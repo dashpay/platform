@@ -13,12 +13,11 @@
 //! key-wallet lives in dedicated sub-changesets: identities, contacts,
 //! platform addresses, asset locks, and token balances.
 //!
-//! Earlier revisions of this file used `key_wallet::changeset::WalletChangeSet`
-//! verbatim in the `core` field. That upstream type was deleted in favour
-//! of an event-bus model (see PR #696 in rust-dashcore). Platform-wallet
-//! subscribes to the event bus, projects each event into a `CoreChangeSet`,
-//! and routes it through this changeset's `core` slot — keeping the
-//! per-domain merge / apply shape downstream consumers already know.
+//! key-wallet exposes core wallet changes as an event bus rather than a
+//! changeset type of its own. Platform-wallet subscribes to that bus,
+//! projects each event into a `CoreChangeSet`, and routes it through this
+//! changeset's `core` slot — so every domain, core included, shares one
+//! merge / apply shape downstream consumers can rely on.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -63,12 +62,13 @@ use crate::wallet::identity::{
 /// `WalletEvent` bus delivers.
 ///
 /// Built by the platform-wallet event adapter from `WalletEvent` variants
-/// emitted by `WalletManager`. The merge implementation coalesces the
-/// record vecs newest-wins (by txid for the wallet-level `records`, by
+/// emitted by `WalletManager`. Every field is additive except
+/// [`Self::sweeps`]. The merge implementation coalesces the record vecs
+/// newest-wins (by txid for the wallet-level `records`, by
 /// `(txid, account)` for `account_records` — see
 /// [`fold_same_txid_records`]), uses monotonic-max for the height
-/// watermarks, `extend` for the utxo vecs, and last-write-wins for the
-/// IS-lock map.
+/// watermarks, `extend` for the utxo vecs and for `sweeps` (in emission
+/// order — see the field), and last-write-wins for the IS-lock map.
 ///
 /// # Why a projection instead of the upstream type
 ///
@@ -87,7 +87,7 @@ use crate::wallet::identity::{
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CoreChangeSet {
     /// Transaction records produced by this batch — one WALLET-LEVEL
-    /// record per txid (dashpay/platform#4387).
+    /// record per txid.
     ///
     /// Includes records first stored (`TransactionDetected`,
     /// `BlockProcessed.inserted`), records whose context advanced
@@ -232,6 +232,89 @@ pub struct CoreChangeSet {
     /// lower height never overwrites a higher one — chain locks are
     /// strictly forward-advancing per upstream's contract).
     pub last_applied_chain_lock: Option<ChainLock>,
+
+    /// Sweeps this batch carries, in the order the wallet emitted them.
+    ///
+    /// The one subtractive part of this type. Every other field is additive,
+    /// which is exactly why this one has to exist: a persister that only ever
+    /// appends keeps the dead rows and replays them on the next load,
+    /// re-creating a balance the wallet has already corrected.
+    ///
+    /// Kept as ordered batches rather than folded into one removal list plus
+    /// one release set. Each sweep describes the wallet at the moment it
+    /// fired, and those descriptions can disagree: an early sweep frees a
+    /// coin, something later spends it, and a later sweep removes that
+    /// spender while keeping the coin spent because its own winner took it.
+    /// Union the release sets and the first answer outlives the last one that
+    /// is actually true. Applied in order, each batch corrects the one before
+    /// it, which is what the wallet itself did.
+    /// `serde(default)` so a payload written before this field existed still
+    /// reads, as an empty vec — the exact backward-compatible meaning, since
+    /// a changeset from then could not have carried a sweep.
+    ///
+    /// Scope of that claim: it holds for SELF-DESCRIBING encodings (JSON and
+    /// friends), where a missing field is a fact the decoder can see. It does
+    /// NOT hold for a non-self-describing one — bincode, which is what this
+    /// workspace persists every stored blob with — where appending a field is
+    /// a wire break `default` cannot absorb. That is not a live hazard today:
+    /// nothing in-tree serializes a changeset at all (the derive is behind the
+    /// optional `serde` feature for out-of-tree consumers), and this note
+    /// exists so nobody starts persisting one with bincode believing the
+    /// attribute makes it upgrade-safe.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub sweeps: Vec<SweepBatch>,
+}
+
+/// One `TransactionsSwept` event: the transactions it removed, the
+/// transaction that beat them, and the coins its removal actually freed.
+///
+/// The grouping is what makes ordering expressible. `released_outpoints` is
+/// only true relative to the wallet as this event saw it, so it belongs with
+/// the removals it came from rather than in a set shared with every other
+/// sweep in the batch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SweepBatch {
+    /// The removed transactions. Their rows and every UTXO they created go.
+    pub txids: Vec<Txid>,
+    /// The transaction whose arrival settled the inputs — final, and
+    /// therefore the reason the removed ones can never confirm. Not
+    /// necessarily wallet-relevant: it can pay entirely to outside addresses
+    /// and still sweep, which is why it cannot be looked up to work out what
+    /// it took.
+    pub superseded_by: Txid,
+    /// Mined height of `superseded_by` when the sweep was triggered by its
+    /// arrival in a block; `None` when it was triggered by an
+    /// InstantSend-locked winner still waiting to be mined (upstream's only
+    /// two triggers — an unlocked mempool arrival never sweeps).
+    ///
+    /// This is the winner's finality context, straight from the event: the
+    /// winner need not be wallet-relevant, so no persister can look its
+    /// height up in its own records. A held-but-unfunded input is mirrored
+    /// as a durable placeholder in EITHER case; this field decides the
+    /// placeholder's lifetime. `Some` stamps the winner's own block height
+    /// — the projection of upstream's `observed_spent_outpoints` — and the
+    /// placeholder is collectible once `min(chainlock_height,
+    /// synced_height)` reaches it, exactly upstream's
+    /// `prune_finalized_observed_spends` boundary. `None` (IS-locked
+    /// winner, unmined) leaves the placeholder UNSTAMPED and never
+    /// collectible: under DIP-10 the lock alone settles the input —
+    /// upstream retains it in the account's `spent_outpoints`, a hold with
+    /// no height that no record survives to rebuild — and an IS-locked
+    /// winner has no mining deadline, so no watermark can ever prove the
+    /// funding output delivered-or-never. An unstamped placeholder
+    /// resolves only through proof: funding materialisation, a later
+    /// block-context sweep's re-stamp, or a release.
+    ///
+    /// `serde(default)`: a journaled payload written before this field
+    /// existed reads back as `None` — the conservative reading (no new
+    /// placeholder, existing stamps kept).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub winner_mined_height: Option<u32>,
+    /// Of the inputs those removed transactions claimed, the ones that came
+    /// free — no surviving transaction spends them too. Everything else they
+    /// claimed was taken by `superseded_by` and stays spent.
+    pub released_outpoints: Vec<OutPoint>,
 }
 
 /// Highest-used derivation index per pool slot for one account, as
@@ -265,8 +348,8 @@ impl HighestUsedIndexes {
     }
 }
 
-/// Fold same-txid [`TransactionRecord`]s into ONE wallet-level record —
-/// the dashpay/platform#4387 fix at the batch seam.
+/// Fold same-txid [`TransactionRecord`]s into ONE wallet-level record
+/// at the batch seam.
 ///
 /// Upstream `check_core_transaction` emits one record PER MATCHED ACCOUNT
 /// for a single transaction, each carrying only its account's slice
@@ -447,7 +530,7 @@ pub(crate) fn fold_same_txid_records(records: &mut Vec<TransactionRecord>) {
 ///
 /// One linear pass over each side per merge — the adapter's drain calls
 /// merge once per buffered event, so this deliberately avoids the
-/// full-vec re-fold a `fold_same_txid_records` call here used to cost.
+/// full-vec re-fold a `fold_same_txid_records` call here would cost.
 fn coalesce_newest_wins<K: std::hash::Hash + Eq>(
     existing: &mut Vec<TransactionRecord>,
     incoming: Vec<TransactionRecord>,
@@ -495,7 +578,7 @@ fn context_rank(context: &key_wallet::transaction_checking::TransactionContext) 
 
 impl Merge for CoreChangeSet {
     fn merge(&mut self, other: Self) {
-        // Records: coalesce by txid, NEWEST-WINS (dashpay/platform#4387).
+        // Records: coalesce by txid, NEWEST-WINS.
         //
         // The event bridge already folded each event's per-account
         // slices into one wallet-level record per txid (see
@@ -610,11 +693,18 @@ impl Merge for CoreChangeSet {
                 .or_default()
                 .merge_max(indexes);
         }
+
+        // Sweeps: appended, never folded. Order is the whole point — a later
+        // batch's decision to keep a coin spent has to survive an earlier
+        // batch's decision to free it, and only replaying them in sequence
+        // preserves that.
+        self.sweeps.extend(other.sweeps);
     }
 
     fn is_empty(&self) -> bool {
         self.records.is_empty()
             && self.account_records.is_empty()
+            && self.sweeps.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
@@ -1468,7 +1558,7 @@ impl Merge for DpnsNameStateChangeSet {
 /// Per-(identity, token) balance changes emitted by
 /// [`crate::manager::identity_sync::IdentitySyncManager::sync_now`].
 ///
-/// The watch list itself is no longer changeset-replicated — it lives
+/// The watch list itself is not changeset-replicated — it lives
 /// purely in the manager's in-memory cache. Persistence carries only
 /// the post-sync balance updates and tombstones.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -1894,8 +1984,8 @@ pub struct PlatformWalletChangeSet {
     /// carries: no persister vtable has a slot for this field yet, so on
     /// hosts that have not adopted it the verdict is process-lifetime only.
     /// Within a process it still redirects a second bring-up, and a partial
-    /// scan is now retried inside its own launch — but closing
-    /// dashpay/platform#4365 across launches needs the host slot.
+    /// scan is retried inside its own launch — but honouring the verdict
+    /// across launches needs the host slot.
     pub identity_scan_state: Option<IdentityScanStateEntry>,
     /// Per-account registration entries emitted at registration / on
     /// later `add_account` calls. See [`AccountRegistrationEntry`] for
@@ -2095,6 +2185,72 @@ impl Merge for PlatformWalletChangeSet {
         {
             core_empty
         }
+    }
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod serde_compat_tests {
+    use super::*;
+
+    /// A changeset serialized before `sweeps` existed must still load. The
+    /// field postdates the representation, so an older payload simply omits
+    /// it — and an empty vec is the exact reading, since nothing back then
+    /// could have carried a sweep. Without `serde(default)` the whole
+    /// deserialization fails and every pre-sweep payload becomes unreadable.
+    #[test]
+    fn a_pre_sweep_payload_deserializes_with_no_sweeps() {
+        let json = r#"{
+            "records": [],
+            "spent_utxos": [],
+            "new_utxos": [],
+            "instant_locks_for_non_final_records": {},
+            "last_processed_height": 1000,
+            "synced_height": 900,
+            "account_highest_used": {},
+            "last_applied_chain_lock": null
+        }"#;
+
+        let cs: CoreChangeSet =
+            serde_json::from_str(json).expect("a pre-sweep payload must still deserialize");
+        assert!(cs.sweeps.is_empty());
+        assert_eq!(cs.last_processed_height, Some(1000));
+        assert_eq!(cs.synced_height, Some(900));
+    }
+
+    /// The compat test above only proves a MISSING `sweeps` reads as empty.
+    /// This one proves a present one survives the trip at all: `SweepBatch`
+    /// carries `Txid` and `OutPoint` from `dashcore`, whose `Serialize` /
+    /// `Deserialize` arrive through that crate's own feature wiring — if
+    /// that wiring were wrong or absent, every sweep-carrying changeset
+    /// would silently fail to round-trip and nothing else here would catch
+    /// it.
+    #[test]
+    fn a_populated_sweep_batch_round_trips() {
+        use dashcore::hashes::Hash;
+
+        let loser = Txid::from_byte_array([0x11; 32]);
+        let winner = Txid::from_byte_array([0x22; 32]);
+        let released = OutPoint::new(Txid::from_byte_array([0x33; 32]), 7);
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser],
+                superseded_by: winner,
+                winner_mined_height: Some(4_242),
+                released_outpoints: vec![released],
+            }],
+            ..Default::default()
+        };
+
+        let encoded = serde_json::to_string(&cs).expect("a sweep-carrying changeset serializes");
+        let decoded: CoreChangeSet =
+            serde_json::from_str(&encoded).expect("and reads back identically");
+
+        assert_eq!(decoded.sweeps.len(), 1);
+        let batch = &decoded.sweeps[0];
+        assert_eq!(batch.txids, vec![loser]);
+        assert_eq!(batch.superseded_by, winner);
+        assert_eq!(batch.winner_mined_height, Some(4_242));
+        assert_eq!(batch.released_outpoints, vec![released]);
     }
 }
 
