@@ -4,7 +4,7 @@
 //! waiting for proofs, and tracking lifecycle status. Shared across sub-wallets
 //! via `Arc<AssetLockManager>`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use dashcore::OutPoint;
@@ -74,7 +74,10 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// `wallet_manager.write()` guard would cause across the build→persist
     /// span. Deliberately NOT held across the broadcast/proof-wait — only the
     /// snapshot ordering needs serialization.
-    pub(super) build_persist_serial: tokio::sync::Mutex<()>,
+    ///
+    /// Shared (`Arc`) so a [`shared_handle`](Self::shared_handle) sees the
+    /// same gate.
+    pub(super) build_persist_serial: Arc<tokio::sync::Mutex<()>>,
     /// Outpoints whose `Built` row is excluded from rejected-build cleanup,
     /// counted so concurrent resumes of the same lock each hold their own
     /// claim. A live resume releases its claim on pre-dispatch exit. Once a
@@ -118,7 +121,15 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// about outpoints: a re-registration allocates a fresh funding index
     /// and therefore a different funding transaction, so no build and resume
     /// of ONE outpoint can end up on two maps.
-    pub(super) resume_dispatch_claims: std::sync::Mutex<BTreeMap<OutPoint, usize>>,
+    pub(super) resume_dispatch_claims: Arc<std::sync::Mutex<BTreeMap<OutPoint, usize>>>,
+    /// Outpoints whose resume gave up on the broadcast transport and now has
+    /// a readiness-deferred retry in flight — see
+    /// [`resume_when_transport_ready`](Self::resume_when_transport_ready).
+    /// Membership is what keeps a lock the host resumes repeatedly (launch,
+    /// foreground, reconnect) from stacking up one retry per attempt: a
+    /// second deferral while the first is still waiting is a no-op. Held
+    /// only for set arithmetic, never across an await.
+    pub(super) deferred_resumes: Arc<std::sync::Mutex<BTreeSet<OutPoint>>>,
     /// Test-only gauge of builds currently at or past the
     /// `build_persist_serial` gate within `broadcast_funded_asset_lock`
     /// (incremented before the `lock().await`, RAII-decremented on every
@@ -128,7 +139,7 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// build holds the lock, a gauge of 2 proves the second build cannot
     /// yet have collected its pool snapshot.
     #[cfg(test)]
-    pub(super) build_serial_gate: std::sync::atomic::AtomicUsize,
+    pub(super) build_serial_gate: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -148,10 +159,36 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             lock_notify,
             broadcaster,
             persister,
-            build_persist_serial: tokio::sync::Mutex::new(()),
-            resume_dispatch_claims: std::sync::Mutex::new(BTreeMap::new()),
+            build_persist_serial: Arc::new(tokio::sync::Mutex::new(())),
+            resume_dispatch_claims: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            deferred_resumes: Arc::new(std::sync::Mutex::new(BTreeSet::new())),
             #[cfg(test)]
-            build_serial_gate: std::sync::atomic::AtomicUsize::new(0),
+            build_serial_gate: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }
+    }
+
+    /// A second handle onto the SAME manager: every field is shared, so a
+    /// build, a resume or a claim made through either is visible through
+    /// the other. This is what a background task spawned from a `&self`
+    /// method holds, since such a method has no `Arc<Self>` to clone.
+    ///
+    /// Deliberately not `impl Clone`: a `Clone` bound invites treating the
+    /// value as copyable state, and the whole point of the manager's
+    /// per-wallet mutexes and claim maps is that there is exactly one of
+    /// each per registered wallet.
+    pub(super) fn shared_handle(&self) -> Self {
+        Self {
+            sdk: Arc::clone(&self.sdk),
+            wallet_manager: Arc::clone(&self.wallet_manager),
+            wallet_id: self.wallet_id,
+            lock_notify: Arc::clone(&self.lock_notify),
+            broadcaster: Arc::clone(&self.broadcaster),
+            persister: self.persister.clone(),
+            build_persist_serial: Arc::clone(&self.build_persist_serial),
+            resume_dispatch_claims: Arc::clone(&self.resume_dispatch_claims),
+            deferred_resumes: Arc::clone(&self.deferred_resumes),
+            #[cfg(test)]
+            build_serial_gate: Arc::clone(&self.build_serial_gate),
         }
     }
 

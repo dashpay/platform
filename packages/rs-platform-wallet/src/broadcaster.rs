@@ -63,8 +63,13 @@ impl From<BroadcastError> for PlatformWalletError {
 /// peer echo / InstantSend lock / confirmation, or by an accepting Core
 /// endpoint. A successful P2P socket write alone must never satisfy this
 /// contract.
+/// `'static` because the asset-lock manager hands a shared handle onto
+/// itself — broadcaster included — to background tasks (the
+/// readiness-deferred resume retry), and a spawned task cannot borrow.
+/// Every broadcaster is an owned struct anyway; the bound only makes that
+/// requirement explicit.
 #[async_trait]
-pub trait TransactionBroadcaster: Send + Sync {
+pub trait TransactionBroadcaster: Send + Sync + 'static {
     /// Contract: [`BroadcastError::Rejected`] is allowed only when the
     /// transaction definitively did not enter the network. Any timeout,
     /// transport ambiguity, or unverifiable response must be

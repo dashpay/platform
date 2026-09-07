@@ -272,6 +272,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     entry.status = AssetLockStatus::Consumed;
                     entry.proof = None; // one-shot — never relevant after consumption
                     cs.asset_locks.insert(*out_point, (&*entry).into());
+                    // A tombstone is beyond rejected-build cleanup, so no
+                    // resume claim — active or sticky — has anything left
+                    // to exclude. Same release `advance_asset_lock_status`
+                    // performs when a row leaves `Built`.
+                    self.resume_dispatch_claims
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .remove(out_point);
                 }
                 Some(_) => {
                     tracing::debug!(
@@ -384,12 +392,45 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///
     /// Returns an [`AssetLockChangeSet`] carrying a full snapshot of the
     /// updated entry.
+    ///
+    /// [`Consumed`](AssetLockStatus::Consumed) is absorbing: a tombstone is
+    /// never overwritten, and the attempt fails as
+    /// [`PlatformWalletError::AssetLockAlreadyConsumed`]. A resume snapshots
+    /// the row and then suspends — on the transport, the send and the proof
+    /// wait — and an explicit funding flow can consume the very same lock in
+    /// that interval. Letting the stale resume land its `Broadcast` /
+    /// `InstantSendLocked` / `ChainLocked` afterwards would resurrect a
+    /// spent lock in memory, and the wallet would offer it for reuse until
+    /// the next restart or reconciliation put the tombstone back.
     pub(crate) async fn advance_asset_lock_status(
         &self,
         out_point: &OutPoint,
         new_status: AssetLockStatus,
         proof: Option<dpp::prelude::AssetLockProof>,
     ) -> Result<AssetLockChangeSet, PlatformWalletError> {
+        self.advance_asset_lock_status_if(out_point, |_| true, new_status, proof)
+            .await
+            .map(|advanced| advanced.expect("an unconditional advance always applies"))
+    }
+
+    /// [`advance_asset_lock_status`](Self::advance_asset_lock_status) gated
+    /// on the row's CURRENT status: the transition applies only when
+    /// `expected(&current)` holds, and returns `Ok(None)` — row untouched —
+    /// when it does not. `Consumed` stays absorbing regardless of the
+    /// predicate.
+    ///
+    /// For a transition whose evidence is bound to a particular prior state.
+    /// A resume's `Built` → `Broadcast` advance records "this send
+    /// dispatched", which a row that a concurrent resume has meanwhile
+    /// carried to a proof-bearing status must not be regressed to; its
+    /// predicate is therefore "still `Built`".
+    pub(crate) async fn advance_asset_lock_status_if(
+        &self,
+        out_point: &OutPoint,
+        expected: impl FnOnce(&AssetLockStatus) -> bool,
+        new_status: AssetLockStatus,
+        proof: Option<dpp::prelude::AssetLockProof>,
+    ) -> Result<Option<AssetLockChangeSet>, PlatformWalletError> {
         let mut wm = self.wallet_manager.write().await;
         let info = wm
             .get_wallet_info_mut(&self.wallet_id)
@@ -400,6 +441,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point
             ))
         })?;
+        if entry.status == AssetLockStatus::Consumed {
+            tracing::warn!(
+                outpoint = %out_point,
+                attempted = ?new_status,
+                "advance_asset_lock_status: the lock was consumed while this \
+                 transition was in flight; keeping the tombstone"
+            );
+            return Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point));
+        }
+        if !expected(&entry.status) {
+            tracing::info!(
+                outpoint = %out_point,
+                current = ?entry.status,
+                attempted = ?new_status,
+                "advance_asset_lock_status: the row moved on while this \
+                 transition was in flight; leaving it where it is"
+            );
+            return Ok(None);
+        }
         entry.status = new_status;
         if proof.is_some() {
             entry.proof = proof;
@@ -416,6 +476,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .unwrap_or_else(|e| e.into_inner())
                 .remove(out_point);
         }
-        Ok(cs)
+        Ok(Some(cs))
     }
 }

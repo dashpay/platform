@@ -6,6 +6,8 @@
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use dashcore::Address as DashAddress;
@@ -207,6 +209,36 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 /// Expiry costs nothing beyond the delay: the broadcast is attempted anyway
 /// and reports exactly what it would have reported with no wait at all.
 const BROADCAST_TRANSPORT_READY_WAIT: Duration = Duration::from_secs(15);
+
+/// Longest a readiness-deferred retry waits for the transport before giving
+/// the lock back to the next catch-up.
+///
+/// Where [`BROADCAST_TRANSPORT_READY_WAIT`] is sized against the host
+/// thread it occupies, this one runs on the manager's own runtime and
+/// occupies nothing the host needs, so it can afford to cover a slow first
+/// peer connection or a network that comes back minutes after launch. It
+/// is still a ceiling and not a park: a transport that never comes up in a
+/// session must not keep one task per stuck lock alive for the session's
+/// whole life. On expiry the row is exactly as it was — tracked, resumable
+/// — and the next catch-up (launch, foreground, reconnect) starts over.
+const DEFERRED_RESUME_TRANSPORT_WAIT: Duration = Duration::from_secs(10 * 60);
+
+/// RAII membership in the manager's deferred-resume set: dropped on every
+/// exit of the retry task — completion, expiry, or the runtime tearing the
+/// task down — so an outpoint can be deferred again afterwards.
+struct DeferredResumeMembership {
+    deferred: Arc<Mutex<BTreeSet<OutPoint>>>,
+    out_point: OutPoint,
+}
+
+impl Drop for DeferredResumeMembership {
+    fn drop(&mut self) {
+        self.deferred
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.out_point);
+    }
+}
 
 /// Find the first outpoint of `lock`'s transaction that some **other,
 /// confirmed** transaction of this wallet already spent, returning
@@ -481,16 +513,23 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// for, and `None` stays `None` — the recovery policy's own
     /// [`UNCONFIRMED_BROADCAST_PROOF_TIMEOUT`] default still applies to the
     /// proof wait downstream.
+    ///
+    /// A wait that expires without readiness is recorded in `missed`, so
+    /// the resume can hand the lock to a readiness-deferred retry once its
+    /// own attempt has run its course — see
+    /// [`resume_asset_lock`](Self::resume_asset_lock).
     async fn await_broadcast_ready(
         &self,
         out_point: &OutPoint,
         timeout: Option<Duration>,
+        missed: &AtomicBool,
     ) -> Option<Duration> {
         let budget = timeout.map_or(BROADCAST_TRANSPORT_READY_WAIT, |t| {
             t.min(BROADCAST_TRANSPORT_READY_WAIT)
         });
         let started = tokio::time::Instant::now();
         if !self.broadcaster.wait_until_ready(budget).await {
+            missed.store(true, Ordering::Relaxed);
             tracing::warn!(
                 outpoint = %out_point,
                 ?budget,
@@ -505,6 +544,128 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             "resume_asset_lock: broadcast transport wait finished"
         );
         timeout.map(|t| t.saturating_sub(waited))
+    }
+
+    /// The status `out_point` would be deferred from: its current status
+    /// when that is one of the two that still need a send, `None` for a
+    /// row that is settled, consumed or gone.
+    async fn status_needing_a_send(&self, out_point: &OutPoint) -> Option<AssetLockStatus> {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get(out_point))
+            .map(|lock| lock.status.clone())
+            .filter(|status| matches!(status, AssetLockStatus::Built | AssetLockStatus::Broadcast))
+    }
+
+    /// Retry a resume whose bounded transport wait expired, once the
+    /// transport actually comes up — off the caller's thread.
+    ///
+    /// The bounded wait in [`await_broadcast_ready`](Self::await_broadcast_ready)
+    /// is the most the synchronous FFI entry point can afford: the host
+    /// drives the catch-up on the same fixed-width pool it needs to reach
+    /// `start_spv`, so parking there for longer would delay the very
+    /// transport being waited for. But an expiry followed by the pre-dispatch
+    /// rejection ends the resume with nothing rescheduling it, and the
+    /// in-tree hosts start the catch-up only while loading a wallet. A cold
+    /// start or a first peer connection that takes longer than the ceiling
+    /// therefore recreated the original stranding: SPV usable seconds later,
+    /// the transaction unsent until the next launch.
+    ///
+    /// This closes that gap without lengthening the host's wait. The retry
+    /// is a task on the manager's runtime — the one the FFI's
+    /// `runtime().block_on(...)` already runs on — holding a
+    /// [`shared_handle`](Self::shared_handle) onto the same manager. It waits
+    /// for readiness under [`DEFERRED_RESUME_TRANSPORT_WAIT`], re-checks that
+    /// the row still reads exactly `deferred_from` — any change means another
+    /// resume, a funding flow or a proof got there first, and the retry
+    /// stands down rather than add a send of its own — and then runs an
+    /// ordinary resume with the caller's own `timeout`. That inner resume
+    /// never defers again: readiness was just observed, so a second miss is
+    /// a transport that went away, which is the next catch-up's problem.
+    ///
+    /// One retry per outpoint at a time: `deferred_resumes` membership makes
+    /// a second deferral while the first is waiting a no-op, so a host that
+    /// re-runs its catch-up on foreground and reconnect cannot stack retries.
+    /// Without a runtime to spawn on — a purely blocking caller — nothing is
+    /// scheduled and the row is simply left for the next catch-up, exactly
+    /// as before.
+    fn resume_when_transport_ready(
+        &self,
+        out_point: OutPoint,
+        deferred_from: AssetLockStatus,
+        timeout: Option<Duration>,
+    ) {
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            tracing::warn!(
+                outpoint = %out_point,
+                "resume_asset_lock: transport not ready and no runtime to \
+                 defer the retry onto; leaving the lock for the next catch-up"
+            );
+            return;
+        };
+        {
+            let mut deferred = self
+                .deferred_resumes
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if !deferred.insert(out_point) {
+                tracing::debug!(
+                    outpoint = %out_point,
+                    "resume_asset_lock: a readiness-deferred retry is already \
+                     waiting for this lock"
+                );
+                return;
+            }
+        }
+        tracing::info!(
+            outpoint = %out_point,
+            ceiling = ?DEFERRED_RESUME_TRANSPORT_WAIT,
+            "resume_asset_lock: transport not ready within the bounded wait; \
+             deferring a retry until it comes up"
+        );
+        let manager = self.shared_handle();
+        runtime.spawn(async move {
+            let _membership = DeferredResumeMembership {
+                deferred: Arc::clone(&manager.deferred_resumes),
+                out_point,
+            };
+            if !manager
+                .broadcaster
+                .wait_until_ready(DEFERRED_RESUME_TRANSPORT_WAIT)
+                .await
+            {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    ceiling = ?DEFERRED_RESUME_TRANSPORT_WAIT,
+                    "deferred resume: transport never came up; leaving the \
+                     lock tracked for the next catch-up"
+                );
+                return;
+            }
+            let current = manager.status_needing_a_send(&out_point).await;
+            if current.as_ref() != Some(&deferred_from) {
+                tracing::info!(
+                    outpoint = %out_point,
+                    ?deferred_from,
+                    ?current,
+                    "deferred resume: the row moved on since the deferral; \
+                     standing down"
+                );
+                return;
+            }
+            match manager.resume_asset_lock_attempt(&out_point, timeout).await {
+                Ok(_) => tracing::info!(
+                    outpoint = %out_point,
+                    "deferred resume: completed once the transport came up"
+                ),
+                Err(error) => tracing::warn!(
+                    outpoint = %out_point,
+                    %error,
+                    "deferred resume: the retry did not settle the lock; it \
+                     stays tracked and resumable"
+                ),
+            }
+        });
     }
 
     /// Re-run the double-spend screen once a proof wait has expired, and
@@ -741,10 +902,47 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// lock) is host and user policy; the SDK does not license it
     /// unilaterally on this evidence. The screen is one-sided — read its
     /// docs before treating a clean pass as evidence the lock is alive.
+    ///
+    /// A `Built` / `Broadcast` resume whose bounded transport wait expires
+    /// still makes its one attempt and reports what it drew — but if the
+    /// row still needs a send afterwards, a retry is deferred until the
+    /// transport comes up, off this thread. See
+    /// [`resume_when_transport_ready`](Self::resume_when_transport_ready).
     pub async fn resume_asset_lock(
         &self,
         out_point: &OutPoint,
         timeout: Option<Duration>,
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
+        let transport_missed = AtomicBool::new(false);
+        let result = self
+            .resume_asset_lock_with(out_point, timeout, &transport_missed)
+            .await;
+        if transport_missed.load(Ordering::Relaxed) {
+            if let Some(deferred_from) = self.status_needing_a_send(out_point).await {
+                self.resume_when_transport_ready(*out_point, deferred_from, timeout);
+            }
+        }
+        result
+    }
+
+    /// One resume attempt, with no readiness-deferred retry: what the
+    /// deferred retry itself runs, having just observed readiness.
+    async fn resume_asset_lock_attempt(
+        &self,
+        out_point: &OutPoint,
+        timeout: Option<Duration>,
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
+        self.resume_asset_lock_with(out_point, timeout, &AtomicBool::new(false))
+            .await
+    }
+
+    /// The resume proper. `transport_missed` is set when a broadcasting
+    /// arm's bounded transport wait expired without readiness.
+    async fn resume_asset_lock_with(
+        &self,
+        out_point: &OutPoint,
+        timeout: Option<Duration>,
+        transport_missed: &AtomicBool,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
         tracing::info!(outpoint = %out_point, ?timeout, "resume_asset_lock: entered");
 
@@ -903,7 +1101,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // Nothing final locally, so this row still needs a send:
                 // re-broadcast and wait for proof — but not into a transport
                 // that cannot carry the send. See `await_broadcast_ready`.
-                let timeout = self.await_broadcast_ready(out_point, timeout).await;
+                let timeout = self
+                    .await_broadcast_ready(out_point, timeout, transport_missed)
+                    .await;
 
                 // No verdict this broadcaster can return ends the resume by
                 // itself. `MaybeSent` means the outcome is unknown — and for
@@ -1057,11 +1257,27 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     // the row exactly where it was, so the next resume
                     // re-sends the transaction instead of dropping into the
                     // `Broadcast` arm's wait for a send that never happened.
+                    //
+                    // The advance is conditional on the row still reading
+                    // `Built`. It records "this send dispatched", nothing
+                    // more; a concurrent resume that already carried the
+                    // row to a proof-bearing status must not be regressed,
+                    // and a `Consumed` tombstone laid down by an explicit
+                    // funding flow while this resume was suspended must
+                    // stay one — that case ends the resume here, as the
+                    // consumed lock has nothing left to wait for.
                     if undispatched.is_none() {
-                        let cs = self
-                            .advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
-                            .await?;
-                        self.queue_asset_lock_changeset(cs);
+                        if let Some(cs) = self
+                            .advance_asset_lock_status_if(
+                                out_point,
+                                |current| *current == AssetLockStatus::Built,
+                                AssetLockStatus::Broadcast,
+                                None,
+                            )
+                            .await?
+                        {
+                            self.queue_asset_lock_changeset(cs);
+                        }
                         drop(dispatch_claim.take());
                     }
                     // A dispatched attempt no longer needs the claim once the
@@ -1175,7 +1391,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // Defensive re-broadcast, then wait for proof — and, as on
                 // the `Built` arm, not into a transport that cannot carry
                 // the send. See `await_broadcast_ready`.
-                let timeout = self.await_broadcast_ready(out_point, timeout).await;
+                let timeout = self
+                    .await_broadcast_ready(out_point, timeout, transport_missed)
+                    .await;
 
                 // A lock can sit at `Broadcast` across app restarts long
                 // enough for its funding tx to be evicted from every mempool
@@ -1444,7 +1662,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // pending window and resurrect the false-"Pending" rendering
         // on every restored lock whose resume didn't end in a spend.
         // Consumption is recorded separately (`consume_asset_lock`)
-        // when the credit output actually lands on Platform.
+        // when the credit output actually lands on Platform — and a
+        // tombstone that landed while this resume was suspended wins:
+        // `advance_asset_lock_status` refuses to overwrite `Consumed`,
+        // so the proof gathered here is never handed out for a lock the
+        // wallet has already spent.
         let new_status = if status == AssetLockStatus::RecoveredFromChain {
             AssetLockStatus::RecoveredFromChain
         } else {
@@ -1602,7 +1824,7 @@ mod tests {
     use key_wallet_manager::WalletManager;
     use tokio::sync::{Notify, RwLock};
 
-    use super::BROADCAST_TRANSPORT_READY_WAIT;
+    use super::{BROADCAST_TRANSPORT_READY_WAIT, DEFERRED_RESUME_TRANSPORT_WAIT};
     use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
     use crate::changeset::{
         ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
@@ -3726,6 +3948,52 @@ mod tests {
         );
     }
 
+    /// A tracked lock at `status` on a funded wallet, plus the manager that
+    /// resumes it through `broadcaster` and the handles a test needs to
+    /// read the row back afterwards.
+    struct TrackedLockFixture {
+        manager: AssetLockManager<dyn TransactionBroadcaster>,
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        out_point: OutPoint,
+    }
+
+    impl TrackedLockFixture {
+        /// The lock's tracked status right now (`None` = untracked).
+        async fn status(&self) -> Option<AssetLockStatus> {
+            self.wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&self.wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&self.out_point)
+                .map(|lock| lock.status.clone())
+        }
+
+        /// The lock's attached proof right now.
+        async fn proof(&self) -> Option<dpp::prelude::AssetLockProof> {
+            self.wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&self.wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&self.out_point)
+                .and_then(|lock| lock.proof.clone())
+        }
+
+        /// Whether a readiness-deferred retry is currently registered for
+        /// the lock.
+        fn retry_deferred(&self) -> bool {
+            self.manager
+                .deferred_resumes
+                .lock()
+                .expect("deferred set mutex")
+                .contains(&self.out_point)
+        }
+    }
+
     /// Builds a tracked lock at `status` on a funded wallet and resumes it
     /// through `broadcaster` with the given `timeout`, returning the resume
     /// error and the lock's tracked state afterwards (`None` = untracked).
@@ -3734,6 +4002,22 @@ mod tests {
         status: AssetLockStatus,
         timeout: Option<Duration>,
     ) -> (PlatformWalletError, Option<AssetLockStatus>) {
+        let fixture = tracked_lock_at(broadcaster, status).await;
+        let error = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, timeout)
+            .await
+            .expect_err("no proof event is ever delivered in these cases");
+        let tracked = fixture.status().await;
+        (error, tracked)
+    }
+
+    /// Builds a tracked lock at `status` on a funded wallet, resumable
+    /// through `broadcaster`.
+    async fn tracked_lock_at(
+        broadcaster: Arc<dyn TransactionBroadcaster>,
+        status: AssetLockStatus,
+    ) -> TrackedLockFixture {
         let (wallet_manager, wallet_id, _balance, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
@@ -3780,20 +4064,308 @@ mod tests {
                     },
                 );
         }
+        TrackedLockFixture {
+            manager,
+            wallet_manager,
+            wallet_id,
+            out_point,
+        }
+    }
 
-        let error = manager
-            .resume_asset_lock(&out_point, timeout)
+    /// Readiness polls before a transport that misses the bounded wait
+    /// comes up: the ceiling is `BROADCAST_TRANSPORT_READY_WAIT` of 5ms
+    /// polls, and this lands a little after it.
+    const TRANSPORT_COMES_UP_AFTER_THE_CEILING: u32 =
+        (BROADCAST_TRANSPORT_READY_WAIT.as_millis() / 5) as u32 + 600;
+
+    /// A transport that misses the bounded wait must not strand the lock
+    /// for the session. The in-tree hosts start the catch-up only while
+    /// loading a wallet, so a resume that spent its one send into a dead
+    /// transport and reported the unknown outcome used to leave the row
+    /// exactly as it was — the original failure, back again, whenever SPV
+    /// startup took longer than the ceiling. The resume keeps its bounded
+    /// wait (the host thread cannot afford more) and hands the lock to a
+    /// retry off that thread, which sends once the transport is up.
+    #[tokio::test(start_paused = true)]
+    async fn a_missed_transport_wait_defers_a_retry_until_the_transport_comes_up() {
+        let broadcaster = Arc::new(StartingUpBroadcaster::comes_up_after(
+            TRANSPORT_COMES_UP_AFTER_THE_CEILING,
+        ));
+        let fixture = tracked_lock_at(broadcaster.clone(), AssetLockStatus::Built).await;
+        let caller_budget = Some(Duration::from_secs(300));
+
+        let error = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, caller_budget)
             .await
-            .expect_err("no proof event is ever delivered in these cases");
-        let tracked = wallet_manager
-            .read()
+            .expect_err("the transport is down for the whole bounded wait");
+        assert!(
+            matches!(
+                error,
+                PlatformWalletError::TransactionBroadcastUnconfirmed(_)
+            ),
+            "the caller still gets the attempt's own verdict: {error:?}"
+        );
+        let attempts = broadcaster.attempts();
+        assert_eq!(attempts.len(), 1, "the bounded attempt spends its one send");
+        assert!(
+            !attempts[0].1,
+            "and that send went into the transport as it was"
+        );
+        assert_eq!(fixture.status().await, Some(AssetLockStatus::Built));
+        assert!(
+            fixture.retry_deferred(),
+            "a row that still needs a send after a missed wait has a retry deferred"
+        );
+
+        // Let the paused clock run the deferred retry: the transport comes
+        // up a few seconds in, and the retry sends into it.
+        tokio::time::sleep(Duration::from_secs(60)).await;
+
+        let attempts = broadcaster.attempts();
+        assert_eq!(
+            attempts.len(),
+            2,
+            "the deferred retry makes exactly one further send"
+        );
+        assert!(
+            attempts[1].1,
+            "and holds it until the transport is actually up"
+        );
+        assert_eq!(
+            attempts[1].0, attempts[0].0,
+            "the retry re-sends the ORIGINAL transaction, never a rebuild"
+        );
+        assert_eq!(
+            fixture.status().await,
+            Some(AssetLockStatus::Broadcast),
+            "a send that dispatched advances the row"
+        );
+        assert_eq!(
+            broadcaster.readiness_budgets(),
+            vec![
+                BROADCAST_TRANSPORT_READY_WAIT,
+                DEFERRED_RESUME_TRANSPORT_WAIT,
+                BROADCAST_TRANSPORT_READY_WAIT,
+            ],
+            "the host's wait keeps its ceiling; only the off-thread retry \
+             waits under the longer one, and its own resume then finds the \
+             transport ready at once"
+        );
+
+        // The retry's proof wait runs out the caller's budget and the task
+        // ends, releasing the outpoint for a later deferral.
+        tokio::time::sleep(Duration::from_secs(300)).await;
+        assert!(
+            !fixture.retry_deferred(),
+            "a finished retry no longer holds the outpoint"
+        );
+        assert_eq!(
+            broadcaster.attempts().len(),
+            2,
+            "and nothing sends again on its own"
+        );
+    }
+
+    /// The deferred retry acts only on a row that is exactly as the
+    /// deferring resume left it. A host that resumed the same lock again
+    /// meanwhile — with a transport that had come up by then — made the
+    /// send itself and advanced the row, and the retry must not add a
+    /// send of its own on top of that.
+    #[tokio::test(start_paused = true)]
+    async fn a_deferred_retry_stands_down_when_the_row_moved_on_meanwhile() {
+        let broadcaster = Arc::new(StartingUpBroadcaster::comes_up_after(
+            TRANSPORT_COMES_UP_AFTER_THE_CEILING,
+        ));
+        let fixture = tracked_lock_at(broadcaster.clone(), AssetLockStatus::Built).await;
+
+        let _ = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_secs(300)))
+            .await;
+        assert!(fixture.retry_deferred());
+
+        // A second host-driven resume before the retry's own wait has
+        // observed readiness: its bounded wait is what sees the transport
+        // come up, and its send advances the row.
+        let _ = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_secs(300)))
+            .await;
+        assert_eq!(fixture.status().await, Some(AssetLockStatus::Broadcast));
+        let attempts = broadcaster.attempts();
+        assert_eq!(attempts.len(), 2);
+        assert!(
+            attempts[1].1,
+            "the second resume's send waited for the transport"
+        );
+
+        tokio::time::sleep(Duration::from_secs(400)).await;
+        assert_eq!(
+            broadcaster.attempts().len(),
+            2,
+            "the deferred retry saw a row that had moved on and sent nothing"
+        );
+        assert!(!fixture.retry_deferred());
+    }
+
+    /// A lock consumed while its resume is suspended stays consumed.
+    ///
+    /// The resume snapshots the row at `Built`, then waits for the
+    /// transport; an explicit funding flow can consume the same lock in
+    /// that interval. The stale resume's `Built` → `Broadcast` advance
+    /// must not overwrite the tombstone — a `Consumed` row that reads
+    /// `Broadcast` again is a spent lock the wallet would offer for reuse
+    /// until the next restart — and the resume must report the lock as
+    /// consumed rather than hand out a proof for it.
+    #[tokio::test(start_paused = true)]
+    async fn a_lock_consumed_while_the_resume_awaits_the_transport_keeps_its_tombstone() {
+        let broadcaster = Arc::new(StartingUpBroadcaster::comes_up_after(
+            TRANSPORT_COMES_UP_AFTER_POLLS,
+        ));
+        let fixture = tracked_lock_at(broadcaster.clone(), AssetLockStatus::Built).await;
+
+        let resume = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_secs(300)));
+        let consume_meanwhile = async {
+            // One poll into the transport wait: the resume has taken its
+            // snapshot and is suspended.
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            fixture
+                .manager
+                .consume_asset_lock(&fixture.out_point)
+                .await
+                .expect("consume")
+        };
+        let (outcome, _) = tokio::join!(resume, consume_meanwhile);
+
+        let error = outcome.expect_err("a consumed lock yields no proof");
+        assert!(
+            matches!(
+                error,
+                PlatformWalletError::AssetLockAlreadyConsumed(actual) if actual == fixture.out_point
+            ),
+            "expected AssetLockAlreadyConsumed, got {error:?}"
+        );
+        assert_eq!(
+            fixture.status().await,
+            Some(AssetLockStatus::Consumed),
+            "the tombstone survives the stale resume's status advance"
+        );
+        assert!(
+            fixture.proof().await.is_none(),
+            "and no proof is re-attached to a consumed lock"
+        );
+        assert!(
+            fixture
+                .manager
+                .resume_dispatch_claims
+                .lock()
+                .expect("claims mutex")
+                .is_empty(),
+            "consumption releases the resume's dispatch claim — there is no \
+             cleanup left for it to exclude"
+        );
+        assert!(
+            !fixture.retry_deferred(),
+            "a consumed lock is not a lock that needs a send"
+        );
+    }
+
+    /// `Consumed` absorbs every later transition, whatever proof it comes
+    /// with: the proof-attaching advance a resume makes after its wait is
+    /// the other place a stale resume could resurrect a spent lock.
+    #[tokio::test]
+    async fn a_consumed_tombstone_absorbs_every_later_status_advance() {
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+
+        let fixture = tracked_lock_at(
+            Arc::new(RecordingBroadcaster::default()),
+            AssetLockStatus::Broadcast,
+        )
+        .await;
+        fixture
+            .manager
+            .consume_asset_lock(&fixture.out_point)
             .await
-            .get_wallet_info(&wallet_id)
-            .expect("wallet")
-            .tracked_asset_locks
-            .get(&out_point)
-            .map(|lock| lock.status.clone());
-        (error, tracked)
+            .expect("consume");
+
+        let proof = dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 78,
+            out_point: fixture.out_point,
+        });
+        let error = fixture
+            .manager
+            .advance_asset_lock_status(
+                &fixture.out_point,
+                AssetLockStatus::ChainLocked,
+                Some(proof),
+            )
+            .await
+            .expect_err("a tombstone is never overwritten");
+        assert!(matches!(
+            error,
+            PlatformWalletError::AssetLockAlreadyConsumed(actual) if actual == fixture.out_point
+        ));
+        assert_eq!(fixture.status().await, Some(AssetLockStatus::Consumed));
+        assert!(fixture.proof().await.is_none());
+    }
+
+    /// A conditional advance whose premise no longer holds leaves the row
+    /// alone: a resume recording "this send dispatched" must not regress a
+    /// row a concurrent resume already carried to a proof-bearing status.
+    #[tokio::test]
+    async fn a_conditional_advance_leaves_a_row_that_moved_on_alone() {
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+
+        let fixture = tracked_lock_at(
+            Arc::new(RecordingBroadcaster::default()),
+            AssetLockStatus::Built,
+        )
+        .await;
+        let proof = dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 78,
+            out_point: fixture.out_point,
+        });
+        fixture
+            .manager
+            .advance_asset_lock_status(
+                &fixture.out_point,
+                AssetLockStatus::ChainLocked,
+                Some(proof.clone()),
+            )
+            .await
+            .expect("the concurrent resume's proof lands first");
+
+        let advanced = fixture
+            .manager
+            .advance_asset_lock_status_if(
+                &fixture.out_point,
+                |current| *current == AssetLockStatus::Built,
+                AssetLockStatus::Broadcast,
+                None,
+            )
+            .await
+            .expect("a stale premise is not an error");
+        assert!(
+            advanced.is_none(),
+            "nothing to persist for a skipped advance"
+        );
+        assert_eq!(fixture.status().await, Some(AssetLockStatus::ChainLocked));
+        assert_eq!(fixture.proof().await, Some(proof));
+
+        let advanced = fixture
+            .manager
+            .advance_asset_lock_status_if(
+                &fixture.out_point,
+                |current| *current == AssetLockStatus::ChainLocked,
+                AssetLockStatus::ChainLocked,
+                None,
+            )
+            .await
+            .expect("a premise that holds applies");
+        assert!(advanced.is_some());
     }
 
     /// Regression: an ambiguous re-broadcast on the UNBOUNDED resume path
@@ -4424,8 +4996,8 @@ mod tests {
             resume_lock_at(broadcaster.clone(), AssetLockStatus::Built, None).await;
 
         assert_eq!(
-            broadcaster.readiness_budgets(),
-            vec![BROADCAST_TRANSPORT_READY_WAIT],
+            broadcaster.readiness_budgets().first(),
+            Some(&BROADCAST_TRANSPORT_READY_WAIT),
             "an unbounded caller must still hand the transport wait a ceiling"
         );
         let PlatformWalletError::TransactionBroadcastUnconfirmed(reason) = &error else {
@@ -4480,8 +5052,8 @@ mod tests {
         let elapsed = started.elapsed();
 
         assert_eq!(
-            broadcaster.readiness_budgets(),
-            vec![BROADCAST_TRANSPORT_READY_WAIT],
+            broadcaster.readiness_budgets().first(),
+            Some(&BROADCAST_TRANSPORT_READY_WAIT),
             "the caller's 300s must not become a 300s transport wait"
         );
         assert!(
@@ -4559,8 +5131,8 @@ mod tests {
         let elapsed = started.elapsed();
 
         assert_eq!(
-            broadcaster.readiness_budgets(),
-            vec![caller_budget],
+            broadcaster.readiness_budgets().first(),
+            Some(&caller_budget),
             "a caller under the ceiling hands the transport wait its own \
              budget — the constant caps the wait, it never extends it"
         );
