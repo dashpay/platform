@@ -212,7 +212,9 @@ impl DefaultCoreRPC {
     pub fn open(url: &str, username: String, password: String) -> Result<Self, Error> {
         let prefetcher = CorePrefetcher::new(url, username.clone(), password.clone());
         if prefetcher.is_none() {
-            tracing::warn!("could not open a second Core RPC connection; block sync will fetch masternode and quorum updates on the critical path");
+            tracing::warn!(
+                "could not open a second Core RPC connection; masternode and quorum updates will be fetched on the critical path"
+            );
         }
         Ok(DefaultCoreRPC {
             inner: Client::new(url, Auth::UserPass(username, password))?,
@@ -281,7 +283,9 @@ impl CoreRPCLike for DefaultCoreRPC {
     ) -> Result<ExtendedQuorumListResult, Error> {
         // Block sync walks core heights in order, so the next call is almost
         // always for height + 1. Take the speculative answer when it is for the
-        // height we were asked about, and start the next guess either way.
+        // height we were asked about, and start the next guess either way. The
+        // prefetcher declines a guess past the chain lock, so at the tip this is
+        // a no-op until Core locks the next block.
         let prefetched = height
             .zip(self.prefetcher.as_ref())
             .and_then(|(height, prefetcher)| prefetcher.take_quorum_list(height));

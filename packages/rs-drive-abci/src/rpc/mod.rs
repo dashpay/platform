@@ -2,6 +2,6 @@
 pub mod core;
 
 /// Speculative Core RPC fetching for consecutive core heights
-pub mod prefetch;
+pub(crate) mod prefetch;
 /// Core signatures verification
 pub mod signature;
