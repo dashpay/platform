@@ -15,7 +15,7 @@
 /packages/rs-drive/                         @dashpay/drive-owners
 /packages/rs-dpp/                           @dashpay/drive-owners
 /packages/rs-platform-version/              @dashpay/drive-owners
-/packages/rs-platform-value/                @QuantumExplorer
+/packages/rs-platform-value/                @QuantumExplorer @shumkov
 /packages/rs-drive-proof-verifier/          @dashpay/drive-owners @lklimek
 
 # ---------- DAPI / wire ----------
@@ -44,16 +44,16 @@
 /packages/rs-unified-sdk-jni/               @dashpay/mobile-team
 
 # ---------- JavaScript / Node ----------
-/packages/dashmate/                         @dashpay/js-owners
-/packages/dapi/                             @dashpay/js-owners
-/packages/js-dapi-client/                   @dashpay/js-owners
-/packages/js-evo-sdk/                       @dashpay/js-owners
-/packages/js-dash-sdk/                      @dashpay/js-owners
-/packages/wallet-lib/                       @dashpay/js-owners
-/packages/dash-spv/                         @dashpay/js-owners
-/packages/platform-test-suite/              @dashpay/js-owners
-/packages/js-grpc-common/                   @dashpay/js-owners
-/packages/bench-suite/                      @dashpay/js-owners
+/packages/dashmate/                         @dashpay/js-owners @lklimek
+/packages/dapi/                             @dashpay/js-owners @lklimek
+/packages/js-dapi-client/                   @dashpay/js-owners @lklimek
+/packages/js-evo-sdk/                       @dashpay/js-owners @lklimek
+/packages/js-dash-sdk/                      @dashpay/js-owners @lklimek
+/packages/wallet-lib/                       @dashpay/js-owners @lklimek
+/packages/dash-spv/                         @dashpay/js-owners @lklimek
+/packages/platform-test-suite/              @dashpay/js-owners @lklimek
+/packages/js-grpc-common/                   @dashpay/js-owners @lklimek
+/packages/bench-suite/                      @dashpay/js-owners @lklimek
 
 # ---------- Build & CI ----------
 /.github/workflows/                         @dashpay/infra-team @shumkov
