@@ -14,6 +14,16 @@ function validTo(days) {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString();
 }
 
+/**
+ * @param {string} value
+ * @return {string}
+ */
+function stripAnsi(value) {
+  const escape = String.fromCharCode(27);
+
+  return value.replace(new RegExp(`${escape}\\[[0-9;]*m`, 'g'), '');
+}
+
 describe('analyseGatewayCertificateFactory', () => {
   let analyseGatewayCertificate;
   let config;
@@ -907,13 +917,16 @@ describe('analyseGatewayCertificateFactory', () => {
       renewalFailed();
 
       const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+      const description = stripAnsi(renewal.getDescription());
+      const solution = stripAnsi(renewal.getSolution());
+      const misleadingCounter = /\b37\b[^\n.]*\b(?:attempts?|failures?|failed|wake-ups?)\b/i;
 
-      expect(renewal.getSolution()).to.contain('Last renewed');
-      expect(renewal.getDescription()).to.not.contain('failing since');
-      expect(renewal.getSolution()).to.not.contain('failing since');
+      expect(solution).to.contain('Last renewed');
+      expect(description).to.not.contain('failing since');
+      expect(solution).to.not.contain('failing since');
       // The counter counts scheduler wake-ups, not attempts.
-      expect(renewal.getDescription()).to.not.contain('37');
-      expect(renewal.getSolution()).to.not.contain('37');
+      expect(description).to.not.match(misleadingCounter);
+      expect(solution).to.not.match(misleadingCounter);
     });
 
     it('should name the cause instead of sending an operator to the logs', () => {

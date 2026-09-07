@@ -104,27 +104,16 @@ pub(super) fn verify_having_query(
         .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
     // Resolve any pending time-range selection through the shared
-    // normalization helper, then reject the request outright if anything
-    // resolved — mirroring the server-side rejection in drive's
-    // `execute_document_having_request`. HAVING accepts equality prefixes
-    // on compound ranked indexes (which exclude transformed indexes), so a
-    // resolved bucket-start equality would pin a *plain* ranked index on
-    // the same timestamp field, and a malicious node could return a valid
-    // proof over raw-timestamp matches at the bucket boundary instead of
-    // the requested window. Without this guard the verifier would
-    // authenticate a request shape honest servers refuse.
+    // normalization helper — the resolved bucket-start equality joins the
+    // where set as the pin on the bucketed first level, and the
+    // provenance is threaded into index resolution below. The picker's
+    // admissibility rule is the load-bearing half: the resolved pin is
+    // only ever matched against the index bucketing that field with
+    // exactly the resolved grid — never a plain index over raw
+    // timestamps, where a malicious node could authenticate
+    // boundary-timestamp matches as window membership.
     let resolved_time_ranges =
         normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
-    if !resolved_time_ranges.is_empty() {
-        return Err(drive_proof_verifier::Error::RequestError {
-            error: "a HAVING query cannot carry a time-range (IN_TIME_RANGE) selection: its \
-                    equality prefixes pin plain ranked indexes, so a resolved bucket-start \
-                    equality would authenticate raw-timestamp matches at the bucket boundary \
-                    instead of window membership — the server rejects this request and the \
-                    verifier must not authenticate a proof for it"
-                .to_string(),
-        });
-    }
 
     let document_type = request
         .data_contract
@@ -148,6 +137,7 @@ pub(super) fn verify_having_query(
         request.document_type_name.clone(),
         document_type.indexes(),
         &mode,
+        &resolved_time_ranges,
         platform_version,
     )
     .map_err(|e| drive_proof_verifier::Error::RequestError {

@@ -50,15 +50,15 @@ pub struct DocumentHavingRequest<'a> {
     /// at most one may instead be a bounded `IN` (one branch per
     /// element, merged; entries then carry `in_key`).
     pub where_clauses: &'a [WhereClause],
-    /// The fields among `where_clauses` whose equality clause was produced by
+    /// The provenance of any `where_clauses` equality produced by
     /// `IN_TIME_RANGE` resolution (see
-    /// [`crate::query::DriveDocumentQuery::resolved_time_ranges`]).
-    /// Must be empty: HAVING's equality prefixes pin plain ranked indexes
-    /// (its picker excludes transformed ones), so a resolved bucket-start
-    /// equality would authenticate raw-timestamp matches at the bucket
-    /// boundary instead of window membership. Carried (and rejected) here
-    /// for the same reason the ranked request carries it: drive owns the
-    /// rejection regardless of which upstream path built the request.
+    /// [`crate::query::DriveDocumentQuery::resolved_time_ranges`]). At most
+    /// one; index selection consumes it through
+    /// [`crate::query::index_admissible_for_resolved_time_range`], which
+    /// routes the resolved bucket-start pin to exactly the grid it was
+    /// resolved against — and keeps raw requests off bucketed indexes,
+    /// where a hand-written equality would authenticate raw-timestamp
+    /// matches at the bucket boundary instead of window membership.
     pub resolved_time_ranges: &'a [ResolvedTimeRange],
     /// Request `limit`. **Required**; `1 ..= MAX_HAVING_LIMIT`.
     pub limit: Option<u32>,
@@ -117,19 +117,21 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentHavingResponse, Error> {
-        // Before mode detection reads `where_clauses`: a resolved bucket
-        // equality is indistinguishable from a hand-written equality pin, and
-        // the pinned-prefix form would accept it against a plain ranked index
-        // over raw timestamps — a validly-proven answer to a different
-        // question. See `DocumentHavingRequest::resolved_time_ranges`.
-        if !request.resolved_time_ranges.is_empty() {
-            return Err(Error::Query(QuerySyntaxError::Unsupported(
-                "a HAVING query cannot carry a time-range (IN_TIME_RANGE) selection: its \
-                 equality prefixes pin plain ranked indexes, so a resolved bucket-start \
-                 equality would match raw timestamps at the bucket boundary instead of the \
-                 selected window"
-                    .to_string(),
-            )));
+        // A transform's source must be its index's first property, so no
+        // single index can serve two resolved buckets; rejected before
+        // routing, mirroring the ranked dispatcher. A single resolution is
+        // consumed by index selection (the picker's admissibility rule
+        // routes it to exactly the grid it was resolved against, and keeps
+        // raw requests off bucketed indexes) — the resolved bucket-start
+        // equality pins the bucketed first level like any other leading
+        // property.
+        if request.resolved_time_ranges.len() > 1 {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "at most one time-range selection (IN_TIME_RANGE) is supported per \
+                 having-range query; this one resolves {:?}, and no single index can \
+                 bucket more than one field",
+                request.resolved_time_ranges
+            ))));
         }
         let mode = detect_having_mode(
             &request.select,
@@ -155,6 +157,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     &mode,
+                    request.resolved_time_ranges,
                     transaction,
                     platform_version,
                 )?,
@@ -166,6 +169,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     &mode,
+                    request.resolved_time_ranges,
                     transaction,
                     platform_version,
                 )?,

@@ -6,6 +6,18 @@ const generateRandomIdentifier = require('../../../lib/test/utils/generateRandom
 const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
 const createPlatformProofVerifier = require('../../../lib/test/createPlatformProofVerifier');
 
+function identifierLikeToBase58(evo, value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (value && typeof value.toBase58 === 'function') {
+    return value.toBase58();
+  }
+
+  return evo.Identifier.fromBytes(Array.from(value)).toBase58();
+}
+
 const {
   Errors: {
     StateTransitionBroadcastError,
@@ -306,7 +318,7 @@ describe('Platform', () => {
       // quorum-signed root, re-deriving the outer query and checking
       // it against the proven inner values — the node cannot steer
       // the join.
-      const { sdk: evoSdk } = await createPlatformProofVerifier
+      const { evo, sdk: evoSdk } = await createPlatformProofVerifier
         .getEvoSdkForNetwork(process.env.NETWORK);
 
       const page = await evoSdk.documents.chained({
@@ -327,8 +339,8 @@ describe('Platform', () => {
 
       // The inner projection carries the pagination cursor.
       const [innerLike] = page.innerDocuments;
-      // Identifier-typed properties surface as base58 strings in JS.
-      expect(innerLike.properties.postId).to.equal(post.getId().toString());
+      expect(identifierLikeToBase58(evo, innerLike.properties.postId))
+        .to.equal(post.getId().toString());
     });
 
     it('should fail to query a subset-index projection without proofs', async () => {

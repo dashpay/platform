@@ -52,11 +52,9 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// queue their own `AssetLockChangeSet`s into the changeset flush
     /// boundary without round-tripping through the parent wallet.
     ///
-    /// Item 8 sub-step 1a: previously mutations returned
-    /// `AssetLockChangeSet` and callers (including
-    /// `create_funded_asset_lock_proof` itself) dropped them with
-    /// `let _cs = ...`. Every emitted changeset now flows straight
-    /// into `queue_persist` here.
+    /// Invariant: no mutation drops its `AssetLockChangeSet` — every
+    /// emitted changeset goes straight to `queue_asset_lock_changeset`,
+    /// which stores it through this handle.
     pub(super) persister: WalletPersister,
     /// Serializes the funding-index-critical section of
     /// [`broadcast_funded_asset_lock`](Self::broadcast_funded_asset_lock) —

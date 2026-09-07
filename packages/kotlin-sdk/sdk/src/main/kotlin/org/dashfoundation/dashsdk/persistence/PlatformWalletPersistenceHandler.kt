@@ -1667,6 +1667,21 @@ class PlatformWalletPersistenceHandler(
                     updatedAt = now(),
                 ),
             )
+            // Spend-visibility reconcile: an asset-lock tx burns its value
+            // into the special-tx PAYLOAD and often has no wallet-owned
+            // standard output, so SPV block matching can miss it entirely —
+            // the spender's transaction row then never leaves mempool
+            // context and onWalletChangesetTransaction's in-block flip never
+            // runs, leaving the funding TXOs isSpent=0 (spendingTxid set)
+            // FOREVER. The lock's own STATUS is a signal that provably
+            // does arrive (the proof wait drives it): once it reaches
+            // InstantSendLocked (2) the network has locked the inputs, so
+            // flip the linked TXOs here. Monotonic, and keyed strictly to
+            // TXOs already linked to THIS lock's funding txid.
+            if (incomingStatus >= ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED) {
+                val fundingTxid = outPoint.copyOfRange(0, 32)
+                db.txoDao().markSpentBySpendingTxid(fundingTxid, now())
+            }
         }
         0
     }
@@ -2415,6 +2430,36 @@ class PlatformWalletPersistenceHandler(
     }
 
     /**
+     * Whether the transaction [spendingTxid] funds an asset lock the
+     * network has already locked (`InstantSendLocked` or beyond), or
+     * `null` when the asset-lock table could not be read.
+     *
+     * Keyed on the funding TXID alone, never on a single outpoint:
+     * DIP-0027 lets one funding transaction carry several credit
+     * outputs, and Rust persists each tracked lock under its own
+     * credit-output index, so the lock a given spend produced can sit at
+     * any vout. Finality belongs to the transaction, so any of its locks
+     * reaching InstantSendLocked means the inputs are gone.
+     *
+     * `null` is a deliberate third answer, not a swallowed error. This
+     * runs inside `guardedLoad(emptyArray())` and the Android load
+     * surface carries no error channel, so an escaping read failure would
+     * hand Rust a SUCCESSFUL EMPTY restore for every wallet — the
+     * strongest possible "this device has no coins". The fault is
+     * therefore contained to the single candidate it concerns and every
+     * unrelated wallet, account and TXO still restores.
+     */
+    private suspend fun spendByFinalizedAssetLock(spendingTxid: ByteArray): Boolean? =
+        try {
+            val status = database.assetLockDao()
+                .maxStatusForTxid(spendingTxid.reversedArray().toHex())
+            status != null && status >= ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED
+        } catch (t: Throwable) {
+            Log.w(TAG, "load: asset-lock finality lookup failed; dropping the candidate UTXO", t)
+            null
+        }
+
+    /**
      * Assemble the [UtxoRestoreData] rows for one wallet: every unspent
      * `txos` row, routed to its owning account for the leading
      * account-tag block the Rust load path uses to file the UTXO into
@@ -2459,6 +2504,40 @@ class PlatformWalletPersistenceHandler(
             if (spendingTxid != null) {
                 val spending = database.transactionDao().getByTxid(spendingTxid)
                 if (spending != null && spending.context >= CONTEXT_IN_BLOCK) continue
+                // Asset-lock spender: the lock tx burns its value into the
+                // special-tx payload and often has no wallet-owned standard
+                // output, so SPV block matching can miss it and its row sits
+                // at mempool context FOREVER — the guard above never fires,
+                // and every relaunch resurrects the consumed output into the
+                // engine's balance. The tracked lock's own status is the
+                // finality signal that provably arrives; from
+                // InstantSendLocked on this output is gone. Skip it, and
+                // heal the flag so isSpent-based readers stop counting it.
+                when (spendByFinalizedAssetLock(spendingTxid)) {
+                    // Provably final. Heal opportunistically: excluding
+                    // the row from THIS restore does not depend on the
+                    // repair becoming durable, and the whole body of
+                    // `onLoadWalletList` runs under
+                    // `guardedLoad(emptyArray())` — an escaping write
+                    // failure would discard every wallet's restore set
+                    // over one unhealed row. Log and carry on instead,
+                    // the way `scrubAliases` treats its cleanup.
+                    true -> {
+                        try {
+                            database.txoDao().markSpentByOutpoint(txo.outpoint, now())
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "load: failed to heal asset-lock-consumed TXO", t)
+                        }
+                        continue
+                    }
+                    // Unreadable (see the helper): drop this one candidate
+                    // and never heal it. Under-reporting one output for a
+                    // launch is recoverable; handing a consumed output back
+                    // as spendable is what this guard exists to stop.
+                    null -> continue
+                    // Demonstrably not final — keep it in the restore set.
+                    false -> Unit
+                }
             }
             val account = txo.accountId?.let { database.accountDao().getById(it) }
                 ?: accountByAddress.getOrPut(txo.address) {
@@ -3283,6 +3362,17 @@ class PlatformWalletPersistenceHandler(
 
         /** `TransactionContext::InBlock` — spends only count once in-block. */
         private const val CONTEXT_IN_BLOCK = 2
+
+        /**
+         * Rust `AssetLockStatus` wire bytes
+         * (`wallet::asset_lock::tracked`): Built 0, Broadcast 1,
+         * InstantSendLocked 2, ChainLocked 3, Consumed 4,
+         * RecoveredFromChain 5. At InstantSendLocked the network has
+         * locked the funding inputs, and every status above it is a
+         * strictly stronger finality claim — so the spend-visibility
+         * reconcile treats the linked TXOs as spent from there on.
+         */
+        private const val ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED = 2
 
         /** `Network.testnet` rawValue — the Swift fallback network. */
         private const val NETWORK_TESTNET = 1

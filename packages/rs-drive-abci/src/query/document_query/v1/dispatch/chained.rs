@@ -337,6 +337,7 @@ mod tests {
                         // fields.
                         variant: Some(document_field_value::Variant::BytesValue(OWNER_1.to_vec())),
                     }),
+                    time_range: None,
                 },
             ],
             order_by: Vec::new(),

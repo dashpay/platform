@@ -68,17 +68,19 @@ pub struct DocumentRankedRequest<'a> {
     /// at most one may instead be a bounded `IN` (one branch per
     /// element, merged; entries then carry `in_key`).
     pub where_clauses: &'a [WhereClause],
-    /// The fields among `where_clauses` whose equality clause was produced by
+    /// The provenance of any `where_clauses` equality produced by
     /// `IN_TIME_RANGE` resolution (see
-    /// [`crate::query::DriveDocumentQuery::resolved_time_ranges`]).
-    /// Must be empty: bucketed (timeRange) indexes are excluded from the
-    /// ranked surface (see the rejection in
-    /// [`Drive::execute_document_ranked_request`]), because ranking over
-    /// bucket keys is undesigned — a document belongs to `overlap_factor`
-    /// buckets at once, so it would contribute to that many groups. Carried
-    /// (and rejected) here for the same reason `having` and `start_at` are:
-    /// drive owns the rejection regardless of which upstream path built the
-    /// request.
+    /// [`crate::query::DriveDocumentQuery::resolved_time_ranges`]). At most
+    /// one, and its resolved bucket-start equality must appear among
+    /// `where_clauses` as the pin on the covering index's bucketed first
+    /// property. Index selection consumes it through
+    /// [`crate::query::index_admissible_for_resolved_time_range`]: a
+    /// resolved request is served only by the index bucketing that field
+    /// with exactly that grid, and a raw request never by a bucketed
+    /// index. Ranked levels sit strictly BELOW the bucketed one (contract
+    /// validation guarantees it), so the walk reads the pinned window's
+    /// own per-prefix secondary — one window, each document once,
+    /// regardless of grid overlap.
     pub resolved_time_ranges: &'a [ResolvedTimeRange],
     /// Request `limit` — the ranking's `k`. **Required**; there is no
     /// server default a verifying client could reproduce.
@@ -144,26 +146,16 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentRankedResponse, Error> {
-        // Load-bearing, not a shape formality: `detect_ranked_mode` accepts
-        // equality pins, and a resolved bucket-start equality is an ordinary
-        // `==` clause on the bucketed source field, so nothing in the grammar
-        // stops it. Without this guard the request would fall through to
-        // index selection, where the picker excludes bucketed indexes —
-        // surfacing as a misleading "no covering index" error, or, if a plain
-        // ranked index happens to cover the same properties, matching it and
-        // answering a raw-timestamp question the caller never asked.
-        // Rejecting the provenance up front keeps the ranked surface's
-        // exclusion of bucketed indexes a precise refusal rather than a
-        // silent fallback to another index.
-        if !request.resolved_time_ranges.is_empty() {
-            return Err(Error::Query(QuerySyntaxError::Unsupported(
-                "a ranked query cannot carry a time-range (IN_TIME_RANGE) selection: ranking \
-                 reads a pre-built secondary keyed by document properties, and a document \
-                 belongs to every bucket that contains its timestamp — it would be ranked \
-                 into several groups at once — so bucketed (timeRange) indexes are excluded \
-                 from the ranked surface"
-                    .to_string(),
-            )));
+        // A transform's source must be its index's first property, so no
+        // single index can serve two resolved buckets; rejected before
+        // routing, mirroring `DriveDocumentQuery::select_best_index`.
+        if request.resolved_time_ranges.len() > 1 {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "at most one time-range selection (IN_TIME_RANGE) is supported per ranked \
+                 query; this one resolves {:?}, and no single index can bucket more than \
+                 one field",
+                request.resolved_time_ranges
+            ))));
         }
 
         let mode = detect_ranked_mode(
@@ -190,6 +182,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     &mode,
+                    request.resolved_time_ranges,
                     transaction,
                     platform_version,
                 )?,
@@ -201,6 +194,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     &mode,
+                    request.resolved_time_ranges,
                     transaction,
                     platform_version,
                 )?,

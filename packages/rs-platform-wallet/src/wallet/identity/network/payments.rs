@@ -1218,17 +1218,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
             let current_height = info.core_wallet.synced_height();
 
-            // Pool the same funding set as a plain send (#4329): BIP44 +
-            // BIP32 + every DashPay receiving account. Pinning this path to
-            // BIP44 alone was the reason a wallet whose balance had moved into
+            // Pool the same funding set as a plain send: BIP44 + BIP32 +
+            // every DashPay receiving account. Pinning this path to BIP44
+            // alone would make a wallet whose balance has moved into
             // contact-receiving accounts hit "Insufficient funds" on a screen
-            // showing plenty — the exact symptom #4329 fixed for the core send
-            // path, which this path never picked up (it only took that PR's
-            // `set_funding` → `add_funding` rename).
+            // showing plenty.
             //
             // Order is load-bearing: BIP44 is offered first, and the builder
             // takes the change address from the first funding source, so
-            // change keeps returning to BIP44 as before. CoinJoin stays out by
+            // change keeps returning to BIP44. CoinJoin stays out by
             // construction — spending mixed outputs alongside transparent ones
             // links them and undoes the mixing — and so do the contact
             // *external* accounts, which hold the counterparty's xpub and no
@@ -1239,7 +1237,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .add_output(&payment_address, amount_duffs);
 
             // Derivation paths for every offered UTXO, since the signer closure
-            // below can no longer resolve them from one account.
+            // below cannot resolve them from one account.
             let mut funding_paths: std::collections::HashMap<
                 dashcore::Address,
                 key_wallet::bip32::DerivationPath,
@@ -1373,8 +1371,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // this very input, finds no fence on it, passes its own copy of the
             // check above, and completes — after which THIS future resumes and
             // puts its already-signed transaction on the wire against an input
-            // reassigned to another payment (`dashpay/platform#4309`, review
-            // round 7).
+            // reassigned to another payment.
             //
             // So the pin is installed under the guard that just proved the
             // reservation is ours, making check-and-pin one atomic step, and it
@@ -1432,8 +1429,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // The pin installed under the build guard is held across this await —
         // that is the whole point of it — and settled on the way out. Only a
         // definitive rejection releases the inputs; every other outcome leaves
-        // the pending-spend fence standing until the wallet observes the spend
-        // (`dashpay/platform#4309`). A cancellation or unwind inside `broadcast`
+        // the pending-spend fence standing until the wallet observes the spend.
+        // A cancellation or unwind inside `broadcast`
         // reaches neither arm and settles as pending through
         // `InBroadcastPin::drop`, which is the conservative direction.
         let broadcast_result = match self.broadcaster.broadcast(&tx).await {
@@ -1452,25 +1449,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 // fence inputs of a transaction proven never sent — a fence no
                 // observed spend could ever clear, held for the manager's
                 // lifetime since the pending phase carries no deadline by
-                // design (`dashpay/platform#4309`).
+                // design.
                 let mut in_broadcast_pin = in_broadcast_pin;
                 in_broadcast_pin.settle_released_on_drop();
                 //
                 // ORDER MATTERS — the cleanup runs FIRST, under the still-live
-                // fence, and only then does the pin come down
-                // (`dashpay/platform#4309`, review round 8). The cleanup is an
+                // fence, and only then does the pin come down. The cleanup is an
                 // `.await`: it must re-acquire the wallet-manager read lock, and
                 // on this path it carries NO reservation token, so it performs an
                 // unconditional `release_reservation`. Releasing the fence first
-                // opened a window in which this input was neither fenced nor —
-                // once catch-up had swept the build's reservation — reserved. A
-                // build already queued on the manager write lock could take it in
-                // that window, pass the now-absent conflict check, and drop the
-                // lock with its external signer still pending (finalized builds
-                // install no pin until broadcast); the unconditional cleanup then
-                // deleted THAT build's newer reservation, and a second
-                // finalization could reserve and sign the same input — two live
-                // conflicting handles.
+                // would open a window in which this input is neither fenced nor
+                // — once catch-up has swept the build's reservation — reserved.
+                // A build already queued on the manager write lock could take it
+                // in that window, pass the now-absent conflict check, and drop
+                // the lock with its external signer still pending (finalized
+                // builds install no pin until broadcast); the unconditional
+                // cleanup would then delete THAT build's newer reservation, and
+                // a second finalization could reserve and sign the same input —
+                // two live conflicting handles.
                 //
                 // With the fence held across the cleanup there is no such window:
                 // a queued build that runs first meets the fence and rolls back
@@ -5286,7 +5282,7 @@ mod tests {
     /// * It pins the deliberate mixed-failure policy change: purpose-rejected
     ///   on our side wins, and the entry stays recoverable.
     ///
-    /// Drained twice, because the cost this PR removes is per sweep, not once.
+    /// Drained twice, because the cost avoided is per sweep, not once.
     #[tokio::test]
     async fn unaccepted_recipient_purpose_never_fetches_and_stays_recoverable() {
         use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
@@ -6223,13 +6219,11 @@ mod tests {
     }
 
     /// A contact payment funds from a DashPay **receiving** account when BIP44
-    /// alone cannot cover it — the pooled funding set a plain send has used
-    /// since #4329.
+    /// alone cannot cover it — the same pooled funding set a plain send uses.
     ///
-    /// This path kept its BIP44-only pin through that PR (it took only the
-    /// `set_funding` → `add_funding` rename), so a wallet whose balance had
-    /// moved into contact-receiving accounts saw the funds in its total and got
-    /// `Insufficient funds` trying to pay a contact. Reported from mainnet
+    /// A BIP44-only pin on this path lets a wallet whose balance has moved
+    /// into contact-receiving accounts see the funds in its total and still
+    /// get `Insufficient funds` trying to pay a contact. Observed on mainnet
     /// after 8 successful contact payments drained BIP44: `available 41505,
     /// required 100000`, on a screen showing plenty.
     ///
@@ -6784,14 +6778,13 @@ mod tests {
         }
     }
 
-    /// `dashpay/platform#4309`, REVIEW ROUND 7 — THE CONTACT-PAYMENT BUILD'S
-    /// OWN FENCE.
+    /// THE CONTACT-PAYMENT BUILD'S OWN FENCE.
     ///
-    /// The build's conflict check stopped it from CONSUMING an input another
-    /// dispatch had fenced. It did not fence the selection it had just made, so
+    /// The build's conflict check stops it from CONSUMING an input another
+    /// dispatch has fenced. Without a fence on the selection it has just made,
     /// the stretch after the manager write guard drops — the durability store
-    /// and `broadcaster.broadcast(&tx)` — ran with no pin at all. This test
-    /// drives the resulting race end to end:
+    /// and `broadcaster.broadcast(&tx)` — would run with no pin at all. This
+    /// test drives the resulting race end to end:
     ///
     /// 1. A contact payment builds, signs, releases the guard, and SUSPENDS
     ///    inside the broadcaster before submission.
@@ -6802,10 +6795,10 @@ mod tests {
     ///    UTXO, so it selects the same input the parked transaction already
     ///    spends.
     ///
-    /// Before the fix step 3 SUCCEEDED — it found no fence (the parked build
-    /// never installed one), passed its own conflict check, and returned a
-    /// second signed transaction against the same input, which the resuming
-    /// original then raced on the wire. It must now be refused.
+    /// Without the build's own fence step 3 would SUCCEED — it would find no
+    /// fence (the parked build installed none), pass its own conflict check,
+    /// and return a second signed transaction against the same input, which
+    /// the resuming original then races on the wire. It must be refused.
     #[tokio::test]
     async fn a_suspended_contact_payment_fences_its_inputs_against_a_competing_build() {
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
@@ -6881,20 +6874,20 @@ mod tests {
         );
     }
 
-    /// `dashpay/platform#4309`, REVIEW ROUND 8 — THE FENCE MUST OUTLIVE THE
-    /// REJECTED-BROADCAST RESERVATION CLEANUP.
+    /// THE FENCE MUST OUTLIVE THE REJECTED-BROADCAST RESERVATION CLEANUP.
     ///
-    /// The definitive-rejection arm used to drop the fence FIRST and only then
-    /// await `release_reservation_after_rejected_broadcast`. That cleanup is
-    /// token-less on this path, so it performs an UNCONDITIONAL
-    /// `release_reservation`, and it can only run after re-acquiring the
-    /// wallet-manager read lock — an await. In that window the input was
-    /// neither fenced nor (once catch-up had swept it) reserved, so a build
-    /// already queued on the manager write lock could reserve it, pass the
-    /// now-absent conflict check, and drop the lock with an external signer
-    /// still pending. The unconditional cleanup then deleted THAT build's
-    /// newer reservation, leaving the outpoint free for a second finalization
-    /// to reserve and sign — two fresh conflicting handles over one input.
+    /// If the definitive-rejection arm dropped the fence FIRST and only then
+    /// awaited `release_reservation_after_rejected_broadcast`, there would be
+    /// a window: that cleanup is token-less on this path, so it performs an
+    /// UNCONDITIONAL `release_reservation`, and it can only run after
+    /// re-acquiring the wallet-manager read lock — an await. In that window
+    /// the input is neither fenced nor (once catch-up has swept it) reserved,
+    /// so a build already queued on the manager write lock could reserve it,
+    /// pass the now-absent conflict check, and drop the lock with an external
+    /// signer still pending. The unconditional cleanup would then delete THAT
+    /// build's newer reservation, leaving the outpoint free for a second
+    /// finalization to reserve and sign — two fresh conflicting handles over
+    /// one input.
     ///
     /// The invariant that closes it: the fence stays up THROUGH the cleanup and
     /// comes down only after it. A queued build that runs first then meets a
@@ -6903,10 +6896,10 @@ mod tests {
     /// Driven here by holding the wallet-manager WRITE lock across the
     /// broadcaster's rejection. The cleanup needs the READ lock, so it cannot
     /// complete while the test holds the write side — which makes the assertion
-    /// an invariant rather than a race: with the fix the fence CANNOT be gone at
-    /// this observation point, because the only code that releases it runs after
-    /// a cleanup that is provably still blocked. Before the fix the release ran
-    /// synchronously the instant `broadcast` returned, so the fence was gone.
+    /// an invariant rather than a race: the fence CANNOT be gone at this
+    /// observation point, because the only code that releases it runs after a
+    /// cleanup that is provably still blocked. A release that ran synchronously
+    /// the instant `broadcast` returned would already have taken it down.
     #[tokio::test]
     async fn the_contact_send_fence_outlives_its_rejected_broadcast_reservation_cleanup() {
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
@@ -6985,28 +6978,29 @@ mod tests {
         );
     }
 
-    /// `dashpay/platform#4309` — CANCELLATION DURING THE REJECTED-BROADCAST
-    /// CLEANUP MUST NOT LEAVE A PERMANENT FENCE.
+    /// CANCELLATION DURING THE REJECTED-BROADCAST CLEANUP MUST NOT LEAVE A
+    /// PERMANENT FENCE.
     ///
     /// After `broadcast()` definitively returns `Rejected`, the send awaits
     /// the token-less reservation cleanup under the still-raised fence (the
-    /// round-8 ordering, proven by the sibling test above). The pin used to
-    /// carry its DEFAULT pending-on-drop verdict through that await, so
-    /// cancelling the send future while the cleanup waited on the manager
-    /// lock dropped the pin as `Pending`: a pending-spend fence over the
-    /// inputs of a transaction PROVEN never sent. No spend of it can ever be
-    /// observed, and the pending phase has no deadline by design, so the
-    /// outpoint stayed fenced for the manager's lifetime.
+    /// ordering proven by the sibling test above). Were the pin to carry its
+    /// DEFAULT pending-on-drop verdict through that await, cancelling the send
+    /// future while the cleanup waits on the manager lock would drop the pin
+    /// as `Pending`: a pending-spend fence over the inputs of a transaction
+    /// PROVEN never sent. No spend of it can ever be observed, and the pending
+    /// phase has no deadline by design, so the outpoint would stay fenced for
+    /// the manager's lifetime.
     ///
-    /// The rejection verdict is now recorded on the pin synchronously, before
-    /// the cleanup's first await gives cancellation its first opportunity, so
-    /// a drop ANYWHERE afterwards settles the fence as released.
+    /// The rejection verdict is therefore recorded on the pin synchronously,
+    /// before the cleanup's first await gives cancellation its first
+    /// opportunity, so a drop ANYWHERE afterwards settles the fence as
+    /// released.
     ///
     /// The test drives the send future by hand (noop waker) so every step is
     /// deterministic: park it inside the broadcaster, pin the cleanup behind
     /// a held manager WRITE lock, poll the rejection through to the cleanup
-    /// await, then DROP the future there — the cancellation the finding
-    /// describes — and require the outpoint to be left unfenced.
+    /// await, then DROP the future there — the cancellation described above
+    /// — and require the outpoint to be left unfenced.
     #[tokio::test]
     async fn cancelling_the_rejected_broadcast_cleanup_leaves_no_fence() {
         use std::task::{Context, Poll, Waker};

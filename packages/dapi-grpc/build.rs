@@ -341,6 +341,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         // absent (same pattern DocumentQuery's own serde defaults follow
         // for pre-SQL-surface fixtures).
         .field_attribute("GetDocumentsRequestV1.chained", SERDE_DEFAULT)
+        // Same compat rule for the typed IN_TIME_RANGE operand: mock
+        // vectors captured while the operand still rode `value` carry no
+        // `time_range` key.
+        .field_attribute("GetDocumentsRequest.WhereClause.time_range", SERDE_DEFAULT)
         .field_attribute("ResponseMetadata.height", SERDE_WITH_STRING)
         .field_attribute("ResponseMetadata.time_ms", SERDE_WITH_STRING)
         .field_attribute("start_at_ms", SERDE_WITH_STRING)

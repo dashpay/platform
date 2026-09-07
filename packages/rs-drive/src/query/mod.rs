@@ -692,9 +692,15 @@ impl From<InternalClauses> for Vec<WhereClause> {
     }
 }
 
-/// Which active time range a `TOP(timeRange(...))` selection resolves to,
-/// when the index's ranges overlap (`range > step`). Time-range queries are a
-/// v1-only feature; the v0 query surface is unaffected.
+/// Which window of a `timeRange` grid an `IN_TIME_RANGE` selection resolves
+/// to. Time-range queries are a v1-only feature; the v0 query surface is
+/// unaffected.
+///
+/// The two relative selectors are resolved against an authoritative "now"
+/// (block time on the server, the quorum-signed metadata time on the
+/// verifier); [`Self::ByStart`] names a window absolutely, so its resolution
+/// reads the query alone and needs no clock at all — which is what makes
+/// historic windows addressable.
 #[cfg(any(feature = "server", feature = "verify"))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -706,24 +712,41 @@ pub enum TimeRangeSelector {
     /// The oldest range still active at now. Covers a near-full trailing
     /// window of ~range of history. Best for "trending over the last window".
     Oldest,
+    /// The range starting exactly at `start_ms` (a millisecond timestamp).
+    /// Must lie on the grid — `phase + k * step`, the same values
+    /// [`TimeRangeTransform::containing_buckets`] produces and the storage
+    /// keys spell — or resolution rejects it (see
+    /// [`TimeRangeTransform::is_bucket_start`]). A window with no documents,
+    /// including one that has not started yet, is a provable empty answer
+    /// rather than an error.
+    ByStart {
+        /// The selected window's start on the millisecond timeline.
+        start_ms: u64,
+    },
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
 impl TimeRangeSelector {
-    /// The selector's wire spelling — the `IN_TIME_RANGE` clause's operand on
-    /// the v1 `getDocuments` wire. The single source of truth for the string
-    /// form: the SDK encoder, the drive-abci decoder and the wasm-sdk JSON
-    /// parser all go through these two functions (and the serde derive above
-    /// is renamed to match), so the spellings cannot drift apart.
+    /// The selector's JSON spelling — the `selector` string of the wasm-sdk
+    /// query surface. The single source of truth for the string form: the
+    /// wasm-sdk JSON parser and every error message quote these spellings.
+    /// (The gRPC wire does not use them: since the typed
+    /// `TimeRangeSelection` operand, the selector rides as a proto enum.)
+    ///
+    /// [`Self::ByStart`] names its *kind* only — the `start_ms` payload
+    /// rides in a separate JSON field, so [`Self::from_string`] cannot
+    /// construct it and parsers of the full shape handle it themselves.
     pub fn as_str(&self) -> &'static str {
         match self {
             TimeRangeSelector::Newest => "newest",
             TimeRangeSelector::Oldest => "oldest",
+            TimeRangeSelector::ByStart { .. } => "byStart",
         }
     }
 
-    /// Parses the wire spelling. Returns `None` for anything but the exact
-    /// strings [`Self::as_str`] produces.
+    /// Parses the spelling of the payload-free selectors. Returns `None`
+    /// for anything else — including `"byStart"`, whose `start_ms` payload
+    /// a bare string cannot carry (see [`Self::as_str`]).
     pub fn from_string(value: &str) -> Option<Self> {
         match value {
             "newest" => Some(TimeRangeSelector::Newest),
@@ -793,11 +816,14 @@ impl ResolvedTimeRange {
 /// [`WhereClause`] on the bucketed source field, using the named grid's
 /// `timeRange` transform and an authoritative `block_time_ms`.
 ///
-/// The server supplies `block_time_ms` from current block time and the
-/// verifier re-derives it from the quorum-signed response metadata `time_ms`,
-/// so both produce the identical concrete equality query — the existing
-/// index/count proofs apply unchanged and the engine never needs a dedicated
-/// time-range operator.
+/// For the relative selectors the server supplies `block_time_ms` from
+/// current block time and the verifier re-derives it from the quorum-signed
+/// response metadata `time_ms`, so both produce the identical concrete
+/// equality query — the existing index/count proofs apply unchanged and the
+/// engine never needs a dedicated time-range operator. A
+/// [`TimeRangeSelector::ByStart`] selection ignores `block_time_ms`
+/// entirely: the start is in the query itself (validated to lie on the
+/// grid), so both sides read the same window with no clock involved.
 ///
 /// `grid` selects among several time-range indexes on the same field: `None`
 /// is accepted only while exactly one grid buckets the field (the common
@@ -853,9 +879,9 @@ pub fn resolve_time_range_bucket_clause(
         None => {
             if grids.len() > 1 {
                 return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                    "field \"{}\" is bucketed by {} different grids; the IN_TIME_RANGE operand \
-                     must name one as [selector, range, step] or [selector, range, step, phase] \
-                     (seconds, as the contract declares them)",
+                    "field \"{}\" is bucketed by {} different grids; the IN_TIME_RANGE \
+                     selection must name one in its `grid` (range/step/phase, in seconds, \
+                     as the contract declares them)",
                     field,
                     grids.len()
                 ))));
@@ -867,6 +893,25 @@ pub fn resolve_time_range_bucket_clause(
     let bucket_start = match selector {
         TimeRangeSelector::Newest => transform.newest_active_start(block_time_ms),
         TimeRangeSelector::Oldest => transform.oldest_active_start(block_time_ms),
+        // Absolute selection: the start comes from the query itself, so no
+        // clock is consulted — prover and verifier agree by construction.
+        // Only grid membership is checked; an empty (or not-yet-started)
+        // window is a provable empty answer, not an invalid question.
+        TimeRangeSelector::ByStart { start_ms } => {
+            if !transform.is_bucket_start(start_ms) {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                    "byStart {} on \"{}\" is not a window start of the grid range={}s \
+                     step={}s phase={}s: starts are phase + k*step on the millisecond \
+                     timeline, and an off-grid start is rejected rather than snapped",
+                    start_ms,
+                    field,
+                    transform.range_seconds,
+                    transform.step_seconds,
+                    transform.phase_seconds
+                ))));
+            }
+            Some(start_ms)
+        }
     }
     .ok_or(Error::Query(QuerySyntaxError::Unsupported(format!(
         "no time range on \"{}\" is active yet: the block time predates the grid's phase \

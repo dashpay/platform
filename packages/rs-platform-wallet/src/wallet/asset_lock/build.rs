@@ -65,9 +65,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// `DerivationPath` is what the caller hands back to the same
     /// `signer` when the credit output is later consumed on Platform.
     ///
-    /// Exact-amount form — the historical entry point, now **pooled**: it funds
-    /// from [`ASSET_LOCK_FUNDING_SOURCES`] (BIP44 + BIP32 + every DashPay
-    /// contact-receiving account), so the lock no longer needs its whole amount
+    /// Exact-amount form, **pooled**: it funds from
+    /// [`ASSET_LOCK_FUNDING_SOURCES`] (BIP44 + BIP32 + every DashPay
+    /// contact-receiving account), so the lock does not need its whole amount
     /// sitting in one account and change returns to BIP44. The
     /// funding-parameterized form is
     /// [`Self::build_asset_lock_transaction_with_funding`].
@@ -187,8 +187,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// that gap, and a competing build can then sweep and re-reserve this very
     /// input, find no fence, pass its own copy of the check, and complete —
     /// after which this build's already-signed asset lock still goes to the wire
-    /// against an input reassigned to another payment (`dashpay/platform#4309`,
-    /// review round 7).
+    /// against an input reassigned to another payment.
     ///
     /// The returned pin closes that. The CALLER OWNS ITS SETTLEMENT and must
     /// account for every exit: [`InBroadcastPin::settle_released`] on a
@@ -341,8 +340,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //
         // `build_asset_lock_with_signer` always returns the `Public`
         // variant. The `Private` arm would only come from the soft-
-        // wallet `build_asset_lock` path which we no longer call from
-        // platform-wallet — defensively bail if it appears.
+        // wallet `build_asset_lock` path, which platform-wallet does not
+        // call — defensively bail if it appears.
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockCreditKeys;
         let path = match result.keys {
             AssetLockCreditKeys::Public(mut keys) => {
@@ -950,7 +949,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //    `in_broadcast_pin` fences those inputs from the moment they were
         //    reserved — installed under the build's own write guard, so no
         //    competing build can sweep and re-reserve them across the durability
-        //    gate and the broadcast await below (`dashpay/platform#4309`). Every
+        //    gate and the broadcast await below. Every
         //    exit from here on settles it: released on the aborts that never
         //    reach the broadcaster and on a definitive rejection, left pending
         //    otherwise.
@@ -997,9 +996,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // transaction to protect: release it alongside the reservation
                 // — but AFTER the cleanup, never before it. The cleanup awaits
                 // the manager read lock, and an input that is unfenced while
-                // still reserved-or-reusable is exactly the window review round
-                // 8 closed on the contact-send path
-                // (`dashpay/platform#4309`). This site's release is
+                // still reserved-or-reusable is exactly the window the
+                // contact-send path closes. This site's release is
                 // owner-guarded by `reservation_token`, so a newer build's
                 // reservation cannot be clobbered here even so; the ordering is
                 // uniform across every settle-with-cleanup site rather than
@@ -1010,7 +1008,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // released on drop: the abort is established and nothing was
                 // sent, so a pending-spend settle there would fence inputs no
                 // observed spend could ever clear — same shape as the
-                // contact-send rejection arm (`dashpay/platform#4309`).
+                // contact-send rejection arm.
                 let mut in_broadcast_pin = in_broadcast_pin;
                 in_broadcast_pin.settle_released_on_drop();
                 crate::wallet::reservations::release_reservation_after_rejected_broadcast(
@@ -1064,7 +1062,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // leaving it would block the retry the release exists to enable.
                 // It comes down AFTER the cleanup, not before — see the
                 // drain-floor branch above for why every settle-with-cleanup
-                // site keeps that order (`dashpay/platform#4309`, round 8) —
+                // site keeps that order —
                 // and the released verdict is recorded BEFORE the cleanup's
                 // first await, so a cancellation inside it settles released
                 // rather than opening an uncleanable pending-spend fence over
@@ -1162,9 +1160,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     // Provably nothing on the wire and the row is gone: free the
                     // fence with the reservation so the rebuild can reselect —
                     // the fence coming down LAST, after the cleanup await, so
-                    // the input is never unfenced while still reusable
-                    // (`dashpay/platform#4309`, round 8; see the drain-floor
-                    // branch for the full window).
+                    // the input is never unfenced while still reusable (see
+                    // the drain-floor branch for the full window).
                     //
                     // The released verdict IS established now — rejected AND
                     // unresumable — so it is recorded before the cleanup's
@@ -1279,7 +1276,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 /// Map a key-wallet [`AssetLockError`] to a [`PlatformWalletError`], promoting
 /// every coin-selection shortfall shape to the typed
 /// [`PlatformWalletError::AssetLockInsufficientFunds`] so callers get one
-/// structured shortfall contract (dashpay/platform#4073) instead of a string
+/// structured shortfall contract instead of a string
 /// they must pattern-match:
 ///
 ///   - `BuilderError::InsufficientFunds` / `SelectionError::InsufficientFunds`
@@ -1364,7 +1361,7 @@ mod tests {
     /// The zero-spendable-candidate selection error must surface the SAME
     /// typed shortfall as a partial shortfall (not the generic string form),
     /// so hosts stay on one structured path; and a partial shortfall must
-    /// still carry its own exact amounts (dashpay/platform#4073).
+    /// still carry its own exact amounts.
     #[test]
     fn coin_selection_shortfalls_map_to_typed_insufficient_funds() {
         use super::{map_builder_error, AssetLockError, BuilderError, SelectionError};
@@ -1552,14 +1549,13 @@ mod tests {
         *utxos.keys().next().expect("one utxo")
     }
 
-    /// `dashpay/platform#4309`, REVIEW ROUND 7 — THE ASSET-LOCK BUILD'S OWN
-    /// FENCE.
+    /// THE ASSET-LOCK BUILD'S OWN FENCE.
     ///
-    /// The build's conflict check stopped it from CONSUMING an input another
-    /// dispatch had fenced. It did not fence the selection it had just made, so
+    /// The build's conflict check stops it from CONSUMING an input another
+    /// dispatch has fenced. Without a fence on the selection it has just made,
     /// everything between the check and the direct `broadcaster.broadcast(&tx)`
     /// — the pool durability gate, the `Built` tracking write, and the await
-    /// itself — ran with no pin on those inputs.
+    /// itself — would run with no pin on those inputs.
     ///
     /// 1. A funded asset lock builds, signs, releases the manager guard, and
     ///    SUSPENDS inside the broadcaster before submission.
@@ -1568,8 +1564,8 @@ mod tests {
     /// 3. A competing asset-lock build runs. There is exactly one spendable
     ///    UTXO, so it selects the same input the parked lock already spends.
     ///
-    /// Before the fix step 3 SUCCEEDED and returned a second signed asset lock
-    /// against that input. It must now be refused with `InputMidBroadcast`.
+    /// Step 3 must be refused with `InputMidBroadcast` rather than returning a
+    /// second signed asset lock against that input.
     ///
     /// The two builds run through two `AssetLockManager`s over ONE shared
     /// wallet manager. That is not a workaround for the per-manager

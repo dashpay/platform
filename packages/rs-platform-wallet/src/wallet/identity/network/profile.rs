@@ -161,8 +161,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             properties.insert("avatarFingerprint".to_string(), Value::Bytes(fp.to_vec()));
         }
 
-        // 4. Look up identity + signing key. We no longer need the
-        // identity_index — the signer is supplied externally.
+        // 4. Look up identity + signing key. The identity_index is not
+        // needed here — the signer is supplied externally.
         let signing_key = {
             let wm = self.wallet_manager.read().await;
             let info = wm

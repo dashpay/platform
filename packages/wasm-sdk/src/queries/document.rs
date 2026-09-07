@@ -123,14 +123,22 @@ export interface DocumentsQuery {
   /**
    * Time-range bucket selections for "trending"-style queries. Each entry
    * picks a single bucket of a timestamp field covered by a `timeRange`
-   * index. The server resolves the bucket from the current block time and
-   * the proof verifier re-derives it from the signed response metadata, so
-   * the result is provable. Requires protocol version 14+ (the first
-   * version whose contract grammar hosts `timeRange` indexes).
+   * index. For the relative selectors the server resolves the bucket from
+   * the current block time and the proof verifier re-derives it from the
+   * signed response metadata; `"byStart"` names the bucket absolutely, so
+   * both sides read it straight from the query. Provable either way.
+   * Requires protocol version 14+ (the first version whose contract
+   * grammar hosts `timeRange` indexes).
    *
    * - `selector: "oldest"` → the oldest still-active range (a near-full
    *   trailing window of ~`range`; best for "trending over the last window").
    * - `selector: "newest"` → the freshest started range (latest partial slice).
+   * - `selector: "byStart"` → the range starting exactly at `startMs` — any
+   *   window, current or historic. `startMs` is then required and must be a
+   *   window start on the grid (`phase + k * step`, in milliseconds); an
+   *   off-grid start is rejected rather than snapped, and an empty window
+   *   is a provable empty answer. The relative selectors must not carry
+   *   `startMs`.
    *
    * `grid` names one of the field's grids in the contract's own declared
    * seconds (`{ range, step, phase? }`) — required when the contract buckets
@@ -140,7 +148,8 @@ export interface DocumentsQuery {
    */
   timeRange?: {
     field: string;
-    selector: "newest" | "oldest";
+    selector: "newest" | "oldest" | "byStart";
+    startMs?: number;
     grid?: { range: number; step: number; phase?: number };
   }[];
 }
@@ -500,20 +509,26 @@ pub(super) fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause,
     })
 }
 
-/// Parse a JSON time-range clause `{ field, selector, grid? }` for
-/// [`DocumentQuery::with_time_range`] / `with_time_range_grid`.
+/// Parse a JSON time-range clause `{ field, selector, startMs?, grid? }`
+/// for [`DocumentQuery::with_time_range`] / `with_time_range_grid`.
+///
+/// `selector` is `"newest"`, `"oldest"`, or `"byStart"`. The relative
+/// selectors resolve their window from block time and must not carry
+/// `startMs`; `"byStart"` names a window absolutely — `startMs` is then
+/// required and must be a window start on the grid (`phase + k * step`,
+/// milliseconds), which the server validates against the contract.
 ///
 /// `grid` is `{ range, step, phase? }` in the contract's own declared
 /// seconds, naming one of the field's grids — required when the contract
 /// buckets the field with more than one `timeRange` grid (the bare selector
 /// is ambiguous there and the server rejects it). Like the contract grammar
 /// and the wire, a zero phase is spelled by omission.
-fn parse_time_range_clause(
+pub(super) fn parse_time_range_clause(
     json_clause: &JsonValue,
 ) -> Result<(String, TimeRangeSelector, Option<TimeRangeGridSpec>), WasmSdkError> {
     let object = json_clause.as_object().ok_or_else(|| {
         WasmSdkError::invalid_argument(
-            "timeRange clause must be an object { field, selector, grid? }",
+            "timeRange clause must be an object { field, selector, startMs?, grid? }",
         )
     })?;
     let field = object
@@ -523,15 +538,46 @@ fn parse_time_range_clause(
             WasmSdkError::invalid_argument("timeRange clause requires a string `field`")
         })?
         .to_string();
-    let selector = object
+    let selector_text = object
         .get("selector")
         .and_then(JsonValue::as_str)
-        .and_then(TimeRangeSelector::from_string)
         .ok_or_else(|| {
             WasmSdkError::invalid_argument(
-                "timeRange clause `selector` must be \"newest\" or \"oldest\"",
+                "timeRange clause `selector` must be \"newest\", \"oldest\" or \"byStart\"",
             )
         })?;
+    let start_ms = match object.get("startMs") {
+        None | Some(JsonValue::Null) => None,
+        Some(value) => Some(value.as_u64().ok_or_else(|| {
+            WasmSdkError::invalid_argument(
+                "timeRange clause `startMs` must be an unsigned integer millisecond timestamp",
+            )
+        })?),
+    };
+    let selector = match (selector_text, start_ms) {
+        ("byStart", Some(start_ms)) => TimeRangeSelector::ByStart { start_ms },
+        ("byStart", None) => {
+            return Err(WasmSdkError::invalid_argument(
+                "timeRange clause `selector: \"byStart\"` requires `startMs` naming the \
+                 window's start (a millisecond timestamp on the grid)",
+            ));
+        }
+        (other, start_ms) => {
+            let selector = TimeRangeSelector::from_string(other).ok_or_else(|| {
+                WasmSdkError::invalid_argument(
+                    "timeRange clause `selector` must be \"newest\", \"oldest\" or \"byStart\"",
+                )
+            })?;
+            if start_ms.is_some() {
+                return Err(WasmSdkError::invalid_argument(
+                    "timeRange clause `startMs` is only meaningful with `selector: \
+                     \"byStart\"`; the relative selectors resolve their window from block \
+                     time",
+                ));
+            }
+            selector
+        }
+    };
     let grid = match object.get("grid") {
         None | Some(JsonValue::Null) => None,
         Some(grid_json) => {
@@ -1160,10 +1206,10 @@ mod tests {
     use serde_json::json;
 
     /// This parser is the only boundary turning the public JavaScript
-    /// `{ field, selector, grid? }` shape into a typed time-range clause —
-    /// native and protobuf tests construct their queries after it, so a
-    /// parser that dropped the grid or mis-typed a member would not fail
-    /// them. Pin every branch here.
+    /// `{ field, selector, startMs?, grid? }` shape into a typed time-range
+    /// clause — native and protobuf tests construct their queries after it,
+    /// so a parser that dropped the grid or mis-typed a member would not
+    /// fail them. Pin every branch here.
     #[test]
     fn parses_a_bare_selector_without_a_grid() {
         let (field, selector, grid) =
@@ -1215,7 +1261,44 @@ mod tests {
     #[test]
     fn rejects_an_invalid_selector() {
         parse_time_range_clause(&json!({ "field": "$createdAt", "selector": "latest" }))
-            .expect_err("only \"newest\" and \"oldest\" are selectors");
+            .expect_err("only \"newest\", \"oldest\" and \"byStart\" are selectors");
+    }
+
+    #[test]
+    fn parses_by_start_with_its_window_start() {
+        let (field, selector, grid) = parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "byStart",
+            "startMs": 1_756_684_800_000u64,
+        }))
+        .expect("the absolute shape parses");
+        assert_eq!(field, "$createdAt");
+        assert_eq!(
+            selector,
+            TimeRangeSelector::ByStart {
+                start_ms: 1_756_684_800_000
+            }
+        );
+        assert_eq!(grid, None);
+    }
+
+    #[test]
+    fn by_start_requires_a_start_and_relative_selectors_refuse_one() {
+        parse_time_range_clause(&json!({ "field": "$createdAt", "selector": "byStart" }))
+            .expect_err("byStart without startMs names no window");
+        parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "newest",
+            "startMs": 1_756_684_800_000u64,
+        }))
+        .expect_err("a relative selector resolves its window from block time, not startMs");
+        // and startMs must be an unsigned integer of milliseconds
+        parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "byStart",
+            "startMs": -5,
+        }))
+        .expect_err("a negative start is not a millisecond timestamp");
     }
 
     #[test]

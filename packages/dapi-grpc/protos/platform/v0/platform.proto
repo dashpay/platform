@@ -596,15 +596,15 @@ message GetDocumentsRequest {
     STARTS_WITH = 10;
     // Time-range bucket selection (v1 only; the v0 CBOR surface is
     // unaffected). `field` names a timestamp covered by a `timeRange`
-    // index. Operand: `text` selector `"newest"`/`"oldest"` when one grid
-    // buckets the field, or `list` `[selector, range, step(, phase)]` in
-    // the contract's declared seconds to name one of several grids (zero
-    // phase is spelled by omission — one wire spelling per grid). The
-    // server resolves it to a bucket-start equality from current block
-    // time; the verifier re-derives the same bucket from the quorum-signed
-    // metadata time — an ordinary index/count proof. See `timeRange` in
-    // the document meta-schema and
-    // `drive::query::resolve_time_range_bucket_clause`.
+    // index. The operand is `WhereClause.time_range` (a
+    // `TimeRangeSelection`); `WhereClause.value` must be unset. For the
+    // relative selectors (`NEWEST` / `OLDEST`) the server resolves the
+    // selection to a bucket-start equality from current block time and
+    // the verifier re-derives the same bucket from the quorum-signed
+    // metadata time; `BY_START` names the window absolutely, so both
+    // sides read the start straight from the query — an ordinary
+    // index/count proof either way. See `timeRange` in the document
+    // meta-schema and `drive::query::resolve_time_range_bucket_clause`.
     IN_TIME_RANGE = 11;
   }
 
@@ -658,6 +658,54 @@ message GetDocumentsRequest {
     }
   }
 
+  // Operand of an `IN_TIME_RANGE` where clause: which window of a
+  // `timeRange` grid the query selects. Typed rather than riding
+  // `DocumentFieldValue` — the selection is not a field value, and a
+  // structured message keeps the selector an enum instead of a
+  // magic string.
+  //
+  // The relative selectors are resolved server-side: `NEWEST` is the
+  // freshest started window (largest grid start <= block time; the
+  // latest partial slice of history), `OLDEST` the oldest window still
+  // active at block time (a near-full trailing window of ~`range` —
+  // best for "trending over the last window"). The proof verifier
+  // re-derives the same window from the quorum-signed response
+  // metadata time, so neither side trusts the other's clock.
+  //
+  // `BY_START` names a window absolutely — any window, current or
+  // historic — by its start. `start_ms` is then required and must lie
+  // on the grid (`start_ms == phase + k * step`, in milliseconds);
+  // an unaligned start is rejected rather than snapped. A window with
+  // no documents (including one that has not started yet) is a
+  // provable empty answer, not an error. The relative selectors must
+  // NOT carry `start_ms` — one wire spelling per meaning.
+  message TimeRangeSelection {
+    enum Selector {
+      NEWEST = 0;
+      OLDEST = 1;
+      BY_START = 2;
+    }
+    // Names one of the field's declared grids, in the contract's own
+    // seconds — verbatim from the contract's `timeRange` declaration.
+    // Required when more than one `timeRange` grid buckets the field
+    // (the bare selector is ambiguous there and rejected); optional
+    // while exactly one grid does. A zero `phase` is the proto3
+    // default, matching the contract grammar where `phase` is an
+    // omittable key — every grid has exactly one wire spelling by
+    // construction.
+    message Grid {
+      uint64 range = 1 [jstype = JS_STRING];
+      uint64 step = 2 [jstype = JS_STRING];
+      uint64 phase = 3 [jstype = JS_STRING];
+    }
+    Selector selector = 1;
+    // `BY_START` only: the selected window's start, as a millisecond
+    // timestamp on the grid (see the message docstring). Rejected on
+    // the relative selectors.
+    optional uint64 start_ms = 2 [jstype = JS_STRING];
+    Grid grid = 3;
+  }
+
   // Single `field <op> value` clause. The server reassembles a
   // `Vec<WhereClause>` from the request's `where_clauses` field,
   // runs the same `WhereClause::group_clauses` validator (rejects
@@ -666,10 +714,16 @@ message GetDocumentsRequest {
   // then hands the structured clauses to the executor. Wire
   // semantics are identical to v0's CBOR `[field, op, value]`
   // triples — only the envelope differs.
+  //
+  // Exactly one operand field is set, keyed by the operator:
+  // `operator = IN_TIME_RANGE` carries its operand in `time_range`
+  // (`value` must be unset); every other operator carries `value`
+  // (`time_range` must be unset). Either mismatch is rejected.
   message WhereClause {
     string field = 1;
     WhereOperator operator = 2;
     DocumentFieldValue value = 3;
+    TimeRangeSelection time_range = 4;
   }
 
   // Per-group aggregate operand for the left side of a

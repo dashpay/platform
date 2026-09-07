@@ -114,12 +114,14 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    per-document write amplification is capped per index by
 ///    `SystemLimits::max_time_range_overlap_factor`), and the v1
 ///    `getDocuments` handler resolves the new `IN_TIME_RANGE` operator —
-///    bare `"newest"`/`"oldest"` on a single-grid field, or a structured
-///    `[selector, range, step(, phase)]` operand naming one grid — into a
-///    bucket-start equality from committed block time, making "newest
-///    window" trending/leaderboard document and count/sum/avg queries
-///    provable. `unique: true` is admitted only for non-overlapping windows
-///    (`range == step`) sourced from the immutable `$createdAt`.
+///    a typed `TimeRangeSelection` operand: `NEWEST`/`OLDEST` (resolved to
+///    a bucket-start equality from committed block time) or `BY_START`
+///    (naming any window, current or historic, by its grid-aligned start),
+///    with a `grid` member naming one grid where several bucket the field
+///    — making trending/leaderboard document and count/sum/avg queries
+///    provable over the current or any named window. `unique: true` is
+///    admitted only for non-overlapping windows (`range == step`) sourced
+///    from the immutable `$createdAt`.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type
