@@ -220,14 +220,29 @@ extension PlatformWalletPersistenceHandler {
     /// resumed across the continuation.
     func emitCoreWalletDatabaseDiagnostics(
         walletId: Data,
-        limits: CoreDiagnosticRowLimits = .production
+        limits: CoreDiagnosticRowLimits = .production,
+        cancellation: CoreDiagnosticsCancellation? = nil
     ) async -> CoreWalletDatabaseDiagnosticSnapshot? {
         await withCheckedContinuation { continuation in
             serialQueue.async { [self] in
                 let snapshot = autoreleasepool { () -> CoreWalletDatabaseDiagnosticSnapshot? in
+                    // A scratch context, still on the serial queue. Two things
+                    // the handler's own context could not give: it sees only
+                    // COMMITTED state — a Rust `store()` round is one changeset
+                    // spread across several separate `sync` blocks, and this
+                    // block can land between two of them, where the handler's
+                    // context holds pending rows that `endChangeset` may still
+                    // roll back — and it is dropped with this block, so the up
+                    // to ~110k objects the pass registers do not stay resident
+                    // for the life of the process. The queue still guarantees
+                    // no save lands mid-pass.
+                    let context = ModelContext(modelContainer)
+                    context.autosaveEnabled = false
                     return emitCoreWalletDatabaseDiagnosticsOnQueue(
                         walletId: walletId,
-                        limits: limits
+                        context: context,
+                        limits: limits,
+                        cancellation: cancellation
                     )
                 }
                 continuation.resume(returning: snapshot)
@@ -236,22 +251,43 @@ extension PlatformWalletPersistenceHandler {
     }
 
     /// Queue-confined implementation behind the async export API. Callers must
-    /// already own `serialQueue`; it performs the full exact audit whenever the
-    /// tables fit under `limits` and returns only Sendable value copies.
+    /// already own `serialQueue` and hand in a context confined to it; it
+    /// performs the full exact audit whenever the tables fit under `limits`
+    /// and returns only Sendable value copies. Between its stages it asks
+    /// `cancellation` whether shutdown has begun and, if so, says what it
+    /// skipped and stops — the drain in `shutdown()` covers this pass, and
+    /// must never wait for a whole cross-wallet scan.
     @discardableResult
     func emitCoreWalletDatabaseDiagnosticsOnQueue(
         walletId: Data,
-        limits: CoreDiagnosticRowLimits = .production
+        context: ModelContext,
+        limits: CoreDiagnosticRowLimits = .production,
+        cancellation: CoreDiagnosticsCancellation? = nil
     ) -> CoreWalletDatabaseDiagnosticSnapshot? {
         // This whole pass is export-only: the launch restore path takes
         // `logCoreRestoreBufferSnapshotOnQueue` and never comes here, so the
         // checkpoint every event below carries is a constant, not a parameter.
         let checkpoint = CoreWalletDiagnosticCheckpoint.preExport
+        func shutdownBegan(before stage: String) -> Bool {
+            guard let cancellation, cancellation.isCancelled else { return false }
+            SDKLogger.event(
+                "core_diagnostics_unavailable",
+                category: .persistence,
+                severity: .warning,
+                fields: [
+                    "checkpoint": .publicText(checkpoint.rawValue),
+                    "reason": .publicText("shutdown_requested"),
+                    "skipped_from_stage": .publicText(stage),
+                    "wallet_reference": .reference(walletId),
+                ]
+            )
+            return true
+        }
         do {
             let walletDescriptor = FetchDescriptor<PersistentWallet>(
                 predicate: PersistentWallet.predicate(walletId: walletId)
             )
-            guard let wallet = try backgroundContext.fetch(walletDescriptor).first else {
+            guard let wallet = try context.fetch(walletDescriptor).first else {
                 SDKLogger.event(
                     "core_diagnostics_unavailable",
                     category: .persistence,
@@ -274,19 +310,21 @@ extension PlatformWalletPersistenceHandler {
             // row or a cross-wallet duplicate is then invisible to it. A
             // streaming pass would lift the ceiling without losing the
             // distinction and remains the follow-up.
-            let txoRowCount = try backgroundContext.fetchCount(FetchDescriptor<PersistentTxo>())
+            if shutdownBegan(before: "txo_fetch") { return nil }
+            let txoRowCount = try context.fetchCount(FetchDescriptor<PersistentTxo>())
             let crossWalletTxoScan = txoRowCount <= limits.crossWalletTxoRows
             let allTxos: [PersistentTxo]
             if crossWalletTxoScan {
-                allTxos = try backgroundContext.fetch(FetchDescriptor<PersistentTxo>())
+                allTxos = try context.fetch(FetchDescriptor<PersistentTxo>())
             } else {
-                allTxos = try backgroundContext.fetch(FetchDescriptor<PersistentTxo>(
+                allTxos = try context.fetch(FetchDescriptor<PersistentTxo>(
                     predicate: #Predicate { $0.walletId == walletId }
                 ))
             }
             let walletTxos = allTxos.filter {
                 $0.walletId == walletId || Self.relationshipWalletId(of: $0) == walletId
             }
+            if shutdownBegan(before: "transaction_fetch") { return nil }
             // Walking every transaction relationship is deliberately export-only.
             // A heavily mixed wallet can have enough history for this traversal to
             // stall restore, which is precisely the failure this instrumentation is
@@ -294,7 +332,7 @@ extension PlatformWalletPersistenceHandler {
             let allTransactions: [PersistentTransaction]?
             let walletTransactions: [PersistentTransaction]?
             do {
-                let transactionRowCount = try backgroundContext.fetchCount(
+                let transactionRowCount = try context.fetchCount(
                     FetchDescriptor<PersistentTransaction>()
                 )
                 // Both tables must fit: the audit resolves each decoded
@@ -302,7 +340,7 @@ extension PlatformWalletPersistenceHandler {
                 // scan would turn every foreign row into `missing_txo`.
                 if crossWalletTxoScan,
                    transactionRowCount <= limits.exactAuditTransactionRows {
-                    allTransactions = try backgroundContext.fetch(
+                    allTransactions = try context.fetch(
                         FetchDescriptor<PersistentTransaction>()
                     )
                     // Through the accounts' inverse relationship, not
@@ -354,7 +392,7 @@ extension PlatformWalletPersistenceHandler {
             }
             let pending: [PersistentPendingInput]?
             do {
-                pending = try backgroundContext.fetch(
+                pending = try context.fetch(
                     FetchDescriptor<PersistentPendingInput>(
                         predicate: #Predicate { $0.walletId == walletId }
                     )
@@ -544,6 +582,21 @@ extension PlatformWalletPersistenceHandler {
             // be expensive. The exact #4438 audit is needed for the manually
             // exported artifact, not for restoring Rust, so keep startup's
             // persistence queue limited to lightweight summaries.
+            if let allTransactions, shutdownBegan(before: "owned_output_audit") {
+                SDKLogger.event(
+                    "core_owned_output_audit_summary",
+                    category: .persistence,
+                    severity: .warning,
+                    fields: [
+                        "audit_incomplete": .boolean(true),
+                        "checkpoint": .publicText(checkpoint.rawValue),
+                        "reason": .publicText("shutdown_requested"),
+                        "transaction_row_count": .integer(Int64(allTransactions.count)),
+                        "wallet_reference": .reference(walletId),
+                    ]
+                )
+                return nil
+            }
             if let allTransactions {
                 Self.auditCoinJoinOwnedBip44Outputs(
                     wallet: wallet,
@@ -558,7 +611,7 @@ extension PlatformWalletPersistenceHandler {
             let assetLocksAvailable: Bool
             do {
                 assetLocks = try Self.logAssetLockDatabaseSnapshot(
-                    context: backgroundContext,
+                    context: context,
                     walletId: walletId,
                     checkpoint: checkpoint,
                     walletTransactions: walletTransactions
@@ -580,7 +633,7 @@ extension PlatformWalletPersistenceHandler {
             }
             do {
                 try Self.logShieldedStoreSnapshot(
-                    context: backgroundContext,
+                    context: context,
                     walletId: walletId,
                     checkpoint: checkpoint
                 )
@@ -1265,49 +1318,67 @@ extension PlatformWalletManager {
             )
             return
         }
-        let database = await handler.emitCoreWalletDatabaseDiagnostics(walletId: walletId)
-        guard let database else { return }
-        // The DB await above lets shutdown interleave. Admission is atomic on
-        // MainActor and keeps the copied handle alive across the off-main FFI
-        // work; shutdown drains this operation before consuming the handle.
-        guard isConfigured, handle != NULL_HANDLE else {
+        // Admit BEFORE the database half, not after it: `shutdown()`'s drain
+        // must cover the whole export, or a teardown that begins during the
+        // cross-wallet scan proceeds while that scan still holds the
+        // persistence queue every persister callback enters through. The
+        // queue-confined pass polls `cancellation` between stages, so the
+        // cover costs the drain at most one stage. A manager with no handle
+        // has nothing to drain; its database half still runs.
+        let cancellation = coreDiagnosticsCancellation
+        let admitted: Bool
+        if isConfigured, handle != NULL_HANDLE {
+            do {
+                try admitCoreDiagnosticsNativeOp()
+                admitted = true
+            } catch {
+                SDKLogger.event(
+                    "core_memory_snapshot_unavailable",
+                    category: .persistence,
+                    severity: .warning,
+                    fields: [
+                        "checkpoint": .publicText(checkpoint.rawValue),
+                        "reason": .publicText("manager_shutdown_in_progress"),
+                        "wallet_reference": .reference(walletId),
+                    ]
+                )
+                return
+            }
+        } else {
+            admitted = false
+        }
+        defer { if admitted { finishCoreDiagnosticsNativeOp() } }
+
+        // The database half may come back empty — wallet row missing, fetch
+        // failed — and those are exactly the "coins gone from the database"
+        // reports this exists for. The Rust half needs only the wallet id, so
+        // it runs regardless and marks its diffs as one-sided.
+        let database = await handler.emitCoreWalletDatabaseDiagnostics(
+            walletId: walletId,
+            cancellation: cancellation
+        )
+        guard admitted else {
             SDKLogger.event(
                 "core_memory_snapshot_unavailable",
                 category: .persistence,
                 severity: .warning,
                 fields: [
                     "checkpoint": .publicText(checkpoint.rawValue),
-                    "reason": .publicText("manager_not_configured_after_database_snapshot"),
+                    "reason": .publicText("manager_not_configured"),
                     "wallet_reference": .reference(walletId),
                 ]
             )
             return
         }
-        do {
-            try admitCoreDiagnosticsNativeOp()
-        } catch {
-            SDKLogger.event(
-                "core_memory_snapshot_unavailable",
-                category: .persistence,
-                severity: .warning,
-                fields: [
-                    "checkpoint": .publicText(checkpoint.rawValue),
-                    "reason": .publicText("manager_shutdown_in_progress"),
-                    "wallet_reference": .reference(walletId),
-                ]
-            )
-            return
-        }
-        defer { finishCoreDiagnosticsNativeOp() }
 
         let managerHandle = handle
         let managedWallet = wallets[walletId]
-        let cancellation = coreDiagnosticsCancellation
         await withCheckedContinuation { continuation in
             Self.coreDiagnosticsQueue.async {
                 Self.emitCoreMemoryDiagnostics(
                     managerHandle: managerHandle,
                     managedWallet: managedWallet,
+                    walletId: walletId,
                     database: database,
                     checkpoint: checkpoint,
                     cancellation: cancellation
@@ -1323,7 +1394,8 @@ extension PlatformWalletManager {
     private nonisolated static func emitCoreMemoryDiagnostics(
         managerHandle: Handle,
         managedWallet: ManagedPlatformWallet?,
-        database: CoreWalletDatabaseDiagnosticSnapshot,
+        walletId: Data,
+        database: CoreWalletDatabaseDiagnosticSnapshot?,
         checkpoint: CoreWalletDiagnosticCheckpoint,
         cancellation: CoreDiagnosticsCancellation
     ) {
@@ -1341,7 +1413,7 @@ extension PlatformWalletManager {
                     "checkpoint": .publicText(checkpoint.rawValue),
                     "reason": .publicText("shutdown_requested"),
                     "skipped_from_stage": .publicText(stage),
-                    "wallet_reference": .reference(database.walletId),
+                    "wallet_reference": .reference(walletId),
                 ]
             )
             return true
@@ -1353,13 +1425,14 @@ extension PlatformWalletManager {
         if shutdownBegan(before: "asset_locks") { return }
         compareAssetLocks(
             database,
+            walletId: walletId,
             managedWallet: managedWallet,
             checkpoint: checkpoint
         )
         if shutdownBegan(before: "account_balances") { return }
         let balanceQuery = readAccountBalances(
             handle: managerHandle,
-            walletId: database.walletId
+            walletId: walletId
         )
         guard case .success(let balances) = balanceQuery else {
             SDKLogger.event(
@@ -1369,7 +1442,7 @@ extension PlatformWalletManager {
                 fields: [
                     "checkpoint": .publicText(checkpoint.rawValue),
                     "reason": .publicText("account_balance_query_failed"),
-                    "wallet_reference": .reference(database.walletId),
+                    "wallet_reference": .reference(walletId),
                 ]
             )
             return
@@ -1387,7 +1460,7 @@ extension PlatformWalletManager {
             if shutdownBegan(before: "account_utxos") { return }
             let query = diagnosticAccountUtxos(
                 managerHandle: managerHandle,
-                walletId: database.walletId,
+                walletId: walletId,
                 balance: balance
             )
             guard case .success(let utxos) = query else {
@@ -1401,7 +1474,7 @@ extension PlatformWalletManager {
                         "account_type": .unsignedInteger(UInt64(key.typeTag)),
                         "checkpoint": .publicText(checkpoint.rawValue),
                         "query_available": .boolean(false),
-                        "wallet_reference": .reference(database.walletId),
+                        "wallet_reference": .reference(walletId),
                     ]
                 )
                 continue
@@ -1435,13 +1508,14 @@ extension PlatformWalletManager {
                     "utxo_value_duffs": .unsignedInteger(
                         diagnosticSaturatingSum(utxos.map(\.amount))
                     ),
-                    "wallet_reference": .reference(database.walletId),
+                    "wallet_reference": .reference(walletId),
                 ]
             )
             memoryTxos.append(contentsOf: utxos)
         }
         compareDatabase(
             database,
+            walletId: walletId,
             memoryTxos: memoryTxos,
             memoryAccounts: Set(balances.map(Self.diagnosticAccountKey)),
             unavailableAccounts: unavailableAccounts,
@@ -1452,12 +1526,34 @@ extension PlatformWalletManager {
     /// Logs the deterministic DB↔Rust UTXO diff, excluding accounts whose Rust
     /// UTXO query failed instead of falsely reporting all their rows DB-only.
     private nonisolated static func compareDatabase(
-        _ database: CoreWalletDatabaseDiagnosticSnapshot,
+        _ database: CoreWalletDatabaseDiagnosticSnapshot?,
+        walletId: Data,
         memoryTxos: [CoreWalletDatabaseDiagnosticSnapshot.Txo],
         memoryAccounts: Set<CoreWalletDatabaseDiagnosticSnapshot.AccountKey>,
         unavailableAccounts: Set<CoreWalletDatabaseDiagnosticSnapshot.AccountKey>,
         checkpoint: CoreWalletDiagnosticCheckpoint
     ) {
+        guard let database else {
+            // No database side to diff against: say so, with the memory side's
+            // size, rather than emit nothing — an absent summary reads like a
+            // truncated log, and this is the case where Rust may still hold
+            // the funds the database lost.
+            SDKLogger.event(
+                "core_db_memory_diff_summary",
+                category: .persistence,
+                severity: .warning,
+                fields: [
+                    "checkpoint": .publicText(checkpoint.rawValue),
+                    "database_snapshot_available": .boolean(false),
+                    "diff_incomplete": .boolean(true),
+                    "memory_account_count": .integer(Int64(memoryAccounts.count)),
+                    "memory_txo_count": .integer(Int64(memoryTxos.count)),
+                    "unavailable_account_count": .integer(Int64(unavailableAccounts.count)),
+                    "wallet_reference": .reference(walletId),
+                ]
+            )
+            return
+        }
         let excludedDatabaseTxos = database.unspentTxos.filter { row in
             row.account.map(unavailableAccounts.contains) ?? false
         }
@@ -1480,6 +1576,7 @@ extension PlatformWalletManager {
             fields: [
                 "checkpoint": .publicText(checkpoint.rawValue),
                 "common_count": .integer(Int64(result.commonCount)),
+                "database_snapshot_available": .boolean(true),
                 "database_account_only_count": .integer(
                     Int64(result.databaseAccountOnlyCount)
                 ),
@@ -1491,12 +1588,12 @@ extension PlatformWalletManager {
                 "memory_account_only_count": .integer(Int64(result.memoryAccountOnlyCount)),
                 "truncated_count": .integer(Int64(result.truncatedCount)),
                 "unavailable_account_count": .integer(Int64(unavailableAccounts.count)),
-                "wallet_reference": .reference(database.walletId),
+                "wallet_reference": .reference(walletId),
             ]
         )
         for detail in result.emittedDetails {
             logDiffItem(
-                database.walletId,
+                walletId,
                 checkpoint,
                 detail.row,
                 detail.outpoint,
@@ -1530,7 +1627,8 @@ extension PlatformWalletManager {
     /// Captures the managed wallet's tracked locks and compares them with the
     /// queue-safe SwiftData snapshot. Raw outpoints are only reference-hashed.
     private nonisolated static func compareAssetLocks(
-        _ database: CoreWalletDatabaseDiagnosticSnapshot,
+        _ database: CoreWalletDatabaseDiagnosticSnapshot?,
+        walletId: Data,
         managedWallet: ManagedPlatformWallet?,
         checkpoint: CoreWalletDiagnosticCheckpoint
     ) {
@@ -1548,7 +1646,7 @@ extension PlatformWalletManager {
                 fields: [
                     "checkpoint": .publicText(checkpoint.rawValue),
                     "query_available": .boolean(false),
-                    "wallet_reference": .reference(database.walletId),
+                    "wallet_reference": .reference(walletId),
                 ]
             )
             // Mirror the database-unavailable path below: an analyst greps for
@@ -1561,12 +1659,13 @@ extension PlatformWalletManager {
                 severity: .warning,
                 fields: [
                     "checkpoint": .publicText(checkpoint.rawValue),
-                    "database_query_available": .boolean(database.assetLocksAvailable),
+                    "database_query_available": .boolean(database?.assetLocksAvailable ?? false),
+                    "database_snapshot_available": .boolean(database != nil),
                     "diff_incomplete": .boolean(true),
                     "memory_query_available": .boolean(false),
                     "mismatch_count": .integer(0),
                     "truncated_count": .integer(0),
-                    "wallet_reference": .reference(database.walletId),
+                    "wallet_reference": .reference(walletId),
                 ]
             )
             return
@@ -1585,7 +1684,7 @@ extension PlatformWalletManager {
                 "shielded_funding_count": .integer(Int64(memory.filter {
                     $0.fundingType == .assetLockShieldedAddressTopUp
                 }.count)),
-                "wallet_reference": .reference(database.walletId),
+                "wallet_reference": .reference(walletId),
             ]
         )
 
@@ -1606,7 +1705,7 @@ extension PlatformWalletManager {
                     "funding_type": .unsignedInteger(UInt64(first.fundingType.rawValue)),
                     "proof_present_count": .integer(Int64(group.filter(\.hasProof).count)),
                     "status": .unsignedInteger(UInt64(first.status.rawValue)),
-                    "wallet_reference": .reference(database.walletId),
+                    "wallet_reference": .reference(walletId),
                 ]
             )
         }
@@ -1622,7 +1721,7 @@ extension PlatformWalletManager {
                 hasProof: row.hasProof
             )
         }
-        guard database.assetLocksAvailable else {
+        guard let database, database.assetLocksAvailable else {
             SDKLogger.event(
                 "asset_lock_db_memory_diff_summary",
                 category: .persistence,
@@ -1630,11 +1729,12 @@ extension PlatformWalletManager {
                 fields: [
                     "checkpoint": .publicText(checkpoint.rawValue),
                     "database_query_available": .boolean(false),
+                    "database_snapshot_available": .boolean(database != nil),
                     "diff_incomplete": .boolean(true),
                     "memory_query_available": .boolean(true),
                     "mismatch_count": .integer(0),
                     "truncated_count": .integer(0),
-                    "wallet_reference": .reference(database.walletId),
+                    "wallet_reference": .reference(walletId),
                 ]
             )
             return
@@ -1650,11 +1750,12 @@ extension PlatformWalletManager {
             fields: [
                 "checkpoint": .publicText(checkpoint.rawValue),
                 "database_query_available": .boolean(true),
+                "database_snapshot_available": .boolean(true),
                 "diff_incomplete": .boolean(false),
                 "memory_query_available": .boolean(true),
                 "mismatch_count": .integer(Int64(result.details.count)),
                 "truncated_count": .integer(Int64(result.truncatedCount)),
-                "wallet_reference": .reference(database.walletId),
+                "wallet_reference": .reference(walletId),
             ]
         )
         for detail in result.emittedDetails {
@@ -1666,7 +1767,7 @@ extension PlatformWalletManager {
                     "checkpoint": .publicText(checkpoint.rawValue),
                     "outpoint_reference": .referenceString(detail.outpointDisplay),
                     "reason": .publicText(detail.reason),
-                    "wallet_reference": .reference(database.walletId),
+                    "wallet_reference": .reference(walletId),
                 ]
             )
         }

@@ -219,7 +219,11 @@ enum SDKLogFormatter {
 final class SDKLoggerState: @unchecked Sendable {
     /// How many pre-install events are retained for replay. A host that never
     /// installs a sink must not accumulate lines for the life of the process,
-    /// so the buffer drops its oldest entries and reports the loss instead.
+    /// so once full the buffer keeps what it has, drops the NEWEST arrivals,
+    /// and reports the loss. Head-not-tail on purpose: the lines this buffer
+    /// exists for — `core_store_open_result` from the host's `init()` — are
+    /// the first ones in, and a launch that overflows does so with restore
+    /// and changeset lines whose loss costs far less than the store open's.
     static let pendingLineLimit = 256
 
     private let lock = NSLock()
@@ -272,9 +276,9 @@ final class SDKLoggerState: @unchecked Sendable {
     func record(severity: SDKLogSeverity, line: String) {
         let destination: SDKLogFileSink? = lock.withLock {
             guard let sink else {
-                if pendingLines.count >= Self.pendingLineLimit {
-                    pendingLines.removeFirst()
+                guard pendingLines.count < Self.pendingLineLimit else {
                     droppedPendingLineCount += 1
+                    return nil
                 }
                 pendingLines.append((severity: severity, line: line))
                 return nil

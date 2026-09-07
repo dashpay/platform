@@ -362,41 +362,6 @@ final class CoreWalletDiagnosticAnalyzerTests: XCTestCase {
         )
     }
 
-    func testRescanDiagnosticResultOnlyReportsArmedForARealRewind() {
-        XCTAssertEqual(
-            coreRescanDiagnosticResult(
-                previousSyncedHeight: 2_500_000,
-                requestedStartHeight: 2_484_000
-            ),
-            .armed
-        )
-        XCTAssertEqual(
-            coreRescanDiagnosticResult(
-                previousSyncedHeight: 2_484_000,
-                requestedStartHeight: 2_484_000
-            ),
-            .noOp
-        )
-        // Above the checkpoint is stored but arms nothing, exactly like the
-        // equal case — see `spvRescanFilters`.
-        XCTAssertEqual(
-            coreRescanDiagnosticResult(
-                previousSyncedHeight: 2_480_000,
-                requestedStartHeight: 2_484_000
-            ),
-            .noOp
-        )
-        // No checkpoint was readable, so the log must not let an analyst rule
-        // a rewind in or out.
-        XCTAssertEqual(
-            coreRescanDiagnosticResult(
-                previousSyncedHeight: nil,
-                requestedStartHeight: 2_484_000
-            ),
-            .unknownPreviousHeight
-        )
-    }
-
     private func fingerprintMaterial(_ txo: Txo) -> Data {
         diagnosticTxoFingerprint(
             outpoint: txo.outpoint,

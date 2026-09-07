@@ -91,28 +91,6 @@ public struct PlatformSpvSyncProgress: Sendable, Equatable {
     }
 }
 
-enum CoreRescanDiagnosticResult: String, Sendable, Equatable {
-    /// The request lowered the checkpoint, so the filter sync will rescan.
-    case armed
-    /// The request was at or above the checkpoint: stored, but no rescan (see
-    /// ``PlatformWalletManager/spvRescanFilters(walletId:fromHeight:)``).
-    case noOp = "no_op"
-    /// The checkpoint could not be read, so nothing about a rewind is known.
-    case unknownPreviousHeight = "unknown_previous_height"
-}
-
-/// Classifies only what can be proven from the checkpoint visible before the
-/// accepted FFI call. A missing checkpoint is not evidence of a rewind: without
-/// it, an analyst must not be able to read the log as ruling one out, which is
-/// what any positive label would invite.
-func coreRescanDiagnosticResult(
-    previousSyncedHeight: UInt32?,
-    requestedStartHeight: UInt32
-) -> CoreRescanDiagnosticResult {
-    guard let previousSyncedHeight else { return .unknownPreviousHeight }
-    return requestedStartHeight < previousSyncedHeight ? .armed : .noOp
-}
-
 /// Node type of a connected SPV peer, classified against the masternode
 /// list. Mirrors Rust's `SpvPeerNodeType` / the `SPV_PEER_NODE_TYPE_*`
 /// FFI constants.
@@ -334,11 +312,11 @@ extension PlatformWalletManager {
     ///   - fromHeight: the core block height to rewind the filter scan to.
     public func spvRescanFilters(walletId: Data, fromHeight: UInt32) throws {
         guard walletId.count == 32 else {
-            // Every other way this method fails leaves a `core_rescan_armed`
+            // Every other way this method fails leaves a `core_rescan_requested`
             // line; a rejected request must too, or the export reads as if
             // no rescan was ever asked for.
             SDKLogger.event(
-                "core_rescan_armed",
+                "core_rescan_requested",
                 category: .persistence,
                 severity: .error,
                 fields: [
@@ -351,7 +329,12 @@ extension PlatformWalletManager {
                 "walletId must be exactly 32 bytes"
             )
         }
-        let previousHeight = coreWalletState(for: walletId)?.syncedHeight
+        // The event records the request and whether the FFI accepted it —
+        // nothing about whether a rewind actually happened. Classifying that
+        // would need the filter-scan checkpoint, which is not the core
+        // wallet's synced height and is not readable without a blocking
+        // Rust-lock FFI call on the main actor; a label built on either
+        // would let an analyst rule a rewind in or out on false grounds.
         do {
             try walletId.withUnsafeBytes { widRaw in
                 guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
@@ -360,37 +343,25 @@ extension PlatformWalletManager {
                 }
                 try platform_wallet_manager_spv_rescan_filters(handle, widPtr, fromHeight).check()
             }
-            let diagnosticResult = coreRescanDiagnosticResult(
-                previousSyncedHeight: previousHeight,
-                requestedStartHeight: fromHeight
-            )
-            var fields: [String: SDKLogValue] = [
-                "from_height": .unsignedInteger(UInt64(fromHeight)),
-                "result": .publicText(diagnosticResult.rawValue),
-                "wallet_reference": .reference(walletId),
-            ]
-            if let previousHeight {
-                fields["previous_synced_height"] = .unsignedInteger(UInt64(previousHeight))
-            }
             SDKLogger.event(
-                "core_rescan_armed",
+                "core_rescan_requested",
                 category: .persistence,
-                fields: fields
+                fields: [
+                    "from_height": .unsignedInteger(UInt64(fromHeight)),
+                    "result": .publicText("accepted"),
+                    "wallet_reference": .reference(walletId),
+                ]
             )
         } catch {
-            var fields: [String: SDKLogValue] = [
-                "from_height": .unsignedInteger(UInt64(fromHeight)),
-                "result": .publicText("failed"),
-                "wallet_reference": .reference(walletId),
-            ]
-            if let previousHeight {
-                fields["previous_synced_height"] = .unsignedInteger(UInt64(previousHeight))
-            }
             SDKLogger.event(
-                "core_rescan_armed",
+                "core_rescan_requested",
                 category: .persistence,
                 severity: .error,
-                fields: fields
+                fields: [
+                    "from_height": .unsignedInteger(UInt64(fromHeight)),
+                    "result": .publicText("failed"),
+                    "wallet_reference": .reference(walletId),
+                ]
             )
             throw error
         }

@@ -63,7 +63,9 @@ final class SDKLoggerPreInstallBufferTests: XCTestCase {
         XCTAssertEqual(try writtenLines(shown), ["debug", "info"])
     }
 
-    func testBufferDropsTheOldestLineAboveTheLimitAndReportsIt() throws {
+    /// Head-not-tail: the store-open line is the first in, and it is the one
+    /// the buffer exists to carry, so overflow discards the newest arrival.
+    func testBufferKeepsTheHeadAndDropsTheNewestAboveTheLimit() throws {
         let state = SDKLoggerState()
         let limit = SDKLoggerState.pendingLineLimit
         // limit + 1 lines: exactly one over.
@@ -79,8 +81,8 @@ final class SDKLoggerPreInstallBufferTests: XCTestCase {
 
         let lines = try writtenLines(state)
         XCTAssertEqual(lines.count, limit)
-        XCTAssertEqual(lines.first, "line-1", "the oldest line is the one dropped")
-        XCTAssertEqual(lines.last, "line-\(limit)")
+        XCTAssertEqual(lines.first, "line-0", "the first line in survives")
+        XCTAssertEqual(lines.last, "line-\(limit - 1)", "the newest arrival is the one dropped")
     }
 
     func testBufferIsClearedByInstallSoASecondInstallReplaysNothing() throws {

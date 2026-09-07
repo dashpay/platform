@@ -117,10 +117,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// `serialQueue`: every public entry point wraps its body in
     /// `onQueue { … }`, and internal helpers (`upsertTransaction`,
     /// `markUtxoSpent`, …) assume they are already on the queue.
-    /// Internal only so the read-only diagnostics extension can take its
-    /// snapshot on the same serialized context as the persistence callbacks.
-    /// Production persistence code must continue to enter through `onQueue`.
-    let backgroundContext: ModelContext
+    private let backgroundContext: ModelContext
 
     /// Taken instead of `backgroundContext.fetch` by the reads whose
     /// failure must reject the round (see `ModelFetching`).
@@ -138,9 +135,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// entry points — both the FFI callback shims and the
     /// app-facing accessors — funnel through `onQueue` so the
     /// context is only ever touched on this queue.
-    /// Internal only so diagnostics can enqueue an asynchronous, read-only
-    /// snapshot without blocking the main actor. All mutations remain in this
-    /// file's persistence callbacks.
+    /// Internal only so the read-only diagnostics extension can enqueue its
+    /// export pass here without blocking the main actor. That pass runs on a
+    /// scratch `ModelContext` of its own — it never touches
+    /// `backgroundContext`, so it sees only committed state — and needs this
+    /// queue solely so no save can land while it reads. All mutations remain
+    /// in this file's persistence callbacks.
     let serialQueue = DispatchQueue(
         label: "org.dash.platform-wallet.persistence",
         qos: .userInitiated
@@ -233,10 +233,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     ///
     /// The pool goes inside the `sync` so it wraps exactly one unit of work
     /// and is drained before the Rust caller is resumed.
-    /// Internal only for the read-only diagnostics extension. Keeping the
-    /// diagnostic reads on this queue gives each exported snapshot a coherent
-    /// view and prevents it racing an in-flight Rust changeset save.
-    func onQueue<T>(_ body: () throws -> T) rethrows -> T {
+    private func onQueue<T>(_ body: () throws -> T) rethrows -> T {
         try serialQueue.sync {
             try autoreleasepool { try body() }
         }
