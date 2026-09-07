@@ -275,6 +275,50 @@ describe('migrateConfigFileFactory', () => {
     }
   });
 
+  it('should add the Tor section to a config a development build stamped 4.2.0', async () => {
+    // Development builds of the 4.2.0 cycle stamp configs at 4.2.0, the newest
+    // migration key at the time, so the section has to be added by a key above
+    // it. Loading is what fails without it: the schema requires the section.
+    const fromVersion = '4.2.0';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const baseConfig = container.resolve('defaultConfigs').get('base');
+
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = fromVersion;
+    for (const options of Object.values(configFileData.configs)) {
+      delete options.core.tor;
+    }
+
+    const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(options.core.tor).to.deep.equal(
+        baseConfig.get('core.tor'),
+        `Tor section was not added for ${name}`,
+      );
+      expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+    }
+  });
+
+  it('should leave an enabled Tor section alone when re-migrating', async () => {
+    const fromVersion = '4.2.0';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = fromVersion;
+    configFileData.configs.testnet.core.tor.enabled = true;
+    configFileData.configs.testnet.core.tor.control.password = 'operator-chosen';
+
+    const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+    expect(migrated.configs.testnet.core.tor).to.deep.equal({
+      enabled: true,
+      docker: { image: 'osminogin/tor-simple:0.4.9.11' },
+      control: { password: 'operator-chosen' },
+    });
+  });
+
   it('should keep an operator image that predates the 4.0.0 re-pin', async () => {
     // Every config older than 4.0.0 crosses the unconditional re-pin in that
     // migration, so it is the first place operator intent can be respected. It

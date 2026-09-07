@@ -117,6 +117,18 @@ export default function getBaseConfigFactory() {
           host: '127.0.0.1',
           port: 29998,
         },
+        // Tor sidecar. Off by default: it adds an onion service and onion
+        // peers on top of the node's IPv4 identity, it does not replace it.
+        // The masternode ProTx address stays IPv4; see docs/config/core.md.
+        tor: {
+          enabled: false,
+          docker: {
+            image: 'osminogin/tor-simple:0.4.9.11',
+          },
+          control: {
+            password: 'torpassword',
+          },
+        },
         spork: {
           address: null,
           privateKey: null,

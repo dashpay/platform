@@ -1720,6 +1720,22 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '4.2.1': (configFile) => {
+        // Keyed above 4.2.0 rather than added to it: a config written by a
+        // development build of this cycle is already stamped 4.2.0 and would
+        // skip anything keyed there.
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // The Tor sidecar is new and off by default, so an existing node
+            // keeps behaving as before. The schema requires the section, so a
+            // config without it cannot be loaded.
+            if (options.core && options.core.tor === undefined) {
+              options.core.tor = base.getStored('core.tor');
+            }
+          });
+
+        return configFile;
+      },
       '4.1.1': (configFile) => {
         // The drive and rs-dapi tags are derived from the package version, and
         // the migration that re-pins them no longer fires for a config already

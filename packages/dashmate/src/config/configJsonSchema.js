@@ -337,6 +337,37 @@ export default {
           required: ['host', 'port'],
           additionalProperties: false,
         },
+        tor: {
+          type: 'object',
+          properties: {
+            enabled: {
+              type: 'boolean',
+              description: 'Run a Tor sidecar so Core reaches onion peers and '
+                + 'publishes an onion service for inbound connections. The '
+                + 'node keeps its IPv4 address: the onion service is an '
+                + 'additional address, not a replacement for the one in the '
+                + 'masternode registration.',
+            },
+            docker: {
+              $ref: '#/definitions/docker',
+            },
+            control: {
+              type: 'object',
+              properties: {
+                password: {
+                  type: 'string',
+                  minLength: 1,
+                  description: 'Tor control port password Core authenticates '
+                    + 'with to create its onion service',
+                },
+              },
+              required: ['password'],
+              additionalProperties: false,
+            },
+          },
+          required: ['enabled', 'docker', 'control'],
+          additionalProperties: false,
+        },
         spork: {
           type: 'object',
           properties: {
@@ -514,7 +545,7 @@ export default {
             + '(~10% chain-size disk overhead on mainnet).',
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'zmq', 'spork', 'masternode', 'miner', 'devnet', 'log',
+      required: ['docker', 'p2p', 'rpc', 'zmq', 'tor', 'spork', 'masternode', 'miner', 'devnet', 'log',
         'indexes', 'insight'],
       additionalProperties: false,
     },

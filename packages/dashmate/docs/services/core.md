@@ -40,6 +40,8 @@ To interact with Core RPC use `dashmate core cli` command.
 
 Optionally, you can enable the Insight API and UI to provide a web interface for exploring the blockchain. The `core.insight.enabled` configuration option enables Insight API and `core.insight.ui.enabled` enables block explorer.
 
+Optionally, `core.tor.enabled` runs a Tor daemon (`core_tor` service) in Core's network namespace. Core uses it to reach onion peers and to publish an onion service for inbound connections. It listens on loopback only and exposes no ports. See [Tor configuration](../config/core.md#tor).
+
 **Responsibilities**:
 - Process blockchain transactions
 - Handle masternode operations

@@ -33,6 +33,9 @@ export default function getCoreScopeFactory(
       network,
       rpcService,
       p2pService,
+      torEnabled: config.get('core.tor.enabled'),
+      // The onion service Core registered through the Tor sidecar, once it has.
+      onionService: null,
       version: null,
       chain: null,
       latestVersion: null,
@@ -103,10 +106,17 @@ export default function getCoreScopeFactory(
       core.verificationProgress = verificationprogress;
       core.sizeOnDisk = size_on_disk;
 
-      const { subversion, connections } = networkInfo.result;
+      const { subversion, connections, localaddresses } = networkInfo.result;
 
       core.peersCount = connections;
       core.version = extractCoreVersion(subversion);
+
+      const onionAddress = (localaddresses ?? [])
+        .find(({ address }) => address.endsWith('.onion'));
+
+      if (onionAddress) {
+        core.onionService = `${onionAddress.address}:${onionAddress.port}`;
+      }
     } catch (e) {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
