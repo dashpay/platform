@@ -159,6 +159,7 @@ fun DashPayTabScreen(navController: NavHostController) {
     val appUiState = container.appUiState
     var claimSheetUri by remember { mutableStateOf<String?>(null) }
     var showClaimSheet by remember { mutableStateOf(false) }
+    var showTipSheet by remember { mutableStateOf(false) }
     val pendingInvite by appUiState.pendingInviteUri.collectAsStateWithLifecycle()
     val claimInFlight by appUiState.invitationClaimInFlight.collectAsStateWithLifecycle()
     // The parked URI is NOT cleared at seeding: it stays in AppUiState (the
@@ -320,7 +321,22 @@ fun DashPayTabScreen(navController: NavHostController) {
                             onError = { unlockError = it },
                         )
 
+                        val tipManager = manager
+                        val tipWalletId = identity.walletId
+                        if (showTipSheet && managed != null && tipManager != null && tipWalletId != null) {
+                            ModalBottomSheet(onDismissRequest = { showTipSheet = false }) {
+                                ShieldedTipSheet(tipManager, managed, tipWalletId, tipManager.shieldedTipAccountIndex(identity.identityIndex))
+                            }
+                        }
                         FormSection(title = "DashPay") {
+                            if (container.shieldedService.isAvailable) {
+                                EntityRow(
+                                    icon = Icons.AutoMirrored.Filled.Send,
+                                    title = "Send shielded tip",
+                                    onClick = { showTipSheet = true },
+                                    modifier = Modifier.testTag("dashpay.sendShieldedTip"),
+                                )
+                            }
                             EntityRow(
                                 icon = Icons.Default.Group,
                                 title = "Contacts",

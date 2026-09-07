@@ -281,7 +281,8 @@ final class DashModelMigrationTests: XCTestCase {
             Schema(versionedSchema: DashSchemaV1.self),
             Schema(versionedSchema: DashSchemaV2.self),
             Schema(versionedSchema: DashSchemaV3.self),
-            Schema(versionedSchema: DashSchemaV4.self)
+            Schema(versionedSchema: DashSchemaV4.self),
+            Schema(versionedSchema: DashSchemaV5.self)
         ] {
             let names = schema.entities.map(\.name)
             XCTAssertTrue(
@@ -379,5 +380,108 @@ final class DashModelMigrationTests: XCTestCase {
             try migrated.mainContext.fetch(FetchDescriptor<PersistentAssetLock>())
                 .first?.recipientIsExternal,
             true)
+    }
+}
+
+extension DashModelMigrationTests {
+    @MainActor
+    func testV4StoreMigratesToV5PreservingSweepStateAndProfiles() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("sweep-profile.store")
+        let oldSchema = Schema(versionedSchema: DashSchemaV4.self)
+        let oldConfig = ModelConfiguration(schema: oldSchema, url: storeURL, cloudKitDatabase: .none)
+        var oldContainer: ModelContainer? = try ModelContainer(for: oldSchema, configurations: [oldConfig])
+        let identityId = Data(repeating: 0x21, count: 32)
+        let walletId = Data(repeating: 0x31, count: 32)
+        let winnerTxid = Data(repeating: 0x41, count: 32)
+        do {
+            let context = oldContainer!.mainContext
+            let identity = PersistentIdentity(identityId: identityId, isLocal: true, network: .testnet)
+            context.insert(identity)
+            context.insert(PersistentDashpayProfile(identity: identity, displayName: "Preserved profile"))
+            let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+            wallet.lastAppliedChainLockHeight = 4321
+            context.insert(wallet)
+            let pending = PersistentPendingInput(
+                outpoint: Data(repeating: 0x11, count: 36), inputIndex: 0,
+                spendingTxid: winnerTxid, spendingTransaction: nil, walletId: walletId)
+            pending.isSweptTombstone = true
+            pending.winnerMinedHeight = 1234
+            context.insert(pending)
+            let funding = PersistentTransaction(txid: Data(repeating: 0x51, count: 32),
+                transactionData: Data([0x03, 0x00]), context: 2, blockHeight: 100)
+            context.insert(funding)
+            let coin = PersistentTxo(transaction: funding, vout: 0, amount: 1000, address: "yV4Coin", height: 100)
+            coin.walletId = walletId
+            coin.isSpent = true
+            coin.supersededByTxid = winnerTxid
+            context.insert(coin)
+            try context.save()
+        }
+        oldContainer = nil
+
+        let schema = Schema(versionedSchema: DashSchemaV5.self)
+        let config = ModelConfiguration(schema: schema, url: storeURL, cloudKitDatabase: .none)
+        var container: ModelContainer? = try ModelContainer(
+            for: schema, migrationPlan: DashMigrationPlan.self, configurations: [config])
+        do {
+            let context = container!.mainContext
+            let profiles = try context.fetch(FetchDescriptor<PersistentDashpayProfile>())
+            XCTAssertEqual(profiles.map(\.displayName), ["Preserved profile"])
+            XCTAssertEqual(profiles.first?.identity.identityId, identityId)
+            XCTAssertNil(profiles.first?.shieldedAddress)
+            let wallets = try context.fetch(FetchDescriptor<PersistentWallet>())
+            XCTAssertEqual(wallets.map(\.lastAppliedChainLockHeight), [4321])
+            let pending = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentPendingInput>()).first)
+            XCTAssertTrue(pending.isSweptTombstone)
+            XCTAssertEqual(pending.winnerMinedHeight, 1234)
+            XCTAssertEqual(pending.spendingTxid, winnerTxid)
+            let coin = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentTxo>()).first)
+            XCTAssertTrue(coin.isSpent)
+            XCTAssertEqual(coin.supersededByTxid, winnerTxid)
+            XCTAssertEqual(coin.transaction?.blockHeight, 100)
+            try PersistentDashpayPaymentAddresses.replace(in: context,
+                networkRaw: Network.testnet.rawValue, ownerIdentityId: identityId, profileIdentityId: identityId,
+                core: nil, platform: nil, shielded: Data(repeating: 0x45, count: 43))
+            try context.save()
+        }
+        container = nil
+        let reopened = try ModelContainer(for: schema, migrationPlan: DashMigrationPlan.self, configurations: [config])
+        let profile = try XCTUnwrap(reopened.mainContext.fetch(FetchDescriptor<PersistentDashpayProfile>()).first)
+        XCTAssertEqual(profile.shieldedAddress, Data(repeating: 0x45, count: 43))
+    }
+
+    @MainActor
+    func testV3ProfileStoreMigratesToPaymentAddressesWithoutLosingProfile() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("profile.store")
+        let oldSchema = Schema(versionedSchema: DashSchemaV3.self)
+        let oldConfig = ModelConfiguration(schema: oldSchema, url: storeURL, cloudKitDatabase: .none)
+        var oldContainer: ModelContainer? = try ModelContainer(for: oldSchema, configurations: [oldConfig])
+        let identityId = Data(repeating: 0x21, count: 32)
+        do {
+            let identity = DashSchemaV1.PersistentIdentity(identityId: identityId, isLocal: true, network: .testnet)
+            oldContainer!.mainContext.insert(identity)
+            oldContainer!.mainContext.insert(DashSchemaV1.PersistentDashpayProfile(
+                identity: identity, displayName: "Preserved profile"))
+            try oldContainer!.mainContext.save()
+        }
+        oldContainer = nil
+        let schema = Schema(versionedSchema: DashSchemaV5.self)
+        let config = ModelConfiguration(schema: schema, url: storeURL, cloudKitDatabase: .none)
+        let container = try ModelContainer(for: schema, migrationPlan: DashMigrationPlan.self, configurations: [config])
+        let profiles = try container.mainContext.fetch(FetchDescriptor<PersistentDashpayProfile>())
+        XCTAssertEqual(profiles.count, 1)
+        XCTAssertEqual(profiles[0].displayName, "Preserved profile")
+        XCTAssertNil(profiles[0].shieldedAddress)
+        try PersistentDashpayPaymentAddresses.replace(in: container.mainContext,
+            networkRaw: Network.testnet.rawValue, ownerIdentityId: identityId, profileIdentityId: identityId,
+            core: nil, platform: nil, shielded: Data(repeating: 0x45, count: 43))
+        try container.mainContext.save()
+        XCTAssertEqual(profiles[0].identity.identityId, identityId)
     }
 }

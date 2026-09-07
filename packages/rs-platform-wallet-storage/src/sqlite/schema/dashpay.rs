@@ -50,9 +50,9 @@ pub fn apply(
             let mut delete_stmt =
                 tx.prepare_cached("DELETE FROM dashpay_profiles WHERE identity_id = ?1")?;
             let mut insert_stmt = tx.prepare_cached(
-                "INSERT INTO dashpay_profiles (identity_id, profile_blob) \
-                 VALUES (?1, ?2) \
-                 ON CONFLICT(identity_id) DO UPDATE SET profile_blob = excluded.profile_blob",
+                "INSERT INTO dashpay_profiles (identity_id, profile_blob, profile_format) \
+                 VALUES (?1, ?2, 1) \
+                 ON CONFLICT(identity_id) DO UPDATE SET profile_blob = excluded.profile_blob, profile_format = 1",
             )?;
             for (identity_id, profile) in profiles {
                 match profile {

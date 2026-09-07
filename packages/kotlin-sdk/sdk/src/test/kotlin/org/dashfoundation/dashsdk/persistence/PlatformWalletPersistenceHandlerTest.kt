@@ -905,6 +905,9 @@ class PlatformWalletPersistenceHandlerTest {
             dashpayAvatarFingerprint = ByteArray(8),
             dashpayAvatarFingerprintPresent = false,
             dashpayPublicMessage = "hi",
+            dashpayCorePaymentAddress = ByteArray(21) { 1 },
+            dashpayPlatformPaymentAddress = ByteArray(21) { 2 },
+            dashpayShieldedAddress = ByteArray(43) { 3 },
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -923,6 +926,9 @@ class PlatformWalletPersistenceHandlerTest {
         assertNotNull(profile)
         assertEquals("Alice", profile!!.displayName)
         assertEquals("hi", profile.publicMessage)
+        assertTrue(ByteArray(21) { 1 }.contentEquals(profile.corePaymentAddress))
+        assertTrue(ByteArray(21) { 2 }.contentEquals(profile.platformPaymentAddress))
+        assertTrue(ByteArray(43) { 3 }.contentEquals(profile.shieldedAddress))
         assertNotNull(profile.avatarHash)
         assertNull(profile.avatarFingerprint)
     }
@@ -4700,6 +4706,9 @@ class PlatformWalletPersistenceHandlerTest {
             avatarFingerprintPresent = false,
             publicMessage = "yo",
             checkedAtMs = 1_700_000_111_000,
+            corePaymentAddress = ByteArray(21) { 1 },
+            platformPaymentAddress = ByteArray(21) { 2 },
+            shieldedAddress = ByteArray(43) { 3 },
         )
         handler.onChangesetEnd(walletId, success = true)
     }
@@ -4828,9 +4837,18 @@ class PlatformWalletPersistenceHandlerTest {
             ),
         )
 
+        db.dashpayDao().upsertProfile(
+            org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity(
+                networkRaw = testnet, identityId = ownerId,
+                displayName = "Alice", shieldedAddress = ByteArray(43) { 7 },
+            ),
+        )
         val list = handler.onLoadWalletList()
         assertEquals(1, list.size)
         val identity = list[0].identities.single()
+        assertEquals("Alice", identity.dashpayProfile?.displayName)
+        assertTrue(ByteArray(43) { 7 }.contentEquals(identity.dashpayProfile?.shieldedAddress))
+
 
         assertEquals(1, identity.payments.size)
         val payment = identity.payments[0]
@@ -4843,6 +4861,9 @@ class PlatformWalletPersistenceHandlerTest {
 
         assertEquals(1, identity.contactProfiles.size)
         val profile = identity.contactProfiles[0]
+        assertTrue(ByteArray(21) { 1 }.contentEquals(profile.corePaymentAddress))
+        assertTrue(ByteArray(21) { 2 }.contentEquals(profile.platformPaymentAddress))
+        assertTrue(ByteArray(43) { 3 }.contentEquals(profile.shieldedAddress))
         assertTrue(contactId.contentEquals(profile.contactId))
         assertEquals("Bob", profile.displayName)
         assertNull(profile.bio)

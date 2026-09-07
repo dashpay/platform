@@ -1458,6 +1458,7 @@ mod tests {
             avatar_hash: Some([0xaa; 32]),
             avatar_fingerprint: Some([0xbb; 8]),
             public_message: Some("hello world".into()),
+            ..Default::default()
         };
 
         // Mutate A (persists internally via noop persister).

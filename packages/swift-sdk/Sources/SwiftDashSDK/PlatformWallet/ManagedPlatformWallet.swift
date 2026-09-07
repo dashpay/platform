@@ -2763,37 +2763,19 @@ extension ManagedPlatformWallet {
                         publicMessage,
                         avatarUrl
                     ) { namePtr, msgPtr, urlPtr -> PlatformWalletFFIResult in
-                        let bytes = avatarBytes ?? Data()
-                        if let avatarBytes, !avatarBytes.isEmpty {
-                            return avatarBytes.withUnsafeBytes { rawBuf -> PlatformWalletFFIResult in
-                                let bytesPtr = rawBuf.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                                return platform_wallet_create_or_update_dashpay_profile_with_signer(
-                                    handle,
-                                    idPtr,
-                                    namePtr,
-                                    msgPtr,
-                                    urlPtr,
-                                    bytesPtr,
-                                    UInt(avatarBytes.count),
-                                    doCreate,
-                                    signerHandle,
-                                    &outProfile
-                                )
+                        return update.corePaymentAddress.withFFI { core in
+                            update.platformPaymentAddress.withFFI { platform in
+                                update.shieldedAddress.withFFI { shielded in
+                                    (avatarBytes ?? Data()).withUnsafeBytes { bytes in
+                                        platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer(
+                                            handle, idPtr, namePtr, msgPtr, urlPtr,
+                                            bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                            UInt(bytes.count), core, platform, shielded,
+                                            doCreate, signerHandle, &outProfile
+                                        )
+                                    }
+                                }
                             }
-                        } else {
-                            _ = bytes
-                            return platform_wallet_create_or_update_dashpay_profile_with_signer(
-                                handle,
-                                idPtr,
-                                namePtr,
-                                msgPtr,
-                                urlPtr,
-                                nil,
-                                0,
-                                doCreate,
-                                signerHandle,
-                                &outProfile
-                            )
                         }
                     }
                 }

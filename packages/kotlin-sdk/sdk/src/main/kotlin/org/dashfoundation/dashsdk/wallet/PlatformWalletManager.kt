@@ -1768,6 +1768,26 @@ class PlatformWalletManager(
     // — the caller must NOT retry (the spent notes stay reserved Rust-side;
     // the next shielded sync reconciles the outcome).
 
+    /** Dedicated account index derived by Rust's wallet convention. */
+    fun shieldedTipAccountIndex(identityIndex: Int): Int = mapNativeErrors { FundingNative.tipAccountIndex(identityIndex) }
+
+    suspend fun prepareShieldedTipAddress(walletId: ByteArray, identityId: ByteArray): ByteArray = teardownGate.op {
+        mapNativeErrors { FundingNative.prepareShieldedTipAddress(managerHandle, walletId, mnemonicResolver.nativeHandle, identityId) }
+    }
+
+    /** Send only if fresh resolution still matches the recipient shown in confirmation. */
+    suspend fun sendShieldedTip(
+        walletId: ByteArray, username: String,
+        recipient: org.dashfoundation.dashsdk.tokens.ShieldedTipRecipient,
+        amount: Long, account: Int = 0, memo: String? = null,
+    ): Unit = teardownGate.op {
+        require(amount > 0 && account >= 0)
+        mapNativeErrors {
+            FundingNative.sendShieldedTip(managerHandle, walletId, mnemonicResolver.nativeHandle,
+                account, username, recipient.identityId, recipient.address, amount, memo)
+        }
+    }
+
     /**
      * Shielded → shielded transfer (Type 16) — port of Swift's
      * `PlatformWalletManager.shieldedTransfer(walletId:account:recipientRaw43:amount:memo:)`

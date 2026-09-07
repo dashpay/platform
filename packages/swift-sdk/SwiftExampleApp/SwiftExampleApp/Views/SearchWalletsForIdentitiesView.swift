@@ -361,6 +361,9 @@ struct SearchWalletsForIdentitiesView: View {
                 startIndex: nil, // resume from cache
                 gapLimit: nil    // Rust default (IDENTITY_GAP_LIMIT)
             )
+            // Newly discovered identities introduce deterministic tip accounts.
+            // Rebind before scanning so historical tips are included.
+            try walletManager.bindShielded(walletId: walletId, resolver: MnemonicResolver())
             result = WalletFinding(
                 walletId: walletId,
                 label: label,

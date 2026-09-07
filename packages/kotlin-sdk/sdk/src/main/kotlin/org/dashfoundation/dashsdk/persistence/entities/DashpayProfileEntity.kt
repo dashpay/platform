@@ -44,6 +44,9 @@ data class DashpayProfileEntity(
     val avatarHash: ByteArray? = null,
     /** 8-byte perceptual hash. */
     val avatarFingerprint: ByteArray? = null,
+    val corePaymentAddress: ByteArray? = null,
+    val platformPaymentAddress: ByteArray? = null,
+    val shieldedAddress: ByteArray? = null,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),
 )

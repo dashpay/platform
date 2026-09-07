@@ -418,12 +418,13 @@ impl Sdk {
             // Extract the identity from records.identity
             if let Some(Value::Map(records)) = doc.properties().get("records") {
                 for (key, value) in records {
-                    if let (Value::Text(k), Value::Identifier(id_bytes)) = (key, value) {
-                        if k == "identity" {
-                            return Ok(Some(Identifier::from_bytes(id_bytes).map_err(|e| {
-                                Error::Generic(format!("Invalid identifier: {}", e))
-                            })?));
-                        }
+                    if key.as_text() == Some("identity") {
+                        // CBOR and document decoding can represent the same
+                        // identifier as Bytes/Bytes32 instead of Identifier.
+                        return value
+                            .to_identifier()
+                            .map(Some)
+                            .map_err(|e| Error::Generic(format!("Invalid identifier: {e}")));
                     }
                 }
             }

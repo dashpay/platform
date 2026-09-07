@@ -493,7 +493,7 @@ struct SendTransactionView: View {
     /// send source is correct for a non-`firstWallet` wallet whose
     /// engine binding is live but whose UI mirror is pointed elsewhere.
     private var shieldedBalance: UInt64 {
-        shieldedNotes.reduce(0) { $0 + $1.value }
+        shieldedNotes.filter { !PlatformWalletManager.isShieldedTipAccount($0.accountIndex) }.reduce(0) { $0 + $1.value }
     }
 
     /// Mirrors `WalletDetailView.platformBalance`: BLAST-synced

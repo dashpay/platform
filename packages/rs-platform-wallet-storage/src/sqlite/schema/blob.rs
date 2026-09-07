@@ -3,7 +3,8 @@
 //! Thin error-mapping wrappers around `bincode::serde` so every
 //! `_blob` column in the SQLite schema uses one encoding path. Schema
 //! evolution is gated by the refinery migration version on the
-//! database as a whole — there is no per-blob revision tag.
+//! database; identity/profile rows also carry an encoding column so older
+//! positional records remain readable until rewritten.
 //!
 //! [`encode_outpoint`] / [`decode_outpoint`] encode a `dashcore::OutPoint`
 //! the same way — via bincode-serde — for the `outpoint` PRIMARY KEY

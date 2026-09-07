@@ -645,7 +645,7 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24002816630
+            24002927540
         );
 
         let check_result = platform
@@ -1160,7 +1160,7 @@ mod tests {
         // Plus we have 24_000_000_000 in base costs
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24005633260
+            24005855080
         );
 
         let check_result = platform
@@ -1635,7 +1635,7 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24002816630
+            24002927540
         );
 
         platform
@@ -1722,7 +1722,7 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            27002879350
+            27003006640
         );
 
         let check_result = platform
@@ -2094,7 +2094,7 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24002816630
+            24002927540
         );
 
         platform

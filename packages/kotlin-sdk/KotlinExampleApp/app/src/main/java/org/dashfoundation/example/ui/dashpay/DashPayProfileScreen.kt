@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,14 +40,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import java.math.BigDecimal
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.dashfoundation.dashsdk.tokens.PaymentAddressUpdate
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.util.Base58
+import org.dashfoundation.example.util.DashAddress
+import org.dashfoundation.example.util.DashAddressType
 import org.dashfoundation.example.util.generateQrBitmap
 import org.dashfoundation.example.util.hexToBytes
 
@@ -72,7 +79,19 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
     val walletId = identity?.walletId
     val wallet = remember(manager, walletId) { walletId?.let { manager?.wallet(forWalletId = it) } }
 
+    val tipAccount = remember(manager, identity?.identityIndex) {
+        identity?.identityIndex?.let { index -> runCatching { manager?.shieldedTipAccountIndex(index) }.getOrNull() }
+    }
+    val tipBalance by remember(walletId, tipAccount) {
+        if (walletId == null || tipAccount == null) flowOf(0L)
+        else container.database.shieldedDao().observeNotesByWalletAccount(walletId, tipAccount)
+            .map { notes -> notes.filter { !it.isSpent }.sumOf { it.value } }
+    }.collectAsStateWithLifecycle(initialValue = 0L)
+
     var profile by remember { mutableStateOf<DashPayProfile?>(null) }
+    val publishedTipAddress = profile?.shieldedAddress?.let { raw ->
+        manager?.let { m -> runCatching { DashAddress.encodeOrchard(raw.hexToBytes(), m.network) }.getOrNull() }
+    }
     var profileExists by remember { mutableStateOf(false) }
     var qrUri by remember { mutableStateOf<String?>(null) }
     var qrError by remember { mutableStateOf<String?>(null) }
@@ -87,6 +106,7 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
     var displayNameField by remember { mutableStateOf("") }
     var publicMessageField by remember { mutableStateOf("") }
     var avatarUrlField by remember { mutableStateOf("") }
+    var shieldedAddressField by remember { mutableStateOf("") }
     var isSaving by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
 
@@ -132,6 +152,7 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
                                 displayNameField = profile?.displayName.orEmpty()
                                 publicMessageField = profile?.publicMessage.orEmpty()
                                 avatarUrlField = profile?.avatarUrl.orEmpty()
+                                shieldedAddressField = publishedTipAddress.orEmpty()
                                 saveError = null
                             }
                             isEditing = !isEditing
@@ -172,6 +193,31 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
                         label = { Text("Avatar URL") },
                         singleLine = true,
                     )
+                    TextButton(enabled = !isSaving && container.shieldedService.isAvailable, onClick = {
+                        val m = manager ?: return@TextButton
+                        val wid = walletId ?: return@TextButton
+                        isSaving = true
+                        saveError = null
+                        scope.launch {
+                            try {
+                                shieldedAddressField = requireNotNull(DashAddress.encodeOrchard(m.prepareShieldedTipAddress(wid, idBytes), m.network))
+                            } catch (e: Exception) {
+                                saveError = e.message ?: "Could not prepare tip account"
+                            } finally {
+                                isSaving = false
+                            }
+                        }
+                    }, modifier = Modifier.testTag("dashpay.profile.useTipAccount")) {
+                        Text("Use this wallet’s dedicated tip account")
+                    }
+                    Text("The address is published only when you save.", style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(
+                        value = shieldedAddressField,
+                        onValueChange = { shieldedAddressField = it },
+                        modifier = Modifier.fillMaxWidth().testTag("dashpay.profile.shieldedAddress"),
+                        label = { Text("Shielded tip address") },
+                        supportingText = { Text("Paste an external receiving address, or leave blank to disable tips. External funds are managed by the receiving wallet.") },
+                    )
                     saveError?.let {
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     }
@@ -194,6 +240,15 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
                                     avatarUrl = avatarUrlField.trim().ifEmpty { null },
                                     doCreate = !profileExists,
                                     signerHandle = m.signerHandle,
+                                    shieldedAddress = when (val address = shieldedAddressField.trim()) {
+                                        publishedTipAddress.orEmpty() -> PaymentAddressUpdate.Keep
+                                        "" -> PaymentAddressUpdate.Remove
+                                        else -> {
+                                            val parsed = DashAddress.parse(address, m.network) as? DashAddressType.Orchard
+                                                ?: throw IllegalArgumentException("Enter a shielded address for this network")
+                                            PaymentAddressUpdate.Set(parsed.raw43)
+                                        }
+                                    },
                                 )
                                 loadProfile()
                                 isEditing = false
@@ -220,6 +275,19 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
                         profile?.publicMessage?.trim()?.takeIf { it.isNotEmpty() }?.let {
                             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                         }
+                    }
+                }
+            }
+
+            if (!isEditing) {
+                FormSection(title = "Shielded tips") {
+                    Text("This wallet’s tip balance: ${BigDecimal.valueOf(tipBalance, 11).stripTrailingZeros().toPlainString()} DASH")
+                    val address = publishedTipAddress
+                    if (address == null) {
+                        Text("Tips are not enabled.")
+                    } else {
+                        SelectionContainer { Text(address, style = MaterialTheme.typography.bodySmall) }
+                        Text("This receiving address is public and associated with your username. Removing it does not revoke previously shared copies.", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }

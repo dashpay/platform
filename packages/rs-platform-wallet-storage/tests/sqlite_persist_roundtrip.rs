@@ -681,6 +681,7 @@ fn tc012_dashpay_overlay_roundtrip() {
         avatar_hash: None,
         avatar_fingerprint: None,
         public_message: Some("public".into()),
+        ..Default::default()
     };
     let payment = PaymentEntry::new_sent(Identifier::from([0x66; 32]), 7_500, Some("lunch".into()));
 

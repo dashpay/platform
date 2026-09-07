@@ -1236,3 +1236,88 @@ func shieldedTreeProgressCallback(
         )
     }
 }
+
+public struct ShieldedTipRecipient: Sendable, Equatable {
+    public let identityId: Data
+    public let address: Data
+}
+
+extension ManagedPlatformWallet {
+    /// Fetch and verify the current DPNS identity and shielded tip address.
+    public func resolveShieldedTip(username: String) async throws -> ShieldedTipRecipient {
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            var identityId = [UInt8](repeating: 0, count: 32)
+            var address = [UInt8](repeating: 0, count: 43)
+            try username.withCString {
+                try platform_wallet_resolve_shielded_tip(handle, $0, &identityId, &address).check()
+            }
+            return ShieldedTipRecipient(identityId: Data(identityId), address: Data(address))
+        }.value
+    }
+}
+
+extension PlatformWalletManager {
+    /// Prepare the dedicated tip account. Publication is a separate profile update.
+    public func prepareShieldedTipAddress(walletId: Data, identityId: Data, resolver: MnemonicResolver) async throws -> Data {
+        guard walletId.count == 32, identityId.count == 32, let resolverHandle = resolver.handle else {
+            throw PlatformWalletError.invalidParameter("Expected wallet/identity IDs and mnemonic resolver")
+        }
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            try withExtendedLifetime(resolver) {
+                var address = [UInt8](repeating: 0, count: 43)
+                try walletId.withUnsafeBytes { wallet in
+                    try identityId.withUnsafeBytes { identity in
+                        try platform_wallet_manager_prepare_shielded_tip_address(
+                            handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self), resolverHandle,
+                            identity.baseAddress!.assumingMemoryBound(to: UInt8.self), &address
+                        ).check()
+                    }
+                }
+                return Data(address)
+            }
+        }.value
+    }
+
+    /// Recheck the confirmed recipient before building and broadcasting the payment.
+    public func sendShieldedTip(walletId: Data, resolver: MnemonicResolver, account: UInt32 = 0,
+                                username: String, recipient: ShieldedTipRecipient, amount: UInt64) async throws {
+        guard walletId.count == 32, recipient.identityId.count == 32, recipient.address.count == 43,
+              let resolverHandle = resolver.handle else {
+            throw PlatformWalletError.invalidParameter("Invalid shielded tip recipient or wallet")
+        }
+        let handle = self.handle
+        try await Task.detached(priority: .userInitiated) {
+            try withExtendedLifetime(resolver) {
+                try walletId.withUnsafeBytes { wallet in
+                    try recipient.identityId.withUnsafeBytes { identity in
+                        try recipient.address.withUnsafeBytes { address in
+                            try username.withCString { name in
+                                try platform_wallet_manager_send_shielded_tip(
+                                    handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self), resolverHandle,
+                                    account, name, identity.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                                    address.baseAddress!.assumingMemoryBound(to: UInt8.self), amount, nil
+                                ).check()
+                            }
+                        }
+                    }
+                }
+            }
+        }.value
+    }
+}
+
+extension PlatformWalletManager {
+    public static func shieldedTipAccountIndex(identityIndex: UInt32) throws -> UInt32 {
+        var account: UInt32 = 0
+        try platform_wallet_shielded_tip_account_index(identityIndex, &account).check()
+        return account
+    }
+}
+
+extension PlatformWalletManager {
+    public static func isShieldedTipAccount(_ account: UInt32) -> Bool {
+        platform_wallet_is_shielded_tip_account(account)
+    }
+}

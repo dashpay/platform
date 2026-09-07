@@ -128,3 +128,16 @@ extension PersistentDashpayProfile {
         }
     }
 }
+
+// Address metadata is stored separately so released profile/identity relationships
+// retain their SwiftData schema identity across upgrades.
+extension PersistentDashpayProfile {
+    private var paymentAddresses: PersistentDashpayPaymentAddresses? {
+        guard let modelContext else { return nil }
+        return try? PersistentDashpayPaymentAddresses.fetch(in: modelContext, networkRaw: networkRaw,
+            ownerIdentityId: identity.identityId, profileIdentityId: identity.identityId)
+    }
+    public var corePaymentAddress: Data? { paymentAddresses?.corePaymentAddress }
+    public var platformPaymentAddress: Data? { paymentAddresses?.platformPaymentAddress }
+    public var shieldedAddress: Data? { paymentAddresses?.shieldedAddress }
+}

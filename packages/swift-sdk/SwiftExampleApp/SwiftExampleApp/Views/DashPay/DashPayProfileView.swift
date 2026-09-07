@@ -1,6 +1,7 @@
 import CoreImage.CIFilterBuiltins
 import SwiftDashSDK
 import SwiftUI
+import SwiftData
 
 /// Read-only DashPay profile sheet, promoted out of
 /// `IdentityDetailView`'s inline card: large avatar, display name,
@@ -19,6 +20,15 @@ struct DashPayProfileView: View {
     @State private var qrImage: UIImage?
     @State private var qrURI: String?
     @State private var qrError: String?
+    @State private var showSpendTips = false
+    @Query private var shieldedNotes: [PersistentShieldedNote]
+
+    private var tipBalance: UInt64 {
+        guard let walletId = identity.wallet?.walletId,
+              let account = try? PlatformWalletManager.shieldedTipAccountIndex(identityIndex: identity.identityIndex) else { return 0 }
+        return shieldedNotes.filter { $0.walletId == walletId && $0.accountIndex == account && !$0.isSpent }
+            .reduce(UInt64(0)) { $0 &+ $1.value }
+    }
 
     private var displayName: String {
         if let name = profile?.displayName?
@@ -62,6 +72,20 @@ struct DashPayProfileView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .listRowBackground(Color.clear)
+                }
+
+                Section("Shielded tips") {
+                    if let address = profile?.shieldedAddress,
+                       let display = DashAddress.encodeOrchard(rawBytes: address, network: identity.network) {
+                        Text(display).font(.caption).textSelection(.enabled)
+                    } else {
+                        Text("No tip address published")
+                    }
+                    Text("Dedicated account balance: \(NSDecimalNumber(decimal: Decimal(tipBalance) / 100_000_000_000).stringValue) DASH")
+                        .font(.caption)
+                    Button("Send from dedicated tip account") { showSpendTips = true }
+                        .disabled(tipBalance == 0)
+                    Text("An external receiving address is managed by its own wallet.").font(.caption).foregroundStyle(.secondary)
                 }
 
                 Section("Identity") {
@@ -122,6 +146,12 @@ struct DashPayProfileView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
+                }
+            }
+            .sheet(isPresented: $showSpendTips) {
+                if let walletId = identity.wallet?.walletId,
+                   let account = try? PlatformWalletManager.shieldedTipAccountIndex(identityIndex: identity.identityIndex) {
+                    SendShieldedTipSheet(walletId: walletId, account: account, sourceLabel: "dedicated tip account")
                 }
             }
             .navigationTitle("Your Profile")
