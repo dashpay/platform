@@ -5,17 +5,15 @@ import renderTemplateFactory from '../../../src/templates/renderTemplateFactory.
 import renderServiceTemplatesFactory from '../../../src/templates/renderServiceTemplatesFactory.js';
 
 describe('Tor templates', () => {
-  let getBaseConfig;
+  let config;
   let renderServiceTemplates;
 
   beforeEach(() => {
-    getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
+    config = getBaseConfigFactory(HomeDir.createTemp())();
     renderServiceTemplates = renderServiceTemplatesFactory(renderTemplateFactory());
   });
 
   it('should leave onion listening off and set no proxy when Tor is disabled', () => {
-    const config = getBaseConfig();
-
     const dashConf = renderServiceTemplates(config)['core/dash.conf'];
 
     expect(dashConf).to.match(/^listenonion=0$/m);
@@ -25,7 +23,6 @@ describe('Tor templates', () => {
   });
 
   it('should point Core at the sidecar on loopback when Tor is enabled', () => {
-    const config = getBaseConfig();
     config.set('core.tor.enabled', true);
     config.set('core.tor.control.password', 'dashmatetest');
 
@@ -41,7 +38,6 @@ describe('Tor templates', () => {
   });
 
   it('should render a torrc with loopback listeners and a hashed control password', () => {
-    const config = getBaseConfig();
     config.set('core.tor.control.password', 'dashmatetest');
 
     const torrc = renderServiceTemplates(config)['core/tor/torrc'];

@@ -17,9 +17,9 @@ describe('generateEnvsFactory', () => {
   });
 
   it('should not include the Tor compose file when Tor is disabled', () => {
-    const { COMPOSE_FILE } = generateEnvs(config);
+    const envs = generateEnvs(config);
 
-    expect(COMPOSE_FILE.split(':')).to.not.include('docker-compose.tor.yml');
+    expect(envs.COMPOSE_FILE.split(':')).to.not.include('docker-compose.tor.yml');
   });
 
   it('should include the Tor compose file and image when Tor is enabled', () => {

@@ -305,6 +305,8 @@ describe('migrateConfigFileFactory', () => {
     const fromVersion = '4.2.0';
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
+    const baseConfig = container.resolve('defaultConfigs').get('base');
+
     const configFileData = createConfigFile().toObject();
     configFileData.configFormatVersion = fromVersion;
     configFileData.configs.testnet.core.tor.enabled = true;
@@ -314,7 +316,7 @@ describe('migrateConfigFileFactory', () => {
 
     expect(migrated.configs.testnet.core.tor).to.deep.equal({
       enabled: true,
-      docker: { image: 'osminogin/tor-simple:0.4.9.11' },
+      docker: baseConfig.get('core.tor.docker'),
       control: { password: 'operator-chosen' },
     });
   });

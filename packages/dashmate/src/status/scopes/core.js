@@ -111,8 +111,7 @@ export default function getCoreScopeFactory(
       core.peersCount = connections;
       core.version = extractCoreVersion(subversion);
 
-      const onionAddress = (localaddresses ?? [])
-        .find(({ address }) => address.endsWith('.onion'));
+      const onionAddress = localaddresses?.find(({ address }) => address.endsWith('.onion'));
 
       if (onionAddress) {
         core.onionService = `${onionAddress.address}:${onionAddress.port}`;
