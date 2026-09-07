@@ -295,10 +295,26 @@ pub fn load_state(
 ///
 /// Only the duplicate-slot case consults `ctx`: a second live row claiming
 /// an `identity_index` this wallet has already filled is fatal under
-/// `Strict` and a counted, logged drop under `Recovery`. The typed-column
-/// cross-checks stay unconditional — a row whose columns contradict its own
-/// blob is corruption, not a recoverable projection. Rows are read by
-/// `identity_id` ascending, so the lexicographically higher id wins a collision.
+/// `Strict` and a counted, logged drop under `Recovery`. Rows are read by
+/// `identity_id` ascending, so the lexicographically higher id wins a
+/// collision.
+///
+/// # The typed-column cross-checks are DELIBERATELY fatal in both policies
+///
+/// An `identities` row carries the identity's credit balance, so skipping one
+/// would hand back a wallet whose reported credits are quietly too low — the
+/// same harm that keeps the unspent-script decode fail-hard in `core_state`,
+/// and the reason `platform_addresses` degrades by wallet rather than by row.
+/// Sitting outside `ctx` does NOT put these sites outside the load policy:
+/// they reach `load()`'s per-wallet isolation boundary, which drops the whole
+/// wallet under `Recovery` and names it in `LoadDegradation::wallets_degraded`.
+/// A visibly missing wallet is a fact a caller can act on; a wallet with
+/// silently missing credits is not.
+///
+/// Do not convert them to `ctx.tolerate`. Beyond the balance, a skipped
+/// identity orphans its keys and contacts, and the orphan is fatal in both
+/// policies two functions later in `merge_contacts_and_keys` — so per-row
+/// tolerance here would relocate a failure rather than remove one.
 pub fn load_state_with_ctx(
     conn: &Connection,
     wallet_id: &WalletId,

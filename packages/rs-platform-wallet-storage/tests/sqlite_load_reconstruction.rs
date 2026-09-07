@@ -277,7 +277,11 @@ fn load_all_reconstructs_only_registered_accounts() {
     // Sanity: wallet A really does carry the orphan row on disk.
     assert_eq!(total_rows_a, 3, "wallet A has 3 platform_addresses rows");
 
-    let (sync_a, count_a) = all.get(&a).expect("wallet A present in load_all");
+    let (sync_a, count_a) = all
+        .get(&a)
+        .expect("wallet A present in load_all")
+        .as_ref()
+        .expect("wallet A must read cleanly");
     assert_eq!(
         *count_a, 3,
         "count is the raw row total, so it includes the orphan row"
@@ -296,7 +300,11 @@ fn load_all_reconstructs_only_registered_accounts() {
         "the unregistered (orphan) account is excluded from per_account"
     );
 
-    let (sync_b, count_b) = all.get(&b).expect("wallet B present in load_all");
+    let (sync_b, count_b) = all
+        .get(&b)
+        .expect("wallet B present in load_all")
+        .as_ref()
+        .expect("wallet B must read cleanly");
     assert_eq!(*count_b, 1, "wallet B's single orphan row still counts");
     assert!(
         sync_b.per_account.is_empty(),

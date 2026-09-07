@@ -113,7 +113,10 @@ pub(crate) fn list_platform_payment_registrations(
 /// query.
 pub(crate) fn all_platform_payment_registrations(
     conn: &Connection,
-) -> Result<BTreeMap<WalletId, Vec<PlatformPaymentRegistration>>, WalletStorageError> {
+) -> Result<
+    BTreeMap<WalletId, Result<Vec<PlatformPaymentRegistration>, WalletStorageError>>,
+    WalletStorageError,
+> {
     let mut stmt = conn.prepare(
         "SELECT length(wallet_id), wallet_id, account_index, key_class, \
                 length(account_xpub_bytes), account_xpub_bytes \
@@ -122,18 +125,35 @@ pub(crate) fn all_platform_payment_registrations(
          ORDER BY wallet_id, account_index",
     )?;
     let mut rows = stmt.query([])?;
-    let mut out: BTreeMap<WalletId, Vec<PlatformPaymentRegistration>> = BTreeMap::new();
+    let mut out: BTreeMap<WalletId, Result<Vec<PlatformPaymentRegistration>, WalletStorageError>> =
+        BTreeMap::new();
     while let Some(row) = rows.next()? {
         blob::check_fixed_width(row.get::<_, i64>(0)?, 32, "account_registrations.wallet_id")?;
         let wid_bytes: Vec<u8> = row.get(1)?;
         let idx: i64 = row.get(2)?;
         let key_class: i64 = row.get(3)?;
-        blob::check_size(row.get::<_, i64>(4)?)?;
+        let payload_width: i64 = row.get(4)?;
         let bytes: Vec<u8> = row.get(5)?;
+        // An id that is not 32 bytes belongs to no wallet, so it stays
+        // file-fatal; everything after it is attributable to one.
         let wallet_id = super::id32("account_registrations.wallet_id", &wid_bytes)?;
-        out.entry(wallet_id)
-            .or_default()
-            .push(decode_platform_payment_row(idx, key_class, &bytes)?);
+        let decoded = blob::check_size(payload_width)
+            .and_then(|()| decode_platform_payment_row(idx, key_class, &bytes));
+        match decoded {
+            // A wallet already recorded as failed keeps its first cause;
+            // its remaining rows cannot change the outcome.
+            Ok(decoded) => {
+                if let Ok(rows) = out.entry(wallet_id).or_insert_with(|| Ok(Vec::new())) {
+                    rows.push(decoded);
+                }
+            }
+            Err(err) => {
+                let slot = out.entry(wallet_id).or_insert_with(|| Ok(Vec::new()));
+                if slot.is_ok() {
+                    *slot = Err(err);
+                }
+            }
+        }
     }
     Ok(out)
 }
@@ -900,7 +920,14 @@ mod tests {
         )
         .unwrap();
 
-        let err = all_platform_payment_registrations(&conn)
+        // The bulk reader refuses the row per WALLET: the scan survives, and
+        // the wallet that owns the bad row carries the refusal.
+        let all = all_platform_payment_registrations(&conn)
+            .expect("the scan itself must survive one bad row");
+        let err = all
+            .get(&w)
+            .expect("the wallet must be present in the scan")
+            .as_ref()
             .expect_err("bulk reader must reject key_class mismatch");
         assert!(
             matches!(err, WalletStorageError::AccountRegistrationEntryMismatch),

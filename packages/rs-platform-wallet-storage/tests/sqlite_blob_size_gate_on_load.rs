@@ -289,9 +289,15 @@ fn blob_gate_platform_addrs_load_all_rejects_wrong_width_address() {
     .expect("insert wrong-width address row");
 
     // load_all drives all_address_rows which has the check_fixed_width gate.
+    // The rejection is per WALLET: the row is never accepted, and the wallet
+    // that owns it carries the refusal instead of the whole scan aborting.
     use platform_wallet_storage::sqlite::schema::platform_addrs;
-    let err =
-        platform_addrs::load_all(&conn).expect_err("load_all must reject a wrong-width address");
+    let all = platform_addrs::load_all(&conn).expect("the scan itself must survive one bad row");
+    let err = all
+        .get(&w)
+        .expect("the wallet must be present in the scan")
+        .as_ref()
+        .expect_err("load_all must reject a wrong-width address");
     assert!(
         matches!(
             err,
@@ -320,8 +326,12 @@ fn blob_gate_platform_addrs_load_all_rejects_oversize_address() {
     .expect("insert oversize address row");
 
     use platform_wallet_storage::sqlite::schema::platform_addrs;
-    let err =
-        platform_addrs::load_all(&conn).expect_err("load_all must reject an oversize address blob");
+    let all = platform_addrs::load_all(&conn).expect("the scan itself must survive one bad row");
+    let err = all
+        .get(&w)
+        .expect("the wallet must be present in the scan")
+        .as_ref()
+        .expect_err("load_all must reject an oversize address blob");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),
         "expected BlobTooLarge for oversize address, got {err:?}"

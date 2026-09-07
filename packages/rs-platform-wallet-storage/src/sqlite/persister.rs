@@ -1439,7 +1439,21 @@ impl PlatformWalletPersistence for SqlitePersister {
 
         let addrs_all = schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
         let mut addresses_loaded: usize = 0;
-        for (wallet_id, (addrs, count)) in addrs_all {
+        // Wallets whose platform-address rows could not be read. They are
+        // already counted here, so the loop below skips them rather than
+        // rebuilding a wallet whose platform balance would be understated.
+        let mut unreadable: std::collections::BTreeSet<WalletId> =
+            std::collections::BTreeSet::new();
+        for (wallet_id, entry) in addrs_all {
+            let (addrs, count) = match entry {
+                Ok(entry) => entry,
+                Err(original) => {
+                    degrade_whole_wallet(&ctx, wallet_id, &original)
+                        .map_err(|_| PersistenceError::from(original))?;
+                    unreadable.insert(wallet_id);
+                    continue;
+                }
+            };
             // Skip a wallet with no platform state at all (no addresses,
             // no registrations, all sync watermarks zero).
             if count > 0
@@ -1458,6 +1472,9 @@ impl PlatformWalletPersistence for SqlitePersister {
         let wallet_ids = schema::wallets::list_ids(&conn).map_err(PersistenceError::from)?;
         let wallets_seen = wallet_ids.len();
         for wallet_id in wallet_ids {
+            if unreadable.contains(&wallet_id) {
+                continue;
+            }
             match load_one_wallet(&conn, wallet_id, &ctx) {
                 Ok(wallet_state) => {
                     state.wallets.insert(wallet_id, wallet_state);
@@ -1469,21 +1486,8 @@ impl PlatformWalletPersistence for SqlitePersister {
                 // matching on a specific cause still sees it.
                 Err(original) => {
                     let cause = wallet_storage_kind(&original);
-                    ctx.tolerate_at(
-                        LoadSite::WalletRehydration,
-                        crate::sqlite::load_ctx::SiteCoords {
-                            wallet_id: Some(wallet_id),
-                            account_type: &"wallet",
-                            affected: 1,
-                            detail: Some(&cause),
-                        },
-                        WalletStorageError::WalletRehydrationFailed {
-                            wallet_id,
-                            cause: original.to_string(),
-                        },
-                    )
-                    .map_err(|_| original)?;
-                    ctx.note_wallet_degraded(wallet_id, cause);
+                    record_wallet_degradation(&ctx, wallet_id, cause, &original)
+                        .map_err(|_| original)?;
                 }
             }
         }
@@ -1757,6 +1761,45 @@ fn load_one_wallet(
         identity_manager,
         unused_asset_locks,
     })
+}
+
+/// Count one wallet's whole loss and attribute it, or return so the caller
+/// can propagate its own error under `Strict`.
+///
+/// The returned error is discarded by every caller: it exists only to say
+/// "Strict", because the caller holds a better error than this one — the
+/// original cause, in the type its own signature promises.
+fn record_wallet_degradation(
+    ctx: &LoadCtx,
+    wallet_id: WalletId,
+    cause: &'static str,
+    original: &dyn std::fmt::Display,
+) -> Result<(), WalletStorageError> {
+    ctx.tolerate_at(
+        LoadSite::WalletRehydration,
+        crate::sqlite::load_ctx::SiteCoords {
+            wallet_id: Some(wallet_id),
+            account_type: &"wallet",
+            affected: 1,
+            detail: Some(&cause),
+        },
+        WalletStorageError::WalletRehydrationFailed {
+            wallet_id,
+            cause: original.to_string(),
+        },
+    )?;
+    ctx.note_wallet_degraded(wallet_id, cause);
+    Ok(())
+}
+
+/// [`record_wallet_degradation`] for a failure that is already a typed
+/// storage error, so its own kind tag is the cause.
+fn degrade_whole_wallet(
+    ctx: &LoadCtx,
+    wallet_id: WalletId,
+    original: &WalletStorageError,
+) -> Result<(), WalletStorageError> {
+    record_wallet_degradation(ctx, wallet_id, original.error_kind_str(), original)
 }
 
 /// The kind tag of the typed storage error inside a persistence error.
