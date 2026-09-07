@@ -804,15 +804,15 @@ fn tc049_legacy_standard_row_with_bip32_blob_still_loads() {
 /// same account: the upsert's conflict target includes `account_type`, so the
 /// writer's precise label is a different primary key and inserts a sibling row.
 ///
-/// Pinned because it is the one cost of admitting the legacy label rather than
-/// guessing at it, and because "the next write heals it" is the obvious wrong
-/// assumption to make here. The two rows carry the same blob, so the reader
-/// yields the same account twice and the load still succeeds; the stale row is
-/// bounded (one per pre-split standard account) and never grows. Resolving it
-/// would need the writer to delete legacy-labelled siblings, which is a
-/// separate change and not obviously worth it.
+/// Pinned because "the next write heals it" is the obvious wrong assumption to
+/// make here, and because the reconciliation that makes the surviving row
+/// harmless lives in the READER: `accounts::load_state` collapses the pair, so
+/// the manifest carries the account once even though the table carries it
+/// twice. A destructive `DELETE` in a wallet's account table to tidy a label
+/// would be the wrong trade. Both halves are asserted below, because the
+/// reader's guarantee is only worth anything while the writer's fork is real.
 #[test]
-fn tc050_legacy_standard_row_is_not_healed_by_a_later_write() {
+fn tc050_legacy_standard_row_is_reconciled_by_the_reader_not_the_writer() {
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::bip32::ExtendedPubKey;
     use platform_wallet::changeset::{
@@ -885,8 +885,19 @@ fn tc050_legacy_standard_row_is_not_healed_by_a_later_write() {
         vec!["standard".to_string(), "standard_bip44".to_string()],
         "the legacy row survives beside the writer's precise label"
     );
-    assert!(
-        persister.load().is_ok(),
-        "the duplicate must not break the load"
+    let manifest = {
+        let conn = persister.lock_conn_for_test();
+        platform_wallet_storage::sqlite::schema::accounts::load_state(
+            &conn,
+            &wallet_id,
+            &platform_wallet_storage::LoadCtx::strict(),
+        )
+        .expect("the forked pair must not break a strict load")
+    };
+    assert_eq!(
+        manifest.ecdsa.len(),
+        1,
+        "two rows, one account: the reader must return it once, got {:?}",
+        manifest.ecdsa
     );
 }

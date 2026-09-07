@@ -444,7 +444,9 @@ pub(crate) fn load_provider_state(
 /// re-derive + the per-account xpubs the wrong-account gate checks). PUBLIC
 /// material only (xpub + account type), no `Wallet` minted. Each list is
 /// ordered by its typed columns for determinism. Typed-column drift is fatal
-/// under Strict; Recovery drops the offending registration row. Persisted
+/// under Strict; Recovery drops the offending registration row. A pre-split
+/// `standard` row is reconciled against the precise-labelled row for the same
+/// account, so a forked registration is returned once. Persisted
 /// funds attributed to that missing account fall back to the first remaining
 /// funds account until the next sync rebuilds per-account attribution.
 pub fn load_state(
@@ -485,6 +487,10 @@ fn load_ecdsa_state(
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut out = Vec::new();
+    // Positions in `out` of rows still carrying the pre-split `standard`
+    // label. `Vec::new` does not allocate until its first push, so a database
+    // written after the split walks this loop exactly as it did before.
+    let mut legacy_rows: Vec<usize> = Vec::new();
     while let Some(row) = rows.next()? {
         let typed_type: String = row.get(0)?; // account_type TEXT
         let typed_index: i64 = row.get(1)?; // account_index INTEGER
@@ -530,9 +536,66 @@ fn load_ecdsa_state(
             )?;
             continue;
         }
+        if typed_type == LEGACY_STANDARD_LABEL {
+            legacy_rows.push(out.len());
+        }
         out.push(entry);
     }
-    Ok(out)
+    if legacy_rows.is_empty() {
+        return Ok(out);
+    }
+    reconcile_legacy_standard_rows(out, &legacy_rows, ctx)
+}
+
+/// Collapse each pre-split `standard` row into the precise-labelled row that
+/// stands for the same account.
+///
+/// `V007` admits the legacy label rather than guessing which standard variant
+/// such a row is, so one account can hold two rows: the writer's upsert keys
+/// on `account_type`, so a post-split save INSERTS a precisely-labelled
+/// sibling instead of updating the legacy row. Returning both would make this
+/// reader emit one account twice and leave deduplication to a consumer that
+/// cannot see why the pair exists.
+///
+/// A sibling is matched on the whole typed `AccountType`, NOT on
+/// `(index, key_class, identity ids)`: BIP44 and BIP32 accounts at one index
+/// are different accounts that share those columns, and the coarser key would
+/// fuse them — dropping a real registration and calling a healthy wallet
+/// drifted. When the matched pair disagrees the legacy row is not a duplicate
+/// but genuine drift (only the precise row is ever updated, so a changed xpub
+/// leaves the legacy one behind), and it goes to
+/// [`LoadSite::AccountRegistrationDrift`] like every other disagreement here.
+/// A legacy row with no sibling is the account's only row and is kept.
+fn reconcile_legacy_standard_rows(
+    entries: Vec<AccountRegistrationEntry>,
+    legacy_rows: &[usize],
+    ctx: &LoadCtx,
+) -> Result<Vec<AccountRegistrationEntry>, WalletStorageError> {
+    let mut superseded = vec![false; entries.len()];
+    for &legacy in legacy_rows {
+        let Some(precise) = entries
+            .iter()
+            .enumerate()
+            .find(|(pos, candidate)| {
+                !legacy_rows.contains(pos) && candidate.account_type == entries[legacy].account_type
+            })
+            .map(|(_, candidate)| candidate)
+        else {
+            continue;
+        };
+        if *precise != entries[legacy] {
+            ctx.tolerate(
+                LoadSite::AccountRegistrationDrift,
+                WalletStorageError::AccountRegistrationEntryMismatch,
+            )?;
+        }
+        superseded[legacy] = true;
+    }
+    Ok(entries
+        .into_iter()
+        .zip(superseded)
+        .filter_map(|(entry, is_superseded)| (!is_superseded).then_some(entry))
+        .collect())
 }
 
 /// Source of truth for the `account_registrations.account_type` TEXT domain,

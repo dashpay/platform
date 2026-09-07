@@ -52,10 +52,10 @@ pub fn migration() -> String {
     // the equivalence instead (`accounts::db_label_matches_entry`).
     //
     // A later save does NOT replace such a row: the upsert keys on
-    // `account_type`, so the writer's precise label inserts a sibling and the
-    // legacy row persists, carrying the same blob. Bounded at one stale row
-    // per pre-split standard account, and pinned by
-    // `tc050_legacy_standard_row_is_not_healed_by_a_later_write`.
+    // `account_type`, so the writer's precise label inserts a sibling rather
+    // than updating it. The reader reconciles that pair, returning the account
+    // once and routing a disagreeing pair to `AccountRegistrationDrift`, so
+    // the surviving row costs a row and not a duplicate registration.
     let account_type_check = build_check_in(&[
         "standard",
         "standard_bip44",
