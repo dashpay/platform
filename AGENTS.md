@@ -121,7 +121,9 @@ Quick build commands:
 ```bash
 # Build unified iOS framework (includes Core + Platform)
 cd packages/swift-sdk
-./build_ios.sh
+./build_ios.sh --target sim                  # release profile (the default)
+./build_ios.sh --target sim --profile dev    # local iteration ONLY — debug
+                                             # assertions abort the host app
 
 # Build SwiftExampleApp
 cd packages/swift-sdk

@@ -28,12 +28,11 @@ use crate::wallet::PlatformWallet;
 /// its inputs fenced, because the broadcaster's return says "this may be on the
 /// network", not "this wallet has seen the spend" — and on the
 /// `DapiBroadcaster` path the two are far apart, since `sdk.execute` injects
-/// nothing into local wallet state. Something has to end that fence, and three
-/// earlier revisions tried to end it on elapsed `last_processed_height`. That
-/// cannot work: catch-up advances the chain clock over blocks mined *before*
-/// the transaction was submitted, so an ordinary historical sync retires a
-/// fence without a shred of evidence about the transaction it was protecting
-/// (`dashpay/platform#4309`).
+/// nothing into local wallet state. Something has to end that fence, and
+/// elapsed `last_processed_height` cannot be it: catch-up advances the chain
+/// clock over blocks mined *before* the transaction was submitted, so an
+/// ordinary historical sync would retire a fence without a shred of evidence
+/// about the transaction it was protecting.
 ///
 /// So the fence ends on the observation instead, and this handler is where the
 /// observation arrives.
@@ -76,17 +75,16 @@ use crate::wallet::PlatformWallet;
 /// block. Releasing the fence then takes only the generation's `in_broadcast`
 /// `std::sync::Mutex` for a few hash operations and never awaits.
 ///
-/// The infallibility is what retires the deferral this handler used to need.
-/// While the map was a `tokio::sync::RwLock`, a `try_read` losing to a
-/// lifecycle writer had to queue the observation for the next delivered
-/// event — dropping it was unacceptable, since `TransactionDetected` can be
-/// the ONLY spend-bearing event a dispatch ever produces (InstantLock
-/// promotions carry no record here by design, and an evicted or
-/// never-confirmed transaction inserts no `BlockProcessed` record) and the
-/// pending-spend fence has no deadline behind it, so one lost observation
-/// fenced an input for the manager's lifetime (`dashpay/platform#4309`). With
-/// a read that cannot fail there is no such window and nothing to queue: every
-/// observation is applied at delivery.
+/// The infallibility is what makes a deferral queue unnecessary here. Over a
+/// `tokio::sync::RwLock` map, a `try_read` losing to a lifecycle writer would
+/// have to queue the observation for the next delivered event — dropping it
+/// is unacceptable, since `TransactionDetected` can be the ONLY spend-bearing
+/// event a dispatch ever produces (InstantLock promotions carry no record
+/// here by design, and an evicted or never-confirmed transaction inserts no
+/// `BlockProcessed` record) and the pending-spend fence has no deadline
+/// behind it, so one lost observation would fence an input for the manager's
+/// lifetime. With a read that cannot fail there is no such window and nothing
+/// to queue: every observation is applied at delivery.
 ///
 /// One outcome stays terminal, deliberately: a wallet id that resolves to no
 /// entry in the map is unregistered — a resolution, not contention, with
@@ -169,7 +167,7 @@ pub(crate) fn observed_spends(event: &WalletEvent) -> Vec<dashcore::OutPoint> {
         // Finality promotions of records the wallet already holds, and a bare
         // watermark advance. No new spend in any of them — and note that the
         // watermark is precisely the "chain moved" signal that must NOT touch
-        // a fence (`dashpay/platform#4309`).
+        // a fence.
         WalletEvent::TransactionInstantLocked { .. }
         | WalletEvent::ChainLockProcessed { .. }
         | WalletEvent::SyncHeightAdvanced { .. } => Vec::new(),
@@ -180,8 +178,7 @@ pub(crate) fn observed_spends(event: &WalletEvent) -> Vec<dashcore::OutPoint> {
 mod tests {
     //! Cover the projection — which events count as observing a spend, and
     //! which outpoints they yield. That decision IS the fence's release
-    //! condition (`dashpay/platform#4309`), so it is pinned here rather than
-    //! only exercised end to end.
+    //! condition, so it is pinned here rather than only exercised end to end.
 
     use dashcore::hashes::Hash;
     use dashcore::{
@@ -335,10 +332,9 @@ mod tests {
     /// THE VARIANT THAT MUST NEVER TOUCH A FENCE.
     ///
     /// `SyncHeightAdvanced` is the bare "the chain moved" watermark, and it is
-    /// precisely the signal three earlier revisions of this fix let retire a
-    /// fence — via a `last_processed_height + N` bound rather than directly,
-    /// but with the same effect. It reports no spend and must stay that way
-    /// (`dashpay/platform#4309`).
+    /// precisely the signal a `last_processed_height + N` bound would let
+    /// retire a fence — indirectly, but with the same effect. It reports no
+    /// spend and must stay that way.
     #[test]
     fn chain_progress_alone_reports_no_spend() {
         let event = WalletEvent::SyncHeightAdvanced {

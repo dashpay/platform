@@ -70,7 +70,7 @@ impl EventHandler for BalanceUpdateHandler {
         };
 
         // Wait-free snapshot of the wallets map; cannot fail or block, so
-        // a lifecycle write can no longer cost a snapshot. A wallet absent
+        // a lifecycle write cannot cost a snapshot. A wallet absent
         // from the snapshot is one still inside its creation window: it is
         // registered in the inner manager (and therefore SPV-visible)
         // several `.await`s before it is published here. Both creation
