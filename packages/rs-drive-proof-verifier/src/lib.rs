@@ -33,6 +33,7 @@ pub use proof::document_having::{verify_having_range_proof, DocumentHavingEntrie
 /// that binds the proof's reconstructed root hash to the signed app
 /// hash and returns the whole verified [`drive::query::RankedPage`].
 pub use proof::document_ranked::{verify_ranked_top_k_proof, DocumentRankedEntries};
+pub use proof::document_request::{DocumentWireQuery, RequestedDocuments};
 pub use proof::document_split_count::DocumentSplitCounts;
 // Re-export `SplitCountEntry` from rs-drive at the proof-verifier
 // crate root so SDK consumers don't have to depend on rs-drive

@@ -2285,6 +2285,7 @@ name = "drive-proof-verifier"
 version = "4.2.0-dev.8"
 dependencies = [
  "bincode",
+ "ciborium",
  "dapi-grpc",
  "dash-context-provider",
  "derive_more 1.0.0",
@@ -2292,6 +2293,7 @@ dependencies = [
  "drive",
  "hex",
  "indexmap 2.14.0",
+ "platform-query-wire",
  "platform-serialization",
  "platform-serialization-derive",
  "serde",
