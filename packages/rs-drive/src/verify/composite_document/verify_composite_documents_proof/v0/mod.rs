@@ -1,7 +1,7 @@
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::drive_composite_document_query::{
-    BindingSource, CompositeDocumentsResult, DriveCompositeDocumentQuery, PresentTrio, ProvedTrio,
+    CompositeDocumentsResult, DriveCompositeDocumentQuery, PresentTrio, ProvedTrio,
 };
 use crate::verify::RootHash;
 use dpp::document::Document;
@@ -45,23 +45,11 @@ impl DriveCompositeDocumentQuery<'_> {
         let mut bootstrap_sub_documents: Vec<Option<Vec<Document>>> =
             vec![None; self.sub_queries.len()];
         for (index, sub_query) in self.sub_queries.iter().enumerate() {
-            let values = match &sub_query.binding {
-                None => Vec::new(),
-                Some(binding) => match binding.source {
-                    BindingSource::Page => self.derive_values(binding, &bootstrap_page)?,
-                    BindingSource::SubQuery(source) => {
-                        let documents =
-                            bootstrap_sub_documents[source].as_deref().ok_or_else(|| {
-                                Error::Proof(ProofError::CorruptedProof(
-                                    "a binding's source sub-query was not bootstrapped before \
-                                     it"
-                                    .to_string(),
-                                ))
-                            })?;
-                        self.derive_values(binding, documents)?
-                    }
-                },
-            };
+            let values = self.derive_for(sub_query, &bootstrap_page, |source| {
+                bootstrap_sub_documents
+                    .get(source)
+                    .and_then(|documents| documents.as_deref())
+            })?;
             if self.is_binding_source(index) {
                 let documents = if sub_query.binding.is_some() && values.is_empty() {
                     Vec::new()
@@ -77,6 +65,7 @@ impl DriveCompositeDocumentQuery<'_> {
                     self.decode_sub_query_document_trios(
                         sub_query,
                         &values,
+                        direction,
                         present(trios),
                         platform_version,
                     )?
@@ -104,11 +93,37 @@ impl DriveCompositeDocumentQuery<'_> {
             platform_version,
         )?;
 
-        // The PROVEN results are authoritative: every derivation must come
-        // out identical from them, or the proof was built over a different
-        // page than it proves.
-        let authoritative = self.derive_all(&result.page_documents, &|index| {
-            Some(result.sub_results[index].documents().to_vec())
+        // The PROVEN results are authoritative. The bootstrap read the
+        // same proof through each component's own query, so what it
+        // decoded must be exactly what the routed authoritative pass
+        // assigned to that component — a difference means the routing
+        // misassigned an entry — and every derivation must come out
+        // identical from the proven results, or the proof was built over
+        // a different page than it proves.
+        if bootstrap_page != result.page_documents {
+            return Err(Error::Proof(ProofError::CorruptedProof(
+                "the composite proof's page differs between the page query alone and the \
+                 merged composition"
+                    .to_string(),
+            )));
+        }
+        for (index, bootstrapped) in bootstrap_sub_documents.iter().enumerate() {
+            let Some(bootstrapped) = bootstrapped else {
+                continue;
+            };
+            if bootstrapped.as_slice() != result.sub_results[index].documents() {
+                return Err(Error::Proof(ProofError::CorruptedProof(format!(
+                    "the composite proof's sub-query {} differs between its own query and the \
+                     merged composition",
+                    index
+                ))));
+            }
+        }
+        let authoritative = self.derive_all(&result.page_documents, |index| {
+            result
+                .sub_results
+                .get(index)
+                .map(|result| result.documents())
         })?;
         if authoritative != derived {
             return Err(Error::Proof(ProofError::CorruptedProof(

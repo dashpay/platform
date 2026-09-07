@@ -545,7 +545,10 @@ fn should_reject_conflicting_document_directions_even_when_the_page_is_empty() {
                 query.verify_composite_documents_proof(&[], pv).map(|_| ()),
             ] {
                 assert!(matches!(result, Err(Error::Query(_))), "{result:?}");
-                assert!(result.unwrap_err().to_string().contains("outer ordering"));
+                assert!(result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("must match the page's direction"));
             }
         }
     }
@@ -1402,4 +1405,216 @@ fn should_inherit_the_page_direction_for_unordered_lookups() {
         assert!(matches!(result, Err(Error::Query(_))), "{result:?}");
         assert!(result.unwrap_err().to_string().contains("outer ordering"));
     }
+}
+
+#[test]
+fn should_reject_zero_limits() {
+    let (drive, feed, dashpay) = setup();
+    let pv = platform_version();
+    let base = feed_query(&feed, &dashpay, None);
+
+    let mut zero_page = base.clone();
+    zero_page.page.limit = Some(0);
+    let refused = zero_page
+        .validate(pv)
+        .expect_err("a zero page limit is refused");
+    assert!(refused.to_string().contains("at least 1"), "{refused}");
+
+    let mut zero_lookup = base.clone();
+    zero_lookup.sub_queries[REPOSTS].limit = Some(0);
+    let refused = zero_lookup
+        .validate(pv)
+        .expect_err("a zero lookup limit is refused");
+    assert!(refused.to_string().contains("at least 1"), "{refused}");
+
+    let mut zero_sibling = base;
+    zero_sibling.sub_queries.push(DriveSubQuery {
+        contract: &feed,
+        document_type: feed.document_type_for_name("repost").expect("repost"),
+        kind: SubQueryKind::Documents,
+        where_clauses: vec![],
+        order_by: vec![],
+        limit: Some(0),
+        binding: None,
+    });
+    let refused = zero_sibling
+        .validate(pv)
+        .expect_err("a zero sibling limit is refused");
+    assert!(refused.to_string().contains("at least 1"), "{refused}");
+    drop(drive);
+}
+
+#[test]
+fn should_reject_a_bound_field_that_is_not_identifier_typed() {
+    let (drive, feed, dashpay) = setup();
+    let pv = platform_version();
+    let mut query = feed_query(&feed, &dashpay, None);
+    // `hashtag` is a string: no derived identifier could ever match it.
+    query.sub_queries.push(bound(
+        &feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "$id",
+        "hashtag",
+        Some(5),
+    ));
+    let refused = query
+        .validate(pv)
+        .expect_err("a string bound field is refused");
+    assert!(
+        refused.to_string().contains("not identifier-typed"),
+        "{refused}"
+    );
+    drop(drive);
+}
+
+/// A bound sub-query that derives nothing contributes no branch, so the
+/// merged root is decided by the components that are always present.
+/// A limited page with a sub-query below its own path would land at the
+/// root on any page where the other bound sub-queries derive nothing;
+/// that is refused up front rather than failing on such a page.
+#[test]
+fn should_reject_a_limited_page_a_sub_query_below_it_could_leave_at_the_merged_root() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    // The page walks `like` through [hashtag, postId] with the hashtag
+    // fixed; the lookup fixes the postId too and binds the terminal, so
+    // its path extends the page's.
+    let like_type = feed.document_type_for_name("like").expect("like");
+    let page = DriveDocumentQuery {
+        contract: &feed,
+        document_type: like_type,
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            }],
+            pv,
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(10),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+    };
+    let mut below_the_page = bound(
+        &feed,
+        "like",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "$ownerId",
+        "$ownerId",
+        None,
+    );
+    below_the_page.where_clauses = vec![
+        WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("dash".to_string()),
+        },
+        WhereClause {
+            field: "postId".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(POST_A),
+        },
+    ];
+    let query = DriveCompositeDocumentQuery {
+        page,
+        sub_queries: vec![
+            below_the_page,
+            // A bound sub-query elsewhere: present on some pages, absent
+            // on others, so the merged root moves with the data.
+            bound(
+                &feed,
+                "post",
+                SubQueryKind::Documents,
+                BindingSource::Page,
+                "postId",
+                "$id",
+                None,
+            ),
+        ],
+    };
+    let refused = query
+        .validate(pv)
+        .expect_err("a limited page above a sub-query is refused");
+    assert!(
+        refused.to_string().contains("lands at the merged root"),
+        "{refused}"
+    );
+}
+
+/// A `$id ==` page lowers with a limit of one whatever its limit says;
+/// the proof query drops it like a `$id IN` page's, so the page and a
+/// join on its type share the primary tree without a budget to lift.
+#[test]
+fn should_prove_a_single_id_page_with_a_join_on_the_same_type() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let mut page = page_by_hashtag(&feed, "dash", Some(1));
+    page.internal_clauses = InternalClauses::extract_from_clauses(
+        vec![WhereClause {
+            field: "$id".into(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(POST_A),
+        }],
+        pv,
+    )
+    .expect("by-id page");
+    let query = DriveCompositeDocumentQuery {
+        page,
+        sub_queries: vec![bound(
+            &feed,
+            "post",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "quotedPostId",
+            "$id",
+            None,
+        )],
+    };
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    assert_eq!(ids(&materialized.page_documents), vec![POST_A]);
+    assert_eq!(ids(materialized.sub_results[0].documents()), vec![POST_D]);
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+#[test]
+fn should_reject_two_limited_lookups_on_one_index_path() {
+    let (drive, feed, dashpay) = setup();
+    let pv = platform_version();
+    let mut query = feed_query(&feed, &dashpay, None);
+    // A second limited repost lookup on `byPost`, bound to the quoted
+    // posts: budgets never blend, so the two could never be merged.
+    query.sub_queries.push(bound(
+        &feed,
+        "repost",
+        SubQueryKind::Documents,
+        BindingSource::SubQuery(QUOTED_POSTS),
+        "$id",
+        "postId",
+        Some(20),
+    ));
+    let refused = query
+        .validate(pv)
+        .expect_err("two limited lookups on one index path are refused");
+    assert!(refused.to_string().contains("carries a limit"), "{refused}");
+    drop(drive);
 }

@@ -55,12 +55,24 @@
 //! `$ownerId`, or an identifier-typed property. The page limit is
 //! required and capped at [`MAX_BOUND_VALUES`] (an `IN` clause admits at
 //! most that many values); the page takes no cursor and no offset —
-//! paginate with a range clause, exactly as chained queries do.
+//! paginate with a range clause, exactly as chained queries do. A by-ids
+//! page is proven without its limit, which must therefore cover its ids
+//! (a plain documents query would truncate instead).
+//!
+//! Direction: grovedb merges only queries that agree on their walk
+//! direction, so every component walks in the page's. Counts and by-id
+//! joins are aligned freely — their selected sets do not depend on it —
+//! while a documents lookup the caller left unordered on its bound field
+//! inherits it (which decides WHICH rows a limited lookup returns under a
+//! descending page), an explicit ordering that disagrees is refused, and
+//! so is an unordered sibling under a descending page: order it, in the
+//! page's direction.
 
 use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::drive_document_count_query::point_lookup_count_entries;
 use crate::query::index_only_synthesis::synthesize_index_only_document;
 use crate::query::{
     DriveDocumentCountQuery, DriveDocumentQuery, InternalClauses, OrderClause, SplitCountEntry,
@@ -218,12 +230,6 @@ pub(crate) type ProvedTrio = (Vec<Vec<u8>>, Vec<u8>, Option<Element>);
 /// A proved triple whose element is present.
 pub(crate) type PresentTrio = (Vec<Vec<u8>>, Vec<u8>, Element);
 
-/// What the routing step decoded out of one path-query group's trios.
-enum DecodedItems {
-    Documents(Vec<Document>),
-    Counts(Vec<SplitCountEntry>),
-}
-
 /// A component of the merged proof: the page or one sub-query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Component {
@@ -237,6 +243,19 @@ fn unsupported(message: String) -> Error {
 
 fn corrupted_proof(message: String) -> Error {
     Error::Proof(ProofError::CorruptedProof(message))
+}
+
+/// A merge refusal is a property of the request's shape (the same
+/// components refuse identically on every node and every verifier), so it
+/// is reported as one rather than as an internal grovedb failure.
+fn merge_error_to_shape_error(error: grovedb::Error) -> Error {
+    match error {
+        grovedb::Error::NotSupported(message) => unsupported(format!(
+            "the composite query's components cannot be merged into one proof: {}",
+            message
+        )),
+        other => Error::from(other),
+    }
 }
 
 /// The bound identifier a document carries for `field`, or `None` when
@@ -303,12 +322,17 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                 self.sub_queries.len(),
             )));
         }
-        match self.page.limit {
+        let page_limit = match self.page.limit {
             None => {
                 return Err(unsupported(
                     "composite queries require an explicit limit on the page: the page size \
                      bounds every derived sub-query"
                         .to_string(),
+                ));
+            }
+            Some(0) => {
+                return Err(unsupported(
+                    "a composite page limit must be at least 1".to_string(),
                 ));
             }
             Some(limit) if limit as usize > MAX_BOUND_VALUES => {
@@ -318,8 +342,8 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                     limit, MAX_BOUND_VALUES,
                 )));
             }
-            Some(_) => {}
-        }
+            Some(limit) => limit,
+        };
         if self.page.offset.is_some() {
             return Err(unsupported(
                 "composite queries do not support a page offset; paginate with a range clause"
@@ -337,21 +361,20 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         // `page_path_query`), so the limit must not be what bounds it.
         if self.page_is_by_ids() {
             let ids = self.page_ids()?.len();
-            if (self.page.limit.unwrap_or(0) as usize) < ids {
+            if (page_limit as usize) < ids {
                 return Err(unsupported(format!(
                     "a by-ids composite page addresses {} ids but its limit is {}: the ids \
                      bound the page, so the limit must cover them",
-                    ids,
-                    self.page.limit.unwrap_or(0),
+                    ids, page_limit,
                 )));
             }
         }
         // The page must lower to a path query at all — an unindexed
         // shape fails here, before any sub-query is inspected.
-        self.page_path_query(platform_version)?;
+        let direction = self.page_direction(platform_version)?;
 
         for (index, sub_query) in self.sub_queries.iter().enumerate() {
-            self.validate_sub_query(index, sub_query, platform_version)?;
+            self.validate_sub_query(index, sub_query, direction, platform_version)?;
         }
         self.validate_component_paths(platform_version)
     }
@@ -360,6 +383,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         &self,
         index: usize,
         sub_query: &DriveSubQuery<'a>,
+        direction: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let label = |message: &str| unsupported(format!("sub-query {}: {}", index, message));
@@ -379,6 +403,9 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                         "a sibling documents sub-query requires an explicit limit",
                     ));
                 }
+                Some(0) => {
+                    return Err(label("a sibling's limit must be at least 1"));
+                }
                 Some(limit) if limit as usize > MAX_BOUND_VALUES => {
                     return Err(label(&format!(
                         "limit {} exceeds {}",
@@ -388,8 +415,13 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                 Some(_) => {}
             }
             // Must lower to a path query.
-            self.sub_query_document_query(sub_query, &[], platform_version)?
-                .construct_path_query(None, platform_version)?;
+            self.sub_query_document_query_with_direction(
+                sub_query,
+                &[],
+                direction,
+                platform_version,
+            )?
+            .construct_path_query(None, platform_version)?;
             return Ok(());
         };
 
@@ -465,9 +497,10 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                 }
                 BindingSource::SubQuery(source_index) => {
                     let source = &self.sub_queries[source_index];
-                    let shape = self.sub_query_document_query(
+                    let shape = self.sub_query_document_query_with_direction(
                         source,
                         &[Identifier::default()],
+                        direction,
                         platform_version,
                     )?;
                     let index = shape.index_only_query_index(platform_version)?;
@@ -493,6 +526,35 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                  derived",
                 binding.field,
             )));
+        }
+
+        // The bound field must hold identifiers on the sub-query's own
+        // type: `$ownerId`, or an identifier-typed property (`$id` is the
+        // by-id join, checked below). Derived values are identifiers, so
+        // any other type could never match, and assembly reads the field
+        // back as an identifier.
+        if !sub_query.is_by_id_join() && binding.field != dpp::document::property_names::OWNER_ID {
+            let Some(property) = sub_query
+                .document_type
+                .flattened_properties()
+                .get(binding.field.as_str())
+            else {
+                return Err(label(&format!(
+                    "bound field \"{}\" does not name a property of \"{}\"",
+                    binding.field,
+                    sub_query.document_type.name(),
+                )));
+            };
+            if !matches!(
+                property.property_type,
+                DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+            ) {
+                return Err(label(&format!(
+                    "bound field \"{}\" is not identifier-typed; composite bindings derive \
+                     identifiers only",
+                    binding.field,
+                )));
+            }
         }
 
         match sub_query.kind {
@@ -551,9 +613,10 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             }
             SubQueryKind::Documents => {
                 // Must lower to a path query with a representative value.
-                let shape = self.sub_query_document_query(
+                let shape = self.sub_query_document_query_with_direction(
                     sub_query,
                     &[Identifier::default()],
+                    direction,
                     platform_version,
                 )?;
                 shape.construct_path_query(None, platform_version)?;
@@ -581,7 +644,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                 // the same index. Anything else needs one, to bound the
                 // walk under each value.
                 let value_bounded =
-                    self.lookup_is_value_bounded(sub_query, &shape, platform_version)?;
+                    self.lookup_is_value_bounded(sub_query, binding, &shape, platform_version)?;
                 match (value_bounded, sub_query.limit) {
                     (true, Some(_)) => {
                         return Err(label(
@@ -589,6 +652,9 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                              with every prefix fixed, yields at most one row per derived \
                              value) takes no limit",
                         ));
+                    }
+                    (false, Some(0)) => {
+                        return Err(label("a lookup's limit must be at least 1"));
                     }
                     (false, None) => {
                         return Err(label(
@@ -634,12 +700,10 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
     fn lookup_is_value_bounded(
         &self,
         sub_query: &DriveSubQuery<'a>,
+        binding: &SubQueryBinding,
         shape: &DriveDocumentQuery<'a>,
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
-        let Some(binding) = &sub_query.binding else {
-            return Ok(false);
-        };
         let fixed_equalities: BTreeSet<&str> = sub_query
             .where_clauses
             .iter()
@@ -686,21 +750,33 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         if self.page_is_by_ids() {
             let mut unlimited = self.page.clone();
             unlimited.limit = None;
-            return unlimited.construct_path_query(None, platform_version);
+            let mut path_query = unlimited.construct_path_query(None, platform_version)?;
+            // A `$id ==` page lowers with a limit of one whatever the
+            // query's own limit says; the single key already bounds it,
+            // so the proof query carries no limit either way.
+            path_query.query.limit = None;
+            return Ok(path_query);
         }
         self.page.construct_path_query(None, platform_version)
     }
 
-    /// Document entries are routed back to components by the longest
-    /// matching base path and then by bound-value membership; counts use
-    /// their exact terminal positions. Document routing and merging need
-    /// two things the
-    /// shapes must guarantee up front: no limited component may land at
-    /// the merged root (grovedb has no branch to lift its limit into),
-    /// and documents components sharing a base path must be tellable
-    /// apart by their derived values — so a sibling, which has none,
-    /// stays alone, and a page only shares the primary tree with joins
-    /// when it is itself a by-ids fetch.
+    /// The shape rules routing and merging need up front. Document
+    /// entries are routed back to components by the longest matching
+    /// base path and then by bound-value membership (counts by their
+    /// exact terminal positions), so documents components sharing a base
+    /// path must be tellable apart by their derived values: a sibling,
+    /// which has none, stays alone, and a page only shares the primary
+    /// tree with joins when it is itself a by-ids fetch. And no limited
+    /// component may land at the merged root, where grovedb has no
+    /// branch to lift its limit into. A bound sub-query that derives
+    /// nothing contributes no branch, so the merged root is not fixed by
+    /// the shapes: it is the common prefix of whichever components are
+    /// present, and a limited component lands on it exactly when every
+    /// other present component's path extends its own. The page and the
+    /// siblings are always present and any bound sub-query may be
+    /// absent, so the rule is checked over that worst case rather than
+    /// over the full set, and a request that validates never fails the
+    /// merge for lack of data.
     fn validate_component_paths(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
         let representative = [Identifier::default()];
         let mut components: Vec<(Vec<Vec<u8>>, Component, bool)> = Vec::new();
@@ -721,24 +797,38 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             ));
         }
 
-        let merged_root: Vec<Vec<u8>> =
-            components
-                .iter()
-                .skip(1)
-                .fold(components[0].0.clone(), |common, (path, _, _)| {
-                    common
-                        .iter()
-                        .zip(path)
-                        .take_while(|(a, b)| a == b)
-                        .map(|(a, _)| a.clone())
-                        .collect()
-                });
+        let is_bound = |component: &Component| matches!(component, Component::Sub(index) if self.sub_queries[*index].binding.is_some());
         for (path, component, limited) in &components {
-            if *limited && *path == merged_root {
+            if !*limited {
+                continue;
+            }
+            let lands_at_root = match component {
+                // Any bound sub-query below the page puts the page at the
+                // root once it is the only other component present; so
+                // do the siblings when every one of them is below it.
+                Component::Page => {
+                    let (siblings, bound): (Vec<_>, Vec<_>) = components
+                        .iter()
+                        .skip(1)
+                        .partition(|(_, other, _)| !is_bound(other));
+                    bound.iter().any(|(other, _, _)| other.starts_with(path))
+                        || (!siblings.is_empty()
+                            && siblings.iter().all(|(other, _, _)| other.starts_with(path)))
+                }
+                // The page and every other sibling are always present:
+                // when all of them are below this component, the bound
+                // sub-queries deriving nothing leaves it at the root.
+                Component::Sub(_) => components
+                    .iter()
+                    .filter(|(_, other, _)| other != component && !is_bound(other))
+                    .all(|(other, _, _)| other.starts_with(path)),
+            };
+            if lands_at_root {
                 return Err(unsupported(format!(
-                    "{} carries a limit and lands at the merged root of the composite proof, \
-                     where grovedb has no branch to lift the limit into; give it a clause that \
-                     narrows its path, or split it into a separate request",
+                    "{} carries a limit and lands at the merged root of the composite proof \
+                     (once the bound sub-queries that derive nothing drop out), where grovedb \
+                     has no branch to lift the limit into; give it a clause that narrows its \
+                     path, or split it into a separate request",
                     match component {
                         Component::Page => "the page".to_string(),
                         Component::Sub(index) => format!("sub-query {}", index),
@@ -747,14 +837,14 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             }
         }
 
-        let mut groups: BTreeMap<&Vec<Vec<u8>>, Vec<Component>> = BTreeMap::new();
-        for (path, component, _) in &components {
-            groups.entry(path).or_default().push(*component);
+        let mut groups: BTreeMap<&Vec<Vec<u8>>, Vec<(Component, bool)>> = BTreeMap::new();
+        for (path, component, limited) in &components {
+            groups.entry(path).or_default().push((*component, *limited));
         }
         for members in groups.values() {
             let documents_members: Vec<Component> = members
                 .iter()
-                .copied()
+                .map(|(component, _)| *component)
                 .filter(|component| match component {
                     Component::Page => true,
                     Component::Sub(index) => {
@@ -762,12 +852,18 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                     }
                 })
                 .collect();
-            let has_count_member = members.iter().any(|component| {
+            let has_count_member = members.iter().any(|(component, _)| {
                 matches!(component, Component::Sub(index) if self.sub_queries[*index].kind == SubQueryKind::Count)
             });
             // A count reads an index's value trees themselves; a documents
             // component on the same index descends past them to the rows.
-            // One tree node cannot serve both selections in one proof.
+            // One tree node cannot serve both selections in one proof, and
+            // grovedb's merge does not refuse the combination: the descent
+            // wins and the count silently drops out of the merged query, so
+            // this guard (and the concrete-value one in
+            // `proof_path_queries`, for nested bases) is what keeps a count
+            // from verifying as empty. Shapes sharing a base are refused
+            // here regardless of data, so acceptance stays predictable.
             if has_count_member && !documents_members.is_empty() {
                 return Err(unsupported(
                     "a count sub-query shares its index path with a documents component: \
@@ -797,6 +893,17 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                         .to_string(),
                 ));
             }
+            // Components sharing a base path merge into one body, and
+            // budgets never blend: a limited one among them can never be
+            // merged (value-bounded lookups, which carry none, can).
+            if members.iter().any(|(_, limited)| *limited) {
+                return Err(unsupported(
+                    "two documents components of the composite query address the same index \
+                     path and one of them carries a limit, which cannot be merged with the \
+                     other's selection; split them into separate requests"
+                        .to_string(),
+                ));
+            }
         }
         Ok(())
     }
@@ -820,10 +927,11 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             }
         }
         if values.len() > MAX_BOUND_VALUES {
-            return Err(unsupported(format!(
-                "{} derived values exceed the {} a derived `IN` clause admits",
-                values.len(),
-                MAX_BOUND_VALUES,
+            // The page limit, every sub-query limit and every value-bounded
+            // lookup cap a source at MAX_BOUND_VALUES documents, so this is
+            // an invariant on both sides, not a shape or proof condition.
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a composite binding source yielded more documents than the shapes allow",
             )));
         }
         Ok(values)
@@ -836,6 +944,20 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         &self,
         sub_query: &DriveSubQuery<'a>,
         values: &[Identifier],
+        platform_version: &PlatformVersion,
+    ) -> Result<DriveDocumentQuery<'a>, Error> {
+        let direction = self.page_direction(platform_version)?;
+        self.sub_query_document_query_with_direction(sub_query, values, direction, platform_version)
+    }
+
+    /// [`Self::sub_query_document_query`] with the page's direction
+    /// already in hand: what every internal caller uses, so the page path
+    /// query is lowered once per request rather than once per sub-query.
+    pub(crate) fn sub_query_document_query_with_direction(
+        &self,
+        sub_query: &DriveSubQuery<'a>,
+        values: &[Identifier],
+        direction: bool,
         platform_version: &PlatformVersion,
     ) -> Result<DriveDocumentQuery<'a>, Error> {
         let ids = sorted_values(values);
@@ -903,7 +1025,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                     binding.field.clone(),
                     OrderClause {
                         field: binding.field.clone(),
-                        ascending: self.page_direction(platform_version)?,
+                        ascending: direction,
                     },
                 );
             }
@@ -929,7 +1051,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         &'b self,
         sub_query: &'b DriveSubQuery<'a>,
         values: &[Identifier],
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<DriveDocumentCountQuery<'b>, Error> {
         let Some(binding) = &sub_query.binding else {
             return Err(unsupported("a count sub-query must be bound".to_string()));
@@ -958,7 +1080,6 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                 binding.field,
             ))
         })?;
-        let _ = platform_version;
         Ok(DriveDocumentCountQuery {
             document_type: sub_query.document_type,
             contract_id: sub_query.contract.id().to_buffer(),
@@ -975,9 +1096,25 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         values: &[Identifier],
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        let direction = self.page_direction(platform_version)?;
+        self.sub_query_path_query_with_direction(sub_query, values, direction, platform_version)
+    }
+
+    fn sub_query_path_query_with_direction(
+        &self,
+        sub_query: &DriveSubQuery<'a>,
+        values: &[Identifier],
+        direction: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
         match sub_query.kind {
             SubQueryKind::Documents => self
-                .sub_query_document_query(sub_query, values, platform_version)?
+                .sub_query_document_query_with_direction(
+                    sub_query,
+                    values,
+                    direction,
+                    platform_version,
+                )?
                 .construct_path_query(None, platform_version),
             SubQueryKind::Count => self
                 .sub_query_count_query(sub_query, values, platform_version)?
@@ -1006,16 +1143,25 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         direction: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        let mut path_query = self.sub_query_path_query(sub_query, values, platform_version)?;
+        let mut path_query = self.sub_query_path_query_with_direction(
+            sub_query,
+            values,
+            direction,
+            platform_version,
+        )?;
         if sub_query.kind == SubQueryKind::Documents
             && !sub_query.is_by_id_join()
             && path_query.query.query.left_to_right != direction
         {
-            return Err(unsupported(
+            return Err(unsupported(if sub_query.binding.is_none() {
+                "a sibling sub-query's ordering must match the page's direction; order it \
+                 explicitly by its index property, in the page's direction"
+                    .to_string()
+            } else {
                 "a documents sub-query's outer ordering must match the page's direction; \
                  changing it for the merged proof would change its result"
-                    .to_string(),
-            ));
+                    .to_string()
+            }));
         }
         // Joins restore first-appearance order after decoding. Counts
         // restore key order. Their selected sets do not depend on direction.
@@ -1073,10 +1219,50 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         }
         for terminal_path in count_terminal_paths {
             for component in std::iter::once(&page).chain(sub_path_queries.iter().flatten()) {
+                // A walk never leaves its own base path, so a component
+                // reaches the terminal only when one path prefixes the
+                // other (a base below the terminal passes through it).
+                if !terminal_path.starts_with(&component.path)
+                    && !component.path.starts_with(&terminal_path)
+                {
+                    continue;
+                }
                 if Self::path_query_descends_through(component, &terminal_path, platform_version)? {
                     return Err(unsupported(
                         "a count sub-query selects a tree another component descends through; \
                          split them into separate requests"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
+        // Document entries are routed to the component with the longest
+        // base path that prefixes them, which is only right when no
+        // documents component walks through another's base path to
+        // deeper rows (those rows would be routed to the deeper one).
+        // Exact base-path sharing is refused by the shapes; nesting
+        // depends on the concrete values, so it is checked here.
+        let documents: Vec<&PathQuery> = std::iter::once(&page)
+            .chain(
+                sub_path_queries
+                    .iter()
+                    .zip(&self.sub_queries)
+                    .filter(|(_, sub_query)| sub_query.kind == SubQueryKind::Documents)
+                    .filter_map(|(path_query, _)| path_query.as_ref()),
+            )
+            .collect();
+        for deeper in &documents {
+            for shallower in &documents {
+                if deeper.path.len() <= shallower.path.len()
+                    || !deeper.path.starts_with(&shallower.path)
+                {
+                    continue;
+                }
+                if Self::path_query_descends_through(shallower, &deeper.path, platform_version)? {
+                    return Err(unsupported(
+                        "a documents sub-query walks through another documents component's \
+                         subtree, so their rows could not be told apart; split them into \
+                         separate requests"
                             .to_string(),
                     ));
                 }
@@ -1122,7 +1308,8 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         if components.len() == 1 {
             return Ok(page.clone());
         }
-        PathQuery::merge(components, &platform_version.drive.grove_version).map_err(Error::from)
+        PathQuery::merge(components, &platform_version.drive.grove_version)
+            .map_err(merge_error_to_shape_error)
     }
 
     /// Decodes the proved entries of a documents component: stored
@@ -1165,17 +1352,18 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         &self,
         sub_query: &DriveSubQuery<'a>,
         values: &[Identifier],
+        direction: bool,
         trios: Vec<PresentTrio>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
-        let query = self.sub_query_document_query(sub_query, values, platform_version)?;
+        let query = self.sub_query_document_query_with_direction(
+            sub_query,
+            values,
+            direction,
+            platform_version,
+        )?;
         let documents = Self::decode_document_trios(&query, trios, platform_version)?;
-        match self.assemble_sub_result(sub_query, values, &DecodedItems::Documents(documents))? {
-            SubQueryResult::Documents(documents) => Ok(documents),
-            SubQueryResult::Counts(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                "a documents sub-query must assemble documents",
-            ))),
-        }
+        self.assemble_documents(sub_query, values, &documents)
     }
 
     /// Decodes the proved entries of a count component: one entry per
@@ -1184,102 +1372,94 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
     /// equalities, and IS the key otherwise (the same layout
     /// `verify_point_lookup_count_proof` reads).
     fn decode_count_trios(base_path_len: usize, trios: Vec<PresentTrio>) -> Vec<SplitCountEntry> {
-        let mut entries: Vec<_> = trios
-            .into_iter()
-            .map(|(path, key, element)| {
-                let key = if path.len() > base_path_len {
-                    path[base_path_len].clone()
-                } else {
-                    key
-                };
-                SplitCountEntry {
-                    in_key: None,
-                    key,
-                    count: Some(element.count_value_or_default()),
-                }
-            })
-            .collect();
+        // A composite count is always bound, so it always carries an `IN`.
+        let mut entries = point_lookup_count_entries(
+            base_path_len,
+            true,
+            trios
+                .into_iter()
+                .map(|(path, key, element)| (path, key, Some(element))),
+        );
         // Proof merging may align the count walk with a descending page;
         // count results retain the ordinary point-lookup's key order.
         entries.sort_by(|a, b| a.key.cmp(&b.key));
         entries
     }
 
-    /// Assembles one sub-query's result from the decoded items routed to
-    /// its group, keeping only the items its derived values admit and,
-    /// for a by-id join, enforcing exact set equality in first-appearance
-    /// order. Shared by the server (where a violation is corrupted
-    /// state) and the verifier (where it is an invalid proof).
-    fn assemble_sub_result(
+    /// Assembles one documents sub-query's result from its decoded
+    /// documents, keeping only the ones its derived values admit and, for
+    /// a by-id join, enforcing exact set equality in first-appearance
+    /// order. Shared by the server (where a violation is corrupted state)
+    /// and the verifier (where it is an invalid proof).
+    fn assemble_documents(
         &self,
         sub_query: &DriveSubQuery<'a>,
         values: &[Identifier],
-        items: &DecodedItems,
-    ) -> Result<SubQueryResult, Error> {
+        documents: &[Document],
+    ) -> Result<Vec<Document>, Error> {
+        let Some(binding) = &sub_query.binding else {
+            return Ok(documents.to_vec());
+        };
         let admitted: BTreeSet<Identifier> = values.iter().copied().collect();
-        match (sub_query.kind, items) {
-            (SubQueryKind::Documents, DecodedItems::Documents(documents)) => {
-                let Some(binding) = &sub_query.binding else {
-                    return Ok(SubQueryResult::Documents(documents.clone()));
-                };
-                if sub_query.is_by_id_join() {
-                    let mut by_id: BTreeMap<Identifier, Document> = BTreeMap::new();
-                    for document in documents {
-                        let id = document.id();
-                        if !admitted.contains(&id) {
-                            // Another join on the same type owns it.
-                            continue;
-                        }
-                        if by_id.insert(id, document.clone()).is_some() {
-                            return Err(corrupted_proof(format!(
-                                "composite join results carry document {} twice",
-                                id
-                            )));
-                        }
-                    }
-                    let mut ordered = Vec::with_capacity(values.len());
-                    for value in values {
-                        let document = by_id.remove(value).ok_or_else(|| {
-                            corrupted_proof(format!(
-                                "composite join results are missing referenced document {}: \
-                                 a permanentDocument reference cannot dangle, so the proof \
-                                 does not cover the derived query",
-                                value
-                            ))
-                        })?;
-                        ordered.push(document);
-                    }
-                    return Ok(SubQueryResult::Documents(ordered));
+        if sub_query.is_by_id_join() {
+            let mut by_id: BTreeMap<Identifier, &Document> = BTreeMap::new();
+            for document in documents {
+                let id = document.id();
+                if !admitted.contains(&id) {
+                    // Another join on the same type owns it.
+                    continue;
                 }
-                let mut mine = Vec::new();
-                for document in documents {
-                    match document_bound_value(document, &binding.field)? {
-                        Some(value) if admitted.contains(&value) => mine.push(document.clone()),
-                        _ => {}
-                    }
+                if by_id.insert(id, document).is_some() {
+                    return Err(corrupted_proof(format!(
+                        "composite join results carry document {} twice",
+                        id
+                    )));
                 }
-                Ok(SubQueryResult::Documents(mine))
             }
-            (SubQueryKind::Count, DecodedItems::Counts(entries)) => {
-                let mut mine = Vec::new();
-                for entry in entries {
-                    let Ok(value) = Identifier::from_bytes(&entry.key) else {
-                        return Err(corrupted_proof(
-                            "a composite count entry is keyed by something other than an \
-                             identifier"
-                                .to_string(),
-                        ));
-                    };
-                    if admitted.contains(&value) {
-                        mine.push(entry.clone());
-                    }
-                }
-                Ok(SubQueryResult::Counts(mine))
+            let mut ordered = Vec::with_capacity(values.len());
+            for value in values {
+                let document = by_id.remove(value).ok_or_else(|| {
+                    corrupted_proof(format!(
+                        "composite join results are missing referenced document {}: a \
+                         permanentDocument reference cannot dangle, so the proof does not \
+                         cover the derived query",
+                        value
+                    ))
+                })?;
+                ordered.push(document.clone());
             }
-            _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                "a component group decoded into the wrong kind of items",
-            ))),
+            return Ok(ordered);
         }
+        let mut mine = Vec::new();
+        for document in documents {
+            match document_bound_value(document, &binding.field)? {
+                Some(value) if admitted.contains(&value) => mine.push(document.clone()),
+                _ => {}
+            }
+        }
+        Ok(mine)
+    }
+
+    /// Assembles one count sub-query's result: the entries its derived
+    /// values admit.
+    fn assemble_counts(
+        values: &[Identifier],
+        entries: Vec<SplitCountEntry>,
+    ) -> Result<Vec<SplitCountEntry>, Error> {
+        let admitted: BTreeSet<Identifier> = values.iter().copied().collect();
+        let mut mine = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let Ok(value) = Identifier::from_bytes(&entry.key) else {
+                return Err(corrupted_proof(
+                    "a composite count entry is keyed by something other than an identifier"
+                        .to_string(),
+                ));
+            };
+            if admitted.contains(&value) {
+                mine.push(entry);
+            }
+        }
+        Ok(mine)
     }
 
     /// Routes the proved trios of the merged query back to the page and
@@ -1300,6 +1480,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         // complete terminal positions: a shared base and bound value can
         // still select different trailing equality values. A terminal may
         // belong to several counts, including counts with nested base paths.
+        let direction = page_path_query.query.query.left_to_right;
         let mut groups: Vec<(Vec<Vec<u8>>, Vec<Component>)> = Vec::new();
         let mut count_members_by_position: BTreeMap<_, Vec<usize>> = BTreeMap::new();
         let mut register = |path: &Vec<Vec<u8>>, component: Component| {
@@ -1345,13 +1526,20 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                             .to_string(),
                     )
                 })?;
-                for index in members {
+                // Every member takes a copy; the last takes the original.
+                let (last, others) = members.split_last().ok_or_else(|| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "a registered count position has at least one member",
+                    ))
+                })?;
+                for index in others {
                     count_trios_by_sub[*index].push((
                         position.0.clone(),
                         position.1.clone(),
                         element.clone(),
                     ));
                 }
+                count_trios_by_sub[*last].push((position.0, position.1, element));
                 continue;
             }
             let best = groups
@@ -1382,15 +1570,15 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                     Self::decode_document_trios(&self.page, document_trios, platform_version)?
                 }
                 Component::Sub(index) => {
-                    let query = self.sub_query_document_query(
+                    let query = self.sub_query_document_query_with_direction(
                         &self.sub_queries[index],
                         &derived[index],
+                        direction,
                         platform_version,
                     )?;
                     Self::decode_document_trios(&query, document_trios, platform_version)?
                 }
             };
-            let decoded = DecodedItems::Documents(documents.clone());
             let mut claimed: BTreeSet<usize> = BTreeSet::new();
             for member in documents_members {
                 match member {
@@ -1415,19 +1603,16 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                     }
                     Component::Sub(index) => {
                         let sub_query = &self.sub_queries[*index];
-                        let result =
-                            self.assemble_sub_result(sub_query, &derived[*index], &decoded)?;
-                        let mine_ids: BTreeSet<Identifier> = result
-                            .documents()
-                            .iter()
-                            .map(|document| document.id())
-                            .collect();
+                        let mine =
+                            self.assemble_documents(sub_query, &derived[*index], &documents)?;
+                        let mine_ids: BTreeSet<Identifier> =
+                            mine.iter().map(|document| document.id()).collect();
                         for (position, document) in documents.iter().enumerate() {
                             if mine_ids.contains(&document.id()) {
                                 claimed.insert(position);
                             }
                         }
-                        sub_results[*index] = Some(result);
+                        sub_results[*index] = Some(SubQueryResult::Documents(mine));
                     }
                 }
             }
@@ -1448,11 +1633,10 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                 continue;
             };
             let entries = Self::decode_count_trios(path_query.path.len(), count_trios);
-            sub_results[index] = Some(self.assemble_sub_result(
-                &self.sub_queries[index],
+            sub_results[index] = Some(SubQueryResult::Counts(Self::assemble_counts(
                 &derived[index],
-                &DecodedItems::Counts(entries),
-            )?);
+                entries,
+            )?));
         }
 
         Ok(CompositeDocumentsResult {
@@ -1503,33 +1687,47 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         Ok(ids)
     }
 
-    /// Derives every sub-query's values from the (materialized or
-    /// proven) page and earlier sub-query documents, in request order.
-    pub fn derive_all(
+    /// Derives one sub-query's values from the (materialized or proven)
+    /// page and earlier sub-query documents: `sub_documents(i)` is the
+    /// documents of sub-query `i`, which every source has by the time a
+    /// later sub-query binds it (validation orders bindings; the
+    /// executors and the verifier's bootstrap materialize sources
+    /// first). ONE derivation every path runs — the no-proof executor,
+    /// the prover, the verifier's bootstrap and its authoritative
+    /// re-check — which is what keeps them identical.
+    pub(crate) fn derive_for<'d>(
+        &self,
+        sub_query: &DriveSubQuery<'a>,
+        page_documents: &[Document],
+        sub_documents: impl Fn(usize) -> Option<&'d [Document]>,
+    ) -> Result<DerivedValues, Error> {
+        let Some(binding) = &sub_query.binding else {
+            return Ok(Vec::new());
+        };
+        match binding.source {
+            BindingSource::Page => self.derive_values(binding, page_documents),
+            BindingSource::SubQuery(source_index) => {
+                let documents = sub_documents(source_index).ok_or_else(|| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "a binding's source sub-query was not materialized before it",
+                    ))
+                })?;
+                self.derive_values(binding, documents)
+            }
+        }
+    }
+
+    /// Derives every sub-query's values, in request order — see
+    /// [`Self::derive_for`].
+    pub fn derive_all<'d>(
         &self,
         page_documents: &[Document],
-        sub_documents: &dyn Fn(usize) -> Option<Vec<Document>>,
+        sub_documents: impl Fn(usize) -> Option<&'d [Document]>,
     ) -> Result<Vec<DerivedValues>, Error> {
-        let mut derived: Vec<DerivedValues> = Vec::with_capacity(self.sub_queries.len());
-        for sub_query in &self.sub_queries {
-            let Some(binding) = &sub_query.binding else {
-                derived.push(Vec::new());
-                continue;
-            };
-            let values = match binding.source {
-                BindingSource::Page => self.derive_values(binding, page_documents)?,
-                BindingSource::SubQuery(source_index) => {
-                    let documents = sub_documents(source_index).ok_or_else(|| {
-                        Error::Drive(DriveError::CorruptedCodeExecution(
-                            "a binding's source sub-query was not materialized before it",
-                        ))
-                    })?;
-                    self.derive_values(binding, &documents)?
-                }
-            };
-            derived.push(values);
-        }
-        Ok(derived)
+        self.sub_queries
+            .iter()
+            .map(|sub_query| self.derive_for(sub_query, page_documents, &sub_documents))
+            .collect()
     }
 
     /// Whether a sub-query's documents feed a later binding.
@@ -1599,10 +1797,14 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
     }
 
     /// Materializes one sub-query's result without a proof.
+    // The drive handle, transaction and operation sink travel together
+    // through every materializer here; bundling them buys nothing.
+    #[allow(clippy::too_many_arguments)]
     fn materialize_sub_result(
         &self,
         sub_query: &DriveSubQuery<'a>,
         values: &[Identifier],
+        direction: bool,
         drive: &crate::drive::Drive,
         transaction: grovedb::TransactionArg,
         drive_operations: &mut Vec<crate::fees::op::LowLevelDriveOperation>,
@@ -1618,7 +1820,12 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         }
         match sub_query.kind {
             SubQueryKind::Documents => {
-                let query = self.sub_query_document_query(sub_query, values, platform_version)?;
+                let query = self.sub_query_document_query_with_direction(
+                    sub_query,
+                    values,
+                    direction,
+                    platform_version,
+                )?;
                 let documents = Self::materialize_documents(
                     &query,
                     drive,
@@ -1626,7 +1833,9 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                     drive_operations,
                     platform_version,
                 )?;
-                self.assemble_sub_result(sub_query, values, &DecodedItems::Documents(documents))
+                Ok(SubQueryResult::Documents(
+                    self.assemble_documents(sub_query, values, &documents)?,
+                ))
             }
             SubQueryKind::Count => {
                 let path_query = self
@@ -1662,7 +1871,9 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                     })
                     .collect();
                 let entries = Self::decode_count_trios(base_path_len, trios);
-                self.assemble_sub_result(sub_query, values, &DecodedItems::Counts(entries))
+                Ok(SubQueryResult::Counts(Self::assemble_counts(
+                    values, entries,
+                )?))
             }
         }
     }
@@ -1677,23 +1888,19 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
     ) -> Result<CompositeDocumentsResult, Error> {
         self.validate(platform_version)?;
 
+        let direction = self.page_direction(platform_version)?;
         let page_documents =
             self.materialize_page(drive, transaction, drive_operations, platform_version)?;
         let mut sub_results: Vec<SubQueryResult> = Vec::with_capacity(self.sub_queries.len());
         let mut derived = Vec::with_capacity(self.sub_queries.len());
         for sub_query in &self.sub_queries {
-            let values = match &sub_query.binding {
-                None => Vec::new(),
-                Some(binding) => match binding.source {
-                    BindingSource::Page => self.derive_values(binding, &page_documents)?,
-                    BindingSource::SubQuery(source) => {
-                        self.derive_values(binding, sub_results[source].documents())?
-                    }
-                },
-            };
+            let values = self.derive_for(sub_query, &page_documents, |source| {
+                sub_results.get(source).map(|result| result.documents())
+            })?;
             sub_results.push(self.materialize_sub_result(
                 sub_query,
                 &values,
+                direction,
                 drive,
                 transaction,
                 drive_operations,
@@ -1734,9 +1941,16 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<u8>, Vec<Document>), Error> {
         self.validate(platform_version)?;
+        let direction = self.page_direction(platform_version)?;
 
+        // Block commits are seconds apart while an attempt is
+        // milliseconds, so a bracket collision is rare and two in a row
+        // vanishingly so; three attempts is generosity, not need.
         const MAX_ATTEMPTS: usize = 3;
         for _ in 0..MAX_ATTEMPTS {
+            // An attempt that loses the race is discarded whole, its
+            // operations included: the caller is billed for one run.
+            let operations_before = drive_operations.len();
             let root_before = drive
                 .grove
                 .root_hash(None, &platform_version.drive.grove_version)
@@ -1749,24 +1963,16 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             let mut derived: Vec<DerivedValues> = Vec::with_capacity(self.sub_queries.len());
             let mut materialized: Vec<Option<Vec<Document>>> = vec![None; self.sub_queries.len()];
             for (index, sub_query) in self.sub_queries.iter().enumerate() {
-                let values = match &sub_query.binding {
-                    None => Vec::new(),
-                    Some(binding) => match binding.source {
-                        BindingSource::Page => self.derive_values(binding, &page_documents)?,
-                        BindingSource::SubQuery(source) => {
-                            let documents = materialized[source].as_deref().ok_or_else(|| {
-                                Error::Drive(DriveError::CorruptedCodeExecution(
-                                    "a binding's source sub-query was not materialized",
-                                ))
-                            })?;
-                            self.derive_values(binding, documents)?
-                        }
-                    },
-                };
+                let values = self.derive_for(sub_query, &page_documents, |source| {
+                    materialized
+                        .get(source)
+                        .and_then(|documents| documents.as_deref())
+                })?;
                 if self.is_binding_source(index) {
                     let result = self.materialize_sub_result(
                         sub_query,
                         &values,
+                        direction,
                         drive,
                         None,
                         drive_operations,
@@ -1784,13 +1990,15 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             let proof = drive
                 .grove
                 .prove_query_many(components, None, &platform_version.drive.grove_version)
-                .unwrap()?;
+                .unwrap()
+                .map_err(merge_error_to_shape_error)?;
 
             let root_after = drive
                 .grove
                 .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()?;
             if root_before != root_after {
+                drive_operations.truncate(operations_before);
                 continue;
             }
             return Ok((proof, page_documents));
@@ -1799,5 +2007,47 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             "composite proof generation raced a block commit on every attempt; transient — \
              retry the request",
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use grovedb::{Query, SizedQuery, SubqueryBranch};
+
+    /// The nested-documents guard asks whether one component's walk
+    /// passes through another's base path to deeper rows: it must follow
+    /// the query's own base path, its selected keys and its subqueries,
+    /// and stop at a key the query does not select.
+    #[test]
+    fn should_follow_a_walk_through_selected_keys_and_subqueries_only() {
+        let pv = PlatformVersion::latest();
+        let key = |name: &str| name.as_bytes().to_vec();
+        let mut body = Query::new();
+        body.insert_key(key("x"));
+        body.default_subquery_branch = SubqueryBranch {
+            subquery_path: Some(vec![key("c")]),
+            subquery: Some(Box::new(Query::new_range_full())),
+        };
+        let shallower = PathQuery::new(vec![key("a"), key("b")], SizedQuery::new(body, None, None));
+        let descends = |path: &[&str]| {
+            DriveCompositeDocumentQuery::path_query_descends_through(
+                &shallower,
+                &path.iter().map(|segment| key(segment)).collect::<Vec<_>>(),
+                pv,
+            )
+            .expect("the walk resolves")
+        };
+        assert!(
+            descends(&["a", "b", "x", "c"]),
+            "selected key, then its subquery path"
+        );
+        assert!(!descends(&["a", "b", "x", "d"]), "not the subquery path");
+        assert!(!descends(&["a", "b", "y", "c"]), "an unselected key");
+        assert!(!descends(&["a", "z"]), "off the base path");
+        assert!(
+            !descends(&["a", "b", "x", "c", "k"]),
+            "past the walk's leaves"
+        );
     }
 }
