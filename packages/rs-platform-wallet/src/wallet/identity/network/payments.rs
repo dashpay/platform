@@ -1019,11 +1019,164 @@ async fn confirm_sent_payment_by_txid(
     }
 }
 
+/// Select and consume from the one authoritative pool shared by Core sends
+/// and externally funded contact payouts. Caller holds the manager write lock.
+fn reserve_contact_payment_address(
+    wm: &mut WalletManager<PlatformWalletInfo>,
+    wallet_id: WalletId,
+    from_identity_id: &Identifier,
+    to_contact_id: &Identifier,
+) -> Result<(dashcore::Address, crate::changeset::PlatformWalletChangeSet), PlatformWalletError> {
+    use key_wallet::account::account_collection::DashpayAccountKey;
+    let account_index = 0;
+    // Resolve the external account's xpub so we can derive addresses.
+    let contact_xpub = {
+        // Look up the external account in the *immutable* AccountCollection on
+        // `Wallet`. The ManagedAccountCollection only stores the managed state;
+        // the xpub lives on the immutable Account in `wallet.accounts`.
+        // For a watch-only external account we stored the contact's xpub directly
+        // as `account_xpub` on the Account struct — look it up via DashpayAccountKey.
+        let wallet = wm
+            .get_wallet(&wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
+        wallet
+            .accounts
+            .dashpay_external_accounts
+            .get(&DashpayAccountKey {
+                index: account_index,
+                user_identity_id: from_identity_id.to_buffer(),
+                friend_identity_id: to_contact_id.to_buffer(),
+            })
+            .map(|a| a.account_xpub)
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "No DashpayExternalAccount found for contact {} — call \
+                     register_external_contact_account first",
+                    to_contact_id
+                ))
+            })?
+    };
+
+    let info = wm
+        .get_wallet_info_mut(&wallet_id)
+        .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
+
+    // Derive the next unused address from the external account's address pool.
+    let key = DashpayAccountKey {
+        index: account_index,
+        user_identity_id: from_identity_id.to_buffer(),
+        friend_identity_id: to_contact_id.to_buffer(),
+    };
+    let external_account = info
+        .core_wallet
+        .accounts
+        .dashpay_external_accounts
+        .get_mut(&key)
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "No managed DashpayExternalAccount found for contact {}",
+                to_contact_id
+            ))
+        })?;
+
+    let payment_address = external_account
+        .next_address(Some(&contact_xpub), true)
+        .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+
+    // `next_address`/`next_unused` only *selects* (and, when the
+    // gap-window is exhausted, generates) the next unused address —
+    // it does NOT flip its `used` flag (that lives solely on
+    // `AddressPool::mark_used`). DIP-15 per-payment rotation requires
+    // that once we commit this address to a payment it never be
+    // handed out again, so mark it used now, on the resident external
+    // account, before the snapshot below captures the pool. A
+    // `false` return would mean the address vanished from the pool
+    // between derivation and this call — a real invariant break, so
+    // fail loud rather than silently ship an un-rotated address.
+    if !external_account.mark_address_used(&payment_address) {
+        return Err(PlatformWalletError::TransactionBuild(format!(
+            "derived payment address {payment_address} is not in the external \
+             account pool — cannot mark it used"
+        )));
+    }
+
+    // Snapshot the used-flag flip (and any gap-window extension)
+    // `next_address` + `mark_address_used` just applied to the
+    // external account's pool, as an owned changeset. The snapshot is
+    // captured here — while the pool is still borrowed under the
+    // guard — so the persisted state is exactly the flip just made,
+    // but the `persister.store` call itself is deferred until after
+    // this write guard is released (see below, before the broadcast).
+    // The host persistence callback must not run while the
+    // wallet-manager write lock is held: a slow host write would stall
+    // every other wallet accessor for its duration, and a host store
+    // that re-entered any manager API would deadlock the non-reentrant
+    // lock.
+    let external_account_type = key_wallet::account::AccountType::DashpayExternalAccount {
+        index: account_index,
+        user_identity_id: from_identity_id.to_buffer(),
+        friend_identity_id: to_contact_id.to_buffer(),
+    };
+    let used_flip_changeset = crate::changeset::PlatformWalletChangeSet {
+        account_address_pools: crate::changeset::account_address_pool_entries(
+            external_account_type,
+            external_account.managed_account_type().address_pools(),
+        ),
+        ..Default::default()
+    };
+
+    Ok((payment_address, used_flip_changeset))
+}
+
 // ---------------------------------------------------------------------------
 // Send payment to contact
 // ---------------------------------------------------------------------------
 
 impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
+    /// Reserve a fresh DIP-15 Core payout address without selecting Core funds.
+    ///
+    /// Use this after the user confirms a Platform or shielded withdrawal to
+    /// a contact. The address shares the Core send pool and its used flag is
+    /// persisted before it is returned. Once exposed, it is never released,
+    /// including when the withdrawal is rejected or its outcome is unknown.
+    /// Do not call this for previews: every successful call consumes an index.
+    /// This does not submit a payment or record payment history.
+    pub async fn reserve_payment_address<C>(
+        &self,
+        from_identity_id: &Identifier,
+        to_contact_id: &Identifier,
+        provider: &C,
+    ) -> Result<dashcore::Address, PlatformWalletError>
+    where
+        C: crate::wallet::identity::network::contact_requests::ContactCryptoProvider + Sync,
+    {
+        self.drain_pending_contact_crypto_verified(provider, None)
+            .await?;
+        let _payment_guard = self.persister.lock_contact_payments().await;
+        let (address, changeset) = {
+            let mut wm = self.wallet_manager.write().await;
+            reserve_contact_payment_address(
+                &mut wm,
+                self.wallet_id,
+                from_identity_id,
+                to_contact_id,
+            )?
+        };
+        // Host persistence may re-enter wallet APIs, so never invoke it under
+        // the manager guard. Failure must not expose an unpersisted address.
+        self.persister.store(changeset).map_err(|e| {
+            PlatformWalletError::Persistence(format!(
+                "failed to persist payment-address reservation: {e}"
+            ))
+        })?;
+        self.persister.flush().map_err(|e| {
+            PlatformWalletError::Persistence(format!(
+                "failed to flush payment-address reservation: {e}"
+            ))
+        })?;
+        Ok(address)
+    }
+
     /// Send a Core payment to a DashPay contact.
     ///
     /// Derives the next payment address from the contact's `DashpayExternalAccount`
@@ -1116,105 +1269,25 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // of being allowed to write first and fail second.
         self.drain_pending_contact_crypto_verified(provider, None)
             .await?;
+        let _payment_guard = self.persister.lock_contact_payments().await;
 
         let (payment_address, used_flip_changeset, tx, fee, funding_accounts, in_broadcast_pin) = {
             let mut wm = self.wallet_manager.write().await;
 
-            // Resolve the external account's xpub so we can derive addresses.
-            let contact_xpub = {
-                // Look up the external account in the *immutable* AccountCollection on
-                // `Wallet`. The ManagedAccountCollection only stores the managed state;
-                // the xpub lives on the immutable Account in `wallet.accounts`.
-                // For a watch-only external account we stored the contact's xpub directly
-                // as `account_xpub` on the Account struct — look it up via DashpayAccountKey.
-                let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
-                    PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id))
-                })?;
-                wallet
-                    .accounts
-                    .dashpay_external_accounts
-                    .get(&DashpayAccountKey {
-                        index: account_index,
-                        user_identity_id: from_identity_id.to_buffer(),
-                        friend_identity_id: to_contact_id.to_buffer(),
-                    })
-                    .map(|a| a.account_xpub)
-                    .ok_or_else(|| {
-                        PlatformWalletError::InvalidIdentityData(format!(
-                            "No DashpayExternalAccount found for contact {} — call \
-                             register_external_contact_account first",
-                            to_contact_id
-                        ))
-                    })?
-            };
-
-            let (wallet, info) = wm
-                .get_wallet_and_info_mut(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-
-            // Derive the next unused address from the external account's address pool.
+            let (payment_address, used_flip_changeset) = reserve_contact_payment_address(
+                &mut wm,
+                self.wallet_id,
+                from_identity_id,
+                to_contact_id,
+            )?;
             let key = DashpayAccountKey {
                 index: account_index,
                 user_identity_id: from_identity_id.to_buffer(),
                 friend_identity_id: to_contact_id.to_buffer(),
             };
-            let external_account = info
-                .core_wallet
-                .accounts
-                .dashpay_external_accounts
-                .get_mut(&key)
-                .ok_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "No managed DashpayExternalAccount found for contact {}",
-                        to_contact_id
-                    ))
-                })?;
-
-            let payment_address = external_account
-                .next_address(Some(&contact_xpub), true)
-                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-
-            // `next_address`/`next_unused` only *selects* (and, when the
-            // gap-window is exhausted, generates) the next unused address —
-            // it does NOT flip its `used` flag (that lives solely on
-            // `AddressPool::mark_used`). DIP-15 per-payment rotation requires
-            // that once we commit this address to a payment it never be
-            // handed out again, so mark it used now, on the resident external
-            // account, before the snapshot below captures the pool. A
-            // `false` return would mean the address vanished from the pool
-            // between derivation and this call — a real invariant break, so
-            // fail loud rather than silently ship an un-rotated address.
-            if !external_account.mark_address_used(&payment_address) {
-                return Err(PlatformWalletError::TransactionBuild(format!(
-                    "derived payment address {payment_address} is not in the external \
-                     account pool — cannot mark it used"
-                )));
-            }
-
-            // Snapshot the used-flag flip (and any gap-window extension)
-            // `next_address` + `mark_address_used` just applied to the
-            // external account's pool, as an owned changeset. The snapshot is
-            // captured here — while the pool is still borrowed under the
-            // guard — so the persisted state is exactly the flip just made,
-            // but the `persister.store` call itself is deferred until after
-            // this write guard is released (see below, before the broadcast).
-            // The host persistence callback must not run while the
-            // wallet-manager write lock is held: a slow host write would stall
-            // every other wallet accessor for its duration, and a host store
-            // that re-entered any manager API would deadlock the non-reentrant
-            // lock.
-            let external_account_type = key_wallet::account::AccountType::DashpayExternalAccount {
-                index: account_index,
-                user_identity_id: from_identity_id.to_buffer(),
-                friend_identity_id: to_contact_id.to_buffer(),
-            };
-            let used_flip_changeset = crate::changeset::PlatformWalletChangeSet {
-                account_address_pools: crate::changeset::account_address_pool_entries(
-                    external_account_type,
-                    external_account.managed_account_type().address_pools(),
-                ),
-                ..Default::default()
-            };
+            let (wallet, info) = wm
+                .get_wallet_and_info_mut(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
 
             let current_height = info.core_wallet.synced_height();
 
@@ -1419,6 +1492,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )));
         }
 
+        // Durability is complete. Other contact payments can reserve while
+        // this broadcast awaits the network. A definitive rejection takes
+        // the same gate again before snapshotting its address rollback.
+        drop(_payment_guard);
+
         // --- 3. Broadcast the transaction, releasing the build's UTXO
         // reservation if the broadcast is definitively rejected pre-send. ---
         // Release across EVERY account that offered inputs, not just BIP44:
@@ -1513,6 +1591,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 // failure keeps the consumption: the transaction may still
                 // have propagated, so the address must never be re-handed.
                 if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
+                    let _payment_guard = self.persister.lock_contact_payments().await;
                     let revert_changeset = {
                         let mut wm = self.wallet_manager.write().await;
                         wm.get_wallet_info_mut(&self.wallet_id).and_then(|info| {
@@ -1704,6 +1783,7 @@ mod tests {
         /// `Some(n)` lets the next `n` `store` calls succeed and fails every
         /// later one until the budget is disarmed (`None` = always succeed).
         allow_stores_then_fail: Mutex<Option<usize>>,
+        fail_flush: Mutex<bool>,
         /// `true` makes the enumeration answer `Ok(None)` — the shape of a
         /// backend that never wired wallet-scoped tx enumeration (Android).
         enumeration_unsupported: Mutex<bool>,
@@ -1728,7 +1808,11 @@ mod tests {
             }
         }
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
-            Ok(())
+            if *self.fail_flush.lock().unwrap() {
+                Err(PersistenceError::backend("injected flush failure"))
+            } else {
+                Ok(())
+            }
         }
         fn load(&self) -> Result<ClientStartState, PersistenceError> {
             Ok(ClientStartState::default())
@@ -2104,8 +2188,8 @@ mod tests {
         txid.to_string()
     }
 
-    async fn install_external_account(
-        manager: &Arc<PlatformWalletManager<RecordStorePersister>>,
+    async fn install_external_account<P: PlatformWalletPersistence + 'static>(
+        manager: &Arc<PlatformWalletManager<P>>,
         wallet_id: WalletId,
         owner: Identifier,
         contact: Identifier,
@@ -6029,6 +6113,174 @@ mod tests {
     // The full drain-then-send of a queued `RegisterExternal` is exercised
     // end-to-end by the live DashPay e2e flow.
 
+    #[tokio::test]
+    async fn reserve_payment_address_needs_no_core_funds_and_rotates_with_core_send() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        let (manager, persister, wallet_id, owner, contact) =
+            register_sender_and_external_account().await;
+        let wallet = manager.get_wallet(&wallet_id).await.unwrap();
+        let iw = wallet.identity();
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .unwrap()
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        persister.stores.lock().unwrap().clear();
+        let first = iw
+            .dashpay()
+            .reserve_payment_address(&owner, &contact, &provider)
+            .await
+            .unwrap();
+        let second = iw
+            .dashpay()
+            .reserve_payment_address(&owner, &contact, &provider)
+            .await
+            .unwrap();
+        assert_ne!(first, second);
+        {
+            let stores = persister.stores.lock().unwrap();
+            for address in [&first, &second] {
+                assert!(stores
+                    .iter()
+                    .flat_map(|(_, cs)| &cs.account_address_pools)
+                    .flat_map(|pool| &pool.addresses)
+                    .any(|info| &info.address == address && info.is_used()));
+            }
+        }
+        // A subsequent transparent send must draw a third address, not reuse
+        // either durably exposed withdrawal destination.
+        fund_bip44_account_0(&manager, wallet_id, 0xC5, 120_000).await;
+        let signer = SeedSigner::new(seed, Network::Testnet);
+        with_accepting_broadcaster(iw)
+            .dashpay()
+            .send_payment(&owner, &contact, 50_000, None, &signer, &provider)
+            .await
+            .unwrap();
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).unwrap();
+        let key = DashpayAccountKey {
+            index: 0,
+            user_identity_id: owner.to_buffer(),
+            friend_identity_id: contact.to_buffer(),
+        };
+        let pools = info.core_wallet.accounts.dashpay_external_accounts[&key]
+            .managed_account_type()
+            .address_pools();
+        assert_eq!(pools[0].used_indices.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn reserve_payment_address_survives_concurrent_core_rejection() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        let (manager, persister, wallet_id, owner, contact) =
+            register_sender_and_external_account().await;
+        let wallet = manager.get_wallet(&wallet_id).await.unwrap();
+        let iw = wallet.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xC6, 120_000).await;
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .unwrap()
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let gated =
+            with_gated_rejecting_broadcaster(iw, Arc::clone(&entered), Arc::clone(&release));
+        let send = async {
+            gated
+                .dashpay()
+                .send_payment(&owner, &contact, 50_000, None, &signer, &provider)
+                .await
+        };
+        let reserve = async {
+            entered.wait().await;
+            let address = iw
+                .dashpay()
+                .reserve_payment_address(&owner, &contact, &provider)
+                .await
+                .unwrap();
+            release.wait().await;
+            address
+        };
+        let (send_result, reserved) =
+            tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                tokio::join!(send, reserve)
+            })
+            .await
+            .expect("reservation must not wait for the network broadcast");
+        assert!(matches!(
+            send_result,
+            Err(PlatformWalletError::TransactionBroadcast(_))
+        ));
+        let stores = persister.stores.lock().unwrap();
+        let latest = stores
+            .iter()
+            .rev()
+            .flat_map(|(_, cs)| &cs.account_address_pools)
+            .find(|pool| {
+                matches!(
+                    pool.account_type,
+                    key_wallet::account::AccountType::DashpayExternalAccount { .. }
+                )
+            })
+            .unwrap();
+        assert!(latest.addresses.iter().any(|info| info.address == reserved && info.is_used()),
+            "the rejected Core send's later rollback snapshot must preserve the withdrawal reservation");
+    }
+
+    #[tokio::test]
+    async fn reserve_payment_address_does_not_expose_on_persistence_failure() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let addresses = install_external_account(&manager, wallet_id, owner, contact).await;
+        let wallet = manager.get_wallet(&wallet_id).await.unwrap();
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .unwrap()
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        *persister.allow_stores_then_fail.lock().unwrap() = Some(0);
+        assert!(matches!(
+            wallet
+                .identity()
+                .dashpay()
+                .reserve_payment_address(&owner, &contact, &provider)
+                .await,
+            Err(PlatformWalletError::Persistence(_))
+        ));
+        *persister.allow_stores_then_fail.lock().unwrap() = None;
+        *persister.fail_flush.lock().unwrap() = true;
+        assert!(matches!(
+            wallet
+                .identity()
+                .dashpay()
+                .reserve_payment_address(&owner, &contact, &provider)
+                .await,
+            Err(PlatformWalletError::Persistence(_))
+        ));
+        *persister.fail_flush.lock().unwrap() = false;
+        let next = wallet
+            .identity()
+            .dashpay()
+            .reserve_payment_address(&owner, &contact, &provider)
+            .await
+            .unwrap();
+        assert_ne!(
+            next, addresses[0],
+            "failed store leaves conservative in-memory consumption"
+        );
+        assert!(
+            wallet
+                .identity()
+                .dashpay()
+                .reserve_payment_address(&contact, &owner, &provider)
+                .await
+                .is_err(),
+            "the owner/contact scope cannot be reversed"
+        );
+    }
+
     /// `send_payment` drains the deferred contact-crypto queue before it
     /// resolves the external account. A `RegisterExternal` op can't be built
     /// from under the single-shot mock fetch (see the module comment above), so
@@ -6037,7 +6289,16 @@ mod tests {
     /// `send_payment`, that queued op is drained. Without the send-path drain
     /// the op stays queued.
     #[tokio::test]
+    async fn reserve_payment_address_runs_verified_contact_crypto_drain() {
+        assert_payment_runs_pending_contact_crypto_drain(true).await;
+    }
+
+    #[tokio::test]
     async fn send_payment_runs_pending_contact_crypto_drain() {
+        assert_payment_runs_pending_contact_crypto_drain(false).await;
+    }
+
+    async fn assert_payment_runs_pending_contact_crypto_drain(reserve_only: bool) {
         use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
         use key_wallet::account::account_collection::DashpayAccountKey;
@@ -6088,10 +6349,24 @@ mod tests {
 
         // The send fails (no external account for `pay_contact`), but the drain
         // it runs first must have completed the queued RegisterReceiving op.
-        let result = iw
-            .dashpay()
-            .send_payment(&owner, &pay_contact, 10_000, None, &signer, &provider)
-            .await;
+        let result = if reserve_only {
+            let foreign = SeedCryptoProvider::from_seed([42; 64], Network::Testnet);
+            assert!(matches!(
+                iw.dashpay()
+                    .reserve_payment_address(&owner, &pay_contact, &foreign)
+                    .await,
+                Err(PlatformWalletError::SeedMismatch { .. })
+            ));
+            iw.dashpay()
+                .reserve_payment_address(&owner, &pay_contact, &provider)
+                .await
+                .map(|_| ())
+        } else {
+            iw.dashpay()
+                .send_payment(&owner, &pay_contact, 10_000, None, &signer, &provider)
+                .await
+                .map(|_| ())
+        };
         assert!(
             result.is_err(),
             "the send must still fail for an unbuilt external account"

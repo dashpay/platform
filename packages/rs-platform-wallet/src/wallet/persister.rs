@@ -25,11 +25,22 @@ use dpp::prelude::Identifier;
 pub struct WalletPersister {
     wallet_id: WalletId,
     inner: Arc<dyn PlatformWalletPersistence>,
+    contact_payment_gate: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl WalletPersister {
     pub fn new(wallet_id: WalletId, inner: Arc<dyn PlatformWalletPersistence>) -> Self {
-        Self { wallet_id, inner }
+        Self {
+            wallet_id,
+            inner,
+            contact_payment_gate: Arc::new(tokio::sync::Mutex::new(())),
+        }
+    }
+
+    /// Keep contact-pool snapshots in reservation order across Core and
+    /// withdrawal sends, including a Core broadcast rejection's pool rollback.
+    pub(crate) async fn lock_contact_payments(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.contact_payment_gate.lock().await
     }
 
     pub(crate) fn store(&self, changeset: PlatformWalletChangeSet) -> Result<(), PersistenceError> {
