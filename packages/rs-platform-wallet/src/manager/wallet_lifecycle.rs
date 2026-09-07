@@ -22,6 +22,17 @@ use crate::wallet::PlatformWallet;
 
 use super::PlatformWalletManager;
 
+/// The error a registration of an already-registered wallet returns.
+///
+/// Built from the upstream variant `insert_wallet` would have produced, so the
+/// pre-read check and the insert itself are indistinguishable to the caller —
+/// which of the two answers first is an ordering detail, not a contract.
+fn already_registered(wallet_id: WalletId) -> PlatformWalletError {
+    PlatformWalletError::WalletAlreadyExists(
+        key_wallet_manager::WalletError::WalletExists(wallet_id).to_string(),
+    )
+}
+
 /// Parse a BIP-39 mnemonic against every supported wordlist in turn,
 /// returning the first language that yields a valid mnemonic.
 ///
@@ -381,6 +392,62 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         wallet.downgrade_to_external_signable();
 
+        // Answer a duplicate registration before the read below, not after.
+        // Re-registering an existing wallet is a benign no-op the FFI / Swift
+        // call sites rely on, and it must stay one: a busy backend would
+        // otherwise turn it into a persister error that invites the caller to
+        // retry an operation that had nothing to do. `insert_wallet` stays the
+        // authority — this only decides which answer the caller gets first, so
+        // a wallet registered between the two checks still collides there.
+        {
+            let wm = self.wallet_manager.read().await;
+            if wm.get_wallet_info(&registration_wallet_id).is_some() {
+                return Err(already_registered(registration_wallet_id));
+            }
+        }
+
+        // Read the persisted state BEFORE the wallet exists anywhere the
+        // wallet-event producer can see it.
+        //
+        // The ordering is load-bearing, and the write it protects against is
+        // not one this function makes. An exhausted transient read reports
+        // `PersisterLoad(Transient)`, which tells the caller nothing was
+        // mutated and the registration is safe to re-issue. But
+        // `insert_wallet` publishes the wallet into the shared
+        // `WalletManager`, and the SPV filter loop scans under that same lock:
+        // a wallet whose `synced_height` is behind the chain is picked up by
+        // the next batch, whose matches and watermark advance travel the
+        // lossless channel to the wallet-event adapter and land in `store()`.
+        // Registering first therefore lets a durable write precede the promise
+        // that none happened — and the exhausting read is the slow case, so
+        // the producer has the most time to commit exactly when the promise is
+        // about to be made. Reading first leaves nothing for it to write.
+        //
+        // `load` is an idempotent read, so a transient blip is retried
+        // in-crate — unlike the `store` further down.
+        //
+        // The whole per-wallet map is carried across `insert_wallet` rather
+        // than sliced here: the authoritative id is the one that call returns,
+        // and it is deliberately not assumed equal to `registration_wallet_id`
+        // (see the divergence branch below).
+        let load_persister: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
+        let mut persisted_platform_addresses =
+            match super::retry_transient_load(move || load_persister.load()).await {
+                Ok(crate::changeset::ClientStartState {
+                    platform_addresses, ..
+                }) => platform_addresses,
+                Err(e) => {
+                    tracing::error!(
+                        wallet_id = %hex::encode(registration_wallet_id),
+                        transient = e.is_transient(),
+                        error = %e,
+                        "failed to load persisted wallet state after retries; \
+                         registration aborted before the wallet was registered"
+                    );
+                    return Err(PlatformWalletError::from_load_failure(e));
+                }
+            };
+
         // Insert into WalletManager. A duplicate (same network-scoped
         // wallet id already registered) surfaces as the typed
         // `WalletAlreadyExists` so the create FFI / Swift call sites can
@@ -389,16 +456,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // stays `WalletCreation`.
         let wallet_id = {
             let mut wm = self.wallet_manager.write().await;
-            wm.insert_wallet(wallet, platform_info).map_err(|e| {
-                if matches!(e, key_wallet_manager::WalletError::WalletExists(_)) {
-                    PlatformWalletError::WalletAlreadyExists(e.to_string())
-                } else {
-                    PlatformWalletError::WalletCreation(format!(
+            wm.insert_wallet(wallet, platform_info)
+                .map_err(|e| match e {
+                    key_wallet_manager::WalletError::WalletExists(id) => already_registered(id),
+                    other => PlatformWalletError::WalletCreation(format!(
                         "Failed to register wallet in WalletManager: {}",
-                        e
-                    ))
-                }
-            })?
+                        other
+                    )),
+                })?
         };
 
         // `insert_wallet` recomputes the id from the (now external-signable)
@@ -426,50 +491,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .insert(wallet_id, fences);
         }
 
-        // Read the persisted state BEFORE the registration write below, and
-        // keep only this wallet's slice of it.
-        //
-        // The ordering is load-bearing: an exhausted transient read reports
-        // `PersisterLoad(Transient)`, which tells the caller nothing was
-        // mutated and the operation is safe to re-issue — and the only
-        // operation it can re-issue is this registration. Placed after the
-        // append-only registration write, that invitation buys a second copy
-        // of it. The read consumes nothing the write produces (it is consulted
-        // only for platform-address state, which no registration changeset
-        // carries), so reading first costs nothing but the ordering.
-        //
-        // `load` is an idempotent read, so a transient blip is retried
-        // in-crate — unlike the `store` below.
-        //
-        // A bare `?` here would leave the wallet half-registered (present in
-        // `wallet_manager` from the earlier `insert_wallet`, absent from
-        // `self.wallets`), poisoning every retry on `WalletAlreadyExists`.
-        // Roll back before bailing — same shape as `manager::load`.
-        let load_persister: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
-        let load_result = super::retry_transient_load(move || load_persister.load()).await;
-        let persisted_platform_addresses = match load_result {
-            Ok(crate::changeset::ClientStartState {
-                mut platform_addresses,
-                ..
-            }) => platform_addresses.remove(&wallet_id),
-            Err(e) => {
-                tracing::error!(
-                    wallet_id = %hex::encode(wallet_id),
-                    transient = e.is_transient(),
-                    error = %e,
-                    "failed to load persisted wallet state after retries"
-                );
-                let mut wm = self.wallet_manager.write().await;
-                if let Err(remove_err) = wm.remove_wallet(&wallet_id) {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        error = %remove_err,
-                        "rollback: remove_wallet failed while unwinding a failed wallet setup"
-                    );
-                }
-                return Err(PlatformWalletError::from_load_failure(e));
-            }
-        };
+        // Now that the authoritative id is known, take this wallet's slice of
+        // the snapshot read above and drop the rest.
+        let persisted_platform_addresses = persisted_platform_addresses.remove(&wallet_id);
 
         // Emit metadata + per-account xpubs + per-pool address
         // snapshots to the persister so the watch-only restore path
@@ -616,8 +640,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         //
         // A wallet added while SPV is already synced (e.g. importing an
         // existing mnemonic with `birth_height = 0`) has its historical
-        // funds backfilled by the SPV rescan that `insert_wallet` above
-        // triggers. That rescan can complete — emitting the
+        // funds backfilled by an SPV rescan. `insert_wallet` does not
+        // request that rescan — it only publishes the wallet into the shared
+        // `WalletManager`; the SPV filter loop reads that same map, finds a
+        // wallet whose `synced_height` is behind the chain, and scans it on
+        // its next batch. That backfill can therefore complete — emitting the
         // `BlockProcessed` event that carries the post-backfill balance —
         // *before* this wallet lands in `self.wallets`, so
         // `BalanceUpdateHandler` drops those events (the wallet isn't in
@@ -1644,6 +1671,174 @@ mod persist_retry_tests {
             other => panic!("expected PersisterLoad, got {other:?}"),
         }
         assert_eq!(persister.load_calls.load(Ordering::SeqCst), 2);
+    }
+
+    /// Nothing the wallet-event producer can persist may exist before the
+    /// registration read runs.
+    ///
+    /// The read is retried and can exhaust, and an exhausted transient read
+    /// reports `PersisterLoad(Transient)` — FFI code 49, which promises the
+    /// host nothing was mutated and the registration is safe to re-issue.
+    /// Registering the wallet in `WalletManager` first breaks that promise
+    /// without any code in this function writing anything: the SPV filter loop
+    /// reads the same lock, sees a wallet whose `synced_height` is behind the
+    /// chain, and its scan emits the events that the wallet-event adapter
+    /// commits through `store()`. The read exhausting is exactly the slow case
+    /// (a busy backend can take seconds per attempt), so the producer has the
+    /// most time to commit precisely when the promise is about to be made.
+    ///
+    /// Standing in for SPV from inside `load()` is what makes this
+    /// deterministic rather than a race: the probe plays the part of a filter
+    /// batch committing mid-read, then waits for the write it caused. Safe
+    /// because no caller of `retry_transient_load` holds the wallet-manager
+    /// lock across the call — verified at both call sites — and the probe
+    /// releases its own guard before waiting.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_registration_read_precedes_any_wallet_the_event_producer_can_see() {
+        use std::sync::atomic::AtomicBool;
+        use std::sync::{OnceLock, Weak};
+        use tokio::sync::RwLock;
+
+        use crate::wallet::platform_wallet::PlatformWalletInfo;
+        use key_wallet_manager::{WalletInterface, WalletManager};
+
+        /// Fails every `load` transiently, and while doing so acts as the SPV
+        /// filter loop: any wallet already visible in the manager gets a
+        /// watermark advance, which reaches the persister through the live
+        /// wallet-event adapter.
+        struct SpvRacingPersister {
+            wallet_manager: OnceLock<Weak<RwLock<WalletManager<PlatformWalletInfo>>>>,
+            store_calls: AtomicUsize,
+            wallet_visible_during_load: AtomicBool,
+            /// Flipped for the second phase: the backend recovers and the
+            /// caller's retry must go through.
+            healthy: AtomicBool,
+        }
+
+        impl PlatformWalletPersistence for SpvRacingPersister {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                self.store_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                let manager = self
+                    .wallet_manager
+                    .get()
+                    .and_then(Weak::upgrade)
+                    .expect("the probe is wired to the manager before any registration");
+                // On the blocking pool (`retry_transient_load` spawns each
+                // attempt there), and no caller holds this lock across the
+                // call, so blocking on it here cannot deadlock.
+                let emitted = {
+                    let mut wallet_manager = manager.blocking_write();
+                    match wallet_manager.get_all_wallet_infos().keys().next().copied() {
+                        Some(wallet_id) => {
+                            self.wallet_visible_during_load
+                                .store(true, Ordering::SeqCst);
+                            // What a committed filter batch does to a wallet
+                            // that was behind the chain.
+                            wallet_manager.update_wallet_synced_height(&wallet_id, 1_000);
+                            true
+                        }
+                        None => false,
+                    }
+                };
+
+                // Guard released above: give the write this read provoked time
+                // to actually land, so the assertions below observe a
+                // committed store rather than a lost race.
+                if emitted {
+                    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                    while self.store_calls.load(Ordering::SeqCst) == 0
+                        && std::time::Instant::now() < deadline
+                    {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                }
+
+                if self.healthy.load(Ordering::SeqCst) {
+                    Ok(ClientStartState::default())
+                } else {
+                    Err(transient())
+                }
+            }
+        }
+
+        let persister = Arc::new(SpvRacingPersister {
+            wallet_manager: OnceLock::new(),
+            store_calls: AtomicUsize::new(0),
+            wallet_visible_during_load: AtomicBool::new(false),
+            healthy: AtomicBool::new(false),
+        });
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
+        let manager = PlatformWalletManager::new(sdk, Arc::clone(&persister), event_handler);
+        let _ = persister
+            .wallet_manager
+            .set(Arc::downgrade(&manager.wallet_manager));
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid test mnemonic")
+            .to_seed("");
+        let err = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                // `Some(0)` skips the SPV-tip lookup: the birth height is not
+                // what puts the wallet behind the chain here, the probe is.
+                Some(0),
+            )
+            .await
+            .expect_err("an exhausted transient load must abort registration");
+        match err {
+            PlatformWalletError::PersisterLoad(pe) => assert!(
+                pe.is_transient(),
+                "an exhausted transient load keeps its transient classification"
+            ),
+            other => panic!("expected PersisterLoad, got {other:?}"),
+        }
+
+        assert_eq!(
+            persister.store_calls.load(Ordering::SeqCst),
+            0,
+            "an exhausted read reports that nothing was mutated, so nothing may \
+             have reached the persister before it — including writes this \
+             function never makes itself"
+        );
+        assert!(
+            !persister.wallet_visible_during_load.load(Ordering::SeqCst),
+            "the registration read must run before the wallet is visible in \
+             WalletManager: the SPV filter loop reads that map, and a wallet \
+             it can see is a wallet it can produce persistable events for"
+        );
+
+        // The caller takes the retry the error invited. It can only succeed if
+        // the aborted attempt left no wallet behind — a registration that
+        // returned before publishing one has nothing to collide with.
+        persister.healthy.store(true, Ordering::SeqCst);
+        manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("the retry a transient read invites must succeed");
+        assert!(
+            !persister.wallet_visible_during_load.load(Ordering::SeqCst),
+            "the retry's read must also precede its own registration"
+        );
     }
 
     /// An exhausted transient `load` retry must leave nothing on disk to
