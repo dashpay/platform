@@ -13,11 +13,10 @@
 //! the primary tree.
 
 use crate::error::Error;
-use crate::query::drive_composite_document_query::{
-    BindingSource, DriveCompositeDocumentQuery, DriveSubQuery, SubQueryBinding, SubQueryKind,
-    SubQueryResult, MAX_SUB_QUERIES,
+use crate::query::{
+    BindingSource, DriveDocumentQuery, DriveSubQuery, InternalClauses, OrderClause,
+    SubQueryBinding, SubQueryKind, SubQueryResult, WhereClause, WhereOperator, MAX_SUB_QUERIES,
 };
-use crate::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
@@ -229,6 +228,7 @@ fn page_by_hashtag<'a>(
         start_at_included: false,
         block_time_ms: None,
         resolved_time_ranges: vec![],
+        sub_queries: vec![],
     }
 }
 
@@ -276,7 +276,7 @@ fn feed_query<'a>(
     feed: &'a DataContract,
     dashpay: &'a DataContract,
     viewer: Option<[u8; 32]>,
-) -> DriveCompositeDocumentQuery<'a> {
+) -> DriveDocumentQuery<'a> {
     let mut sub_queries = vec![
         bound(
             feed,
@@ -344,10 +344,7 @@ fn feed_query<'a>(
         }];
         sub_queries.push(marks);
     }
-    DriveCompositeDocumentQuery {
-        page: page_by_hashtag(feed, "dash", Some(10)),
-        sub_queries,
-    }
+    page_by_hashtag(feed, "dash", Some(10)).with_sub_queries(sub_queries)
 }
 
 fn ids(documents: &[Document]) -> Vec<[u8; 32]> {
@@ -455,10 +452,7 @@ fn should_route_counts_by_complete_positions_including_overlapping_queries() {
         value: Value::Identifier(POST_B),
     });
     sub_queries.push(owners_of_b);
-    let query = DriveCompositeDocumentQuery {
-        page: page_by_hashtag(&feed, "dash", Some(10)),
-        sub_queries,
-    };
+    let query = page_by_hashtag(&feed, "dash", Some(10)).with_sub_queries(sub_queries);
     let materialized = drive
         .query_composite_documents(&query, None, None, pv)
         .expect("materializes")
@@ -531,10 +525,8 @@ fn should_reject_conflicting_document_directions_even_when_the_page_is_empty() {
     };
     for sub_query in [lookup, profiles, sibling] {
         for hashtag in ["dash", "empty"] {
-            let query = DriveCompositeDocumentQuery {
-                page: page_by_hashtag(&feed, hashtag, Some(10)),
-                sub_queries: vec![sub_query.clone()],
-            };
+            let query =
+                page_by_hashtag(&feed, hashtag, Some(10)).with_sub_queries(vec![sub_query.clone()]);
             for result in [
                 drive
                     .query_composite_documents(&query, None, None, pv)
@@ -575,10 +567,8 @@ fn should_reject_count_tree_descents_but_allow_disjoint_count_selections() {
         operator: WhereOperator::Equal,
         value: Value::Identifier(OWNER_1),
     });
-    let mut query = DriveCompositeDocumentQuery {
-        page: page_by_hashtag(&feed, "dash", Some(10)),
-        sub_queries: vec![total, per_owner],
-    };
+    let mut query =
+        page_by_hashtag(&feed, "dash", Some(10)).with_sub_queries(vec![total, per_owner]);
     for result in [
         drive
             .query_composite_documents(&query, None, None, pv)
@@ -692,7 +682,7 @@ fn should_preserve_descending_documents_and_key_ordered_counts() {
         "postId",
         None,
     ));
-    let query = DriveCompositeDocumentQuery { page, sub_queries };
+    let query = page.with_sub_queries(sub_queries);
     let materialized = drive
         .query_composite_documents(&query, None, None, pv)
         .expect("materializes")
@@ -826,7 +816,8 @@ fn should_prove_an_empty_page_alone() {
     seed_feed(&drive, &feed, &dashpay);
     let pv = platform_version();
     let mut query = feed_query(&feed, &dashpay, Some(OWNER_1));
-    query.page = page_by_hashtag(&feed, "nothing", Some(10));
+    let sub_queries = std::mem::take(&mut query.sub_queries);
+    query = page_by_hashtag(&feed, "nothing", Some(10)).with_sub_queries(sub_queries);
 
     let materialized = drive
         .query_composite_documents(&query, None, None, pv)
@@ -858,9 +849,9 @@ fn should_refuse_a_page_only_proof() {
     let pv = platform_version();
     let query = feed_query(&feed, &dashpay, None);
 
-    let (page_only_proof, _cost) = query
-        .page
-        .clone()
+    let mut page_alone = query.clone();
+    page_alone.sub_queries = vec![];
+    let (page_only_proof, _cost) = page_alone
         .execute_with_proof(&drive, None, None, pv)
         .expect("the page alone proves");
     assert!(
@@ -868,6 +859,39 @@ fn should_refuse_a_page_only_proof() {
             .verify_composite_documents_proof(&page_only_proof, pv)
             .is_err(),
         "a page-only proof must fail the composite verification"
+    );
+}
+
+/// The plain (page-only) surfaces refuse a query carrying sub-queries
+/// instead of silently proving or verifying the page alone — on the
+/// verify side that silence would report the whole composition verified.
+#[test]
+fn should_refuse_composite_queries_on_plain_surfaces() {
+    let (drive, feed, dashpay) = setup();
+    let pv = platform_version();
+    let query = feed_query(&feed, &dashpay, None);
+
+    let refused = drive
+        .query_documents(query.clone(), None, false, None, None)
+        .expect_err("plain query_documents must refuse sub-queries");
+    assert!(
+        refused.to_string().contains("composite sub-queries"),
+        "{refused}"
+    );
+    let refused = query
+        .clone()
+        .execute_with_proof(&drive, None, None, pv)
+        .expect_err("the plain proof surface must refuse sub-queries");
+    assert!(
+        refused.to_string().contains("composite sub-queries"),
+        "{refused}"
+    );
+    let refused = query
+        .verify_proof(&[], pv)
+        .expect_err("the plain verifier must refuse sub-queries");
+    assert!(
+        refused.to_string().contains("composite sub-queries"),
+        "{refused}"
     );
 }
 
@@ -887,18 +911,15 @@ fn should_refuse_a_dangling_reference() {
         1,
     );
     let pv = platform_version();
-    let query = DriveCompositeDocumentQuery {
-        page: page_by_hashtag(&feed, "dash", Some(10)),
-        sub_queries: vec![bound(
-            &feed,
-            "post",
-            SubQueryKind::Documents,
-            BindingSource::Page,
-            "quotedPostId",
-            "$id",
-            None,
-        )],
-    };
+    let query = page_by_hashtag(&feed, "dash", Some(10)).with_sub_queries(vec![bound(
+        &feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "quotedPostId",
+        "$id",
+        None,
+    )]);
 
     let refused = drive.query_composite_documents(&query, None, None, pv);
     assert!(
@@ -944,19 +965,17 @@ fn should_tell_a_by_ids_page_from_a_join_on_the_same_type() {
         start_at_included: false,
         block_time_ms: None,
         resolved_time_ranges: vec![],
+        sub_queries: vec![],
     };
-    let query = DriveCompositeDocumentQuery {
-        page,
-        sub_queries: vec![bound(
-            &feed,
-            "post",
-            SubQueryKind::Documents,
-            BindingSource::Page,
-            "quotedPostId",
-            "$id",
-            None,
-        )],
-    };
+    let query = page.with_sub_queries(vec![bound(
+        &feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "quotedPostId",
+        "$id",
+        None,
+    )]);
 
     let materialized = drive
         .query_composite_documents(&query, None, None, pv)
@@ -979,7 +998,7 @@ fn should_reject_invalid_composite_shapes() {
     let (drive, feed, dashpay) = setup();
     let pv = platform_version();
     let base = feed_query(&feed, &dashpay, Some(OWNER_1));
-    let expect_unsupported = |query: DriveCompositeDocumentQuery, what: &str| {
+    let expect_unsupported = |query: DriveDocumentQuery, what: &str| {
         let result = drive.query_composite_documents(&query, None, None, pv);
         assert!(
             matches!(result, Err(Error::Query(_))),
@@ -988,11 +1007,11 @@ fn should_reject_invalid_composite_shapes() {
     };
 
     let mut no_limit = base.clone();
-    no_limit.page.limit = None;
+    no_limit.limit = None;
     expect_unsupported(no_limit, "page without a limit");
 
     let mut oversized = base.clone();
-    oversized.page.limit = Some(101);
+    oversized.limit = Some(101);
     expect_unsupported(oversized, "page limit above the bound-value cap");
 
     let mut none = base.clone();
@@ -1141,37 +1160,34 @@ fn should_check_count_and_document_descents_against_the_actual_bound_values() {
     seed_feed(&drive, &feed, &dashpay);
     insert_repost(&drive, &feed, OWNER_3, POST_D, 23);
     let pv = platform_version();
-    let mut query = DriveCompositeDocumentQuery {
-        page: page_by_hashtag(&feed, "dash", Some(10)),
-        sub_queries: vec![
-            bound(
-                &feed,
-                "repost",
-                SubQueryKind::Count,
-                BindingSource::Page,
-                "$id",
-                "postId",
-                None,
-            ),
-            DriveSubQuery {
-                contract: &feed,
-                document_type: feed.document_type_for_name("repost").expect("repost"),
-                kind: SubQueryKind::Documents,
-                where_clauses: vec![WhereClause {
-                    field: "postId".into(),
-                    operator: WhereOperator::Equal,
-                    value: Value::Identifier(POST_B),
-                }],
-                order_by: vec![],
-                limit: None,
-                binding: Some(SubQueryBinding {
-                    source: BindingSource::Page,
-                    source_property: "$ownerId".into(),
-                    field: "$ownerId".into(),
-                }),
-            },
-        ],
-    };
+    let mut query = page_by_hashtag(&feed, "dash", Some(10)).with_sub_queries(vec![
+        bound(
+            &feed,
+            "repost",
+            SubQueryKind::Count,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            None,
+        ),
+        DriveSubQuery {
+            contract: &feed,
+            document_type: feed.document_type_for_name("repost").expect("repost"),
+            kind: SubQueryKind::Documents,
+            where_clauses: vec![WhereClause {
+                field: "postId".into(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(POST_B),
+            }],
+            order_by: vec![],
+            limit: None,
+            binding: Some(SubQueryBinding {
+                source: BindingSource::Page,
+                source_property: "$ownerId".into(),
+                field: "$ownerId".into(),
+            }),
+        },
+    ]);
     for result in [
         drive
             .query_composite_documents(&query, None, None, pv)
@@ -1253,7 +1269,7 @@ fn should_inherit_the_page_direction_for_unordered_lookups() {
             None,
         )
     };
-    let round_trip = |query: &DriveCompositeDocumentQuery, what: &str| {
+    let round_trip = |query: &DriveDocumentQuery, what: &str| {
         let materialized = drive
             .query_composite_documents(query, None, None, pv)
             .unwrap_or_else(|e| panic!("{what} materializes: {e}"))
@@ -1289,22 +1305,19 @@ fn should_inherit_the_page_direction_for_unordered_lookups() {
         operator: WhereOperator::Equal,
         value: Value::Identifier(OWNER_1),
     }];
-    let feed_shape = DriveCompositeDocumentQuery {
-        page: descending_page(),
-        sub_queries: vec![
-            bound(
-                &dashpay,
-                "profile",
-                SubQueryKind::Documents,
-                BindingSource::Page,
-                "$ownerId",
-                "$ownerId",
-                None,
-            ),
-            viewer_likes,
-            like_counts(),
-        ],
-    };
+    let feed_shape = descending_page().with_sub_queries(vec![
+        bound(
+            &dashpay,
+            "profile",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "$ownerId",
+            "$ownerId",
+            None,
+        ),
+        viewer_likes,
+        like_counts(),
+    ]);
     let result = round_trip(&feed_shape, "the descending feed shape");
     // The lookups inherited the page's direction: descending by their
     // bound field.
@@ -1326,21 +1339,18 @@ fn should_inherit_the_page_direction_for_unordered_lookups() {
     // A limited lookup under the page's own contract. Its limit caps the
     // rows it returns in total, in walk order, like an ordinary `IN`
     // query's: walking posts descending, the one row is B's.
-    let limited_lookup = DriveCompositeDocumentQuery {
-        page: descending_page(),
-        sub_queries: vec![
-            bound(
-                &feed,
-                "repost",
-                SubQueryKind::Documents,
-                BindingSource::Page,
-                "$id",
-                "postId",
-                Some(1),
-            ),
-            like_counts(),
-        ],
-    };
+    let limited_lookup = descending_page().with_sub_queries(vec![
+        bound(
+            &feed,
+            "repost",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            Some(1),
+        ),
+        like_counts(),
+    ]);
     let result = round_trip(&limited_lookup, "the limited lookup");
     assert_eq!(
         post_ids_of(&result.sub_results[0], "postId"),
@@ -1353,30 +1363,27 @@ fn should_inherit_the_page_direction_for_unordered_lookups() {
     // the limited lookup descends into. grovedb #851 gives that split the
     // inputs' direction; before it, this descending composition was
     // refused while its ascending twin merged.
-    let combined = DriveCompositeDocumentQuery {
-        page: descending_page(),
-        sub_queries: vec![
-            bound(
-                &dashpay,
-                "profile",
-                SubQueryKind::Documents,
-                BindingSource::Page,
-                "$ownerId",
-                "$ownerId",
-                None,
-            ),
-            bound(
-                &feed,
-                "repost",
-                SubQueryKind::Documents,
-                BindingSource::Page,
-                "$id",
-                "postId",
-                Some(1),
-            ),
-            like_counts(),
-        ],
-    };
+    let combined = descending_page().with_sub_queries(vec![
+        bound(
+            &dashpay,
+            "profile",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "$ownerId",
+            "$ownerId",
+            None,
+        ),
+        bound(
+            &feed,
+            "repost",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            Some(1),
+        ),
+        like_counts(),
+    ]);
     let result = round_trip(&combined, "the cross-contract shape with a limited lookup");
     assert_eq!(
         owner_ids(result.sub_results[0].documents()),
@@ -1414,16 +1421,16 @@ fn should_reject_zero_limits() {
     let base = feed_query(&feed, &dashpay, None);
 
     let mut zero_page = base.clone();
-    zero_page.page.limit = Some(0);
+    zero_page.limit = Some(0);
     let refused = zero_page
-        .validate(pv)
+        .validate_composite(pv)
         .expect_err("a zero page limit is refused");
     assert!(refused.to_string().contains("at least 1"), "{refused}");
 
     let mut zero_lookup = base.clone();
     zero_lookup.sub_queries[REPOSTS].limit = Some(0);
     let refused = zero_lookup
-        .validate(pv)
+        .validate_composite(pv)
         .expect_err("a zero lookup limit is refused");
     assert!(refused.to_string().contains("at least 1"), "{refused}");
 
@@ -1438,7 +1445,7 @@ fn should_reject_zero_limits() {
         binding: None,
     });
     let refused = zero_sibling
-        .validate(pv)
+        .validate_composite(pv)
         .expect_err("a zero sibling limit is refused");
     assert!(refused.to_string().contains("at least 1"), "{refused}");
     drop(drive);
@@ -1460,7 +1467,7 @@ fn should_reject_a_bound_field_that_is_not_identifier_typed() {
         Some(5),
     ));
     let refused = query
-        .validate(pv)
+        .validate_composite(pv)
         .expect_err("a string bound field is refused");
     assert!(
         refused.to_string().contains("not identifier-typed"),
@@ -1502,6 +1509,7 @@ fn should_reject_a_limited_page_a_sub_query_below_it_could_leave_at_the_merged_r
         start_at_included: false,
         block_time_ms: None,
         resolved_time_ranges: vec![],
+        sub_queries: vec![],
     };
     let mut below_the_page = bound(
         &feed,
@@ -1524,25 +1532,22 @@ fn should_reject_a_limited_page_a_sub_query_below_it_could_leave_at_the_merged_r
             value: Value::Identifier(POST_A),
         },
     ];
-    let query = DriveCompositeDocumentQuery {
-        page,
-        sub_queries: vec![
-            below_the_page,
-            // A bound sub-query elsewhere: present on some pages, absent
-            // on others, so the merged root moves with the data.
-            bound(
-                &feed,
-                "post",
-                SubQueryKind::Documents,
-                BindingSource::Page,
-                "postId",
-                "$id",
-                None,
-            ),
-        ],
-    };
+    let query = page.with_sub_queries(vec![
+        below_the_page,
+        // A bound sub-query elsewhere: present on some pages, absent
+        // on others, so the merged root moves with the data.
+        bound(
+            &feed,
+            "post",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "postId",
+            "$id",
+            None,
+        ),
+    ]);
     let refused = query
-        .validate(pv)
+        .validate_composite(pv)
         .expect_err("a limited page above a sub-query is refused");
     assert!(
         refused.to_string().contains("lands at the merged root"),
@@ -1568,18 +1573,15 @@ fn should_prove_a_single_id_page_with_a_join_on_the_same_type() {
         pv,
     )
     .expect("by-id page");
-    let query = DriveCompositeDocumentQuery {
-        page,
-        sub_queries: vec![bound(
-            &feed,
-            "post",
-            SubQueryKind::Documents,
-            BindingSource::Page,
-            "quotedPostId",
-            "$id",
-            None,
-        )],
-    };
+    let query = page.with_sub_queries(vec![bound(
+        &feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "quotedPostId",
+        "$id",
+        None,
+    )]);
     let materialized = drive
         .query_composite_documents(&query, None, None, pv)
         .expect("materializes")
@@ -1613,7 +1615,7 @@ fn should_reject_two_limited_lookups_on_one_index_path() {
         Some(20),
     ));
     let refused = query
-        .validate(pv)
+        .validate_composite(pv)
         .expect_err("two limited lookups on one index path are refused");
     assert!(refused.to_string().contains("carries a limit"), "{refused}");
     drop(drive);

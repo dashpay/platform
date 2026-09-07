@@ -95,6 +95,11 @@ impl<'a> DriveChainedDocumentQuery<'a> {
     pub fn validate(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
         let unsupported = |message: String| Error::Query(QuerySyntaxError::Unsupported(message));
 
+        // A chained inner query is the whole request's page; composite
+        // sub-queries have their own surface and would be silently
+        // ignored here.
+        self.inner
+            .ensure_no_sub_queries("a chained query's inner query")?;
         if !self.inner.document_type.index_only() {
             return Err(unsupported(
                 "chained document queries require an indexOnly inner document type: only \
@@ -282,6 +287,7 @@ impl<'a> DriveChainedDocumentQuery<'a> {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: Vec::new(),
+            sub_queries: vec![],
         }
     }
 

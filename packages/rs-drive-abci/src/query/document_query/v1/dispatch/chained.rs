@@ -437,6 +437,7 @@ mod tests {
             start_at_included: true,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
         let chained = DriveChainedDocumentQuery {
             inner,

@@ -119,6 +119,7 @@ fn my_likes_query<'a>(
         start_at_included: false,
         block_time_ms: None,
         resolved_time_ranges: vec![],
+        sub_queries: vec![],
     }
 }
 

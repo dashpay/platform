@@ -3,7 +3,7 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::query::drive_composite_document_query::DriveCompositeDocumentQuery;
+use crate::query::DriveDocumentQuery;
 use dpp::block::epoch::Epoch;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
@@ -12,12 +12,13 @@ use grovedb::TransactionArg;
 pub use v0::QueryCompositeDocumentsOutcomeV0;
 
 impl Drive {
-    /// Executes a composite document query (a page plus its derived
-    /// sub-queries) without proofs and returns the materialized results
-    /// plus the processing cost (when an epoch is given).
+    /// Executes a composite document query — a [`DriveDocumentQuery`]
+    /// page carrying derived [`sub_queries`](DriveDocumentQuery::sub_queries)
+    /// — without proofs and returns the materialized results plus the
+    /// processing cost (when an epoch is given).
     pub fn query_composite_documents(
         &self,
-        query: &DriveCompositeDocumentQuery,
+        query: &DriveDocumentQuery,
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -44,7 +45,7 @@ impl Drive {
     /// proves committed state only, so the materialize/prove sequence is
     /// bracketed by root-hash reads and retried when a block commit
     /// interleaves — see
-    /// [`DriveCompositeDocumentQuery::execute_with_proof_internal`].
+    /// [`DriveDocumentQuery::execute_composite_with_proof_internal`].
     /// Shares the `query_composite_documents` version slot with the
     /// no-proof path (one surface, one version).
     ///
@@ -53,7 +54,7 @@ impl Drive {
     /// results are covered by the proof and not materialized twice.
     pub fn query_composite_documents_with_proof(
         &self,
-        query: &DriveCompositeDocumentQuery,
+        query: &DriveDocumentQuery,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<u8>, Vec<Document>), Error> {
         match platform_version

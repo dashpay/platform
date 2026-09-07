@@ -1155,6 +1155,9 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
             // selections assign the fields they resolved onto the returned
             // query; everything else is a raw query.
             resolved_time_ranges: vec![],
+            // Composite sub-queries have no wire format yet: a query
+            // parsed from a request is always a plain page.
+            sub_queries: vec![],
         };
 
         Ok(query)

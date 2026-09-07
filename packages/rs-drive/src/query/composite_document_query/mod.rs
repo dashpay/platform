@@ -1,6 +1,16 @@
 //! Composite document queries: one page query plus sub-queries derived
 //! from its proven results, answered as ONE merged grovedb proof.
 //!
+//! There is no separate composite query type: a composite query is a
+//! [`DriveDocumentQuery`] — the page — whose
+//! [`sub_queries`](DriveDocumentQuery::sub_queries) are non-empty. This
+//! module holds the sub-query shapes ([`DriveSubQuery`] and friends) and
+//! the composite behaviour of `DriveDocumentQuery`: shape validation,
+//! derivation, the component path-query builders, proof merging, and the
+//! server-side executors behind `Drive::query_composite_documents` /
+//! `query_composite_documents_with_proof` (the verifier half lives in
+//! `verify::composite_document`).
+//!
 //! A feed is a page of posts and then, for that page, the things a card
 //! renders: the referenced (quoted) posts, the per-post engagement
 //! counts, the authors' profiles, the viewer's own likes. Each of those
@@ -110,7 +120,7 @@ pub enum BindingSource {
     /// The page's proven documents.
     Page,
     /// An earlier documents sub-query's proven documents (its index in
-    /// [`DriveCompositeDocumentQuery::sub_queries`]).
+    /// [`DriveDocumentQuery::sub_queries`]).
     SubQuery(usize),
 }
 
@@ -140,7 +150,7 @@ pub enum SubQueryKind {
 }
 
 /// One sub-query of a composite request.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DriveSubQuery<'a> {
     /// The contract the sub-query targets — the page's, or another one.
     pub contract: &'a DataContract,
@@ -166,20 +176,6 @@ pub struct DriveSubQuery<'a> {
     pub limit: Option<u16>,
     /// The derived clause, or `None` for a sibling.
     pub binding: Option<SubQueryBinding>,
-}
-
-/// A composite document query.
-///
-/// Construction contract: every sub-query's `document_type` MUST be a
-/// document type of its own `contract`. [`Self::validate`] enforces
-/// everything derivable from the shapes themselves.
-#[derive(Debug, Clone)]
-pub struct DriveCompositeDocumentQuery<'a> {
-    /// The page: an ordinary document query with an explicit limit.
-    pub page: DriveDocumentQuery<'a>,
-    /// The sub-queries, in binding order (a sub-query may only bind an
-    /// earlier one).
-    pub sub_queries: Vec<DriveSubQuery<'a>>,
 }
 
 /// One sub-query's materialized result.
@@ -303,11 +299,16 @@ impl<'a> DriveSubQuery<'a> {
     }
 }
 
-impl<'a> DriveCompositeDocumentQuery<'a> {
-    /// Validates the composite shape. Called by the server before
+impl<'a> DriveDocumentQuery<'a> {
+    /// Validates the composite shape: this query as the page plus its
+    /// [`sub_queries`](Self::sub_queries). Called by the server before
     /// executing and by the verifier before verifying, so an invalid
     /// request fails identically on both sides.
-    pub fn validate(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
+    ///
+    /// Construction contract: every sub-query's `document_type` MUST be a
+    /// document type of its own `contract`. This validates everything
+    /// derivable from the shapes themselves.
+    pub fn validate_composite(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
         if self.sub_queries.is_empty() {
             return Err(unsupported(
                 "a composite query needs at least one sub-query; a page alone is a plain \
@@ -322,7 +323,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                 self.sub_queries.len(),
             )));
         }
-        let page_limit = match self.page.limit {
+        let page_limit = match self.limit {
             None => {
                 return Err(unsupported(
                     "composite queries require an explicit limit on the page: the page size \
@@ -344,13 +345,13 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             }
             Some(limit) => limit,
         };
-        if self.page.offset.is_some() {
+        if self.offset.is_some() {
             return Err(unsupported(
                 "composite queries do not support a page offset; paginate with a range clause"
                     .to_string(),
             ));
         }
-        if self.page.start_at.is_some() {
+        if self.start_at.is_some() {
             return Err(unsupported(
                 "composite queries do not support a page cursor (startAt/startAfter); \
                  paginate with a range clause on the page's ordering property"
@@ -428,9 +429,9 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         // The source must precede this sub-query and produce documents.
         let (source_contract, source_type, source_is_index_only_query) = match binding.source {
             BindingSource::Page => (
-                self.page.contract,
-                self.page.document_type,
-                self.page.document_type.index_only(),
+                self.contract,
+                self.document_type,
+                self.document_type.index_only(),
             ),
             BindingSource::SubQuery(source_index) => {
                 if source_index >= index {
@@ -492,7 +493,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             };
             let (carried, index_name) = match binding.source {
                 BindingSource::Page => {
-                    let index = self.page.index_only_query_index(platform_version)?;
+                    let index = self.index_only_query_index(platform_version)?;
                     (carries(index), index.name.clone())
                 }
                 BindingSource::SubQuery(source_index) => {
@@ -733,12 +734,8 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
 
     /// Whether the page is a primary-key fetch (`$id IN` / `$id ==`).
     fn page_is_by_ids(&self) -> bool {
-        self.page.internal_clauses.primary_key_in_clause.is_some()
-            || self
-                .page
-                .internal_clauses
-                .primary_key_equal_clause
-                .is_some()
+        self.internal_clauses.primary_key_in_clause.is_some()
+            || self.internal_clauses.primary_key_equal_clause.is_some()
     }
 
     /// The page's path query as the proof covers it. A by-ids page is
@@ -748,7 +745,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
     /// other page keeps its limit, lifted into its branch on merge.
     pub fn page_path_query(&self, platform_version: &PlatformVersion) -> Result<PathQuery, Error> {
         if self.page_is_by_ids() {
-            let mut unlimited = self.page.clone();
+            let mut unlimited = self.clone();
             unlimited.limit = None;
             let mut path_query = unlimited.construct_path_query(None, platform_version)?;
             // A `$id ==` page lowers with a limit of one whatever the
@@ -757,7 +754,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             path_query.query.limit = None;
             return Ok(path_query);
         }
-        self.page.construct_path_query(None, platform_version)
+        self.construct_path_query(None, platform_version)
     }
 
     /// The shape rules routing and merging need up front. Document
@@ -997,6 +994,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                 start_at_included: false,
                 block_time_ms: None,
                 resolved_time_ranges: Vec::new(),
+                sub_queries: Vec::new(),
             });
         }
 
@@ -1041,6 +1039,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: Vec::new(),
+            sub_queries: Vec::new(),
         })
     }
 
@@ -1567,7 +1566,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             // type, so any member's query decodes the group.
             let documents = match documents_members[0] {
                 Component::Page => {
-                    Self::decode_document_trios(&self.page, document_trios, platform_version)?
+                    Self::decode_document_trios(self, document_trios, platform_version)?
                 }
                 Component::Sub(index) => {
                     let query = self.sub_query_document_query_with_direction(
@@ -1659,14 +1658,14 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
     /// the primary tree.
     fn page_ids(&self) -> Result<BTreeSet<Identifier>, Error> {
         let mut ids = BTreeSet::new();
-        if let Some(clause) = &self.page.internal_clauses.primary_key_equal_clause {
+        if let Some(clause) = &self.internal_clauses.primary_key_equal_clause {
             ids.insert(clause.value.to_identifier().map_err(|_| {
                 Error::Drive(DriveError::CorruptedCodeExecution(
                     "a primary-key equality clause holds an identifier",
                 ))
             })?);
         }
-        if let Some(clause) = &self.page.internal_clauses.primary_key_in_clause {
+        if let Some(clause) = &self.internal_clauses.primary_key_in_clause {
             for value in clause
                 .in_values()
                 .into_data()
@@ -1745,24 +1744,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
 }
 
 #[cfg(feature = "server")]
-impl<'a> DriveCompositeDocumentQuery<'a> {
-    /// Materializes the page without a proof.
-    fn materialize_page(
-        &self,
-        drive: &crate::drive::Drive,
-        transaction: grovedb::TransactionArg,
-        drive_operations: &mut Vec<crate::fees::op::LowLevelDriveOperation>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<Document>, Error> {
-        Self::materialize_documents(
-            &self.page,
-            drive,
-            transaction,
-            drive_operations,
-            platform_version,
-        )
-    }
-
+impl<'a> DriveDocumentQuery<'a> {
     /// Materializes a documents query without a proof: indexOnly
     /// projections are synthesized, stored documents deserialized.
     fn materialize_documents(
@@ -1879,18 +1861,23 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
     }
 
     /// Executes the composite query without proofs.
-    pub(crate) fn execute_no_proof_internal(
+    pub(crate) fn execute_composite_no_proof_internal(
         &self,
         drive: &crate::drive::Drive,
         transaction: grovedb::TransactionArg,
         drive_operations: &mut Vec<crate::fees::op::LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<CompositeDocumentsResult, Error> {
-        self.validate(platform_version)?;
+        self.validate_composite(platform_version)?;
 
         let direction = self.page_direction(platform_version)?;
-        let page_documents =
-            self.materialize_page(drive, transaction, drive_operations, platform_version)?;
+        let page_documents = Self::materialize_documents(
+            self,
+            drive,
+            transaction,
+            drive_operations,
+            platform_version,
+        )?;
         let mut sub_results: Vec<SubQueryResult> = Vec::with_capacity(self.sub_queries.len());
         let mut derived = Vec::with_capacity(self.sub_queries.len());
         for sub_query in &self.sub_queries {
@@ -1934,13 +1921,13 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
     /// Returns the proof and the materialized page (the caller's
     /// pagination cursor derives from it); the sub-query results are
     /// covered by the proof and not materialized twice.
-    pub(crate) fn execute_with_proof_internal(
+    pub(crate) fn execute_composite_with_proof_internal(
         &self,
         drive: &crate::drive::Drive,
         drive_operations: &mut Vec<crate::fees::op::LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<u8>, Vec<Document>), Error> {
-        self.validate(platform_version)?;
+        self.validate_composite(platform_version)?;
         let direction = self.page_direction(platform_version)?;
 
         // Block commits are seconds apart while an attempt is
@@ -1957,7 +1944,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                 .unwrap()?;
 
             let page_documents =
-                self.materialize_page(drive, None, drive_operations, platform_version)?;
+                Self::materialize_documents(self, drive, None, drive_operations, platform_version)?;
             // Sub-queries that feed later bindings are materialized in
             // order; everything else is only derived.
             let mut derived: Vec<DerivedValues> = Vec::with_capacity(self.sub_queries.len());
@@ -2031,7 +2018,7 @@ mod tests {
         };
         let shallower = PathQuery::new(vec![key("a"), key("b")], SizedQuery::new(body, None, None));
         let descends = |path: &[&str]| {
-            DriveCompositeDocumentQuery::path_query_descends_through(
+            DriveDocumentQuery::path_query_descends_through(
                 &shallower,
                 &path.iter().map(|segment| key(segment)).collect::<Vec<_>>(),
                 pv,

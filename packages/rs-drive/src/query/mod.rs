@@ -3,6 +3,13 @@ use std::sync::Arc;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
+    // Composite-query building blocks: the sub-query shapes carried by
+    // [`DriveDocumentQuery::sub_queries`] and the assembled result. The
+    // verifier needs them all to rebuild and route the merged proof.
+    composite_document_query::{
+        BindingSource, CompositeDocumentsResult, DriveSubQuery, SubQueryBinding, SubQueryKind,
+        SubQueryResult, MAX_BOUND_VALUES, MAX_SUB_QUERIES,
+    },
     conditions::{ValueClause, WhereClause, WhereOperator},
     // Average-query verifier-shareable types — same split as sum:
     // `AverageEntry` is the per-key `(count, sum)` pair the verifier
@@ -293,11 +300,11 @@ pub(crate) mod index_only_synthesis;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive_chained_document_query;
 
-/// Composite document queries — a page plus sub-queries derived from its
-/// proven results (joins, lookups, counts), proven as one merged proof
-/// against one state root. See the module docs.
+/// Composite document queries — a [`DriveDocumentQuery`] page plus
+/// sub-queries derived from its proven results (joins, lookups, counts),
+/// proven as one merged proof against one state root. See the module docs.
 #[cfg(any(feature = "server", feature = "verify"))]
-pub mod drive_composite_document_query;
+pub mod composite_document_query;
 
 /// Joint count-and-sum no-prove executor surface — backs the AVG
 /// no-prove path's unified single-walk dispatch. See its module
@@ -1095,6 +1102,25 @@ pub struct DriveDocumentQuery<'a> {
     ///
     /// Empty for every raw query.
     pub resolved_time_ranges: Vec<ResolvedTimeRange>,
+    /// The composite sub-queries: queries whose `IN` clauses are derived
+    /// from this query's proven results (by-id joins, indexed lookups,
+    /// counts — see the [`composite_document_query`] module docs), listed
+    /// in binding order (a sub-query may only bind an earlier one) and
+    /// answered together with this query as ONE merged grovedb proof.
+    ///
+    /// Empty for an ordinary documents query, which is what every plain
+    /// entry point requires: a query carrying sub-queries is served by
+    /// `Drive::query_composite_documents` /
+    /// `query_composite_documents_with_proof` and verified by
+    /// `verify_composite_documents_proof`, and the plain
+    /// query/proof/verify surfaces refuse it rather than silently prove
+    /// the page alone.
+    ///
+    /// Never parsed from the wire: every `from_cbor` / `from_value` /
+    /// `from_typed_clauses` entry point leaves this empty; composite
+    /// requests are built programmatically (see
+    /// [`Self::with_sub_queries`]).
+    pub sub_queries: Vec<DriveSubQuery<'a>>,
 }
 
 impl<'a> DriveDocumentQuery<'a> {
@@ -1126,6 +1152,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         }
     }
 
@@ -1143,6 +1170,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at_included: true,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         }
     }
 
@@ -1164,7 +1192,36 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at_included: true,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         }
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// Extends this query into a composite one: `self` becomes the page
+    /// and `sub_queries` are derived from its proven results — see
+    /// [`Self::sub_queries`] and the [`composite_document_query`] module
+    /// docs.
+    pub fn with_sub_queries(mut self, sub_queries: Vec<DriveSubQuery<'a>>) -> Self {
+        self.sub_queries = sub_queries;
+        self
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// Refuses a query carrying composite sub-queries on a plain
+    /// (page-only) surface, which would otherwise silently ignore them —
+    /// on the verify side that would mean reporting the composition
+    /// verified when only the page was.
+    pub(crate) fn ensure_no_sub_queries(&self, surface: &str) -> Result<(), Error> {
+        if self.sub_queries.is_empty() {
+            return Ok(());
+        }
+        Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+            "this query carries {} composite sub-queries, which {} would silently ignore; \
+             use query_composite_documents / query_composite_documents_with_proof to execute \
+             it and verify_composite_documents_proof to verify its proof",
+            self.sub_queries.len(),
+            surface,
+        ))))
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
@@ -1391,6 +1448,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at_included,
             block_time_ms,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         })
     }
 
@@ -1538,6 +1596,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at_included,
             block_time_ms,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         })
     }
 
@@ -1703,6 +1762,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at_included,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         })
     }
 
@@ -2473,6 +2533,7 @@ impl<'a> DriveDocumentQuery<'a> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<u8>, u64), Error> {
+        self.ensure_no_sub_queries("execute_with_proof")?;
         let mut drive_operations = vec![];
         let items = self.execute_with_proof_internal(
             drive,
@@ -2529,6 +2590,7 @@ impl<'a> DriveDocumentQuery<'a> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<Vec<u8>>, u64), Error> {
+        self.ensure_no_sub_queries("execute_with_proof_only_get_elements")?;
         let mut drive_operations = vec![];
         let (root_hash, items) = self.execute_with_proof_only_get_elements_internal(
             drive,
@@ -2587,6 +2649,7 @@ impl<'a> DriveDocumentQuery<'a> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
+        self.ensure_no_sub_queries("execute_raw_results_no_proof")?;
         let mut drive_operations = vec![];
         let (items, skipped) = self.execute_raw_results_no_proof_internal(
             drive,
@@ -3216,6 +3279,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let path_query = query_asc
@@ -3699,6 +3763,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         // Create a document that we are starting at, which may be missing 'transactionIndex'
@@ -3816,6 +3881,7 @@ mod tests {
                 start_at_included: false,
                 block_time_ms: None,
                 resolved_time_ranges: vec![],
+                sub_queries: vec![],
             }
         }
 

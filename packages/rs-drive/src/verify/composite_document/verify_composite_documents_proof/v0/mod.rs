@@ -1,14 +1,13 @@
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::query::drive_composite_document_query::{
-    CompositeDocumentsResult, DriveCompositeDocumentQuery, PresentTrio, ProvedTrio,
-};
+use crate::query::composite_document_query::{PresentTrio, ProvedTrio};
+use crate::query::{CompositeDocumentsResult, DriveDocumentQuery};
 use crate::verify::RootHash;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 
-impl DriveCompositeDocumentQuery<'_> {
+impl DriveDocumentQuery<'_> {
     /// v0 of the composite proof verification — see the versioned
     /// wrapper for the trust model.
     #[inline(always)]
@@ -17,7 +16,7 @@ impl DriveCompositeDocumentQuery<'_> {
         proof: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, CompositeDocumentsResult), Error> {
-        self.validate(platform_version)?;
+        self.validate_composite(platform_version)?;
         let grove_version = &platform_version.drive.grove_version;
 
         let present = |trios: Vec<ProvedTrio>| {
@@ -36,7 +35,7 @@ impl DriveCompositeDocumentQuery<'_> {
         let direction = page_path_query.query.query.left_to_right;
         let (_, page_trios) = GroveDb::verify_subset_query(proof, &page_path_query, grove_version)?;
         let bootstrap_page =
-            Self::decode_document_trios(&self.page, present(page_trios), platform_version)?;
+            Self::decode_document_trios(self, present(page_trios), platform_version)?;
 
         // Derive every sub-query in order. A sub-query that feeds a later
         // binding is itself bootstrapped by a subset pass, so the later

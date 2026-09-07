@@ -6174,6 +6174,7 @@ mod chained_trust_boundary {
                 start_at_included: true,
                 block_time_ms: None,
                 resolved_time_ranges: vec![],
+                sub_queries: vec![],
             },
             join_property: "postId".to_string(),
             outer_document_type: contract

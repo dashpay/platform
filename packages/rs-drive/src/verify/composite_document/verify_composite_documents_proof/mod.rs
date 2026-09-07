@@ -2,15 +2,14 @@ mod v0;
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::query::drive_composite_document_query::{
-    CompositeDocumentsResult, DriveCompositeDocumentQuery,
-};
+use crate::query::{CompositeDocumentsResult, DriveDocumentQuery};
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 
-impl DriveCompositeDocumentQuery<'_> {
-    /// Verifies a composite query's single merged proof and returns
-    /// `(root_hash, result)`.
+impl DriveDocumentQuery<'_> {
+    /// Verifies a composite query's single merged proof — this query as
+    /// the page plus its [`sub_queries`](DriveDocumentQuery::sub_queries)
+    /// — and returns `(root_hash, result)`.
     ///
     /// The verifier trusts nothing about the derivation, and needs
     /// nothing beyond the proof itself: a BOOTSTRAP subset pass runs the
@@ -46,7 +45,7 @@ impl DriveCompositeDocumentQuery<'_> {
         {
             0 => self.verify_composite_documents_proof_v0(proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "DriveCompositeDocumentQuery::verify_composite_documents_proof".to_string(),
+                method: "DriveDocumentQuery::verify_composite_documents_proof".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
