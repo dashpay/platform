@@ -147,6 +147,7 @@ fn empty_v1_request() -> GetDocumentsRequestV1 {
         having: Vec::new(),
         offset: None,
         chained: None,
+        sub_queries: Vec::new(),
     }
 }
 
@@ -957,6 +958,7 @@ fn e2e_documents_select_matches_v0() {
         having: Vec::new(),
         offset: None,
         chained: None,
+        sub_queries: Vec::new(),
     };
     let v1_result = platform
         .query_documents_v1(request_v1, &state, version)
@@ -994,6 +996,7 @@ fn e2e_having_rejection_surfaces_in_response() {
         )],
         offset: None,
         chained: None,
+        sub_queries: Vec::new(),
     };
     let result = platform
         .query_documents_v1(request, &state, version)
@@ -1030,6 +1033,7 @@ fn reject_start_with_select_count() {
         having: Vec::new(),
         offset: None,
         chained: None,
+        sub_queries: Vec::new(),
     };
     let result = platform
         .query_documents_v1(request, &state, version)
@@ -1190,6 +1194,7 @@ mod ported_v0_count_tests {
             having: Vec::new(),
             offset: None,
             chained: None,
+            sub_queries: Vec::new(),
         }
     }
 
@@ -2079,6 +2084,7 @@ mod ranked_tests {
             having: Vec::new(),
             offset,
             chained: None,
+            sub_queries: Vec::new(),
         }
     }
 
@@ -2975,6 +2981,7 @@ mod ranked_tests {
             having: Vec::new(),
             offset: None,
             chained: None,
+            sub_queries: Vec::new(),
         };
 
         match ranked_error(&platform, &state, request.clone(), version) {
@@ -3110,6 +3117,7 @@ mod multi_in_wire_tests {
             having: Vec::new(),
             offset: None,
             chained: None,
+            sub_queries: Vec::new(),
         }
     }
 
@@ -3266,6 +3274,7 @@ mod having_range_tests {
             having: vec![clause],
             offset: None,
             chained: None,
+            sub_queries: Vec::new(),
         }
     }
 
@@ -3696,6 +3705,7 @@ mod having_range_tests {
             )],
             offset: None,
             chained: None,
+            sub_queries: Vec::new(),
         };
 
         match ranked_error(&platform, &state, request, version) {
@@ -3850,6 +3860,7 @@ mod having_range_tests {
             )],
             offset: None,
             chained: None,
+            sub_queries: Vec::new(),
         };
 
         match ranked_error(&platform, &state, request, version) {
@@ -4607,6 +4618,7 @@ mod time_range_proof_verification {
             having: Vec::new(),
             offset: None,
             chained: None,
+            sub_queries: Vec::new(),
         }
     }
 
@@ -5790,6 +5802,7 @@ mod time_range_proof_verification {
             having: Vec::new(),
             offset: None,
             chained: None,
+            sub_queries: Vec::new(),
         }
     }
 
