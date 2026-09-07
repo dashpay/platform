@@ -1986,12 +1986,22 @@ mod tests {
         // behind that writer forever; the re-derivation must therefore
         // never take the lock itself.
         let queued_writer = {
+            use std::future::Future;
+
             let wallet_manager = Arc::clone(&restored_manager.wallet_manager);
             let guard = restored_manager.wallet_manager.read().await;
-            let writer = tokio::spawn(async move {
+            let mut writer = Box::pin(async move {
                 let _w = wallet_manager.write().await;
             });
-            tokio::task::yield_now().await;
+            // Queue the writer deterministically: poll it once by hand. The
+            // read guard above is live, so the poll must return `Pending`
+            // with the writer parked in the lock's queue — no scheduler
+            // timing (`yield_now`) involved.
+            let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+            assert!(
+                writer.as_mut().poll(&mut cx).is_pending(),
+                "the writer must queue behind the held read guard"
+            );
             let info = guard
                 .get_wallet_info(&wallet_id)
                 .expect("restored wallet info");
@@ -2009,8 +2019,7 @@ mod tests {
         };
         tokio::time::timeout(Duration::from_secs(5), queued_writer)
             .await
-            .expect("the queued writer must acquire the lock once the guard drops")
-            .expect("writer task");
+            .expect("the queued writer must acquire the lock once the guard drops");
     }
 
     // -----------------------------------------------------------------
