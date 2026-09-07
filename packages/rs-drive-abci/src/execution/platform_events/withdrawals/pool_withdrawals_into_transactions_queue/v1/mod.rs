@@ -59,9 +59,22 @@ where
                 return Ok(());
             }
 
-            let all_documents = self
+            // Diagnostic only. Whether this query runs at all depends on the log
+            // level, so a failure in it must not decide whether the block succeeds.
+            let all_documents = match self
                 .drive
-                .fetch_oldest_withdrawal_documents(transaction, platform_version)?;
+                .fetch_oldest_withdrawal_documents(transaction, platform_version)
+            {
+                Ok(all_documents) => all_documents,
+                Err(error) => {
+                    tracing::debug!(
+                        height = block_info.height,
+                        ?error,
+                        "Unable to fetch withdrawal documents for the status summary"
+                    );
+                    return Ok(());
+                }
+            };
             if all_documents.is_empty() {
                 tracing::debug!(
                     height = block_info.height,
@@ -387,5 +400,122 @@ mod tests {
 
             assert_eq!(tx_index, i as u64);
         }
+    }
+
+    /// A DEBUG subscriber, so the status summary behind `tracing::enabled!` runs.
+    fn init_debug_tracing() -> tracing::subscriber::DefaultGuard {
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_test_writer()
+            .finish();
+        tracing::subscriber::set_default(subscriber)
+    }
+
+    #[test]
+    fn test_nothing_queued_with_debug_logging_summarises_without_touching_documents() {
+        let _guard = init_debug_tracing();
+
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1,
+            height: 1,
+            core_height: 96,
+            epoch: Epoch::default(),
+        };
+
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                .expect("to load system data contract");
+
+        setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
+
+        // Nothing queued, but history to summarise: one completed withdrawal.
+        let completed = get_withdrawal_document_fixture(
+            &data_contract,
+            Identifier::new([1u8; 32]),
+            platform_value!({
+                "amount": 1000u64,
+                "coreFeePerByte": 1u32,
+                "pooling": Pooling::Never as u8,
+                "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                "status": withdrawals_contract::WithdrawalStatus::COMPLETE as u8,
+                "transactionIndex": 1u64,
+            }),
+            None,
+            platform_version.protocol_version,
+        )
+        .expect("expected withdrawal document");
+
+        let document_type = data_contract
+            .document_type_for_name(withdrawal::NAME)
+            .expect("expected to get document type");
+
+        setup_document(
+            &platform.drive,
+            &completed,
+            &data_contract,
+            document_type,
+            Some(&transaction),
+        );
+
+        platform
+            .pool_withdrawals_into_transactions_queue_v1(
+                &block_info,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("nothing queued is not an error");
+
+        let still_complete = platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                DEFAULT_QUERY_LIMIT,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("to fetch withdrawal documents");
+
+        assert_eq!(still_complete.len(), 1);
+        assert_eq!(still_complete[0].revision(), completed.revision());
+    }
+
+    #[test]
+    fn test_no_withdrawal_documents_at_all_with_debug_logging() {
+        let _guard = init_debug_tracing();
+
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1,
+            height: 1,
+            core_height: 96,
+            epoch: Epoch::default(),
+        };
+
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                .expect("to load system data contract");
+
+        setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
+
+        platform
+            .pool_withdrawals_into_transactions_queue_v1(
+                &block_info,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("an empty withdrawal history is not an error");
     }
 }
