@@ -137,9 +137,9 @@ impl AppliedRequestSettings {
             max_decoding_message_size,
         } = self;
 
-        // The wasm transport ignores all settings when building its client
-        // (see `wasm_channel::create_channel`), so nothing may split the key
-        // there.
+        // The wasm channel builder ignores `connect_timeout`, so it does not
+        // split the key there. The decoding limit still participates because
+        // `grpc.rs` applies it to the client after channel construction.
         #[cfg(target_arch = "wasm32")]
         let connect_timeout = {
             let _ = connect_timeout;
