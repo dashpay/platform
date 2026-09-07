@@ -15,7 +15,7 @@ private func scrubBytes(_ bytes: inout [UInt8]) {
 /// mnemonic, and the BIP-39 passphrase when the wallet has one) while
 /// they sit on the Swift heap between the Keychain read and the final
 /// copy into Rust's `Zeroizing` buffer.
-private final class MaskedMnemonicUTF8 {
+private final class MaskedSecretUTF8 {
     private var maskedBytes: [UInt8]
     private var maskBytes: [UInt8]
 
@@ -201,11 +201,11 @@ public final class MnemonicResolver: @unchecked Sendable {
             }
         }
 
-        let maskedMnemonic: MaskedMnemonicUTF8
-        let maskedPassphrase: MaskedMnemonicUTF8?
+        let maskedMnemonic: MaskedSecretUTF8
+        let maskedPassphrase: MaskedSecretUTF8?
         do {
-            maskedMnemonic = try MaskedMnemonicUTF8(plaintextUTF8Bytes: mnemonicUTF8Bytes)
-            maskedPassphrase = try passphraseUTF8Bytes.map { try MaskedMnemonicUTF8(plaintextUTF8Bytes: $0) }
+            maskedMnemonic = try MaskedSecretUTF8(plaintextUTF8Bytes: mnemonicUTF8Bytes)
+            maskedPassphrase = try passphraseUTF8Bytes.map { try MaskedSecretUTF8(plaintextUTF8Bytes: $0) }
         } catch {
             return .other
         }
