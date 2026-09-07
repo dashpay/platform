@@ -284,8 +284,8 @@ impl Drop for DeferredResumeMembership {
 /// nothing — the lock is unrelayable for as long as the sibling stands.
 /// What no evidence reachable here justifies is *refusing* the resume
 /// outright (see above) or *discarding* the tracked lock: the sibling's
-/// block can still reorg out, at which point a peer can replay the
-/// already-broadcast lock and it can confirm — with its tracking state
+/// block can still reorg out, at which point a peer can relay the tracked
+/// lock transaction and it can confirm — with its tracking state
 /// gone, the confirmed lock's credits would be stranded.
 ///
 /// A terminal verdict would need proof that the spender's block is an
@@ -825,8 +825,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///
     /// Looks up the tracked lock by `txid`, then:
     ///
-    /// - **`Built`**: re-broadcasts the transaction and waits for a proof.
-    /// - **`Broadcast`**: waits for a proof.
+    /// - **`Built`**: re-broadcasts the transaction, advances an attempt that
+    ///   was not definitely rejected before dispatch to `Broadcast`, and waits
+    ///   for a proof.
+    /// - **`Broadcast`**: defensively re-broadcasts and waits for a proof.
     /// - **`InstantSendLocked` / `ChainLocked`**: uses the existing proof
     ///   (upgrading a stale IS-lock to a ChainLock proof if necessary).
     ///
@@ -1352,7 +1354,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                                         "asset lock {} remains tracked at Built after the \
                                          re-broadcast was rejected before dispatch and no \
                                          InstantSend/ChainLock proof arrived within {:?}; an \
-                                         earlier broadcast may still be on the network: {}",
+                                         earlier attempt may still be on the network: {}",
                                         out_point, UNCONFIRMED_BROADCAST_PROOF_TIMEOUT, rejection
                                     ),
                                 ));
@@ -1404,10 +1406,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // its bound. A re-broadcast revives an evicted/undelivered
                 // tx, so it is worth attempting before every wait.
                 //
-                // Best-effort for the AMBIGUOUS verdict only: unlike the
-                // `Built` arm, this tx was already broadcast once (that's
-                // what `Broadcast` means), so it may still be in a mempool or
-                // already mined — in which case the network reports "already
+                // Best-effort for the AMBIGUOUS verdict only: `Broadcast`
+                // records an attempt that was not definitely rejected before
+                // dispatch; it does not prove network delivery. That or an
+                // earlier attempt may still have reached a mempool or already
+                // been mined — in which case the network reports "already
                 // known" / "already in block chain", which the broadcaster
                 // cannot distinguish from a real rejection and reports as
                 // `MaybeSent`. We log that and proceed to `wait_for_proof`
@@ -1415,11 +1418,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // fine. If the tx really was mined, `wait_for_proof` resolves
                 // immediately from the SPV/persisted record.
                 //
-                // A DEFINITE `Rejected` ends the resume early — but it says
-                // NOTHING about the row, and must not be read as one. In
-                // fact the row's RECORD may already hold the answer: a lock
-                // can sit at `Broadcast` while its transaction record
-                // carries an IS lock or a chain-locked context, because
+                // Without a standing input conflict, a DEFINITE `Rejected`
+                // ends the resume early — but it says NOTHING about the row,
+                // and must not be read as one. The row's RECORD may already
+                // hold the answer. A lock can sit at `Broadcast` while its
+                // transaction record carries an IS lock or a chain-locked
+                // context, because
                 // finality that arrives with no waiter active enriches the
                 // record without advancing the tracked status
                 // (`LockNotifyHandler` only wakes waiters, and
@@ -1439,10 +1443,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // exactly two places, an unstarted client and dash-spv's
                 // zero-connected-peers check (`spv/runtime.rs`), so it means
                 // "*this* send never left the device" — not "the transaction
-                // is not on the network". The ORIGINAL broadcast that put
-                // this row at `Broadcast` happened in an earlier process,
-                // possibly days ago, and its outcome is untouched by a
-                // re-broadcast that never dispatched.
+                // is not on the network". Any earlier attempt represented by
+                // this row may still have succeeded, and its outcome is
+                // untouched by a re-broadcast that never dispatched.
                 //
                 // So there is no untrack here. `catchUpStuckAssetLocks` runs
                 // on every wallet load, selects `statusRaw < 2` (which
@@ -1488,26 +1491,40 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                                 local_proof = Some(proof);
                             }
                             Err(probe_err) => {
+                                if input_conflict.is_none() {
+                                    tracing::warn!(
+                                        outpoint = %out_point,
+                                        error = %e,
+                                        probe = %probe_err,
+                                        "resume_asset_lock: defensive re-broadcast of a \
+                                         Broadcast-status lock was rejected before \
+                                         dispatch and no local proof exists — this \
+                                         attempt never left the device, which proves \
+                                         nothing about any earlier attempt; leaving \
+                                         the row tracked at Broadcast and failing the \
+                                         resume as an unknown outcome"
+                                    );
+                                    return Err(
+                                        PlatformWalletError::TransactionBroadcastUnconfirmed(
+                                            format!(
+                                                "asset lock {out_point} remains tracked after the \
+                                                 defensive re-broadcast was rejected before \
+                                                 dispatch; an earlier attempt may still be on \
+                                                 the network: {e}"
+                                            ),
+                                        ),
+                                    );
+                                }
                                 tracing::warn!(
                                     outpoint = %out_point,
                                     error = %e,
                                     probe = %probe_err,
                                     "resume_asset_lock: defensive re-broadcast of a \
-                                     Broadcast-status lock was rejected before \
-                                     dispatch and no local proof exists — this \
-                                     attempt never left the device, which proves \
-                                     nothing about the original broadcast; leaving \
-                                     the row tracked at Broadcast and failing the \
-                                     resume as an unknown outcome"
+                                     Broadcast-status lock was rejected before dispatch \
+                                     with an input conflict sighted; entering the bounded \
+                                     proof wait so live synchronization can settle the \
+                                     lock before the conflict verdict is re-read"
                                 );
-                                return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
-                                    format!(
-                                        "asset lock {out_point} remains tracked after the \
-                                         defensive re-broadcast was rejected before \
-                                         dispatch; the original broadcast may still be on \
-                                         the network: {e}"
-                                    ),
-                                ));
                             }
                         }
                     } else {
@@ -3088,9 +3105,56 @@ mod tests {
                 .expect("lock stays tracked")
                 .status,
             AssetLockStatus::Built,
-            "a send that never dispatched must not advance the row — the next resume \
-             re-sends rather than waiting on a broadcast that never happened"
+            "a send rejected before dispatch must leave the row at Built"
         );
+
+        // Exercise the independent defensive-Broadcast path on the second
+        // resume. This models a later send whose outcome was not definitely
+        // undispatched advancing the same retained row.
+        fixture.track(AssetLockStatus::Broadcast, None).await;
+        assert_eq!(
+            fixture
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&fixture.wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&fixture.out_point)
+                .expect("lock stays tracked")
+                .status,
+            AssetLockStatus::Broadcast,
+            "the second resume must start from the defensive Broadcast arm"
+        );
+
+        let second_error = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("the standing conflict must keep bounding later resumes");
+        match second_error {
+            PlatformWalletError::AssetLockInputContested {
+                out_point,
+                input,
+                spent_by,
+                height,
+            } => {
+                assert_eq!(out_point, fixture.out_point);
+                assert_eq!(input, fixture.funded_input());
+                assert_eq!(spent_by, spender_txid);
+                assert_eq!(height, Some(1_234));
+            }
+            other => panic!(
+                "a rejected defensive re-broadcast must preserve the standing conflict's \
+                 verdict across resumes, got {other:?}"
+            ),
+        }
+        assert_eq!(
+            fixture.broadcast_count(),
+            2,
+            "each resume still attempts its own re-broadcast before reporting the conflict"
+        );
+
         // The retained status is only half the invariant. A row that is
         // resumable while its inputs are re-spendable is exactly the state
         // the release gate exists to prevent, and only a rebuild attempt can
@@ -4533,9 +4597,8 @@ mod tests {
     ///
     /// With the production `SpvBroadcaster`, `Rejected` means an unstarted
     /// client or zero connected peers: a fact about the re-broadcast attempt,
-    /// not about the ORIGINAL broadcast that put the row at `Broadcast` in an
-    /// earlier process. Two things followed from reading it as a verdict on
-    /// the row.
+    /// not proof that every attempt represented by the `Broadcast` row failed.
+    /// Two things followed from reading it as a verdict on the row.
     ///
     /// The first revision untracked the row here. `catchUpStuckAssetLocks`
     /// resumes every `statusRaw < 2` row on each wallet load with no
@@ -4546,8 +4609,8 @@ mod tests {
     /// The second was the error type. `TransactionBroadcast` is the FFI's
     /// code 26, which promises the host that Core rejected the transaction,
     /// its UTXO reservation was released and a rebuild is safe — while this
-    /// arm deliberately keeps both the row and its reservation because the
-    /// original may still confirm. A host honouring code 26 would rebuild
+    /// arm deliberately keeps both the row and its reservation because an
+    /// earlier attempt may still confirm. A host honouring code 26 would rebuild
     /// from other UTXOs and create a SECOND asset lock alongside a live one.
     /// The non-terminal `TransactionBroadcastUnconfirmed` (code 20) is the
     /// contract that matches what this arm actually knows: outcome unknown,
@@ -4578,8 +4641,8 @@ mod tests {
         assert_eq!(
             tracked,
             Some(AssetLockStatus::Broadcast),
-            "a re-broadcast that never left the device says nothing about the \
-             original send — the row must survive, unchanged, for a later resume"
+            "a re-broadcast that never left the device says nothing about any \
+             earlier attempt — the row must survive, unchanged, for a later resume"
         );
     }
 

@@ -153,8 +153,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// and everything that pins its inputs must stay:
     ///
     /// 1. The row must still be [`Built`](AssetLockStatus::Built). A resume
-    ///    that already re-broadcast advanced it, and that advance is
-    ///    positive evidence the transaction reached the network.
+    ///    that already re-broadcast advanced it, recording an attempt that was
+    ///    not definitely rejected before dispatch.
     /// 2. No active or sticky cleanup exclusion may remain
     ///    ([`claim_resume_dispatch`](Self::claim_resume_dispatch)). A resume
     ///    that has snapshotted the row but not yet sent is still `Built`, and
@@ -199,14 +199,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     }
 
     // NOTE: there is deliberately no `untrack_unproven_broadcast_asset_lock`
-    // companion here. A `Rejected` verdict from a re-broadcast describes only
-    // that attempt (with the production `SpvBroadcaster`: an unstarted client
-    // or zero connected peers), never the ORIGINAL broadcast that moved the
-    // row to `Broadcast` in an earlier process — so it is not evidence that
-    // the transaction is absent from the network, and removing the row on it
-    // would delete tracking for possibly-mined asset locks during ordinary
-    // offline relaunches. `resume_asset_lock` surfaces the typed error and
-    // leaves the row untouched.
+    // companion here. `Broadcast` records an attempt that was not definitely
+    // rejected before dispatch, not that the network accepted it. A `Rejected`
+    // verdict from a later attempt says only that attempt did not dispatch
+    // (with the production `SpvBroadcaster`: an unstarted client or zero
+    // connected peers), so it cannot prove that no earlier attempt reached the
+    // network. Removing the row would therefore discard tracking for a
+    // possibly-mined asset lock during an ordinary offline relaunch.
+    // `resume_asset_lock` surfaces the typed error and leaves the row untouched.
 
     /// Mark a tracked asset lock as
     /// [`Consumed`](AssetLockStatus::Consumed) after a successful
@@ -420,10 +420,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// predicate.
     ///
     /// For a transition whose evidence is bound to a particular prior state.
-    /// A resume's `Built` → `Broadcast` advance records "this send
-    /// dispatched", which a row that a concurrent resume has meanwhile
-    /// carried to a proof-bearing status must not be regressed to; its
-    /// predicate is therefore "still `Built`".
+    /// A `Built` → `Broadcast` advance records an attempt that was not
+    /// definitely rejected before dispatch. A row that a concurrent flow has
+    /// meanwhile carried to a proof-bearing status must not be regressed to;
+    /// the predicate is therefore "still `Built`".
     pub(crate) async fn advance_asset_lock_status_if(
         &self,
         out_point: &OutPoint,
