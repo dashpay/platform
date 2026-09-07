@@ -1,6 +1,7 @@
 //! Errors produced by the transport-free query core.
 
 use dpp::consensus::ConsensusError;
+use dpp::data_contract::errors::DataContractError;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::ProtocolError;
 
@@ -21,6 +22,12 @@ pub enum Error {
     /// DPP error
     #[error("Protocol error: {0}")]
     Protocol(#[from] ProtocolError),
+}
+
+impl From<DataContractError> for Error {
+    fn from(value: DataContractError) -> Self {
+        Self::Protocol(ProtocolError::DataContractError(value))
+    }
 }
 
 impl From<ConsensusError> for Error {
