@@ -489,7 +489,8 @@ fn load_ecdsa_state(
     let mut out = Vec::new();
     // Positions in `out` of rows still carrying the pre-split `standard`
     // label. `Vec::new` does not allocate until its first push, so a database
-    // written after the split walks this loop exactly as it did before.
+    // written after the split pays one label comparison per row and nothing
+    // else — no allocation, and the same `out` it always returned.
     let mut legacy_rows: Vec<usize> = Vec::new();
     while let Some(row) = rows.next()? {
         let typed_type: String = row.get(0)?; // account_type TEXT
