@@ -50,6 +50,12 @@ pub fn migration() -> String {
     // here would be a guess, and guessing wrong turns a row that loads today
     // into a fatal mismatch under the default load policy. The reader carries
     // the equivalence instead (`accounts::db_label_matches_entry`).
+    //
+    // A later save does NOT replace such a row: the upsert keys on
+    // `account_type`, so the writer's precise label inserts a sibling and the
+    // legacy row persists, carrying the same blob. Bounded at one stale row
+    // per pre-split standard account, and pinned by
+    // `tc050_legacy_standard_row_is_not_healed_by_a_later_write`.
     let account_type_check = build_check_in(&[
         "standard",
         "standard_bip44",

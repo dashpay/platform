@@ -799,3 +799,94 @@ fn tc049_legacy_standard_row_with_bip32_blob_still_loads() {
         "the wallet carrying the legacy row must reconstruct"
     );
 }
+
+/// A surviving legacy `standard` row is NOT rewritten by a later save of the
+/// same account: the upsert's conflict target includes `account_type`, so the
+/// writer's precise label is a different primary key and inserts a sibling row.
+///
+/// Pinned because it is the one cost of admitting the legacy label rather than
+/// guessing at it, and because "the next write heals it" is the obvious wrong
+/// assumption to make here. The two rows carry the same blob, so the reader
+/// yields the same account twice and the load still succeeds; the stale row is
+/// bounded (one per pre-split standard account) and never grows. Resolving it
+/// would need the writer to delete legacy-labelled siblings, which is a
+/// separate change and not obviously worth it.
+#[test]
+fn tc050_legacy_standard_row_is_not_healed_by_a_later_write() {
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::bip32::ExtendedPubKey;
+    use platform_wallet::changeset::{
+        AccountRegistrationEntry, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use platform_wallet_storage::sqlite::schema::blob;
+    use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
+    use rusqlite::params;
+
+    let tmp = common::secure_tempdir().unwrap();
+    let path = tmp.path().join("legacy-sibling.db");
+    let wallet_id = [0x54u8; 32];
+    let xpub = ExtendedPubKey::decode(&hex::decode(
+        "0488B21E000000000000000000873DFF81C02F525623FD1FE5167EAC3A55A049DE3D314BB42EE227FFED37D5080339A36013301597DAEF41FBE593A02CC513D0B55527EC2DF1050E2E8FF49C85C2",
+    ).unwrap()).unwrap();
+    let entry = AccountRegistrationEntry {
+        account_type: AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        },
+        account_xpub: xpub,
+    };
+    let entry_blob = blob::encode(&entry).unwrap();
+
+    {
+        let mut conn = rusqlite::Connection::open(&path).unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        mig::runner()
+            .set_target(refinery::Target::Version(6))
+            .run(&mut conn)
+            .expect("migrate to the v4.2-dev schema");
+        conn.execute(
+            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+             VALUES (?1, 'testnet', 0)",
+            params![wallet_id.as_slice()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO account_registrations \
+                 (wallet_id, account_type, account_index, account_xpub_bytes) \
+             VALUES (?1, 'standard', 0, ?2)",
+            params![wallet_id.as_slice(), entry_blob],
+        )
+        .unwrap();
+    }
+
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let mut cs = PlatformWalletChangeSet::default();
+    cs.account_registrations = vec![entry];
+    persister.store(wallet_id, cs).unwrap();
+    persister.flush(wallet_id).unwrap();
+
+    let labels: Vec<String> = {
+        let conn = persister.lock_conn_for_test();
+        let mut stmt = conn
+            .prepare(
+                "SELECT account_type FROM account_registrations \
+                 WHERE wallet_id = ?1 ORDER BY account_type",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map(params![wallet_id.as_slice()], |r| r.get(0))
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
+        rows
+    };
+    assert_eq!(
+        labels,
+        vec!["standard".to_string(), "standard_bip44".to_string()],
+        "the legacy row survives beside the writer's precise label"
+    );
+    assert!(
+        persister.load().is_ok(),
+        "the duplicate must not break the load"
+    );
+}
