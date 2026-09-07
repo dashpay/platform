@@ -174,6 +174,42 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         XCTAssertEqual(manager.handle, NULL_HANDLE)
     }
 
+    /// A tick publishes a field only if nobody changed it while the tick was
+    /// parked: the baseline captured before the hop must still match.
+    func testApplyPollSnapshotSkipsFieldsChangedWhileParked() {
+        let manager = PlatformWalletManager.makeForTesting(handle: 91, calls: Self.makeTeardownCalls())
+        let fresh = PlatformWalletPollBaseline(
+            spvProgress: .empty, spvIsRunning: false, spvPeers: [],
+            platformAddressSyncIsSyncing: false, shieldedSyncIsSyncing: false,
+            dashPaySyncIsSyncing: false, spvTipBlockTime: nil, pendingAccountBuilds: [:])
+
+        var read = PlatformWalletPollSnapshot()
+        read.spvIsRunning = true
+        read.platformAddressSyncIsSyncing = true
+        manager.applyPollSnapshot(read, baseline: fresh)
+        XCTAssertTrue(manager.spvIsRunning)
+        XCTAssertTrue(manager.platformAddressSyncIsSyncing)
+
+        // Models a tick that captured `false` for both, parked, and resumed
+        // after something else published `true` (a start, or the reverse of a
+        // reset): its stale `false` must not repaint the newer value.
+        var stale = PlatformWalletPollSnapshot()
+        stale.spvIsRunning = false
+        stale.platformAddressSyncIsSyncing = false
+        manager.applyPollSnapshot(stale, baseline: fresh)
+        XCTAssertTrue(manager.spvIsRunning, "a value changed while the tick was parked is left alone")
+        XCTAssertTrue(manager.platformAddressSyncIsSyncing)
+
+        // The same read from a tick whose baseline matches what is published
+        // goes through.
+        var matching = fresh
+        matching.spvIsRunning = true
+        matching.platformAddressSyncIsSyncing = true
+        manager.applyPollSnapshot(stale, baseline: matching)
+        XCTAssertFalse(manager.spvIsRunning)
+        XCTAssertFalse(manager.platformAddressSyncIsSyncing)
+    }
+
     func testPerformPollLeavesFailedReadsNilAndFoldsWallets() {
         let walletA = Data(repeating: 0xA, count: 32)
         let walletB = Data(repeating: 0xB, count: 32)
