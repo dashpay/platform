@@ -53,8 +53,8 @@ pub use kv::{KvError, KvStore, ObjectId};
 pub use sqlite::{
     default_auto_backup_dir, prune_backups_in, AutoBackupOperation, CommitReport,
     DeleteWalletReport, FlushMode, JournalMode, LoadCtx, LoadDegradation, LoadPolicy, LoadSite,
-    PruneReport, RetentionPolicy, SqlitePersister, SqlitePersisterConfig, Synchronous,
-    WalletStorageError,
+    OwningAccount, PruneReport, RetentionPolicy, SqlitePersister, SqlitePersisterConfig,
+    Synchronous, WalletStorageError,
 };
 
 // Compile-time assertions: `Send + Sync` and `PlatformWalletPersistence`

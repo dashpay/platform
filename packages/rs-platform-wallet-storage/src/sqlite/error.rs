@@ -787,7 +787,74 @@ impl WalletStorageError {
             // if that path leaks through here the typed variant lives in
             // `Self::Migration`, which we leave as `Fatal` since a
             // migration failure isn't a caller bug.
-            _ => PersistenceErrorKind::Fatal,
+            //
+            // Wildcard-free like `is_transient` above: a new variant must fail
+            // to compile here and force a decision, rather than inheriting
+            // `Fatal` — which is the wrong answer for every caller-data fault,
+            // as the hand-classified `Constraint` arms above attest. The
+            // transient variants are unreachable past the early return but
+            // still have to be named for exhaustiveness. The list is long; that
+            // is the cost of the guarantee.
+            Self::Sqlite(_)
+            | Self::FlushRetryable { .. }
+            | Self::Io(_)
+            | Self::Migration(_)
+            | Self::IntegrityCheckFailed { .. }
+            | Self::IntegrityCheckRunFailed { .. }
+            | Self::SourceOpenFailed { .. }
+            | Self::SchemaHistoryMissing
+            | Self::SchemaVersionUnsupported { .. }
+            | Self::AutoBackupDisabled { .. }
+            | Self::AutoBackupDirUnwritable { .. }
+            | Self::InsecureParentDir { .. }
+            | Self::WalletNotFound { .. }
+            | Self::WalletIdMismatch { .. }
+            | Self::LockPoisoned
+            | Self::RestoreDestinationLocked
+            | Self::InvalidWalletIdHex { .. }
+            | Self::InvalidWalletIdLength { .. }
+            | Self::ConfigInvalid { .. }
+            | Self::BincodeEncode { .. }
+            | Self::BincodeDecode { .. }
+            | Self::BlobDecode { .. }
+            | Self::HashDecode { .. }
+            | Self::ConsensusCodec { .. }
+            | Self::AddressDecode { .. }
+            | Self::BackupDestinationExists { .. }
+            | Self::ForeignKeysNotEnforced
+            | Self::JournalModeNotApplied { .. }
+            | Self::SchemaHistoryMalformed { .. }
+            | Self::NotAWalletDb { .. }
+            | Self::AlreadyOpen { .. }
+            | Self::IdentityKeyEntryMismatch
+            | Self::IdentityEntryIdMismatch
+            | Self::IdentityScanStateContradiction { .. }
+            | Self::OrphanedIdentityEntry { .. }
+            | Self::WalletRehydrationFailed { .. }
+            | Self::AccountRegistrationEntryMismatch
+            | Self::ProviderKeyAccountEntryMismatch
+            | Self::ProviderKeyAccountConflict { .. }
+            | Self::TypedPoolKeyConflict { .. }
+            | Self::AccountRecordInvalid { .. }
+            | Self::MissingAccount { .. }
+            | Self::AccountRejected { .. }
+            | Self::AssetLockEntryMismatch { .. }
+            | Self::AssetLockStatusMismatch { .. }
+            | Self::CoreTransactionEntryMismatch { .. }
+            | Self::BlobTooLarge { .. }
+            | Self::IntegerOverflow { .. }
+            | Self::RehydrationPoolMismatch { .. }
+            | Self::RehydrationPoolTypeMismatch { .. }
+            | Self::ReadOnlyRecoveryMode { .. }
+            | Self::RehydrationEnsureDerivedFailed { .. }
+            | Self::RehydrationGapLimitRefillTooLarge { .. }
+            | Self::RehydrationGapLimitTargetOutOfRange { .. }
+            | Self::RehydrationGapLimitFailed { .. }
+            | Self::UsedAddressOwnerConflict { .. }
+            | Self::UnownedIdentityHasRegistrationIndex { .. }
+            | Self::EmptyUtxoScript { .. }
+            | Self::EmptyPoolAddressScript { .. }
+            | Self::DatabasePathIsSymlink { .. } => PersistenceErrorKind::Fatal,
         }
     }
 

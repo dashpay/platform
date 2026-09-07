@@ -101,12 +101,12 @@ const MAX_DB_STEM_LEN: usize = 32;
 const FALLBACK_DB_STEM: &str = "db";
 
 /// Filename for `backup_to(directory)`.
-pub fn manual_backup_filename() -> String {
+pub(crate) fn manual_backup_filename() -> String {
     format!("wallet-{}.db", utc_timestamp())
 }
 
 /// Filename for an auto-backup, stamped with the current UTC time.
-pub fn auto_backup_filename(kind: BackupKind<'_>) -> String {
+pub(crate) fn auto_backup_filename(kind: BackupKind<'_>) -> String {
     auto_backup_filename_at(kind, &utc_timestamp())
 }
 
@@ -141,7 +141,7 @@ fn auto_backup_filename_at(kind: BackupKind<'_>, ts: &str) -> String {
 /// That degrades to a refused overwrite
 /// ([`WalletStorageError::BackupDestinationExists`]), never to a silently
 /// replaced backup.
-pub fn sanitize_db_stem(db_path: &Path) -> String {
+pub(crate) fn sanitize_db_stem(db_path: &Path) -> String {
     let sanitized: String = db_path
         .file_stem()
         .unwrap_or_default()
@@ -169,7 +169,7 @@ pub fn sanitize_db_stem(db_path: &Path) -> String {
 /// `persist_noclobber`-ed over `dest` only on success, so a failure never
 /// materialises a partial `.db`. A pre-existing `dest` is rejected
 /// atomically (no TOCTOU window), and the parent dir is fsynced afterward.
-pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
+pub(crate) fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
     if let Some(parent) = dest.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
             std::fs::create_dir_all(parent)?;
