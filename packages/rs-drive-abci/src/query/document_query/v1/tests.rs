@@ -6354,7 +6354,7 @@ mod composite_trust_boundary {
     //! [`super::chained_trust_boundary`]: rs-drive's e2e suite covers
     //! the merk-level composition, and THIS suite runs the actual SDK
     //! entry points — the dash-platform-queries wire encoding and the
-    //! `FromProof<CompositeDocumentQuery>` composition, including the
+    //! `FromProof<DocumentQuery>` composition, including the
     //! tenderdash binding of the merged proof's root — against a
     //! server-generated proof. It lives here because generating proofs
     //! needs drive's server feature, which the client crates must not
@@ -6368,9 +6368,7 @@ mod composite_trust_boundary {
         get_documents_response_v1, GetDocumentsResponseV1, Version as ResponseVersion,
     };
     use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse, ResponseMetadata};
-    use dash_platform_queries::documents::composite_document_query::{
-        CompositeDocumentQuery, CompositeSubQuery,
-    };
+    use dash_platform_queries::documents::composite_document_query::CompositeSubQuery;
     use dash_platform_queries::documents::document_query::DocumentQuery;
     use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -6493,7 +6491,7 @@ mod composite_trust_boundary {
     /// The rich client-side query — the exact object an SDK caller
     /// hands to `CompositeDocuments::fetch`: the `dash` page, its like
     /// counts, the posts it quotes, and its authors' profiles.
-    fn client_query(feed: Arc<DataContract>, dashpay: Arc<DataContract>) -> CompositeDocumentQuery {
+    fn client_query(feed: Arc<DataContract>, dashpay: Arc<DataContract>) -> DocumentQuery {
         let page = DocumentQuery::new(feed.clone(), "post")
             .expect("post doctype exists")
             .with_where(WhereClause {
@@ -6502,29 +6500,28 @@ mod composite_trust_boundary {
                 value: Value::Text("dash".to_string()),
             })
             .with_limit(10);
-        CompositeDocumentQuery::new(page)
-            .with_sub_query(
-                CompositeSubQuery::count(feed.clone(), "like")
-                    .expect("like doctype exists")
-                    .bound_to_page("$id", "postId"),
-            )
-            .with_sub_query(
-                CompositeSubQuery::documents(feed, "post")
-                    .expect("post doctype exists")
-                    .bound_to_page("quotedPostId", "$id"),
-            )
-            .with_sub_query(
-                CompositeSubQuery::documents(dashpay, "profile")
-                    .expect("profile doctype exists")
-                    .bound_to_page("$ownerId", "$ownerId"),
-            )
+        page.with_sub_query(
+            CompositeSubQuery::count(feed.clone(), "like")
+                .expect("like doctype exists")
+                .bound_to_page("$id", "postId"),
+        )
+        .with_sub_query(
+            CompositeSubQuery::documents(feed, "post")
+                .expect("post doctype exists")
+                .bound_to_page("quotedPostId", "$id"),
+        )
+        .with_sub_query(
+            CompositeSubQuery::documents(dashpay, "profile")
+                .expect("profile doctype exists")
+                .bound_to_page("$ownerId", "$ownerId"),
+        )
     }
 
     /// Server-side proof of the same shape, built from the rich query
     /// through the SDK's own conversion.
     fn prove(
         platform: &crate::platform_types::platform::Platform<crate::rpc::core::MockCoreRPCLike>,
-        query: &CompositeDocumentQuery,
+        query: &DocumentQuery,
     ) -> (Vec<u8>, [u8; 32]) {
         let composite: DriveDocumentQuery = query.try_into().expect("the rich query converts");
         let (proof, _page_documents) = platform
@@ -6605,7 +6602,7 @@ mod composite_trust_boundary {
             )
             .expect("the unified Drive query verifies through the generic proof path");
         let (from_borrowed, _, _) =
-            <CompositeDocuments as FromProof<&CompositeDocumentQuery>>::maybe_from_proof_with_metadata(
+            <CompositeDocuments as FromProof<&DocumentQuery>>::maybe_from_proof_with_metadata(
                 &query,
                 response.clone(),
                 Network::Testnet,
@@ -6615,7 +6612,7 @@ mod composite_trust_boundary {
             .expect("the borrowed rich query verifies through the generic proof path");
 
         let (verified, _mtd, _proof) =
-            <CompositeDocuments as FromProof<CompositeDocumentQuery>>::maybe_from_proof_with_metadata(
+            <CompositeDocuments as FromProof<DocumentQuery>>::maybe_from_proof_with_metadata(
                 query,
                 response,
                 Network::Testnet,
@@ -6674,6 +6671,61 @@ mod composite_trust_boundary {
         );
     }
 
+    #[test]
+    fn should_reject_sub_queries_for_results_that_cannot_return_them() {
+        use drive::query::SelectProjection;
+        use drive_proof_verifier::types::Documents;
+        use drive_proof_verifier::{
+            DocumentAverage, DocumentCount, DocumentHavingEntries, DocumentRankedEntries,
+            DocumentSplitAverages, DocumentSplitCounts, DocumentSplitSums, DocumentSum,
+        };
+
+        fn assert_rejected<T>(query: DocumentQuery)
+        where
+            T: FromProof<DocumentQuery, Request = DocumentQuery, Response = GetDocumentsResponse>
+                + std::fmt::Debug,
+        {
+            let provider = TestQuorumProvider { pubkey: [0; 48] };
+            let result = T::maybe_from_proof_with_metadata(
+                query,
+                GetDocumentsResponse::default(),
+                Network::Testnet,
+                platform_version(),
+                &provider,
+            );
+            assert!(
+                matches!(&result, Err(drive_proof_verifier::Error::RequestError { error })
+                    if error.contains("CompositeDocuments")),
+                "{} must reject sub-queries before reading a proof: {result:?}",
+                std::any::type_name::<T>(),
+            );
+        }
+
+        let feed = json_document_to_contract(FEED_CONTRACT_PATH, false, platform_version())
+            .expect("feed contract");
+        let dashpay = json_document_to_contract(DASHPAY_CONTRACT_PATH, false, platform_version())
+            .expect("dashpay contract");
+        let query = client_query(Arc::new(feed), Arc::new(dashpay));
+        assert_rejected::<dpp::document::Document>(query.clone());
+        assert_rejected::<Documents>(query.clone());
+        assert_rejected::<DocumentCount>(query.clone().with_select(SelectProjection::count_star()));
+        assert_rejected::<DocumentSplitCounts>(
+            query.clone().with_select(SelectProjection::count_star()),
+        );
+        assert_rejected::<DocumentSum>(query.clone().with_select(SelectProjection::sum("amount")));
+        assert_rejected::<DocumentSplitSums>(
+            query.clone().with_select(SelectProjection::sum("amount")),
+        );
+        assert_rejected::<DocumentAverage>(
+            query.clone().with_select(SelectProjection::avg("amount")),
+        );
+        assert_rejected::<DocumentSplitAverages>(
+            query.clone().with_select(SelectProjection::avg("amount")),
+        );
+        assert_rejected::<DocumentRankedEntries>(query.clone());
+        assert_rejected::<DocumentHavingEntries>(query);
+    }
+
     /// A wrong quorum key fails the tenderdash binding — omitting or
     /// miswiring `verify_tenderdash_proof` turns this red.
     #[test]
@@ -6703,7 +6755,7 @@ mod composite_trust_boundary {
         };
 
         let refused =
-            <CompositeDocuments as FromProof<CompositeDocumentQuery>>::maybe_from_proof_with_metadata(
+            <CompositeDocuments as FromProof<DocumentQuery>>::maybe_from_proof_with_metadata(
                 query,
                 response_with(proof, mtd),
                 Network::Testnet,
@@ -6733,7 +6785,7 @@ mod composite_trust_boundary {
         tampered.height += 1;
 
         let refused =
-            <CompositeDocuments as FromProof<CompositeDocumentQuery>>::maybe_from_proof_with_metadata(
+            <CompositeDocuments as FromProof<DocumentQuery>>::maybe_from_proof_with_metadata(
                 query,
                 response_with(proof, tampered),
                 Network::Testnet,
@@ -6756,7 +6808,8 @@ mod composite_trust_boundary {
         let feed = Arc::new(feed);
         let dashpay = Arc::new(dashpay);
         let rich = client_query(feed.clone(), dashpay.clone());
-        let page: DriveDocumentQuery = (&rich.page).try_into().expect("the page converts");
+        let page_query = rich.clone().with_sub_queries(vec![]);
+        let page: DriveDocumentQuery = (&page_query).try_into().expect("the page converts");
         let (grovedb_proof, _cost) = page
             .execute_with_proof(&platform.platform.drive, None, None, platform_version())
             .expect("page proof generates");
@@ -6775,7 +6828,7 @@ mod composite_trust_boundary {
         };
 
         let refused =
-            <CompositeDocuments as FromProof<CompositeDocumentQuery>>::maybe_from_proof_with_metadata(
+            <CompositeDocuments as FromProof<DocumentQuery>>::maybe_from_proof_with_metadata(
                 client_query(feed, dashpay),
                 response_with(proof, mtd),
                 Network::Testnet,

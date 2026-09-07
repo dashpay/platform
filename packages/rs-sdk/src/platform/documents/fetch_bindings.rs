@@ -58,6 +58,6 @@ impl Fetch for drive_proof_verifier::ChainedDocuments {
 }
 
 impl Fetch for drive_proof_verifier::CompositeDocuments {
-    type Query = dash_platform_queries::documents::composite_document_query::CompositeDocumentQuery;
+    type Query = DocumentQuery;
     type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
 }

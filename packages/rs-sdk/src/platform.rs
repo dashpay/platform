@@ -32,8 +32,7 @@ pub use dash_context_provider::ContextProvider;
 pub use dash_context_provider::MockContextProvider;
 pub use documents::chained_document_query::ChainedDocumentQuery;
 pub use documents::composite_document_query::{
-    CompositeBinding, CompositeBindingSource, CompositeDocumentQuery, CompositeSubQuery,
-    CompositeSubQueryKind,
+    CompositeBinding, CompositeBindingSource, CompositeSubQuery, CompositeSubQueryKind,
 };
 pub use documents::document_history_query::DocumentHistoryQuery;
 pub use documents::document_query::DocumentQuery;

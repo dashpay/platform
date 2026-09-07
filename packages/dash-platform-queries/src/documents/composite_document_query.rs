@@ -1,7 +1,8 @@
 //! Composite document queries — the client half of "a page plus the
 //! sub-queries derived from it", answered as ONE merged proof.
 //!
-//! The page is an ordinary [`DocumentQuery`] with an explicit limit.
+//! Attach sub-queries directly to [`DocumentQuery`] with an explicit
+//! page limit, then fetch the result as [`CompositeDocuments`].
 //! Each [`CompositeSubQuery`] is a by-id join, an indexed lookup, a
 //! grouped count, or an independent sibling, whose `IN` clause the
 //! server derives from the proven page (or an earlier documents
@@ -19,20 +20,19 @@ use crate::error::Error;
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::{
     sub_query, SubQuery as ProtoSubQuery,
 };
-use dapi_grpc::platform::v0::get_documents_request::Version as RequestVersion;
-use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse, Proof, ResponseMetadata};
+use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
-use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{
     BindingSource, DriveDocumentQuery, DriveSubQuery, OrderClause, SelectProjection,
-    SubQueryBinding, SubQueryKind, WhereClause,
+    SubQueryBinding, SubQueryKind, WhereClause, MAX_SUB_QUERIES,
 };
 use drive_proof_verifier::{
     verify_composite_documents_tenderdash_proof, CompositeDocuments, FromProof,
@@ -46,7 +46,7 @@ pub enum CompositeBindingSource {
     /// The page.
     Page,
     /// An earlier documents sub-query, by its position in
-    /// [`CompositeDocumentQuery::sub_queries`].
+    /// [`DocumentQuery::sub_queries`].
     SubQuery(usize),
 }
 
@@ -201,38 +201,78 @@ impl CompositeSubQuery {
     }
 }
 
-/// A composite document query: the page plus its sub-queries, in
-/// binding order (a sub-query may only bind the page or an earlier
-/// documents sub-query).
-///
-/// The page MUST carry an explicit non-zero limit (it bounds every
-/// derived clause; there is no server-default sentinel on this
-/// surface) and supports where/order_by only: no cursor, offset,
-/// projection, grouping or time-range selection — paginate with a
-/// range clause on the page's ordering property.
-#[derive(Debug, Clone, PartialEq, dash_platform_macros::Mockable)]
-#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
-pub struct CompositeDocumentQuery {
-    /// The page.
-    pub page: DocumentQuery,
-    /// The sub-queries, in request (and binding) order.
-    pub sub_queries: Vec<CompositeSubQuery>,
-}
-
-impl CompositeDocumentQuery {
-    /// A composite query around `page`, with no sub-queries yet.
-    pub fn new(page: DocumentQuery) -> Self {
+impl From<&DriveSubQuery<'_>> for CompositeSubQuery {
+    fn from(sub: &DriveSubQuery<'_>) -> Self {
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         Self {
-            page,
-            sub_queries: Vec::new(),
+            data_contract: Arc::new(sub.contract.clone()),
+            document_type_name: sub.document_type.name().to_string(),
+            kind: match sub.kind {
+                SubQueryKind::Documents => CompositeSubQueryKind::Documents,
+                SubQueryKind::Count => CompositeSubQueryKind::Count,
+            },
+            where_clauses: sub.where_clauses.clone(),
+            order_by_clauses: sub.order_by.clone(),
+            limit: sub.limit.map(u32::from),
+            binding: sub.binding.as_ref().map(|binding| CompositeBinding {
+                source: match binding.source {
+                    BindingSource::Page => CompositeBindingSource::Page,
+                    BindingSource::SubQuery(index) => CompositeBindingSource::SubQuery(index),
+                },
+                source_property: binding.source_property.clone(),
+                field: binding.field.clone(),
+            }),
         }
     }
+}
 
-    /// Append a sub-query; its position is what later bindings name
-    /// through [`CompositeBindingSource::SubQuery`].
+impl DocumentQuery {
+    /// Append a sub-query derived from this page or an earlier sub-query.
+    /// Fetch the result as [`CompositeDocuments`].
     pub fn with_sub_query(mut self, sub_query: CompositeSubQuery) -> Self {
         self.sub_queries.push(sub_query);
         self
+    }
+
+    /// Replace the sub-queries. An empty list makes this an ordinary query.
+    pub fn with_sub_queries(mut self, sub_queries: Vec<CompositeSubQuery>) -> Self {
+        self.sub_queries = sub_queries;
+        self
+    }
+
+    /// Check the composite-only shape before encoding or building Drive queries.
+    pub(super) fn check_composite_shape(&self) -> Result<(), Error> {
+        if self.sub_queries.is_empty() || self.sub_queries.len() > MAX_SUB_QUERIES {
+            return Err(Error::Config(format!(
+                "a composite document query requires between 1 and {MAX_SUB_QUERIES} sub-queries"
+            )));
+        }
+        check_page_shape(self)?;
+        for (index, sub) in self.sub_queries.iter().enumerate() {
+            if let Some(limit) = sub.limit {
+                if limit == 0 || limit > u32::from(DEFAULT_QUERY_LIMIT) {
+                    return Err(Error::Drive(drive::error::Error::Query(
+                        QuerySyntaxError::InvalidLimit(format!(
+                            "sub-query {index}: limit must be in [1, {DEFAULT_QUERY_LIMIT}], got {limit}"
+                        )),
+                    )));
+                }
+            }
+            if let Some(CompositeBinding {
+                source: CompositeBindingSource::SubQuery(source),
+                ..
+            }) = &sub.binding
+            {
+                if *source >= index
+                    || self.sub_queries[*source].kind != CompositeSubQueryKind::Documents
+                {
+                    return Err(Error::Config(format!(
+                        "sub-query {index}: a binding must name an earlier documents sub-query"
+                    )));
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -240,12 +280,11 @@ impl CompositeDocumentQuery {
 /// conversion: an explicit limit, a documents projection, and nothing
 /// the composite surface cannot express.
 fn check_page_shape(page: &DocumentQuery) -> Result<(), Error> {
-    if page.limit == 0 {
-        return Err(Error::Config(
-            "a composite document query requires an explicit non-zero page limit: it \
+    if page.limit == 0 || page.limit > u32::from(DEFAULT_QUERY_LIMIT) {
+        return Err(Error::Config(format!(
+            "a composite document query requires an explicit page limit between 1 and {DEFAULT_QUERY_LIMIT}: it \
              bounds every derived sub-query clause, so there is no server-default sentinel"
-                .to_string(),
-        ));
+        )));
     }
     if page.select != SelectProjection::documents() {
         return Err(Error::Config(
@@ -268,147 +307,95 @@ fn check_page_shape(page: &DocumentQuery) -> Result<(), Error> {
     Ok(())
 }
 
-impl TryFromPlatformVersioned<CompositeDocumentQuery> for GetDocumentsRequest {
-    type Error = Error;
-
-    fn try_from_platform_versioned(
-        value: CompositeDocumentQuery,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
-        let CompositeDocumentQuery { page, sub_queries } = value;
-        check_page_shape(&page)?;
-
-        let proto_sub_queries = sub_queries
-            .into_iter()
-            .map(|sub_query| {
-                let CompositeSubQuery {
-                    data_contract,
-                    document_type_name,
-                    kind,
-                    where_clauses,
-                    order_by_clauses,
-                    limit,
-                    binding,
-                } = sub_query;
-                let kind = match kind {
-                    CompositeSubQueryKind::Documents => sub_query::Kind::Documents,
-                    CompositeSubQueryKind::Count => sub_query::Kind::Count,
-                };
-                Ok(ProtoSubQuery {
-                    // Always explicit: the server treats an empty id as
-                    // "the page's contract", but naming it costs 32
-                    // bytes and removes a shape the verifier would
-                    // otherwise have to mirror.
-                    data_contract_id: data_contract.id().to_vec(),
-                    document_type: document_type_name,
-                    where_clauses: where_clauses
-                        .into_iter()
-                        .map(where_clause_to_proto)
-                        .collect::<Result<Vec<_>, _>>()?,
-                    order_by: order_by_clauses
-                        .into_iter()
-                        .map(order_clause_to_proto)
-                        .collect(),
-                    limit,
-                    kind: kind as i32,
-                    bind: binding.map(|binding| sub_query::Binding {
-                        source: match binding.source {
-                            CompositeBindingSource::Page => 0,
-                            CompositeBindingSource::SubQuery(index) => index as u32 + 1,
-                        },
-                        source_property: binding.source_property,
-                        field: binding.field,
-                    }),
-                })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-
-        // The composite surface rides the typed V1 wire: encode the
-        // page through the standard versioned encoder, then attach the
-        // sub-queries. A network still on the V0 (CBOR) wire cannot
-        // express the field, so refuse rather than silently sending a
-        // plain documents query.
-        let mut request = GetDocumentsRequest::try_from_platform_versioned(page, platform_version)?;
-        match request.version.as_mut() {
-            Some(RequestVersion::V1(v1)) => {
-                v1.sub_queries = proto_sub_queries;
-            }
-            _ => {
-                return Err(Error::Config(
-                    "composite document queries require the V1 documents wire (Platform \
-                     v3.1+); this network's protocol version encodes V0"
-                        .to_string(),
-                ));
-            }
-        }
-        Ok(request)
-    }
-}
-
-impl<'a> TryFrom<&'a CompositeDocumentQuery> for DriveDocumentQuery<'a> {
-    type Error = Error;
-
-    fn try_from(request: &'a CompositeDocumentQuery) -> Result<Self, Self::Error> {
-        check_page_shape(&request.page)?;
-        let page: DriveDocumentQuery<'a> = (&request.page).try_into()?;
-
-        let sub_queries = request
-            .sub_queries
-            .iter()
-            .enumerate()
-            .map(|(index, sub_query)| {
-                let contract: &'a DataContract = &sub_query.data_contract;
-                let document_type = contract
-                    .document_type_for_name(&sub_query.document_type_name)
-                    .map_err(|e| Error::Protocol(ProtocolError::DataContractError(e)))?;
-                // Mirror the server's limit contract: `[1,
-                // max_query_limit]`, with anything else refused rather
-                // than clamped, so a proof can only ever verify against
-                // a query an honest server would have run.
-                let limit = match sub_query.limit {
-                    None => None,
-                    Some(limit) if limit >= 1 && limit <= u32::from(DEFAULT_QUERY_LIMIT) => {
-                        Some(limit as u16)
-                    }
-                    Some(limit) => {
-                        return Err(Error::Drive(drive::error::Error::Query(
-                            QuerySyntaxError::InvalidLimit(format!(
-                                "sub-query {}: limit must be in [1, {}], got {}",
-                                index, DEFAULT_QUERY_LIMIT, limit
-                            )),
-                        )));
-                    }
-                };
-                Ok(DriveSubQuery {
-                    contract,
-                    document_type,
-                    kind: match sub_query.kind {
-                        CompositeSubQueryKind::Documents => SubQueryKind::Documents,
-                        CompositeSubQueryKind::Count => SubQueryKind::Count,
+/// Encode sub-queries after [`DocumentQuery::check_composite_shape`] has
+/// bounded their count, binding indices, and limits.
+pub(super) fn sub_queries_to_proto(
+    sub_queries: Vec<CompositeSubQuery>,
+) -> Result<Vec<ProtoSubQuery>, Error> {
+    sub_queries
+        .into_iter()
+        .map(|sub_query| {
+            let CompositeSubQuery {
+                data_contract,
+                document_type_name,
+                kind,
+                where_clauses,
+                order_by_clauses,
+                limit,
+                binding,
+            } = sub_query;
+            let kind = match kind {
+                CompositeSubQueryKind::Documents => sub_query::Kind::Documents,
+                CompositeSubQueryKind::Count => sub_query::Kind::Count,
+            };
+            Ok(ProtoSubQuery {
+                // Always explicit: the server treats an empty id as
+                // "the page's contract", but naming it costs 32
+                // bytes and removes a shape the verifier would
+                // otherwise have to mirror.
+                data_contract_id: data_contract.id().to_vec(),
+                document_type: document_type_name,
+                where_clauses: where_clauses
+                    .into_iter()
+                    .map(where_clause_to_proto)
+                    .collect::<Result<Vec<_>, _>>()?,
+                order_by: order_by_clauses
+                    .into_iter()
+                    .map(order_clause_to_proto)
+                    .collect(),
+                limit,
+                kind: kind as i32,
+                bind: binding.map(|binding| sub_query::Binding {
+                    source: match binding.source {
+                        CompositeBindingSource::Page => 0,
+                        CompositeBindingSource::SubQuery(index) => index as u32 + 1,
                     },
-                    where_clauses: sub_query.where_clauses.clone(),
-                    order_by: sub_query.order_by_clauses.clone(),
-                    limit,
-                    binding: sub_query.binding.as_ref().map(|binding| SubQueryBinding {
-                        source: match binding.source {
-                            CompositeBindingSource::Page => BindingSource::Page,
-                            CompositeBindingSource::SubQuery(index) => {
-                                BindingSource::SubQuery(index)
-                            }
-                        },
-                        source_property: binding.source_property.clone(),
-                        field: binding.field.clone(),
-                    }),
-                })
+                    source_property: binding.source_property,
+                    field: binding.field,
+                }),
             })
-            .collect::<Result<Vec<_>, Error>>()?;
-
-        Ok(page.with_sub_queries(sub_queries))
-    }
+        })
+        .collect::<Result<Vec<_>, Error>>()
 }
 
-impl FromProof<CompositeDocumentQuery> for CompositeDocuments {
-    type Request = CompositeDocumentQuery;
+/// Borrow sub-queries after [`DocumentQuery::check_composite_shape`] has
+/// validated limits before narrowing them to Drive's `u16`.
+pub(super) fn drive_sub_queries<'a>(
+    request: &'a DocumentQuery,
+) -> Result<Vec<DriveSubQuery<'a>>, Error> {
+    request
+        .sub_queries
+        .iter()
+        .map(|sub_query| {
+            let contract: &'a DataContract = &sub_query.data_contract;
+            let document_type = contract
+                .document_type_for_name(&sub_query.document_type_name)
+                .map_err(|e| Error::Protocol(ProtocolError::DataContractError(e)))?;
+            Ok(DriveSubQuery {
+                contract,
+                document_type,
+                kind: match sub_query.kind {
+                    CompositeSubQueryKind::Documents => SubQueryKind::Documents,
+                    CompositeSubQueryKind::Count => SubQueryKind::Count,
+                },
+                where_clauses: sub_query.where_clauses.clone(),
+                order_by: sub_query.order_by_clauses.clone(),
+                limit: sub_query.limit.map(|limit| limit as u16),
+                binding: sub_query.binding.as_ref().map(|binding| SubQueryBinding {
+                    source: match binding.source {
+                        CompositeBindingSource::Page => BindingSource::Page,
+                        CompositeBindingSource::SubQuery(index) => BindingSource::SubQuery(index),
+                    },
+                    source_property: binding.source_property.clone(),
+                    field: binding.field.clone(),
+                }),
+            })
+        })
+        .collect::<Result<Vec<_>, Error>>()
+}
+
+impl FromProof<DocumentQuery> for CompositeDocuments {
+    type Request = DocumentQuery;
     type Response = GetDocumentsResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
@@ -422,6 +409,11 @@ impl FromProof<CompositeDocumentQuery> for CompositeDocuments {
         Self: 'a,
     {
         let request: Self::Request = request.into();
+        request
+            .check_composite_shape()
+            .map_err(|e| drive_proof_verifier::Error::RequestError {
+                error: e.to_string(),
+            })?;
         let response: Self::Response = response.into();
 
         let query: DriveDocumentQuery = (&request).try_into().map_err(|e: Error| {
@@ -466,8 +458,11 @@ mod tests {
     //! Drive exists.
 
     use super::*;
+    use dapi_grpc::platform::v0::get_documents_request::Version as RequestVersion;
+    use dapi_grpc::platform::v0::GetDocumentsRequest;
     use dpp::platform_value::Value;
     use dpp::tests::json_document::json_document_to_contract;
+    use dpp::version::TryFromPlatformVersioned;
     use drive::query::WhereOperator;
 
     const FEED_CONTRACT_PATH: &str =
@@ -488,7 +483,7 @@ mod tests {
 
     /// The feed card composition: `dash` posts, their like counts, the
     /// posts they quote, and their authors' dashpay profiles.
-    fn feed_page(limit: u32) -> CompositeDocumentQuery {
+    fn feed_page(limit: u32) -> DocumentQuery {
         let feed = contract(FEED_CONTRACT_PATH);
         let dashpay = contract(DASHPAY_CONTRACT_PATH);
         let page = DocumentQuery::new(feed.clone(), "post")
@@ -499,22 +494,21 @@ mod tests {
                 value: Value::Text("dash".to_string()),
             })
             .with_limit(limit);
-        CompositeDocumentQuery::new(page)
-            .with_sub_query(
-                CompositeSubQuery::count(feed.clone(), "like")
-                    .expect("like doctype exists")
-                    .bound_to_page("$id", "postId"),
-            )
-            .with_sub_query(
-                CompositeSubQuery::documents(feed, "post")
-                    .expect("post doctype exists")
-                    .bound_to_page("quotedPostId", "$id"),
-            )
-            .with_sub_query(
-                CompositeSubQuery::documents(dashpay, "profile")
-                    .expect("profile doctype exists")
-                    .bound_to_page("$ownerId", "$ownerId"),
-            )
+        page.with_sub_query(
+            CompositeSubQuery::count(feed.clone(), "like")
+                .expect("like doctype exists")
+                .bound_to_page("$id", "postId"),
+        )
+        .with_sub_query(
+            CompositeSubQuery::documents(feed, "post")
+                .expect("post doctype exists")
+                .bound_to_page("quotedPostId", "$id"),
+        )
+        .with_sub_query(
+            CompositeSubQuery::documents(dashpay, "profile")
+                .expect("profile doctype exists")
+                .bound_to_page("$ownerId", "$ownerId"),
+        )
     }
 
     #[test]
@@ -572,19 +566,138 @@ mod tests {
     }
 
     #[test]
-    fn requires_a_page_limit() {
-        let refused =
-            GetDocumentsRequest::try_from_platform_versioned(feed_page(0), platform_version());
-        assert!(
-            matches!(refused, Err(Error::Config(_))),
-            "a zero page limit must be refused, got {refused:?}"
+    fn should_preserve_the_full_composition_through_drive_conversion() {
+        let feed = contract(FEED_CONTRACT_PATH);
+        let query = feed_page(10).with_sub_query(
+            CompositeSubQuery::documents(feed, "repost")
+                .expect("repost doctype exists")
+                .bound_to(CompositeBindingSource::SubQuery(1), "$id", "postId")
+                .with_where(WhereClause {
+                    field: "hashtag".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text("dash".to_string()),
+                })
+                .with_order_by(OrderClause {
+                    field: "postId".to_string(),
+                    ascending: true,
+                })
+                .with_limit(7),
         );
+        let drive_query: DriveDocumentQuery = (&query).try_into().expect("converts");
+        for restored in [
+            DocumentQuery::try_from(&drive_query),
+            DocumentQuery::try_from(drive_query.clone()),
+            DocumentQuery::new_with_drive_query(&drive_query),
+        ] {
+            assert_eq!(restored.expect("preserves the composition"), query);
+        }
+    }
+
+    #[test]
+    fn should_reject_compositions_on_v0_without_affecting_ordinary_queries() {
+        let mut v0 = platform_version().clone();
+        v0.drive_abci.query.document_query.default_current_version = 0;
+        let query = feed_page(10);
+        let refused = GetDocumentsRequest::try_from_platform_versioned(query.clone(), &v0);
+        assert!(matches!(refused, Err(Error::Config(message)) if message.contains("V1")));
+
+        let ordinary = query.with_sub_queries(vec![]);
+        let request = GetDocumentsRequest::try_from_platform_versioned(ordinary.clone(), &v0)
+            .expect("ordinary queries still encode as V0");
+        assert!(matches!(request.version, Some(RequestVersion::V0(_))));
+        let request =
+            GetDocumentsRequest::try_from_platform_versioned(ordinary, platform_version())
+                .expect("ordinary queries still encode as V1");
+        let Some(RequestVersion::V1(v1)) = request.version else {
+            panic!("expected V1");
+        };
+        assert!(v1.sub_queries.is_empty());
+    }
+
+    #[test]
+    fn should_enforce_sub_query_limits_before_encoding_or_conversion() {
+        let query = feed_page(10);
+        let sub = query.sub_queries[0].clone();
+        let maximum = query
+            .clone()
+            .with_sub_queries(vec![sub.clone(); MAX_SUB_QUERIES]);
+        GetDocumentsRequest::try_from_platform_versioned(maximum.clone(), platform_version())
+            .expect("the maximum sub-query count encodes");
+        DriveDocumentQuery::try_from(&maximum).expect("the maximum sub-query count converts");
+
+        let excessive = query.with_sub_queries(vec![sub; MAX_SUB_QUERIES + 1]);
+        assert!(GetDocumentsRequest::try_from_platform_versioned(
+            excessive.clone(),
+            platform_version()
+        )
+        .is_err());
+        assert!(DriveDocumentQuery::try_from(&excessive).is_err());
+
+        for limit in [0, 101, u32::MAX] {
+            let mut query = feed_page(10);
+            query.sub_queries[2].limit = Some(limit);
+            assert!(GetDocumentsRequest::try_from_platform_versioned(
+                query.clone(),
+                platform_version()
+            )
+            .is_err());
+            assert!(DriveDocumentQuery::try_from(&query).is_err());
+        }
+    }
+
+    #[test]
+    fn should_reject_invalid_binding_sources_before_encoding_or_conversion() {
+        // Source 0 is a count, source 2 is the sub-query itself, and a
+        // maximal index must not wrap when mapped to the wire's u32.
+        for source in [0, 2, 3, usize::MAX] {
+            let mut query = feed_page(10);
+            query.sub_queries[2].binding.as_mut().expect("bound").source =
+                CompositeBindingSource::SubQuery(source);
+            assert!(GetDocumentsRequest::try_from_platform_versioned(
+                query.clone(),
+                platform_version()
+            )
+            .is_err());
+            assert!(DriveDocumentQuery::try_from(&query).is_err());
+        }
+    }
+
+    #[cfg(feature = "mocks")]
+    #[test]
+    fn should_preserve_mock_compositions_and_read_older_ordinary_queries() {
+        let query = feed_page(10);
+        let encoded = serde_json::to_value(&query).expect("serializes");
+        let restored: DocumentQuery =
+            serde_json::from_value(encoded.clone()).expect("deserializes");
+        assert_eq!(restored, query);
+
+        let mut legacy = encoded;
+        legacy
+            .as_object_mut()
+            .expect("query object")
+            .remove("sub_queries");
+        let restored: DocumentQuery = serde_json::from_value(legacy).expect("reads older vectors");
+        assert_eq!(restored, query.with_sub_queries(vec![]));
+    }
+
+    #[test]
+    fn should_reject_invalid_page_limits() {
+        for limit in [0, 101, u32::MAX] {
+            let query = feed_page(limit);
+            let refused =
+                GetDocumentsRequest::try_from_platform_versioned(query.clone(), platform_version());
+            assert!(
+                matches!(refused, Err(Error::Config(_))),
+                "an invalid page limit must be refused, got {refused:?}"
+            );
+            assert!(DriveDocumentQuery::try_from(&query).is_err());
+        }
     }
 
     #[test]
     fn refuses_unsupported_page_features() {
         let mut query = feed_page(10);
-        query.page.offset = Some(4);
+        query.offset = Some(4);
         let refused = GetDocumentsRequest::try_from_platform_versioned(query, platform_version());
         assert!(
             matches!(refused, Err(Error::Config(_))),

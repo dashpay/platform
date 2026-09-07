@@ -12,7 +12,6 @@ pub use dash_platform_queries::documents::{
 };
 
 pub mod chained_document_query_sdk;
-pub mod composite_document_query_sdk;
 pub mod document_query_sdk;
 mod fetch_bindings;
 pub mod transitions;

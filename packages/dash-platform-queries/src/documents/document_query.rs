@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use super::composite_document_query::{drive_sub_queries, sub_queries_to_proto, CompositeSubQuery};
 use crate::error::Error;
 use dapi_grpc::platform::v0::get_documents_request::Version::{V0, V1};
 use dapi_grpc::platform::v0::{
@@ -68,6 +69,10 @@ pub struct TimeRangeClause {
 /// required to correctly verify proofs returned by the Dash Platform.
 ///
 /// Conversions are implemented between this type, [GetDocumentsRequest] and [DriveDocumentQuery] using [TryFrom] trait.
+///
+/// Add related document or count queries with [`Self::with_sub_query`].
+/// Fetch these compositions as [`drive_proof_verifier::CompositeDocuments`]
+/// to receive both the page and its verified sub-results.
 #[derive(Debug, Clone, PartialEq, dash_platform_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct DocumentQuery {
@@ -168,6 +173,11 @@ pub struct DocumentQuery {
     pub offset: Option<u32>,
     /// first object to start with
     pub start: Option<Start>,
+    /// Related document and count queries derived from this page. Empty for
+    /// ordinary document or aggregate queries. Fetch nonempty compositions
+    /// as [`drive_proof_verifier::CompositeDocuments`].
+    #[cfg_attr(feature = "mocks", serde(default))]
+    pub sub_queries: Vec<CompositeSubQuery>,
 }
 
 /// Which end of a ranking a
@@ -212,13 +222,23 @@ impl DocumentQuery {
             limit: 0,
             offset: None,
             start: None,
+            sub_queries: vec![],
         })
+    }
+
+    /// Ordinary document and aggregate proof results cannot represent sub-queries.
+    pub(super) fn ensure_no_sub_queries(&self) -> Result<(), drive_proof_verifier::Error> {
+        if !self.sub_queries.is_empty() {
+            return Err(drive_proof_verifier::Error::RequestError {
+                error: "this result type cannot return sub-queries; fetch the query as CompositeDocuments".to_string(),
+            });
+        }
+        Ok(())
     }
 
     /// Create new document query based on a [DriveDocumentQuery].
     ///
-    /// Fails when the drive query carries sub-queries, which this plain
-    /// query cannot preserve — use the chained or composite surface.
+    /// Preserves sub-queries, including their contracts and bindings.
     ///
     /// Fails when the drive query carries time-range resolution provenance
     /// (`resolved_time_ranges`): the resolved bucket equality cannot be
@@ -535,6 +555,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
         Self: Sized + 'a,
     {
         let mut request: Self::Request = request.into();
+        request.ensure_no_sub_queries()?;
         let response: Self::Response = response.into();
 
         // A time-range (`IN_TIME_RANGE`) selection is resolved to a concrete
@@ -674,6 +695,9 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
         value: DocumentQuery,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        if !value.sub_queries.is_empty() {
+            value.check_composite_shape()?;
+        }
         let DocumentQuery {
             select,
             data_contract,
@@ -686,6 +710,7 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
             limit,
             offset,
             start,
+            sub_queries,
         } = value;
 
         let feature_version = platform_version
@@ -703,6 +728,12 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
 
         match feature_version {
             0 => {
+                if !sub_queries.is_empty() {
+                    return Err(Error::Config(
+                        "composite document queries require the V1 documents wire (Platform v3.1+)"
+                            .to_string(),
+                    ));
+                }
                 if !time_range_clauses.is_empty() {
                     return Err(Error::Config(
                         "time range (IN_TIME_RANGE) queries require protocol version 14+; the \
@@ -757,6 +788,7 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
                     select,
                     group_by,
                     having,
+                    sub_queries_to_proto(sub_queries)?,
                 )
             }
             n => Err(Error::Config(format!(
@@ -781,6 +813,7 @@ fn encode_v1(
     select: SelectProjection,
     group_by: Vec<String>,
     having: Vec<HavingClause>,
+    sub_queries: Vec<platform_proto::get_documents_request::get_documents_request_v1::SubQuery>,
 ) -> Result<GetDocumentsRequest, Error> {
     let mut where_clauses = where_clauses
         .into_iter()
@@ -875,7 +908,7 @@ fn encode_v1(
             // a second copy of that rule in the SDK.
             offset,
             chained: None,
-            sub_queries: Vec::new(),
+            sub_queries,
         })),
     })
 }
@@ -977,8 +1010,7 @@ fn encode_v0(
 impl<'a> TryFrom<&'a DriveDocumentQuery<'a>> for DocumentQuery {
     type Error = crate::error::Error;
 
-    /// Refuses sub-queries: a plain `DocumentQuery` cannot carry their
-    /// selections through SDK request construction and proof verification.
+    /// Preserves sub-queries through SDK request construction and proof verification.
     ///
     /// Fallible by necessity: a drive query carrying `resolved_time_ranges`
     /// holds bucket-start equalities whose meaning lives in the provenance,
@@ -989,14 +1021,6 @@ impl<'a> TryFrom<&'a DriveDocumentQuery<'a>> for DocumentQuery {
     /// contract then rejects the request, while a contract with a competing
     /// plain index returns a different — but validly proven — result.
     fn try_from(value: &'a DriveDocumentQuery<'a>) -> Result<Self, Self::Error> {
-        if !value.sub_queries.is_empty() {
-            return Err(Error::Config(
-                "a drive query carrying sub-queries cannot be converted to a plain \
-                 DocumentQuery: its sub-queries would be discarded. Use the chained or \
-                 composite query surface instead"
-                    .to_string(),
-            ));
-        }
         if !value.resolved_time_ranges.is_empty() {
             return Err(Error::Config(
                 "a drive query carrying time-range resolution provenance cannot be \
@@ -1038,6 +1062,11 @@ impl<'a> TryFrom<&'a DriveDocumentQuery<'a>> for DocumentQuery {
             limit,
             offset,
             start,
+            sub_queries: value
+                .sub_queries
+                .iter()
+                .map(CompositeSubQuery::from)
+                .collect(),
         })
     }
 }
@@ -1046,7 +1075,7 @@ impl<'a> TryFrom<DriveDocumentQuery<'a>> for DocumentQuery {
     type Error = crate::error::Error;
 
     /// By-value twin of the by-reference conversion above — same
-    /// sub-query and provenance rejections, same rationale.
+    /// sub-query preservation and provenance rejection, same rationale.
     fn try_from(value: DriveDocumentQuery<'a>) -> Result<Self, Self::Error> {
         DocumentQuery::try_from(&value)
     }
@@ -1056,6 +1085,9 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
     type Error = crate::error::Error;
 
     fn try_from(request: &'a DocumentQuery) -> Result<Self, Self::Error> {
+        if !request.sub_queries.is_empty() {
+            request.check_composite_shape()?;
+        }
         // A pending (unresolved) time-range selection MUST be resolved into a
         // concrete bucket-equality clause before a drive query can be built —
         // see `resolve_time_range_clauses_with_metadata_time`. Silently
@@ -1170,9 +1202,7 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
             // selections assign the fields they resolved onto the returned
             // query; everything else is a raw query.
             resolved_time_ranges: vec![],
-            // Composite sub-queries have no wire format yet: a query
-            // parsed from a request is always a plain page.
-            sub_queries: vec![],
+            sub_queries: drive_sub_queries(request)?,
         };
 
         Ok(query)

@@ -106,6 +106,7 @@ impl Sdk {
                 document_type_name: "contactRequest".to_string(),
                 where_clauses: where_clauses.clone(),
                 time_range_clauses: vec![],
+                sub_queries: vec![],
                 group_by: vec![],
                 having: vec![],
                 // Load-bearing: a bare secondary-index equality with no
