@@ -169,9 +169,12 @@ final class Dev1StoreUpgradeTests: XCTestCase {
         let storeURL = directory.appendingPathComponent("DashModel.sqlite")
         try Data(repeating: 0x5A, count: 4096).write(to: storeURL, options: .atomic)
 
-        // Unreadable metadata is not a version question.
+        // Unreadable metadata is not a version question — and not the typed
+        // "newer build" error either, which would send the user to update.
         XCTAssertEqual(DashModelContainer.classifyStore(at: storeURL), .unreadable)
-        XCTAssertThrowsError(try DashModelContainer.open(configuration(at: storeURL)))
+        XCTAssertThrowsError(try DashModelContainer.open(configuration(at: storeURL))) { error in
+            XCTAssertNil(error as? DashModelContainerError, "corrupt store must not read as a newer build")
+        }
 
         XCTAssertTrue(try logLines(event: "core_store_staged_migration_failed").isEmpty)
         let result = try XCTUnwrap(try logLines(event: "core_store_open_result").last)
@@ -209,7 +212,12 @@ final class Dev1StoreUpgradeTests: XCTestCase {
         }
         XCTAssertTrue(reason.contains("FutureOnlyModel"), reason)
 
-        XCTAssertThrowsError(try DashModelContainer.open(configuration(at: storeURL)))
+        XCTAssertThrowsError(try DashModelContainer.open(configuration(at: storeURL))) { error in
+            guard case DashModelContainerError.storeFromNewerBuild(let reason) = error else {
+                return XCTFail("a newer store must surface as the typed error, got \(error)")
+            }
+            XCTAssertTrue(reason.contains("FutureOnlyModel"), reason)
+        }
         XCTAssertTrue(try logLines(event: "core_store_staged_migration_failed").isEmpty)
         let result = try XCTUnwrap(try logLines(event: "core_store_open_result").last)
         XCTAssertTrue(result.contains(#"migration_path="staged""#), result)
@@ -249,7 +257,12 @@ final class Dev1StoreUpgradeTests: XCTestCase {
             DashModelContainer.classifyStore(at: storeURL),
             .newerThanRegistered(reason: "unexpected_entity_drift=PersistentWalletManagerMetadata")
         )
-        XCTAssertThrowsError(try DashModelContainer.open(configuration(at: storeURL)))
+        XCTAssertThrowsError(try DashModelContainer.open(configuration(at: storeURL))) { error in
+            XCTAssertEqual(
+                error as? DashModelContainerError,
+                .storeFromNewerBuild(reason: "unexpected_entity_drift=PersistentWalletManagerMetadata")
+            )
+        }
         XCTAssertTrue(try logLines(event: "core_store_staged_migration_failed").isEmpty)
         let result = try XCTUnwrap(try logLines(event: "core_store_open_result").last)
         XCTAssertTrue(result.contains(#"result="failure""#), result)

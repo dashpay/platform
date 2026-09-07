@@ -2,12 +2,32 @@ import CoreData
 import Foundation
 import SwiftData
 
-/// Why `DashModelContainer.open` refused to open a store.
-public enum DashModelContainerError: Error, Equatable {
+/// Why `DashModelContainer.open` refused to open a store. Typed so a host can
+/// tell a store it must not touch from a store it cannot read, and say the
+/// right thing to the user instead of surfacing SwiftData's opaque
+/// `loadIssueModelContainer`.
+public enum DashModelContainerError: LocalizedError, Equatable {
     /// The configuration was built from a `Schema` whose entity set differs
     /// from the SDK's. `unexpected` names entities the SDK schema lacks;
     /// `missing` names SDK entities the configuration lacks.
     case schemaMismatch(unexpected: [String], missing: [String])
+    /// The store was written by a build with a newer schema than this SDK
+    /// registers (`reason` says how that was detected). Opening it with
+    /// inferred migration would silently drop what the newer build wrote,
+    /// so `open` refuses; the only safe ways forward are a newer build or a
+    /// wallet reset.
+    case storeFromNewerBuild(reason: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .schemaMismatch(let unexpected, let missing):
+            return "The store configuration's schema does not match the SDK schema"
+                + " (unexpected: \(unexpected.joined(separator: ", ")); missing: \(missing.joined(separator: ", ")))."
+        case .storeFromNewerBuild:
+            return "The wallet database on this device was written by a newer version of the app."
+                + " This version cannot open it without losing data; update the app, or reset the wallet."
+        }
+    }
 }
 
 /// Factory for creating SwiftData model containers for Dash Platform persistence
@@ -454,6 +474,13 @@ public enum DashModelContainer {
                 : .unreadable
             guard case .driftedRegisteredVersion = verdict else {
                 report(succeeded: false, migrationPath: .staged, error: error, storeVerdict: verdict)
+                // A newer build's store is the one refusal the host can act
+                // on (tell the user to update or reset), so it gets a typed
+                // error; everything else is SwiftData's own failure, passed
+                // through untouched.
+                if case .newerThanRegistered(let reason) = verdict {
+                    throw DashModelContainerError.storeFromNewerBuild(reason: reason)
+                }
                 throw error
             }
             SDKLogger.event(
