@@ -259,11 +259,12 @@ final class Dev1StoreUpgradeTests: XCTestCase {
         )
     }
 
-    /// `knownDriftedEntities` must be exactly what the fixture shows, no
-    /// wider: every entity it names is one whose hash disagrees with V1's
-    /// model for this store, and none disagrees that it does not name. When
-    /// a shape gets frozen, this is the test that says to shrink the set.
-    func testKnownDriftedEntitiesArePinnedToTheFixture() throws {
+    /// `knownDriftedEntityHashes` must be exactly what the fixture shows, no
+    /// wider and byte for byte: every entity it names disagrees with V1's
+    /// model for this store, none disagrees that it does not name, and each
+    /// listed hash is the one the store carries. When a shape gets frozen,
+    /// this is the test that says to shrink the table.
+    func testKnownDriftedEntityHashesArePinnedToTheFixture() throws {
         let storeURL = try dev1Configuration(named: "Pin.sqlite").url
         let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
             ofType: NSSQLiteStoreType, at: storeURL, options: nil
@@ -276,10 +277,14 @@ final class Dev1StoreUpgradeTests: XCTestCase {
         let disagreeing = Set(storeHashes.compactMap { name, hash in
             v1.entityVersionHashesByName[name] == hash ? nil : name
         })
+        let known = DashModelContainer.knownDriftedEntityHashes
         XCTAssertEqual(
-            disagreeing, DashModelContainer.knownDriftedEntities,
-            "fixture drifts on \(disagreeing.sorted()); the allowlist must match exactly"
+            disagreeing, Set(known.keys),
+            "fixture drifts on \(disagreeing.sorted()); the table must name exactly those"
         )
+        for (name, hash) in known {
+            XCTAssertEqual(storeHashes[name], hash, "\(name): the pinned hash must be the store's")
+        }
     }
 
     /// The decision on plain values: which stores the fallback may answer.
@@ -306,10 +311,23 @@ final class Dev1StoreUpgradeTests: XCTestCase {
 
         // A compatible store is never inspected further.
         XCTAssertEqual(verdict(["PersistentWallet": b], matches: true), .matchesRegisteredVersion)
-        // Drift confined to the known set may be migrated.
+        // Drift confined to the known entities WITH their known shapes may be
+        // migrated; the same entities with any other shape may not.
+        let knownDocumentType = DashModelContainer.knownDriftedEntityHashes["PersistentDocumentType"]!
+        let knownIndex = DashModelContainer.knownDriftedEntityHashes["PersistentIndex"]!
         XCTAssertEqual(
-            verdict(["PersistentWallet": a, "PersistentDocumentType": b, "PersistentIndex": b]),
+            verdict(["PersistentWallet": a, "PersistentDocumentType": knownDocumentType, "PersistentIndex": knownIndex]),
             .driftedRegisteredVersion
+        )
+        XCTAssertEqual(
+            verdict(["PersistentWallet": a, "PersistentDocumentType": knownDocumentType, "PersistentIndex": a]),
+            .driftedRegisteredVersion,
+            "one drifted entity with its known shape, the other untouched"
+        )
+        XCTAssertEqual(
+            verdict(["PersistentWallet": a, "PersistentDocumentType": b, "PersistentIndex": knownIndex]),
+            .newerThanRegistered(reason: "unexpected_entity_drift=PersistentDocumentType"),
+            "a known entity with an unknown shape is a newer build, not drift"
         )
         // The attribute-only downgrade: same names, kept identifier, but the
         // disagreement is on an entity that is not known to have drifted.
@@ -319,7 +337,7 @@ final class Dev1StoreUpgradeTests: XCTestCase {
         )
         // Mixed: known drift plus one unexpected entity still refuses.
         XCTAssertEqual(
-            verdict(["PersistentWallet": b, "PersistentDocumentType": b, "PersistentIndex": a]),
+            verdict(["PersistentWallet": b, "PersistentDocumentType": knownDocumentType, "PersistentIndex": a]),
             .newerThanRegistered(reason: "unexpected_entity_drift=PersistentWallet")
         )
         XCTAssertEqual(

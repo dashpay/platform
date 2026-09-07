@@ -49,8 +49,9 @@ public enum DashModelContainer {
         /// open it, so a failure to do so is something else entirely.
         case matchesRegisteredVersion
         /// Written by a registered version whose live models have since
-        /// drifted (every v4.2.0-dev.1 store, until the remaining V1/V2
-        /// shapes are frozen). Inferred migration may open it.
+        /// drifted, with exactly the drifted shapes `knownDriftedEntityHashes`
+        /// lists (every v4.2.0-dev.1 store, until the remaining V1/V2 shapes
+        /// are frozen). Inferred migration may open it.
         case driftedRegisteredVersion
         /// Written by a build this SDK does not know — a version identifier
         /// it never registered, or an entity its schema lacks. Inferred
@@ -69,21 +70,25 @@ public enum DashModelContainer {
         }
     }
 
-    /// Entities whose live shape has changed in place since the registered
-    /// version a still-supported store was written with — the reason a
-    /// v4.2.0-dev.1 store no longer matches V1's checksum although it was
-    /// written by V1. A store is "drifted" only if the entities whose hashes
-    /// disagree with its declared version's model are all in this set; a
-    /// disagreement anywhere else can only have been written by a newer
-    /// build, and inferred migration would silently remove what it wrote.
+    /// The exact per-entity version hashes a v4.2.0-dev.1 store carries for
+    /// the two shapes changed in place since V1 — the reason such a store no
+    /// longer matches V1's checksum although V1 wrote it.
     ///
-    /// `Dev1StoreUpgradeTests` pins this to the fixture, so it cannot be
-    /// wider than reality. Shrink it as shapes get frozen in
-    /// `DashSchemaFrozenModels.swift`; when it is empty the fallback has no
-    /// case left to answer and can go.
-    static let knownDriftedEntities: Set<String> = [
-        "PersistentDocumentType",
-        "PersistentIndex",
+    /// A store is "drifted" only if every entity whose hash disagrees with its
+    /// declared version's model carries EXACTLY the hash listed here. The hash
+    /// is a function of the shape, so any other shape of these two entities —
+    /// a newer build's, with an added attribute — has a different hash and is
+    /// refused, and so is a disagreement on any other entity. That is what
+    /// makes the fallback answer precisely the store the fixture proves and
+    /// nothing else: there is no "same name, unknown shape" residual left.
+    ///
+    /// `Dev1StoreUpgradeTests` pins these to the fixture. Extend only with a
+    /// hash read from a real store of a supported prerelease; shrink as the
+    /// shapes get frozen in `DashSchemaFrozenModels.swift`, after which the
+    /// fallback has no case left to answer and can go.
+    static let knownDriftedEntityHashes: [String: Data] = [
+        "PersistentDocumentType": Data(base64Encoded: "w2iUSIQfuddeVRUyE/lgUE7oObvG1pWzO1Ah2IB2xBs=")!,
+        "PersistentIndex": Data(base64Encoded: "iJRVIyu7GslKt5zO+2oa194YXGtujJqnzcAe1FPWWa8=")!,
     ]
 
     /// One registered version as the verdict sees it: its identifier and
@@ -120,12 +125,13 @@ public enum DashModelContainer {
     }
 
     /// The decision behind `classifyStore`, on plain values so every branch
-    /// can be tested without building a store for it.
-    ///
-    /// The residual after all four checks, recorded rather than hidden: a
-    /// newer build that changed only one of `knownDriftedEntities` and kept
-    /// the version identifier still reads as drift. That is as narrow as
-    /// metadata allows; freezing those two shapes is what removes it.
+    /// can be tested without building a store for it. Four checks, in order:
+    /// a registered version is compatible; the declared version identifier
+    /// is one this plan registered; every entity is one the current schema
+    /// has; and every entity disagreeing with the declared version's model
+    /// carries the one hash `knownDriftedEntityHashes` lists for it. Only
+    /// the last yields `driftedRegisteredVersion`; everything else that is
+    /// not a match is refused.
     static func storeSchemaVerdict(
         matchesRegisteredVersion: Bool,
         storeEntityHashes: [String: Data],
@@ -156,19 +162,23 @@ public enum DashModelContainer {
         }
 
         // Same entity names, so which ones disagree with the version the
-        // store declares? Drift changes only the known set; a newer build
-        // that added an attribute — same names, kept identifier — changes
-        // something outside it. Only the declared version's model is a fair
-        // comparison: later versions legitimately differ from the store.
+        // store declares — and is each disagreeing shape the one known drift?
+        // A newer build that added an attribute keeps the name and the
+        // identifier but not the hash, whether it touched one of the two
+        // drifted entities or any other. Only the declared version's model
+        // is a fair comparison: later versions legitimately differ.
         var unexpectedDrift: Set<String> = []
         for version in registered where storeVersionIdentifiers.contains(version.identifier) {
-            let disagreeing = Set(storeEntityHashes.compactMap { name, hash in
-                version.entityHashes[name] == hash ? nil : name
+            let disagreeing = storeEntityHashes.filter { name, hash in
+                version.entityHashes[name] != hash
+            }
+            let unknownShapes = Set(disagreeing.compactMap { name, hash in
+                knownDriftedEntityHashes[name] == hash ? nil : name
             })
-            if disagreeing.isSubset(of: knownDriftedEntities) {
+            if unknownShapes.isEmpty {
                 return .driftedRegisteredVersion
             }
-            unexpectedDrift.formUnion(disagreeing.subtracting(knownDriftedEntities))
+            unexpectedDrift.formUnion(unknownShapes)
         }
         return .newerThanRegistered(
             reason: "unexpected_entity_drift=\(unexpectedDrift.sorted().joined(separator: "|"))"
