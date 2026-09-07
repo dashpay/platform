@@ -53,6 +53,8 @@ pub enum LoadSite {
     UndecodableAddressScript,
     /// One used address resolves to two different owning accounts.
     UsedAddressOwnerConflict,
+    /// One wallet could not be rehydrated at all; the rest of the file was.
+    WalletRehydration,
     /// An `identity_keys` / `contacts` row's owner identity is tombstoned.
     /// Counted per row, though `route_by_owner` decides once per collection
     /// after its walk, so one log line can carry many counts.
@@ -84,6 +86,7 @@ impl LoadSite {
             Self::ShieldedViewingKeyRow => "shielded_viewing_key_row",
             Self::CoreTransactionColumnDrift => "core_transaction_column_drift",
             Self::AccountRegistrationDrift => "account_registration_drift",
+            Self::WalletRehydration => "wallet_rehydration",
             Self::ProviderKeyRegistrationDrift => "provider_key_registration_drift",
             Self::ProviderKeyCurveMismatch => "provider_key_curve_mismatch",
             Self::AssetLockStatusDrift => "asset_lock_status_drift",
@@ -128,6 +131,9 @@ impl LoadSite {
             }
             Self::TombstonedIdentityOrphan => {
                 "recovery mode: skipping rows owned by a tombstoned identity"
+            }
+            Self::WalletRehydration => {
+                "recovery mode: dropping one wallet that could not be rebuilt, keeping the rest of the file"
             }
             // The only two sites `note_degraded` ever reaches (see its
             // callers) — never-fatal in either policy, so their prose
@@ -185,6 +191,14 @@ pub struct LoadDegradation {
     /// the data is intact, merely not rehydrated, so it never sets
     /// `degraded`.
     pub unimplemented_rows: u32,
+    /// Wallets that were dropped whole, each mapped to the
+    /// [`WalletStorageError::error_kind_str`] of what stopped it.
+    ///
+    /// A count alone cannot answer the question a caller actually has here:
+    /// a wallet missing from `load()`'s result is otherwise indistinguishable
+    /// from a wallet that never existed. Raw ids rather than a wallet type,
+    /// matching [`SiteCoords`], which keeps this module free of them.
+    pub wallets_degraded: BTreeMap<[u8; 32], &'static str>,
 }
 
 impl LoadDegradation {
@@ -202,16 +216,27 @@ impl LoadDegradation {
         let unimplemented_rows = self
             .unimplemented_rows
             .saturating_add(other.unimplemented_rows);
-        *self = Self::from_counts(by_site, unimplemented_rows);
+        // First cause recorded for a wallet wins: a later read cannot know
+        // more about why the wallet was dropped than the read that dropped it.
+        let mut wallets_degraded = std::mem::take(&mut self.wallets_degraded);
+        for (wallet_id, cause) in other.wallets_degraded {
+            wallets_degraded.entry(wallet_id).or_insert(cause);
+        }
+        *self = Self::from_counts(by_site, unimplemented_rows, wallets_degraded);
     }
 
     /// Derive the invariant fields from the raw counters.
-    fn from_counts(by_site: BTreeMap<LoadSite, u32>, unimplemented_rows: u32) -> Self {
+    fn from_counts(
+        by_site: BTreeMap<LoadSite, u32>,
+        unimplemented_rows: u32,
+        wallets_degraded: BTreeMap<[u8; 32], &'static str>,
+    ) -> Self {
         Self {
             degraded: !by_site.is_empty(),
             total: by_site.values().copied().fold(0u32, u32::saturating_add),
             by_site,
             unimplemented_rows,
+            wallets_degraded,
         }
     }
 }
@@ -234,6 +259,9 @@ impl Display for LoadDegradation {
         )?;
         for (site, count) in &self.by_site {
             write!(f, "\n  - {site} (x{count}): {}", site.explanation())?;
+        }
+        for (wallet_id, cause) in &self.wallets_degraded {
+            write!(f, "\n  - wallet {}: {cause}", hex::encode(wallet_id))?;
         }
         Ok(())
     }
@@ -260,6 +288,7 @@ pub struct LoadCtx {
     policy: LoadPolicy,
     counts: RefCell<BTreeMap<LoadSite, u32>>,
     unimplemented_rows: Cell<u32>,
+    wallets_degraded: RefCell<BTreeMap<[u8; 32], &'static str>>,
 }
 
 impl LoadCtx {
@@ -269,6 +298,7 @@ impl LoadCtx {
             policy,
             counts: RefCell::new(BTreeMap::new()),
             unimplemented_rows: Cell::new(0),
+            wallets_degraded: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -374,7 +404,23 @@ impl LoadCtx {
 
     /// Snapshot the counters accumulated so far.
     pub fn degradation(&self) -> LoadDegradation {
-        LoadDegradation::from_counts(self.counts.borrow().clone(), self.unimplemented_rows.get())
+        LoadDegradation::from_counts(
+            self.counts.borrow().clone(),
+            self.unimplemented_rows.get(),
+            self.wallets_degraded.borrow().clone(),
+        )
+    }
+
+    /// Attribute a whole-wallet loss to the wallet it belongs to.
+    ///
+    /// Separate from [`tolerate_at`](Self::tolerate_at), which counts the
+    /// event: this records WHICH wallet and WHY, because a count cannot say
+    /// that. First cause wins — a wallet is dropped once, by one thing.
+    pub(crate) fn note_wallet_degraded(&self, wallet_id: [u8; 32], cause_kind: &'static str) {
+        self.wallets_degraded
+            .borrow_mut()
+            .entry(wallet_id)
+            .or_insert(cause_kind);
     }
 
     fn count(&self, site: LoadSite, occurrences: u32) {

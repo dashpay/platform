@@ -296,6 +296,16 @@ pub enum WalletStorageError {
     )]
     OrphanedIdentityEntry { owner: [u8; 32] },
 
+    /// One wallet could not be rehydrated by `load()`'s per-wallet loop.
+    ///
+    /// Raised only at the loop's isolation boundary, so a failure that
+    /// belongs to one wallet is attributable to it instead of ending the
+    /// whole load. The cause is carried as text rather than as a source: the
+    /// boundary hands the ORIGINAL error back under `LoadPolicy::Strict`, and
+    /// this variant exists for the degraded path, where the load survives.
+    #[error("wallet {} could not be rehydrated: {cause}", hex::encode(wallet_id))]
+    WalletRehydrationFailed { wallet_id: [u8; 32], cause: String },
+
     /// An `account_registrations` row's typed `(account_type, account_index)`
     /// columns disagreed with the decoded `AccountRegistrationEntry` blob.
     /// Rejected at decode time so the manifest oracle never hands back an
@@ -717,6 +727,7 @@ impl WalletStorageError {
             | Self::IdentityIndexConflict { .. }
             | Self::WalletlessIdentityIndex { .. }
             | Self::OrphanedIdentityEntry { .. }
+            | Self::WalletRehydrationFailed { .. }
             | Self::AccountRegistrationEntryMismatch
             | Self::ProviderKeyAccountEntryMismatch
             | Self::ProviderKeyAccountConflict { .. }
@@ -819,6 +830,7 @@ impl WalletStorageError {
             Self::HashDecode { .. } => "hash_decode",
             Self::ConsensusCodec { .. } => "consensus_codec",
             Self::AddressDecode { .. } => "address_decode",
+            Self::WalletRehydrationFailed { .. } => "wallet_rehydration_failed",
             Self::BackupDestinationExists { .. } => "backup_destination_exists",
             Self::ForeignKeysNotEnforced => "foreign_keys_not_enforced",
             Self::JournalModeNotApplied { .. } => "journal_mode_not_applied",

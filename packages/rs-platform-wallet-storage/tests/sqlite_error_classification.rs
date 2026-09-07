@@ -251,6 +251,10 @@ fn samples() -> Vec<WalletStorageError> {
             identity_index: 2,
         },
         WalletStorageError::OrphanedIdentityEntry { owner: [0x0E; 32] },
+        WalletStorageError::WalletRehydrationFailed {
+            wallet_id: [0x0F; 32],
+            cause: "address decode failed".to_string(),
+        },
         WalletStorageError::AddressDecode {
             source: dashcore::address::Error::UnrecognizedScript,
         },
@@ -416,6 +420,9 @@ fn tc_p2_005_is_transient_table() {
                 (false, "walletless_identity_index")
             }
             WalletStorageError::OrphanedIdentityEntry { .. } => (false, "orphaned_identity_entry"),
+            WalletStorageError::WalletRehydrationFailed { .. } => {
+                (false, "wallet_rehydration_failed")
+            }
             WalletStorageError::AssetLockEntryMismatch { .. } => {
                 (false, "asset_lock_entry_mismatch")
             }

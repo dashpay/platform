@@ -1066,43 +1066,55 @@ fn a_repaired_database_reloads_clean() {
     assert_eq!(degradation.total, 0);
 }
 
-/// A load that returns `Err` leaves the snapshot empty — the error is the
-/// verdict, not a partial tally. `BlobTooLarge` is the one inconsistency
-/// recovery mode still refuses (an allocation guard cannot be waived), so
-/// it is what proves the sites tolerated on the way there are discarded.
+/// A failed `load()` leaves no STALE verdict: the snapshot is cleared before
+/// the walk starts, so a caller can never read a previous load's tally and
+/// take it for this one's.
+///
+/// This used to be pinned with "tolerate a few sites, then meet an oversize
+/// blob". That shape is unreachable by design: a per-row failure now costs
+/// its own wallet and no longer aborts the file, so the lever here is a
+/// FILE-level failure instead — a `wallets.wallet_id` of the wrong width
+/// makes `wallets::list_ids` fail before the per-wallet loop begins, which is
+/// correct, because a wallet index that cannot be read leaves nothing to
+/// isolate. Do not restore the old shape.
 #[test]
-fn a_fatal_blob_in_recovery_discards_the_sites_tolerated_before_it() {
-    // `load()` walks wallets in `ORDER BY wallet_id`, so the tolerable
-    // wallet is reached first and its site is counted before the fatal one.
+fn a_failed_load_leaves_no_stale_verdict() {
     let tolerated = wid(0x01);
-    let fatal = wid(0xF0);
-    let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
-        seed_corrupt_chain_lock(strict, &tolerated);
-        seed_corrupt_chain_lock(strict, &fatal);
-        let conn = strict.lock_conn_for_test();
+    let (persister, _tmp, _path) =
+        fresh_recovery_persister(|strict| seed_corrupt_chain_lock(strict, &tolerated));
+
+    persister
+        .load()
+        .expect("an undecodable chain lock is tolerable under Recovery");
+    let first = persister.last_load_degradation();
+    assert!(
+        first.degraded,
+        "the first load must leave a verdict for the second to have to clear: {first:?}"
+    );
+
+    {
+        let conn = persister.lock_conn_for_test();
         conn.execute(
-            "UPDATE core_sync_state SET last_applied_chain_lock = ?1 WHERE wallet_id = ?2",
-            params![
-                vec![0u8; platform_wallet_storage::SIZE_LIMIT_BYTES + 1].as_slice(),
-                fatal.as_slice()
-            ],
+            "INSERT INTO wallets (wallet_id, network, birth_height) \
+             VALUES (X'0102', 'testnet', 0)",
+            [],
         )
-        .expect("plant an oversize chain lock");
-    });
+        .expect("plant a wallet id that is not 32 bytes");
+    }
 
     let err = typed(
         persister
             .load()
-            .expect_err("an oversize blob stays fatal in recovery mode"),
+            .expect_err("an unreadable wallet index is file-fatal in either policy"),
     );
     assert!(
-        matches!(err, WalletStorageError::BlobTooLarge { .. }),
-        "expected BlobTooLarge, got {err:?}"
+        matches!(err, WalletStorageError::InvalidWalletIdLength { .. }),
+        "expected InvalidWalletIdLength, got {err:?}"
     );
     assert_eq!(
         persister.last_load_degradation(),
         platform_wallet_storage::LoadDegradation::default(),
-        "a failed load must leave no partial tally behind"
+        "a failed load must leave no verdict at all, stale or partial"
     );
 }
 
@@ -1133,5 +1145,95 @@ fn degraded_counts_are_per_load_not_cumulative() {
         &persister,
         LoadSite::ChainLockBlob,
         1, // replaced, not summed — otherwise a repaired DB could never read clean
+    );
+}
+
+/// Seed one healthy wallet and one whose single UNSPENT UTXO carries a bare
+/// `OP_RETURN` — a valid script that is not an address. That decode is
+/// deliberately fail-hard (it is the balance source), so the sick wallet is
+/// genuinely unrehydratable; the question is only who else it takes with it.
+fn seed_healthy_and_sick_wallets(strict: &SqlitePersister, healthy: WalletId, sick: WalletId) {
+    seed_registered_wallet(strict, healthy, 0x51);
+    seed_registered_wallet(strict, sick, 0x52);
+    let conn = strict.lock_conn_for_test();
+    // The outpoint must be genuinely encoded, or the row fails its bincode
+    // decode first and the fixture never reaches the script at all.
+    let outpoint = dashcore::OutPoint::new(Txid::from_byte_array([0x52; 32]), 0);
+    conn.execute(
+        "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+         VALUES (?1, ?2, 5000, ?3, 0)",
+        params![
+            sick.as_slice(),
+            platform_wallet_storage::sqlite::schema::blob::encode_outpoint(&outpoint).unwrap(),
+            [0x6A_u8].as_slice()
+        ],
+    )
+    .expect("plant an unspent utxo whose script is not an address");
+}
+
+/// Recovery is a per-WALLET verdict, not a per-file one: one wallet that
+/// cannot be rebuilt degrades itself and nothing else. The loss is
+/// ATTRIBUTED, not merely counted — a wallet missing from the result is
+/// otherwise indistinguishable from a wallet that never existed.
+#[test]
+fn one_wallets_undecodable_unspent_script_does_not_take_its_sibling_down() {
+    let healthy = wid(0x51);
+    let sick = wid(0x52);
+    let (persister, _tmp, _path) =
+        fresh_recovery_persister(|strict| seed_healthy_and_sick_wallets(strict, healthy, sick));
+
+    let state = persister
+        .load()
+        .expect("one damaged wallet must not fail the whole file under Recovery");
+    assert!(
+        state.wallets.contains_key(&healthy),
+        "the healthy wallet must rehydrate"
+    );
+    assert!(
+        !state.wallets.contains_key(&sick),
+        "the damaged wallet must not be served half-rebuilt"
+    );
+
+    let degradation = persister.last_load_degradation();
+    assert_eq!(
+        degradation.by_site.get(&LoadSite::WalletRehydration),
+        Some(&1),
+        "one wallet, one degradation: {:?}",
+        degradation.by_site
+    );
+    assert_eq!(
+        degradation.wallets_degraded.get(&sick).copied(),
+        Some("address_decode"),
+        "the dropped wallet must name itself and its cause: {:?}",
+        degradation.wallets_degraded
+    );
+    assert!(
+        !degradation.wallets_degraded.contains_key(&healthy),
+        "a wallet that loaded must not be reported degraded"
+    );
+}
+
+/// The boundary changes WHERE a failure stops, never WHAT it is. Under
+/// `Strict` the same fixture still aborts, and with the original typed cause
+/// rather than the boundary's own wrapper, so a caller matching on the cause
+/// keeps matching.
+#[test]
+fn the_isolation_boundary_reports_the_original_cause_under_strict() {
+    let healthy = wid(0x51);
+    let sick = wid(0x52);
+    let (recovery, _tmp, path) =
+        fresh_recovery_persister(|strict| seed_healthy_and_sick_wallets(strict, healthy, sick));
+    drop(recovery);
+
+    let strict = SqlitePersister::open(platform_wallet_storage::SqlitePersisterConfig::new(&path))
+        .expect("reopen strict");
+    let err = typed(
+        strict
+            .load()
+            .expect_err("strict must still refuse a file it cannot fully rebuild"),
+    );
+    assert!(
+        matches!(err, WalletStorageError::AddressDecode { .. }),
+        "strict must surface the original cause, not the boundary wrapper: {err:?}"
     );
 }

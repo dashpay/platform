@@ -1445,190 +1445,34 @@ impl PlatformWalletPersistence for SqlitePersister {
         let wallet_ids = schema::wallets::list_ids(&conn).map_err(PersistenceError::from)?;
         let wallets_seen = wallet_ids.len();
         for wallet_id in wallet_ids {
-            let (network_str, birth_height) = schema::wallets::fetch(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?
-                .ok_or_else(|| {
-                    PersistenceError::backend(format!(
-                        "wallets row vanished mid-load for {}",
-                        hex::encode(wallet_id)
-                    ))
-                })?;
-            let network = schema::wallets::parse_network(&network_str).ok_or_else(|| {
-                PersistenceError::backend(format!(
-                    "unknown persisted network {:?} for wallet {}",
-                    network_str,
-                    hex::encode(wallet_id)
-                ))
-            })?;
-
-            let account_manifest = schema::accounts::load_state(&conn, &wallet_id, &ctx)
-                .map_err(PersistenceError::from)?;
-            let (core_state, utxo_accounts) =
-                schema::core_state::load_state(&conn, &wallet_id, network, &ctx)
-                    .map_err(PersistenceError::from)?;
-            // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
-            // already carrying its own public keys + contact state (matching
-            // the FFI persister), so signing works immediately post-load
-            // without a key sync. `ClientWalletStartState.contacts` /
-            // `.identity_keys` stay empty — nothing is layered on afterwards.
-            let identity_manager = schema::identities::load_prekeyed(&conn, &wallet_id, &ctx)
-                .map_err(PersistenceError::from)?;
-            let unused_asset_locks = schema::asset_locks::load_unconsumed(&conn, &wallet_id, &ctx)
-                .map_err(PersistenceError::from)?;
-            // Used addresses drive the reuse guard: a used-then-emptied
-            // address must never be handed back as a fresh receive address,
-            // and must come back used on ITS OWN account so it is never
-            // re-issued as a fresh receive address from that account. Union
-            // the verbatim `core_address_pool` used-set (known owner) with the
-            // `core_utxos`-derived set (spent + unspent; owner resolved per
-            // script, `None` when no pool row covers it). The guard is
-            // monotonic, so a mixed store — historical UTXOs plus a later
-            // partial pool snapshot that never enumerates them — must surface
-            // both; neither source may shadow the other. Keyed by address; the
-            // pool source is authoritative on owner, so a `None` from the
-            // `core_utxos` source never overrides a resolved pool owner. Two
-            // resolved-but-disagreeing owners for one script means the store
-            // cannot say which account may re-issue the address, so the
-            // policy decides: strict aborts, recovery keeps the pool owner.
-            let used_core_addresses = {
-                let mut union: std::collections::HashMap<
-                    dashcore::Address,
-                    Option<schema::core_pool::OwningAccount>,
-                > = std::collections::HashMap::new();
-                let pool = schema::core_pool::load_used_addresses_with_ctx(
-                    &conn, &wallet_id, network, &ctx,
-                )
-                .map_err(PersistenceError::from)?;
-                for (addr, owner) in pool {
-                    union.entry(addr).or_insert(Some(owner));
+            match load_one_wallet(&conn, wallet_id, &ctx) {
+                Ok(wallet_state) => {
+                    state.wallets.insert(wallet_id, wallet_state);
                 }
-                let utxo = schema::core_state::load_used_addresses_with_ctx(
-                    &conn, &wallet_id, network, &ctx,
-                )
-                .map_err(PersistenceError::from)?;
-                for (addr, owner) in utxo {
-                    match union.entry(addr) {
-                        std::collections::hash_map::Entry::Occupied(existing) => {
-                            if let (Some(pool_owner), Some(utxo_owner)) = (existing.get(), &owner) {
-                                if pool_owner != utxo_owner {
-                                    let conflict = WalletStorageError::UsedAddressOwnerConflict {
-                                        address: existing.key().to_string(),
-                                        pool_owner: format!(
-                                            "{}[{}]",
-                                            pool_owner.account_type, pool_owner.account_index
-                                        ),
-                                        utxo_owner: format!(
-                                            "{}[{}]",
-                                            utxo_owner.account_type, utxo_owner.account_index
-                                        ),
-                                    };
-                                    ctx.tolerate(LoadSite::UsedAddressOwnerConflict, conflict)
-                                        .map_err(PersistenceError::from)?;
-                                }
-                            }
-                        }
-                        std::collections::hash_map::Entry::Vacant(slot) => {
-                            slot.insert(owner);
-                        }
-                    }
+                // The isolation boundary. One wallet's failure is recorded
+                // against that wallet and the walk continues; under Strict
+                // `tolerate_at` returns, and the ORIGINAL error propagates
+                // rather than the boundary's own wrapper, so a caller
+                // matching on a specific cause still sees it.
+                Err(original) => {
+                    let cause = wallet_storage_kind(&original);
+                    ctx.tolerate_at(
+                        LoadSite::WalletRehydration,
+                        crate::sqlite::load_ctx::SiteCoords {
+                            wallet_id: Some(wallet_id),
+                            account_type: &"wallet",
+                            affected: 1,
+                            detail: Some(&cause),
+                        },
+                        WalletStorageError::WalletRehydrationFailed {
+                            wallet_id,
+                            cause: original.to_string(),
+                        },
+                    )
+                    .map_err(|_| original)?;
+                    ctx.note_wallet_degraded(wallet_id, cause);
                 }
-                union
-            };
-
-            // Reconstruct a populated `ManagedWalletInfo` from typed rows:
-            // rebuild the wallet watch-only from the manifest, then layer the
-            // persisted core-state projection (UTXOs, sync watermarks,
-            // chainlock, used-address pool depth) onto it. The manager consumes
-            // this directly — the old skeleton + core_state replay fallback is
-            // gone.
-            let wallet = if account_manifest.is_empty() {
-                // No accounts of any kind for this wallet. An empty manifest
-                // is NOT necessarily an orphaned row: a platform-only wallet — a
-                // Platform identity plus contacts, with no core accounts —
-                // legitimately has one. Register it as an external-signable
-                // placeholder (empty AccountCollection) that still carries its
-                // platform-side state (identities, contacts); the manager
-                // registers it like any other wallet. The genuinely-orphaned
-                // case (a crash between the wallet-row write and the first
-                // account write) also lands here and is harmless — it rehydrates
-                // as an empty wallet.
-                //
-                // TODO(product decision needed, task #14): the orphaned variant
-                // leaves a permanently empty manifest. It is not corrupted or
-                // lost, but there is no recovery path today: no re-registration
-                // flow, no eviction, no surfacing to the user. Open question:
-                // does this need one (a TTL-based cleanup, a re-registration
-                // entry point, or a surfaced "orphaned wallet" diagnostic), or is
-                // register-empty-forever acceptable? Awaiting product decision;
-                // not addressed here.
-                key_wallet::wallet::Wallet::new_external_signable(
-                    network,
-                    wallet_id,
-                    key_wallet::account::account_collection::AccountCollection::new(),
-                )
-            } else {
-                build_wallet(network, wallet_id, &account_manifest).map_err(|e| {
-                    PersistenceError::backend(format!(
-                        "watch-only wallet rebuild failed for {}: {e}",
-                        hex::encode(wallet_id)
-                    ))
-                })?
-            };
-            // TODO(insert-wallet-id-recompute): confirm whether key_wallet's
-            // insert_wallet recomputes wallet_id — see PR's existing Deferred
-            // #3992 note. Both construction paths above hand it the persisted
-            // id; if the manager derives its own instead, a rehydrated wallet
-            // could be filed under an id that no longer matches its rows.
-            // Answering it needs the key-wallet crate, not this repo.
-            let mut wallet_info =
-                key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(
-                    &wallet,
-                    birth_height,
-                );
-            // Provider key-material accounts hold no funds, so only the ECDSA
-            // half feeds the UTXO/balance projection here. The platform-node
-            // pre-derived-key pool is restored separately below.
-            apply_persisted_core_state(
-                &mut wallet_info,
-                &account_manifest.ecdsa,
-                &core_state,
-                &utxo_accounts,
-                &used_core_addresses,
-                &ctx,
-            )
-            .map_err(|e| {
-                PersistenceError::backend(format!(
-                    "core-state rehydration failed for {}: {e}",
-                    hex::encode(wallet_id)
-                ))
-            })?;
-            if account_manifest.provider.iter().any(|entry| {
-                entry.account_type == key_wallet::account::AccountType::ProviderPlatformKeys
-            }) {
-                restore_provider_platform_node_pool(
-                    &mut wallet_info,
-                    &conn,
-                    &wallet_id,
-                    network,
-                    &ctx,
-                )
-                .map_err(|e| {
-                    PersistenceError::backend(format!(
-                        "platform-node pool rehydration failed for {}: {e}",
-                        hex::encode(wallet_id)
-                    ))
-                })?;
             }
-
-            state.wallets.insert(
-                wallet_id,
-                platform_wallet::changeset::ClientWalletStartState {
-                    wallet,
-                    wallet_info,
-                    identity_manager,
-                    unused_asset_locks,
-                },
-            );
         }
         let wallets_rehydrated = state.wallets.len();
         #[cfg(feature = "shielded")]
@@ -1720,6 +1564,203 @@ fn populated_field_count(cs: &PlatformWalletChangeSet) -> usize {
 /// reader can pick it up — it simply is not in this `ClientStartState`.
 /// One statement, not one per table: `tc_p4_012` holds `load()`'s
 /// wallet-count-independent statement count to a small constant.
+/// Rehydrate one wallet, or fail without touching any other.
+///
+/// Extracted from `load()`'s loop so the loop has somewhere to put a
+/// boundary: every `?` in here ends this wallet, not the file.
+fn load_one_wallet(
+    conn: &Connection,
+    wallet_id: WalletId,
+    ctx: &LoadCtx,
+) -> Result<platform_wallet::changeset::ClientWalletStartState, PersistenceError> {
+    let (network_str, birth_height) = schema::wallets::fetch(conn, &wallet_id)
+        .map_err(PersistenceError::from)?
+        .ok_or_else(|| {
+            PersistenceError::backend(format!(
+                "wallets row vanished mid-load for {}",
+                hex::encode(wallet_id)
+            ))
+        })?;
+    let network = schema::wallets::parse_network(&network_str).ok_or_else(|| {
+        PersistenceError::backend(format!(
+            "unknown persisted network {:?} for wallet {}",
+            network_str,
+            hex::encode(wallet_id)
+        ))
+    })?;
+
+    let account_manifest =
+        schema::accounts::load_state(conn, &wallet_id, ctx).map_err(PersistenceError::from)?;
+    let (core_state, utxo_accounts) =
+        schema::core_state::load_state(conn, &wallet_id, network, ctx)
+            .map_err(PersistenceError::from)?;
+    // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
+    // already carrying its own public keys + contact state (matching
+    // the FFI persister), so signing works immediately post-load
+    // without a key sync. `ClientWalletStartState.contacts` /
+    // `.identity_keys` stay empty — nothing is layered on afterwards.
+    let identity_manager =
+        schema::identities::load_prekeyed(conn, &wallet_id, ctx).map_err(PersistenceError::from)?;
+    let unused_asset_locks = schema::asset_locks::load_unconsumed(conn, &wallet_id, ctx)
+        .map_err(PersistenceError::from)?;
+    // Used addresses drive the reuse guard: a used-then-emptied
+    // address must never be handed back as a fresh receive address,
+    // and must come back used on ITS OWN account so it is never
+    // re-issued as a fresh receive address from that account. Union
+    // the verbatim `core_address_pool` used-set (known owner) with the
+    // `core_utxos`-derived set (spent + unspent; owner resolved per
+    // script, `None` when no pool row covers it). The guard is
+    // monotonic, so a mixed store — historical UTXOs plus a later
+    // partial pool snapshot that never enumerates them — must surface
+    // both; neither source may shadow the other. Keyed by address; the
+    // pool source is authoritative on owner, so a `None` from the
+    // `core_utxos` source never overrides a resolved pool owner. Two
+    // resolved-but-disagreeing owners for one script means the store
+    // cannot say which account may re-issue the address, so the
+    // policy decides: strict aborts, recovery keeps the pool owner.
+    let used_core_addresses = {
+        let mut union: std::collections::HashMap<
+            dashcore::Address,
+            Option<schema::core_pool::OwningAccount>,
+        > = std::collections::HashMap::new();
+        let pool = schema::core_pool::load_used_addresses_with_ctx(conn, &wallet_id, network, ctx)
+            .map_err(PersistenceError::from)?;
+        for (addr, owner) in pool {
+            union.entry(addr).or_insert(Some(owner));
+        }
+        let utxo = schema::core_state::load_used_addresses_with_ctx(conn, &wallet_id, network, ctx)
+            .map_err(PersistenceError::from)?;
+        for (addr, owner) in utxo {
+            match union.entry(addr) {
+                std::collections::hash_map::Entry::Occupied(existing) => {
+                    if let (Some(pool_owner), Some(utxo_owner)) = (existing.get(), &owner) {
+                        if pool_owner != utxo_owner {
+                            let conflict = WalletStorageError::UsedAddressOwnerConflict {
+                                address: existing.key().to_string(),
+                                pool_owner: format!(
+                                    "{}[{}]",
+                                    pool_owner.account_type, pool_owner.account_index
+                                ),
+                                utxo_owner: format!(
+                                    "{}[{}]",
+                                    utxo_owner.account_type, utxo_owner.account_index
+                                ),
+                            };
+                            ctx.tolerate(LoadSite::UsedAddressOwnerConflict, conflict)
+                                .map_err(PersistenceError::from)?;
+                        }
+                    }
+                }
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    slot.insert(owner);
+                }
+            }
+        }
+        union
+    };
+
+    // Reconstruct a populated `ManagedWalletInfo` from typed rows:
+    // rebuild the wallet watch-only from the manifest, then layer the
+    // persisted core-state projection (UTXOs, sync watermarks,
+    // chainlock, used-address pool depth) onto it. The manager consumes
+    // this directly — the old skeleton + core_state replay fallback is
+    // gone.
+    let wallet = if account_manifest.is_empty() {
+        // No accounts of any kind for this wallet. An empty manifest
+        // is NOT necessarily an orphaned row: a platform-only wallet — a
+        // Platform identity plus contacts, with no core accounts —
+        // legitimately has one. Register it as an external-signable
+        // placeholder (empty AccountCollection) that still carries its
+        // platform-side state (identities, contacts); the manager
+        // registers it like any other wallet. The genuinely-orphaned
+        // case (a crash between the wallet-row write and the first
+        // account write) also lands here and is harmless — it rehydrates
+        // as an empty wallet.
+        //
+        // TODO(product decision needed, task #14): the orphaned variant
+        // leaves a permanently empty manifest. It is not corrupted or
+        // lost, but there is no recovery path today: no re-registration
+        // flow, no eviction, no surfacing to the user. Open question:
+        // does this need one (a TTL-based cleanup, a re-registration
+        // entry point, or a surfaced "orphaned wallet" diagnostic), or is
+        // register-empty-forever acceptable? Awaiting product decision;
+        // not addressed here.
+        key_wallet::wallet::Wallet::new_external_signable(
+            network,
+            wallet_id,
+            key_wallet::account::account_collection::AccountCollection::new(),
+        )
+    } else {
+        build_wallet(network, wallet_id, &account_manifest).map_err(|e| {
+            PersistenceError::backend(format!(
+                "watch-only wallet rebuild failed for {}: {e}",
+                hex::encode(wallet_id)
+            ))
+        })?
+    };
+    // TODO(insert-wallet-id-recompute): confirm whether key_wallet's
+    // insert_wallet recomputes wallet_id — see PR's existing Deferred
+    // #3992 note. Both construction paths above hand it the persisted
+    // id; if the manager derives its own instead, a rehydrated wallet
+    // could be filed under an id that no longer matches its rows.
+    // Answering it needs the key-wallet crate, not this repo.
+    let mut wallet_info = key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(
+        &wallet,
+        birth_height,
+    );
+    // Provider key-material accounts hold no funds, so only the ECDSA
+    // half feeds the UTXO/balance projection here. The platform-node
+    // pre-derived-key pool is restored separately below.
+    apply_persisted_core_state(
+        &mut wallet_info,
+        &account_manifest.ecdsa,
+        &core_state,
+        &utxo_accounts,
+        &used_core_addresses,
+        ctx,
+    )
+    .map_err(|e| {
+        PersistenceError::backend(format!(
+            "core-state rehydration failed for {}: {e}",
+            hex::encode(wallet_id)
+        ))
+    })?;
+    if account_manifest
+        .provider
+        .iter()
+        .any(|entry| entry.account_type == key_wallet::account::AccountType::ProviderPlatformKeys)
+    {
+        restore_provider_platform_node_pool(&mut wallet_info, conn, &wallet_id, network, ctx)
+            .map_err(|e| {
+                PersistenceError::backend(format!(
+                    "platform-node pool rehydration failed for {}: {e}",
+                    hex::encode(wallet_id)
+                ))
+            })?;
+    }
+    Ok(platform_wallet::changeset::ClientWalletStartState {
+        wallet,
+        wallet_info,
+        identity_manager,
+        unused_asset_locks,
+    })
+}
+
+/// The kind tag of the typed storage error inside a persistence error.
+///
+/// The boundary attributes a dropped wallet to its cause, and the cause is
+/// more useful than the boundary's own name: a caller wants `address_decode`,
+/// not `wallet_rehydration_failed`.
+fn wallet_storage_kind(err: &PersistenceError) -> &'static str {
+    match err {
+        PersistenceError::Backend { source, .. } => source
+            .downcast_ref::<WalletStorageError>()
+            .map(WalletStorageError::error_kind_str)
+            .unwrap_or("backend"),
+        PersistenceError::LockPoisoned => "lock_poisoned",
+    }
+}
+
 fn count_unimplemented_rows(conn: &Connection) -> Result<u32, WalletStorageError> {
     let sum = LOAD_UNIMPLEMENTED_TABLES
         .iter()
