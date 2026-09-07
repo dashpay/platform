@@ -129,6 +129,32 @@ interface TxoDao {
     suspend fun releaseByOutpoint(outpoint: ByteArray, walletId: ByteArray)
 
     /**
+     * Hold one of [walletId]'s coins spent under [supersededBy] on the
+     * strength of a sweep batch's claimed inputs alone — the by-outpoint
+     * twin of [holdSpentWithoutSpender] for a loser this store never held
+     * (swept before its own detection reached persistence), whose inputs
+     * therefore cannot be found by spender.
+     *
+     * `spendingTxid IS NULL` keeps it from overreaching, the same way it
+     * does for [releaseByOutpoint]: a coin some surviving transaction
+     * claims — the winner's own record, recorded earlier in this round —
+     * keeps that link, which already attributes the spend. Only a
+     * detached coin needs the batch's word for it. Returns the rows
+     * touched, so the caller can tell a detached coin it just held from
+     * one that has no row at all yet and needs a placeholder instead.
+     */
+    @Query(
+        "UPDATE txos SET isSpent = 1, spendingInputIndex = NULL, " +
+            "supersededByTxid = :supersededBy " +
+            "WHERE outpoint = :outpoint AND spendingTxid IS NULL AND walletId = :walletId",
+    )
+    suspend fun holdClaimedInput(
+        outpoint: ByteArray,
+        walletId: ByteArray,
+        supersededBy: ByteArray,
+    ): Int
+
+    /**
      * Whether some wallet other than [walletId] still has a TXO pointing at
      * [spendingTxid] as its spender.
      *

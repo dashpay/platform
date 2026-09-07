@@ -1362,6 +1362,7 @@ class PlatformWalletPersistenceHandler(
         txids: Array<ByteArray>,
         supersededBy: Array<ByteArray>,
         releasedOutpoints: Array<ByteArray>,
+        claimedInputs: Array<ByteArray>,
         winnerMinedHeight: Int,
     ): Int = guarded {
         stage(walletId) { db ->
@@ -1498,6 +1499,75 @@ class PlatformWalletPersistenceHandler(
                                 winnerMinedHeight = winnerHeight ?: it.winnerMinedHeight,
                             )
                         },
+                    )
+                }
+            }
+            // Inputs the batch vouches for on behalf of a loser this store
+            // never held: it was swept before its own detection reached
+            // persistence, so the loop above found no staged rows to hold
+            // and `holdSpentWithoutSpender` no link to follow. The batch
+            // carries the detection's own input details instead, and each
+            // is settled exactly like a deleted row's input — released ones
+            // are left to the release pass below, a co-swept parent's
+            // output is nobody's coin, and everything else is held spent
+            // under the winner: on the coin's row when it exists and is
+            // not claimed by a surviving spender, otherwise as the same
+            // tombstone the staged-row path writes, so the funding TXO's
+            // arrival (even after a restart) drains into a held coin rather
+            // than a fresh unspent one. Repeats of an input the loop above
+            // already settled land on the same values.
+            // The batch's winner is the same for every loser in it
+            // (`supersededBy` is one value repeated per loser), so any slot
+            // names it. A batch that vouches for inputs but names no
+            // winner cannot be settled; failing the round keeps Rust from
+            // clearing a sweep whose hold never landed, the same contract
+            // as every other refusal here.
+            val claimedWinner = supersededBy.firstOrNull()
+            if (claimedWinner == null && claimedInputs.isNotEmpty()) {
+                throw IllegalStateException(
+                    "sweep batch vouches for ${claimedInputs.size} input(s) but names no winner",
+                )
+            }
+            for (outpoint in claimedInputs) {
+                if (releasedKeys.contains(outpoint.toHex()) ||
+                    sweptTxidKeys.contains(outpoint.copyOfRange(0, 32).toHex())
+                ) {
+                    continue
+                }
+                val winner = claimedWinner ?: continue
+                val held = db.txoDao().holdClaimedInput(outpoint, walletId, winner)
+                if (held > 0 || db.txoDao().getByOutpoint(outpoint) != null) continue
+                // Only an earlier tombstone for this winner (and this
+                // wallet) counts as "already written". An ordinary pending
+                // row the winner's own record staged is a surviving
+                // spender's claim, left alone exactly like a linked TXO
+                // above; the tombstone is written beside it, the same end
+                // state a stored loser's sweep leaves, and the drain prefers
+                // the tombstone regardless of age.
+                val existing = db.documentDao().getPendingInputsByOutpoint(outpoint).firstOrNull {
+                    it.walletId.contentEquals(walletId) && it.isSweptTombstone &&
+                        it.spendingTxid.contentEquals(winner)
+                }
+                if (existing == null) {
+                    // `inputIndex` is the input's position in its spending
+                    // transaction, which the batch does not carry; the
+                    // drain copies it onto the TXO for display order only.
+                    db.documentDao().upsertPendingInput(
+                        PendingInputEntity(
+                            outpoint = outpoint,
+                            inputIndex = 0,
+                            spendingTxid = winner,
+                            spendingTransactionTxid = null,
+                            walletId = walletId,
+                            isSweptTombstone = true,
+                            winnerMinedHeight = winnerHeight,
+                        ),
+                    )
+                } else if (winnerHeight != null && existing.winnerMinedHeight != winnerHeight) {
+                    // Same re-point rule as `stillHeld` above: a block-context
+                    // sweep re-stamps, an IS-locked one keeps the stamp.
+                    db.documentDao().updatePendingInputs(
+                        listOf(existing.copy(winnerMinedHeight = winnerHeight)),
                     )
                 }
             }

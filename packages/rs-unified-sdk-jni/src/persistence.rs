@@ -725,6 +725,20 @@ unsafe fn persist_changeset_sweep_batch(
         })?;
     }
 
+    // Inputs the batch vouches for on behalf of a loser this store never
+    // held (swept before its detection reached persistence) — same 36-byte
+    // key shape as the released set, settled by the handler exactly like a
+    // deleted row's own inputs.
+    let claimed = slice_or_empty(batch.claimed_inputs, batch.claimed_inputs_count);
+    let claimed_arr = env.new_object_array(claimed.len() as i32, &byte_array_cls, &empty)?;
+    for (i, outpoint) in claimed.iter().enumerate() {
+        let key = pack_outpoint_key(outpoint);
+        env.with_local_frame(4, |env| {
+            let k = env.byte_array_from_slice(&key)?;
+            env.set_object_array_element(&claimed_arr, i as i32, &k)
+        })?;
+    }
+
     // The winner's finality context: its mined height for a block-context
     // sweep, -1 for an InstantSend-locked winner still waiting to be mined.
     // The sentinel is unambiguous — block heights are non-negative — and
@@ -743,12 +757,13 @@ unsafe fn persist_changeset_sweep_batch(
     env.call_method(
         bridge,
         "onWalletChangesetTransactionsSwept",
-        "([B[[B[[B[[BI)I",
+        "([B[[B[[B[[B[[BI)I",
         &[
             wid.into(),
             (&txids_arr).into(),
             (&winners).into(),
             (&released_arr).into(),
+            (&claimed_arr).into(),
             JValue::Int(winner_mined_height),
         ],
     )?
@@ -4434,7 +4449,7 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     // right where a failed round freezes the wallet's watermark. Descriptor
     // must track the literal at the `call_method` site in
     // `persist_changeset_sweep_batch` above.
-    ("onWalletChangesetTransactionsSwept", "([B[[B[[B[[BI)I"),
+    ("onWalletChangesetTransactionsSwept", "([B[[B[[B[[B[[BI)I"),
     // Same drift risk as the sweeps descriptor above: this slot fires on
     // chainlock-advancing rounds only, so a stale descriptor would surface
     // exactly when the first real chainlock crossed. Must track the

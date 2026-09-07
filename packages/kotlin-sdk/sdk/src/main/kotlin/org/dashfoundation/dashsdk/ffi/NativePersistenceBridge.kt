@@ -318,7 +318,7 @@ abstract class NativePersistenceBridge {
      * batch can keep spent a coin an earlier one freed — so an
      * implementation must apply every call's holds before its releases and
      * must never fold calls together or reorder them.
-     * Descriptor `([B[[B[[B[[BI)I`.
+     * Descriptor `([B[[B[[B[[B[[BI)I`.
      *
      * [winnerMinedHeight] is the winner's own mined block height for a
      * block-context sweep, or -1 for an InstantSend-locked winner not yet
@@ -352,6 +352,19 @@ abstract class NativePersistenceBridge {
      * transaction may pay entirely to outside addresses and never be
      * reported here at all.
      *
+     * [claimedInputs] holds the same 36-byte keys: inputs the removed
+     * transactions claimed, as far as the wallet's own events prove it,
+     * for an implementation that never stored the removed transaction.
+     * "Holds every input of every row it deletes" fails for a transaction
+     * swept before its own detection reached persistence — no row was
+     * written, so there is nothing to walk — and these keys are then the
+     * only evidence that the winner consumed this wallet's coin. Settle
+     * each exactly like an input of a row this call deletes: free it if
+     * [releasedOutpoints] names it, otherwise hold it spent under its
+     * batch's winner (a durable placeholder when the funding TXO has not
+     * arrived). Usually empty; may repeat inputs of a row that does exist,
+     * which settle idempotently.
+     *
      * Native delivers these through the persistence extension's
      * size-negotiated sweep callback (not the wallet-changeset struct, whose
      * bare-pointer ABI cannot version itself), immediately after the
@@ -372,11 +385,13 @@ abstract class NativePersistenceBridge {
      * Rust already strips the watermark before its `store()`, so returning
      * success costs nothing and preserves the round's additive slots.
      */
+    @Suppress("LongParameterList")
     open fun onWalletChangesetTransactionsSwept(
         walletId: ByteArray,
         txids: Array<ByteArray>,
         supersededBy: Array<ByteArray>,
         releasedOutpoints: Array<ByteArray>,
+        claimedInputs: Array<ByteArray>,
         winnerMinedHeight: Int,
     ): Int =
         if (persistenceCapabilitiesBits() and CAPABILITY_CORE_SWEEP_REMOVAL != 0L) 1 else 0

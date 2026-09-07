@@ -169,6 +169,7 @@ fn sweep_only_changeset_deletes_loser_row_and_its_outputs() {
                 superseded_by: Txid::from_byte_array([0x11; 32]),
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -209,6 +210,7 @@ fn sweeping_an_unknown_txid_is_a_no_op() {
             superseded_by: Txid::from_byte_array([0x21; 32]),
             winner_mined_height: Some(WINNER_HEIGHT),
             released_outpoints: vec![],
+            claimed_inputs: vec![],
         }],
         ..Default::default()
     };
@@ -216,12 +218,17 @@ fn sweeping_an_unknown_txid_is_a_no_op() {
     tx.commit().unwrap();
 }
 
-/// A delayed detection is projected without its stale transaction row when
-/// the live wallet has already swept that loser. Its event-carried spent
-/// input must still survive a SQLite restart even though the sweep itself
-/// cannot recover evidence from the absent row.
+/// A loser can be swept while its detection event is still queued for
+/// persistence. The adapter then projects the detection without its stale
+/// row and hands the loser's inputs to the sweep as `claimed_inputs` — the
+/// only evidence this store ever gets that the external winner consumed the
+/// funding coin. The claim has to be attributed to the winner (not merely
+/// marked spent): `spent_in_txid` is the one thing the funding upsert's
+/// valve defends, so an unattributed mark would be reset to unspent the
+/// next time the funding output is delivered — a rescan after restart does
+/// exactly that, blind to a winner no block carries yet.
 #[test]
-fn delayed_detection_without_loser_row_keeps_input_spent_after_restart() {
+fn claimed_input_of_a_never_held_loser_stays_spent_across_restart_and_funding_redelivery() {
     let (persister, _tmp, path) = fresh_persister();
     let w: WalletId = wid(0xFB);
     ensure_wallet_meta(&persister, &w);
@@ -230,6 +237,7 @@ fn delayed_detection_without_loser_row_keeps_input_spent_after_restart() {
     let funding_txid = Txid::from_byte_array([0x71; 32]);
     let funding_outpoint = OutPoint::new(funding_txid, 0);
     let loser_txid = Txid::from_byte_array([0x72; 32]);
+    let winner_txid = Txid::from_byte_array([0x73; 32]);
 
     {
         let mut conn = persister.lock_conn_for_test();
@@ -247,6 +255,9 @@ fn delayed_detection_without_loser_row_keeps_input_spent_after_restart() {
         tx.commit().unwrap();
     }
 
+    // Exactly what the adapter emits for the folded delayed-detection +
+    // sweep drain: no record, no `spent_utxos`, one batch vouching for the
+    // loser's input.
     {
         let mut conn = persister.lock_conn_for_test();
         let tx = conn.transaction().unwrap();
@@ -254,12 +265,12 @@ fn delayed_detection_without_loser_row_keeps_input_spent_after_restart() {
             &tx,
             &w,
             &CoreChangeSet {
-                spent_utxos: vec![make_utxo(&addr, funding_txid, 0, 50_000)],
                 sweeps: vec![SweepBatch {
                     txids: vec![loser_txid],
-                    superseded_by: Txid::from_byte_array([0x73; 32]),
+                    superseded_by: winner_txid,
                     winner_mined_height: Some(WINNER_HEIGHT),
                     released_outpoints: vec![],
+                    claimed_inputs: vec![funding_outpoint],
                 }],
                 ..Default::default()
             },
@@ -283,15 +294,143 @@ fn delayed_detection_without_loser_row_keeps_input_spent_after_restart() {
             !loser_exists,
             "the delayed stale transaction row must never be persisted"
         );
+        assert_eq!(
+            spent_in_txid(&conn, &w, &funding_outpoint),
+            Some(winner_txid),
+            "the claimed input is attributed to the winner, not merely marked"
+        );
     }
 
     drop(persister);
     let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    {
+        let conn = persister.lock_conn_for_test();
+        assert!(
+            !unspent(&conn, &w).contains(&funding_outpoint),
+            "the external winner's consumed input must remain spent after restart"
+        );
+    }
+
+    // The funding output delivered again, as an ordinary UTXO upsert.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        core_state::apply(
+            &tx,
+            &w,
+            &CoreChangeSet {
+                new_utxos: vec![make_utxo(&addr, funding_txid, 0, 50_000)],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+    }
     let conn = persister.lock_conn_for_test();
     assert!(
         !unspent(&conn, &w).contains(&funding_outpoint),
-        "the external winner's consumed input must remain spent after restart"
+        "re-delivering the funding output must not lift the winner's claim"
     );
+    assert_eq!(
+        spent_in_txid(&conn, &w, &funding_outpoint),
+        Some(winner_txid)
+    );
+}
+
+/// The same never-held loser, but its input's funding output has not been
+/// classified yet: the claim gets the same stamped placeholder a stored
+/// loser's unfunded input would, and the funding upsert materialises it
+/// held rather than freshly unspent.
+#[test]
+fn claimed_input_without_a_funding_row_gets_a_stamped_placeholder() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xFC);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x74);
+    let funding_txid = Txid::from_byte_array([0x75; 32]);
+    let funding_outpoint = OutPoint::new(funding_txid, 0);
+    let winner_txid = Txid::from_byte_array([0x77; 32]);
+
+    {
+        let mut conn = persister.lock_conn_for_test();
+        derive_address(&conn, &w, 0, &addr);
+        let tx = conn.transaction().unwrap();
+        core_state::apply(
+            &tx,
+            &w,
+            &CoreChangeSet {
+                sweeps: vec![SweepBatch {
+                    txids: vec![Txid::from_byte_array([0x76; 32])],
+                    superseded_by: winner_txid,
+                    winner_mined_height: Some(WINNER_HEIGHT),
+                    released_outpoints: vec![],
+                    claimed_inputs: vec![funding_outpoint],
+                }],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let conn = persister.lock_conn_for_test();
+        assert!(row_exists(&conn, &w, &funding_outpoint));
+        assert_eq!(
+            spent_in_txid(&conn, &w, &funding_outpoint),
+            Some(winner_txid)
+        );
+        let stamp: Option<i64> = conn
+            .query_row(
+                "SELECT winner_mined_height FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![
+                    w.as_slice(),
+                    &blob::encode_outpoint(&funding_outpoint).unwrap()[..]
+                ],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stamp, Some(i64::from(WINNER_HEIGHT)));
+    }
+
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        core_state::apply(
+            &tx,
+            &w,
+            &CoreChangeSet {
+                new_utxos: vec![make_utxo(&addr, funding_txid, 0, 50_000)],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+    }
+    let conn = persister.lock_conn_for_test();
+    assert!(
+        !unspent(&conn, &w).contains(&funding_outpoint),
+        "the funding output materialises the placeholder as a held coin"
+    );
+}
+
+/// `spent_in_txid` of one `core_utxos` row, decoded — `None` for an
+/// unattributed row or no row at all.
+fn spent_in_txid(conn: &rusqlite::Connection, w: &WalletId, op: &OutPoint) -> Option<Txid> {
+    let bytes = blob::encode_outpoint(op).unwrap();
+    let raw: Option<Option<Vec<u8>>> = conn
+        .query_row(
+            "SELECT spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            params![w.as_slice(), &bytes[..]],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap();
+    raw.flatten().map(|v| {
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&v);
+        Txid::from_byte_array(arr)
+    })
 }
 
 /// The released set is applied verbatim: an outpoint it names becomes
@@ -383,6 +522,7 @@ fn the_released_set_frees_exactly_the_inputs_it_names() {
                 superseded_by: winner_txid,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![exclusive_input],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -467,6 +607,7 @@ fn an_absent_winner_still_keeps_its_own_input_spent() {
                 superseded_by: unrecorded_winner_txid,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![loser_exclusive],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -565,6 +706,7 @@ fn a_released_coin_a_surviving_record_reclaims_stays_spent() {
                 superseded_by: winner_txid,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![freed_coin],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -683,6 +825,7 @@ fn a_release_naming_a_coin_a_stored_finalized_record_claims_is_refused() {
                 superseded_by: winner_txid,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![settled_coin, losers_own_coin],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -808,6 +951,7 @@ fn a_stale_mempool_claimant_does_not_veto_an_authoritative_release() {
                 superseded_by: winner_txid,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![coin],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -878,6 +1022,7 @@ fn a_corrupt_stored_claimant_fails_the_sweep_round_closed() {
             superseded_by: winner_txid,
             winner_mined_height: Some(WINNER_HEIGHT),
             released_outpoints: vec![coin],
+            claimed_inputs: vec![],
         }],
         ..Default::default()
     };
@@ -977,6 +1122,7 @@ fn sweeping_a_transaction_deletes_its_instant_lock() {
                 superseded_by: Txid::from_byte_array([0x61; 32]),
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -1070,6 +1216,7 @@ fn a_later_sweep_keeping_a_coin_spent_overrides_an_earlier_release() {
                     superseded_by: Txid::from_byte_array([0x7a; 32]),
                     winner_mined_height: Some(WINNER_HEIGHT),
                     released_outpoints: vec![contested],
+                    claimed_inputs: vec![],
                 },
                 // The second winner consumed the coin, so this sweep frees
                 // nothing — and that has to override the release above.
@@ -1078,6 +1225,7 @@ fn a_later_sweep_keeping_a_coin_spent_overrides_an_earlier_release() {
                     superseded_by: Txid::from_byte_array([0x7b; 32]),
                     winner_mined_height: Some(WINNER_HEIGHT),
                     released_outpoints: vec![],
+                    claimed_inputs: vec![],
                 },
             ],
             ..Default::default()
@@ -1153,6 +1301,7 @@ fn a_held_input_with_no_utxo_row_survives_restart_and_stays_spent_when_funded() 
                 superseded_by: winner_txid,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -1263,6 +1412,7 @@ fn a_chained_sweep_before_funding_still_frees_an_earlier_tombstone_on_release() 
                 superseded_by: second_loser,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -1295,6 +1445,7 @@ fn a_chained_sweep_before_funding_still_frees_an_earlier_tombstone_on_release() 
                 superseded_by: final_winner,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![unfunded_input],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -1388,6 +1539,7 @@ fn a_chained_sweep_before_funding_repoints_an_earlier_tombstone_to_the_new_winne
                 superseded_by: second_loser,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -1411,6 +1563,7 @@ fn a_chained_sweep_before_funding_repoints_an_earlier_tombstone_to_the_new_winne
                 superseded_by: final_winner,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -1522,6 +1675,7 @@ fn a_multi_wallet_chained_sweep_before_funding_reconciles_each_wallets_own_tombs
                 superseded_by: shared_winner,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -1553,6 +1707,7 @@ fn a_multi_wallet_chained_sweep_before_funding_reconciles_each_wallets_own_tombs
                 superseded_by: final_winner,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![p1],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -1597,6 +1752,7 @@ fn a_multi_wallet_chained_sweep_before_funding_reconciles_each_wallets_own_tombs
                 superseded_by: final_winner,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -1707,6 +1863,7 @@ fn sweep_of_a_shared_loser_txid_is_independent_per_wallet() {
                 superseded_by: winner_txid,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![coin],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -1754,6 +1911,7 @@ fn sweep_of_a_shared_loser_txid_is_independent_per_wallet() {
                 superseded_by: winner_txid,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -1856,6 +2014,7 @@ fn sweep_deletion_is_durable_even_when_the_other_wallets_callback_never_arrives(
                 superseded_by: winner_txid,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -1972,6 +2131,7 @@ fn a_record_reinstating_a_swept_txid_in_a_later_round_is_accepted_and_durable() 
                 superseded_by: winner_txid,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -2095,6 +2255,7 @@ fn a_release_applies_even_when_the_swept_txid_has_no_row() {
                 superseded_by: winner_txid,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -2121,6 +2282,7 @@ fn a_release_applies_even_when_the_swept_txid_has_no_row() {
                 superseded_by: final_winner,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![p],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -2211,6 +2373,7 @@ fn a_batch_sweeping_parent_and_child_leaves_no_placeholder_for_the_parents_outpu
                 superseded_by: winner_txid,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -2307,6 +2470,7 @@ fn a_co_swept_parent_with_no_row_still_has_its_output_removed() {
                 superseded_by: winner_txid,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -2410,6 +2574,7 @@ fn a_co_swept_parent_known_only_through_the_childs_spend_is_still_removed() {
                 superseded_by: winner_txid,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -2532,6 +2697,7 @@ fn seed_tombstone(
             superseded_by: winner,
             winner_mined_height,
             released_outpoints: vec![],
+            claimed_inputs: vec![],
         }],
         ..Default::default()
     };
@@ -2981,6 +3147,7 @@ fn a_repointed_tombstone_is_restamped_to_the_later_winners_height() {
                 superseded_by: final_winner,
                 winner_mined_height: Some(WINNER_HEIGHT + 50),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -3040,6 +3207,7 @@ fn a_mempool_repointed_tombstone_keeps_its_block_context_stamp() {
                 superseded_by: final_winner,
                 winner_mined_height: None,
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };
@@ -3107,6 +3275,7 @@ fn an_unstamped_tombstone_restamped_by_a_block_context_sweep_becomes_collectible
                 superseded_by: final_winner,
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }],
             ..Default::default()
         };

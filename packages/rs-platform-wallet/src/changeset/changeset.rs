@@ -133,6 +133,21 @@ pub struct CoreChangeSet {
     /// without a follow-up read.
     pub spent_utxos: Vec<Utxo>,
 
+    /// Inputs proven spent by a detection whose transaction the live
+    /// wallet no longer holds, keyed by that transaction's txid: the event
+    /// bridge finds the record already swept (or pruned) by the time its
+    /// queued detection is projected, and refuses to restore the stale
+    /// row — but the record's own input details are the only evidence
+    /// left of what it consumed. Only the event bridge fills this, and the
+    /// adapter settles it before a changeset reaches a persister —
+    /// attributing each entry to the sweep batch that removed its txid (see
+    /// [`SweepBatch::claimed_inputs`]) and demoting what no sweep names to
+    /// plain [`spent_utxos`](Self::spent_utxos) — so a persister always
+    /// receives it empty and need not read it. Never journaled: it exists
+    /// only between projection and settlement.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub dropped_record_spends: BTreeMap<Txid, Vec<Utxo>>,
+
     /// UTXOs to add — outputs created by records in this batch that pay
     /// to one of our addresses (i.e. `OutputRole::Received` or
     /// `OutputRole::Change` per the upstream `TransactionRecord`).
@@ -305,6 +320,31 @@ pub struct SweepBatch {
     /// free — no surviving transaction spends them too. Everything else they
     /// claimed was taken by `superseded_by` and stays spent.
     pub released_outpoints: Vec<OutPoint>,
+    /// Inputs the removed transactions claimed, as far as the round's own
+    /// events prove it, for a persister that never stored the removed
+    /// transaction. A persister ordinarily holds every input of a row it
+    /// deletes, and `released_outpoints` alone tells it which came free —
+    /// but a transaction can be swept before its own detection reaches
+    /// persistence, and then no store has a row to read inputs from. The
+    /// detection event still carried them; the adapter attaches them here
+    /// so the sweep can settle them exactly as it would a deleted row's
+    /// inputs: released ones come free, every other one is held spent and
+    /// attributed to `superseded_by`, with a durable placeholder when the
+    /// funding output has not materialised. Usually empty, and may repeat
+    /// inputs of a row the persister does hold — settling an input twice is
+    /// idempotent.
+    ///
+    /// Not keyed by loser: when a later record reinstates one of `txids`
+    /// (see the `Merge` impl) its claimed inputs stay on the batch under
+    /// `superseded_by`. The coin really is spent — by the reinstated
+    /// transaction — so nothing is handed back wrongly; only the recorded
+    /// spender is the winner that has since lost, which the reinstated
+    /// record's own spend evidence supersedes when it confirms.
+    ///
+    /// `serde(default)`: a journaled payload written before this field
+    /// existed reads back as empty.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub claimed_inputs: Vec<OutPoint>,
 }
 
 /// Highest-used derivation index per pool slot for one account, as
@@ -613,6 +653,12 @@ impl Merge for CoreChangeSet {
             (r.txid, r.account_type)
         });
         self.spent_utxos.extend(other.spent_utxos);
+        for (txid, utxos) in other.dropped_record_spends {
+            self.dropped_record_spends
+                .entry(txid)
+                .or_default()
+                .extend(utxos);
+        }
         self.new_utxos.extend(other.new_utxos);
 
         // IS-lock map: last-write-wins per txid. A second IS-lock for
@@ -719,6 +765,7 @@ impl Merge for CoreChangeSet {
             && self.sweeps.is_empty()
             && self.account_records.is_empty()
             && self.spent_utxos.is_empty()
+            && self.dropped_record_spends.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
             && self.last_processed_height.is_none()
@@ -727,6 +774,40 @@ impl Merge for CoreChangeSet {
             && self.addresses_marked_used.is_empty()
             && self.account_highest_used.is_empty()
             && self.last_applied_chain_lock.is_none()
+    }
+}
+
+impl CoreChangeSet {
+    /// Settle [`dropped_record_spends`](Self::dropped_record_spends) against
+    /// this changeset's sweeps and return whatever no sweep here names.
+    ///
+    /// An entry whose txid a batch in `sweeps` removed becomes that batch's
+    /// [`SweepBatch::claimed_inputs`]: the sweep is what settles those
+    /// inputs, and the winner it names is the attribution every persister
+    /// keeps a held input under. The rest are handed back to the caller —
+    /// the transaction may have been chain-locked and pruned rather than
+    /// swept (its spends are real, and already persisted by the events
+    /// that confirmed it), or its sweep may still be queued for a later
+    /// drain — and the caller decides how long to keep waiting for a sweep
+    /// before writing them as unattributed spends.
+    pub(crate) fn settle_dropped_record_spends(&mut self) -> BTreeMap<Txid, Vec<Utxo>> {
+        let mut pending = std::mem::take(&mut self.dropped_record_spends);
+        if pending.is_empty() {
+            return pending;
+        }
+        for batch in &mut self.sweeps {
+            for txid in &batch.txids {
+                let Some(utxos) = pending.remove(txid) else {
+                    continue;
+                };
+                for utxo in utxos {
+                    if !batch.claimed_inputs.contains(&utxo.outpoint) {
+                        batch.claimed_inputs.push(utxo.outpoint);
+                    }
+                }
+            }
+        }
+        pending
     }
 }
 
@@ -2243,6 +2324,33 @@ mod serde_compat_tests {
         assert!(cs.sweeps.is_empty());
         assert_eq!(cs.last_processed_height, Some(1000));
         assert_eq!(cs.synced_height, Some(900));
+    }
+
+    /// A sweep batch serialized before `claimed_inputs` existed reads back
+    /// with none: nothing back then could have vouched for an input.
+    #[test]
+    fn a_sweep_payload_without_claimed_inputs_deserializes_with_none() {
+        let json = r#"{
+            "records": [],
+            "spent_utxos": [],
+            "new_utxos": [],
+            "instant_locks_for_non_final_records": {},
+            "last_processed_height": null,
+            "synced_height": null,
+            "account_highest_used": {},
+            "last_applied_chain_lock": null,
+            "sweeps": [{
+                "txids": ["1111111111111111111111111111111111111111111111111111111111111111"],
+                "superseded_by": "2222222222222222222222222222222222222222222222222222222222222222",
+                "released_outpoints": []
+            }]
+        }"#;
+
+        let cs: CoreChangeSet =
+            serde_json::from_str(json).expect("a pre-claimed-inputs sweep must deserialize");
+        assert_eq!(cs.sweeps.len(), 1);
+        assert!(cs.sweeps[0].claimed_inputs.is_empty());
+        assert!(cs.sweeps[0].winner_mined_height.is_none());
     }
 }
 

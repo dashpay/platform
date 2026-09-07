@@ -7099,6 +7099,7 @@ mod tests {
                                 dashcore::Txid::from_byte_array([0x33; 32]),
                                 7,
                             )],
+                            claimed_inputs: vec![],
                         },
                         // IS-locked winner: no height — the consumer must
                         // see the absence, not a fabricated zero.
@@ -7110,6 +7111,7 @@ mod tests {
                             superseded_by: dashcore::Txid::from_byte_array([0x66; 32]),
                             winner_mined_height: None,
                             released_outpoints: vec![],
+                            claimed_inputs: vec![],
                         },
                     ],
                     ..Default::default()

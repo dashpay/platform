@@ -112,7 +112,7 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(
             "a hand-declared capability with the inherited no-op body must fail the round",
             declaringButNotOverriding.onWalletChangesetTransactionsSwept(
-                walletId, arrayOf(ByteArray(32) { 2 }), arrayOf(ByteArray(32) { 3 }), emptyArray(), 400,
+                walletId, arrayOf(ByteArray(32) { 2 }), arrayOf(ByteArray(32) { 3 }), emptyArray(), emptyArray(), 400,
             ) != 0,
         )
 
@@ -120,7 +120,7 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(
             0,
             nonAttesting.onWalletChangesetTransactionsSwept(
-                walletId, arrayOf(ByteArray(32) { 2 }), arrayOf(ByteArray(32) { 3 }), emptyArray(), 400,
+                walletId, arrayOf(ByteArray(32) { 2 }), arrayOf(ByteArray(32) { 3 }), emptyArray(), emptyArray(), 400,
             ),
         )
     }
@@ -2157,7 +2157,7 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, winnerTxid)
         handler.onWalletChangesetTransactionsSwept(
             walletId, arrayOf(sweptTxid), arrayOf(winnerTxid),
-            arrayOf(makeOutpoint(fundingTxid, 1)), 400,
+            arrayOf(makeOutpoint(fundingTxid, 1)), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -2236,7 +2236,7 @@ class PlatformWalletPersistenceHandlerTest {
             walletId, arrayOf(sweptTxid), arrayOf(irrelevantWinner),
             // Upstream knows the winner took this coin even though it never
             // reports the winner itself, so nothing is released.
-            emptyArray(), 400,
+            emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -2271,6 +2271,149 @@ class PlatformWalletPersistenceHandlerTest {
         val redelivered = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!
         assertTrue("the stamped hold survives re-delivery", redelivered.isSpent)
         assertTrue(irrelevantWinner.contentEquals(redelivered.supersededByTxid))
+        assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
+    }
+
+    @Test
+    fun aLoserSweptBeforeItsDetectionPersistedStillHoldsTheClaimedInput() = runTest {
+        // The loser can be swept while its detection event is still queued
+        // for persistence: the projection then finds no live record and
+        // refuses to restore the stale row, so this store never holds a
+        // transaction whose inputs the sweep could walk. The detection's
+        // own input details ride on the batch as `claimedInputs` instead,
+        // and must be settled exactly like a deleted row's inputs — held
+        // under the winner, durably, across a restart AND a re-delivery of
+        // the funding output.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yUtxoAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 61 }
+        val neverHeldLoser = ByteArray(32) { 62 }
+        val externalWinner = ByteArray(32) { 63 }
+        val funding = makeOutpoint(fundingTxid, 0)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 100_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertFalse(db.txoDao().getByOutpoint(funding)!!.isSpent)
+
+        // The round the adapter builds for a delayed detection folded with
+        // its sweep: no record, no utxos_spent, one batch vouching for the
+        // funding coin.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(neverHeldLoser), arrayOf(externalWinner),
+            emptyArray(), arrayOf(funding), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull("no stale loser row is invented", db.transactionDao().getByTxid(neverHeldLoser))
+        val held = db.txoDao().getByOutpoint(funding)!!
+        assertTrue("the input the batch vouched for is held", held.isSpent)
+        assertNull(held.spendingTxid)
+        assertTrue(externalWinner.contentEquals(held.supersededByTxid))
+        assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
+
+        // Re-delivery of the funding output (restore-rescan) must not lift
+        // the hold — the same valve the SQLite store's upsert applies.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        val redelivered = db.txoDao().getByOutpoint(funding)!!
+        assertTrue("the claimed-input hold survives re-delivery", redelivered.isSpent)
+        assertTrue(externalWinner.contentEquals(redelivered.supersededByTxid))
+        assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
+    }
+
+    @Test
+    fun aClaimedInputWithNoFundingRowYetLeavesAStampedTombstone() = runTest {
+        // The same never-held loser, but the coin it spent has not been
+        // classified as ours yet. The batch's claim must survive as the
+        // same tombstone a staged pending row turns into, so the funding
+        // TXO's later arrival drains into a held coin rather than a fresh
+        // unspent one, and the collector can reap it at the boundary.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yUtxoAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+        val fundingTxid = ByteArray(32) { 64 }
+        val neverHeldLoser = ByteArray(32) { 65 }
+        val externalWinner = ByteArray(32) { 66 }
+        val funding = makeOutpoint(fundingTxid, 0)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(neverHeldLoser), arrayOf(externalWinner),
+            emptyArray(), arrayOf(funding), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val tombstone = db.documentDao().getPendingInput(funding, externalWinner)
+        assertNotNull("a placeholder claim is written for the unfunded input", tombstone)
+        assertTrue(tombstone!!.isSweptTombstone)
+        assertNull(tombstone.spendingTransactionTxid)
+        assertEquals(400, tombstone.winnerMinedHeight)
+
+        // Re-vouching for the same input (a re-emitted sweep) is idempotent.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(neverHeldLoser), arrayOf(externalWinner),
+            emptyArray(), arrayOf(funding), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertEquals(1, db.documentDao().getPendingInputsByOutpoint(funding).size)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 100_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val drained = db.txoDao().getByOutpoint(funding)!!
+        assertTrue("the funding output arrives already held", drained.isSpent)
+        assertTrue(externalWinner.contentEquals(drained.supersededByTxid))
+        assertTrue(db.documentDao().getPendingInputsByOutpoint(funding).isEmpty())
         assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
     }
 
@@ -2317,7 +2460,7 @@ class PlatformWalletPersistenceHandlerTest {
         // as a stamped hold.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), 400,
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
         handler.onChangesetBegin(walletId)
@@ -2446,7 +2589,7 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
             walletId, arrayOf(loserTxid), arrayOf(winnerTxid),
-            arrayOf(settledCoin, losersOwnCoin), 400,
+            arrayOf(settledCoin, losersOwnCoin), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -2595,7 +2738,7 @@ class PlatformWalletPersistenceHandlerTest {
         )
         handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 1, reclaimerTxid)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(sweptTxid), arrayOf(winnerTxid), arrayOf(freedCoin), 400,
+            walletId, arrayOf(sweptTxid), arrayOf(winnerTxid), arrayOf(freedCoin), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -2675,10 +2818,10 @@ class PlatformWalletPersistenceHandlerTest {
         // One round, two batches, in order.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(firstLoser), arrayOf(ByteArray(32) { 73 }), arrayOf(contested), 400,
+            walletId, arrayOf(firstLoser), arrayOf(ByteArray(32) { 73 }), arrayOf(contested), emptyArray(), 400,
         )
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(secondLoser), arrayOf(ByteArray(32) { 74 }), emptyArray(), 400,
+            walletId, arrayOf(secondLoser), arrayOf(ByteArray(32) { 74 }), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -2789,7 +2932,7 @@ class PlatformWalletPersistenceHandlerTest {
         // (Q) is held rather than freed.
         handler.onChangesetBegin(walletB)
         handler.onWalletChangesetTransactionsSwept(
-            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), 400,
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletB, success = true)
 
@@ -2807,7 +2950,7 @@ class PlatformWalletPersistenceHandlerTest {
         // Wallet A second: releases P.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(p), 400,
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(p), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -2839,7 +2982,7 @@ class PlatformWalletPersistenceHandlerTest {
         // Wallet A first: releases P.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(p), 400,
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(p), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -2857,7 +3000,7 @@ class PlatformWalletPersistenceHandlerTest {
         // Wallet B second: releases nothing.
         handler.onChangesetBegin(walletB)
         handler.onWalletChangesetTransactionsSwept(
-            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), 400,
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletB, success = true)
 
@@ -2923,7 +3066,7 @@ class PlatformWalletPersistenceHandlerTest {
         // this test at all.
         handler.onChangesetBegin(walletB)
         handler.onWalletChangesetTransactionsSwept(
-            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), 400,
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletB, success = true)
 
@@ -3015,12 +3158,12 @@ class PlatformWalletPersistenceHandlerTest {
         // only its own coin.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(pA), 400,
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(pA), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
         handler.onChangesetBegin(walletB)
         handler.onWalletChangesetTransactionsSwept(
-            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(pB), 400,
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(pB), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletB, success = true)
 
@@ -3061,7 +3204,7 @@ class PlatformWalletPersistenceHandlerTest {
         // the sweep already tombstoned it and deleted its phantom output.
         handler.onChangesetBegin(walletB)
         handler.onWalletChangesetTransactionsSwept(
-            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), 400,
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletB, success = true)
 
@@ -3177,7 +3320,7 @@ class PlatformWalletPersistenceHandlerTest {
             walletId,
             arrayOf(loser),
             arrayOf(ByteArray(32) { 82 }),
-            released.toTypedArray(), 400,
+            released.toTypedArray(), emptyArray(), 400,
         )
         val committed = handler.onChangesetEnd(walletId, success = true)
 
@@ -3204,7 +3347,7 @@ class PlatformWalletPersistenceHandlerTest {
 
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(txid), arrayOf(ByteArray(32) { 44 }), emptyArray(), 400,
+            walletId, arrayOf(txid), arrayOf(ByteArray(32) { 44 }), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = false)
 
@@ -3333,7 +3476,7 @@ class PlatformWalletPersistenceHandlerTest {
         // with nothing on hand to update.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(sweptTxid), arrayOf(winnerTxid), emptyArray(), 400,
+            walletId, arrayOf(sweptTxid), arrayOf(winnerTxid), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -3423,7 +3566,7 @@ class PlatformWalletPersistenceHandlerTest {
             pOutpoint, 1,
         )
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), 400,
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -3503,7 +3646,7 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
             walletId, arrayOf(parentTxid, childTxid),
-            arrayOf(winnerTxid, winnerTxid), emptyArray(), 400,
+            arrayOf(winnerTxid, winnerTxid), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -3578,7 +3721,7 @@ class PlatformWalletPersistenceHandlerTest {
         // First sweep: W beats L, holding P (still unfunded).
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(firstLoserTxid), arrayOf(secondLoserTxid), emptyArray(), 400,
+            walletId, arrayOf(firstLoserTxid), arrayOf(secondLoserTxid), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -3604,7 +3747,7 @@ class PlatformWalletPersistenceHandlerTest {
         // Second sweep: X beats W, releasing P this time.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(secondLoserTxid), arrayOf(finalWinnerTxid), arrayOf(pOutpoint), 400,
+            walletId, arrayOf(secondLoserTxid), arrayOf(finalWinnerTxid), arrayOf(pOutpoint), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -3677,7 +3820,7 @@ class PlatformWalletPersistenceHandlerTest {
         // First sweep: W beats L, holding P.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(loserTxid), arrayOf(intermediateWinner), emptyArray(), 400,
+            walletId, arrayOf(loserTxid), arrayOf(intermediateWinner), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -3697,7 +3840,7 @@ class PlatformWalletPersistenceHandlerTest {
         // Second sweep: X beats W, and this time upstream frees P.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(intermediateWinner), arrayOf(finalWinner), arrayOf(pOutpoint), 400,
+            walletId, arrayOf(intermediateWinner), arrayOf(finalWinner), arrayOf(pOutpoint), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -3749,7 +3892,7 @@ class PlatformWalletPersistenceHandlerTest {
         // First sweep: W beats L, holding P.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(firstLoserTxid), arrayOf(secondLoserTxid), emptyArray(), 400,
+            walletId, arrayOf(firstLoserTxid), arrayOf(secondLoserTxid), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -3765,7 +3908,7 @@ class PlatformWalletPersistenceHandlerTest {
         // Second sweep: X beats W, still holding the same input.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(secondLoserTxid), arrayOf(finalWinnerTxid), emptyArray(), 400,
+            walletId, arrayOf(secondLoserTxid), arrayOf(finalWinnerTxid), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -3867,12 +4010,12 @@ class PlatformWalletPersistenceHandlerTest {
         // beats L, holding everything (nothing funded, nothing released).
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(sharedLoser), arrayOf(sharedWinner), emptyArray(), 400,
+            walletId, arrayOf(sharedLoser), arrayOf(sharedWinner), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
         handler.onChangesetBegin(walletB)
         handler.onWalletChangesetTransactionsSwept(
-            walletB, arrayOf(sharedLoser), arrayOf(sharedWinner), emptyArray(), 400,
+            walletB, arrayOf(sharedLoser), arrayOf(sharedWinner), emptyArray(), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletB, success = true)
         assertNull("L is gone once both wallets ran", db.transactionDao().getByTxid(sharedLoser))
@@ -3894,7 +4037,7 @@ class PlatformWalletPersistenceHandlerTest {
         // wallet's — deletes the shared row.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(sharedWinner), arrayOf(finalWinner), arrayOf(pA), 400,
+            walletId, arrayOf(sharedWinner), arrayOf(finalWinner), arrayOf(pA), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletId, success = true)
         assertNull(
@@ -3907,7 +4050,7 @@ class PlatformWalletPersistenceHandlerTest {
         // of its two coins and holding the other.
         handler.onChangesetBegin(walletB)
         handler.onWalletChangesetTransactionsSwept(
-            walletB, arrayOf(sharedWinner), arrayOf(finalWinner), arrayOf(rB), 400,
+            walletB, arrayOf(sharedWinner), arrayOf(finalWinner), arrayOf(rB), emptyArray(), 400,
         )
         handler.onChangesetEnd(walletB, success = true)
 
@@ -4891,7 +5034,7 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onChangesetEnd(walletId, success = true)
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(loser), arrayOf(winner), emptyArray(), winnerMinedHeight,
+            walletId, arrayOf(loser), arrayOf(winner), emptyArray(), emptyArray(), winnerMinedHeight,
         )
         handler.onChangesetEnd(walletId, success = true)
     }
@@ -5079,7 +5222,7 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onChangesetEnd(walletId, success = true)
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(secondLoser), arrayOf(finalWinner), emptyArray(), 450,
+            walletId, arrayOf(secondLoser), arrayOf(finalWinner), emptyArray(), emptyArray(), 450,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -5336,7 +5479,7 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onChangesetEnd(walletId, success = true)
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(secondLoser), arrayOf(finalWinner), emptyArray(), -1,
+            walletId, arrayOf(secondLoser), arrayOf(finalWinner), emptyArray(), emptyArray(), -1,
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -5398,7 +5541,7 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onChangesetEnd(walletId, success = true)
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(secondLoser), arrayOf(finalWinner), emptyArray(), 450,
+            walletId, arrayOf(secondLoser), arrayOf(finalWinner), emptyArray(), emptyArray(), 450,
         )
         handler.onChangesetEnd(walletId, success = true)
 

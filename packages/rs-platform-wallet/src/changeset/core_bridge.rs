@@ -37,6 +37,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use dashcore::blockdata::transaction::{txout::TxOut, OutPoint};
+use dashcore::Txid;
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, AddressState};
 use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRecord};
@@ -325,6 +326,10 @@ async fn run_wallet_event_adapter<P>(
     // One-shot latch so the hard "watermark frozen" line hits logcat exactly
     // once per session rather than once per faulted batch.
     let freeze_logged = Arc::new(AtomicBool::new(false));
+    // Spent-input evidence of records the live wallet had already dropped
+    // when their detection was projected, whose sweep has not been drained
+    // yet (see `settle_dropped_record_spends` below for its lifetime).
+    let mut carried_record_spends: CarriedSpendsByWallet = BTreeMap::new();
 
     loop {
         // Block for the first event of a batch. Everything already sitting in
@@ -381,6 +386,33 @@ async fn run_wallet_event_adapter<P>(
                     closed = true;
                     break;
                 }
+            }
+        }
+        // Whether this drain consumed everything that was queued when it
+        // ran, as opposed to stopping at the fold limit with more behind it.
+        // Decides how long unpaired spend evidence is kept (see
+        // `settle_dropped_record_spends`).
+        let drained_to_empty = closed || folded < ADAPTER_STORE_BATCH_LIMIT;
+
+        for (wallet_id, wallet_batch) in batch.iter_mut() {
+            settle_dropped_record_spends(
+                *wallet_id,
+                &mut wallet_batch.core,
+                &mut carried_record_spends,
+            );
+        }
+        if drained_to_empty {
+            // Evidence still unpaired after the channel ran dry has nothing
+            // left to wait for: only what THIS drain produced is kept, for
+            // one more drain (see the helper's doc for the race it covers).
+            carried_record_spends.retain(|_, entries| {
+                entries.retain(|_, carried| carried.fresh);
+                !entries.is_empty()
+            });
+        }
+        for entries in carried_record_spends.values_mut() {
+            for carried in entries.values_mut() {
+                carried.fresh = false;
             }
         }
 
@@ -585,6 +617,80 @@ async fn run_wallet_event_adapter<P>(
 ///    means the rows never reached disk — the same condition that makes us
 ///    fault the wallet — so counting it as persisted would make the trace
 ///    contradict itself.
+/// Spend evidence of one dropped record, held back by the adapter until a
+/// sweep names its txid. `fresh` marks evidence the most recent drain
+/// produced; see [`settle_dropped_record_spends`] for its lifetime.
+struct CarriedRecordSpends {
+    utxos: Vec<Utxo>,
+    fresh: bool,
+}
+
+type CarriedSpendsByWallet = BTreeMap<WalletId, BTreeMap<Txid, CarriedRecordSpends>>;
+
+/// Attribute a drain's dropped-record spend evidence to the sweeps that
+/// removed those records, and decide what to do with evidence no sweep in
+/// the drain names.
+///
+/// A detection projected after the live wallet already swept its
+/// transaction carries the loser's input details but no row (see the
+/// `TransactionDetected` arm of [`build_core_changeset`]). The sweep event
+/// that removed it was queued the moment the sweep ran — before the
+/// projection could observe the record gone — so it sits behind the
+/// detection in the channel and usually folds into the same drain;
+/// `settle_dropped_record_spends` pairs the two by txid and the inputs
+/// travel with the batch as [`SweepBatch::claimed_inputs`], which every
+/// persister settles under the winner's attribution — the only form of the
+/// claim that survives the funding output being delivered again later.
+///
+/// Evidence no sweep in this drain names is written as ordinary
+/// [`CoreChangeSet::spent_utxos`] right away and kept in `carried` for later
+/// drains of the same wallet. The interim write reaches the SQLite store
+/// (whose `apply` marks the coin spent, unattributed, until the sweep's
+/// attribution lands); the FFI hosts derive spends from records alone and
+/// see nothing until the pairing, so for them the carry IS the fix. How
+/// long the evidence is kept follows from where the sweep can be: it was
+/// already queued when the projection ran, so it is at most one full
+/// channel behind. Evidence therefore survives every drain that stops at
+/// the fold limit (`ADAPTER_STORE_BATCH_LIMIT`, a backlog with more behind
+/// it) and is dropped once a drain has run the channel dry without pairing
+/// it — except that the drain which produced it always carries it one
+/// drain further, covering the window between a sweep dropping the
+/// manager's write lock and enqueueing its event, during which the
+/// projection can already see the record gone. What is dropped is the
+/// other way a record vanishes: chain-locked and pruned, its spends
+/// already persisted by the events that confirmed it, with no sweep ever
+/// coming. The caller applies that policy after settling every wallet in
+/// the drain; this function only pairs, writes and re-carries.
+fn settle_dropped_record_spends(
+    wallet_id: WalletId,
+    core: &mut CoreChangeSet,
+    carried: &mut CarriedSpendsByWallet,
+) {
+    let fresh = std::mem::take(&mut core.dropped_record_spends);
+    let previous = carried.remove(&wallet_id).unwrap_or_default();
+    let mut still_carried: BTreeMap<Txid, CarriedRecordSpends> = BTreeMap::new();
+    if !previous.is_empty() {
+        core.dropped_record_spends = previous
+            .iter()
+            .map(|(txid, carried)| (*txid, carried.utxos.clone()))
+            .collect();
+        // Already written as unattributed spends by the drain that produced
+        // them; pair what this drain's sweeps name, keep the rest waiting.
+        for (txid, utxos) in core.settle_dropped_record_spends() {
+            let fresh = previous.get(&txid).is_some_and(|c| c.fresh);
+            still_carried.insert(txid, CarriedRecordSpends { utxos, fresh });
+        }
+    }
+    core.dropped_record_spends = fresh;
+    for (txid, utxos) in core.settle_dropped_record_spends() {
+        core.spent_utxos.extend(utxos.iter().cloned());
+        still_carried.insert(txid, CarriedRecordSpends { utxos, fresh: true });
+    }
+    if !still_carried.is_empty() {
+        carried.insert(wallet_id, still_carried);
+    }
+}
+
 fn commit_batch<P>(
     persister: &P,
     batch: BTreeMap<WalletId, WalletBatch>,
@@ -963,20 +1069,23 @@ async fn build_core_changeset(
             // emit and drain): emit NO row rather than let a lone
             // stale slice supersede a complete fold earlier in this
             // drain's batch — the chainlock's own events carry the
-            // row's finality forward. The event's input details remain
-            // authoritative evidence of what was spent, however: a
-            // sweep cannot recover them after both the live and durable
-            // transaction rows are gone.
+            // row's finality forward. The event's input details are
+            // still the only evidence left of what the transaction
+            // consumed, though: the wallet may equally have SWEPT it
+            // (a delayed detection of a loser), and a sweep cannot
+            // recover the inputs of a row no store ever held. They are
+            // kept aside under the record's txid for the adapter to
+            // attach to whichever sweep in the drain removed it — see
+            // `CoreChangeSet::dropped_record_spends`.
             let slices: Vec<TransactionRecord> =
                 match wallet_slices_for_txid(wallet_manager, wallet_id, &record.txid).await {
                     Some(slices) => slices,
                     None => vec![(**record).clone()],
                 };
-            let spent_utxos = if slices.is_empty() {
-                derive_spent_utxos(record)
-            } else {
-                slices.iter().flat_map(derive_spent_utxos).collect()
-            };
+            let mut dropped_record_spends = BTreeMap::new();
+            if slices.is_empty() {
+                dropped_record_spends.insert(record.txid, derive_spent_utxos(record));
+            }
             // A contact's watch-only chain never defines the wallet's
             // transaction row or its TXOs (see `is_contact_watch_only`);
             // the usage deltas below are still emitted, so the event
@@ -997,7 +1106,8 @@ async fn build_core_changeset(
                 // from ALL slices, so a contact spending an output a
                 // pre-fix build persisted still clears the stale row.
                 new_utxos: owned.iter().flat_map(derive_new_utxos).collect(),
-                spent_utxos,
+                spent_utxos: slices.iter().flat_map(derive_spent_utxos).collect(),
+                dropped_record_spends,
                 records: folded,
                 account_records: owned,
                 // Mirror the upstream-emitted derived addresses
@@ -1137,6 +1247,13 @@ async fn build_core_changeset(
                     // once the loser's record is gone.
                     winner_mined_height: *winner_mined_height,
                     released_outpoints: released_outpoints.clone(),
+                    // Filled in by the adapter once the whole drain is
+                    // visible: a detection projected earlier in the same
+                    // drain may have found this batch's loser already
+                    // gone from the live wallet, and its input details
+                    // are then attached here (`settle_dropped_record_
+                    // spends`). The event itself carries none.
+                    claimed_inputs: vec![],
                 }],
                 ..CoreChangeSet::default()
             }
@@ -1611,6 +1728,7 @@ impl CoreChangeSet {
             && self.sweeps.is_empty()
             && self.account_records.is_empty()
             && self.spent_utxos.is_empty()
+            && self.dropped_record_spends.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
             && self.last_processed_height.is_none()
@@ -1713,6 +1831,7 @@ mod swept_transaction_projection_tests {
                 superseded_by: txid(0xff),
                 winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
+                claimed_inputs: vec![],
             }]
         );
         // A wallet-relevant winner claims the inputs through its own
@@ -3322,7 +3441,7 @@ mod tests {
     // lossless burst, a rejected `store()`, the per-wallet freeze, and
     // per-wallet batch folding.
 
-    use super::{run_wallet_event_adapter, AdapterFaultState};
+    use super::{run_wallet_event_adapter, AdapterFaultState, ADAPTER_STORE_BATCH_LIMIT};
     use crate::changeset::changeset::PlatformWalletChangeSet;
     use crate::changeset::client_start_state::ClientStartState;
     use crate::changeset::traits::{PersistenceError, PlatformWalletPersistence};
@@ -3332,7 +3451,7 @@ mod tests {
     use std::collections::{BTreeMap, HashSet};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
-    use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+    use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
     use tokio::sync::RwLock;
     use tokio_util::sync::CancellationToken;
 
@@ -3394,9 +3513,7 @@ mod tests {
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
             if let Some(core) = changeset.core {
-                if !core.sweeps.is_empty() {
-                    let _ = self.stored.send(core);
-                }
+                let _ = self.stored.send(core);
             }
             Ok(())
         }
@@ -4188,13 +4305,17 @@ mod tests {
         }
     }
 
-    /// A transaction may disappear from the live manager before its queued
-    /// detection event reaches persistence. If a later sweep cannot find a
-    /// transaction row either, the detection event's input details are the
-    /// only durable evidence that the winning external payment consumed the
-    /// wallet's funding coin.
-    #[tokio::test]
-    async fn delayed_detection_after_sweep_preserves_spend_without_restoring_stale_record() {
+    /// A wallet the manager knows but that no longer holds `loser` — the
+    /// live state by the time a delayed detection of `loser` is drained —
+    /// plus the detection event itself: an outgoing spend of the wallet's
+    /// funding coin, paying only outside addresses.
+    fn swept_before_persisted_fixture() -> (
+        Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        WalletId,
+        dashcore::Transaction,
+        dashcore::OutPoint,
+        WalletEvent,
+    ) {
         use crate::wallet::core::WalletGeneration;
         use crate::wallet::identity::IdentityManager;
         use dashcore::hashes::Hash as _;
@@ -4250,8 +4371,6 @@ mod tests {
             -100_000_000,
         );
 
-        // The manager knows the wallet but no longer retains the swept loser,
-        // which is the live state by the time the delayed event is drained.
         let info = PlatformWalletInfo {
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
@@ -4264,31 +4383,64 @@ mod tests {
         let wallet_id = manager
             .insert_wallet(ctx.wallet, info)
             .expect("insert wallet");
-        let manager = Arc::new(RwLock::new(manager));
+        let detected = WalletEvent::TransactionDetected {
+            wallet_id,
+            record: Box::new(record),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        };
+        (
+            Arc::new(RwLock::new(manager)),
+            wallet_id,
+            loser,
+            funding_outpoint,
+            detected,
+        )
+    }
 
+    fn sweep_of(
+        wallet_id: WalletId,
+        loser: &dashcore::Transaction,
+        winner_byte: u8,
+    ) -> WalletEvent {
+        use dashcore::hashes::Hash as _;
+        WalletEvent::TransactionsSwept {
+            wallet_id,
+            txids: vec![loser.txid()],
+            superseded_by: dashcore::Txid::from_byte_array([winner_byte; 32]),
+            winner_mined_height: Some(WINNER_HEIGHT),
+            released_outpoints: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        }
+    }
+
+    async fn next_store(rx: &mut UnboundedReceiver<CoreChangeSet>) -> CoreChangeSet {
+        tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+            .await
+            .expect("the drain must persist")
+            .expect("the persister stays connected")
+    }
+
+    /// A transaction may disappear from the live manager before its queued
+    /// detection event reaches persistence. No store then holds a row whose
+    /// inputs the sweep could walk, so the detection event's input details
+    /// are the only evidence that the winning external payment consumed the
+    /// wallet's funding coin — and they must travel WITH the sweep, as its
+    /// claimed inputs, so every persister settles them under the winner's
+    /// attribution rather than as an unattributed mark the funding output's
+    /// re-delivery would erase.
+    #[tokio::test]
+    async fn delayed_detection_after_sweep_attaches_its_inputs_to_the_sweep_without_restoring_stale_record(
+    ) {
+        let (manager, wallet_id, loser, funding_outpoint, detected) =
+            swept_before_persisted_fixture();
         let (stored_tx, mut stored_rx) = unbounded_channel();
         let persister = Arc::new(SweepProjectionPersister::new(stored_tx));
         let (event_tx, event_rx) = unbounded_channel();
-        event_tx
-            .send(WalletEvent::TransactionDetected {
-                wallet_id,
-                record: Box::new(record),
-                balance: WalletCoreBalance::default(),
-                account_balances: BTreeMap::new(),
-                addresses_derived: vec![],
-            })
-            .unwrap();
-        event_tx
-            .send(WalletEvent::TransactionsSwept {
-                wallet_id,
-                txids: vec![loser.txid()],
-                superseded_by: Txid::from_byte_array([0x62; 32]),
-                winner_mined_height: Some(WINNER_HEIGHT),
-                released_outpoints: vec![],
-                balance: WalletCoreBalance::default(),
-                account_balances: BTreeMap::new(),
-            })
-            .unwrap();
+        event_tx.send(detected).unwrap();
+        event_tx.send(sweep_of(wallet_id, &loser, 0x62)).unwrap();
 
         let cancel = CancellationToken::new();
         let handle = tokio::spawn(run_wallet_event_adapter(
@@ -4298,10 +4450,7 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             cancel.clone(),
         ));
-        let persisted = tokio::time::timeout(std::time::Duration::from_secs(5), stored_rx.recv())
-            .await
-            .expect("the delayed drain must persist")
-            .expect("the persister stays connected");
+        let persisted = next_store(&mut stored_rx).await;
         cancel.cancel();
         drop(event_tx);
         handle.await.unwrap();
@@ -4314,13 +4463,173 @@ mod tests {
             persisted.account_records.is_empty(),
             "the delayed stale account record must not be restored after the live sweep"
         );
+        assert_eq!(persisted.sweeps.len(), 1);
+        assert_eq!(
+            persisted.sweeps[0].claimed_inputs,
+            vec![funding_outpoint],
+            "the external winner's consumed funding coin must reach persistence as the \
+             sweep's claimed input"
+        );
         assert!(
-            persisted
+            persisted.spent_utxos.is_empty(),
+            "attributed evidence is not doubled as an unattributed spend"
+        );
+    }
+
+    /// The sweep event can sit just past the drain's fold limit. The
+    /// detection's drain then writes the coin spent (unattributed — better
+    /// than handing it out meanwhile) and keeps the evidence for the next
+    /// drain, where the sweep picks it up as its claimed input.
+    #[tokio::test]
+    async fn delayed_detection_evidence_carries_into_the_next_drains_sweep() {
+        let (manager, wallet_id, loser, funding_outpoint, detected) =
+            swept_before_persisted_fixture();
+        let (stored_tx, mut stored_rx) = unbounded_channel();
+        let persister = Arc::new(SweepProjectionPersister::new(stored_tx));
+        let (event_tx, event_rx) = unbounded_channel();
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            manager,
+            Arc::clone(&persister),
+            event_rx,
+            Arc::new(AtomicBool::new(false)),
+            cancel.clone(),
+        ));
+
+        event_tx.send(detected).unwrap();
+        let first = next_store(&mut stored_rx).await;
+        assert!(first.sweeps.is_empty());
+        assert!(first.records.is_empty());
+        assert_eq!(
+            first
                 .spent_utxos
                 .iter()
-                .any(|utxo| utxo.outpoint == funding_outpoint),
-            "the external winner's consumed funding coin must reach persistence"
+                .map(|u| u.outpoint)
+                .collect::<Vec<_>>(),
+            vec![funding_outpoint],
+            "with no sweep in its own drain the spend is written unattributed right away"
         );
+
+        event_tx.send(sweep_of(wallet_id, &loser, 0x62)).unwrap();
+        let second = next_store(&mut stored_rx).await;
+        assert_eq!(second.sweeps.len(), 1);
+        assert_eq!(
+            second.sweeps[0].claimed_inputs,
+            vec![funding_outpoint],
+            "the next drain's sweep of that txid claims the carried evidence"
+        );
+
+        cancel.cancel();
+        drop(event_tx);
+        handle.await.unwrap();
+    }
+
+    /// Once a drain has run the channel dry, evidence it did not pair has
+    /// nothing left to wait for beyond the one-drain grace: a record can
+    /// also vanish because it was chain-locked and pruned, and nothing will
+    /// ever sweep that one, so the carry must not accumulate.
+    #[tokio::test]
+    async fn delayed_detection_evidence_is_dropped_after_one_unpaired_drain() {
+        let (manager, wallet_id, loser, funding_outpoint, detected) =
+            swept_before_persisted_fixture();
+        let (stored_tx, mut stored_rx) = unbounded_channel();
+        let persister = Arc::new(SweepProjectionPersister::new(stored_tx));
+        let (event_tx, event_rx) = unbounded_channel();
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            manager,
+            Arc::clone(&persister),
+            event_rx,
+            Arc::new(AtomicBool::new(false)),
+            cancel.clone(),
+        ));
+
+        event_tx.send(detected).unwrap();
+        let first = next_store(&mut stored_rx).await;
+        assert_eq!(first.spent_utxos.len(), 1);
+
+        // An unrelated drain of the same wallet: the carried evidence is
+        // offered to it, pairs with nothing, and is dropped.
+        event_tx
+            .send(WalletEvent::SyncHeightAdvanced {
+                wallet_id,
+                height: 5,
+            })
+            .unwrap();
+        let second = next_store(&mut stored_rx).await;
+        assert!(second.spent_utxos.is_empty(), "nothing is re-written");
+
+        event_tx.send(sweep_of(wallet_id, &loser, 0x62)).unwrap();
+        let third = next_store(&mut stored_rx).await;
+        assert_eq!(third.sweeps.len(), 1);
+        assert!(
+            third.sweeps[0].claimed_inputs.is_empty(),
+            "evidence older than one drain no longer attaches; {:?} was expected gone",
+            funding_outpoint
+        );
+
+        cancel.cancel();
+        drop(event_tx);
+        handle.await.unwrap();
+    }
+
+    /// Under a backlog the sweep can sit several fold-limit drains behind
+    /// the detection. The evidence must survive every drain that stopped at
+    /// the limit, because the sweep was already queued when the detection
+    /// was projected and the channel has not run dry since.
+    #[tokio::test]
+    async fn delayed_detection_evidence_survives_a_backlog_of_full_drains() {
+        let (manager, wallet_id, loser, funding_outpoint, detected) =
+            swept_before_persisted_fixture();
+        let (stored_tx, mut stored_rx) = unbounded_channel();
+        let persister = Arc::new(SweepProjectionPersister::new(stored_tx));
+        let (event_tx, event_rx) = unbounded_channel();
+
+        // Queue everything up front: the detection, more than two full
+        // drains of filler, then the sweep.
+        event_tx.send(detected).unwrap();
+        let filler = ADAPTER_STORE_BATCH_LIMIT * 2 + ADAPTER_STORE_BATCH_LIMIT / 2;
+        for height in 0..filler as u32 {
+            event_tx
+                .send(WalletEvent::SyncHeightAdvanced { wallet_id, height })
+                .unwrap();
+        }
+        event_tx.send(sweep_of(wallet_id, &loser, 0x62)).unwrap();
+
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            manager,
+            Arc::clone(&persister),
+            event_rx,
+            Arc::new(AtomicBool::new(false)),
+            cancel.clone(),
+        ));
+
+        let first = next_store(&mut stored_rx).await;
+        assert!(first.sweeps.is_empty());
+        assert_eq!(first.spent_utxos.len(), 1, "written unattributed at once");
+        let mut paired = None;
+        for _ in 0..4 {
+            let store = next_store(&mut stored_rx).await;
+            if !store.sweeps.is_empty() {
+                paired = Some(store);
+                break;
+            }
+            assert!(
+                store.spent_utxos.is_empty(),
+                "the interim mark is written once"
+            );
+        }
+        let paired = paired.expect("the sweep must reach the persister");
+        assert_eq!(
+            paired.sweeps[0].claimed_inputs,
+            vec![funding_outpoint],
+            "the sweep still claims the evidence after several full drains"
+        );
+
+        cancel.cancel();
+        drop(event_tx);
+        handle.await.unwrap();
     }
 
     /// dashpay/platform#4406 (finding 2): sweeps reach an FFI host only

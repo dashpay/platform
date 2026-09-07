@@ -152,6 +152,9 @@ final class SweptTransactionPersistTests: XCTestCase {
         /// undefaulted so every test states which world it is in.
         var winnerMinedHeight: UInt32?
         var released: [(txid: Data, vout: UInt32)] = []
+        /// Inputs the batch vouches for on behalf of a loser this store
+        /// never held — `SweepBatchFFI.claimed_inputs`.
+        var claimedInputs: [(txid: Data, vout: UInt32)] = []
     }
 
     /// Drive a changeset of sweep batches through the same entry point the
@@ -188,6 +191,7 @@ final class SweptTransactionPersistTests: XCTestCase {
 
         var txidBuffers: [UnsafeMutablePointer<RawTxid>] = []
         var releasedBuffers: [UnsafeMutablePointer<OutPointFFI>] = []
+        var claimedBuffers: [UnsafeMutablePointer<OutPointFFI>] = []
         var ffiBatches: [SweepBatchFFI] = []
         defer {
             for (i, buf) in txidBuffers.enumerated() {
@@ -196,6 +200,10 @@ final class SweptTransactionPersistTests: XCTestCase {
             }
             for (i, buf) in releasedBuffers.enumerated() {
                 buf.deinitialize(count: batches[i].released.count)
+                buf.deallocate()
+            }
+            for (i, buf) in claimedBuffers.enumerated() {
+                buf.deinitialize(count: batches[i].claimedInputs.count)
                 buf.deallocate()
             }
         }
@@ -227,11 +235,26 @@ final class SweptTransactionPersistTests: XCTestCase {
             }
             releasedBuffers.append(freed)
 
+            let claimed = UnsafeMutablePointer<OutPointFFI>.allocate(
+                capacity: max(batch.claimedInputs.count, 1)
+            )
+            for (i, outpoint) in batch.claimedInputs.enumerated() {
+                var entry = OutPointFFI()
+                Swift.withUnsafeMutableBytes(of: &entry.txid) { dst in
+                    outpoint.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+                }
+                entry.vout = outpoint.vout
+                claimed.advanced(by: i).initialize(to: entry)
+            }
+            claimedBuffers.append(claimed)
+
             var entry = SweepBatchFFI()
             entry.txids = UnsafePointer(txids)
             entry.txids_count = UInt(batch.losers.count)
             entry.released_outpoints = UnsafePointer(freed)
             entry.released_outpoints_count = UInt(batch.released.count)
+            entry.claimed_inputs = UnsafePointer(claimed)
+            entry.claimed_inputs_count = UInt(batch.claimedInputs.count)
             Swift.withUnsafeMutableBytes(of: &entry.superseded_by) { dst in
                 batch.winner.withUnsafeBytes { src in dst.copyMemory(from: src) }
             }
@@ -779,6 +802,151 @@ final class SweptTransactionPersistTests: XCTestCase {
             }
         }
         _ = handler.endChangeset(walletId: walletId, success: true)
+    }
+
+    /// A loser can be swept while its detection is still queued for
+    /// persistence: the projection then finds no live record, refuses to
+    /// restore the stale row, and this store never holds a transaction whose
+    /// inputs the sweep could walk. The detection's own input details ride
+    /// on the batch as claimed inputs and must be held under the winner —
+    /// durably, across a restart and a re-delivery of the funding output.
+    func testAClaimedInputOfALoserNeverHeldStaysSpentAcrossRestartAndRedelivery() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("claimed.store")
+
+        let neverHeldLoser = Data(repeating: 0x62, count: 32)
+        let externalWinner = Data(repeating: 0x63, count: 32)
+
+        do {
+            let (handler, container) = try makeHandler(url: storeURL)
+            // Only the funding side exists: two unspent coins and no loser row.
+            let context = ModelContext(container)
+            context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+            let funding = PersistentTransaction(
+                txid: fundingTxid,
+                transactionData: Data(repeating: 0x04, count: 10),
+                context: 2,
+                blockHeight: 100,
+                netAmount: 140_000
+            )
+            context.insert(funding)
+            for (vout, amount) in [(UInt32(0), UInt64(100_000)), (UInt32(1), UInt64(40_000))] {
+                let coin = PersistentTxo(
+                    transaction: funding,
+                    vout: vout,
+                    amount: amount,
+                    address: "yFundAddr",
+                    height: 100
+                )
+                coin.walletId = walletId
+                context.insert(coin)
+            }
+            try context.save()
+
+            // The round the adapter builds for a delayed detection folded
+            // with its sweep: no record, no utxos_spent, one batch vouching
+            // for coin B and releasing nothing.
+            handler.beginChangeset(walletId: walletId)
+            XCTAssertTrue(sweep(handler, [Batch(
+                losers: [neverHeldLoser],
+                winner: externalWinner,
+                winnerMinedHeight: 400,
+                claimedInputs: [(txid: fundingTxid, vout: 1)]
+            )]))
+            XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+
+            XCTAssertNil(
+                transaction(container, txid: neverHeldLoser),
+                "no stale loser row is invented"
+            )
+            let held = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+            XCTAssertTrue(held.isSpent, "the input the batch vouched for is held")
+            XCTAssertNil(held.spendingTransaction)
+            XCTAssertEqual(held.supersededByTxid, externalWinner)
+            let untouched = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+            XCTAssertFalse(untouched.isSpent, "a coin the batch did not name is left alone")
+        }
+
+        // Restart, then hand coin B back the way a rescan does.
+        let (handler, container) = try makeHandler(url: storeURL)
+        let restored = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertTrue(restored.isSpent, "the hold survives a restart")
+        redeliverCoinB(handler)
+        let redelivered = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertTrue(redelivered.isSpent, "re-delivery does not outrank the sweep's verdict")
+        XCTAssertEqual(redelivered.supersededByTxid, externalWinner)
+    }
+
+    /// The same never-held loser, but the coin it spent has not been
+    /// classified as ours yet: the claim must survive as the same detached
+    /// tombstone a staged pending row turns into, so the funding TXO's
+    /// arrival drains into a held coin rather than a fresh unspent one.
+    func testAClaimedInputWithNoFundingRowLeavesAStampedTombstone() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        try context.save()
+
+        let neverHeldLoser = Data(repeating: 0x62, count: 32)
+        let externalWinner = Data(repeating: 0x63, count: 32)
+        let claimedKey = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 1)
+
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertTrue(sweep(handler, [Batch(
+            losers: [neverHeldLoser],
+            winner: externalWinner,
+            winnerMinedHeight: 400,
+            claimedInputs: [(txid: fundingTxid, vout: 1)]
+        )]))
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+
+        let tombstones = try ModelContext(container).fetch(
+            FetchDescriptor<PersistentPendingInput>(
+                predicate: #Predicate { $0.outpoint == claimedKey }
+            )
+        )
+        XCTAssertEqual(tombstones.count, 1, "a placeholder claim is written for the unfunded input")
+        let tombstone = try XCTUnwrap(tombstones.first)
+        XCTAssertTrue(tombstone.isSweptTombstone)
+        XCTAssertNil(tombstone.spendingTransaction)
+        XCTAssertEqual(tombstone.spendingTxid, externalWinner)
+        XCTAssertEqual(tombstone.winnerMinedHeight, 400)
+
+        // Re-vouching for the same input (a re-emitted sweep) is idempotent.
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertTrue(sweep(handler, [Batch(
+            losers: [neverHeldLoser],
+            winner: externalWinner,
+            winnerMinedHeight: 400,
+            claimedInputs: [(txid: fundingTxid, vout: 1)]
+        )]))
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+        XCTAssertEqual(
+            try ModelContext(container).fetchCount(
+                FetchDescriptor<PersistentPendingInput>(
+                    predicate: #Predicate { $0.outpoint == claimedKey }
+                )
+            ),
+            1
+        )
+
+        // The funding output arrives: it materialises already held.
+        redeliverCoinB(handler)
+        let drained = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertTrue(drained.isSpent, "the funding output arrives already held")
+        XCTAssertEqual(drained.supersededByTxid, externalWinner)
+        XCTAssertEqual(
+            try ModelContext(container).fetchCount(
+                FetchDescriptor<PersistentPendingInput>(
+                    predicate: #Predicate { $0.outpoint == claimedKey }
+                )
+            ),
+            0,
+            "the tombstone drains into the coin"
+        )
     }
 
     /// Two sweeps in one round, the later disagreeing with the earlier.

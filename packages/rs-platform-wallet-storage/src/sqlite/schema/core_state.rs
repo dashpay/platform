@@ -21,6 +21,13 @@ pub fn apply(
     wallet_id: &WalletId,
     cs: &CoreChangeSet,
 ) -> Result<(), WalletStorageError> {
+    // Adapter-internal evidence, settled into `sweeps[..].claimed_inputs`
+    // or `spent_utxos` before any changeset reaches a store; a producer
+    // that bypassed the adapter would leave spends this round never writes.
+    debug_assert!(
+        cs.dropped_record_spends.is_empty(),
+        "unsettled dropped-record spend evidence reached the SQLite store"
+    );
     if !cs.records.is_empty() {
         let mut stmt = tx.prepare_cached(
             "INSERT INTO core_transactions \
@@ -237,6 +244,25 @@ pub fn apply(
                 tx,
                 wallet_id,
                 loser_txid,
+                &batch.superseded_by,
+                &released,
+                &swept_txids,
+                batch.winner_mined_height,
+            )?;
+        }
+        // Inputs the batch itself vouches for, settled exactly like a
+        // deleted loser's inputs. `apply_sweep` above reads a loser's
+        // inputs off its stored row, and a loser swept before its own
+        // detection reached this store has no row to read — the detection
+        // event's input details, carried on the batch, are then the only
+        // evidence that the winner consumed this wallet's coin. Repeats of
+        // inputs a stored row already settled are harmless: the same
+        // UPDATE lands on the same value.
+        for outpoint in &batch.claimed_inputs {
+            settle_swept_input(
+                tx,
+                wallet_id,
+                *outpoint,
                 &batch.superseded_by,
                 &released,
                 &swept_txids,
@@ -517,27 +543,59 @@ fn apply_sweep(
     }
     drop(delete_output_stmt);
 
-    // Each input is set outright rather than only touched when it changes:
-    // whichever way it went, the row must end this round agreeing with the
-    // wallet, and a coin the sweep did not free stays out of the unspent
-    // query even if nothing had marked it spent yet (upstream sweeps only
-    // unconfirmed records, whose spends this schema does not mark).
-    // `spent_in_txid` moves with `spent`: a released input clears back to
-    // NULL (nobody's claim), a held one is attributed to `superseded_by` so
-    // the claim outlives this row's own deletion below.
-    // A held, never-materialised claim (`height IS NULL`) is re-stamped
-    // with the NEW winner's mined height when this sweep has one — the
-    // claim now belongs to that winner, and its height is what the
-    // collector compares against the finality boundary. An IS-locked
-    // winner (`?5` NULL) re-points the claim but keeps the existing stamp:
-    // the earlier block-context observation stands, exactly as upstream's
-    // `observed_spent_outpoints` entry is never retracted by an
-    // unconfirmed conflict, and collection at the old height stays sound —
-    // the funding output of a spent outpoint is mined at or below the
-    // height of ANY block-context spender of it, so the boundary passing
-    // that height still proves the funding was delivered or never will be.
-    // Materialised rows (`height` set) keep their NULL stamp — they are
-    // outside the collector's reach either way.
+    for input in &loser.transaction.input {
+        settle_swept_input(
+            tx,
+            wallet_id,
+            input.previous_output,
+            superseded_by,
+            released,
+            swept_txids,
+            winner_mined_height,
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Settle one input a swept transaction claimed: freed if `released` names
+/// it, otherwise held spent and attributed to `superseded_by`, with a
+/// placeholder row when its funding output has not materialised. Shared by
+/// [`apply_sweep`] (walking a stored loser's inputs) and the caller's pass
+/// over [`SweepBatch::claimed_inputs`](platform_wallet::changeset::changeset::SweepBatch::claimed_inputs)
+/// (inputs the batch vouches for when no row exists to walk). Idempotent:
+/// the same input settled twice in one round lands on the same value.
+///
+/// Each input is set outright rather than only touched when it changes:
+/// whichever way it went, the row must end this round agreeing with the
+/// wallet, and a coin the sweep did not free stays out of the unspent
+/// query even if nothing had marked it spent yet (upstream sweeps only
+/// unconfirmed records, whose spends this schema does not mark).
+/// `spent_in_txid` moves with `spent`: a released input clears back to
+/// NULL (nobody's claim), a held one is attributed to `superseded_by` so
+/// the claim outlives the loser row's own deletion.
+/// A held, never-materialised claim (`height IS NULL`) is re-stamped
+/// with the NEW winner's mined height when this sweep has one — the
+/// claim now belongs to that winner, and its height is what the
+/// collector compares against the finality boundary. An IS-locked
+/// winner (`?5` NULL) re-points the claim but keeps the existing stamp:
+/// the earlier block-context observation stands, exactly as upstream's
+/// `observed_spent_outpoints` entry is never retracted by an
+/// unconfirmed conflict, and collection at the old height stays sound —
+/// the funding output of a spent outpoint is mined at or below the
+/// height of ANY block-context spender of it, so the boundary passing
+/// that height still proves the funding was delivered or never will be.
+/// Materialised rows (`height` set) keep their NULL stamp — they are
+/// outside the collector's reach either way.
+fn settle_swept_input(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    outpoint: dashcore::OutPoint,
+    superseded_by: &dashcore::Txid,
+    released: &HashSet<dashcore::OutPoint>,
+    swept_txids: &HashSet<dashcore::Txid>,
+    winner_mined_height: Option<u32>,
+) -> Result<(), WalletStorageError> {
     let mut spend_stmt = tx.prepare_cached(
         "UPDATE core_utxos SET spent = ?3, spent_in_txid = ?4, \
             winner_mined_height = CASE \
@@ -546,8 +604,8 @@ fn apply_sweep(
          WHERE wallet_id = ?1 AND outpoint = ?2",
     )?;
     // Only reached for a held input with no existing row — see the doc
-    // comment above. `value`/`script`/`height`/`account_index` are
-    // placeholders; the funding UTXO's own upsert overwrites them (and,
+    // comment on `apply_sweep`. `value`/`script`/`height`/`account_index`
+    // are placeholders; the funding UTXO's own upsert overwrites them (and,
     // thanks to the `spent_in_txid` guard in `execute_upsert_utxo`, does
     // not clear `spent` while doing it). `winner_mined_height` is the
     // winner's own block height when the sweep has one — the row's whole
@@ -561,71 +619,67 @@ fn apply_sweep(
              winner_mined_height) \
          VALUES (?1, ?2, 0, X'', NULL, 0, 1, ?3, ?4)",
     )?;
-    for input in &loser.transaction.input {
-        let outpoint = input.previous_output;
-        // An input funded by a transaction this same changeset also sweeps
-        // is a dead parent's output — nobody's coin, not something the
-        // winner took: upstream's descendant closure always sweeps parent
-        // and child together, and its release computation excludes exactly
-        // these outpoints (so `freed` below can never be true for one). The
-        // right end state is NO row, deleted here outright rather than
-        // assumed away or marked:
-        //
-        // - Assuming the parent's own pass deleted it fails when the
-        //   parent's record was lost (the same record-loss threat the
-        //   caller's by-outpoint release pass exists for) — that pass
-        //   deletes nothing, and skipping the claim here would leave the
-        //   dead output `spent = 0`, a phantom spendable coin `load()`
-        //   hands back.
-        // - Holding it instead (`spent = 1`, `spent_in_txid = winner`, the
-        //   ordinary path below) survives as a claim the funding upsert's
-        //   valve then defends — against the chainlocked reinstatement
-        //   that is the ONE event that can bring the coin back, whose
-        //   re-emitted output must land freshly unspent.
-        //
-        // The delete is idempotent against the parent's own pass in either
-        // batch order, and a reinstatement re-creates the real row through
-        // the ordinary `utxos_added` upsert with nothing left standing in
-        // its way.
-        if swept_txids.contains(&outpoint.txid) {
-            let key = blob::encode_outpoint(&outpoint)?;
-            tx.execute(
-                "DELETE FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
-                params![wallet_id.as_slice(), &key[..]],
-            )?;
-            continue;
-        }
+    // An input funded by a transaction this same changeset also sweeps
+    // is a dead parent's output — nobody's coin, not something the
+    // winner took: upstream's descendant closure always sweeps parent
+    // and child together, and its release computation excludes exactly
+    // these outpoints (so `freed` below can never be true for one). The
+    // right end state is NO row, deleted here outright rather than
+    // assumed away or marked:
+    //
+    // - Assuming the parent's own pass deleted it fails when the
+    //   parent's record was lost (the same record-loss threat the
+    //   caller's by-outpoint release pass exists for) — that pass
+    //   deletes nothing, and skipping the claim here would leave the
+    //   dead output `spent = 0`, a phantom spendable coin `load()`
+    //   hands back.
+    // - Holding it instead (`spent = 1`, `spent_in_txid = winner`, the
+    //   ordinary path below) survives as a claim the funding upsert's
+    //   valve then defends — against the chainlocked reinstatement
+    //   that is the ONE event that can bring the coin back, whose
+    //   re-emitted output must land freshly unspent.
+    //
+    // The delete is idempotent against the parent's own pass in either
+    // batch order, and a reinstatement re-creates the real row through
+    // the ordinary `utxos_added` upsert with nothing left standing in
+    // its way.
+    if swept_txids.contains(&outpoint.txid) {
         let key = blob::encode_outpoint(&outpoint)?;
-        let freed = released.contains(&outpoint);
-        let spent_in_txid: Option<&[u8]> = if freed {
-            None
-        } else {
-            Some(AsRef::<[u8]>::as_ref(superseded_by))
-        };
-        let affected = spend_stmt.execute(params![
+        tx.execute(
+            "DELETE FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            params![wallet_id.as_slice(), &key[..]],
+        )?;
+        return Ok(());
+    }
+    let key = blob::encode_outpoint(&outpoint)?;
+    let freed = released.contains(&outpoint);
+    let spent_in_txid: Option<&[u8]> = if freed {
+        None
+    } else {
+        Some(AsRef::<[u8]>::as_ref(superseded_by))
+    };
+    let affected = spend_stmt.execute(params![
+        wallet_id.as_slice(),
+        &key[..],
+        !freed,
+        spent_in_txid,
+        winner_mined_height.map(i64::from)
+    ])?;
+    if affected == 0 && !freed {
+        // A held input with no row gets a placeholder in EVERY sweep
+        // context — `CORE_SWEEP_REMOVAL`'s contract: each non-released
+        // input retains a durable spend claim even when its funding
+        // TXO has not materialised yet. An IS-locked, unmined winner
+        // just leaves the stamp NULL, which the collector never
+        // touches — see the doc comment on `apply_sweep` for what
+        // resolves (and what bounds) an unstamped row.
+        tombstone_stmt.execute(params![
             wallet_id.as_slice(),
             &key[..],
-            !freed,
-            spent_in_txid,
+            AsRef::<[u8]>::as_ref(superseded_by),
             winner_mined_height.map(i64::from)
         ])?;
-        if affected == 0 && !freed {
-            // A held input with no row gets a placeholder in EVERY sweep
-            // context — `CORE_SWEEP_REMOVAL`'s contract: each non-released
-            // input retains a durable spend claim even when its funding
-            // TXO has not materialised yet. An IS-locked, unmined winner
-            // just leaves the stamp NULL, which the collector never
-            // touches — see the doc comment above for what resolves (and
-            // what bounds) an unstamped row.
-            tombstone_stmt.execute(params![
-                wallet_id.as_slice(),
-                &key[..],
-                AsRef::<[u8]>::as_ref(superseded_by),
-                winner_mined_height.map(i64::from)
-            ])?;
-        }
     }
-
     Ok(())
 }
 

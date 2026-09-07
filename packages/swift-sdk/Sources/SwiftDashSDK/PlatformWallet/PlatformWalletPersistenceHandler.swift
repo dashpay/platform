@@ -1474,6 +1474,104 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     }
                 }
 
+                // Inputs the batch vouches for on behalf of a loser this
+                // store never held: it was swept before its own detection
+                // reached persistence, so `fetchSweepTransactionRow` found
+                // nothing above and there is no row whose `inputs` or
+                // `pendingInputs` could carry the claim. The batch carries
+                // the detection's own input details instead, and each is
+                // settled exactly like a deleted row's input would have
+                // been — a released one is left to the outpoint pass below,
+                // a co-swept parent's output is nobody's coin, and every
+                // other one is held under the winner: on the coin's row
+                // when it exists and no surviving spender claims it,
+                // otherwise as the same detached tombstone
+                // `applySweptTransaction` writes, so the funding TXO's
+                // arrival (even after a restart) drains into a held coin.
+                // Repeats of an input the loser loop already settled land
+                // on the same values. Same fetch discipline as the release
+                // pass: one plain pending-changes fetch per kind, keyed by
+                // the immutable outpoint set.
+                if batch.claimed_inputs_count > 0, let claimedPtr = batch.claimed_inputs {
+                    var claimed = Set<Data>()
+                    for i in 0..<Int(batch.claimed_inputs_count) {
+                        let outpoint = claimedPtr[i]
+                        let txid = Swift.withUnsafeBytes(of: outpoint.txid) { Data($0) }
+                        let key = PersistentTxo.makeOutpoint(txid: txid, vout: outpoint.vout)
+                        guard !released.contains(key), !coSwept.contains(txid) else { continue }
+                        claimed.insert(key)
+                    }
+                    if !claimed.isEmpty {
+                        let txoRows: [PersistentTxo]
+                        let pendingRows: [PersistentPendingInput]
+                        do {
+                            txoRows = try backgroundContext.fetch(
+                                FetchDescriptor<PersistentTxo>(
+                                    predicate: #Predicate { claimed.contains($0.outpoint) }
+                                )
+                            )
+                            pendingRows = try backgroundContext.fetch(
+                                FetchDescriptor<PersistentPendingInput>(
+                                    predicate: #Predicate { claimed.contains($0.outpoint) }
+                                )
+                            )
+                        } catch {
+                            print(
+                                "⚠️ persistWalletChangesetSweeps: claimed-input lookup failed: "
+                                    + "\(error.localizedDescription); failing the round"
+                            )
+                            return false
+                        }
+                        var unfunded = claimed
+                        for txo in txoRows where !txo.isDeleted {
+                            unfunded.remove(txo.outpoint)
+                            guard Self.resolvedWalletId(of: txo) == walletId,
+                                  txo.spendingTransaction == nil else { continue }
+                            txo.isSpent = true
+                            txo.supersededByTxid = supersededBy
+                            txo.spendingInputIndex = nil
+                            txo.lastUpdated = Date()
+                        }
+                        for outpoint in unfunded {
+                            // Only an earlier tombstone for this winner counts
+                            // as "already written". An ordinary pending row
+                            // the winner's own record staged is a surviving
+                            // spender's claim, left alone exactly like a
+                            // linked TXO above; the tombstone is written
+                            // beside it, the same end state a stored loser's
+                            // sweep leaves, and the drain prefers the
+                            // tombstone regardless of age.
+                            let existing = pendingRows.first {
+                                !$0.isDeleted && $0.outpoint == outpoint
+                                    && $0.walletId == walletId && $0.isSweptTombstone
+                                    && $0.spendingTxid == supersededBy
+                            }
+                            if let existing {
+                                if let winnerMinedHeight {
+                                    existing.winnerMinedHeight = winnerMinedHeight
+                                }
+                                continue
+                            }
+                            // `inputIndex` is the input's position in its
+                            // spending transaction, which the batch does not
+                            // carry; the drain copies it onto the TXO for
+                            // display order only.
+                            let tombstone = PersistentPendingInput(
+                                outpoint: outpoint,
+                                inputIndex: 0,
+                                spendingTxid: supersededBy,
+                                spendingTransaction: nil,
+                                walletId: walletId
+                            )
+                            tombstone.isSweptTombstone = true
+                            tombstone.winnerMinedHeight = winnerMinedHeight
+                            backgroundContext.insert(tombstone)
+                            roundIndex?.pendingInputsByOutpoint[outpoint, default: []]
+                                .append(tombstone)
+                        }
+                    }
+                }
+
                 // The released set applies by OUTPOINT, after every loser in
                 // the batch has been walked — `applySweptTransaction` only
                 // reaches the claims still attached to a loser's row, and a

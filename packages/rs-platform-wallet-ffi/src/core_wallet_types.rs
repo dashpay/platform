@@ -299,6 +299,18 @@ pub struct SweepBatchFFI {
     /// this is the only thing telling it which to hand back.
     pub released_outpoints: *const OutPointFFI,
     pub released_outpoints_count: usize,
+    /// Inputs the removed transactions claimed, as far as the wallet's own
+    /// events prove it, for a persister that never stored the removed
+    /// transaction. "A persister holds every input of what it deletes"
+    /// fails for a transaction swept before its own detection reached
+    /// persistence: no row was ever written, so there is nothing to walk.
+    /// Settle each of these exactly like an input of a row this batch
+    /// deletes — free it if `released_outpoints` names it, otherwise hold
+    /// it spent under `superseded_by` (a durable placeholder when its
+    /// funding output has not arrived). Usually empty; may repeat inputs of
+    /// a row the persister does hold, which settle idempotently.
+    pub claimed_inputs: *const OutPointFFI,
+    pub claimed_inputs_count: usize,
     /// Whether `winner_mined_height` is meaningful. `false` means the sweep
     /// was triggered by an InstantSend-locked winner still waiting to be
     /// mined (upstream's only other trigger — an unlocked mempool arrival
@@ -611,6 +623,7 @@ impl WalletChangeSetFFI {
 pub(crate) struct SweepBatchStorage {
     txids: Vec<[u8; 32]>,
     released: Vec<OutPointFFI>,
+    claimed: Vec<OutPointFFI>,
 }
 
 /// Build the C mirrors of a changeset's sweep batches for the extension
@@ -641,6 +654,7 @@ pub(crate) fn build_sweep_batches_for_callback(
                 .iter()
                 .map(OutPointFFI::from)
                 .collect(),
+            claimed: batch.claimed_inputs.iter().map(OutPointFFI::from).collect(),
         })
         .collect();
 
@@ -670,6 +684,12 @@ pub(crate) fn build_sweep_batches_for_callback(
                     backing.released.as_ptr()
                 },
                 released_outpoints_count: backing.released.len(),
+                claimed_inputs: if backing.claimed.is_empty() {
+                    std::ptr::null()
+                } else {
+                    backing.claimed.as_ptr()
+                },
+                claimed_inputs_count: backing.claimed.len(),
                 has_winner_mined_height: batch.winner_mined_height.is_some(),
                 winner_mined_height: batch.winner_mined_height.unwrap_or(0),
             }
@@ -1700,6 +1720,65 @@ mod tests {
         let ffi = WalletChangeSetFFI::from_changeset(&cs);
         assert_eq!(ffi.accounts_count, 0);
         unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// A batch's claimed inputs — the only spend evidence a persister gets
+    /// for a loser swept before its detection was persisted — must cross
+    /// the boundary next to the released set, in the same outpoint shape,
+    /// or the mobile stores restore the consumed coin at the next load.
+    #[test]
+    fn sweep_batches_project_claimed_inputs_beside_released_ones() {
+        use dashcore::hashes::Hash as _;
+        use dashcore::{OutPoint, Txid};
+        use platform_wallet::changeset::changeset::SweepBatch;
+
+        let claimed = OutPoint::new(Txid::from_byte_array([0x61; 32]), 3);
+        let released = OutPoint::new(Txid::from_byte_array([0x62; 32]), 0);
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![Txid::from_byte_array([0x63; 32])],
+                superseded_by: Txid::from_byte_array([0x64; 32]),
+                winner_mined_height: Some(400),
+                released_outpoints: vec![released],
+                claimed_inputs: vec![claimed],
+            }],
+            ..CoreChangeSet::default()
+        };
+
+        let (batches, _storage) = build_sweep_batches_for_callback(&cs);
+        assert_eq!(batches.len(), 1);
+        let batch = &batches[0];
+        assert_eq!(batch.claimed_inputs_count, 1);
+        assert_eq!(batch.released_outpoints_count, 1);
+        let projected = unsafe { &*batch.claimed_inputs };
+        assert_eq!(projected.txid, [0x61; 32]);
+        assert_eq!(projected.vout, 3);
+        let freed = unsafe { &*batch.released_outpoints };
+        assert_eq!(freed.txid, [0x62; 32]);
+        assert_eq!(freed.vout, 0);
+    }
+
+    /// An empty claimed set projects as a null pointer with a zero count,
+    /// never a dangling pointer into an empty buffer.
+    #[test]
+    fn sweep_batches_without_claimed_inputs_project_null() {
+        use dashcore::hashes::Hash as _;
+        use dashcore::Txid;
+        use platform_wallet::changeset::changeset::SweepBatch;
+
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![Txid::from_byte_array([0x63; 32])],
+                superseded_by: Txid::from_byte_array([0x64; 32]),
+                winner_mined_height: None,
+                released_outpoints: vec![],
+                claimed_inputs: vec![],
+            }],
+            ..CoreChangeSet::default()
+        };
+        let (batches, _storage) = build_sweep_batches_for_callback(&cs);
+        assert!(batches[0].claimed_inputs.is_null());
+        assert_eq!(batches[0].claimed_inputs_count, 0);
     }
 
     /// A folded wallet-level record files the transaction row under the
