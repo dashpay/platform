@@ -206,7 +206,7 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// that spender stands and an unbounded proof wait would hang. The resume
     /// still runs — the sighting bounds that wait rather than replacing it, so
     /// the lock was (re-)broadcast and waited on (a `Broadcast`-status lock
-    /// was also sent on an earlier call) — and this is what the bounded wait
+    /// also had an earlier attempt that may have sent it) — and this is what the bounded wait
     /// expired with. This is the ONLY double-spend code the SDK emits, and it
     /// is PROVISIONAL: no discard licence, keep the lock tracked and retry
     /// later. A later chainlock does not upgrade it to 47 today; what a retry
@@ -581,9 +581,9 @@ public enum PlatformWalletError: LocalizedError {
     /// already-confirmed transaction of this wallet spent first, so no peer
     /// will relay it while that spender stands. The resume still ran — it
     /// re-broadcast and waited for a proof under a bounded timeout, and this
-    /// is what the wait expired with. A `Broadcast`-status lock was also
-    /// already sent on an earlier call, so this is not a claim that nothing
-    /// ever reached the network.
+    /// is what the wait expired with. A `Broadcast`-status lock also had an
+    /// earlier attempt that may have sent it, so this is not a claim that
+    /// nothing ever reached the network.
     ///
     /// The only double-spend verdict the SDK emits, and PROVISIONAL: the
     /// tracked lock must NOT be discarded on this error. A conflict that

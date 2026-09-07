@@ -495,7 +495,8 @@ pub enum PlatformWalletError {
     /// exactly like a slow network). The sighting therefore bounds the
     /// wait rather than replacing it: the resume still (re-)broadcasts and
     /// still waits, and this is what the bounded wait expired with — a
-    /// `Broadcast`-status lock was also already sent on an earlier call.
+    /// `Broadcast`-status lock also had an earlier attempt that may have
+    /// sent the transaction.
     ///
     /// The verdict is PROVISIONAL and carries NO licence to discard the
     /// tracked lock. Keep the lock and retry later. Note what a retry can

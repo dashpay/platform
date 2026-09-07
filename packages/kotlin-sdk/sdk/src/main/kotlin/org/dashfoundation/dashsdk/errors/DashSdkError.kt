@@ -168,7 +168,8 @@ sealed class DashSdkError(
          * confirm while that spender stands and an unbounded proof wait would
          * hang. The resume still runs: the sighting bounds that wait instead
          * of replacing it, so the lock was (re-)broadcast and waited on (a
-         * `Broadcast`-status lock was also sent on an earlier call), and this
+         * `Broadcast`-status lock also had an earlier attempt that may have
+         * sent it), and this
          * is what the bounded wait expired with.
          *
          * The ONLY double-spend verdict the native side emits, and it is
