@@ -119,9 +119,13 @@ struct CoreDiagnosticRowLimits: Sendable {
     /// bodies are not materialized and the exact audit is declined.
     let exactAuditTransactionRows: Int
 
+    /// The transaction ceiling is the one that matters: `walletOwnsTransaction`
+    /// faults four relationships per transaction cross-wallet, each a query
+    /// under the coordinator lock, so it — not decoding — dominates the time
+    /// the persistence queue is held.
     static let production = CoreDiagnosticRowLimits(
         crossWalletTxoRows: 100_000,
-        exactAuditTransactionRows: 20_000
+        exactAuditTransactionRows: 10_000
     )
 }
 
