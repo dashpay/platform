@@ -894,6 +894,21 @@ impl SqlitePersister {
             // `busy_timeout`.
             let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)?;
 
+            // Confirm the erasing mode is in force HERE, inside the transaction
+            // the cascade actually runs in — not merely where it was set. A
+            // pragma that failed to survive into this context fails silently,
+            // and the result would be a delete that reports success while
+            // leaving the wallet's pages legible.
+            match secure_delete_mode(&tx) {
+                Ok(SECURE_DELETE_ERASING_VALUE) => {}
+                other => tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    observed = ?other,
+                    "the wallet cascade is running without the erasing secure_delete mode; \
+                     freed pages will retain deleted row content"
+                ),
+            }
+
             // Deleting the parent `wallets` row drives all cleanup: native
             // `ON DELETE CASCADE` clears FK-bearing tables and AFTER DELETE
             // triggers reap the `meta_*` rows (the completeness test
@@ -1952,13 +1967,13 @@ fn validate_config(config: &SqlitePersisterConfig) -> Result<(), WalletStorageEr
 /// cannot be scrubbed leaves them strictly worse off. The residue that survives
 /// is the same residue the steady-state mode already leaves.
 fn raise_secure_delete_for_erase(conn: &Connection, wallet_id: WalletId) {
-    if let Err(e) = conn.pragma_update(None, "secure_delete", SECURE_DELETE_ERASING) {
-        tracing::warn!(
-            wallet_id = %hex::encode(wallet_id),
-            error = %e,
-            "could not raise secure_delete for the wallet cascade; freed pages may retain deleted row content"
-        );
-    }
+    set_secure_delete(
+        conn,
+        wallet_id,
+        SECURE_DELETE_ERASING,
+        SECURE_DELETE_ERASING_VALUE,
+        "could not raise secure_delete for the wallet cascade; freed pages may retain deleted row content",
+    );
 }
 
 /// Return `conn` to the steady-state `secure_delete` mode after a cascade.
@@ -1966,12 +1981,51 @@ fn raise_secure_delete_for_erase(conn: &Connection, wallet_id: WalletId) {
 /// A failure here leaves the connection MORE aggressive than configured, never
 /// less, so it costs I/O rather than confidentiality — logged and tolerated.
 fn restore_secure_delete_steady_state(conn: &Connection, wallet_id: WalletId) {
-    if let Err(e) = conn.pragma_update(None, "secure_delete", SECURE_DELETE_STEADY_STATE) {
-        tracing::warn!(
+    set_secure_delete(
+        conn,
+        wallet_id,
+        SECURE_DELETE_STEADY_STATE,
+        SECURE_DELETE_STEADY_STATE_VALUE,
+        "could not restore secure_delete after the wallet cascade; later writes pay full erase cost",
+    );
+}
+
+/// Set `secure_delete` to `mode` and confirm it reads back as `expected`.
+///
+/// `pragma_update` does not error when a setting fails to take, so the
+/// read-back is the only thing standing between a silent no-op and a guarantee
+/// the crate believes it has. It compares the exact value rather than "not
+/// off": `ON` and `FAST` are distinct modes, and accepting either would let a
+/// failed restore look like a successful one.
+///
+/// Logged and tolerated rather than fatal. Both callers bracket a delete the
+/// user asked for, and refusing to remove a wallet because the file cannot be
+/// scrubbed leaves them strictly worse off than removing it imperfectly.
+fn set_secure_delete(
+    conn: &Connection,
+    wallet_id: WalletId,
+    mode: &str,
+    expected: i64,
+    failure_message: &'static str,
+) {
+    let outcome = conn
+        .pragma_update(None, "secure_delete", mode)
+        .map_err(WalletStorageError::Sqlite)
+        .and_then(|()| secure_delete_mode(conn));
+    match outcome {
+        Ok(actual) if actual == expected => {}
+        Ok(actual) => tracing::warn!(
             wallet_id = %hex::encode(wallet_id),
+            requested = mode,
+            actual,
+            failure_message
+        ),
+        Err(e) => tracing::warn!(
+            wallet_id = %hex::encode(wallet_id),
+            requested = mode,
             error = %e,
-            "could not restore secure_delete after the wallet cascade; later writes pay full erase cost"
-        );
+            failure_message
+        ),
     }
 }
 
@@ -1979,10 +2033,31 @@ fn restore_secure_delete_steady_state(conn: &Connection, wallet_id: WalletId) {
 /// are being rewritten anyway, without paying to scrub pages released to the
 /// freelist on every ordinary write.
 const SECURE_DELETE_STEADY_STATE: &str = "FAST";
+/// What [`SECURE_DELETE_STEADY_STATE`] reads back as. SQLite reports the mode
+/// numerically and the three values are distinct — `0` off, `1` ON, `2` FAST —
+/// so a read-back that only checked for nonzero would accept `ON` where `FAST`
+/// was asked for, and, worse, would accept a failed restore after a cascade.
+const SECURE_DELETE_STEADY_STATE_VALUE: i64 = 2;
 /// `secure_delete` mode for a wallet cascade, which releases whole pages that
 /// `FAST` leaves intact. Deletion is rare, explicit and user-initiated, so it
 /// can afford the I/O that every ordinary write cannot.
+///
+/// Measured on this schema: deleting a wallet whose rows span whole pages
+/// leaves the row content fully legible under `off`, PARTLY legible under
+/// `FAST` (it clears only the part of a page it was rewriting anyway), and not
+/// at all under `ON`.
 const SECURE_DELETE_ERASING: &str = "ON";
+/// What [`SECURE_DELETE_ERASING`] reads back as.
+const SECURE_DELETE_ERASING_VALUE: i64 = 1;
+
+/// Read the connection's `secure_delete` mode back.
+///
+/// Must be issued on the connection that set it: the setting is per-connection,
+/// and a fresh handle reports the build default rather than any value another
+/// handle put in force.
+fn secure_delete_mode(conn: &Connection) -> Result<i64, WalletStorageError> {
+    Ok(conn.pragma_query_value(None, "secure_delete", |row| row.get(0))?)
+}
 
 fn apply_pragmas(
     conn: &mut Connection,
@@ -2012,9 +2087,8 @@ fn apply_pragmas(
     // Read back like `journal_mode`: `pragma_update` does not error when the
     // setting does not take, and a silent `0` here is an at-rest guarantee the
     // crate documents and does not have.
-    let applied_secure_delete: i64 =
-        conn.pragma_query_value(None, "secure_delete", |row| row.get(0))?;
-    if applied_secure_delete == 0 {
+    let applied_secure_delete = secure_delete_mode(conn)?;
+    if applied_secure_delete != SECURE_DELETE_STEADY_STATE_VALUE {
         return Err(WalletStorageError::SecureDeleteNotApplied {
             actual: applied_secure_delete,
         });
