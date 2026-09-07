@@ -1,4 +1,5 @@
 pub(crate) mod average_proof_helpers;
+pub mod chained_document_query;
 pub(crate) mod count_proof_helpers;
 pub mod document_average;
 pub mod document_count;

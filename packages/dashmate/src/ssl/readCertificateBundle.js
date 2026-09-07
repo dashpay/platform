@@ -11,7 +11,7 @@ import fs from 'node:fs';
  * @param {string|undefined} subjectAltName
  * @return {string[]}
  */
-function parseIpAddresses(subjectAltName) {
+export function parseIpAddresses(subjectAltName) {
   if (!subjectAltName) {
     return [];
   }

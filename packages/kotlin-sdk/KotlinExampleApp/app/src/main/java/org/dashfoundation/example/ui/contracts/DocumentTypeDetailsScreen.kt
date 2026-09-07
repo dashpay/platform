@@ -144,6 +144,9 @@ fun DocumentTypeDetailsScreen(
             }
 
             FormSection(title = "Document Settings") {
+                if (schema.boolField("indexOnly") == true) {
+                    LabeledContent("Index Only", "Yes (entries are the documents)")
+                }
                 LabeledContent(
                     "Keep History",
                     if (schema.boolField("documentsKeepHistory") == true) "Yes" else "No",
@@ -208,6 +211,14 @@ fun DocumentTypeDetailsScreen(
                                             color = MaterialTheme.colorScheme.tertiary,
                                         )
                                     }
+                                    if (index.boolField("preallocated") == true) {
+                                        Text(
+                                            "PREALLOCATED",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.padding(start = 4.dp),
+                                        )
+                                    }
                                     Icon(
                                         if (isExpanded) Icons.Default.KeyboardArrowUp
                                         else Icons.Default.KeyboardArrowDown,
@@ -229,6 +240,37 @@ fun DocumentTypeDetailsScreen(
                                             )
                                         }
                                     }
+                                indexTerminal(
+                                    index,
+                                    indexOnly = schema.boolField("indexOnly") == true,
+                                )?.let { terminal ->
+                                    Text(
+                                        "Terminal: $terminal",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        modifier = Modifier.padding(start = 8.dp),
+                                    )
+                                }
+                                val axes = indexAxisDescriptors(index)
+                                if (axes.isNotEmpty()) {
+                                    Text(
+                                        axes.joinToString(" · "),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(start = 8.dp),
+                                    )
+                                }
+                                index.objectField("timeRange")?.let { timeRange ->
+                                    val range = timeRange.longField("range")
+                                    val step = timeRange.longField("step")
+                                    if (range != null && step != null) {
+                                        Text(
+                                            "Time Range: ${range}s windows every ${step}s",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            modifier = Modifier.padding(start = 8.dp),
+                                        )
+                                    }
+                                }
                                 if (index.boolField("nullSearchable") == true) {
                                     Text(
                                         "Null Searchable",

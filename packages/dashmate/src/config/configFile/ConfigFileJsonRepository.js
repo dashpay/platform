@@ -11,6 +11,7 @@ import ConfigFileNotFoundError from '../errors/ConfigFileNotFoundError.js';
 import InvalidConfigFileFormatError from '../errors/InvalidConfigFileFormatError.js';
 import configFileJsonSchema from './configFileJsonSchema.js';
 import ConfigFile from './ConfigFile.js';
+import ConfigurationLockLostError from '../../ssl/errors/ConfigurationLockLostError.js';
 
 /**
  * How long a lock may go un-refreshed before another process may break it.
@@ -109,19 +110,40 @@ export default class ConfigFileJsonRepository {
    * @returns {ConfigFile}
    */
   read(options = {}) {
-    const { skipValidation = false } = options;
+    return this.#buildConfigFile(this.#readRawConfigFile(), options);
+  }
+
+  /**
+   * The bytes on disk, parsed, and nothing more.
+   *
+   * Separate from building a ConfigFile so a caller that has to decide
+   * something about the file before migrating it can decide and migrate from
+   * the same snapshot. Reading twice leaves a window in which the file can be
+   * replaced between the decision and the work it authorised.
+   *
+   * @returns {Object}
+   */
+  #readRawConfigFile() {
     if (!fs.existsSync(this.configFilePath)) {
       throw new ConfigFileNotFoundError(this.configFilePath);
     }
 
     const configFileJSON = fs.readFileSync(this.configFilePath, 'utf8');
 
-    let configFileData;
     try {
-      configFileData = JSON.parse(configFileJSON);
+      return JSON.parse(configFileJSON);
     } catch (e) {
       throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
+  }
+
+  /**
+   * @param {Object} configFileData - already read and parsed
+   * @param {Object} [options={}]
+   * @returns {ConfigFile}
+   */
+  #buildConfigFile(configFileData, options = {}) {
+    const { skipValidation = false } = options;
 
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
@@ -208,7 +230,7 @@ export default class ConfigFileJsonRepository {
       this.#save(configFile);
 
       if (!this.isExclusive()) {
-        throw new Error('Lost the configuration lock after saving the config file;'
+        throw new ConfigurationLockLostError('Lost the configuration lock after saving the config file;'
           + ' follow-up filesystem changes were not run. Re-run the command.');
       }
 
@@ -253,7 +275,7 @@ export default class ConfigFileJsonRepository {
 
     return this.#locked(() => {
       if (!this.isExclusive()) {
-        throw new Error('Lost the configuration lock before the config file was migrated.');
+        throw new ConfigurationLockLostError('Lost the configuration lock before the config file was migrated.');
       }
 
       // Another process may have migrated or changed the file while this
@@ -514,7 +536,7 @@ export default class ConfigFileJsonRepository {
         }
 
         if (Date.now() >= deadline) {
-          throw new Error(`Timed out waiting for configuration lock '${this.lockFilePath}'.`
+          throw new ConfigurationLockLostError(`Timed out waiting for configuration lock '${this.lockFilePath}'.`
             + ' It may be held by a Dashmate command, the dashmate helper during certificate'
             + ' renewal, or a running reindex. An abandoned lock after SIGKILL or power loss'
             + ' clears itself after about a minute; do not remove it manually while another'

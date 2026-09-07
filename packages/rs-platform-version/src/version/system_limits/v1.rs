@@ -19,6 +19,13 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     //     them that jointly empty an index group leave the group tree behind
     //     — a document-less group that still ranks, and still proves. See
     //     SystemLimits::max_transitions_in_documents_batch.
+    //   - indexOnly (PV14) state probes see only pre-batch state, and the
+    //     DPP duplicate check fingerprints (type, id) — while two indexOnly
+    //     creates (or two delete-by-values) with different entropy-derived
+    //     ids can address the very same index entries. Both would validate
+    //     and then collide as duplicate operations for one qualified key
+    //     inside the grove batch. Lifting the cap requires cross-sibling
+    //     derived-entry tracking in batch state validation.
     // Before lifting this cap above 1, the whole batch validation +
     // transformer + nonce-bump path must be reviewed and the atomicity /
     // nonce semantics fixed. Pulling the cap higher today would expose
@@ -42,4 +49,5 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     // only becomes reachable if the size limit is raised. Pinned by dpp's
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
+    max_time_range_overlap_factor: None,
 };

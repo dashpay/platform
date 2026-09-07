@@ -14,8 +14,8 @@ impl DriveDocumentHavingQuery<'_> {
     /// [`execute_range_with_proof`](Self::execute_range_with_proof).
     /// Both sides derive the proved subtree from
     /// [`indexed_property_name_tree_path`](Self::indexed_property_name_tree_path)
-    /// and the secondary query from
-    /// [`AxisRangeBounds::merk_query`](crate::query::drive_document_having_query::AxisRangeBounds::merk_query),
+    /// and the same bounded axis `PathQuery` from
+    /// [`AxisRangeBounds::i128_bounds`](crate::query::drive_document_having_query::AxisRangeBounds::i128_bounds),
     /// so the verifier cannot drift from the prover on *which* bound over
     /// *which* tree it is checking.
     ///

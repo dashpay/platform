@@ -120,6 +120,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenDistributionTimeIntervalTooShortError(_) => 10273,
             Self::InvalidTokenDistributionTimeIntervalNotMinuteAlignedError(_) => 10274,
             Self::RedundantDocumentPaidForByTokenWithContractId(_) => 10275,
+            Self::DataContractInvalidRequiredFieldsUpdateError { .. } => 10276,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -317,6 +318,8 @@ impl ErrorWithCode for StateError {
             Self::ReferencedIdentityKeyNotFoundError(_) => 40123,
             Self::ReferencedIdentityKeyDisabledError(_) => 40124,
             Self::ReferencedKeyIdPropertyInvalidError(_) => 40125,
+            Self::ReferencedDocumentPropertyAgreementInvalidError(_) => 40126,
+            Self::ReferencedDocumentPropertyMismatchError(_) => 40127,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

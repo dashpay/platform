@@ -87,6 +87,7 @@ impl Drive {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         // todo: deal with cost of this operation

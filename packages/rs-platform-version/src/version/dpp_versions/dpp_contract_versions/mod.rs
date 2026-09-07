@@ -82,6 +82,11 @@ pub struct DocumentTypeSchemaVersions {
     /// `None` on versions that predate the keyword: they ignore it entirely,
     /// exactly as they parsed before it existed.
     pub apply_property_reference: OptionalFeatureVersion,
+    /// Parses the `requiredSince` property keyword (the contract version from
+    /// which a property is required). `None` on versions that predate the
+    /// keyword: they ignore it entirely, exactly as they parsed before it
+    /// existed.
+    pub apply_required_since: OptionalFeatureVersion,
     pub validate_max_depth: FeatureVersion,
     pub max_depth: u16,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,

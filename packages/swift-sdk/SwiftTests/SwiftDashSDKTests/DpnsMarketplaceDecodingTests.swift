@@ -178,6 +178,23 @@ final class DpnsMarketplaceDecodingTests: XCTestCase {
 
 @MainActor
 final class DpnsMarketplaceManagerWrapperTests: XCTestCase {
+    private nonisolated static func noOpTeardownCalls() -> PlatformWalletNativeTeardownCalls {
+        let success: PlatformWalletNativeTeardownCalls.Call = { _ in
+            PlatformWalletFFIResult(
+                code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS,
+                message: nil
+            )
+        }
+        return PlatformWalletNativeTeardownCalls(
+            spvStop: success,
+            platformAddressSyncStop: success,
+            shieldedSyncStop: success,
+            dashPaySyncStop: success,
+            dpnsSyncStop: success,
+            destroy: success
+        )
+    }
+
     private func assertInvalidHandle(
         file: StaticString = #filePath,
         line: UInt = #line,
@@ -215,7 +232,10 @@ final class DpnsMarketplaceManagerWrapperTests: XCTestCase {
     }
 
     func testEventExtensionPublishesOwnedWalletResults() async {
-        let manager = PlatformWalletManager()
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 72,
+            calls: Self.noOpTeardownCalls()
+        )
         let handler = PlatformWalletEventHandler(manager: manager)
         let eventExtension = handler.makeCallbacksExtension()
         XCTAssertEqual(
@@ -255,5 +275,6 @@ final class DpnsMarketplaceManagerWrapperTests: XCTestCase {
         let event = manager.lastDpnsSyncEvent
         XCTAssertEqual(event?.syncUnixSeconds, 123)
         XCTAssertEqual(event?.result(for: walletId)?.errorMessage, "ephemeral error")
+        await manager.shutdown()
     }
 }

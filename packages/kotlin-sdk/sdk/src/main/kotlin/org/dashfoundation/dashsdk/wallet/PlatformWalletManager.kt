@@ -27,6 +27,7 @@ import org.dashfoundation.dashsdk.ffi.DpnsMarketplaceNative
 import org.dashfoundation.dashsdk.ffi.FundingNative
 import org.dashfoundation.dashsdk.ffi.NativeWalletEventBridge
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
+import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
 import org.dashfoundation.dashsdk.persistence.entities.DashpayPaymentEntity
@@ -743,6 +744,17 @@ class PlatformWalletManager(
      *   seen (`Some(h)` pins a specific height). Mirror of Swift
      *   `PlatformWalletManager.createWallet(..., birthHeight:)`
      *   (`birthHeight: showImportOption ? 0 : nil`).
+     * @throws org.dashfoundation.dashsdk.security.KeystoreDeviceLockedException
+     *   (RETRYABLE after unlock) if the device is locked at entry AND the
+     *   master key is actually lock-bound — decided by the Keystore itself
+     *   via [WalletStorage.ensureMasterKeyNotLockBlocked]'s preflight
+     *   encrypt, and thrown BEFORE the native create, so nothing was
+     *   created and nothing needs rolling back — or if the Keystore denies
+     *   the mnemonic store as device-locked after the false-locked bounded
+     *   retry in [WalletStorage.storeMnemonic] is exhausted (that path runs
+     *   the full rollback below first). A locked device whose master key is
+     *   NOT lock-bound (generated before a PIN was enrolled) proceeds
+     *   normally.
      */
     suspend fun createWallet(
         mnemonic: String,
@@ -750,6 +762,18 @@ class PlatformWalletManager(
         createDefaultAccounts: Boolean = true,
         birthHeight: UInt? = null,
     ): ManagedPlatformWallet = withContext(Dispatchers.IO) {
+        // Fail-fast pre-check BEFORE the native create: on a locked device
+        // whose MASTER_ALIAS key is lock-bound (setUnlockedDeviceRequired)
+        // the storeMnemonic step below is guaranteed to be denied, which
+        // would force the full rollback dance. The pre-check preflights one
+        // master-alias encrypt so the Keystore itself renders that verdict
+        // (a key generated before any PIN existed carries no lock binding
+        // and keeps working while locked — creation must proceed then).
+        // Failing here instead means no native wallet was created, no Room
+        // rows were written, and there is nothing to roll back — the typed
+        // KeystoreDeviceLockedException tells the caller to retry after
+        // unlock.
+        walletStorage.ensureMasterKeyNotLockBlocked(operation = "createWallet")
         // Caller-allocated out-buffers: the JNI side validates both BEFORE
         // the native create so no fallible allocation follows the
         // persistence commit (a post-commit publish failure would strand
@@ -1445,6 +1469,27 @@ class PlatformWalletManager(
     }
 
     /**
+     * Consensus-pinned flat shielded fee (in credits) for a pool-paid
+     * shielded transition of [kind] with [numActions] Orchard actions —
+     * port of Swift's `PlatformWalletManager.estimateShieldedFee`
+     * (`PlatformWalletManagerShieldedSync.swift`). Computed at this
+     * manager's network-tracked platform version (the same version the
+     * shielded builders carve fees with), so the preview can't drift from
+     * the fee the consensus gate validates even when the connected network
+     * hasn't activated the client's latest protocol version yet. No
+     * network round-trip. A single-note spend with change is
+     * `numActions = 2`.
+     */
+    suspend fun estimateShieldedFee(
+        kind: ShieldedProver.FeeKind,
+        numActions: Int = 2,
+    ): Long = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            FundingNative.estimateShieldedFee(managerHandle, kind.raw, numActions)
+        }
+    }
+
+    /**
      * Fund a wallet's shielded (Orchard) pool from a fresh Core L1 asset
      * lock — port of Swift's `shieldedFundFromAssetLock`. Blocks for the
      * ~30s Halo 2 proof; the shielded note itself arrives on the next
@@ -1476,6 +1521,54 @@ class PlatformWalletManager(
                 amountDuffs,
                 recipientRaw43,
                 surplusOutput,
+                mnemonicResolverHandle,
+            )
+        }
+    }
+
+    /**
+     * Fund a wallet's shielded (Orchard) pool by DRAINING its CoinJoin account
+     * (`m/9'/coinType'/4'/coinJoinAccountIndex'`) into a single asset lock —
+     * port of Swift's `shieldedFundFromCoinJoinDrain`.
+     *
+     * Sibling of [shieldedFundFromAssetLock] with drain funding, which is what
+     * makes this the CoinJoin → Shielded migration path: every final mixed-coin
+     * UTXO is consumed and the lock value is `Σ inputs − L1 fee`, computed
+     * Rust-side, so the mixed coins never hop through a transparent BIP44
+     * address on the way in. Hence no amount parameter, and no surplus output
+     * (the single-recipient remainder flow pins the consensus surplus to zero).
+     *
+     * The recipient receives `lockValue − poolFee` credits. The Rust preflight
+     * rejects a drain whose balance could not clear the Type 18 pool fee, so an
+     * unrecoverable dust lock is never broadcast; a drain of an empty account
+     * fails with the typed asset-lock shortfall
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockInsufficientFunds]).
+     * A stuck lock resumes via [shieldedResumeFundFromAssetLock] exactly like a
+     * BIP44-funded one.
+     *
+     * Blocks for the ~30s Halo 2 proof; the shielded note itself arrives on the
+     * next shielded sync pass, so nothing is returned.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param recipientRaw43 the 43-byte raw Orchard payment address
+     *   (11-byte diversifier + 32-byte pk_d).
+     * @param coinJoinAccountIndex the CoinJoin account whose whole balance
+     *   funds the asset lock (account 0 for every current wallet).
+     */
+    suspend fun shieldedFundFromCoinJoinDrain(
+        walletId: ByteArray,
+        recipientRaw43: ByteArray,
+        coinJoinAccountIndex: Int = 0,
+    ): Unit = teardownGate.op {
+        require(coinJoinAccountIndex >= 0) {
+            "coinJoinAccountIndex must be non-negative, got $coinJoinAccountIndex"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedFundFromCoinJoinDrain(
+                managerHandle,
+                walletId,
+                coinJoinAccountIndex,
+                recipientRaw43,
                 mnemonicResolverHandle,
             )
         }
@@ -2077,9 +2170,23 @@ class PlatformWalletManager(
     suspend fun unlockWalletFromKeystore(managed: ManagedPlatformWallet): Boolean {
         val walletId = managed.walletId
         require(walletId.size == 32) { "walletId must be 32 bytes, got ${walletId.size}" }
-        if (!walletStorage.hasMnemonic(walletId)) return false
 
         val key = walletId.toHex()
+        // Pure delegation — the WHOLE guard sequence (storage read, status-key
+        // derivation, stale-mismatch clear, early-return decision) lives in
+        // [isGenuineWatchOnly] so `WatchOnlySeedMismatchTest` pins it without
+        // the native library. Don't inline any of it back here: logic at this
+        // call site is exactly what the unit tests cannot see.
+        if (isGenuineWatchOnly(
+                walletId = walletId,
+                hasMnemonic = walletStorage::hasMnemonic,
+                updateUnlockStatus = { statusKey, transform ->
+                    updateUnlockStatus(statusKey, transform)
+                },
+            )
+        ) {
+            return false
+        }
         // Wrong-seed / wrong-wallet gate. `seedMismatch` is published from
         // the verify result itself, scoped to JUST this call: the verify
         // FFI maps Rust `SeedMismatch` → ErrorInvalidParameter (de-offset
@@ -2354,6 +2461,51 @@ data class DashPaySyncSummary(
     val errors: Int,
     val syncUnixSeconds: Long,
 )
+
+/**
+ * The genuine-watch-only guard of
+ * [PlatformWalletManager.unlockWalletFromKeystore] — the COMPLETE sequence
+ * the unlock runs ahead of the binding verify: probe mnemonic existence
+ * through [hasMnemonic] ([WalletStorage.hasMnemonic] in production — an
+ * existence check, no decrypt), and when nothing is stored clear any stale
+ * `seedMismatch` under the wallet's hex status key BEFORE reporting
+ * watch-only.
+ *
+ * A wallet with no stored mnemonic (imported by xpub, or one whose Keystore
+ * entry was removed) is genuine watch-only. Reporting that MUST first clear
+ * any stale `seedMismatch`: no mnemonic is not a mismatch, and a wallet whose
+ * seed once failed to bind and whose Keystore entry was then deleted would
+ * otherwise keep publishing the unlock banner forever for a seed that is no
+ * longer there — nothing downstream of the early return can clear it.
+ *
+ * The ordering is the whole contract, which is why the WHOLE guard — the
+ * storage read, the status-key derivation, the clearing transform, and the
+ * early-return decision — lives here rather than inline. The call site in
+ * [PlatformWalletManager.unlockWalletFromKeystore] is pure delegation, so
+ * this function IS the call-site shape and `WatchOnlySeedMismatchTest` pins
+ * it without the native library. (An earlier cut took a pre-computed
+ * `hasMnemonic: Boolean` and a bare clear lambda, which left the real
+ * read/clear/return sequence living untested at the call site.) Mirror of
+ * the Swift `verifySeedBinding` watch-only arm
+ * (PlatformWalletManager.swift:764-770).
+ *
+ * @param hasMnemonic the storage existence probe, invoked with [walletId].
+ * @param updateUnlockStatus the manager's status-map updater, invoked with
+ *   the wallet's hex status key and the `seedMismatch = false` transform.
+ * @return true when the wallet is watch-only and the caller must report it as
+ *   such; false when a mnemonic exists and the binding verify must run —
+ *   this path must not touch `seedMismatch` (the verify publishes the real
+ *   result).
+ */
+internal suspend fun isGenuineWatchOnly(
+    walletId: ByteArray,
+    hasMnemonic: suspend (walletId: ByteArray) -> Boolean,
+    updateUnlockStatus: (key: String, transform: (DashPayUnlockStatus) -> DashPayUnlockStatus) -> Unit,
+): Boolean {
+    if (hasMnemonic(walletId)) return false
+    updateUnlockStatus(walletId.toHex()) { it.copy(seedMismatch = false) }
+    return true
+}
 
 /**
  * Decode the tagged shielded-create payload the JNI returns:

@@ -1,0 +1,338 @@
+{
+  "$formatVersion": "0",
+  "id": "AY6xWncZUFv2GCrS5seqKthUfbW9yYyUXtF8diSuHQ4g",
+  "ownerId": "AtirhSVpAWF7dEt6dLAmesC4Sr1MsJ9bFC1nLAoNnq2S",
+  "version": 1,
+  "documentSchemas": {
+    "like": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byHashtagPost",
+          "properties": [
+            {
+              "hashtag": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": true,
+          "preallocated": true,
+          "skipIfAbsent": true
+        },
+        {
+          "name": "byPost",
+          "properties": [
+            {
+              "postId": "asc"
+            }
+          ],
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": true,
+          "preallocated": true
+        },
+        {
+          "name": "byLiker",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            }
+          ],
+          "terminal": "postId"
+        }
+      ],
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post",
+            "propertyAgreement": {
+              "hashtag": "hashtag"
+            }
+          },
+          "position": 1
+        }
+      },
+      "required": [
+        "postId"
+      ],
+      "additionalProperties": false
+    },
+    "post": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "indices": [
+        {
+          "name": "byHashtag",
+          "properties": [
+            {
+              "hashtag": "asc"
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 280,
+          "position": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "beat": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byHourHashtag",
+          "properties": [
+            {
+              "$createdAt": "asc"
+            },
+            {
+              "hashtag": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "timeRange": {
+            "on": "$createdAt",
+            "range": 3600,
+            "step": 900
+          },
+          "countable": "countable",
+          "rangeCountable": true
+        },
+        {
+          "name": "byHashtag",
+          "properties": [
+            {
+              "hashtag": "asc"
+            }
+          ],
+          "terminal": "$ownerId"
+        }
+      ],
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        }
+      },
+      "required": [
+        "hashtag",
+        "$createdAt"
+      ],
+      "additionalProperties": false
+    },
+    "tip": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byPost",
+          "properties": [
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": true,
+          "summable": "amount",
+          "rangeSummable": true,
+          "rankedSummable": true,
+          "preallocated": true
+        },
+        {
+          "name": "byTipperAmount",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "amount": "asc"
+            }
+          ],
+          "terminal": "postId"
+        }
+      ],
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post"
+          },
+          "position": 0
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000,
+          "position": 1
+        }
+      },
+      "required": [
+        "postId",
+        "amount"
+      ],
+      "additionalProperties": false
+    },
+    "mark": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byA",
+          "properties": [
+            {
+              "a": "asc"
+            }
+          ],
+          "terminal": "$ownerId"
+        },
+        {
+          "name": "byB",
+          "properties": [
+            {
+              "b": "asc"
+            }
+          ],
+          "terminal": "$ownerId"
+        }
+      ],
+      "properties": {
+        "a": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "b": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 1
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "additionalProperties": false
+    },
+    "note": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "indices": [
+        {
+          "name": "byTopic",
+          "properties": [
+            {
+              "topic": "asc"
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "topic": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotation": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byNoteTopic",
+          "properties": [
+            {
+              "noteId": "asc"
+            },
+            {
+              "topic": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "preallocated": true
+        }
+      ],
+      "properties": {
+        "noteId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "note",
+            "propertyAgreement": {
+              "topic": "topic"
+            }
+          }
+        },
+        "topic": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 1
+        }
+      },
+      "required": [
+        "noteId",
+        "topic"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

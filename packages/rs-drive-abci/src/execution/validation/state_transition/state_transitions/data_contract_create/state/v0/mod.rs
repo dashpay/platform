@@ -443,7 +443,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::errors::DataContractError;
     use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-    use dpp::platform_value::Value;
+    use dpp::platform_value::{platform_value, Value};
     use dpp::prelude::IdentityNonce;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
     use dpp::tests::fixtures::get_data_contract_fixture;
@@ -544,6 +544,109 @@ mod tests {
 
             // We have tons of operations here so not sure if we want to assert all of them
             assert!(!execution_context.operations_slice().is_empty());
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_required_since_reached_through_a_ref_exceeds_the_contract_version(
+        ) {
+            // The create-time basic-structure check scans only raw top-level
+            // property JSON, so a `requiredSince` annotation hidden behind
+            // `$ref` slips past it. Contract deserialization enforces the
+            // invariant on parsed properties instead, and its failure must be
+            // classified as a consensus error converted to a nonce bump —
+            // never as an execution error, which would abort processing.
+            let platform_version = PlatformVersion::latest();
+            let identity_nonce = IdentityNonce::default();
+
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let data_contract =
+                get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
+                    .data_contract_owned();
+
+            let identity_id = data_contract.owner_id();
+
+            let mut data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            let DataContractInSerializationFormat::V1(ref mut contract) =
+                data_contract_for_serialization
+            else {
+                panic!("expected serialization version 1")
+            };
+
+            contract
+                .schema_defs
+                .get_or_insert_with(Default::default)
+                .insert(
+                    "annotated".to_string(),
+                    platform_value!({
+                        "type": "string",
+                        "maxLength": 60_u32,
+                        "requiredSince": 2_u32,
+                    }),
+                );
+            contract.document_schemas.insert(
+                "note".to_string(),
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "message": {"$ref": "#/$defs/annotated", "position": 0_u32},
+                    },
+                    "required": ["message"],
+                    "additionalProperties": false
+                }),
+            );
+
+            let transition: DataContractCreateTransition = DataContractCreateTransitionV0 {
+                data_contract: data_contract_for_serialization,
+                identity_nonce,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = transition
+                .validate_state_v0::<MockCoreRPCLike>(
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    ValidationMode::Validator,
+                    None,
+                    &mut execution_context,
+                    platform_version,
+                )
+                .expect("failed to validate state");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
+                )] if e.document_type() == "note"
+                    && e.details().contains("requiredSince 2 which exceeds the contract version 1")
+            );
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::BumpIdentityNonceAction(action))
+                if action.identity_id() == identity_id && action.identity_nonce() == identity_nonce
+            );
         }
 
         #[test]

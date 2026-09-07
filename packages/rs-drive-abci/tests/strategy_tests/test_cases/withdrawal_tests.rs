@@ -17,7 +17,8 @@ mod tests {
     use drive::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
     use drive::drive::identity::withdrawals::fetch_total_credits_in_platform_a_day_ago::DAY_IN_MS;
     use drive::drive::identity::withdrawals::paths::{
-        get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+        get_withdrawal_root_path, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+        WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
     };
     use drive::drive::system::misc_path;
     use drive::util::grove_operations::DirectQueryType;
@@ -2200,7 +2201,12 @@ mod tests {
     async fn should_cap_withdrawals_at_the_relative_daily_limit() {
         // Latest protocol version: the daily withdrawal limit is 15% of the total credits
         // Platform held a day ago (the flat 2000 Dash of the previous rule while no recorded
-        // total is a day old yet), counted against the amounts pooled in the last 24 hours.
+        // total is a day old yet) plus the credit inflows of the last 25 hours (the limit is
+        // one on net outflow), counted against the amounts pooled in the last 24 hours.
+        //
+        // The identities are funded through asset locks, which are credit inflows, so a
+        // waiting phase lets those inflows expire before the withdrawals start: the phases
+        // after it exercise the relative limit alone.
         let platform_version = PlatformVersion::latest();
         let start_strategy = NetworkStrategy {
             strategy: Strategy {
@@ -2415,6 +2421,24 @@ mod tests {
 
             assert_eq!(total_credits_in_platform, Some(1010000000000000));
 
+            // Every credit entered through an asset lock, so the whole 10,100 Dash is
+            // recorded as credit inflows the daily withdrawal limit would add to its maximum.
+            let credit_inflows = outcome
+                .abci_app
+                .platform
+                .drive
+                .grove_get_sum_tree_total_value(
+                    (&get_withdrawal_root_path()).into(),
+                    &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+                    DirectQueryType::StatefulDirectQuery,
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to get the credit inflows");
+
+            assert_eq!(credit_inflows, 1010000000000000);
+
             outcome
         };
 
@@ -2474,7 +2498,26 @@ mod tests {
             ..Default::default()
         };
 
-        // Run Block 3 onwards: initiates withdrawals
+        let hour_in_ms = 1000 * 60 * 60;
+
+        let hourly_config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                ..Default::default()
+            },
+            block_spacing_ms: hour_in_ms,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+
+        // Let the funding inflows expire: 26 hourly blocks with no operations. The inflow
+        // entries are keyed 25 hours after the funding blocks, so the 26th hourly block prunes
+        // them, and the 10,100 Dash recorded at the funding blocks becomes the day-old base:
+        // from here on the daily maximum is 15% of 10,100 = 1,515 Dash, with no inflows left
+        // to extend it - the phases below exercise the relative limit alone.
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -2493,6 +2536,67 @@ mod tests {
                 abci_app,
                 ChainExecutionParameters {
                     block_start: 3,
+                    core_height_start: 1,
+                    block_count: 26,
+                    proposers,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    current_identity_nonce_counter: identity_nonce_counter,
+                    current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms + 1000,
+                    instant_lock_quorums,
+                    current_identities: identities,
+                    current_addresses_with_balance: addresses_with_balance,
+                },
+                continue_strategy_no_operations.clone(),
+                hourly_config.clone(),
+                StrategyRandomness::SeedEntropy(5),
+            )
+            .await;
+
+            // The funding inflows are 25 hours old and pruned; nothing extends the daily
+            // maximum any more.
+            let credit_inflows = outcome
+                .abci_app
+                .platform
+                .drive
+                .grove_get_sum_tree_total_value(
+                    (&get_withdrawal_root_path()).into(),
+                    &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+                    DirectQueryType::StatefulDirectQuery,
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to get the credit inflows");
+
+            assert_eq!(credit_inflows, 0);
+
+            outcome
+        };
+
+        // Run Block 29 onwards: initiates withdrawals
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            identities,
+            addresses_with_balance,
+            ..
+        } = {
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 29,
                     core_height_start: 1,
                     block_count: 20,
                     proposers,
@@ -2554,8 +2658,8 @@ mod tests {
                 )
                 .unwrap();
 
-            // We have 40 out of 80 queued
-            assert_eq!(withdrawal_documents_queued.len(), 40);
+            // We have 50 out of 80 queued
+            assert_eq!(withdrawal_documents_queued.len(), 50);
 
             // Withdrawal documents with queued status should exist.
             let withdrawal_documents_completed = outcome
@@ -2602,12 +2706,13 @@ mod tests {
                 )
                 .unwrap();
 
-            // We have 40 broadcasted (40 queued + 40 broadcasted = 80 total)
-            // 40 broadcasted = 40 * 50 Dash = 2000 Dash
-            // The whole run is younger than a day, so no recorded total is a day old yet and
-            // the flat 2000 Dash of the previous rule still applies: the first ten withdrawal
-            // blocks pool their 4 withdrawals (200 Dash) each, then the limit is exhausted.
-            assert_eq!(withdrawal_documents_broadcasted.len(), 40);
+            // We have 30 broadcasted (50 queued + 30 broadcasted = 80 total)
+            // 30 broadcasted = 30 * 50 Dash = 1500 Dash
+            // The day-old base is the 10,100 Dash of the funding blocks, so the daily maximum
+            // is 15% = 1,515 Dash: the first seven withdrawal blocks pool their 4 withdrawals
+            // (200 Dash) each, the eighth pools two more into the 115 Dash left, then the
+            // limit is exhausted.
+            assert_eq!(withdrawal_documents_broadcasted.len(), 30);
 
             let locked_amount = outcome
                 .abci_app
@@ -2623,12 +2728,10 @@ mod tests {
                 )
                 .expect("expected to get locked amount");
 
-            assert_eq!(locked_amount, dash_to_credits!(2000) as i64);
+            assert_eq!(locked_amount, dash_to_credits!(1500) as i64);
 
             outcome
         };
-
-        let hour_in_ms = 1000 * 60 * 60;
 
         let ChainExecutionOutcome {
             abci_app,
@@ -2647,7 +2750,7 @@ mod tests {
             let outcome = continue_chain_for_strategy(
                 abci_app,
                 ChainExecutionParameters {
-                    block_start: 23,
+                    block_start: 49,
                     core_height_start: 1,
                     block_count: 48,
                     proposers,
@@ -2680,13 +2783,14 @@ mod tests {
             )
             .await;
 
-            // From the 25th hourly block a recorded total is a day old, and the reference is
-            // the 6100 Dash left after all 80 withdrawals were executed (10100 - 80 * 50), so
-            // the daily maximum is 15% = 915 Dash. The 2000 Dash pooled on the first day
-            // unlocked 25 hours later (cleaned up at the 26th hourly block, after pooling), so
-            // from the 27th hourly block withdrawals pooled again, at most 4 (200 Dash) per
-            // block while they fit: 200, 400, 600, 800 Dash locked, then only two more fit in
-            // the 115 Dash left (900 Dash locked), and those locks outlive this phase.
+            // Once the withdrawal blocks are a day in the past the reference is the 6100
+            // Dash they left behind (10100 - 80 * 50), so the daily maximum is 15% = 915
+            // Dash and the 1500 Dash locked in the withdrawal phase stops counting the same
+            // block (outflows the day-old base already reflects are not subtracted again;
+            // the entries themselves are cleaned up an hour later). From that block
+            // withdrawals pooled again, at most 4 (200 Dash) per block while they fit:
+            // 200, 400, 600, 800 Dash locked, then only two more fit in the 115 Dash left
+            // (900 Dash locked), and those locks outlive this phase.
             let locked_amount = outcome
                 .abci_app
                 .platform
@@ -2732,8 +2836,8 @@ mod tests {
                 )
                 .unwrap();
 
-            // We have 22 out of 80 queued
-            assert_eq!(withdrawal_documents_queued.len(), 22);
+            // We have 32 out of 80 queued
+            assert_eq!(withdrawal_documents_queued.len(), 32);
 
             // Withdrawal documents with queued status should exist.
             let withdrawal_documents_completed = outcome
@@ -2780,15 +2884,15 @@ mod tests {
                 )
                 .unwrap();
 
-            // 40 from the first day plus the 18 pooled once the first locks expired
-            assert_eq!(withdrawal_documents_broadcasted.len(), 58);
+            // 30 from the withdrawal phase plus the 18 pooled once the first locks expired
+            assert_eq!(withdrawal_documents_broadcasted.len(), 48);
             outcome
         };
 
         let outcome = continue_chain_for_strategy(
             abci_app,
             ChainExecutionParameters {
-                block_start: 71,
+                block_start: 97,
                 core_height_start: 1,
                 block_count: 250,
                 proposers,
@@ -2837,7 +2941,7 @@ mod tests {
             .expect("expected to get locked amount");
 
         // Another 250 hourly blocks: as each lock expires 25 hours later as many withdrawals
-        // fit again under the 915 Dash daily maximum, so the remaining 22 drain within a few
+        // fit again under the 915 Dash daily maximum, so the remaining 32 drain within a few
         // days and the last locks expired long before the end.
         // We have nothing locked left
         assert_eq!(locked_amount, 0);

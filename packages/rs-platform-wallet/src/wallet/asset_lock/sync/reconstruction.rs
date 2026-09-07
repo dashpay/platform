@@ -591,6 +591,7 @@ mod tests {
             .insert(7, account);
 
         let info = PlatformWalletInfo {
+            observed_input_conflicts: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: std::sync::Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),

@@ -55,6 +55,9 @@ use crate::query::drive_document_sum_query::index_picker::{
     find_range_summable_index_for_where_clauses, find_summable_index_for_where_clauses,
 };
 use crate::query::drive_document_sum_query::{is_range_operator, DriveDocumentSumQuery};
+use crate::query::{
+    validate_and_canonicalize_where_clauses, validate_resolved_time_range_clause_shapes,
+};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::version::PlatformVersion;
@@ -72,11 +75,30 @@ impl Drive {
     ///   dispatcher that reads `(count, sum)` together.
     pub fn execute_document_average_request(
         &self,
-        request: DocumentAverageRequest,
+        mut request: DocumentAverageRequest,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentAverageResponse, Error> {
+        // Provenance-vs-shape contract, BEFORE the prove/no-prove split: the
+        // no-prove path re-checks inside the joint dispatcher, but the prove
+        // path would otherwise reach its executors unguarded — a direct
+        // caller marking an `In`/range clause as time-range-resolved could
+        // have the pickers admit the bucketed index and prove an aggregate
+        // that counts a document once per overlapping bucket. The guard only
+        // inspects Equal clauses, so running it before range-pair
+        // canonicalization is equivalent to running it after.
+        validate_resolved_time_range_clause_shapes(
+            &request.where_clauses,
+            &request.resolved_time_ranges,
+        )?;
         if request.prove {
+            // The no-prove path canonicalizes inside the joint dispatcher;
+            // run the identical shared step (see
+            // [`crate::query::canonicalize`]) on the prove path so both
+            // accept the bounded pair form (`[f > A, f < B]`) as well as
+            // the pre-merged `between*` form.
+            request.where_clauses =
+                validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;
             return self.execute_document_average_prove(request, transaction, platform_version);
         }
         self.execute_document_count_and_sum_request(request, transaction, platform_version)
@@ -176,6 +198,7 @@ impl Drive {
                 request.document_type.indexes(),
                 &request.where_clauses,
                 &request.sum_property,
+                &request.resolved_time_ranges,
             )
             .filter(|idx| idx.range_countable)
             .ok_or_else(|| {
@@ -262,6 +285,7 @@ impl Drive {
                 request.document_type.indexes(),
                 &request.where_clauses,
                 &request.sum_property,
+                &request.resolved_time_ranges,
             )
             .filter(|idx| idx.range_countable)
             .ok_or_else(|| {
@@ -350,6 +374,7 @@ impl Drive {
                 request.document_type.indexes(),
                 &request.where_clauses,
                 &request.sum_property,
+                &request.resolved_time_ranges,
             )
             .filter(|idx| idx.countable.is_countable())
             .ok_or_else(|| {
@@ -394,6 +419,7 @@ impl Drive {
 #[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
+    use crate::query::ResolvedTimeRange;
 
     // ── Dispatcher limit-policy regression tests ───────────────────
     //
@@ -495,6 +521,7 @@ mod tests {
         properties.insert("color".to_string(), Value::Text(color.to_string()));
         properties.insert("amount".to_string(), Value::U64(amount));
         let document: Document = DocumentV0 {
+            contract_version: None,
             id: Identifier::from([(i + 1) as u8; 32]),
             owner_id: Identifier::from([0u8; 32]),
             properties,
@@ -598,6 +625,7 @@ mod tests {
             limit: None,
             prove: true,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -615,6 +643,7 @@ mod tests {
             document_type.indexes(),
             std::slice::from_ref(&color_gt_blue),
             "amount",
+            &[],
         )
         .filter(|idx| idx.range_countable)
         .expect("byColor rangeAverageable index covers `color > blue`");
@@ -692,6 +721,7 @@ mod tests {
             limit: Some(over_max),
             prove: true,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let err = drive
@@ -806,6 +836,7 @@ mod tests {
             limit: None,
             prove: true,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -883,6 +914,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config,
+            resolved_time_ranges: vec![],
         };
         let sum_request = DocumentSumRequest {
             contract,
@@ -894,6 +926,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config,
+            resolved_time_ranges: vec![],
         };
         let count_resp = drive
             .execute_document_count_request(count_request, None, platform_version)
@@ -1008,6 +1041,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let joint_response = drive
@@ -1119,6 +1153,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let joint_response = drive
@@ -1139,6 +1174,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
         let sum_request = DocumentSumRequest {
             contract: &data_contract,
@@ -1150,6 +1186,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
         let count_resp = drive
             .execute_document_count_request(count_request, None, platform_version)
@@ -1253,6 +1290,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let joint_response = drive
@@ -1273,6 +1311,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
         let sum_request = DocumentSumRequest {
             contract: &data_contract,
@@ -1284,6 +1323,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
         let count_resp = drive
             .execute_document_count_request(count_request, None, platform_version)
@@ -1376,6 +1416,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let joint_response = drive
@@ -1508,6 +1549,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let joint_response = drive
@@ -1528,6 +1570,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
         let sum_request = DocumentSumRequest {
             contract: &data_contract,
@@ -1539,6 +1582,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
         let count_resp = drive
             .execute_document_count_request(count_request, None, platform_version)
@@ -1641,6 +1685,7 @@ mod tests {
             limit: Some(2),
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -1719,6 +1764,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -1797,6 +1843,7 @@ mod tests {
             limit: Some(4),
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -1852,6 +1899,7 @@ mod tests {
             limit: None,
             prove: true,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let err = drive
@@ -1914,6 +1962,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let err = drive
@@ -1929,6 +1978,67 @@ mod tests {
         assert!(
             !msg.contains("WhereClauseOnNonIndexedProperty"),
             "validator should reject before the index picker would: {msg}"
+        );
+    }
+
+    /// The prove path returns before the joint dispatcher, so the
+    /// provenance-vs-shape guard must run at the shared entry: without it a
+    /// direct caller marking an `In` clause as time-range-resolved would
+    /// reach the prove executors, have the pickers admit a bucketed index,
+    /// and prove an aggregate that counts a document once per overlapping
+    /// bucket.
+    #[test]
+    fn avg_prove_path_rejects_resolved_time_range_provenance_on_an_in_clause() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        let in_on_resolved_field = WhereClause {
+            field: "$createdAt".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::U64(0), Value::U64(7_200_000)]),
+        };
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![in_on_resolved_field],
+            order_clauses: Vec::new(),
+            mode: AverageMode::Aggregate,
+            limit: None,
+            prove: true,
+            drive_config: &drive_config,
+            resolved_time_ranges: vec![ResolvedTimeRange {
+                transform: dpp::data_contract::document_type::TimeRangeTransform {
+                    source: "$createdAt".to_string(),
+                    range_seconds: 21_600,
+                    step_seconds: 7_200,
+                    phase_seconds: 0,
+                },
+            }],
+        };
+
+        let err = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect_err("AVG prove must reject provenance attached to an In clause");
+        assert!(
+            format!("{err:?}").contains("InvalidWhereClauseComponents"),
+            "expected the provenance shape guard, got: {err:?}"
         );
     }
 
@@ -2016,6 +2126,7 @@ mod tests {
             limit: Some(2),
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -2096,6 +2207,7 @@ mod tests {
             let mut properties = std::collections::BTreeMap::new();
             properties.insert("amount".to_string(), Value::U64(*amount));
             let document: Document = DocumentV0 {
+                contract_version: None,
                 id: Identifier::from([(i + 1) as u8; 32]),
                 owner_id: Identifier::from([0u8; 32]),
                 properties,
@@ -2144,6 +2256,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -2250,6 +2363,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let response = drive

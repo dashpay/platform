@@ -2,6 +2,7 @@ import net from 'node:net';
 import tls from 'node:tls';
 import probeServedCertificate, { STATE } from '../../../src/ssl/probeServedCertificate.js';
 import createCertificateForTest from '../../../src/test/createCertificateForTest.js';
+import { issueChain } from '../../../src/test/certificateFixtures.js';
 
 const EXTERNAL_IP = '127.0.0.1';
 
@@ -45,6 +46,21 @@ describe('probeServedCertificate', () => {
     await Promise.all(servers.splice(0).map((server) => new Promise((resolve) => {
       server.close(resolve);
     })));
+  });
+
+  // A bundle can be complete and correct and still fail to verify, because the
+  // root that signed it is not one this machine trusts - a staging or private
+  // authority. The code that comes back is the same one a genuinely incomplete
+  // chain produces, which is why nothing downstream may read it as "certificates
+  // are missing".
+  it('should report a complete chain signed by an untrusted root', async () => {
+    const { leaf, intermediate } = issueChain({ ip: '127.0.0.1' });
+    const port = await listenTls({ cert: leaf.pem + intermediate.pem, key: leaf.keyPem });
+
+    const result = await probeServedCertificate({ host: '127.0.0.1', port, externalIp: '127.0.0.1' });
+
+    expect(result.chainVerified).to.be.false();
+    expect(result.chainError).to.equal('UNABLE_TO_GET_ISSUER_CERT_LOCALLY');
   });
 
   it('should report the certificate the server actually serves', async () => {

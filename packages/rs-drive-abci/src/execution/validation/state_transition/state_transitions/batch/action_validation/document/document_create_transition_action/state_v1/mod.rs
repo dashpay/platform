@@ -10,6 +10,8 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentFromCreateTransitionAction;
 use dpp::prelude::{ConsensusValidationResult, Identifier};
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
@@ -72,6 +74,76 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
                 InvalidDocumentTypeError::new(document_type_name.clone(), contract.id()).into(),
             ));
         };
+
+        // indexOnly document types have no primary-storage tree to probe by
+        // id, and the unique-index engine does not apply (their indexes are
+        // non-unique by declaration; uniqueness is structural). Instead,
+        // probe every index's entry computed from the action's values and
+        // owner: the create writes all of them atomically, so ANY existing
+        // entry is a duplicate — which is also what makes a shorter or
+        // owner-less index act as a uniqueness constraint over its value
+        // projection. `index_only()` can only be true on a PV14+ contract,
+        // so this branch is unreachable for every historical transition.
+        if document_type.index_only() {
+            let document = dpp::document::Document::try_from_create_transition_action(
+                self,
+                owner_id,
+                platform_version,
+            )?;
+
+            let mut probe_operations = vec![];
+            let mut duplicate_index = None;
+            for index in document_type.indexes().values() {
+                let entry_exists = platform
+                    .drive
+                    .has_index_only_document_entry(
+                        contract.id(),
+                        document_type,
+                        index,
+                        &document,
+                        transaction,
+                        &mut probe_operations,
+                        platform_version,
+                    )
+                    .map_err(Error::Drive)?;
+                if entry_exists {
+                    duplicate_index = Some(index);
+                    break;
+                }
+            }
+
+            // Every probe is a stateful grove read validators actually
+            // perform — bill them all, on the duplicate path included.
+            let fee_result = drive::drive::Drive::calculate_fee(
+                None,
+                Some(probe_operations),
+                &block_info.epoch,
+                platform.drive.config.epochs_per_era,
+                platform_version,
+                None,
+            )
+            .map_err(Error::Drive)?;
+            execution_context
+                .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+            if let Some(index) = duplicate_index {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::DuplicateUniqueIndexError(
+                        dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError::new(
+                            self.base().id(),
+                            index
+                                .properties
+                                .iter()
+                                .map(|property| property.name.clone())
+                                .chain(index.terminal.clone())
+                                .collect(),
+                        ),
+                    )),
+                ));
+            }
+
+            return Ok(SimpleConsensusValidationResult::new());
+        }
 
         // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
         // We should check to see if a document already exists in the state

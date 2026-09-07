@@ -1,4 +1,6 @@
 import scheduleRenewZeroSslCertificateFactory from '../../../src/helper/scheduleRenewZeroSslCertificateFactory.js';
+import HomeDir from '../../../src/config/HomeDir.js';
+import RenewalRecordRepository from '../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
 import ConfigIsNotPresentError from '../../../src/config/errors/ConfigIsNotPresentError.js';
 import Certificate from '../../../src/ssl/zerossl/Certificate.js';
 import { CONFIG_REFRESH_INTERVAL_MS } from '../../../src/helper/watchCertificateConfig.js';
@@ -10,9 +12,12 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
   let dockerCompose;
   let configFileRepository;
   let writeConfigTemplates;
+  let homeDir;
   let scheduleRenewZeroSslCertificate;
 
   beforeEach(function beforeEach() {
+    homeDir = HomeDir.createTemp();
+
     config = {
       get: this.sinon.stub(),
       getName: this.sinon.stub().returns('base'),
@@ -51,7 +56,13 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
       dockerCompose,
       configFileRepository,
       writeConfigTemplates,
+      homeDir,
+      new RenewalRecordRepository(homeDir),
     );
+  });
+
+  afterEach(() => {
+    homeDir.remove();
   });
 
   describe('certificate read failure', () => {
@@ -160,7 +171,12 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
       expect(onConfigurationChanged).to.have.been.calledOnceWith(config);
       expect(obtainZeroSSLCertificateTask).to.not.have.been.called();
 
-      await clock.tickAsync(64 * 24 * 60 * 60 * 1000);
+      // The handoff must leave nothing armed for ZeroSSL, so running every
+      // remaining timer proves the old renewal can never fire. Ticking a blanket
+      // 64 days here instead would replay ~92k config-refresh firings (one real
+      // event-loop hop each) whenever a poll timer survives, blowing the test
+      // timeout on a slow runner rather than failing on the assertion below.
+      await clock.runAllAsync();
 
       expect(onConfigurationChanged).to.have.been.calledOnce();
       expect(obtainZeroSSLCertificateTask).to.not.have.been.called();
@@ -303,6 +319,7 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
     expect(run).to.have.been.calledOnceWith({
       expirationDays: Certificate.EXPIRATION_LIMIT_DAYS,
       noRetry: true,
+      renewalGeneration: 1,
     });
     expect(configFileRepository.write).to.have.been.calledOnce();
     expect(writeConfigTemplates).to.have.been.calledOnceWith(config);
@@ -357,6 +374,7 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
     expect(tasks.run).to.have.been.calledOnceWithExactly({
       expirationDays: 3,
       noRetry: true,
+      renewalGeneration: 1,
     });
   });
 
@@ -385,6 +403,7 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
     expect(run).to.have.been.calledOnceWith({
       expirationDays: Certificate.EXPIRATION_LIMIT_DAYS,
       noRetry: true,
+      renewalGeneration: 1,
     });
   });
 });

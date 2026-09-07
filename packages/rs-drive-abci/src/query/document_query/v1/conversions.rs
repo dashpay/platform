@@ -30,15 +30,17 @@ use crate::error::query::QueryError;
 use dapi_grpc::platform::v0::get_documents_request::{
     document_field_value,
     get_documents_request_v1::{select, Select as ProtoSelect},
-    having_aggregate, having_clause, order_clause, DocumentFieldValue as ProtoDocumentFieldValue,
-    HavingAggregate as ProtoHavingAggregate, HavingClause as ProtoHavingClause,
-    OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
-    WhereOperator as ProtoWhereOperator,
+    having_aggregate, having_clause, order_clause,
+    time_range_selection::Selector as ProtoTimeRangeSelector,
+    DocumentFieldValue as ProtoDocumentFieldValue, HavingAggregate as ProtoHavingAggregate,
+    HavingClause as ProtoHavingClause, OrderClause as ProtoOrderClause,
+    WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
 };
 use dpp::platform_value::Value;
+use drive::query::TimeRangeGridSpec;
 use drive::query::{
     HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
-    OrderClause, SelectFunction, SelectProjection, WhereClause, WhereOperator,
+    OrderClause, SelectFunction, SelectProjection, TimeRangeSelector, WhereClause, WhereOperator,
 };
 
 /// Map a wire-level [`ProtoWhereOperator`] discriminant onto
@@ -49,7 +51,7 @@ use drive::query::{
 pub(super) fn where_operator_from_proto(op: i32) -> Result<WhereOperator, QueryError> {
     let proto_op = ProtoWhereOperator::try_from(op).map_err(|_| {
         QueryError::InvalidArgument(format!(
-            "unknown WhereOperator discriminant: {} (valid values: 0..=10, see \
+            "unknown WhereOperator discriminant: {} (valid values: 0..=11, see \
              `get_documents_request::WhereOperator`)",
             op
         ))
@@ -66,7 +68,113 @@ pub(super) fn where_operator_from_proto(op: i32) -> Result<WhereOperator, QueryE
         ProtoWhereOperator::BetweenExcludeRight => WhereOperator::BetweenExcludeRight,
         ProtoWhereOperator::In => WhereOperator::In,
         ProtoWhereOperator::StartsWith => WhereOperator::StartsWith,
+        // IN_TIME_RANGE is not an engine operator: it's resolved to a concrete
+        // equality from authoritative block time before clause conversion (see
+        // `is_time_range_clause` / `time_range_clause_from_proto`), so it must
+        // never reach this mapping.
+        ProtoWhereOperator::InTimeRange => {
+            return Err(QueryError::InvalidArgument(
+                "IN_TIME_RANGE where clauses are resolved from block time before \
+                 operator conversion and must not be mixed into normal clause decoding"
+                    .to_string(),
+            ))
+        }
     })
+}
+
+/// Whether a wire where clause is a time-range selection
+/// (`operator == IN_TIME_RANGE`). The v1 handler partitions these out and
+/// resolves them from authoritative block time via
+/// [`time_range_clause_from_proto`].
+pub(super) fn is_time_range_clause(clause: &ProtoWhereClause) -> bool {
+    clause.operator == ProtoWhereOperator::InTimeRange as i32
+}
+
+/// Decode an `IN_TIME_RANGE` wire where clause into its
+/// `(field, selector, grid)`.
+///
+/// The operand is the typed `WhereClause.time_range` message
+/// (`TimeRangeSelection`); the generic `value` operand must be unset — the
+/// selection is not a field value, and a clause carrying both would be two
+/// spellings of one question. Shape rules, each rejected explicitly:
+///
+/// - `selector` must be a known discriminant (`NEWEST` / `OLDEST` /
+///   `BY_START`); unknown integers are wire-level garbage.
+/// - `BY_START` requires `start_ms` (the window's start, a millisecond
+///   timestamp on the grid — alignment itself is the resolver's check,
+///   since only it sees the contract); the relative selectors must NOT
+///   carry `start_ms` — one wire spelling per meaning.
+/// - `grid`, when present, names one of the field's grids in the
+///   contract's own declared seconds and must carry non-zero `range` and
+///   `step` (zero is proto3's absent-field default, so an all-default
+///   `Grid` is indistinguishable from a forgotten one — rejected here with
+///   a better message than the resolver's no-such-grid miss). A zero
+///   `phase` IS the canonical spelling of a phaseless grid, matching the
+///   contract grammar where `phase` is an omittable key.
+pub(super) fn time_range_clause_from_proto(
+    clause: ProtoWhereClause,
+) -> Result<(String, TimeRangeSelector, Option<TimeRangeGridSpec>), QueryError> {
+    let field = clause.field;
+    if clause.value.is_some() {
+        return Err(QueryError::InvalidArgument(format!(
+            "IN_TIME_RANGE clause on field '{}' must not set `value`: the operand is the \
+             typed `time_range` selection",
+            field
+        )));
+    }
+    let selection = clause.time_range.ok_or_else(|| {
+        QueryError::InvalidArgument(format!(
+            "IN_TIME_RANGE clause on field '{}' has no `time_range` selection set",
+            field
+        ))
+    })?;
+    let proto_selector = ProtoTimeRangeSelector::try_from(selection.selector).map_err(|_| {
+        QueryError::InvalidArgument(format!(
+            "unknown TimeRangeSelection.Selector discriminant on field '{}': {} (valid \
+             values: NEWEST = 0, OLDEST = 1, BY_START = 2)",
+            field, selection.selector
+        ))
+    })?;
+    let selector = match (proto_selector, selection.start_ms) {
+        (ProtoTimeRangeSelector::Newest, None) => TimeRangeSelector::Newest,
+        (ProtoTimeRangeSelector::Oldest, None) => TimeRangeSelector::Oldest,
+        (ProtoTimeRangeSelector::ByStart, Some(start_ms)) => {
+            TimeRangeSelector::ByStart { start_ms }
+        }
+        (ProtoTimeRangeSelector::ByStart, None) => {
+            return Err(QueryError::InvalidArgument(format!(
+                "IN_TIME_RANGE BY_START on field '{}' requires `start_ms` naming the \
+                 window's start (a millisecond timestamp on the grid)",
+                field
+            )))
+        }
+        (ProtoTimeRangeSelector::Newest | ProtoTimeRangeSelector::Oldest, Some(_)) => {
+            return Err(QueryError::InvalidArgument(format!(
+                "IN_TIME_RANGE on field '{}': `start_ms` is only meaningful with \
+                 BY_START; the relative selectors resolve their window from block time",
+                field
+            )))
+        }
+    };
+    let grid = selection
+        .grid
+        .map(|grid| {
+            if grid.range == 0 || grid.step == 0 {
+                return Err(QueryError::InvalidArgument(format!(
+                    "IN_TIME_RANGE grid on field '{}' must carry the contract's declared \
+                     `range` and `step` (non-zero seconds); a zero phase is the canonical \
+                     spelling of a phaseless grid",
+                    field
+                )));
+            }
+            Ok(TimeRangeGridSpec {
+                range_seconds: grid.range,
+                step_seconds: grid.step,
+                phase_seconds: grid.phase,
+            })
+        })
+        .transpose()?;
+    Ok((field, selector, grid))
 }
 
 /// Map a wire [`ProtoDocumentFieldValue`] onto a
@@ -138,6 +246,17 @@ fn value_from_proto_at_depth(
 /// and value-shape failures.
 pub(super) fn where_clause_from_proto(clause: ProtoWhereClause) -> Result<WhereClause, QueryError> {
     let operator = where_operator_from_proto(clause.operator)?;
+    // `time_range` is IN_TIME_RANGE's operand and those clauses are
+    // partitioned out before this conversion (see `is_time_range_clause`),
+    // so on any clause reaching here a set `time_range` is a malformed mix
+    // of the two operand kinds.
+    if clause.time_range.is_some() {
+        return Err(QueryError::InvalidArgument(format!(
+            "WhereClause on field '{}' sets `time_range`, which is only valid with the \
+             IN_TIME_RANGE operator",
+            clause.field
+        )));
+    }
     let value = clause.value.ok_or_else(|| {
         QueryError::InvalidArgument(format!(
             "WhereClause on field '{}' has no value set; every clause must carry a \

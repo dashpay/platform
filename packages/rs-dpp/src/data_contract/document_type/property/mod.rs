@@ -39,6 +39,34 @@ pub struct DocumentProperty {
     pub property_type: DocumentPropertyType,
     pub required: bool,
     pub transient: bool,
+    /// The contract version this property is required from (`requiredSince`).
+    /// `None` for plain-required properties (required at every version) and
+    /// for optional properties. Only ever `Some` when `required` is true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required_since: Option<u32>,
+}
+
+impl DocumentProperty {
+    /// Whether this property is required for a document whose bytes conform to
+    /// `contract_version` (the document's stamp). `None` means the document
+    /// was serialized before format 3, which predates every `requiredSince`
+    /// annotation, so only unconditionally required properties count.
+    pub fn required_at(&self, contract_version: Option<u32>) -> bool {
+        self.required
+            && match self.required_since {
+                None => true,
+                Some(since) => contract_version.is_some_and(|version| version >= since),
+            }
+    }
+
+    /// Whether this property is required regardless of any document's
+    /// contract-version stamp: `required` without a `requiredSince` gate.
+    /// This is the requiredness the pre-stamp serialization formats (0–2)
+    /// encode, and it equals `required_at(None)` — an unstamped document
+    /// predates every `requiredSince` annotation.
+    pub fn always_required(&self) -> bool {
+        self.required && self.required_since.is_none()
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize)]
@@ -74,6 +102,15 @@ pub enum DocumentPropertyReferenceTarget {
         /// the declaring contract itself
         contract_id: Option<Identifier>,
         document_type_name: String,
+        /// Property agreement: each `{referring property: referenced
+        /// property}` pair must hold as an EQUALITY between the referring
+        /// document's value and the referenced document's value, checked by
+        /// consensus at document write time (the referenced document is
+        /// already fetched for existence validation, so agreement adds no
+        /// reads). Declarations are validated at contract registration:
+        /// both properties must exist and share one property type.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        property_agreement: BTreeMap<String, String>,
     },
     /// A specific public key of an identity: the property value holds the
     /// identity id and the named sibling property of the same document type
@@ -97,6 +134,7 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: Some(contract_id),
                 document_type_name,
+                ..
             } => write!(
                 f,
                 "permanent document (contract {contract_id}, document type {document_type_name})"
@@ -104,6 +142,7 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
                 document_type_name,
+                ..
             } => write!(
                 f,
                 "permanent document (own contract, document type {document_type_name})"
@@ -2825,6 +2864,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -2833,6 +2873,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -5121,6 +5162,7 @@ mod tests {
                 }),
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         inner_fields.insert(
@@ -5129,6 +5171,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5179,6 +5222,7 @@ mod tests {
                 }),
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5198,6 +5242,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         inner_fields.insert(
@@ -5206,6 +5251,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5638,6 +5684,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5672,6 +5719,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -5680,6 +5728,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -5697,6 +5746,7 @@ mod tests {
                 property_type: DocumentPropertyType::U16,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -5705,6 +5755,7 @@ mod tests {
                 property_type: DocumentPropertyType::Boolean,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -5996,6 +6047,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -6004,6 +6056,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -6063,6 +6116,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -6071,6 +6125,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -6156,6 +6211,7 @@ mod tests {
                 property_type: DocumentPropertyType::U8,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -6164,6 +6220,7 @@ mod tests {
                 property_type: DocumentPropertyType::Boolean,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -6429,6 +6486,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6457,6 +6515,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         // Second field is required
@@ -6466,6 +6525,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6581,6 +6641,7 @@ mod tests {
                 }),
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6598,6 +6659,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6903,6 +6965,7 @@ mod tests {
                 property_type: DocumentPropertyType::U8,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -7165,6 +7228,7 @@ mod tests {
             ),
             required: false,
             transient: false,
+            required_since: None,
         };
 
         let value = serde_json::to_value(&property).expect("serialization should succeed");
@@ -7194,6 +7258,7 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: Some(contract_id),
                 document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
             }
             .to_string(),
             format!("permanent document (contract {contract_id}, document type note)")
@@ -7202,9 +7267,52 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
                 document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
             }
             .to_string(),
             "permanent document (own contract, document type note)"
         );
+    }
+
+    /// A compile-time guard, not a behavioural test.
+    ///
+    /// `DocumentPropertyReferenceTarget` is mirrored outside this crate —
+    /// notably by wasm-dpp2's `DocumentPropertyReference` TypeScript union
+    /// and the conversion that builds it. Those live behind a `match` that
+    /// a new variant would not break, because they can fall back to a
+    /// catch-all. This exhaustive `match` has no catch-all, so adding a
+    /// sixth variant fails to compile *here*, in the crate that owns the
+    /// enum, where whoever adds it will see it.
+    #[test]
+    fn reference_targets_are_exhaustively_mirrored() {
+        let targets = [
+            DocumentPropertyReferenceTarget::Identity,
+            DocumentPropertyReferenceTarget::Contract,
+            DocumentPropertyReferenceTarget::Token,
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
+            },
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property: "signerKeyId".to_string(),
+            },
+        ];
+
+        for target in &targets {
+            // No `_ =>` arm: a new variant is a compile error.
+            let json_tag = match target {
+                DocumentPropertyReferenceTarget::Identity => "identity",
+                DocumentPropertyReferenceTarget::Contract => "contract",
+                DocumentPropertyReferenceTarget::Token => "token",
+                DocumentPropertyReferenceTarget::PermanentDocument { .. } => "permanentDocument",
+                DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
+            };
+
+            // The tag is the `refersTo` schema keyword's own `type` value,
+            // which is what the JS surface reports verbatim.
+            assert!(!json_tag.is_empty());
+            assert!(!target.to_string().is_empty());
+        }
     }
 }

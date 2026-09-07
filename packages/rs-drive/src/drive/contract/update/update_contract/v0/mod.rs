@@ -1,5 +1,5 @@
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
-use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -15,14 +15,13 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 impl Drive {
     /// Updates a data contract.
@@ -301,10 +300,13 @@ impl Drive {
                     type_key.as_bytes(),
                 ];
 
-                let mut index_cache: HashSet<&[u8]> = HashSet::new();
                 let document_type_ref = document_type.as_ref();
                 let index_structure = document_type_ref.index_structure();
-                // for each type we should insert the indices that are top level.
+                // For each type we should insert the indices that are top
+                // level — one root sub-level per distinct top tree (plain
+                // first properties by name, time-range grids by their
+                // qualified `TimeRangeTransform::storage_key`), the same
+                // iteration `insert_contract_v0` performs.
                 //
                 // `batch_insert_empty_tree_if_not_exists` is a no-op when the
                 // index already exists, so this loop covers BOTH the
@@ -320,20 +322,19 @@ impl Drive {
                 // contract update silently created a NormalTree, diverging
                 // from the layout a fresh insert would have produced and
                 // breaking subsequent range-sum / range-count reads.
-                for index in document_type.as_ref().top_level_indices() {
-                    let index_bytes = index.name.as_bytes();
-                    if !index_cache.contains(index_bytes) {
-                        let index_info = index_structure
-                            .sub_levels()
-                            .get(index.name.as_str())
-                            .and_then(|level| level.has_index_with_type());
+                for (level_key, level) in index_structure.sub_levels() {
+                    {
                         // Meta schema v3 (PV14) additionally upgrades the
                         // chosen variant to its indexed mirror when the index
-                        // declares a ranking axis; `ranked_axes` is empty for
-                        // every pre-v3 contract, making this arm bit-identical
-                        // to the previous 4-way dispatch for them.
+                        // declares a ranking axis — including the grouping
+                        // level of a compound index ranked at its first
+                        // property (`rankedCountable: { at }`), which the
+                        // level-aware resolver maps to the Count-axis indexed
+                        // tree; `ranked_axes` is empty for every pre-v3
+                        // contract, making this arm bit-identical to the
+                        // previous 4-way dispatch for them.
                         let (target_tree_type, ranked_axes) =
-                            property_name_tree_type_and_ranked_axes(index_info)?;
+                            property_name_tree_type_and_ranked_axes_for_level(level)?;
                         let apply_type = if estimated_costs_only_with_layer_info.is_none() {
                             BatchInsertTreeApplyType::StatefulBatchInsertTree
                         } else {
@@ -356,7 +357,7 @@ impl Drive {
                         // indexes (unchanged on disk) and brand-new ones
                         // (materialized with the dispatch-chosen variant).
                         self.batch_insert_empty_index_tree_if_not_exists(
-                            PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
+                            PathFixedSizeKeyRef((type_path, level_key.as_bytes())),
                             target_tree_type,
                             &ranked_axes,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
@@ -366,7 +367,6 @@ impl Drive {
                             &mut batch_operations,
                             drive_version,
                         )?;
-                        index_cache.insert(index_bytes);
                     }
                 }
             } else {
@@ -461,13 +461,15 @@ impl Drive {
                     )?,
                 }
 
-                let mut index_cache: HashSet<&[u8]> = HashSet::new();
                 let document_type_ref = document_type.as_ref();
                 let index_structure = document_type_ref.index_structure();
-                // for each type we should insert the indices that are top level
-                for index in document_type.as_ref().top_level_indices() {
-                    let index_bytes = index.name.as_bytes();
-                    if !index_cache.contains(index_bytes) {
+                // For each type we should insert the indices that are top
+                // level — the index structure's root sub-levels, whose keys
+                // are grid-qualified for time-range first properties (see
+                // `insert_contract_v0`).
+                for (level_key, level) in index_structure.sub_levels() {
+                    let index_bytes = level_key.as_bytes();
+                    {
                         // Top-level index tree variant is selected from the
                         // index's `(range_countable, range_summable)` pair —
                         // identical 4-way dispatch as
@@ -477,12 +479,8 @@ impl Drive {
                         // sum- or range-countable top-level index added via
                         // contract update, diverging on-disk layout from
                         // fresh-insert contracts.
-                        let index_info = index_structure
-                            .sub_levels()
-                            .get(index.name.as_str())
-                            .and_then(|level| level.has_index_with_type());
                         let (tree_type, ranked_axes) =
-                            property_name_tree_type_and_ranked_axes(index_info)?;
+                            property_name_tree_type_and_ranked_axes_for_level(level)?;
                         match tree_type {
                             TreeType::ProvableCountProvableSumTree => self
                                 .batch_insert_empty_provable_count_provable_sum_tree(
@@ -542,7 +540,6 @@ impl Drive {
                                 drive_version,
                             )?,
                         }
-                        index_cache.insert(index_bytes);
                     }
                 }
             }

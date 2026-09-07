@@ -91,6 +91,37 @@ fn build_limit_query(params: &DataContractHistoryQueryParsed) -> LimitQuery<(Ide
     }
 }
 
+impl WasmSdk {
+    /// Fetch one contract (proved) and seed the trusted-context cache
+    /// with it, so the document queries that follow find it there
+    /// instead of each fetching it again. Backs `getDataContract`.
+    pub(crate) async fn fetch_contract_seeding_cache(
+        &self,
+        id: Identifier,
+    ) -> Result<Option<DataContract>, WasmSdkError> {
+        let contract = DataContract::fetch_by_identifier(self.as_ref(), id).await?;
+        if let Some(contract) = &contract {
+            self.cache_contract(contract.clone());
+        }
+        Ok(contract)
+    }
+
+    /// Fetch several contracts in one round trip (proved) and seed the
+    /// trusted-context cache with every one that resolved. Backs
+    /// `getDataContracts` — the natural preload call, which until this
+    /// seeded nothing and left every first query to refetch.
+    pub(crate) async fn fetch_contracts_seeding_cache(
+        &self,
+        ids: Vec<Identifier>,
+    ) -> Result<DataContracts, WasmSdkError> {
+        let contracts: DataContracts = DataContract::fetch_many(self.as_ref(), ids).await?;
+        for contract in contracts.values().flatten() {
+            self.cache_contract(contract.clone());
+        }
+        Ok(contracts)
+    }
+}
+
 #[wasm_bindgen]
 impl WasmSdk {
     #[wasm_bindgen(js_name = "getDataContract")]
@@ -102,7 +133,8 @@ impl WasmSdk {
             WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
         })?;
 
-        let data_contract = DataContract::fetch_by_identifier(self.as_ref(), id)
+        let data_contract = self
+            .fetch_contract_seeding_cache(id)
             .await?
             .map(DataContractWasm::from);
 
@@ -126,6 +158,7 @@ impl WasmSdk {
 
         contract
             .map(|contract| {
+                self.cache_contract(contract.clone());
                 ProofMetadataResponseWasm::from_sdk_parts(
                     DataContractWasm::from(contract),
                     metadata,
@@ -174,9 +207,8 @@ impl WasmSdk {
         let identifiers: Vec<Identifier> =
             try_to_vec::<IdentifierWasm, _, _>(ids, "ids", "identifier")?;
 
-        // Fetch all contracts
-        let contracts_result: DataContracts =
-            DataContract::fetch_many(self.as_ref(), identifiers).await?;
+        // Fetch all contracts, seeding the cache with each one found
+        let contracts_result = self.fetch_contracts_seeding_cache(identifiers).await?;
 
         let contracts_map = Map::new();
 
@@ -245,7 +277,10 @@ impl WasmSdk {
 
         for (id, contract_opt) in contracts_result {
             let key: JsValue = IdentifierWasm::from(id).to_base58().into();
-            let value = contract_opt.map(DataContractWasm::from);
+            let value = contract_opt.map(|contract| {
+                self.cache_contract(contract.clone());
+                DataContractWasm::from(contract)
+            });
 
             contracts_map.set(&key, &JsValue::from(value));
         }
@@ -255,5 +290,92 @@ impl WasmSdk {
             metadata,
             proof,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! The cache-seeding contract of the contract fetch entry points:
+    //! what `getDataContract` / `getDataContracts` fetch must land in
+    //! the trusted-context cache, because those calls are how an app
+    //! preloads its contracts — and a preload that seeds nothing leaves
+    //! every first document query per contract fetching it again.
+
+    use super::*;
+    use crate::context_provider::WasmTrustedContext;
+    use dash_sdk::dpp::data_contract::accessors::v0::{
+        DataContractV0Getters, DataContractV0Setters,
+    };
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dash_sdk::dpp::version::PlatformVersion;
+    use dash_sdk::Sdk;
+
+    /// Built at the SDK's own platform version, the version the mock
+    /// deserializes at, so the round-tripped contract compares equal.
+    fn custom_contract(id_byte: u8, platform_version: &PlatformVersion) -> DataContract {
+        let mut contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("DPNS contract fixture should load");
+        contract.set_id(Identifier::new([id_byte; 32]));
+        contract
+    }
+
+    #[tokio::test]
+    async fn a_single_contract_fetch_seeds_the_cache() {
+        let mut inner_sdk = Sdk::new_mock();
+        let expected = custom_contract(0xA1, inner_sdk.version());
+        let id = expected.id();
+        inner_sdk
+            .mock()
+            .expect_fetch(id, Some(expected.clone()))
+            .await
+            .expect("mock contract response should be configured");
+        let sdk =
+            WasmSdk::new_for_testing(inner_sdk, Some(WasmTrustedContext::for_testing(vec![])));
+        assert!(sdk.get_cached_contract(&id).is_none());
+
+        let fetched = sdk
+            .fetch_contract_seeding_cache(id)
+            .await
+            .expect("proved contract fetch should succeed");
+
+        assert_eq!(fetched.as_ref(), Some(&expected));
+        assert_eq!(sdk.get_cached_contract(&id).as_deref(), Some(&expected));
+    }
+
+    #[tokio::test]
+    async fn a_batched_contract_fetch_seeds_the_cache_with_every_resolved_contract() {
+        let mut inner_sdk = Sdk::new_mock();
+        let found = custom_contract(0xA2, inner_sdk.version());
+        let missing_id = Identifier::new([0xB3; 32]);
+        let ids = vec![found.id(), missing_id];
+        let response: DataContracts = [(found.id(), Some(found.clone())), (missing_id, None)]
+            .into_iter()
+            .collect();
+        inner_sdk
+            .mock()
+            .expect_fetch_many::<Identifier, DataContract, Vec<Identifier>, DataContracts>(
+                ids.clone(),
+                Some(response),
+            )
+            .await
+            .expect("mock contracts response should be configured");
+        let sdk =
+            WasmSdk::new_for_testing(inner_sdk, Some(WasmTrustedContext::for_testing(vec![])));
+
+        let fetched = sdk
+            .fetch_contracts_seeding_cache(ids)
+            .await
+            .expect("proved batched contract fetch should succeed");
+
+        assert_eq!(fetched.get(&found.id()), Some(&Some(found.clone())));
+        assert_eq!(fetched.get(&missing_id), Some(&None));
+        assert_eq!(
+            sdk.get_cached_contract(&found.id()).as_deref(),
+            Some(&found)
+        );
+        assert!(
+            sdk.get_cached_contract(&missing_id).is_none(),
+            "a contract the network does not have seeds nothing"
+        );
     }
 }

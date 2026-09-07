@@ -11,7 +11,10 @@ Every serialized document follows this layout:
 ```text
 ┌──────────────────────┐
 │  Serialization       │  varint (1-2 bytes)
-│  Version             │  Currently: 0, 1, or 2
+│  Version             │  Currently: 0, 1, 2, or 3
+├──────────────────────┤
+│  Contract version    │  V3 only: varint
+│  stamp               │  (0 = unstamped)
 ├──────────────────────┤
 │  $id                 │  32 bytes
 ├──────────────────────┤
@@ -44,8 +47,9 @@ The first bytes of a serialized document are a **varint** encoding the serializa
 | 0 | Original format. All integers encoded as **i64** (8 bytes big-endian) regardless of their schema type. |
 | 1 | Integers encoded at their **native size** (u8 = 1 byte, u16 = 2 bytes, u32 = 4 bytes, etc.). Otherwise identical to v0. |
 | 2 | Same as v1, but adds **`$creatorId`** field after `$ownerId` for document types that support transfers or trading. |
+| 3 | Same as v2, but adds a **contract version stamp** varint immediately after the version varint (protocol v14+). The stamp selects each property's layout when the document type carries `requiredSince` annotations — see below. |
 
-The varint encoding uses the [`integer-encoding`](https://docs.rs/integer-encoding) crate's `VarInt` format. For values 0, 1, and 2, the varint is a single byte: `0x00`, `0x01`, or `0x02`.
+The varint encoding uses the [`integer-encoding`](https://docs.rs/integer-encoding) crate's `VarInt` format. For values 0 through 3, the varint is a single byte: `0x00`, `0x01`, `0x02`, or `0x03`.
 
 ```rust
 // Serialization version is written first
@@ -60,11 +64,35 @@ match serialized_version {
     0 => DocumentV0::from_bytes_v0(serialized_document, document_type, platform_version),
     1 => DocumentV0::from_bytes_v1(serialized_document, document_type, platform_version),
     2 => DocumentV0::from_bytes_v2(serialized_document, document_type, platform_version),
+    3 => DocumentV0::from_bytes_v3(serialized_document, document_type, platform_version),
     _ => Err(/* unknown version */),
 }
 ```
 
 Note: version 0 has a fallback — if deserialization as v0 (all i64) fails, it retries as v1 (native integer types). This handles edge cases from protocol versions 1–8 where the version byte was 0 but non-i64 integer types may have been used.
+
+## The contract version stamp (v3)
+
+Serialization version 3 (the default from protocol v14) writes one extra varint immediately after the version varint: the **contract version stamp** — the version of the data contract the document's bytes conform to. A value of `0` means *unstamped*: the document was originally serialized before format 3 existed and has merely been rewritten in the new envelope (for example by a transfer).
+
+The stamp exists because contract updates may add new **required** properties from a specific contract version onward, using the `requiredSince` schema keyword:
+
+```json
+"properties": {
+  "newField": { "type": "string", "maxLength": 63, "position": 4, "requiredSince": 3 }
+},
+"required": ["existingField", "newField"]
+```
+
+Requiredness is baked into the wire format — a required property serializes raw while an optional one carries a presence flag — so a property whose requiredness varies by contract version needs the stamp to resolve its layout. The rule, per property:
+
+> A property is encoded as **required** (no presence flag) if it is listed in `required` **and** either it has no `requiredSince` annotation, or the document's stamp is **at or above** the annotation. Otherwise it is encoded as optional (presence-flagged).
+
+An unstamped document (`0`) predates every `requiredSince` annotation, so only unconditionally required properties count as required for it. This means the **latest contract alone** reconstructs the byte layout of every document ever stored — no historical contract lookups are needed.
+
+The stamp is **platform-assigned**: Drive sets it to the current contract version whenever document content is supplied (create and replace), and preserves it untouched through server-side rewrites that do not re-supply content (transfer and purchase). A document created before a contract update therefore keeps its old stamp — and may legitimately omit properties the newest schema requires — until a replace re-supplies its content and re-stamps it. Clients can also use the stamp as a staleness signal: a document stamped above the client's cached contract version means the contract needs refetching.
+
+Formats 0–2 have no stamp; documents read from them deserialize with `contract_version = None`, equivalent to a `0` stamp.
 
 ## Field-by-field breakdown
 
@@ -128,7 +156,7 @@ If the document type's `trade_mode` allows seller-set pricing:
 
 Properties are serialized **in schema position order** — each property in the data contract schema has a `position` field, and `document_type.properties()` returns an `IndexMap` sorted by that position. This is *not* alphabetical order.
 
-Each property is encoded based on its type and whether it is required:
+Each property is encoded based on its type and whether it is required. In serialization version 3, "required" means *required at the document's contract version stamp* (see above); in versions 0–2 — and for every property without a `requiredSince` annotation — it is simply whether the property is listed in `required`.
 
 **Required fields**: The value is written directly with no prefix byte.
 
@@ -255,3 +283,5 @@ See `packages/rs-scripts/README.md` for full usage details.
 5. **Optional fields have a presence byte.** If you forget to read the `0x00`/`0x01` prefix for optional fields, every subsequent field will be shifted by one byte.
 
 6. **ByteArray encoding depends on size constraints.** Fixed-size byte arrays (where `minItems == maxItems` in the schema) have no length prefix. Variable-size byte arrays have a varint length prefix. Check the schema to know which encoding is used.
+
+7. **In version 3, the same document type can produce different property layouts.** A property annotated with `requiredSince` is presence-flagged in documents stamped below the annotation and raw in documents stamped at or above it. Two version-3 documents of the same type may therefore differ in layout — always read the stamp varint and resolve each property's requiredness against it before decoding the properties section.

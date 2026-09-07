@@ -123,12 +123,12 @@ extension PlatformWalletManager {
             return []
         }
 
-        var outEntries: UnsafePointer<MasternodeEntryFFI>?
+        var outEntries: UnsafePointer<MasternodeEntryV2FFI>?
         var outCount: UInt = 0
 
         let ffiResult = walletId.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
             let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self)
-            return platform_wallet_manager_list_masternodes(
+            return platform_wallet_manager_list_masternodes_v2(
                 handle,
                 base,
                 &outEntries,
@@ -147,7 +147,7 @@ extension PlatformWalletManager {
         }
 
         defer {
-            platform_wallet_manager_free_masternodes(
+            platform_wallet_manager_free_masternodes_v2(
                 UnsafeMutablePointer(mutating: entries),
                 outCount
             )
@@ -156,16 +156,17 @@ extension PlatformWalletManager {
         return Self.masternodeModels(from: entries, count: Int(outCount))
     }
 
-    /// Decode a Rust-owned `MasternodeEntryFFI` array into value models —
+    /// Decode a Rust-owned `MasternodeEntryV2FFI` array into value models —
     /// shared by the wallet list, the tracked list, and the tracked
     /// track/refresh calls. `nonisolated` so detached marshalling tasks can
     /// run it off the main actor.
     nonisolated static func masternodeModels(
-        from entries: UnsafePointer<MasternodeEntryFFI>,
+        from entries: UnsafePointer<MasternodeEntryV2FFI>,
         count: Int
     ) -> [PlatformMasternode] {
         (0..<count).map { i in
-            var entry = entries[i]
+            let entryV2 = entries[i]
+            var entry = entryV2.v1
             let proTx = withUnsafeBytes(of: &entry.pro_tx_hash) { Data($0) }
             let collateralTxid = entry.has_collateral
                 ? withUnsafeBytes(of: &entry.collateral_txid) { Data($0) }
@@ -211,8 +212,8 @@ extension PlatformWalletManager {
                 platformAccountType: entry.platform_account_type,
                 platformKeyIndex: entry.platform_key_index,
                 platformOwnershipChecked: entry.platform_ownership_checked,
-                source: MasternodeSource(rawValue: entry.source) ?? .wallet,
-                label: entry.label.map { String(cString: $0) }
+                source: MasternodeSource(rawValue: entryV2.source) ?? .wallet,
+                label: entryV2.label.map { String(cString: $0) }
             )
         }
     }
@@ -355,6 +356,147 @@ extension PlatformWalletManager {
             }
             return outBalance
         }.value
+    }
+
+    /// Unban / update-service: broadcast a ProUpServTx re-asserting this
+    /// wallet-owned masternode's current service values — which revives it
+    /// if it is PoSe-banned. Pure bridge — the whole orchestration (list
+    /// lookup, operator-key derive + match, payout rule, funding, BLS
+    /// payload sign, input sign, broadcast) lives in `platform-wallet`
+    /// behind this one FFI call, per CLAUDE.md.
+    ///
+    /// - `operatorKeyIndex`: the wallet's operator-key index for this
+    ///   masternode — the record's `operatorKeyIndex` join field.
+    /// - `platformP2PPort`: required for an evonode (the masternode list
+    ///   does not carry it); must be nil for a regular masternode.
+    /// - `operatorPayoutAddress`: must be nil when the masternode's
+    ///   registered `operatorReward` is 0, and must be given when it is
+    ///   not — the payload REPLACES the operator payout script on-chain.
+    ///
+    /// Returns the ProUpServTx txid (32 wire-order bytes). A
+    /// `.transactionBroadcastUnconfirmed` error means the outcome is
+    /// ambiguous — never retry; the wallet reconciles through sync.
+    public func masternodeUpdateService(
+        walletId: Data,
+        proTxHash: Data,
+        operatorKeyIndex: UInt32,
+        platformP2PPort: UInt16? = nil,
+        operatorPayoutAddress: String? = nil
+    ) async throws -> Data {
+        guard isConfigured, handle != NULL_HANDLE,
+            walletId.count == 32, proTxHash.count == 32
+        else {
+            throw PlatformWalletError.invalidParameter(
+                "Manager not configured, or wallet id / proTxHash not 32 bytes")
+        }
+
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) { () -> Data in
+            // Resolver-backed signer: derives the operator key (and signs
+            // the funding inputs) with the mnemonic fetched from the
+            // Keychain inside the resolver vtable Rust-side. Kept alive
+            // across the synchronous FFI call, whose callback fires during it.
+            let resolver = MnemonicResolver()
+            var txidTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            let ffiResult = withExtendedLifetime(resolver) { () -> PlatformWalletFFIResult in
+                walletId.withUnsafeBytes { (widRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+                    proTxHash.withUnsafeBytes { (ptRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+                        func call(_ payoutPtr: UnsafePointer<CChar>?) -> PlatformWalletFFIResult {
+                            platform_wallet_manager_masternode_update_service(
+                                handle,
+                                widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                ptRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                operatorKeyIndex,
+                                platformP2PPort != nil,
+                                platformP2PPort ?? 0,
+                                payoutPtr,
+                                resolver.handle,
+                                &txidTuple
+                            )
+                        }
+                        if let operatorPayoutAddress {
+                            return operatorPayoutAddress.withCString { call($0) }
+                        }
+                        return call(nil)
+                    }
+                }
+            }
+            let result = PlatformWalletResult(ffiResult)
+            guard result.isSuccess else {
+                throw PlatformWalletError(result: result)
+            }
+            return Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
+        }.value
+    }
+
+    /// Prepare — but do not broadcast — the same ProUpServTx
+    /// `masternodeUpdateService` would send, so the host can show the
+    /// transaction before the user commits to it.
+    ///
+    /// The returned token owns a signed transaction whose inputs are
+    /// reserved: broadcast it with
+    /// `ManagedCoreWallet.broadcastTransactionWithOutcome(_:)`, or let it
+    /// deinit — which abandons it and releases the reservation. Its `fee`
+    /// and `serializedData()` describe exactly what a broadcast would send.
+    public func masternodePrepareUpdateService(
+        walletId: Data,
+        proTxHash: Data,
+        operatorKeyIndex: UInt32,
+        platformP2PPort: UInt16? = nil,
+        operatorPayoutAddress: String? = nil
+    ) async throws -> FinalizedCoreTransaction {
+        guard isConfigured, handle != NULL_HANDLE,
+            walletId.count == 32, proTxHash.count == 32
+        else {
+            throw PlatformWalletError.invalidParameter(
+                "Manager not configured, or wallet id / proTxHash not 32 bytes")
+        }
+
+        let handle = self.handle
+        // Only the raw handle crosses the task boundary; the owning token is
+        // built here, so a thrown error can't strand it.
+        let transactionHandle = try await Task.detached(priority: .userInitiated) { () -> Handle in
+            let resolver = MnemonicResolver()
+            var outHandle: Handle = NULL_HANDLE
+            let ffiResult = withExtendedLifetime(resolver) { () -> PlatformWalletFFIResult in
+                walletId.withUnsafeBytes { (widRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+                    proTxHash.withUnsafeBytes { (ptRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+                        func call(_ payoutPtr: UnsafePointer<CChar>?) -> PlatformWalletFFIResult {
+                            platform_wallet_manager_masternode_prepare_update_service(
+                                handle,
+                                widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                ptRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                operatorKeyIndex,
+                                platformP2PPort != nil,
+                                platformP2PPort ?? 0,
+                                payoutPtr,
+                                resolver.handle,
+                                &outHandle
+                            )
+                        }
+                        if let operatorPayoutAddress {
+                            return operatorPayoutAddress.withCString { call($0) }
+                        }
+                        return call(nil)
+                    }
+                }
+            }
+            let result = PlatformWalletResult(ffiResult)
+            guard result.isSuccess else {
+                throw PlatformWalletError(result: result)
+            }
+            return outHandle
+        }.value
+
+        return try FinalizedCoreTransaction(handle: transactionHandle)
     }
 }
 

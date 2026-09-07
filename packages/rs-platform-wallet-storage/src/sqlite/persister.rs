@@ -1003,6 +1003,34 @@ impl PlatformWalletPersistence for SqlitePersister {
         let conn = self.conn().map_err(PersistenceError::from)?;
         schema::core_state::get_tx_record(&conn, &wallet_id, txid).map_err(PersistenceError::from)
     }
+
+    /// Served from the `dpns_name_states` table this persister already
+    /// writes (`DPNS_NAME_STATES` is attested above), so the marketplace
+    /// sync pass can recover a departed name's `document_id` after a
+    /// restart instead of orphaning the row.
+    ///
+    /// Reads the *committed* table. In [`FlushMode::Manual`] a row that
+    /// is still sitting in the write buffer is not visible yet and this
+    /// returns `Ok(None)` — the caller degrades to the pre-fix behaviour
+    /// for that one name, never to a wrong id. Not a concern for the
+    /// departure path: it is looking for a row written by an earlier
+    /// session, and the default [`FlushMode::Immediate`] commits on every
+    /// `store`.
+    fn get_dpns_name_state(
+        &self,
+        wallet_id: WalletId,
+        wallet_identity_id: &dpp::prelude::Identifier,
+        normalized_label: &str,
+    ) -> Result<Option<platform_wallet::changeset::DpnsNameStateEntry>, PersistenceError> {
+        let conn = self.conn().map_err(PersistenceError::from)?;
+        schema::dpns_name_states::get_by_identity_and_label(
+            &conn,
+            &wallet_id,
+            wallet_identity_id,
+            normalized_label,
+        )
+        .map_err(PersistenceError::from)
+    }
 }
 
 // ----- Helpers -----

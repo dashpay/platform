@@ -124,6 +124,7 @@ GPBObjCClassDeclaration(GetDocumentsRequest_DocumentFieldValue);
 GPBObjCClassDeclaration(GetDocumentsRequest_DocumentFieldValue_ValueList);
 GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV0);
 GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV1);
+GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin);
 GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV1_Select);
 GPBObjCClassDeclaration(GetDocumentsRequest_HavingAggregate);
 GPBObjCClassDeclaration(GetDocumentsRequest_HavingClause);
@@ -137,6 +138,7 @@ GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_AverageAggre
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_AverageResults);
+GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_CountEntries);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_CountEntry);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_CountResults);
@@ -5155,7 +5157,7 @@ GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void) {
         "Equal\000GreaterThan\000GreaterThanOrEquals\000Le"
         "ssThan\000LessThanOrEquals\000Between\000BetweenE"
         "xcludeBounds\000BetweenExcludeLeft\000BetweenE"
-        "xcludeRight\000In\000StartsWith\000";
+        "xcludeRight\000In\000StartsWith\000InTimeRange\000";
     static const int32_t values[] = {
         GetDocumentsRequest_WhereOperator_Equal,
         GetDocumentsRequest_WhereOperator_GreaterThan,
@@ -5168,6 +5170,7 @@ GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void) {
         GetDocumentsRequest_WhereOperator_BetweenExcludeRight,
         GetDocumentsRequest_WhereOperator_In,
         GetDocumentsRequest_WhereOperator_StartsWith,
+        GetDocumentsRequest_WhereOperator_InTimeRange,
     };
     GPBEnumDescriptor *worker =
         [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentsRequest_WhereOperator)
@@ -5196,6 +5199,7 @@ BOOL GetDocumentsRequest_WhereOperator_IsValidValue(int32_t value__) {
     case GetDocumentsRequest_WhereOperator_BetweenExcludeRight:
     case GetDocumentsRequest_WhereOperator_In:
     case GetDocumentsRequest_WhereOperator_StartsWith:
+    case GetDocumentsRequest_WhereOperator_InTimeRange:
       return YES;
     default:
       return NO;
@@ -5945,6 +5949,7 @@ void GetDocumentsRequest_GetDocumentsRequestV0_ClearStartOneOfCase(GetDocumentsR
 @dynamic groupByArray, groupByArray_Count;
 @dynamic havingArray, havingArray_Count;
 @dynamic hasOffset, offset;
+@dynamic hasChained, chained;
 
 typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
   uint32_t _has_storage_[2];
@@ -5959,6 +5964,7 @@ typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
   NSMutableArray *selectsArray;
   NSMutableArray *groupByArray;
   NSMutableArray *havingArray;
+  GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin *chained;
 } GetDocumentsRequest_GetDocumentsRequestV1__storage_;
 
 // This method is threadsafe because it is initially called
@@ -6074,6 +6080,15 @@ typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
         .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, offset),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "chained",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin),
+        .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Chained,
+        .hasIndex = 6,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, chained),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -6217,6 +6232,63 @@ BOOL GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_IsValidValue(int3
       return NO;
   }
 }
+
+#pragma mark - GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin
+
+@implementation GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin
+
+@dynamic joinProperty;
+@dynamic outerDocumentType;
+
+typedef struct GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin__storage_ {
+  uint32_t _has_storage_[1];
+  NSString *joinProperty;
+  NSString *outerDocumentType;
+} GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "joinProperty",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin_FieldNumber_JoinProperty,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin__storage_, joinProperty),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "outerDocumentType",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin_FieldNumber_OuterDocumentType,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin__storage_, outerDocumentType),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsRequest_GetDocumentsRequestV1)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
 
 #pragma mark - GetDocumentsResponse
 
@@ -7164,10 +7236,12 @@ void GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_ClearVariantOneO
 @dynamic count;
 @dynamic sum;
 @dynamic avg;
+@dynamic hasInKey, inKey;
 
 typedef struct GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_ {
   uint32_t _has_storage_[2];
   NSData *key;
+  NSData *inKey;
   uint64_t count;
   int64_t sum;
   double avg;
@@ -7214,6 +7288,15 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_
         .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_, avg),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeDouble,
+      },
+      {
+        .name = "inKey",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_InKey,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_, inKey),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -7313,6 +7396,7 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries__storag
 @dynamic sums;
 @dynamic averages;
 @dynamic ranked;
+@dynamic chained;
 
 typedef struct GetDocumentsResponse_GetDocumentsResponseV1_ResultData__storage_ {
   uint32_t _has_storage_[2];
@@ -7321,6 +7405,7 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_ResultData__storage_ 
   GetDocumentsResponse_GetDocumentsResponseV1_SumResults *sums;
   GetDocumentsResponse_GetDocumentsResponseV1_AverageResults *averages;
   GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries *ranked;
+  GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments *chained;
 } GetDocumentsResponse_GetDocumentsResponseV1_ResultData__storage_;
 
 // This method is threadsafe because it is initially called
@@ -7374,6 +7459,15 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_ResultData__storage_ 
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
+      {
+        .name = "chained",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments),
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Chained,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_ResultData__storage_, chained),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
     };
     GPBDescriptor *localDescriptor =
         [GPBDescriptor allocDescriptorForClass:[GetDocumentsResponse_GetDocumentsResponseV1_ResultData class]
@@ -7405,6 +7499,63 @@ void GetDocumentsResponse_GetDocumentsResponseV1_ResultData_ClearVariantOneOfCas
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments
+
+@implementation GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments
+
+@dynamic innerDocumentsArray, innerDocumentsArray_Count;
+@dynamic outerDocumentsArray, outerDocumentsArray_Count;
+
+typedef struct GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *innerDocumentsArray;
+  NSMutableArray *outerDocumentsArray;
+} GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "innerDocumentsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber_InnerDocumentsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__storage_, innerDocumentsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "outerDocumentsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber_OuterDocumentsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__storage_, outerDocumentsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsResponse_GetDocumentsResponseV1)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetDocumentHistoryRequest
 
 @implementation GetDocumentHistoryRequest

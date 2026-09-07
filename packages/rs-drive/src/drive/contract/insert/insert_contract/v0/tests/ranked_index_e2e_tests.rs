@@ -271,49 +271,55 @@ fn group_keys<T>(entries: &[(T, Vec<u8>)]) -> Vec<String> {
         .collect()
 }
 
-fn avg_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i128, Vec<u8>)> {
-    let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
-    drive
+fn axis_top_k_keys(
+    drive: &Drive,
+    path: &[Vec<u8>],
+    axis: grovedb_query::IndexAxis,
+    k: u16,
+    descending: bool,
+) -> grovedb::AxisKeys {
+    let path_query = grovedb::PathQuery::new_axis(
+        path.to_vec(),
+        grovedb_query::AxisQuery::top_k(axis, k, 0, descending).keys_only(),
+    );
+    match drive
         .grove
-        .indexed_avg_top_k_keys(
-            path_refs.as_slice(),
-            k,
-            descending,
+        .run_path_query(
+            &path_query,
+            true,
+            true,
+            true,
+            grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType,
             None,
             &platform_version().drive.grove_version,
         )
         .unwrap()
-        .expect("indexed_avg_top_k_keys must succeed")
+        .expect("the keys-only axis read must succeed")
+    {
+        grovedb::PathQueryRun::AxisKeys { keys, .. } => keys,
+        other => panic!("expected a keys-only axis page, got {other:?}"),
+    }
+}
+
+fn avg_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i128, Vec<u8>)> {
+    match axis_top_k_keys(drive, path, grovedb_query::IndexAxis::Avg, k, descending) {
+        grovedb::AxisKeys::Avg(pairs) => pairs,
+        other => panic!("expected avg keys, got {other:?}"),
+    }
 }
 
 fn count_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(u64, Vec<u8>)> {
-    let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
-    drive
-        .grove
-        .indexed_count_top_k_keys(
-            path_refs.as_slice(),
-            k,
-            descending,
-            None,
-            &platform_version().drive.grove_version,
-        )
-        .unwrap()
-        .expect("indexed_count_top_k_keys must succeed")
+    match axis_top_k_keys(drive, path, grovedb_query::IndexAxis::Count, k, descending) {
+        grovedb::AxisKeys::Count(pairs) => pairs,
+        other => panic!("expected count keys, got {other:?}"),
+    }
 }
 
 fn sum_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i64, Vec<u8>)> {
-    let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
-    drive
-        .grove
-        .indexed_sum_top_k_keys(
-            path_refs.as_slice(),
-            k,
-            descending,
-            None,
-            &platform_version().drive.grove_version,
-        )
-        .unwrap()
-        .expect("indexed_sum_top_k_keys must succeed")
+    match axis_top_k_keys(drive, path, grovedb_query::IndexAxis::Sum, k, descending) {
+        grovedb::AxisKeys::Sum(pairs) => pairs,
+        other => panic!("expected sum keys, got {other:?}"),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -793,8 +799,13 @@ fn compound_ranked_index_resolves_its_terminal_level_to_an_indexed_tree() {
         summable: Some("price".to_string()),
         range_summable: true,
         ranked_countable: false,
+        ranked_countable_at: vec![],
         ranked_summable: false,
         ranked_averageable: true,
+        time_range: None,
+        terminal: None,
+        preallocated: false,
+        skip_if_absent: false,
     };
     let index_structure =
         IndexLevel::try_from_indices([&compound_ranked_index], "dish", platform_version())
@@ -1008,8 +1019,13 @@ fn a_null_unsearchable_ranked_level_is_what_makes_a_phantom_group_possible() {
         summable: None,
         range_summable: false,
         ranked_countable: true,
+        ranked_countable_at: vec![],
         ranked_summable: false,
         ranked_averageable: false,
+        time_range: None,
+        terminal: None,
+        preallocated: false,
+        skip_if_absent: false,
     };
 
     for null_searchable in [false, true] {
@@ -1501,6 +1517,7 @@ fn ranked_avg_page(
                     ascending: false,
                 }],
                 where_clauses: &[],
+                resolved_time_ranges: &[],
                 limit: Some(limit),
                 offset: Some(offset),
                 has_start_at: false,
@@ -1547,6 +1564,7 @@ fn verified_ranked_avg_page(
                     ascending: false,
                 }],
                 where_clauses: &[],
+                resolved_time_ranges: &[],
                 limit: Some(limit),
                 offset: Some(offset),
                 has_start_at: false,
@@ -1571,9 +1589,16 @@ fn verified_ranked_avg_page(
         document_type,
         contract_id: contract.id().to_buffer(),
         document_type_name: "review".to_string(),
-        index: find_ranked_index_for_axis(indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "grade")
-            .expect("the fixture declares rankedAverageable on grade"),
-        equality_prefix_values: vec![],
+        index: find_ranked_index_for_axis(
+            indexes,
+            GROUP_PROPERTY,
+            &[],
+            RankedAxis::Avg,
+            "grade",
+            &[],
+        )
+        .expect("the fixture declares rankedAverageable on grade"),
+        prefix_branches: vec![vec![]],
         axis: RankedAxis::Avg,
         descending: true,
         k: limit as u16,

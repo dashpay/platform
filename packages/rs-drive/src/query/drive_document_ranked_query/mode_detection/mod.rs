@@ -88,4 +88,4 @@ pub fn ranked_order_key(select: &SelectProjection) -> &str {
 mod v0;
 // Re-exported so the dispatcher's callers (`drive_dispatcher`, the
 // test suites) keep addressing the frozen grammar by its old path.
-pub use v0::{detect_ranked_mode_v0, equality_pins_from_where_clauses};
+pub use v0::{detect_ranked_mode_v0, prefix_pins_from_where_clauses};

@@ -336,6 +336,7 @@ mod tests {
         properties.insert("price".to_string(), Value::U64(1000));
 
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id,
             owner_id,
             properties,

@@ -8,8 +8,9 @@
 //! indexes. Available under `server` and `verify` for the same reason as
 //! [`super::super::drive_document_ranked_query::mode_detection`]: both
 //! sides must agree on which requests are well-formed and on the exact
-//! bounds a well-formed one resolves to, because the bounds are echoed
-//! (as a Merk query) inside the proof envelope.
+//! bounds a well-formed one resolves to, because the verifier rebuilds
+//! the bounded traversal from those bounds and re-executes the proof
+//! against it.
 //!
 //! Versioned through
 //! `platform_version.drive.methods.document.query.detect_having_mode` —

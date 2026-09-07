@@ -20039,6 +20039,7 @@ $root.org = (function() {
                          * @property {number} BETWEEN_EXCLUDE_RIGHT=8 BETWEEN_EXCLUDE_RIGHT value
                          * @property {number} IN=9 IN value
                          * @property {number} STARTS_WITH=10 STARTS_WITH value
+                         * @property {number} IN_TIME_RANGE=11 IN_TIME_RANGE value
                          */
                         GetDocumentsRequest.WhereOperator = (function() {
                             var valuesById = {}, values = Object.create(valuesById);
@@ -20053,6 +20054,7 @@ $root.org = (function() {
                             values[valuesById[8] = "BETWEEN_EXCLUDE_RIGHT"] = 8;
                             values[valuesById[9] = "IN"] = 9;
                             values[valuesById[10] = "STARTS_WITH"] = 10;
+                            values[valuesById[11] = "IN_TIME_RANGE"] = 11;
                             return values;
                         })();
 
@@ -20870,6 +20872,7 @@ $root.org = (function() {
                                     case 8:
                                     case 9:
                                     case 10:
+                                    case 11:
                                         break;
                                     }
                                 if (message.value != null && message.hasOwnProperty("value")) {
@@ -20938,6 +20941,10 @@ $root.org = (function() {
                                 case "STARTS_WITH":
                                 case 10:
                                     message.operator = 10;
+                                    break;
+                                case "IN_TIME_RANGE":
+                                case 11:
+                                    message.operator = 11;
                                     break;
                                 }
                                 if (object.value != null) {
@@ -22265,6 +22272,7 @@ $root.org = (function() {
                              * @property {Array.<string>|null} [groupBy] GetDocumentsRequestV1 groupBy
                              * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingClause>|null} [having] GetDocumentsRequestV1 having
                              * @property {number|null} [offset] GetDocumentsRequestV1 offset
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.IChainedJoin|null} [chained] GetDocumentsRequestV1 chained
                              */
 
                             /**
@@ -22383,6 +22391,14 @@ $root.org = (function() {
                              */
                             GetDocumentsRequestV1.prototype.offset = 0;
 
+                            /**
+                             * GetDocumentsRequestV1 chained.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.IChainedJoin|null|undefined} chained
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             */
+                            GetDocumentsRequestV1.prototype.chained = null;
+
                             // OneOf field names bound to virtual getters and setters
                             var $oneOfFields;
 
@@ -22450,6 +22466,8 @@ $root.org = (function() {
                                         $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.encode(message.having[i], writer.uint32(/* id 11, wireType 2 =*/90).fork()).ldelim();
                                 if (message.offset != null && Object.hasOwnProperty.call(message, "offset"))
                                     writer.uint32(/* id 12, wireType 0 =*/96).uint32(message.offset);
+                                if (message.chained != null && Object.hasOwnProperty.call(message, "chained"))
+                                    $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin.encode(message.chained, writer.uint32(/* id 13, wireType 2 =*/106).fork()).ldelim();
                                 return writer;
                             };
 
@@ -22529,6 +22547,9 @@ $root.org = (function() {
                                         break;
                                     case 12:
                                         message.offset = reader.uint32();
+                                        break;
+                                    case 13:
+                                        message.chained = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin.decode(reader, reader.uint32());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -22636,6 +22657,11 @@ $root.org = (function() {
                                 if (message.offset != null && message.hasOwnProperty("offset"))
                                     if (!$util.isInteger(message.offset))
                                         return "offset: integer expected";
+                                if (message.chained != null && message.hasOwnProperty("chained")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin.verify(message.chained);
+                                    if (error)
+                                        return "chained." + error;
+                                }
                                 return null;
                             };
 
@@ -22721,6 +22747,11 @@ $root.org = (function() {
                                 }
                                 if (object.offset != null)
                                     message.offset = object.offset >>> 0;
+                                if (object.chained != null) {
+                                    if (typeof object.chained !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.chained: object expected");
+                                    message.chained = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin.fromObject(object.chained);
+                                }
                                 return message;
                             };
 
@@ -22756,6 +22787,7 @@ $root.org = (function() {
                                     object.limit = 0;
                                     object.prove = false;
                                     object.offset = 0;
+                                    object.chained = null;
                                 }
                                 if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
                                     object.dataContractId = options.bytes === String ? $util.base64.encode(message.dataContractId, 0, message.dataContractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractId) : message.dataContractId;
@@ -22802,6 +22834,8 @@ $root.org = (function() {
                                 }
                                 if (message.offset != null && message.hasOwnProperty("offset"))
                                     object.offset = message.offset;
+                                if (message.chained != null && message.hasOwnProperty("chained"))
+                                    object.chained = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin.toObject(message.chained, options);
                                 return object;
                             };
 
@@ -23079,6 +23113,216 @@ $root.org = (function() {
                                 })();
 
                                 return Select;
+                            })();
+
+                            GetDocumentsRequestV1.ChainedJoin = (function() {
+
+                                /**
+                                 * Properties of a ChainedJoin.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                                 * @interface IChainedJoin
+                                 * @property {string|null} [joinProperty] ChainedJoin joinProperty
+                                 * @property {string|null} [outerDocumentType] ChainedJoin outerDocumentType
+                                 */
+
+                                /**
+                                 * Constructs a new ChainedJoin.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                                 * @classdesc Represents a ChainedJoin.
+                                 * @implements IChainedJoin
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.IChainedJoin=} [properties] Properties to set
+                                 */
+                                function ChainedJoin(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * ChainedJoin joinProperty.
+                                 * @member {string} joinProperty
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin
+                                 * @instance
+                                 */
+                                ChainedJoin.prototype.joinProperty = "";
+
+                                /**
+                                 * ChainedJoin outerDocumentType.
+                                 * @member {string} outerDocumentType
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin
+                                 * @instance
+                                 */
+                                ChainedJoin.prototype.outerDocumentType = "";
+
+                                /**
+                                 * Creates a new ChainedJoin instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.IChainedJoin=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin} ChainedJoin instance
+                                 */
+                                ChainedJoin.create = function create(properties) {
+                                    return new ChainedJoin(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified ChainedJoin message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.IChainedJoin} message ChainedJoin message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ChainedJoin.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.joinProperty != null && Object.hasOwnProperty.call(message, "joinProperty"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).string(message.joinProperty);
+                                    if (message.outerDocumentType != null && Object.hasOwnProperty.call(message, "outerDocumentType"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).string(message.outerDocumentType);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified ChainedJoin message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.IChainedJoin} message ChainedJoin message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ChainedJoin.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a ChainedJoin message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin} ChainedJoin
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ChainedJoin.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.joinProperty = reader.string();
+                                            break;
+                                        case 2:
+                                            message.outerDocumentType = reader.string();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a ChainedJoin message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin} ChainedJoin
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ChainedJoin.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a ChainedJoin message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                ChainedJoin.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.joinProperty != null && message.hasOwnProperty("joinProperty"))
+                                        if (!$util.isString(message.joinProperty))
+                                            return "joinProperty: string expected";
+                                    if (message.outerDocumentType != null && message.hasOwnProperty("outerDocumentType"))
+                                        if (!$util.isString(message.outerDocumentType))
+                                            return "outerDocumentType: string expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a ChainedJoin message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin} ChainedJoin
+                                 */
+                                ChainedJoin.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin();
+                                    if (object.joinProperty != null)
+                                        message.joinProperty = String(object.joinProperty);
+                                    if (object.outerDocumentType != null)
+                                        message.outerDocumentType = String(object.outerDocumentType);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a ChainedJoin message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin} message ChainedJoin
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                ChainedJoin.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.joinProperty = "";
+                                        object.outerDocumentType = "";
+                                    }
+                                    if (message.joinProperty != null && message.hasOwnProperty("joinProperty"))
+                                        object.joinProperty = message.joinProperty;
+                                    if (message.outerDocumentType != null && message.hasOwnProperty("outerDocumentType"))
+                                        object.outerDocumentType = message.outerDocumentType;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this ChainedJoin to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                ChainedJoin.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return ChainedJoin;
                             })();
 
                             return GetDocumentsRequestV1;
@@ -26727,6 +26971,7 @@ $root.org = (function() {
                                  * @property {number|Long|null} [count] RankedEntry count
                                  * @property {number|Long|null} [sum] RankedEntry sum
                                  * @property {number|null} [avg] RankedEntry avg
+                                 * @property {Uint8Array|null} [inKey] RankedEntry inKey
                                  */
 
                                 /**
@@ -26776,6 +27021,14 @@ $root.org = (function() {
                                  */
                                 RankedEntry.prototype.avg = 0;
 
+                                /**
+                                 * RankedEntry inKey.
+                                 * @member {Uint8Array} inKey
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @instance
+                                 */
+                                RankedEntry.prototype.inKey = $util.newBuffer([]);
+
                                 // OneOf field names bound to virtual getters and setters
                                 var $oneOfFields;
 
@@ -26822,6 +27075,8 @@ $root.org = (function() {
                                         writer.uint32(/* id 3, wireType 0 =*/24).sint64(message.sum);
                                     if (message.avg != null && Object.hasOwnProperty.call(message, "avg"))
                                         writer.uint32(/* id 4, wireType 1 =*/33).double(message.avg);
+                                    if (message.inKey != null && Object.hasOwnProperty.call(message, "inKey"))
+                                        writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.inKey);
                                     return writer;
                                 };
 
@@ -26867,6 +27122,9 @@ $root.org = (function() {
                                             break;
                                         case 4:
                                             message.avg = reader.double();
+                                            break;
+                                        case 5:
+                                            message.inKey = reader.bytes();
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -26926,6 +27184,9 @@ $root.org = (function() {
                                         if (typeof message.avg !== "number")
                                             return "avg: number expected";
                                     }
+                                    if (message.inKey != null && message.hasOwnProperty("inKey"))
+                                        if (!(message.inKey && typeof message.inKey.length === "number" || $util.isString(message.inKey)))
+                                            return "inKey: buffer expected";
                                     return null;
                                 };
 
@@ -26966,6 +27227,11 @@ $root.org = (function() {
                                             message.sum = new $util.LongBits(object.sum.low >>> 0, object.sum.high >>> 0).toNumber();
                                     if (object.avg != null)
                                         message.avg = Number(object.avg);
+                                    if (object.inKey != null)
+                                        if (typeof object.inKey === "string")
+                                            $util.base64.decode(object.inKey, message.inKey = $util.newBuffer($util.base64.length(object.inKey)), 0);
+                                        else if (object.inKey.length >= 0)
+                                            message.inKey = object.inKey;
                                     return message;
                                 };
 
@@ -26982,7 +27248,7 @@ $root.org = (function() {
                                     if (!options)
                                         options = {};
                                     var object = {};
-                                    if (options.defaults)
+                                    if (options.defaults) {
                                         if (options.bytes === String)
                                             object.key = "";
                                         else {
@@ -26990,6 +27256,14 @@ $root.org = (function() {
                                             if (options.bytes !== Array)
                                                 object.key = $util.newBuffer(object.key);
                                         }
+                                        if (options.bytes === String)
+                                            object.inKey = "";
+                                        else {
+                                            object.inKey = [];
+                                            if (options.bytes !== Array)
+                                                object.inKey = $util.newBuffer(object.inKey);
+                                        }
+                                    }
                                     if (message.key != null && message.hasOwnProperty("key"))
                                         object.key = options.bytes === String ? $util.base64.encode(message.key, 0, message.key.length) : options.bytes === Array ? Array.prototype.slice.call(message.key) : message.key;
                                     if (message.count != null && message.hasOwnProperty("count")) {
@@ -27013,6 +27287,8 @@ $root.org = (function() {
                                         if (options.oneofs)
                                             object.value = "avg";
                                     }
+                                    if (message.inKey != null && message.hasOwnProperty("inKey"))
+                                        object.inKey = options.bytes === String ? $util.base64.encode(message.inKey, 0, message.inKey.length) : options.bytes === Array ? Array.prototype.slice.call(message.inKey) : message.inKey;
                                     return object;
                                 };
 
@@ -27286,6 +27562,7 @@ $root.org = (function() {
                                  * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumResults|null} [sums] ResultData sums
                                  * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageResults|null} [averages] ResultData averages
                                  * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IRankedEntries|null} [ranked] ResultData ranked
+                                 * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IChainedDocuments|null} [chained] ResultData chained
                                  */
 
                                 /**
@@ -27343,17 +27620,25 @@ $root.org = (function() {
                                  */
                                 ResultData.prototype.ranked = null;
 
+                                /**
+                                 * ResultData chained.
+                                 * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IChainedDocuments|null|undefined} chained
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @instance
+                                 */
+                                ResultData.prototype.chained = null;
+
                                 // OneOf field names bound to virtual getters and setters
                                 var $oneOfFields;
 
                                 /**
                                  * ResultData variant.
-                                 * @member {"documents"|"counts"|"sums"|"averages"|"ranked"|undefined} variant
+                                 * @member {"documents"|"counts"|"sums"|"averages"|"ranked"|"chained"|undefined} variant
                                  * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
                                  * @instance
                                  */
                                 Object.defineProperty(ResultData.prototype, "variant", {
-                                    get: $util.oneOfGetter($oneOfFields = ["documents", "counts", "sums", "averages", "ranked"]),
+                                    get: $util.oneOfGetter($oneOfFields = ["documents", "counts", "sums", "averages", "ranked", "chained"]),
                                     set: $util.oneOfSetter($oneOfFields)
                                 });
 
@@ -27391,6 +27676,8 @@ $root.org = (function() {
                                         $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.encode(message.averages, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
                                     if (message.ranked != null && Object.hasOwnProperty.call(message, "ranked"))
                                         $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.encode(message.ranked, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
+                                    if (message.chained != null && Object.hasOwnProperty.call(message, "chained"))
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.encode(message.chained, writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
                                     return writer;
                                 };
 
@@ -27439,6 +27726,9 @@ $root.org = (function() {
                                             break;
                                         case 5:
                                             message.ranked = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.decode(reader, reader.uint32());
+                                            break;
+                                        case 6:
+                                            message.chained = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.decode(reader, reader.uint32());
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -27524,6 +27814,16 @@ $root.org = (function() {
                                                 return "ranked." + error;
                                         }
                                     }
+                                    if (message.chained != null && message.hasOwnProperty("chained")) {
+                                        if (properties.variant === 1)
+                                            return "variant: multiple values";
+                                        properties.variant = 1;
+                                        {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.verify(message.chained);
+                                            if (error)
+                                                return "chained." + error;
+                                        }
+                                    }
                                     return null;
                                 };
 
@@ -27563,6 +27863,11 @@ $root.org = (function() {
                                         if (typeof object.ranked !== "object")
                                             throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.ranked: object expected");
                                         message.ranked = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.fromObject(object.ranked);
+                                    }
+                                    if (object.chained != null) {
+                                        if (typeof object.chained !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.chained: object expected");
+                                        message.chained = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.fromObject(object.chained);
                                     }
                                     return message;
                                 };
@@ -27605,6 +27910,11 @@ $root.org = (function() {
                                         if (options.oneofs)
                                             object.variant = "ranked";
                                     }
+                                    if (message.chained != null && message.hasOwnProperty("chained")) {
+                                        object.chained = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.toObject(message.chained, options);
+                                        if (options.oneofs)
+                                            object.variant = "chained";
+                                    }
                                     return object;
                                 };
 
@@ -27620,6 +27930,254 @@ $root.org = (function() {
                                 };
 
                                 return ResultData;
+                            })();
+
+                            GetDocumentsResponseV1.ChainedDocuments = (function() {
+
+                                /**
+                                 * Properties of a ChainedDocuments.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @interface IChainedDocuments
+                                 * @property {Array.<Uint8Array>|null} [innerDocuments] ChainedDocuments innerDocuments
+                                 * @property {Array.<Uint8Array>|null} [outerDocuments] ChainedDocuments outerDocuments
+                                 */
+
+                                /**
+                                 * Constructs a new ChainedDocuments.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @classdesc Represents a ChainedDocuments.
+                                 * @implements IChainedDocuments
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IChainedDocuments=} [properties] Properties to set
+                                 */
+                                function ChainedDocuments(properties) {
+                                    this.innerDocuments = [];
+                                    this.outerDocuments = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * ChainedDocuments innerDocuments.
+                                 * @member {Array.<Uint8Array>} innerDocuments
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments
+                                 * @instance
+                                 */
+                                ChainedDocuments.prototype.innerDocuments = $util.emptyArray;
+
+                                /**
+                                 * ChainedDocuments outerDocuments.
+                                 * @member {Array.<Uint8Array>} outerDocuments
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments
+                                 * @instance
+                                 */
+                                ChainedDocuments.prototype.outerDocuments = $util.emptyArray;
+
+                                /**
+                                 * Creates a new ChainedDocuments instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IChainedDocuments=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments} ChainedDocuments instance
+                                 */
+                                ChainedDocuments.create = function create(properties) {
+                                    return new ChainedDocuments(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified ChainedDocuments message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IChainedDocuments} message ChainedDocuments message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ChainedDocuments.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.innerDocuments != null && message.innerDocuments.length)
+                                        for (var i = 0; i < message.innerDocuments.length; ++i)
+                                            writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.innerDocuments[i]);
+                                    if (message.outerDocuments != null && message.outerDocuments.length)
+                                        for (var i = 0; i < message.outerDocuments.length; ++i)
+                                            writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.outerDocuments[i]);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified ChainedDocuments message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IChainedDocuments} message ChainedDocuments message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ChainedDocuments.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a ChainedDocuments message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments} ChainedDocuments
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ChainedDocuments.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.innerDocuments && message.innerDocuments.length))
+                                                message.innerDocuments = [];
+                                            message.innerDocuments.push(reader.bytes());
+                                            break;
+                                        case 2:
+                                            if (!(message.outerDocuments && message.outerDocuments.length))
+                                                message.outerDocuments = [];
+                                            message.outerDocuments.push(reader.bytes());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a ChainedDocuments message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments} ChainedDocuments
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ChainedDocuments.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a ChainedDocuments message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                ChainedDocuments.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.innerDocuments != null && message.hasOwnProperty("innerDocuments")) {
+                                        if (!Array.isArray(message.innerDocuments))
+                                            return "innerDocuments: array expected";
+                                        for (var i = 0; i < message.innerDocuments.length; ++i)
+                                            if (!(message.innerDocuments[i] && typeof message.innerDocuments[i].length === "number" || $util.isString(message.innerDocuments[i])))
+                                                return "innerDocuments: buffer[] expected";
+                                    }
+                                    if (message.outerDocuments != null && message.hasOwnProperty("outerDocuments")) {
+                                        if (!Array.isArray(message.outerDocuments))
+                                            return "outerDocuments: array expected";
+                                        for (var i = 0; i < message.outerDocuments.length; ++i)
+                                            if (!(message.outerDocuments[i] && typeof message.outerDocuments[i].length === "number" || $util.isString(message.outerDocuments[i])))
+                                                return "outerDocuments: buffer[] expected";
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a ChainedDocuments message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments} ChainedDocuments
+                                 */
+                                ChainedDocuments.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments();
+                                    if (object.innerDocuments) {
+                                        if (!Array.isArray(object.innerDocuments))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.innerDocuments: array expected");
+                                        message.innerDocuments = [];
+                                        for (var i = 0; i < object.innerDocuments.length; ++i)
+                                            if (typeof object.innerDocuments[i] === "string")
+                                                $util.base64.decode(object.innerDocuments[i], message.innerDocuments[i] = $util.newBuffer($util.base64.length(object.innerDocuments[i])), 0);
+                                            else if (object.innerDocuments[i].length >= 0)
+                                                message.innerDocuments[i] = object.innerDocuments[i];
+                                    }
+                                    if (object.outerDocuments) {
+                                        if (!Array.isArray(object.outerDocuments))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.outerDocuments: array expected");
+                                        message.outerDocuments = [];
+                                        for (var i = 0; i < object.outerDocuments.length; ++i)
+                                            if (typeof object.outerDocuments[i] === "string")
+                                                $util.base64.decode(object.outerDocuments[i], message.outerDocuments[i] = $util.newBuffer($util.base64.length(object.outerDocuments[i])), 0);
+                                            else if (object.outerDocuments[i].length >= 0)
+                                                message.outerDocuments[i] = object.outerDocuments[i];
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a ChainedDocuments message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments} message ChainedDocuments
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                ChainedDocuments.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults) {
+                                        object.innerDocuments = [];
+                                        object.outerDocuments = [];
+                                    }
+                                    if (message.innerDocuments && message.innerDocuments.length) {
+                                        object.innerDocuments = [];
+                                        for (var j = 0; j < message.innerDocuments.length; ++j)
+                                            object.innerDocuments[j] = options.bytes === String ? $util.base64.encode(message.innerDocuments[j], 0, message.innerDocuments[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.innerDocuments[j]) : message.innerDocuments[j];
+                                    }
+                                    if (message.outerDocuments && message.outerDocuments.length) {
+                                        object.outerDocuments = [];
+                                        for (var j = 0; j < message.outerDocuments.length; ++j)
+                                            object.outerDocuments[j] = options.bytes === String ? $util.base64.encode(message.outerDocuments[j], 0, message.outerDocuments[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.outerDocuments[j]) : message.outerDocuments[j];
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this ChainedDocuments to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                ChainedDocuments.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return ChainedDocuments;
                             })();
 
                             return GetDocumentsResponseV1;

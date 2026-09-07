@@ -78,6 +78,7 @@ fn create_test_mn_share_document(
     properties.insert(String::from("percentage"), percentage.into());
 
     let document = DocumentV0 {
+        contract_version: None,
         id,
         properties,
         owner_id: identity_id,
