@@ -171,6 +171,10 @@ final class CoreWalletDiagnosticsTests: XCTestCase {
         XCTAssertTrue(summary.contains("owned_bip44_output_count=1"), summary)
         XCTAssertTrue(summary.contains("persisted_valid_count=0"), summary)
         XCTAssertTrue(summary.contains("total_anomaly_count=1"), summary)
+        // Output 1 of the fixture is `OP_RETURN`: no address to attribute.
+        XCTAssertTrue(summary.contains("output_address_undecodable_count=1"), summary)
+        XCTAssertTrue(summary.contains("unattributed_output_count=0"), summary)
+        XCTAssertTrue(summary.contains("bip44_address_pool_size=1"), summary)
 
         let anomalies = try logLines(in: session, event: "core_owned_output_anomaly")
         let anomaly = try XCTUnwrap(anomalies.last)
@@ -241,6 +245,220 @@ final class CoreWalletDiagnosticsTests: XCTestCase {
         XCTAssertTrue(summary.contains("persisted_valid_count=1"), summary)
         XCTAssertTrue(summary.contains("total_anomaly_count=0"), summary)
         XCTAssertTrue(try logLines(in: session, event: "core_owned_output_anomaly").isEmpty)
+    }
+
+    /// Above the row ceilings the export must refuse the exact audit outright
+    /// and say so — never truncate the table and misclassify — while every
+    /// lightweight snapshot still lands. The fixture has two transactions and
+    /// one TXO, so a ceiling of one transaction is over the line.
+    func testExportDeclinesExactAuditAboveRowLimitsButKeepsSnapshots() async throws {
+        let fixture = try makeMissingOwnedOutputFixture()
+        let session = try temporaryDirectory()
+        XCTAssertTrue(SDKLogger.installFileSink(at: session, includeDebug: false))
+
+        let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(
+            walletId: walletId,
+            checkpoint: .preExport,
+            limits: CoreDiagnosticRowLimits(
+                crossWalletTxoRows: 100,
+                exactAuditTransactionRows: 1
+            )
+        )
+        XCTAssertNotNil(databaseSnapshot)
+
+        let summaries = try logLines(in: session, event: "core_owned_output_audit_summary")
+        let summary = try XCTUnwrap(summaries.last)
+        XCTAssertTrue(summary.contains("audit_incomplete=true"), summary)
+        XCTAssertTrue(summary.contains(#"reason="tables_too_large_for_exact_audit""#), summary)
+        XCTAssertTrue(summary.contains("transaction_row_count=2"), summary)
+        XCTAssertTrue(summary.contains("transaction_row_limit=1"), summary)
+        XCTAssertTrue(summary.contains("txo_row_count=1"), summary)
+        // Declining is not the same as finding nothing: no per-output verdict
+        // may be emitted for an audit that never ran.
+        XCTAssertFalse(summary.contains("coinjoin_to_bip44_missing_count"), summary)
+        XCTAssertTrue(try logLines(in: session, event: "core_owned_output_anomaly").isEmpty)
+
+        let walletSnapshot = try XCTUnwrap(
+            try logLines(in: session, event: "core_db_wallet_snapshot").last
+        )
+        XCTAssertTrue(walletSnapshot.contains(#"txo_scan_scope="cross_wallet""#), walletSnapshot)
+        XCTAssertTrue(walletSnapshot.contains("transaction_scan_available=false"), walletSnapshot)
+        XCTAssertTrue(walletSnapshot.contains("txo_count=1"), walletSnapshot)
+        XCTAssertFalse(try logLines(in: session, event: "core_db_account_snapshot").isEmpty)
+        XCTAssertFalse(try logLines(in: session, event: "core_db_anomaly_summary").isEmpty)
+        XCTAssertFalse(try logLines(in: session, event: "asset_lock_db_snapshot").isEmpty)
+    }
+
+    /// Over the TXO ceiling the scan narrows to this wallet's denormalized id
+    /// and the snapshot records that scope, so an analyst knows relationship-
+    /// only rows and cross-wallet duplicates were outside its view.
+    func testExportNarrowsTxoScanToWalletAboveTxoRowLimit() async throws {
+        let fixture = try makeMissingOwnedOutputFixture()
+        let session = try temporaryDirectory()
+        XCTAssertTrue(SDKLogger.installFileSink(at: session, includeDebug: false))
+
+        let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(
+            walletId: walletId,
+            checkpoint: .preExport,
+            limits: CoreDiagnosticRowLimits(
+                crossWalletTxoRows: 0,
+                exactAuditTransactionRows: 100
+            )
+        )
+        XCTAssertNotNil(databaseSnapshot)
+
+        let walletSnapshot = try XCTUnwrap(
+            try logLines(in: session, event: "core_db_wallet_snapshot").last
+        )
+        XCTAssertTrue(walletSnapshot.contains(#"txo_scan_scope="wallet_id_only""#), walletSnapshot)
+        XCTAssertTrue(walletSnapshot.contains("txo_count=1"), walletSnapshot)
+        // A narrowed TXO scan alone is enough to decline the audit, even
+        // though the transaction table is under its own ceiling.
+        let summary = try XCTUnwrap(
+            try logLines(in: session, event: "core_owned_output_audit_summary").last
+        )
+        XCTAssertTrue(summary.contains(#"reason="tables_too_large_for_exact_audit""#), summary)
+        XCTAssertTrue(summary.contains("txo_row_limit=0"), summary)
+    }
+
+    /// Without the change address's `PersistentCoreAddress` row the audit can
+    /// attribute nothing, and must say so through the counter rather than
+    /// report a clean wallet — this is the "false all-clear" from review.
+    func testMissingAddressRowIsCountedAsUnattributedNotCleared() async throws {
+        let fixture = try makeMissingOwnedOutputFixture()
+        fixture.context.delete(fixture.bip44Address)
+        try fixture.context.save()
+
+        let session = try temporaryDirectory()
+        XCTAssertTrue(SDKLogger.installFileSink(at: session, includeDebug: false))
+        let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(
+            walletId: walletId,
+            checkpoint: .preExport
+        )
+        XCTAssertNotNil(databaseSnapshot)
+
+        let summary = try XCTUnwrap(
+            try logLines(in: session, event: "core_owned_output_audit_summary").last
+        )
+        XCTAssertTrue(summary.contains("candidate_transaction_count=1"), summary)
+        XCTAssertTrue(summary.contains("bip44_address_pool_size=0"), summary)
+        XCTAssertTrue(summary.contains("unattributed_output_count=1"), summary)
+        XCTAssertTrue(summary.contains("output_address_undecodable_count=1"), summary)
+        XCTAssertTrue(summary.contains("owned_bip44_output_count=0"), summary)
+        // Zero here means "of what could be attributed" — and the counters
+        // above show that was nothing.
+        XCTAssertTrue(summary.contains("coinjoin_to_bip44_missing_count=0"), summary)
+        XCTAssertTrue(summary.contains("total_anomaly_count=0"), summary)
+    }
+
+    /// A change row that names this wallet by its denormalized id but has no
+    /// account relationship is this wallet's row with a broken link, not
+    /// another wallet's row — the same rule that admits it must judge it.
+    func testOwnedRowWithBrokenRelationshipIsRelationshipMissingNotWrongWallet() async throws {
+        let fixture = try makeMissingOwnedOutputFixture()
+        let output = fixture.decoded.outputs[0]
+        let change = PersistentTxo(
+            transaction: fixture.spendingTransaction,
+            vout: 0,
+            amount: output.valueDuffs,
+            address: try XCTUnwrap(output.address),
+            scriptPubKey: output.scriptPubkey,
+            height: fixture.spendingTransaction.blockHeight
+        )
+        change.walletId = walletId
+        change.isConfirmed = true
+        fixture.context.insert(change)
+        try fixture.context.save()
+
+        let session = try temporaryDirectory()
+        XCTAssertTrue(SDKLogger.installFileSink(at: session, includeDebug: false))
+        let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(
+            walletId: walletId,
+            checkpoint: .preExport
+        )
+        XCTAssertNotNil(databaseSnapshot)
+
+        let summary = try XCTUnwrap(
+            try logLines(in: session, event: "core_owned_output_audit_summary").last
+        )
+        XCTAssertTrue(summary.contains("coinjoin_to_bip44_missing_count=0"), summary)
+        XCTAssertTrue(summary.contains("total_anomaly_count=1"), summary)
+        let anomaly = try XCTUnwrap(
+            try logLines(in: session, event: "core_owned_output_anomaly").last
+        )
+        XCTAssertTrue(anomaly.contains(#"reason="relationship_missing""#), anomaly)
+        XCTAssertFalse(anomaly.contains("wrong_wallet"), anomaly)
+    }
+
+    /// `outpoint` is `@Attribute(.unique)`, so a duplicated outpoint only ever
+    /// exists in a corrupt store and cannot be saved through a context. The
+    /// resolver is therefore exercised on transient rows.
+    func testRepresentativeTxoPrefersThisWalletsRowRegardlessOfFetchOrder() throws {
+        let ours = PersistentWallet(walletId: walletId, network: .testnet)
+        let theirs = PersistentWallet(walletId: Data(repeating: 0xB2, count: 32), network: .testnet)
+        let ourAccount = PersistentAccount(
+            wallet: ours, accountType: 0, accountIndex: 0, accountTypeName: "Standard"
+        )
+        let theirAccount = PersistentAccount(
+            wallet: theirs, accountType: 0, accountIndex: 0, accountTypeName: "Standard"
+        )
+        let transaction = PersistentTransaction(
+            txid: Data(repeating: 0x44, count: 32),
+            transactionData: Data(),
+            context: 2,
+            blockHeight: 1,
+            netAmount: 0
+        )
+        func row(amount: UInt64, account: PersistentAccount?, walletId: Data) -> PersistentTxo {
+            let txo = PersistentTxo(
+                transaction: transaction,
+                vout: 0,
+                amount: amount,
+                address: "duplicate-outpoint",
+                scriptPubKey: Data([0x51]),
+                height: 1
+            )
+            txo.account = account
+            txo.walletId = walletId
+            return txo
+        }
+        let ourRow = row(amount: 1, account: ourAccount, walletId: walletId)
+        let theirRow = row(amount: 2, account: theirAccount, walletId: theirs.walletId)
+        let theirOtherRow = row(amount: 3, account: theirAccount, walletId: theirs.walletId)
+
+        XCTAssertTrue(
+            PlatformWalletPersistenceHandler.representativeTxo(
+                rows: [theirRow, ourRow], walletId: walletId
+            ) === ourRow
+        )
+        XCTAssertTrue(
+            PlatformWalletPersistenceHandler.representativeTxo(
+                rows: [ourRow, theirRow], walletId: walletId
+            ) === ourRow
+        )
+        // Ours by denormalized id alone still wins: the audit judges by the
+        // same rule that admits, and reports the broken link separately.
+        let ourBrokenRow = row(amount: 4, account: nil, walletId: walletId)
+        XCTAssertTrue(
+            PlatformWalletPersistenceHandler.representativeTxo(
+                rows: [theirRow, ourBrokenRow], walletId: walletId
+            ) === ourBrokenRow
+        )
+        // No owned row: still the same answer whichever order the fetch gave.
+        let forward = PlatformWalletPersistenceHandler.representativeTxo(
+            rows: [theirRow, theirOtherRow], walletId: walletId
+        )
+        let reversed = PlatformWalletPersistenceHandler.representativeTxo(
+            rows: [theirOtherRow, theirRow], walletId: walletId
+        )
+        XCTAssertNotNil(forward)
+        XCTAssertTrue(forward === reversed)
+        XCTAssertNil(
+            PlatformWalletPersistenceHandler.representativeTxo(rows: nil, walletId: walletId)
+        )
+        XCTAssertNil(
+            PlatformWalletPersistenceHandler.representativeTxo(rows: [], walletId: walletId)
+        )
     }
 
     func testRestoreOnlyLogsLightweightBufferSnapshotAndNoDeepStartupEvents() throws {

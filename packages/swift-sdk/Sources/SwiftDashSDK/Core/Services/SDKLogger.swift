@@ -213,11 +213,14 @@ enum SDKLogFormatter {
     }
 }
 
-private final class SDKLoggerState: @unchecked Sendable {
+/// Internal rather than private so the pre-install buffer can be tested on a
+/// fresh instance: the process-wide `SDKLogger.state` has no way back to the
+/// "no sink installed" condition once any test has installed one.
+final class SDKLoggerState: @unchecked Sendable {
     /// How many pre-install events are retained for replay. A host that never
     /// installs a sink must not accumulate lines for the life of the process,
     /// so the buffer drops its oldest entries and reports the loss instead.
-    private static let pendingLineLimit = 256
+    static let pendingLineLimit = 256
 
     private let lock = NSLock()
     private var sink: SDKLogFileSink?

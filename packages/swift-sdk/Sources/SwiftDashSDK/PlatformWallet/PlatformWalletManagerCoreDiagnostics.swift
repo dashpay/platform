@@ -99,6 +99,32 @@ enum CoreDiagnosticConstants {
     static let detailLimit = 25
 }
 
+/// Ceilings on what one support export may materialize at once.
+///
+/// The exact #4438 audit needs every TXO and every transaction cross-wallet —
+/// an output absent from this wallet may be `wrong_wallet`, not `missing_txo`,
+/// and only the full table can say which. That pass runs inside the
+/// persistence serial queue, so on a heavily mixed wallet it stalls every
+/// Rust persister callback and the main thread behind them until it finishes:
+/// a watchdog kill, and no export artifact, on exactly the wallet support asked
+/// about. A fetch limit is the wrong tool because a truncated table silently
+/// misclassifies. Counting first and declining above a ceiling keeps the
+/// distinction exact wherever it is computable and refuses honestly where it
+/// is not. The figures are a cap on materialized objects, not a tuned number.
+struct CoreDiagnosticRowLimits: Sendable {
+    /// Above this many `PersistentTxo` rows table-wide, only this wallet's rows
+    /// are fetched and the cross-wallet audit is declined.
+    let crossWalletTxoRows: Int
+    /// Above this many `PersistentTransaction` rows table-wide, transaction
+    /// bodies are not materialized and the exact audit is declined.
+    let exactAuditTransactionRows: Int
+
+    static let production = CoreDiagnosticRowLimits(
+        crossWalletTxoRows: 100_000,
+        exactAuditTransactionRows: 20_000
+    )
+}
+
 private extension Data {
     mutating func appendLittleEndian<T: FixedWidthInteger>(_ value: T) {
         var littleEndian = value.littleEndian
@@ -174,14 +200,16 @@ extension PlatformWalletPersistenceHandler {
     /// resumed across the continuation.
     func emitCoreWalletDatabaseDiagnostics(
         walletId: Data,
-        checkpoint: CoreWalletDiagnosticCheckpoint
+        checkpoint: CoreWalletDiagnosticCheckpoint,
+        limits: CoreDiagnosticRowLimits = .production
     ) async -> CoreWalletDatabaseDiagnosticSnapshot? {
         await withCheckedContinuation { continuation in
             serialQueue.async { [self] in
                 let snapshot = autoreleasepool { () -> CoreWalletDatabaseDiagnosticSnapshot? in
                     return emitCoreWalletDatabaseDiagnosticsOnQueue(
                         walletId: walletId,
-                        checkpoint: checkpoint
+                        checkpoint: checkpoint,
+                        limits: limits
                     )
                 }
                 continuation.resume(returning: snapshot)
@@ -190,12 +218,13 @@ extension PlatformWalletPersistenceHandler {
     }
 
     /// Queue-confined implementation behind the async export API. Callers must
-    /// already own `serialQueue`; it intentionally performs the full exact
-    /// audit and returns only Sendable value copies.
+    /// already own `serialQueue`; it performs the full exact audit whenever the
+    /// tables fit under `limits` and returns only Sendable value copies.
     @discardableResult
     func emitCoreWalletDatabaseDiagnosticsOnQueue(
         walletId: Data,
-        checkpoint: CoreWalletDiagnosticCheckpoint
+        checkpoint: CoreWalletDiagnosticCheckpoint,
+        limits: CoreDiagnosticRowLimits = .production
     ) -> CoreWalletDatabaseDiagnosticSnapshot? {
         do {
             let walletDescriptor = FetchDescriptor<PersistentWallet>(
@@ -217,10 +246,23 @@ extension PlatformWalletPersistenceHandler {
 
             // Exact #4438 classification needs a complete cross-wallet pass:
             // an output absent from this wallet may be `wrong_wallet`, not
-            // `missing_txo`. This first export-only implementation materializes
-            // that pass. A future bounded version must stream every row rather
-            // than apply a fetch limit, so it preserves the distinction.
-            let allTxos = try backgroundContext.fetch(FetchDescriptor<PersistentTxo>())
+            // `missing_txo`. Count before materializing (see
+            // `CoreDiagnosticRowLimits`): under the ceiling the whole table is
+            // held and the audit is exact; over it only this wallet's rows are
+            // fetched, and the snapshot says so, because a relationship-only
+            // row or a cross-wallet duplicate is then invisible to it. A
+            // streaming pass would lift the ceiling without losing the
+            // distinction and remains the follow-up.
+            let txoRowCount = try backgroundContext.fetchCount(FetchDescriptor<PersistentTxo>())
+            let crossWalletTxoScan = txoRowCount <= limits.crossWalletTxoRows
+            let allTxos: [PersistentTxo]
+            if crossWalletTxoScan {
+                allTxos = try backgroundContext.fetch(FetchDescriptor<PersistentTxo>())
+            } else {
+                allTxos = try backgroundContext.fetch(FetchDescriptor<PersistentTxo>(
+                    predicate: #Predicate { $0.walletId == walletId }
+                ))
+            }
             let walletTxos = allTxos.filter {
                 $0.walletId == walletId || Self.relationshipWalletId(of: $0) == walletId
             }
@@ -232,12 +274,41 @@ extension PlatformWalletPersistenceHandler {
             let walletTransactions: [PersistentTransaction]?
             if checkpoint == .preExport {
                 do {
-                    let fetched = try backgroundContext.fetch(
+                    let transactionRowCount = try backgroundContext.fetchCount(
                         FetchDescriptor<PersistentTransaction>()
                     )
-                    allTransactions = fetched
-                    walletTransactions = fetched.filter {
-                        Self.walletOwnsTransaction(walletId: walletId, transaction: $0)
+                    // Both tables must fit: the audit resolves each decoded
+                    // output against `txoByOutpoint`, so a wallet-only TXO
+                    // scan would turn every foreign row into `missing_txo`.
+                    if crossWalletTxoScan,
+                       transactionRowCount <= limits.exactAuditTransactionRows {
+                        let fetched = try backgroundContext.fetch(
+                            FetchDescriptor<PersistentTransaction>()
+                        )
+                        allTransactions = fetched
+                        walletTransactions = fetched.filter {
+                            Self.walletOwnsTransaction(walletId: walletId, transaction: $0)
+                        }
+                    } else {
+                        allTransactions = nil
+                        walletTransactions = nil
+                        SDKLogger.event(
+                            "core_owned_output_audit_summary",
+                            category: .persistence,
+                            severity: .warning,
+                            fields: [
+                                "audit_incomplete": .boolean(true),
+                                "checkpoint": .publicText(checkpoint.rawValue),
+                                "reason": .publicText("tables_too_large_for_exact_audit"),
+                                "transaction_row_count": .integer(Int64(transactionRowCount)),
+                                "transaction_row_limit": .integer(
+                                    Int64(limits.exactAuditTransactionRows)
+                                ),
+                                "txo_row_count": .integer(Int64(txoRowCount)),
+                                "txo_row_limit": .integer(Int64(limits.crossWalletTxoRows)),
+                                "wallet_reference": .reference(walletId),
+                            ]
+                        )
                     }
                 } catch {
                     allTransactions = nil
@@ -327,6 +398,10 @@ extension PlatformWalletPersistenceHandler {
                     "transaction_scan_available": .boolean(walletTransactions != nil),
                     "txo_count": .integer(Int64(walletTxos.count)),
                     "txo_fingerprint": .reference(txoFingerprint),
+                    "txo_row_count": .integer(Int64(txoRowCount)),
+                    "txo_scan_scope": .publicText(
+                        crossWalletTxoScan ? "cross_wallet" : "wallet_id_only"
+                    ),
                     "unconfirmed_count": .integer(Int64(unconfirmed.count)),
                     "unconfirmed_value_duffs": .unsignedInteger(
                         diagnosticSaturatingSum(unconfirmed.map(\.amount))
@@ -797,10 +872,24 @@ extension PlatformWalletPersistenceHandler {
                     anomalies.append((transaction, vout, output.valueDuffs, outpoint, "missing_txo"))
                     continue
                 }
-                guard relationshipWalletId(of: row) == walletId,
-                      row.walletId.isEmpty || row.walletId == walletId
-                else {
+                // Same admission rule as `walletTxos` and the candidate set:
+                // the denormalized id OR the relationship may name this
+                // wallet. Judging by the relationship alone here would report
+                // this wallet's own row with a broken link as `wrong_wallet`.
+                let rowRelationshipWallet = relationshipWalletId(of: row)
+                let denormalizedNamesWallet = row.walletId == walletId
+                let relationshipNamesWallet = rowRelationshipWallet == walletId
+                guard denormalizedNamesWallet || relationshipNamesWallet else {
                     anomalies.append((transaction, vout, output.valueDuffs, outpoint, "wrong_wallet"))
+                    continue
+                }
+                guard relationshipNamesWallet else {
+                    // Ours by id, but the relationship says otherwise. Reuse
+                    // the vocabulary `logTxoAnomalies` already emits for the
+                    // same two facts, so the analyst sees one story.
+                    let reason = rowRelationshipWallet == nil
+                        ? "relationship_missing" : "wallet_id_mismatch"
+                    anomalies.append((transaction, vout, output.valueDuffs, outpoint, reason))
                     continue
                 }
                 guard row.account === expectedAccount,
@@ -894,7 +983,7 @@ extension PlatformWalletPersistenceHandler {
     /// output IS persisted here, whatever else shares the outpoint); otherwise a
     /// deterministic representative is chosen the way `compareTxos` resolves
     /// duplicates before comparing.
-    private static func representativeTxo(
+    static func representativeTxo(
         rows: [PersistentTxo]?,
         walletId: Data
     ) -> PersistentTxo? {
@@ -906,13 +995,16 @@ extension PlatformWalletPersistenceHandler {
             )
         }
         return ordered.first {
-            relationshipWalletId(of: $0) == walletId
-                && ($0.walletId.isEmpty || $0.walletId == walletId)
+            $0.walletId == walletId || relationshipWalletId(of: $0) == walletId
         } ?? ordered[0]
     }
 
     /// Total order over rows sharing an outpoint. Uses only persisted bytes, so
     /// two runs over the same database agree.
+    ///
+    /// A single `0` byte separates the two wallet ids. That is unambiguous only
+    /// because each is exactly 32 bytes or empty — a variable-width id would
+    /// need length prefixes, as `diagnosticTxoFingerprint` uses.
     private static func duplicateResolutionKey(_ txo: PersistentTxo) -> Data {
         var key = Data()
         key.append(txo.walletId)
@@ -1050,6 +1142,17 @@ extension PlatformWalletManager {
     /// Emit a best-effort, read-only snapshot immediately before a diagnostic
     /// export. The method intentionally never throws: a failed sub-query is a
     /// diagnostic fact and is logged as `unavailable`, not reported as zero.
+    ///
+    /// Cost, so hosts do not trigger this mid-sync: the SwiftData half runs on
+    /// the persistence serial queue and holds it for its whole duration, which
+    /// blocks every Rust persister and SPV callback (they enter through
+    /// `serialQueue.sync`) and any main-thread persistence access until it
+    /// returns. Under `CoreDiagnosticRowLimits` that includes materializing
+    /// the full TXO and transaction tables for the exact #4438 audit; above
+    /// them the export narrows to this wallet's rows, declines the audit, and
+    /// says so in `core_owned_output_audit_summary`. A paged variant that
+    /// lifts the ceilings without losing the classification is tracked as a
+    /// follow-up.
     public func emitCoreWalletDiagnostics(for walletId: Data) async {
         await emitCoreWalletDiagnostics(for: walletId, checkpoint: .preExport)
     }
@@ -1588,7 +1691,7 @@ extension PlatformWalletManager {
     /// loop: a hand-rolled copy agrees only by coincidence, and any later change
     /// to the canonical encoder would silently make every lock report as both
     /// `database_only` and `memory_only`.
-    private nonisolated static func assetLockOutpointDisplay(
+    nonisolated static func assetLockOutpointDisplay(
         txid: Data,
         vout: UInt32
     ) -> String {
@@ -1596,6 +1699,9 @@ extension PlatformWalletManager {
         // `encodeOutPoint` traps on a malformed outpoint. Diagnostics must
         // survive corrupt input, so fall back to a clearly non-matching marker
         // that shows up as `memory_only` instead of taking the process down.
+        // Reachable only through a `txid` that is not 32 bytes: `makeOutpoint`
+        // appends whatever it is given, and the FFI copies a fixed 32-byte
+        // array, so this guards the Rust side's word, not this file's.
         guard raw.count == 36 else {
             return "invalid_outpoint:\(raw.count)_bytes:\(vout)"
         }

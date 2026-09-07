@@ -13,12 +13,15 @@ import XCTest
 /// the drifted `PersistentDocumentType` / `PersistentIndex` shapes leave a
 /// dev.1 store matching no registered version — Cocoa error 134504. Hosts turn
 /// that throw into a launch crash, which is why `DashModelContainer.open` falls
-/// back to inferred lightweight migration. This test drives that production
-/// entry point rather than rebuilding a look-alike container, so the fallback
-/// cannot regress unnoticed.
+/// back to inferred lightweight migration for exactly that error. These tests
+/// drive that production entry point rather than rebuilding a look-alike
+/// container, so the fallback — and its limits — cannot regress unnoticed.
 @MainActor
 final class Dev1StoreUpgradeTests: XCTestCase {
-    func testDev1StoreOpensThroughProductionFactoryAndPreservesCoreRows() throws {
+    private var directory: URL!
+    private var fixtureSQLite: Data!
+
+    override func setUp() async throws {
         let resourceURL = try XCTUnwrap(
             Bundle.module.url(
                 forResource: "DashModel-v4.2.0-dev.1.sqlite",
@@ -29,47 +32,54 @@ final class Dev1StoreUpgradeTests: XCTestCase {
         let compressed = try Data(contentsOf: resourceURL)
         // This resource is produced with Foundation's `.zlib` compressor.
         // A Python zlib-wrapped stream is not accepted by NSData on iOS.
-        let sqlite = try (compressed as NSData).decompressed(using: .zlib) as Data
-        XCTAssertEqual(sqlite.count, 647_168)
+        fixtureSQLite = try (compressed as NSData).decompressed(using: .zlib) as Data
+        XCTAssertEqual(fixtureSQLite.count, 647_168)
 
-        let directory = FileManager.default.temporaryDirectory
+        directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(
             at: directory,
             withIntermediateDirectories: true
         )
-        addTeardownBlock {
-            try? FileManager.default.removeItem(at: directory)
-        }
+        // Every test installs its own sink before touching a store, so the
+        // log it reads holds only its own lines and nothing buffered by an
+        // earlier test can replay into it.
+        XCTAssertTrue(SDKLogger.installFileSink(at: directory, includeDebug: false))
+    }
 
-        func configuration(named name: String) throws -> ModelConfiguration {
-            let storeURL = directory.appendingPathComponent(name)
-            try sqlite.write(to: storeURL, options: .atomic)
-            return ModelConfiguration(
-                schema: DashModelContainer.schema,
-                url: storeURL,
-                allowsSave: true,
-                cloudKitDatabase: .none
-            )
-        }
+    override func tearDown() async throws {
+        try? FileManager.default.removeItem(at: directory)
+    }
 
-        // The staged plan on its own is what crashes hosts today. Assert it on
-        // its own copy of the fixture — a failed open must not be what the
-        // production path below is then handed — so this test keeps naming the
-        // cause once the remaining models are frozen and it starts succeeding.
-        XCTAssertThrowsError(
-            try ModelContainer(
-                for: DashModelContainer.schema,
-                migrationPlan: DashMigrationPlan.self,
-                configurations: [try configuration(named: "StagedOnly.sqlite")]
-            )
+    /// A fresh copy of the dev.1 fixture under `name`, as a store configuration.
+    private func dev1Configuration(named name: String) throws -> ModelConfiguration {
+        let storeURL = directory.appendingPathComponent(name)
+        try fixtureSQLite.write(to: storeURL, options: .atomic)
+        return configuration(at: storeURL)
+    }
+
+    private func configuration(at storeURL: URL) -> ModelConfiguration {
+        ModelConfiguration(
+            schema: DashModelContainer.schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none
         )
+    }
 
-        let container = try DashModelContainer.open(
-            try configuration(named: "DashModel.sqlite")
+    private func logLines(event: String) throws -> [String] {
+        SDKLogger.flush()
+        let log = try String(
+            contentsOf: directory.appendingPathComponent("swift/run.log"),
+            encoding: .utf8
         )
+        return log.split(separator: "\n").map(String.init).filter {
+            $0.contains("event=\(event) ")
+        }
+    }
+
+    private func assertDev1Rows(in container: ModelContainer) throws {
         let context = ModelContext(container)
-
         let wallets = try context.fetch(FetchDescriptor<PersistentWallet>())
         let accounts = try context.fetch(FetchDescriptor<PersistentAccount>())
 
@@ -85,5 +95,87 @@ final class Dev1StoreUpgradeTests: XCTestCase {
             Data(repeating: 0x02, count: 78)
         )
         XCTAssertEqual(accounts[0].wallet.walletId, wallets[0].walletId)
+    }
+
+    func testDev1StoreOpensThroughProductionFactoryAndPreservesCoreRows() throws {
+        // The staged plan on its own is what crashes hosts today. Assert it on
+        // its own copy of the fixture — a failed open must not be what the
+        // production path below is then handed — and assert the precondition
+        // the fallback keys on: this store matches no registered version. The
+        // pair keeps naming the cause until the remaining models are frozen,
+        // at which point the match flips to `true` and the staged attempt
+        // starts succeeding.
+        let stagedOnly = try dev1Configuration(named: "StagedOnly.sqlite")
+        XCTAssertEqual(DashModelContainer.storeMatchesRegisteredSchema(at: stagedOnly.url), false)
+        XCTAssertThrowsError(
+            try ModelContainer(
+                for: DashModelContainer.schema,
+                migrationPlan: DashMigrationPlan.self,
+                configurations: [stagedOnly]
+            )
+        )
+
+        let container = try DashModelContainer.open(
+            try dev1Configuration(named: "DashModel.sqlite")
+        )
+        try assertDev1Rows(in: container)
+
+        let staged = try logLines(event: "core_store_staged_migration_failed")
+        XCTAssertEqual(staged.count, 1, staged.joined(separator: "\n"))
+        let result = try XCTUnwrap(try logLines(event: "core_store_open_result").last)
+        XCTAssertTrue(result.contains(#"migration_path="inferred_fallback""#), result)
+        XCTAssertTrue(result.contains(#"result="success""#), result)
+    }
+
+    /// The fallback's "self-heal" claim: once inferred migration has opened a
+    /// dev.1 store, it carries the current schema's checksum, so the very next
+    /// open must succeed through the staged plan with no fallback at all.
+    func testFallbackMigratedStoreReopensThroughStagedPlan() throws {
+        let storeURL = directory.appendingPathComponent("DashModel.sqlite")
+        try fixtureSQLite.write(to: storeURL, options: .atomic)
+
+        XCTAssertEqual(DashModelContainer.storeMatchesRegisteredSchema(at: storeURL), false)
+        try autoreleasepool {
+            let first = try DashModelContainer.open(configuration(at: storeURL))
+            try assertDev1Rows(in: first)
+        }
+        XCTAssertEqual(try logLines(event: "core_store_staged_migration_failed").count, 1)
+        // Inferred migration rewrote the store under the current schema, so
+        // it now matches a registered version and the fallback is never
+        // needed again.
+        XCTAssertEqual(DashModelContainer.storeMatchesRegisteredSchema(at: storeURL), true)
+
+        let second = try DashModelContainer.open(configuration(at: storeURL))
+        try assertDev1Rows(in: second)
+
+        // Still exactly one staged failure — the reopen did not need the
+        // fallback — and the latest result names the staged path.
+        XCTAssertEqual(try logLines(event: "core_store_staged_migration_failed").count, 1)
+        let results = try logLines(event: "core_store_open_result")
+        XCTAssertEqual(results.count, 2, results.joined(separator: "\n"))
+        let reopen = try XCTUnwrap(results.last)
+        XCTAssertTrue(reopen.contains(#"migration_path="staged""#), reopen)
+        XCTAssertTrue(reopen.contains(#"result="success""#), reopen)
+        XCTAssertTrue(reopen.contains("store_existed_before_open=true"), reopen)
+    }
+
+    /// Any failure other than "unknown model version" must surface untouched:
+    /// once a custom `MigrationStage` exists, a failure inside it reopened
+    /// without the plan would stamp the current checksum on a store that never
+    /// ran that stage, so it could never run later.
+    func testNonMigrationOpenFailureIsRethrownWithoutFallback() throws {
+        let storeURL = directory.appendingPathComponent("DashModel.sqlite")
+        try Data(repeating: 0x5A, count: 4096).write(to: storeURL, options: .atomic)
+
+        // Unreadable metadata is not a version question.
+        XCTAssertNil(DashModelContainer.storeMatchesRegisteredSchema(at: storeURL))
+        XCTAssertThrowsError(try DashModelContainer.open(configuration(at: storeURL)))
+
+        XCTAssertTrue(try logLines(event: "core_store_staged_migration_failed").isEmpty)
+        let result = try XCTUnwrap(try logLines(event: "core_store_open_result").last)
+        XCTAssertTrue(result.contains(#"migration_path="staged""#), result)
+        XCTAssertTrue(result.contains(#"result="failure""#), result)
+        // The failed store's path is redacted from the error message.
+        XCTAssertFalse(result.contains(storeURL.path), result)
     }
 }

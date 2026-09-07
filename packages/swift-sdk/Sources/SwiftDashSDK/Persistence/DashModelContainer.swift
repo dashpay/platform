@@ -1,3 +1,4 @@
+import CoreData
 import Foundation
 import SwiftData
 
@@ -22,6 +23,32 @@ public enum DashModelContainer {
         /// The staged plan rejected the store and SwiftData's inferred
         /// lightweight migration was used instead — see `create`.
         case inferredFallback = "inferred_fallback"
+    }
+
+    /// Whether the store at `storeURL` was written by a schema that
+    /// `DashMigrationPlan` registers.
+    ///
+    /// This is the question staged migration asks and answers with Cocoa
+    /// 134504 ("Cannot use staged migration with an unknown model version")
+    /// when the answer is no. It has to be asked here directly, because the
+    /// error SwiftData surfaces for it is `SwiftDataError.loadIssueModelContainer`
+    /// with no explanation and no underlying `NSError` — the same value a
+    /// corrupt file produces — so nothing in the thrown error distinguishes the
+    /// one failure the fallback may answer from every failure it must not.
+    ///
+    /// Returns `nil` when the metadata cannot be read at all: that is not a
+    /// version question, and the caller treats it exactly like a match.
+    static func storeMatchesRegisteredSchema(at storeURL: URL) -> Bool? {
+        guard let metadata = try? NSPersistentStoreCoordinator.metadataForPersistentStore(
+            ofType: NSSQLiteStoreType,
+            at: storeURL,
+            options: nil
+        ) else { return nil }
+        return DashMigrationPlan.schemas.contains { schema in
+            guard let model = NSManagedObjectModel.makeManagedObjectModel(for: schema.models)
+            else { return false }
+            return model.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata)
+        }
     }
 
     /// Builds the common payload for both sides of the container open. The
@@ -189,10 +216,15 @@ public enum DashModelContainer {
         )
     }
 
-    /// The store-opening path every host goes through, parameterised on the
-    /// configuration only so a fixture store can exercise exactly what ships
-    /// (`Dev1StoreUpgradeTests`) instead of a look-alike built in the test.
-    static func open(_ modelConfiguration: ModelConfiguration) throws -> ModelContainer {
+    /// The instrumented store-opening path, parameterised on the configuration.
+    ///
+    /// Public so a host that builds its own `ModelConfiguration` — DashWallet
+    /// does, with a per-network URL — gets the same `core_store_open_result`
+    /// telemetry and the same narrowly-scoped migration fallback as `create`,
+    /// instead of a bare `ModelContainer(for:configurations:)` that reports
+    /// nothing. It is also what lets `Dev1StoreUpgradeTests` drive exactly the
+    /// path that ships against a fixture store.
+    public static func open(_ modelConfiguration: ModelConfiguration) throws -> ModelContainer {
         // Always wire the migration plan so stores created by an older SDK
         // advance through the registered versioned schemas. Record only
         // metadata about the store — never its device path.
@@ -241,13 +273,26 @@ public enum DashModelContainer {
             // real store matching no registered version, and the staged open
             // fails with Cocoa 134504 rather than migrating.
             //
-            // Hosts turn that throw into `fatalError` at launch, so retry the
-            // way they already open the store themselves: the current schema
-            // with SwiftData's inferred lightweight migration and no plan.
-            // This only ever runs after the staged attempt has already failed,
-            // and inference still throws when it cannot map the store, so the
-            // fallback can only turn a crash into a successful open — never
-            // widen the set of stores that are opened destructively.
+            // Hosts turn that throw into `fatalError` at launch, so for THAT
+            // failure retry the way they already open the store themselves:
+            // the current schema with SwiftData's inferred lightweight
+            // migration and no plan. The match is deliberately exact, and it
+            // is made on the store rather than the error (see
+            // `storeMatchesRegisteredSchema`). Every stage in
+            // `DashMigrationPlan` is `.lightweight` today, but the day a
+            // custom stage lands, a failure inside it must surface — a store
+            // that matches a registered version and still failed to open is
+            // exactly that case, and falling back would reopen it without the
+            // stage and stamp the current checksum on it, so the stage could
+            // never run later. Everything except "existing store, matches no
+            // registered version" is therefore rethrown untouched, with the
+            // failed staged attempt reported as such.
+            guard existedBefore,
+                  Self.storeMatchesRegisteredSchema(at: storeURL) == false
+            else {
+                report(succeeded: false, migrationPath: .staged, error: error)
+                throw error
+            }
             SDKLogger.event(
                 "core_store_staged_migration_failed",
                 category: .persistence,

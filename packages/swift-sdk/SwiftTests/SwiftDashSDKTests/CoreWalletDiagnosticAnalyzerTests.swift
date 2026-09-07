@@ -278,6 +278,42 @@ final class CoreWalletDiagnosticAnalyzerTests: XCTestCase {
         )
     }
 
+    /// `compareAssetLocks` matches the two sides on `outpointDisplay`. The
+    /// database side is keyed by `PersistentAssetLock.encodeOutPoint`; the
+    /// memory side by `assetLockOutpointDisplay`. This pins that they are one
+    /// encoder, so a lock present on both sides is never reported twice.
+    func testAssetLockDiffKeysAgreeBetweenDatabaseAndMemorySides() {
+        let txid = Data((0..<32).map { UInt8($0) })
+        let databaseKey = PersistentAssetLock.encodeOutPoint(
+            rawBytes: PersistentTxo.makeOutpoint(txid: txid, vout: 7)
+        )
+        let memoryKey = PlatformWalletManager.assetLockOutpointDisplay(txid: txid, vout: 7)
+        XCTAssertEqual(databaseKey, memoryKey)
+        XCTAssertTrue(memoryKey.hasSuffix(":7"), memoryKey)
+
+        let diff = CoreWalletDiagnosticAnalyzer.compareAssetLocks(
+            database: [assetLock(databaseKey)],
+            memory: [assetLock(memoryKey)]
+        )
+        XCTAssertTrue(diff.details.isEmpty, "\(diff.details)")
+
+        // A malformed txid must neither trap the exporter nor collide with a
+        // real key: it surfaces as `memory_only`.
+        let malformed = PlatformWalletManager.assetLockOutpointDisplay(
+            txid: Data([1, 2, 3]),
+            vout: 7
+        )
+        XCTAssertTrue(malformed.hasPrefix("invalid_outpoint:"), malformed)
+        let malformedDiff = CoreWalletDiagnosticAnalyzer.compareAssetLocks(
+            database: [assetLock(databaseKey)],
+            memory: [assetLock(malformed)]
+        )
+        XCTAssertEqual(
+            malformedDiff.details.map(\.reason).sorted(),
+            ["database_only", "memory_only"]
+        )
+    }
+
     func testShieldedStoreSummaryIncludesValuesActivityKeysAndWatermark() {
         let summary = CoreWalletDiagnosticAnalyzer.summarizeShieldedStore(
             notes: [
