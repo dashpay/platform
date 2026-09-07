@@ -17,7 +17,7 @@
 //! Refinery checksum on databases that already applied it. The
 //! `asset_lock_status_labels_frozen_in_latest_migration` unit test in
 //! `sqlite::schema::asset_locks` pins the live const to this list so a
-//! new variant fails compilation of intent loudly: append V012+ with
+//! new variant fails compilation of intent loudly: append V016+ with
 //! another rebuild, never edit this file.
 
 pub fn migration() -> String {

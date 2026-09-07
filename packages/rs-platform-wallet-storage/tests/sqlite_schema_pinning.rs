@@ -15,13 +15,27 @@ use platform_wallet_storage::sqlite::{migrations as mig, schema::versions::Domai
 /// Golden `(version, name)` fingerprint of the frozen migration set. Bump
 /// deliberately only when adding/removing/renaming a migration file.
 const EXPECTED_ID_FINGERPRINT: &str =
-    "0cde2078d8d001be233972b40cbaf4cd0f29aef0095231cbcdd0b2e1a1626724";
+    "faf69a2b3385a66977779aa7d7789c8d20569af0047a62841900db24962af976";
 
 /// Golden content-level fingerprint over every migration's rendered SQL.
-/// Bump deliberately only when the DDL body itself changes; an accidental
-/// change (a silent table rename) must fail this test, not slip through.
+/// Bump it only when ADDING a migration file; a body change on an already
+/// applied migration is a defect, not a golden to refresh.
 const EXPECTED_SQL_FINGERPRINT: &str =
-    "a1939b885ade6a23102051ee35559f3d149539e5fb27afe481012296f347d046";
+    "cac813d424c307e73575c1f37400de4bfb8fb63913b637477272ce1f92e223bf";
+
+/// The migrations merged `v4.2-dev` already ships. Refinery keys
+/// `refinery_schema_history` by version and validates an applied migration's
+/// checksum against the embedded migration of the SAME version, so pointing one
+/// of these versions at different DDL stops every database that applied the
+/// original from opening. New work appends after the highest entry here.
+const MERGED_MIGRATION_VERSIONS: &[(i32, &str)] = &[
+    (1, "initial"),
+    (2, "address_height_pin"),
+    (3, "invitations"),
+    (4, "asset_lock_recovered_status"),
+    (5, "dpns_name_states"),
+    (6, "tracked_masternodes"),
+];
 
 /// Table names that lost the cross-branch reconciliation and must never
 /// resurface as SQL identifiers on this frozen (`wallets`) baseline.
@@ -38,6 +52,28 @@ fn domain_labels_are_live_sql_names() {
             !RETIRED_SQL_NAMES.contains(&domain.as_str()),
             "Domain::{domain:?} uses retired SQL name `{}`",
             domain.as_str()
+        );
+    }
+}
+
+/// A version already merged to a base branch keeps the name it shipped with.
+///
+/// IF THIS FAILS: a migration file was renumbered onto a version some other
+/// branch already published. Give the new work the next free version instead —
+/// reusing a published one is not a naming preference, it is a database that
+/// stops opening.
+#[test]
+fn merged_migration_versions_keep_their_shipped_names() {
+    let embedded = mig::embedded_migrations();
+    for (version, name) in MERGED_MIGRATION_VERSIONS {
+        let found = embedded
+            .iter()
+            .find(|(v, _)| v == version)
+            .unwrap_or_else(|| panic!("migration version {version} is missing from the set"));
+        assert_eq!(
+            found.1.as_str(),
+            *name,
+            "version {version} must stay `{name}`; it is owned by merged history"
         );
     }
 }
@@ -60,8 +96,10 @@ fn tc_b_040_sql_fingerprint_pinned() {
     assert_eq!(
         hex::encode(mig::embedded_migrations_sql_fingerprint()),
         EXPECTED_SQL_FINGERPRINT,
-        "a migration's DDL body changed. On this frozen baseline that is a \
-         schema-drift alarm (D0). If intentional, update EXPECTED_SQL_FINGERPRINT."
+        "a migration's DDL body changed. Refinery checksums rendered SQL, so \
+         editing a migration that any database has already applied stops that \
+         database opening, permanently. Widen a schema by APPENDING a migration. \
+         Update EXPECTED_SQL_FINGERPRINT only when adding a migration file."
     );
 }
 

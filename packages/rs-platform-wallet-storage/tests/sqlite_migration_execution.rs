@@ -227,58 +227,15 @@ fn tc_b_031_populated_v001_migration_preserves_data() {
     );
 }
 
-#[test]
-fn v016_renames_persisted_domain_labels() {
-    let tmp = common::secure_tempdir().unwrap();
-    let path = tmp.path().join("pre-v016.db");
-    let wallet_id = wid(0xC4);
-    {
-        let mut conn = Connection::open(&path).unwrap();
-        mig::runner()
-            .set_target(refinery::Target::Version(15))
-            .run(&mut conn)
-            .unwrap();
-        conn.execute(
-            "INSERT INTO meta_data_versions (wallet_id, domain, seq) VALUES \
-             (?1, 'wallet_metadata', 7), (?1, 'account_address_pools', 11)",
-            rusqlite::params![wallet_id.as_slice()],
-        )
-        .unwrap();
-    }
-
-    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
-    let conn = persister.lock_conn_for_test();
-    let mut stmt = conn
-        .prepare(
-            "SELECT domain, seq FROM meta_data_versions \
-             WHERE wallet_id = ?1 ORDER BY domain",
-        )
-        .unwrap();
-    let rows = stmt
-        .query_map(rusqlite::params![wallet_id.as_slice()], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-        })
-        .unwrap()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    assert_eq!(
-        rows,
-        vec![
-            ("core_address_pool".to_string(), 11),
-            ("wallets".to_string(), 7)
-        ]
-    );
-}
-
-/// V009 must preserve a legacy confirmed UTXO whose transaction record was
+/// V012 must preserve a legacy confirmed UTXO whose transaction record was
 /// never persisted and whose confirmation height therefore lives only on the
-/// pre-V009 `core_utxos` row.
+/// pre-V012 `core_utxos` row.
 #[test]
-fn v009_backfills_recordless_confirmed_utxo_height() {
+fn v012_backfills_recordless_confirmed_utxo_height() {
     use dashcore::hashes::Hash;
 
     let tmp = common::secure_tempdir().unwrap();
-    let path = tmp.path().join("recordless-v008.db");
+    let path = tmp.path().join("recordless-v011.db");
     let wallet_id = wid(0xC3);
     let txid = dashcore::Txid::from_byte_array([0x91; 32]);
     let outpoint = dashcore::OutPoint::new(txid, 7);
@@ -294,7 +251,7 @@ fn v009_backfills_recordless_confirmed_utxo_height() {
     {
         let mut conn = Connection::open(&path).unwrap();
         mig::runner()
-            .set_target(refinery::Target::Version(8))
+            .set_target(refinery::Target::Version(11))
             .run(&mut conn)
             .unwrap();
         conn.execute(
@@ -317,7 +274,7 @@ fn v009_backfills_recordless_confirmed_utxo_height() {
             rusqlite::params![wallet_id.as_slice(), encoded_legacy_unconfirmed_outpoint],
         )
         .unwrap();
-        assert_eq!(schema_version(&conn), 8);
+        assert_eq!(schema_version(&conn), 11);
     }
 
     let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
@@ -399,7 +356,7 @@ fn tc_b_032_pre_migration_backup_created() {
         .expect("pre-migration backup must exist");
 
     // The backup captured the PRE-migration state: schema version 1, and no
-    // V003 table.
+    // V007 table.
     let bconn = ro_conn(&backup);
     assert_eq!(
         schema_version(&bconn),
@@ -408,7 +365,7 @@ fn tc_b_032_pre_migration_backup_created() {
     );
     assert!(
         !table_exists(&bconn, "core_address_pool"),
-        "backup must predate the V003 schema"
+        "backup must predate the V007 schema"
     );
     assert_eq!(
         bconn
@@ -565,7 +522,7 @@ fn migration_snapshot(conn: &Connection) -> Vec<i64> {
     ]
 }
 
-/// TC-B-035 — crash mid-migrate: an interrupted V003 (partial DDL, no commit)
+/// TC-B-035 — crash mid-migrate: an interrupted V007 (partial DDL, no commit)
 /// leaves the store at the last committed version (V002) with no partial
 /// tables; re-opening resumes and converges byte-equal to a clean direct
 /// migration. Empirically demonstrates refinery's per-migration transaction
@@ -586,7 +543,7 @@ fn tc_b_035_interrupted_migration_recovers_to_clean_state() {
         "clean migration reaches the newest embedded version"
     );
 
-    // Crash simulation: apply part of V003's DDL inside a transaction that is
+    // Crash simulation: apply part of V007's DDL inside a transaction that is
     // rolled back before commit — exactly what a crash before the migration's
     // single COMMIT leaves behind (SQLite DDL is transactional).
     let crash_dir = common::secure_tempdir().unwrap();

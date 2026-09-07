@@ -278,27 +278,27 @@ fn tc044_load_empty_is_empty() {
     assert!(state.is_empty());
 }
 
-/// V009 → V010 upgrade path: a database created at the prior release
-/// schema (through V009) upgrades in place — the asset_locks rebuild
+/// V003 → V004 upgrade path: a database created at the prior release
+/// schema (through V003) upgrades in place — the asset_locks rebuild
 /// keeps existing rows byte-for-byte and widens the status CHECK to
-/// admit `recovered_from_chain`, which the V009 schema rejects.
+/// admit `recovered_from_chain`, which the V003 schema rejects.
 ///
 /// This is the regression test for the review finding that V001's
 /// generated CHECK must never change (Refinery `abort_divergent` would
 /// brick every already-migrated database): the domain widens by
-/// APPENDING V010, and this test drives exactly the sequence an
+/// APPENDING V004, and this test drives exactly the sequence an
 /// existing install experiences.
 #[test]
-fn tc045_v010_widens_asset_lock_status_on_existing_db() {
+fn tc045_v004_widens_asset_lock_status_on_existing_db() {
     use rusqlite::params;
 
     let mut conn = rusqlite::Connection::open_in_memory().expect("open in-memory db");
     conn.pragma_update(None, "foreign_keys", true)
         .expect("enable foreign keys");
 
-    // 1. Stand the database up at the PRIOR release schema (V009).
-    let to_v009 = mig::runner().set_target(refinery::Target::Version(9));
-    to_v009.run(&mut conn).expect("migrate to V009");
+    // 1. Stand the database up at the PRIOR release schema (V003).
+    let to_v003 = mig::runner().set_target(refinery::Target::Version(3));
+    to_v003.run(&mut conn).expect("migrate to V003");
 
     // 2. Populate it the way a live wallet would have.
     let wallet_id = [42u8; 32];
@@ -315,8 +315,8 @@ fn tc045_v010_widens_asset_lock_status_on_existing_db() {
     )
     .expect("insert pre-upgrade asset lock");
 
-    // 3. The V009 CHECK must reject the new label — that's the schema
-    //    gap V010 exists to close.
+    // 3. The V003 CHECK must reject the new label — that's the schema
+    //    gap V004 exists to close.
     let outpoint_b = [2u8; 36];
     let rejected = conn.execute(
         "INSERT INTO asset_locks (wallet_id, outpoint, status, account_index, identity_index, \
@@ -325,12 +325,12 @@ fn tc045_v010_widens_asset_lock_status_on_existing_db() {
     );
     assert!(
         rejected.is_err(),
-        "the V009 CHECK domain must reject recovered_from_chain"
+        "the V003 CHECK domain must reject recovered_from_chain"
     );
 
     // 3b. Plant a legacy orphan row the way an old connection with FK
     //     enforcement off could have: its wallet row is gone, so copying
-    //     it into the FK-declared twin would abort the rebuild. V010's
+    //     it into the FK-declared twin would abort the rebuild. V004's
     //     explicit orphan policy must drop it instead.
     conn.pragma_update(None, "foreign_keys", false)
         .expect("disable foreign keys");
@@ -344,7 +344,7 @@ fn tc045_v010_widens_asset_lock_status_on_existing_db() {
     conn.pragma_update(None, "foreign_keys", true)
         .expect("re-enable foreign keys");
 
-    // 4. Upgrade to the latest schema (applies V010's table rebuild).
+    // 4. Upgrade to the latest schema (applies V004's table rebuild).
     mig::run(&mut conn).expect("migrate to latest despite the orphan row");
 
     // 4b. The orphan is gone (same outcome the declared cascade would
@@ -356,7 +356,7 @@ fn tc045_v010_widens_asset_lock_status_on_existing_db() {
             |row| row.get(0),
         )
         .expect("count orphans");
-    assert_eq!(orphans, 0, "V010 must drop legacy orphan rows, not abort");
+    assert_eq!(orphans, 0, "V004 must drop legacy orphan rows, not abort");
 
     // 5. The pre-upgrade row survived the rebuild intact...
     let (status, identity_index, amount): (String, i64, i64) = conn
@@ -377,7 +377,7 @@ fn tc045_v010_widens_asset_lock_status_on_existing_db() {
          amount_duffs, lifecycle_blob) VALUES (?1, ?2, 'recovered_from_chain', 0, 0, 500, X'02')",
         params![wallet_id.as_slice(), outpoint_b.as_slice()],
     )
-    .expect("recovered_from_chain must insert after V010");
+    .expect("recovered_from_chain must insert after V004");
 
     // 7. ...garbage labels stay rejected, and the rebuilt table kept its
     //    FK: deleting the wallet cascades to both rows.
@@ -398,8 +398,8 @@ fn tc045_v010_widens_asset_lock_status_on_existing_db() {
     assert_eq!(remaining, 0, "ON DELETE CASCADE must survive the rebuild");
 }
 
-/// V011 → V012 upgrade path: a database created at the prior release
-/// schema (through V011) carrying a legacy empty-script spent row becomes
+/// V012 → V013 upgrade path: a database created at the prior release
+/// schema (through V012) carrying a legacy empty-script spent row becomes
 /// loadable again.
 ///
 /// The poisoned row is what the producer wrote before it reconstructed a
@@ -409,7 +409,7 @@ fn tc045_v010_widens_asset_lock_status_on_existing_db() {
 /// exactly the sequence an existing install experiences, asserting the read
 /// fails before the purge and recovers after it.
 #[test]
-fn tc046_v012_purges_legacy_empty_script_spent_utxos() {
+fn tc046_v013_purges_legacy_empty_script_spent_utxos() {
     use platform_wallet_storage::sqlite::schema::core_state;
     use platform_wallet_storage::WalletStorageError;
     use rusqlite::params;
@@ -418,9 +418,9 @@ fn tc046_v012_purges_legacy_empty_script_spent_utxos() {
     conn.pragma_update(None, "foreign_keys", true)
         .expect("enable foreign keys");
 
-    // 1. Stand the database up at the PRIOR release schema (V011).
-    let to_v011 = mig::runner().set_target(refinery::Target::Version(11));
-    to_v011.run(&mut conn).expect("migrate to V011");
+    // 1. Stand the database up at the PRIOR release schema (V012).
+    let to_v012 = mig::runner().set_target(refinery::Target::Version(12));
+    to_v012.run(&mut conn).expect("migrate to V012");
 
     // 2. Two wallets: the poisoned one, and one holding the unspent
     //    empty-script edge case the predicate must NOT reach.
@@ -537,4 +537,105 @@ fn tc046_v012_purges_legacy_empty_script_spent_utxos() {
         unspent_rows, 1,
         "an unspent row is balance state and must survive any script content"
     );
+}
+
+/// V012 rebuilds `core_transactions` into an FK-declaring twin and backfills
+/// height-only rows from `core_utxos`. Both sources can hold rows whose wallet
+/// was deleted while FK enforcement happened to be off — third-party SQLite
+/// tooling defaults `foreign_keys` OFF, and this database sits on an end
+/// user's own device. Copying such a row under `PRAGMA foreign_keys = ON`
+/// aborts the migration, and since `open` migrates on every open the database
+/// then never opens again.
+///
+/// Drives exactly that: one orphan in each source table, plus live rows that
+/// must survive untouched.
+#[test]
+fn tc047_v012_drops_orphans_instead_of_aborting_the_rebuild() {
+    use rusqlite::params;
+
+    let mut conn = rusqlite::Connection::open_in_memory().expect("open in-memory db");
+    conn.pragma_update(None, "foreign_keys", true)
+        .expect("enable foreign keys");
+
+    // 1. Stand the database up at the PRIOR release schema (V011).
+    let to_v011 = mig::runner().set_target(refinery::Target::Version(11));
+    to_v011.run(&mut conn).expect("migrate to V011");
+
+    // 2. A live wallet with one real transaction and one real UTXO.
+    let wallet_id = [42u8; 32];
+    conn.execute(
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+        params![wallet_id.as_slice()],
+    )
+    .expect("insert wallet");
+    let live_txid = [7u8; 32];
+    conn.execute(
+        "INSERT INTO core_transactions (wallet_id, txid, height, block_hash, block_time, \
+         finalized, record_blob) VALUES (?1, ?2, 100, NULL, NULL, 1, X'AA')",
+        params![wallet_id.as_slice(), live_txid.as_slice()],
+    )
+    .expect("insert live transaction");
+    let live_outpoint = [0x20u8; 37];
+    conn.execute(
+        "INSERT INTO core_utxos (wallet_id, outpoint, value, script, height, spent) \
+         VALUES (?1, ?2, 5000, X'BB', 100, 0)",
+        params![wallet_id.as_slice(), live_outpoint.as_slice()],
+    )
+    .expect("insert live utxo");
+
+    // 3. Plant one orphan in each source table, the way an old connection
+    //    with FK enforcement off could have left them.
+    conn.pragma_update(None, "foreign_keys", false)
+        .expect("disable foreign keys");
+    let ghost_wallet = [9u8; 32];
+    conn.execute(
+        "INSERT INTO core_transactions (wallet_id, txid, height, block_hash, block_time, \
+         finalized, record_blob) VALUES (?1, X'01', 5, NULL, NULL, 0, X'CC')",
+        params![ghost_wallet.as_slice()],
+    )
+    .expect("insert orphan transaction with FK enforcement off");
+    conn.execute(
+        "INSERT INTO core_utxos (wallet_id, outpoint, value, script, height, spent) \
+         VALUES (?1, X'02', 1, X'DD', 9, 0)",
+        params![ghost_wallet.as_slice()],
+    )
+    .expect("insert orphan utxo with FK enforcement off");
+    conn.pragma_update(None, "foreign_keys", true)
+        .expect("re-enable foreign keys");
+
+    // 4. The rebuild must complete rather than abort on the orphans.
+    mig::run(&mut conn).expect("migrate to latest despite the orphan rows");
+
+    // 5. Both orphans are gone — the same outcome the declared cascade would
+    //    have produced had enforcement been on when the wallet was deleted.
+    let ghost_rows: i64 = conn
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM core_transactions WHERE wallet_id = ?1) \
+                  + (SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1)",
+            params![ghost_wallet.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("count orphan rows");
+    assert_eq!(ghost_rows, 0, "V012 must drop orphans, not abort");
+
+    // 6. The live transaction survived the rebuild with its record intact.
+    let (height, finalized, blob): (i64, i64, Vec<u8>) = conn
+        .query_row(
+            "SELECT height, finalized, record_blob FROM core_transactions WHERE txid = ?1",
+            params![live_txid.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("live transaction survives");
+    assert_eq!((height, finalized, blob), (100, 1, vec![0xAA]));
+
+    // 7. The live UTXO survived, and its confirmation height was backfilled
+    //    onto a height-only `core_transactions` row.
+    let live_utxos: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1",
+            params![wallet_id.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("count live utxos");
+    assert_eq!(live_utxos, 1, "the live UTXO must survive the orphan sweep");
 }

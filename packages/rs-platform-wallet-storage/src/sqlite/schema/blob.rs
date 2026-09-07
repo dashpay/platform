@@ -255,4 +255,21 @@ mod tests {
             "a 4-byte payload must fail as BincodeDecode, got {res:?}"
         );
     }
+
+    /// Pins the encoded layout `V012__single_source_core_confirmation_height`
+    /// depends on: one length-prefix byte, then the 32 txid bytes. That
+    /// migration lifts the txid with `substr(outpoint, 2, 32)`, so a change
+    /// in the encoding must fail here rather than backfill the wrong bytes.
+    #[test]
+    fn encode_outpoint_txid_occupies_bytes_two_to_thirty_three() {
+        use dashcore::hashes::Hash;
+        let txid_bytes = [0x5Au8; 32];
+        let op = dashcore::OutPoint::new(dashcore::Txid::from_byte_array(txid_bytes), 3);
+        let encoded = encode_outpoint(&op).unwrap();
+        assert_eq!(
+            &encoded[1..33],
+            &txid_bytes,
+            "SQL substr(outpoint, 2, 32) must select exactly the txid"
+        );
+    }
 }

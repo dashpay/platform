@@ -1,13 +1,13 @@
 //! Unified additive migration for `platform-wallet-storage` (#3968).
 //!
-//! The entire migration set remains editable in place until this crate's first
-//! release. Numbered V003, not V002: PR #4019 (ADDR-09,
-//! `V002__address_height_pin.rs`) independently claimed version 2 — two
-//! migrations cannot share a version number (refinery's
-//! `refinery_schema_history` collides on it), so this one sequences after.
-//! V003 lifts `max_supported_version()`
-//! from 2 to 3 automatically (the value is derived from the embedded list)
-//! and lands three concerns in one migration event:
+//! Sequenced after the six migrations `v4.2-dev` already ships (V001-V006),
+//! whose version numbers are owned by merged history and must never be
+//! reassigned — refinery keys `refinery_schema_history` by version and
+//! validates the applied checksum against the embedded migration of the same
+//! version, so reusing one of those numbers for different DDL stops every
+//! database that applied the original from opening.
+//!
+//! Lands three concerns in one migration event:
 //!
 //! - `core_address_pool` — per-index address-pool rows with a `used` flag,
 //!   the first-class row store that replaces `core_utxos` script-derivation
@@ -42,10 +42,9 @@
 // is plain `TEXT NOT NULL` with no `CHECK` allow-list. A constraint was
 // considered and deferred as low-priority defence-in-depth — the column is
 // written only from a closed Rust enum's own label, never from user input,
-// and the readers reject an unknown label anyway. Deliberately NOT added
-// inside the SQL below: this migration is already applied in the field, and
-// editing a rendered body is the schema-drift alarm `sqlite_schema_pinning`
-// exists to raise. A future CHECK belongs in a new migration.
+// and the readers reject an unknown label anyway. A future CHECK belongs in a
+// new migration rather than an edit here: editing a rendered body is the
+// schema-drift alarm `sqlite_schema_pinning` exists to raise.
 pub fn migration() -> String {
     "\
 CREATE TABLE core_address_pool (

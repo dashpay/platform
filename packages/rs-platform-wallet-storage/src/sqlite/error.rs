@@ -606,7 +606,7 @@ pub enum WalletStorageError {
     ///
     /// `load()` turns every stored script back into an address, so an empty
     /// one leaves a row that rejects the load of the entire database file —
-    /// the shape migration V012 had to purge. Refused at the producer, where
+    /// the shape migration V013 had to purge. Refused at the producer, where
     /// the write can still be reported, rather than at the reader, where the
     /// wallet is already un-loadable.
     #[error("refusing to persist a core_utxos row for {outpoint} with an empty script")]

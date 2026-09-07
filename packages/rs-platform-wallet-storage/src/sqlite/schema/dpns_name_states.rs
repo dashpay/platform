@@ -101,7 +101,7 @@ pub fn apply(
 
 /// Single source of truth for the `dpns_name_states.status` TEXT-column
 /// domain + counterparty flattening. The `CHECK (status IN …)` in
-/// `migrations/V011__dpns_name_states.rs` must list exactly these values.
+/// `migrations/V005__dpns_name_states.rs` must list exactly these values.
 pub(crate) fn status_columns(s: &DpnsNameSaleStatus) -> (&'static str, Option<[u8; 32]>) {
     match s {
         DpnsNameSaleStatus::Owned => ("owned", None),

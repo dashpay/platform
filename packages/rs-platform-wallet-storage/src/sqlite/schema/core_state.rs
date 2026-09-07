@@ -1474,7 +1474,7 @@ mod tests {
     /// An empty `script` must be refused by the WRITER, not discovered by
     /// the reader. `load()` turns every stored script back into an address,
     /// so one such row rejects the load of the entire database file — the
-    /// shape migration V012 had to purge. `execute_upsert_utxo` is the only
+    /// shape migration V013 had to purge. `execute_upsert_utxo` is the only
     /// writer of `core_utxos.script`, so guarding it closes the producer.
     #[test]
     fn apply_refuses_an_empty_script_on_a_new_utxo() {
@@ -1509,7 +1509,7 @@ mod tests {
     }
 
     /// The spend path synthesises a `spent = 1` row when the UTXO has no
-    /// existing row, which is exactly the shape V012 had to delete. It runs
+    /// existing row, which is exactly the shape V013 had to delete. It runs
     /// through the same writer, so it must be refused on the same terms.
     #[test]
     fn apply_refuses_an_empty_script_on_a_synthetic_spent_row() {

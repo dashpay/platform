@@ -3,7 +3,13 @@
 //! Rebuilding `core_transactions` relaxes `record_blob NOT NULL`. A height-only
 //! row carries a recordless UTXO's confirmation height without block context.
 //! Legacy writers used height zero as the unconfirmed sentinel, so only positive
-//! heights are safe to backfill; post-V009 rows use `NULL` for unconfirmed.
+//! heights are safe to backfill; post-migration rows use `NULL` for unconfirmed.
+
+// INTENTIONAL(outpoint-txid-prefix): `substr(u.outpoint, 2, 32)` lifts the txid
+// out of an encoded outpoint by skipping a single length-prefix byte ahead of
+// the 32 txid bytes. `encode_outpoint_txid_occupies_bytes_two_to_thirty_three`
+// pins that layout, so a change in the encoding fails a test here rather than
+// silently backfilling 32 bytes of the wrong field.
 
 pub fn migration() -> String {
     "\
@@ -18,6 +24,16 @@ CREATE TABLE core_transactions_new (
     PRIMARY KEY (wallet_id, txid),
     FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
+
+-- Orphan policy: a row whose wallet was deleted while FK enforcement happened
+-- to be off is unreachable garbage (every read path keys through `wallets`),
+-- but copying it into the FK-declared twin under PRAGMA foreign_keys = ON
+-- aborts this whole migration with 'FOREIGN KEY constraint failed'. Drop such
+-- rows explicitly -- the same outcome the declared ON DELETE CASCADE would
+-- have produced had enforcement been on when the wallet was deleted. Both
+-- source tables need it: `core_utxos` feeds the height-only backfill below.
+DELETE FROM core_transactions WHERE wallet_id NOT IN (SELECT wallet_id FROM wallets);
+DELETE FROM core_utxos WHERE wallet_id NOT IN (SELECT wallet_id FROM wallets);
 
 INSERT INTO core_transactions_new
     (wallet_id, txid, height, block_hash, block_time, finalized, record_blob)

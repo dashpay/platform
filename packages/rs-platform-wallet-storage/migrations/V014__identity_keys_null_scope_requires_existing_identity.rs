@@ -15,7 +15,7 @@
 //! Recreated rather than edited into V001: refinery never re-runs an
 //! applied migration, so editing V001 would tighten only freshly created
 //! databases and leave every existing wallet on the permissive trigger.
-//! `V007__drop_core_utxo_metadata` sets the same precedent.
+//! `V010__drop_core_utxo_metadata` sets the same precedent.
 //!
 //! The UPDATE twin is as load-bearing as the INSERT one — the writer's
 //! upsert resolves an existing key to `DO UPDATE`, and an UPDATE never

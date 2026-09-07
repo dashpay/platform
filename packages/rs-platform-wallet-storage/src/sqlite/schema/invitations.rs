@@ -66,7 +66,7 @@ pub fn apply(
 }
 
 /// Single source of truth for the `invitations.status` TEXT-column domain.
-/// The `CHECK (status IN …)` in `migrations/V004__invitations.rs` must list
+/// The `CHECK (status IN …)` in `migrations/V003__invitations.rs` must list
 /// exactly these values.
 pub(crate) fn status_str(s: &InvitationStatus) -> &'static str {
     match s {

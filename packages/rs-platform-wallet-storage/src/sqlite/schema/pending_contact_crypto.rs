@@ -27,10 +27,14 @@ use crate::sqlite::schema::blob;
 // PUBLIC material only: ciphertext + public-key indices, never private bytes.
 crate::sqlite::schema::blob::impl_persistable_blob!(PendingContactCrypto);
 
-/// TEXT-column domain for `pending_contact_crypto.kind`. Single source of truth
-/// shared with the migration's CHECK clause and [`kind_db_label`]; pinned equal
-/// to the writer's codomain by `kind_labels_match_enum`.
-pub const KIND_LABELS: &[&str] = &[
+/// TEXT-column domain for `pending_contact_crypto.kind`. The migrations
+/// interpolate nothing: V001 freezes its own copy of this domain, because a
+/// generated-SQL change breaks that migration's Refinery checksum on every
+/// database that already applied it. Pinned equal to the writer's codomain by
+/// `kind_labels_match_enum`, and to V001's frozen list by
+/// `kind_labels_frozen_in_v001`.
+#[cfg(test)]
+pub(crate) const KIND_LABELS: &[&str] = &[
     "register_receiving",
     "register_external",
     "contact_info_decrypt",
@@ -156,6 +160,26 @@ mod tests {
         assert_eq!(
             mapped, labels,
             "KIND_LABELS must equal the kind_db_label codomain"
+        );
+    }
+
+    /// Pins the live domain to the list frozen in `V001__initial.rs`.
+    ///
+    /// IF THIS FAILS: do NOT edit V001's list to match. Refinery checksums a
+    /// migration's rendered SQL, so changing an applied migration's body makes
+    /// every database that already ran it fail to open, permanently. Append a
+    /// migration rebuilding the table with the widened CHECK (the
+    /// `V004__asset_lock_recovered_status.rs` pattern), then update this pin.
+    #[test]
+    fn kind_labels_frozen_in_v001() {
+        assert_eq!(
+            KIND_LABELS,
+            &[
+                "register_receiving",
+                "register_external",
+                "contact_info_decrypt",
+                "auto_accept",
+            ]
         );
     }
 

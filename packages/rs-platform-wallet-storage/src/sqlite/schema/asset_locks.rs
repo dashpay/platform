@@ -199,7 +199,7 @@ pub fn apply(
 /// because a generated-SQL change breaks that migration's Refinery
 /// checksum on every database that already applied it
 /// (`abort_divergent` default). `V001__initial.rs` carries the original
-/// five labels; `V010__asset_lock_recovered_status.rs` rebuilt the
+/// five labels; `V004__asset_lock_recovered_status.rs` rebuilt the
 /// table with the current six.
 ///
 /// Two unit tests below keep the three copies honest:
@@ -207,7 +207,7 @@ pub fn apply(
 ///   codomain ([`status_str`]);
 /// - `asset_lock_status_labels_frozen_in_latest_migration` — this array
 ///   ⇔ the latest migration's frozen list, so ADDING a variant fails
-///   with instructions to append a new table-rebuild migration (V012+)
+///   with instructions to append a new table-rebuild migration (V016+)
 ///   instead of editing a shipped one.
 #[cfg(test)]
 pub(crate) const ASSET_LOCK_STATUS_LABELS: &[&str] = &[
@@ -661,11 +661,11 @@ mod tests {
     }
 
     /// Pins the live label set to the domain frozen in the LATEST
-    /// asset-lock migration (`V010__asset_lock_recovered_status.rs`).
+    /// asset-lock migration (`V004__asset_lock_recovered_status.rs`).
     /// Shipped migrations interpolate nothing — their generated SQL is
     /// checksummed by Refinery, so widening the domain means APPENDING
-    /// a new table-rebuild migration (V012+) with the new frozen list
-    /// and updating this pin, never editing V001/V010 in place.
+    /// a new table-rebuild migration (V016+) with the new frozen list
+    /// and updating this pin, never editing V001/V004 in place.
     ///
     /// IF THIS FAILS: do NOT edit a shipped migration (its Refinery
     /// checksum would diverge on already-migrated databases). Append a
@@ -673,7 +673,7 @@ mod tests {
     /// CHECK, then update this pin to the new migration's list.
     #[test]
     fn asset_lock_status_labels_frozen_in_latest_migration() {
-        let frozen_in_v010 = [
+        let frozen_in_v004 = [
             "built",
             "broadcast",
             "is_locked",
@@ -681,6 +681,6 @@ mod tests {
             "consumed",
             "recovered_from_chain",
         ];
-        assert_eq!(ASSET_LOCK_STATUS_LABELS, &frozen_in_v010);
+        assert_eq!(ASSET_LOCK_STATUS_LABELS, &frozen_in_v004);
     }
 }

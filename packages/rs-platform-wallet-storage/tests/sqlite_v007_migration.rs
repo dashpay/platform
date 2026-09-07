@@ -1,8 +1,8 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! V003 unified-migration schema tests. Numbered V003, not V002: PR #4019
-//! (ADDR-09) independently claimed version 2 (`V002__address_height_pin.rs`)
-//! and landed first, so the unified migration sequences after it.
+//! V007 unified-migration schema tests. The unified migration sequences after
+//! the six migrations `v4.2-dev` already ships (V001-V006), whose version
+//! numbers are owned by merged history and must never be reassigned.
 //!
 //! Covers TC-B-030 (fresh store migrates clean to the new target version),
 //! TC-B-003 (`meta_data_versions` shape + PK), the schema half of TC-B-001
@@ -54,17 +54,17 @@ impl OptionalExists for rusqlite::Result<()> {
 /// The unified migration is embedded and supported. The exact ceiling moves
 /// with the newest migration and is pinned in that migration's own test file.
 #[test]
-fn v003_is_embedded_and_supported() {
+fn v007_is_embedded_and_supported() {
     assert!(
-        mig::embedded_migrations().iter().any(|(v, _)| *v == 3),
-        "V003 must be in the embedded migration set"
+        mig::embedded_migrations().iter().any(|(v, _)| *v == 7),
+        "V007 must be in the embedded migration set"
     );
-    assert!(mig::max_supported_version() >= 3, "V003 must be applicable");
+    assert!(mig::max_supported_version() >= 7, "V007 must be applicable");
 }
 
-/// TC-B-030 — a fresh store applies V003 and migrates clean through to the
+/// TC-B-030 — a fresh store applies V007 and migrates clean through to the
 /// newest embedded migration (e.g. V004's DIP-13 invitations table), and
-/// every V003 table exists.
+/// every V007 table exists.
 #[test]
 fn tc_b_030_fresh_store_migrates_to_version_three() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -76,7 +76,7 @@ fn tc_b_030_fresh_store_migrates_to_version_three() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(applied, 1, "a fresh store must apply V003");
+    assert_eq!(applied, 1, "a fresh store must apply V007");
     let max: i64 = conn
         .query_row(
             "SELECT MAX(version) FROM refinery_schema_history",

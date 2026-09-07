@@ -151,9 +151,18 @@ auto-backup dir at `<db_dir>/backups/auto/`.
 
 Schema migrations are versioned Rust files under `migrations/`, applied via
 [`refinery`](https://github.com/rust-db/refinery) on every `open`. The current
-migration set is still unreleased, so every migration may be edited in place
-until the crate's first release. Once the schema ships, migrations become
+migration set is still unreleased, so a migration may be edited in place until
+the crate's first release. Once the schema ships, migrations become
 append-only.
+
+Two exceptions already bind, ahead of that release. A migration **version**
+that a base branch has published is never reassigned to different DDL — see
+`SCHEMA.md` § Migrations for the versions this applies to. And a `CHECK`
+domain inside a migration is a frozen literal, never interpolated from a live
+Rust const, so adding an enum variant cannot rewrite an applied migration's
+SQL. Both rules exist because refinery validates an applied migration's
+checksum against the embedded migration of the same version, and a mismatch
+means the database never opens again.
 
 #### Flush semantics (store / flush)
 

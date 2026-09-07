@@ -6,7 +6,7 @@
 //! multi-wallet store via the persister, then lifts its V001-table rows onto a
 //! destination capped at V001 only (`runner().set_target(Version(1))`), writing
 //! `tests/fixtures/populated_v001.db`. Seeding runs fully-migrated because the
-//! writers reference V002/V003 tables; the V001-capped copy is what the
+//! writers reference V002/V007 tables; the V001-capped copy is what the
 //! migration-execution suites (TC-B-031/032/033/035/036) migrate forward.
 //! Re-run it whenever V001's shape changes so the committed fixture's
 //! applied-V001 checksum stays in lockstep with `V001__initial.rs` — otherwise
@@ -476,7 +476,7 @@ fn regenerate_populated_v001_fixture() {
     let tmp = common::secure_tempdir().expect("tempdir");
     let src = tmp.path().join("build.db");
     // Seed on a fully-migrated store: the writers (core_state UTXO attribution,
-    // the meta_data_versions bump) reference V002/V003 tables, so a V001-only
+    // the meta_data_versions bump) reference V002/V007 tables, so a V001-only
     // seed is not expressible directly. The rows the migration suite reads all
     // live in V001 tables, which we lift onto a V001-capped destination below.
     build_populated_store(&src);

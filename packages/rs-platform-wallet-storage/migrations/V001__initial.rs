@@ -38,13 +38,12 @@
 //! (`src/sqlite/conn.rs`).
 //!
 //! Enum-shaped TEXT columns (`network`, `account_type`, `status`,
-//! `state`) carry a `CHECK (col IN (...))` clause whose
-//! IN-list is built from the `*_LABELS` const arrays in
-//! `crate::sqlite::schema::{wallets, accounts, asset_locks,
-//! contacts}`. The consts are the single source of truth shared with
-//! the writer mapping functions; the per-module `*_labels_match_enum`
-//! unit tests enforce set-equality between each const and its writer's
-//! codomain.
+//! `state`) carry a `CHECK (col IN (...))` clause whose IN-list is a
+//! FROZEN literal — never the live `*_LABELS` const it mirrors. See the
+//! freeze rationale on [`migration`]. The live consts stay the
+//! single source of truth for the writer mapping functions; a
+//! `*_labels_frozen_in_v001` unit test per schema module pins each one
+//! to its literal here.
 
 fn build_check_in(labels: &[&str]) -> String {
     let quoted = labels
@@ -55,19 +54,37 @@ fn build_check_in(labels: &[&str]) -> String {
     format!("({})", quoted)
 }
 
+/// Renders V001's DDL.
+///
+/// Every `CHECK (col IN (...))` domain below is a FROZEN literal, and must
+/// stay one. Interpolating a live `*_LABELS` const would let a later enum
+/// variant rewrite this migration's generated SQL, breaking its Refinery
+/// checksum on every database that already applied it (`abort_divergent`
+/// defaults to true) — the database then fails to open, permanently, with
+/// no in-crate recovery path. Widening a domain means APPENDING a migration
+/// that rebuilds the table with the wider CHECK, as
+/// `V004__asset_lock_recovered_status.rs` does; it never means editing a
+/// list here.
 pub fn migration() -> String {
-    let network_check = build_check_in(crate::sqlite::schema::wallets::NETWORK_LABELS);
-    let account_type_check =
-        build_check_in(crate::sqlite::schema::accounts::ACCOUNT_TYPE_LABELS);
-    // FROZEN as of V010: the asset-lock status domain must no longer be
-    // interpolated from the live `ASSET_LOCK_STATUS_LABELS` const — a
-    // later variant addition would silently rewrite this migration's
-    // generated SQL and break its Refinery checksum on every database
-    // that already applied it (`abort_divergent` default). New status
-    // labels are introduced by APPENDING a migration that rebuilds the
-    // table with the widened CHECK (see
-    // `V010__asset_lock_recovered_status.rs`); this list stays
-    // byte-identical to what V001 shipped with.
+    let network_check = build_check_in(&["mainnet", "testnet", "devnet", "regtest"]);
+    let account_type_check = build_check_in(&[
+        "standard_bip44",
+        "standard_bip32",
+        "coinjoin",
+        "identity_registration",
+        "identity_topup",
+        "identity_topup_unbound",
+        "identity_invitation",
+        "asset_lock_address_topup",
+        "asset_lock_shielded_topup",
+        "provider_voting",
+        "provider_owner",
+        "provider_operator",
+        "provider_platform",
+        "dashpay_receiving",
+        "dashpay_external",
+        "platform_payment",
+    ]);
     let asset_lock_status_check = build_check_in(&[
         "built",
         "broadcast",
@@ -75,10 +92,13 @@ pub fn migration() -> String {
         "chain_locked",
         "consumed",
     ]);
-    let contact_state_check =
-        build_check_in(crate::sqlite::schema::contacts::CONTACT_STATE_LABELS);
-    let pending_contact_crypto_kind_check =
-        build_check_in(crate::sqlite::schema::pending_contact_crypto::KIND_LABELS);
+    let contact_state_check = build_check_in(&["sent", "received", "established"]);
+    let pending_contact_crypto_kind_check = build_check_in(&[
+        "register_receiving",
+        "register_external",
+        "contact_info_decrypt",
+        "auto_accept",
+    ]);
 
     // Stamp the header `application_id` so a foreign refinery-versioned
     // SQLite DB can be told apart from a wallet-storage DB (asserted in

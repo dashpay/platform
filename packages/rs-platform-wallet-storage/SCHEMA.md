@@ -38,7 +38,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Nine tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V003, plus its V005–V006 `core_address_pool` columns), `invitations` (V004), `shielded_viewing_keys` (V008), `dpns_name_states` (V011), `tracked_masternodes` (V013), and the `identity_scan_states` / `identity_scan_failed_indices` pair (V015) — see the [Migrations](#migrations) log for what each adds in the meantime.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Nine tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V007, plus its V008–V009 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V011), `dpns_name_states` (V005), `tracked_masternodes` (V006), and the `identity_scan_states` / `identity_scan_failed_indices` pair (V015) — see the [Migrations](#migrations) log for what each adds in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -231,7 +231,7 @@ erDiagram
     ASSET_LOCKS {
         BLOB wallet_id PK
         BLOB outpoint PK "bincode-encoded OutPoint"
-        TEXT status "built | broadcast | is_locked | chain_locked | consumed | recovered_from_chain (V010)"
+        TEXT status "built | broadcast | is_locked | chain_locked | consumed | recovered_from_chain (V004)"
         INTEGER account_index
         INTEGER identity_index
         INTEGER amount_duffs
@@ -519,7 +519,7 @@ fields advance monotonically (new values are `max(current, incoming)`).
 
 Lifecycle tracking for asset-lock outpoints. `status` is a queryable
 text column (`built | broadcast | is_locked | chain_locked | consumed`,
-widened by V010 to add `recovered_from_chain` — the restore-scan
+widened by V004 to add `recovered_from_chain` — the restore-scan
 reconstruction status for a lock rebuilt from a chain-locked on-chain
 record, Core finality proven but Platform-side consumption unknown);
 `lifecycle_blob` carries the full `AssetLockEntry`. Consumed
@@ -735,20 +735,43 @@ having to grep this repo.
 
 ## Migrations
 
+Versions **V001-V006 are owned by merged `v4.2-dev` history**: refinery keys
+`refinery_schema_history` by version and validates an applied migration's
+checksum against the embedded migration of the *same* version, so pointing one
+of those versions at different DDL stops every database that applied the
+original from opening. New work appends after the highest version here, never
+onto a published one. `merged_migration_versions_keep_their_shipped_names`
+(`tests/sqlite_schema_pinning.rs`) enforces it.
+
+Two limits on what that ownership currently buys, stated plainly because the
+version numbers alone imply more than is true:
+
+- **Names are restored, checksums are not.** V001's body was edited in place
+  while the crate was pre-release, and V003-V006 carry this branch's bodies
+  rather than the ones `v4.2-dev` shipped. A database created by a `v4.2-dev`
+  build therefore still fails to open — the version-to-name binding matches
+  again, the version-to-checksum binding does not. Restoring the numbering
+  removes a whole defect class going forward; it does not recover an existing
+  file. Recreating such a database is the only remedy.
+- **Databases created by earlier commits of this branch do not open either.**
+  Their history says version 3 is `unified`, where the embedded version 3 is
+  now `invitations`, so they diverge. Developer and CI scratch only; the crate
+  is pre-release and this is accepted. Delete and recreate.
+
 | Version | File | Description |
 |---|---|---|
-| V001 | `V001__initial.rs` | Full base schema: all 23 tables (including the six `meta_*` per-object metadata tables), every index, and the original trigger set. |
+| V001 | `V001__initial.rs` | Full base schema: all 23 tables (including the six `meta_*` per-object metadata tables), every index, and the original trigger set. Every `CHECK (col IN (...))` domain is a frozen literal, never interpolated from a live `*_LABELS` const — a variant addition must not rewrite an applied migration's SQL. |
 | V002 | `V002__address_height_pin.rs` | Adds `platform_addresses.as_of_height` (the Platform-block-height pin reconciling proof-attested balances against the delta stream; `DEFAULT 0` = unknown provenance for pre-existing rows). Additive column, no new table. |
-| V003 | `V003__unified.rs` | Adds `core_address_pool` (per-index address-pool rows replacing `core_utxos` script-derivation for the address-reuse guard), `meta_data_versions` (per-`(wallet_id, domain)` cache-invalidation `seq`), and `meta_store_generation` (single-row store-generation token). Additive only. |
-| V004 | `V004__invitations.rs` | Adds `invitations` for DIP-13 DashPay invitation lifecycle records, keyed by wallet and outpoint. |
-| V005 | `V005__pool_public_key.rs` | Adds nullable `public_key` and `key_type` columns to `core_address_pool`, preserving typed pre-derived public keys that a watch-only account cannot regenerate (closes #4113). |
-| V006 | `V006__pool_reserved_at.rs` | Adds nullable `core_address_pool.reserved_at` to persist `AddressState::Reserved` timestamps while available and used rows remain unreserved. |
-| V007 | `V007__drop_core_utxo_metadata.rs` | Removes unused `core_utxos.account_index` and `core_utxos.spent_in_txid` metadata and the associated cleanup trigger; owning-account identity is resolved from `core_address_pool` during reads. |
-| V008 | `V008__shielded_viewing_keys.rs` | Adds `shielded_viewing_keys` to persist Orchard full viewing keys by wallet and shielded account. |
-| V009 | `V009__single_source_core_confirmation_height.rs` | Rebuilds `core_transactions` with nullable `record_blob` for height-only rows, preserves existing transaction metadata and blobs, and drops `core_utxos.height` so UTXO confirmation height has one authority (#4178). |
-| V010 | `V010__asset_lock_recovered_status.rs` | Widens `asset_locks.status` to add `recovered_from_chain` (the restore-scan reconstruction status: Core finality proven via a chain-locked record, Platform-side consumption unknown). SQLite can't alter a CHECK in place, so the table is rebuilt — widened twin created, rows copied (dropping any orphaned by a wallet deleted while FK enforcement happened to be off), old table dropped and the twin renamed. The status list is FROZEN as of this migration, like V001's; a further variant is added only by another rebuild, never by editing this file. |
-| V011 | `V011__dpns_name_states.rs` | Adds `dpns_name_states` for the DPNS username marketplace: one row per tracked domain document, carrying sale state (`owned \| sold \| transferred`), listed `price`, and `counterparty_id` (buyer/recipient, NULL for `owned` rows). |
-| V012 | `V012__purge_legacy_empty_script_spent_utxos.rs` | Deletes legacy `core_utxos` rows matching `spent = 1 AND length(script) = 0`, left by a producer that fabricated an empty script for a spend of an output the wallet never recorded. One such row rejects the load of the whole file, since `load_used_addresses` decodes every stored script with no load-policy escape hatch. Balance-neutral: the balance readers select `spent = 0` only. |
-| V013 | `V013__tracked_masternodes.rs` | Adds `tracked_masternodes`, keyed by `(network, pro_tx_hash)` and deliberately NOT wallet-scoped — a tracked masternode belongs to no wallet and survives deleting any one of them. `snapshot_json` caches public DML/Platform-identity data only; any key material a user attaches to a tracked node lives in host secure storage, never here. |
+| V003 | `V003__invitations.rs` | Adds `invitations` for DIP-13 DashPay invitation lifecycle records, keyed by wallet and outpoint. |
+| V004 | `V004__asset_lock_recovered_status.rs` | Widens `asset_locks.status` to add `recovered_from_chain` (the restore-scan reconstruction status: Core finality proven via a chain-locked record, Platform-side consumption unknown). SQLite can't alter a CHECK in place, so the table is rebuilt — widened twin created, rows copied (dropping any orphaned by a wallet deleted while FK enforcement happened to be off), old table dropped and the twin renamed. The status list is FROZEN as of this migration, like V001's; a further variant is added only by another rebuild, never by editing this file. |
+| V005 | `V005__dpns_name_states.rs` | Adds `dpns_name_states` for the DPNS username marketplace: one row per tracked domain document, carrying sale state (`owned \| sold \| transferred`), listed `price`, and `counterparty_id` (buyer/recipient, NULL for `owned` rows). |
+| V006 | `V006__tracked_masternodes.rs` | Adds `tracked_masternodes`, keyed by `(network, pro_tx_hash)` and deliberately NOT wallet-scoped — a tracked masternode belongs to no wallet and survives deleting any one of them. `snapshot_json` caches public DML/Platform-identity data only; any key material a user attaches to a tracked node lives in host secure storage, never here. |
+| V007 | `V007__unified.rs` | Adds `core_address_pool` (per-index address-pool rows replacing `core_utxos` script-derivation for the address-reuse guard), `meta_data_versions` (per-`(wallet_id, domain)` cache-invalidation `seq`), and `meta_store_generation` (single-row store-generation token). Additive only. |
+| V008 | `V008__pool_public_key.rs` | Adds nullable `public_key` and `key_type` columns to `core_address_pool`, preserving typed pre-derived public keys that a watch-only account cannot regenerate (closes #4113). |
+| V009 | `V009__pool_reserved_at.rs` | Adds nullable `core_address_pool.reserved_at` to persist `AddressState::Reserved` timestamps while available and used rows remain unreserved. |
+| V010 | `V010__drop_core_utxo_metadata.rs` | Removes unused `core_utxos.account_index` and `core_utxos.spent_in_txid` metadata and the associated cleanup trigger; owning-account identity is resolved from `core_address_pool` during reads. |
+| V011 | `V011__shielded_viewing_keys.rs` | Adds `shielded_viewing_keys` to persist Orchard full viewing keys by wallet and shielded account. |
+| V012 | `V012__single_source_core_confirmation_height.rs` | Rebuilds `core_transactions` with nullable `record_blob` for height-only rows, preserves existing transaction metadata and blobs, and drops `core_utxos.height` so UTXO confirmation height has one authority (#4178). Both source tables are swept of rows orphaned by a wallet deleted while FK enforcement happened to be off, since copying one into the FK-declared twin would abort the whole migration. |
+| V013 | `V013__purge_legacy_empty_script_spent_utxos.rs` | Deletes legacy `core_utxos` rows matching `spent = 1 AND length(script) = 0`, left by a producer that fabricated an empty script for a spend of an output the wallet never recorded. One such row rejects the load of the whole file, since `load_used_addresses` decodes every stored script with no load-policy escape hatch. Balance-neutral: the balance readers select `spent = 0` only. |
 | V014 | `V014__identity_keys_null_scope_requires_existing_identity.rs` | Recreates the `identity_keys` null-scope trigger pair (see Triggers above) to also reject a NULL-scoped key naming an identity that does not exist at all, closing the gap where V001's guard caught only the wallet-owned case. Recreated rather than edited into V001, since refinery never re-runs an applied migration and editing V001 in place would tighten only freshly created databases. |
 | V015 | `V015__identity_scan_state.rs` | Adds `identity_scan_states` (one row per wallet: the last gap-limit identity-scan verdict — `complete`, `probed_from`/`probed_through`, `unlocated_gap`) and `identity_scan_failed_indices` (indices probed without an answer, cascading from the verdict row via `wallet_id`). Purely additive; an upgraded database reads back "no verdict recorded" for every wallet until the next scan (dashpay/platform#4365). |

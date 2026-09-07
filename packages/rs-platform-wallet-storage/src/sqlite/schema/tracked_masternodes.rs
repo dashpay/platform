@@ -6,7 +6,7 @@
 //! the set is user-curated and small, and the trait contract
 //! (`PlatformWalletPersistence::persist_tracked_masternodes`) is a
 //! whole-set write. `snapshot_json` is an opaque versioned document of
-//! PUBLIC material only (see the V013 migration doc); this module never
+//! PUBLIC material only (see the V006 migration doc); this module never
 //! interprets it beyond storing and returning it.
 
 use rusqlite::{params, Connection, Transaction};
@@ -24,7 +24,7 @@ pub fn replace_all(
     network: dashcore::Network,
     records: &[TrackedMasternode],
 ) -> Result<(), WalletStorageError> {
-    // Bound through `network_to_str`, not `Display`: the V013 CHECK pins
+    // Bound through `network_to_str`, not `Display`: the V006 CHECK pins
     // this label domain and `network_labels_match_enum` is what keeps the
     // two in step. A `Display` change upstream would otherwise turn every
     // write into a CHECK failure with no compile-time signal.
@@ -110,7 +110,7 @@ mod tests {
     use super::*;
 
     /// A row whose `pro_tx_hash` is not 32 bytes — the shape that can only
-    /// reach the file with the V013 CHECK bypassed.
+    /// reach the file with the V006 CHECK bypassed.
     fn conn_with_short_pro_tx_hash() -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
