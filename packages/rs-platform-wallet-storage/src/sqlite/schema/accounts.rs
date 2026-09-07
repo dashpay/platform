@@ -1213,11 +1213,12 @@ mod tests {
                 )
             })
             .collect();
-        let distinct: HashSet<_> = keys.iter().collect();
-        assert_eq!(
-            distinct.len(),
-            keys.len(),
-            "two account types collapse onto one primary key: {keys:?}"
+        let mut seen: HashSet<_> = HashSet::new();
+        let collisions: Vec<_> = keys.iter().filter(|key| !seen.insert(*key)).collect();
+        assert!(
+            collisions.is_empty(),
+            "these primary keys are claimed by more than one account type, so \
+             the second account written would overwrite the first: {collisions:?}"
         );
     }
 
