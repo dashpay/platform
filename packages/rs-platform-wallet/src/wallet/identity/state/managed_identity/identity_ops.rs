@@ -124,24 +124,11 @@ impl ManagedIdentity {
         profile: Option<crate::wallet::identity::DashPayProfile>,
         persister: &WalletPersister,
     ) {
-        let cs = self.set_dashpay_profile_unpersisted(profile);
+        self.dashpay.profile = profile;
+        let cs = self.snapshot_changeset();
         if let Err(e) = persister.store(cs.into()) {
             tracing::error!("Failed to persist changeset: {}", e);
         }
-    }
-
-    /// [`Self::set_dashpay_profile`] without the store: applies the profile
-    /// in memory and returns the identity snapshot for the caller to
-    /// persist once it no longer holds the wallet-manager write guard. The
-    /// host store is synchronous and serialized behind every other
-    /// persistence round, so a store under the guard stalls every reader
-    /// for the host write's duration.
-    pub(crate) fn set_dashpay_profile_unpersisted(
-        &mut self,
-        profile: Option<crate::wallet::identity::DashPayProfile>,
-    ) -> IdentityChangeSet {
-        self.dashpay.profile = profile;
-        self.snapshot_changeset()
     }
 
     /// Record a DashPay payment under its transaction id.
@@ -246,17 +233,11 @@ impl ManagedIdentity {
     ///
     /// Persists the resulting changeset via `persister` and returns `()`.
     pub fn add_dpns_name(&mut self, name: DpnsNameInfo, persister: &WalletPersister) {
-        let cs = self.add_dpns_name_unpersisted(name);
+        self.dpns_names.push(name);
+        let cs = self.snapshot_changeset();
         if let Err(e) = persister.store(cs.into()) {
             tracing::error!("Failed to persist changeset: {}", e);
         }
-    }
-
-    /// [`Self::add_dpns_name`] without the store; see
-    /// [`Self::set_dashpay_profile_unpersisted`] for when to use it.
-    pub(crate) fn add_dpns_name_unpersisted(&mut self, name: DpnsNameInfo) -> IdentityChangeSet {
-        self.dpns_names.push(name);
-        self.snapshot_changeset()
     }
 
     /// Replace the DPNS-name list wholesale.
@@ -279,27 +260,15 @@ impl ManagedIdentity {
     ///
     /// No-op (no changeset emitted) when the label isn't present.
     pub fn remove_dpns_name(&mut self, label: &str, persister: &WalletPersister) {
-        let Some(cs) = self.remove_dpns_name_unpersisted(label) else {
-            return;
-        };
-        if let Err(e) = persister.store(cs.into()) {
-            tracing::error!("Failed to persist changeset: {}", e);
-        }
-    }
-
-    /// [`Self::remove_dpns_name`] without the store; `None` when the label
-    /// was absent (nothing to persist). See
-    /// [`Self::set_dashpay_profile_unpersisted`] for when to use it.
-    pub(crate) fn remove_dpns_name_unpersisted(
-        &mut self,
-        label: &str,
-    ) -> Option<IdentityChangeSet> {
         let before = self.dpns_names.len();
         self.dpns_names.retain(|n| n.label != label);
         if self.dpns_names.len() == before {
-            return None;
+            return;
         }
-        Some(self.snapshot_changeset())
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
     }
 
     /// Append a contested DPNS label this identity is contending for.

@@ -6612,21 +6612,62 @@ mod tests {
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
         use key_wallet::account::AccountType;
 
-        // Probe on the used-flip store: the changeset carrying an external
-        // account's address pools.
-        let probe = Arc::new(crate::test_support::LockProbePersister::for_changesets(
-            |changeset| {
-                changeset
+        // Probe persister: on the used-flip store (the changeset carrying an
+        // external account's address pools), records whether the shared
+        // wallet-manager write lock was already released — a `try_read`
+        // succeeds iff no writer holds it. A `Weak` back-reference avoids a
+        // persister <-> manager cycle.
+        type ManagerLock = tokio::sync::RwLock<
+            key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>,
+        >;
+        struct LockProbePersister {
+            manager: Mutex<Option<std::sync::Weak<ManagerLock>>>,
+            /// `Some(true)`: an external-pool store was seen with the write
+            /// lock released; `Some(false)`: seen but the lock was still held;
+            /// `None`: never seen.
+            external_pool_store_unlocked: Mutex<Option<bool>>,
+        }
+
+        impl PlatformWalletPersistence for LockProbePersister {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                let carries_external_pool = changeset
                     .account_address_pools
                     .iter()
-                    .any(|e| matches!(e.account_type, AccountType::DashpayExternalAccount { .. }))
-            },
-        ));
+                    .any(|e| matches!(e.account_type, AccountType::DashpayExternalAccount { .. }));
+                if carries_external_pool {
+                    let unlocked = self
+                        .manager
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .and_then(|w| w.upgrade())
+                        .map(|m| m.try_read().is_ok())
+                        .unwrap_or(false);
+                    *self.external_pool_store_unlocked.lock().unwrap() = Some(unlocked);
+                }
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let probe = Arc::new(LockProbePersister {
+            manager: Mutex::new(None),
+            external_pool_store_unlocked: Mutex::new(None),
+        });
         let (manager, wallet_id) = make_wallet_with(Arc::clone(&probe)).await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = wallet_arc.identity();
         // Point the probe at the shared manager lock the send will contend on.
-        probe.watch(Arc::downgrade(&iw.wallet_manager));
+        *probe.manager.lock().unwrap() = Some(Arc::downgrade(&iw.wallet_manager));
 
         let owner_id = Identifier::from([0x11; 32]);
         let contact_id = Identifier::from([0x22; 32]);
@@ -6684,7 +6725,7 @@ mod tests {
         // Isolate the assertion to the send path: forget any external-pool
         // store the registration round may have made (that one runs under the
         // registration write guard).
-        probe.reset();
+        *probe.external_pool_store_unlocked.lock().unwrap() = None;
 
         // Fund BIP-44 account 0 so the send builds, signs, and broadcasts —
         // reaching the used-flip persist, which now fires only on the path to
@@ -6708,7 +6749,7 @@ mod tests {
         // after the write guard was released (Some(true)). Some(false) means
         // it still ran under the held write guard (the pre-fix ordering);
         // None means the flip was never persisted.
-        let observed = probe.seen_unlocked();
+        let observed = *probe.external_pool_store_unlocked.lock().unwrap();
         assert_eq!(
             observed,
             Some(true),

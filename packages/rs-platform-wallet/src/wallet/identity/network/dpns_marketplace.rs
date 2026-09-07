@@ -957,24 +957,17 @@ impl IdentityWallet {
             cs.names.insert(entry.document_id, entry);
         }
         cs.removed.extend(removed);
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
-                return;
-            };
-            info.dpns_name_states.extend(cs.names.clone());
-            for document_id in &cs.removed {
-                info.dpns_name_states.remove(document_id);
-            }
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        info.dpns_name_states.extend(cs.names.clone());
+        for document_id in &cs.removed {
+            info.dpns_name_states.remove(document_id);
         }
-        // Persisted only after the write guard is released: the host store
-        // is synchronous and serialized behind every other persistence
-        // round (a block-batch commit can hold it for minutes), so a store
-        // under the guard would stall every wallet-manager reader for that
-        // long. Same best-effort discipline as `add_dpns_name`: the
-        // in-memory mutation stands for this session; a failed store is
-        // logged and the next sync pass re-emits the same rows
-        // (self-healing).
+        // Same best-effort discipline as `add_dpns_name`: the in-memory
+        // mutation stands for this session; a failed store is logged and
+        // the next sync pass re-emits the same rows (self-healing).
         if let Err(e) = self.persister.store(cs.into()) {
             tracing::error!("Failed to persist DPNS name states: {e}");
         }
@@ -988,55 +981,43 @@ impl IdentityWallet {
         label: &str,
         acquired_at: Option<u64>,
     ) {
-        let cs = {
-            let mut wm = self.wallet_manager.write().await;
-            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
-                return;
-            };
-            let Some(managed) = info
-                .identity_manager
-                .wallet_identity_mut(&self.wallet_id, identity_id)
-            else {
-                return;
-            };
-            if managed.dpns_names.iter().any(|n| n.label == label) {
-                return;
-            }
-            managed.add_dpns_name_unpersisted(DpnsNameInfo {
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let Some(managed) = info
+            .identity_manager
+            .wallet_identity_mut(&self.wallet_id, identity_id)
+        else {
+            return;
+        };
+        if managed.dpns_names.iter().any(|n| n.label == label) {
+            return;
+        }
+        managed.add_dpns_name(
+            DpnsNameInfo {
                 label: label.to_string(),
                 acquired_at,
-            })
-        };
-        // Stored after the guard is released — see `record_dpns_name_states`.
-        if let Err(e) = self.persister.store(cs.into()) {
-            tracing::error!("Failed to persist changeset: {}", e);
-        }
+            },
+            &self.persister,
+        );
     }
 
     /// Remove `label` from `identity_id`'s legacy label list (persisting
     /// the identity snapshot). No-op when absent or the identity isn't
     /// in this wallet.
     async fn remove_dpns_label(&self, identity_id: &Identifier, label: &str) {
-        let cs = {
-            let mut wm = self.wallet_manager.write().await;
-            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
-                return;
-            };
-            let Some(managed) = info
-                .identity_manager
-                .wallet_identity_mut(&self.wallet_id, identity_id)
-            else {
-                return;
-            };
-            managed.remove_dpns_name_unpersisted(label)
-        };
-        let Some(cs) = cs else {
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
             return;
         };
-        // Stored after the guard is released — see `record_dpns_name_states`.
-        if let Err(e) = self.persister.store(cs.into()) {
-            tracing::error!("Failed to persist changeset: {}", e);
-        }
+        let Some(managed) = info
+            .identity_manager
+            .wallet_identity_mut(&self.wallet_id, identity_id)
+        else {
+            return;
+        };
+        managed.remove_dpns_name(label, &self.persister);
     }
 
     /// Whether `identity_id` is one of this wallet's identities.
@@ -3554,115 +3535,6 @@ mod tests {
         )
     }
 
-    // -----------------------------------------------------------------
-    // Lock scope: the marketplace bookkeeping must persist only after the
-    // wallet-manager write guard is released. The host store is
-    // synchronous and serialized behind every other persistence round (a
-    // block-batch commit can hold it for minutes), so a store under the
-    // guard stalls every reader — including the host's UI poll — for that
-    // long. Against the pre-fix ordering (store inside the guarded
-    // section) the lock-released assertions below fail.
-    // -----------------------------------------------------------------
-
-    #[tokio::test]
-    async fn record_dpns_name_states_persists_after_releasing_wallet_manager_lock() {
-        let probe = Arc::new(crate::test_support::LockProbePersister::for_changesets(
-            |cs| cs.dpns_name_states.is_some(),
-        ));
-        let wallet = mirror_backed_identity_wallet_with_sdk(
-            Arc::clone(&probe),
-            Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
-        );
-        probe.watch(Arc::downgrade(&wallet.wallet_manager));
-
-        let document_id = Identifier::from([0xD1; 32]);
-        let owner = Identifier::from([0xD2; 32]);
-        wallet
-            .record_dpns_name_states(
-                vec![name_state_entry(
-                    document_id,
-                    owner,
-                    DpnsNameSaleStatus::Owned,
-                )],
-                vec![],
-            )
-            .await;
-
-        assert_eq!(
-            probe.seen_unlocked(),
-            Some(true),
-            "the DPNS name-state store must run after the write guard is released"
-        );
-        let wm = wallet.wallet_manager.read().await;
-        assert!(
-            wm.get_wallet_info(&wallet.wallet_id)
-                .expect("wallet info")
-                .dpns_name_states
-                .contains_key(&document_id),
-            "the in-memory working set must still carry the row"
-        );
-    }
-
-    #[tokio::test]
-    async fn add_dpns_label_if_missing_persists_after_releasing_wallet_manager_lock() {
-        let probe = Arc::new(crate::test_support::LockProbePersister::for_changesets(
-            |cs| cs.identities.is_some(),
-        ));
-        use dpp::identity::IdentityV0;
-        use dpp::prelude::Identity;
-
-        let wallet = mirror_backed_identity_wallet_with_sdk(
-            Arc::clone(&probe),
-            Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
-        );
-        let identity_id = Identifier::from([0xD3; 32]);
-        {
-            let mut wm = wallet.wallet_manager.write().await;
-            let info = wm
-                .get_wallet_info_mut(&wallet.wallet_id)
-                .expect("wallet info");
-            info.identity_manager
-                .add_identity(
-                    Identity::V0(IdentityV0 {
-                        id: identity_id,
-                        public_keys: BTreeMap::new(),
-                        balance: 0,
-                        revision: 0,
-                    }),
-                    0,
-                    wallet.wallet_id,
-                    &wallet.persister,
-                )
-                .expect("add identity");
-        }
-        // Armed only now: `add_identity` above stores under the guard by
-        // design (registration-shaped), and must not count.
-        probe.watch(Arc::downgrade(&wallet.wallet_manager));
-        probe.reset();
-
-        wallet
-            .add_dpns_label_if_missing(&identity_id, "alice", Some(500))
-            .await;
-
-        assert_eq!(
-            probe.seen_unlocked(),
-            Some(true),
-            "the identity snapshot store must run after the write guard is released"
-        );
-        let wm = wallet.wallet_manager.read().await;
-        let labels: Vec<String> = wm
-            .get_wallet_info(&wallet.wallet_id)
-            .expect("wallet info")
-            .identity_manager
-            .wallet_identity(&wallet.wallet_id, &identity_id)
-            .expect("managed identity")
-            .dpns_names
-            .iter()
-            .map(|n| n.label.clone())
-            .collect();
-        assert_eq!(labels, vec!["alice".to_string()]);
-    }
-
     /// A mock SDK primed so the departed-name domain lookup for `label`
     /// answers "no such document" — Platform CONFIRMING the name is
     /// gone, which is the branch that resolves a departure and emits its
@@ -3861,8 +3733,8 @@ mod tests {
     /// A live `IdentityWallet` over `sdk` whose persister is `mirror`.
     /// Mirrors `PlatformWallet::new`'s wiring; only the persister and the
     /// SDK are substituted.
-    fn mirror_backed_identity_wallet_with_sdk<P: PlatformWalletPersistence + 'static>(
-        mirror: Arc<P>,
+    fn mirror_backed_identity_wallet_with_sdk(
+        mirror: Arc<MirrorPersister>,
         sdk: Arc<dash_sdk::Sdk>,
     ) -> IdentityWallet {
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -3878,8 +3750,7 @@ mod tests {
             .expect("create wallet");
         let wallet_manager = Arc::new(RwLock::new(wm));
 
-        let persister =
-            WalletPersister::new(wallet_id, mirror as Arc<dyn PlatformWalletPersistence>);
+        let persister = WalletPersister::new(wallet_id, mirror);
         let spv = Arc::new(crate::spv::SpvRuntime::new(
             Arc::clone(&wallet_manager),
             Arc::new(crate::events::PlatformEventManager::new(Vec::new())),

@@ -77,36 +77,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
         }
 
-        // 4. Under the write guard: apply on change only (mirror the
-        //    None-arm's is_some guard for both directions) and collect the
-        //    identity snapshots; they are stored after the guard is released.
-        let pending: Vec<_> = {
-            let mut wm = self.wallet_manager.write().await;
-            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
-                return Ok(0);
-            };
-            fetched
-                .into_iter()
-                .filter_map(|(identity_id, profile)| {
-                    let managed = info.identity_manager.managed_identity_mut(&identity_id)?;
-                    if managed.dashpay().profile == profile {
-                        return None;
-                    }
-                    Some(managed.set_dashpay_profile_unpersisted(profile))
-                })
-                .collect()
+        // 4. Under the write guard: persist-on-change only (mirror the
+        //    None-arm's is_some guard for both directions).
+        let mut changed = 0u32;
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return Ok(0);
         };
-
-        // 5. Persist outside the guard: the host store is synchronous and
-        //    serialized behind every other persistence round, so a store
-        //    under the write guard would stall every wallet-manager reader
-        //    for the host write's duration. One store per identity, as
-        //    before.
-        let changed = pending.len() as u32;
-        for cs in pending {
-            if let Err(e) = self.persister.store(cs.into()) {
-                tracing::error!("Failed to persist changeset: {}", e);
+        for (identity_id, profile) in fetched {
+            let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) else {
+                continue;
+            };
+            if managed.dashpay().profile == profile {
+                continue;
             }
+            managed.set_dashpay_profile(profile, &self.persister);
+            changed += 1;
         }
 
         Ok(changed)
@@ -650,15 +636,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
         }
 
-        // 3. Under the write guard: full-replace, then snapshot each owner
-        //    for the stores below (which run after the guard is released).
+        // 3. Under the write guard: full-replace, persist-on-change.
         let mut written = 0u32;
-        let pending: Vec<_> = {
+        {
             let mut wm = self.wallet_manager.write().await;
             let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
                 return Ok(0);
             };
-            let mut pending = Vec::with_capacity(results.len());
             for (owner_id, owner_results) in results {
                 let Some(managed) = info.identity_manager.managed_identity_mut(&owner_id) else {
                     continue;
@@ -673,32 +657,23 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         written += 1;
                     }
                 }
-                pending.push((owner_id, managed.snapshot_changeset()));
-            }
-            pending
-        };
-
-        // 4. Persist one changeset per owner, outside the guard: the host
-        //    store is synchronous and serialized behind every other
-        //    persistence round, so a store under the write guard would stall
-        //    every wallet-manager reader for the host write's duration.
-        //    Every owner reaching here had ≥1 profile (re)fetched this
-        //    sweep, so `checked_at_ms` advanced for at least one contact —
-        //    persist unconditionally, not only on content change, so the
-        //    refresh-cache timestamps are durable. A cold start otherwise
-        //    reverts each timestamp to the last content-changing sweep and
-        //    re-fetches every still-fresh profile. No meaningful write
-        //    amplification: the store is paired with the network fetch that
-        //    just ran, and fetches are gated to once per
-        //    `CONTACT_PROFILE_REFRESH_MS` per contact. A failed store
-        //    self-heals on the next sweep.
-        for (owner_id, cs) in pending {
-            if let Err(e) = self.persister.store(cs.into()) {
-                tracing::warn!(
-                    owner = %owner_id,
-                    error = %e,
-                    "Failed to persist contact profiles; will retry next sweep"
-                );
+                // Persist one changeset per owner. Every owner reaching here had
+                // ≥1 profile (re)fetched this sweep, so `checked_at_ms` advanced
+                // for at least one contact — persist unconditionally, not only on
+                // content change, so the refresh-cache timestamps are durable. A
+                // cold start otherwise reverts each timestamp to the last
+                // content-changing sweep and re-fetches every still-fresh profile.
+                // No meaningful write amplification: the store is paired with the
+                // network fetch that just ran, and fetches are gated to once per
+                // `CONTACT_PROFILE_REFRESH_MS` per contact. A failed store
+                // self-heals on the next sweep.
+                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
+                    tracing::warn!(
+                        owner = %owner_id,
+                        error = %e,
+                        "Failed to persist contact profiles; will retry next sweep"
+                    );
+                }
             }
         }
 

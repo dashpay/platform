@@ -265,11 +265,7 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// **latency-sensitive**: a slow synchronous write blocks every other
     /// wallet accessor (readers and writers) for its duration. Keep the
     /// per-call work bounded; if the backend does inline I/O (see the type
-    /// doc), size it accordingly. The periodic sync passes (DPNS
-    /// marketplace, DashPay profiles) collect their changesets under the
-    /// guard and store only after releasing it for exactly this reason;
-    /// the one-off mutation paths above still store inside their critical
-    /// section.
+    /// doc), size it accordingly.
     fn store(
         &self,
         wallet_id: WalletId,
