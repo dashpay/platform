@@ -9,6 +9,16 @@ move funds. Keeping signing material out of that file by construction is what
 makes the rest of the crate safe to operate casually: you can back up the
 `.db` without backing up your keys.
 
+Copying it freely does carry one caveat that is about *deleted* data rather
+than keys. SQLite frees pages without clearing them, and `Backup` copies pages
+including the freelist, so a removed wallet's rows could otherwise ride along
+in every later snapshot. The persister therefore runs with
+`PRAGMA secure_delete = FAST` throughout and raises it to `ON` for the
+`delete_wallet` cascade, where whole pages are released and only `ON` clears
+them. What that does not do — and cannot — is scrub a backup taken before the
+deletion. Those snapshots still hold the wallet, by design; delete them
+yourself if the point of the deletion was to make the data unrecoverable.
+
 So secrets get their own home, their own crypto, and their own typed,
 secret-free error surface — separate from the persister entirely.
 

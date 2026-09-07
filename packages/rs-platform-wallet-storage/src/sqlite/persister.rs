@@ -152,6 +152,58 @@ fn register_open_path(path: PathBuf) -> Result<(), WalletStorageError> {
     Ok(())
 }
 
+/// Registry key for the database at `path`, whose parent is `parent`.
+///
+/// The canonical parent joined with the file name, NOT `canonicalize(path)`:
+/// the claim is taken before the database is created, and `Path::canonicalize`
+/// cannot resolve a path that does not exist yet, so keying on the whole path
+/// would hand two spellings of one not-yet-created database two different keys.
+/// Both callers verify `parent` exists first. A symlinked database is refused
+/// by `precreate_secure`, so for every path that actually opens this equals
+/// `canonicalize(path)`.
+fn registry_key(path: &Path, parent: &Path) -> PathBuf {
+    match (parent.canonicalize(), path.file_name()) {
+        (Ok(dir), Some(name)) => dir.join(name),
+        _ => path.to_path_buf(),
+    }
+}
+
+/// A live claim in the open-path registry, released on drop unless the
+/// persister takes it over.
+///
+/// Claiming EARLY is what closes the window in which two concurrent opens both
+/// compute their pending-migration list from the same pre-migration history and
+/// both apply it; releasing on drop is what keeps a failed open from leaving a
+/// claim nobody will ever remove. The two properties are independent, and the
+/// guard is what lets the code have both.
+struct OpenPathClaim {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl OpenPathClaim {
+    /// Claim `path`, or fail with [`WalletStorageError::AlreadyOpen`].
+    fn claim(path: PathBuf) -> Result<Self, WalletStorageError> {
+        register_open_path(path.clone())?;
+        Ok(Self { path, armed: true })
+    }
+
+    /// Hand the claimed path to the persister that will hold it; the guard
+    /// stops releasing it, and the persister's `Drop` takes over.
+    fn into_held_path(mut self) -> PathBuf {
+        self.armed = false;
+        std::mem::take(&mut self.path)
+    }
+}
+
+impl Drop for OpenPathClaim {
+    fn drop(&mut self) {
+        if self.armed {
+            release_open_path(&self.path);
+        }
+    }
+}
+
 /// Remove `path` from the open-path registry on persister drop.
 fn release_open_path(path: &Path) {
     let mut set = open_path_registry()
@@ -265,10 +317,17 @@ impl SqlitePersister {
             crate::parent_permissions::ParentPermissionsError::Io(source) => {
                 WalletStorageError::Io(source)
             }
-            crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
-                WalletStorageError::InsecureParentDir { mode }
+            crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
+                WalletStorageError::InsecureParentDir { ancestor, reason }
             }
         })?;
+
+        // Claim the path BEFORE anything touches the file. The registry exists
+        // to stop two handles diverging, and the most destructive thing an
+        // unguarded second open does is re-run migrations the first has not
+        // committed yet. The guard releases the claim on every error path out
+        // of this function, so a failed open still leaves no stale claim.
+        let claim = OpenPathClaim::claim(registry_key(&config.path, parent))?;
 
         // Pre-create owner-only (0600) with O_EXCL before rusqlite opens:
         // no umask window, and a planted symlink makes the create fail
@@ -337,14 +396,9 @@ impl SqlitePersister {
 
         let _report = crate::sqlite::migrations::run_for_open(&mut conn)?;
 
-        // Claim the path LAST so a failed open leaves no stale claim;
-        // canonicalize so symlinks / `.`-segments key the same as a
-        // sibling open would.
-        let registered_path = config
-            .path
-            .canonicalize()
-            .unwrap_or_else(|_| config.path.clone());
-        register_open_path(registered_path.clone())?;
+        // The open succeeded, so the claim passes to the persister, whose
+        // `Drop` releases it.
+        let registered_path = claim.into_held_path();
 
         Ok(Self {
             config,
@@ -525,8 +579,8 @@ impl SqlitePersister {
             crate::parent_permissions::ParentPermissionsError::Io(source) => {
                 WalletStorageError::Io(source)
             }
-            crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
-                WalletStorageError::InsecureParentDir { mode }
+            crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
+                WalletStorageError::InsecureParentDir { ancestor, reason }
             }
         })?;
 
@@ -535,9 +589,7 @@ impl SqlitePersister {
         // diverge from the restored bytes. Canonicalize to match how `open()`
         // registers the path (symlinks / `.`-segments resolve to one key); a
         // not-yet-existing dest can't be open, so the fallback path is fine.
-        let dest_canonical = dest_db_path
-            .canonicalize()
-            .unwrap_or_else(|_| dest_db_path.to_path_buf());
+        let dest_canonical = registry_key(dest_db_path, parent);
         if is_path_open(&dest_canonical) {
             return Err(WalletStorageError::AlreadyOpen {
                 path: dest_canonical,
@@ -658,6 +710,20 @@ impl SqlitePersister {
     /// `--no-auto-backup` — call
     /// [`delete_wallet_skip_backup`](Self::delete_wallet_skip_backup).
     ///
+    /// # What "deleted" guarantees on disk
+    ///
+    /// The cascade runs under `PRAGMA secure_delete = ON`, so the pages it
+    /// frees are zeroed rather than merely unlinked and the wallet's row
+    /// content does not remain readable in the `.db`. Two limits are NOT
+    /// covered and are real:
+    ///
+    /// - Backups taken **before** this call still contain the wallet, by
+    ///   design — including the pre-delete auto-backup this call takes.
+    ///   Erasing a wallet from the live database does not erase it from a
+    ///   rollback snapshot; remove those separately.
+    /// - The database file does not shrink. Zeroed pages stay in the file on
+    ///   the freelist and are reused by later writes.
+    ///
     /// # Cross-process rollback caveat
     ///
     /// The pre-delete auto-backup is taken BEFORE the cascade's
@@ -724,6 +790,13 @@ impl SqlitePersister {
                 }
             }
         };
+
+        // Erase rather than merely unlink for the whole delete window. The
+        // cascade releases whole pages to the freelist, and the steady-state
+        // `FAST` setting does not clear those — only `ON` does. Raised here
+        // rather than around the cascade alone so no path out of the closure
+        // can skip the restore below.
+        raise_secure_delete_for_erase(&conn, wallet_id);
 
         let result: Result<DeleteWalletReport, WalletStorageError> = (|| {
             // Existence check before backup so we don't snapshot for an
@@ -855,6 +928,8 @@ impl SqlitePersister {
                 backup_path,
             })
         })();
+
+        restore_secure_delete_steady_state(&conn, wallet_id);
 
         if result.is_err() {
             restore_buffer(&drained_slot);
@@ -1827,6 +1902,45 @@ fn validate_config(config: &SqlitePersisterConfig) -> Result<(), WalletStorageEr
     Ok(())
 }
 
+/// Switch `conn` to the erasing `secure_delete` mode for a wallet cascade.
+///
+/// A failure is logged and tolerated rather than aborting the delete: the user
+/// asked for the wallet to be gone, and refusing to remove it because the file
+/// cannot be scrubbed leaves them strictly worse off. The residue that survives
+/// is the same residue the steady-state mode already leaves.
+fn raise_secure_delete_for_erase(conn: &Connection, wallet_id: WalletId) {
+    if let Err(e) = conn.pragma_update(None, "secure_delete", SECURE_DELETE_ERASING) {
+        tracing::warn!(
+            wallet_id = %hex::encode(wallet_id),
+            error = %e,
+            "could not raise secure_delete for the wallet cascade; freed pages may retain deleted row content"
+        );
+    }
+}
+
+/// Return `conn` to the steady-state `secure_delete` mode after a cascade.
+///
+/// A failure here leaves the connection MORE aggressive than configured, never
+/// less, so it costs I/O rather than confidentiality — logged and tolerated.
+fn restore_secure_delete_steady_state(conn: &Connection, wallet_id: WalletId) {
+    if let Err(e) = conn.pragma_update(None, "secure_delete", SECURE_DELETE_STEADY_STATE) {
+        tracing::warn!(
+            wallet_id = %hex::encode(wallet_id),
+            error = %e,
+            "could not restore secure_delete after the wallet cascade; later writes pay full erase cost"
+        );
+    }
+}
+
+/// Steady-state `secure_delete` mode: zero freed row content within pages that
+/// are being rewritten anyway, without paying to scrub pages released to the
+/// freelist on every ordinary write.
+const SECURE_DELETE_STEADY_STATE: &str = "FAST";
+/// `secure_delete` mode for a wallet cascade, which releases whole pages that
+/// `FAST` leaves intact. Deletion is rare, explicit and user-initiated, so it
+/// can afford the I/O that every ordinary write cannot.
+const SECURE_DELETE_ERASING: &str = "ON";
+
 fn apply_pragmas(
     conn: &mut Connection,
     config: &SqlitePersisterConfig,
@@ -1845,6 +1959,23 @@ fn apply_pragmas(
         });
     }
     conn.pragma_update(None, "synchronous", config.synchronous.pragma_value())?;
+    // Freed pages otherwise keep their content, so a deleted wallet's
+    // addresses, scripts, keys and contact data stay readable in the file — and
+    // `Backup` copies pages, freelist included, into every later snapshot.
+    // `FAST` zeroes freed content within a page already being rewritten, which
+    // is the right steady-state cost; `delete_wallet` raises it to `ON` for the
+    // cascade, where whole pages are released and only `ON` clears them.
+    conn.pragma_update(None, "secure_delete", SECURE_DELETE_STEADY_STATE)?;
+    // Read back like `journal_mode`: `pragma_update` does not error when the
+    // setting does not take, and a silent `0` here is an at-rest guarantee the
+    // crate documents and does not have.
+    let applied_secure_delete: i64 =
+        conn.pragma_query_value(None, "secure_delete", |row| row.get(0))?;
+    if applied_secure_delete == 0 {
+        return Err(WalletStorageError::SecureDeleteNotApplied {
+            actual: applied_secure_delete,
+        });
+    }
     let ms = safe_cast::u64_to_i64(
         "busy_timeout_ms",
         u64::try_from(config.busy_timeout.as_millis()).unwrap_or(i64::MAX as u64),
@@ -2041,8 +2172,8 @@ fn ensure_dir(dir: &Path) -> Result<(), WalletStorageError> {
                 source,
             }
         }
-        crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
-            WalletStorageError::InsecureParentDir { mode }
+        crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
+            WalletStorageError::InsecureParentDir { ancestor, reason }
         }
     })?;
     // Fast-fail writability probe. TOCTOU by construction (the dir can flip

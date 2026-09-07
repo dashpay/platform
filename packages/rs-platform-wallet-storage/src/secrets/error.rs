@@ -210,15 +210,16 @@ pub enum SecretStoreError {
     /// A vault ancestor was writable without the sticky bit or owned by
     /// neither the current user nor root. Either condition can allow another
     /// local user to replace the vault despite its own `0600` mode.
-    #[error(
-        "vault parent path {path} traverses an insecure ancestor with mode {mode:04o}; ensure every ancestor is owned by the current user or root, and run `chmod go-w` on the offending ancestor unless it is an intentional sticky shared directory",
-        path = .path.display()
-    )]
+    ///
+    /// Names the offending ancestor, not the vault's own parent: the walk runs
+    /// to `/`, and telling a user that one of nine components is at fault is
+    /// not a remediation.
+    #[error("{}", crate::parent_permissions::insecure_ancestor_message("vault", .ancestor, .reason))]
     InsecureParentDir {
-        /// The vault's parent path (not secret).
-        path: PathBuf,
-        /// The offending POSIX mode bits on the ancestor directory (not secret).
-        mode: u32,
+        /// The ancestor that was refused (not secret).
+        ancestor: PathBuf,
+        /// Which of the two conditions fired; they need different remediations.
+        reason: crate::parent_permissions::InsecureAncestor,
     },
 
     /// A secret offered for storage exceeded the per-secret write cap
@@ -554,8 +555,10 @@ mod tests {
                 expected: 1000,
             },
             SecretStoreError::InsecureParentDir {
-                path: "/parent".into(),
-                mode: 0o777,
+                ancestor: "/parent".into(),
+                reason: crate::parent_permissions::InsecureAncestor::WritableWithoutSticky {
+                    mode: 0o777,
+                },
             },
             SecretStoreError::SecretTooLarge {
                 found: 100,
@@ -620,12 +623,33 @@ mod tests {
         assert!(file.contains("chmod 600"));
 
         let parent = SecretStoreError::InsecureParentDir {
-            path: "/parent".into(),
-            mode: 0o777,
+            ancestor: "/parent".into(),
+            reason: crate::parent_permissions::InsecureAncestor::WritableWithoutSticky {
+                mode: 0o777,
+            },
         }
         .to_string();
+        // The offender's own path, not the vault's parent: without it the user
+        // is told a chain has a bad link and left to find which.
+        assert!(parent.contains("/parent"));
         assert!(parent.contains("0777"));
-        assert!(parent.contains("chmod"));
+        assert!(parent.contains("chmod go-w /parent"));
+
+        // An ownership rejection must NOT hand out `chmod`: the mode is very
+        // likely unremarkable and changing it would not help.
+        let owned = SecretStoreError::InsecureParentDir {
+            ancestor: "/parent".into(),
+            reason: crate::parent_permissions::InsecureAncestor::UntrustedOwner {
+                uid: 999,
+                current_uid: 1000,
+            },
+        }
+        .to_string();
+        assert!(owned.contains("chown 1000 /parent"));
+        assert!(
+            !owned.contains("chmod"),
+            "an ownership rejection must not suggest chmod: {owned}"
+        );
 
         assert!(SecretStoreError::InvalidLabel
             .to_string()
@@ -869,8 +893,11 @@ mod tests {
                 expected: 2,
             },
             E::InsecureParentDir {
-                path: "/parent".into(),
-                mode: 0,
+                ancestor: "/parent".into(),
+                reason: crate::parent_permissions::InsecureAncestor::UntrustedOwner {
+                    uid: 0,
+                    current_uid: 1,
+                },
             },
             E::SecretTooLarge { found: 1, max: 0 },
             E::AlreadyLocked,

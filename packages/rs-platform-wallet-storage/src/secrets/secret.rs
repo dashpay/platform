@@ -46,6 +46,16 @@ const DEFAULT_CAPACITY: usize = 4096 - 16;
 /// This defense-in-depth floor rejects trivially short inputs but is not a
 /// strength estimator. Dictionary checks, UX feedback, and the real entropy
 /// policy remain the consumer's responsibility (see `SECRETS.md`).
+///
+/// **One-way.** Read paths gate on it, so it may only ever be LOWERED.
+// INTENTIONAL(read-gates-follow-write-side-tunables): raising this locks out
+// every vault and every Tier-2 secret enrolled under a shorter passphrase,
+// permanently — `open`, `rekey` and `unwrap_password_payload` all reject below
+// it, with no override and no legacy door. `MAX_SECRET_LEN` and
+// `MAX_VAULT_SIZE_BYTES` are one-way in the same sense, downward. Accepted
+// rather than split into policy/wire pairs the way `ARGON2_READ_MAX_*` is: no
+// shipped build has moved any of the three, and the split buys nothing until
+// one of them needs to move. Migrate enrolled data before it does.
 pub const MIN_PASSPHRASE_LEN: usize = 8;
 
 /// Maximum byte length for a vault passphrase or Tier-2 object password.

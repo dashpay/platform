@@ -162,10 +162,15 @@ impl KdfParams {
 
     /// Tier-2 envelope read gate, tighter than [`enforce_bounds`]: bounds a
     /// forged header at the shipped cost instead of the 1 GiB / 16-pass DoS
-    /// band. Deliberately asymmetric with the FILE VAULT header, which
-    /// `file::derive_and_verify` accepts across the whole band — a vault is a
-    /// local artefact its owner may harden at will, whereas an envelope's
-    /// cost is paid on every read by whoever holds the object password.
+    /// band. An envelope's cost is paid on every read by whoever holds the
+    /// object password, so a forged header is a denial-of-service lever.
+    ///
+    /// Deliberately asymmetric with the FILE VAULT header, which
+    /// `file::derive_and_verify` accepts across the whole band. That width is
+    /// version tolerance, not a hardening facility: it keeps a vault written by
+    /// a build with a different `default_target()` openable. Narrowing it is a
+    /// separate decision about the vault read band, not a consequence of this
+    /// gate.
     ///
     /// Gated on the wire-stable `ARGON2_READ_MAX_*` rather than
     /// `default_target()` so lowering the shipped write target can never
@@ -177,18 +182,6 @@ impl KdfParams {
             return Err(SecretStoreError::KdfFailure);
         }
         Ok(())
-    }
-
-    /// The componentwise-stronger of two parameter sets; `id`/`p` are fixed
-    /// crate-wide, so only `m_kib`/`t` vary. Lets a rekey carry a hardened
-    /// vault header forward instead of overwriting it with the handle's own
-    /// target, while a raised default still upgrades an old vault.
-    pub(crate) fn max_strength(self, other: Self) -> Self {
-        Self {
-            m_kib: self.m_kib.max(other.m_kib),
-            t: self.t.max(other.t),
-            ..self
-        }
     }
 }
 
@@ -375,33 +368,6 @@ mod tests {
             "caller-owned Argon2 memory changed the derived key"
         );
         reference.zeroize();
-    }
-
-    /// `max_strength` ratchets each axis independently: a handle's target
-    /// can raise a weak header, never lower a hardened one.
-    #[test]
-    fn max_strength_ratchets_each_axis_independently() {
-        let floor = KdfParams::floor_target();
-        let target = KdfParams::default_target();
-        assert_eq!(floor.max_strength(target), target);
-        assert_eq!(target.max_strength(floor), target);
-
-        let wide = KdfParams {
-            m_kib: ARGON2_MAX_M_KIB,
-            ..floor
-        };
-        let slow = KdfParams {
-            t: ARGON2_MAX_T,
-            ..floor
-        };
-        assert_eq!(
-            wide.max_strength(slow),
-            KdfParams {
-                m_kib: ARGON2_MAX_M_KIB,
-                t: ARGON2_MAX_T,
-                ..floor
-            }
-        );
     }
 
     /// The Tier-2 read ceiling is its own wire-format bound, not a mirror

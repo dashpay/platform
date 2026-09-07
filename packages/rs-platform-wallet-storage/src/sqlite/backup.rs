@@ -267,8 +267,8 @@ pub(crate) fn restore_from(
         crate::parent_permissions::ParentPermissionsError::Io(source) => {
             WalletStorageError::Io(source)
         }
-        crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
-            WalletStorageError::InsecureParentDir { mode }
+        crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
+            WalletStorageError::InsecureParentDir { ancestor, reason }
         }
     })?;
     // Ahead of the placeholder block below: `exists()` follows a link to a
