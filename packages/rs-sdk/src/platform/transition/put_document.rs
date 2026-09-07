@@ -11,7 +11,6 @@ use dpp::data_contract::document_type::DocumentType;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
-use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
@@ -88,21 +87,10 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
             } else {
                 let (document, document_state_transition_entropy) =
                     match document_state_transition_entropy {
-                        Some(entropy) => {
-                            // A caller-supplied entropy must derive the document's own id.
-                            // Platform consensus recomputes generate_document_id_v0 from the
-                            // transition entropy and rejects the create with
-                            // InvalidDocumentTransitionIdError on mismatch, so guard here
-                            // before broadcasting to fail locally (no wasted nonce/fee).
-                            ensure_entropy_matches_document_id(
-                                &document_type.data_contract_id(),
-                                &document.owner_id(),
-                                document_type.name(),
-                                &entropy,
-                                document.id(),
-                            )?;
-                            (document, entropy)
-                        }
+                        // A caller-supplied entropy must derive the document's own id;
+                        // dpp's DocumentCreateTransition::from_document refuses a
+                        // mismatch locally, before a nonce is bumped.
+                        Some(entropy) => (document, entropy),
                         None => {
                             let mut rng = StdRng::from_entropy();
                             let mut document = document;
@@ -171,45 +159,13 @@ fn prepare_document_for_transition(document: &Document, document_type: &Document
     document
 }
 
-/// Ensures a caller-supplied `entropy` derives the same document id already set
-/// on a create document.
-///
-/// A document-create state transition carries both the document id and the
-/// entropy, and Drive recomputes the id from the entropy during
-/// `advanced_structure` validation, rejecting the transition with
-/// `InvalidDocumentTransitionIdError` when they disagree. Because
-/// [`PutDocument::put_to_platform`] trusts the caller's id verbatim in the
-/// `Some(entropy)` arm, a two-phase caller whose id and entropy have drifted
-/// would only discover the mismatch after paying (a bumped identity-contract
-/// nonce). This check surfaces the mismatch locally before broadcasting.
-fn ensure_entropy_matches_document_id(
-    contract_id: &Identifier,
-    owner_id: &Identifier,
-    document_type_name: &str,
-    entropy: &[u8; 32],
-    document_id: Identifier,
-) -> Result<(), Error> {
-    let expected_id = Document::generate_document_id_v0(
-        contract_id,
-        owner_id,
-        document_type_name,
-        entropy.as_slice(),
-    );
-    if expected_id != document_id {
-        return Err(Error::Generic(format!(
-            "document id {document_id} does not match the id {expected_id} derived from the \
-             supplied entropy; the entropy must be the one used to generate the document id"
-        )));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use dpp::data_contract::config::DataContractConfig;
     use dpp::document::DocumentV0;
     use dpp::platform_value::{platform_value, Value};
+    use dpp::prelude::Identifier;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 
@@ -219,53 +175,6 @@ mod tests {
 
     fn owner_id() -> Identifier {
         Identifier::from([2u8; 32])
-    }
-
-    #[test]
-    fn matching_entropy_and_id_pass() {
-        let entropy = [7u8; 32];
-        let id = Document::generate_document_id_v0(
-            &contract_id(),
-            &owner_id(),
-            "contactRequest",
-            entropy.as_slice(),
-        );
-
-        ensure_entropy_matches_document_id(
-            &contract_id(),
-            &owner_id(),
-            "contactRequest",
-            &entropy,
-            id,
-        )
-        .expect("id derived from the supplied entropy must be accepted");
-    }
-
-    #[test]
-    fn mismatched_entropy_and_id_error_before_broadcast() {
-        // The id was derived from E1, but the caller passes E2 != E1 (mirroring
-        // the very drift consensus rejects with InvalidDocumentTransitionIdError).
-        let entropy_used = [1u8; 32];
-        let id = Document::generate_document_id_v0(
-            &contract_id(),
-            &owner_id(),
-            "contactRequest",
-            entropy_used.as_slice(),
-        );
-
-        let different_entropy = [2u8; 32];
-        let result = ensure_entropy_matches_document_id(
-            &contract_id(),
-            &owner_id(),
-            "contactRequest",
-            &different_entropy,
-            id,
-        );
-
-        assert!(
-            matches!(result, Err(Error::Generic(_))),
-            "a document id derived from a different entropy must be rejected locally"
-        );
     }
 
     #[test]

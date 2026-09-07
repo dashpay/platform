@@ -12,6 +12,9 @@ pub use contact_request::{
     EcdhProvider, RecipientIdentity, SendContactRequestInput, SendContactRequestResult,
 };
 pub use contact_request_queries::ContactRequestDocuments;
+pub use dash_platform_queries::dashpay::{
+    build_contact_request_document, ContactRequestDocumentParams,
+};
 
 use crate::platform::Fetch;
 use crate::{Error, Sdk};

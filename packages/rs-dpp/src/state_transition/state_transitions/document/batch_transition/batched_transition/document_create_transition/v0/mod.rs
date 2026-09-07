@@ -600,6 +600,63 @@ mod test {
         )
     }
 
+    /// Drive recomputes the document id from the create transition's entropy
+    /// and rejects a mismatch only after the identity contract nonce was
+    /// bumped; `from_document` must refuse the same mismatch locally.
+    #[test]
+    fn from_document_refuses_an_id_the_entropy_does_not_derive() {
+        use crate::consensus::basic::BasicError;
+        use crate::consensus::ConsensusError;
+        use crate::data_contract::accessors::v0::DataContractV0Getters;
+        use crate::document::{Document, DocumentV0};
+
+        let data_contract = data_contract_with_dynamic_properties();
+        let document_type = data_contract
+            .document_type_for_name("test")
+            .expect("test document type");
+        let owner_id = Identifier::from([2_u8; 32]);
+        let entropy = [7_u8; 32];
+        let derived_id =
+            Document::generate_document_id_v0(&data_contract.id(), &owner_id, "test", &entropy);
+        let document = |id: Identifier| {
+            Document::V0(DocumentV0 {
+                id,
+                owner_id,
+                ..Default::default()
+            })
+        };
+
+        DocumentCreateTransitionV0::from_document(
+            document(derived_id),
+            document_type,
+            entropy,
+            None,
+            1,
+            LATEST_PLATFORM_VERSION,
+            None,
+        )
+        .expect("an id derived from the entropy is accepted");
+
+        let error = DocumentCreateTransitionV0::from_document(
+            document(Identifier::from([9_u8; 32])),
+            document_type,
+            entropy,
+            None,
+            1,
+            LATEST_PLATFORM_VERSION,
+            None,
+        )
+        .expect_err("an id the entropy does not derive is refused");
+        assert!(
+            matches!(
+                error,
+                ProtocolError::ConsensusError(ref boxed)
+                    if matches!(**boxed, ConsensusError::BasicError(BasicError::InvalidDocumentTransitionIdError(_)))
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
     #[test]
     #[cfg(feature = "json-conversion")]
     fn convert_to_json_with_dynamic_binary_paths() {
