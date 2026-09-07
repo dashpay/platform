@@ -37,7 +37,8 @@ use dpp::version::PlatformVersion;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{
-    BindingSource, DriveDocumentQuery, DriveSubQuery, SubQueryBinding, SubQueryKind, SubQueryResult,
+    BindingSource, DriveDocumentQuery, DriveSubQuery, SubQueryBinding, SubQueryKind,
+    SubQueryResult, MAX_SUB_QUERIES,
 };
 use drive::util::grove_operations::GroveDBToUse;
 use std::sync::Arc;
@@ -80,6 +81,16 @@ impl<C> Platform<C> {
                 message.to_string(),
             )))
         };
+
+        // Bound dispatch work before scanning clauses, allocating decoded
+        // sub-queries, or fetching any of the request's contracts.
+        if proto_sub_queries.len() > MAX_SUB_QUERIES {
+            return Ok(unsupported(&format!(
+                "a composite query carries at most {} sub-queries, got {}",
+                MAX_SUB_QUERIES,
+                proto_sub_queries.len(),
+            )));
+        }
 
         // The composite surface is documents-shaped by construction:
         // an empty `selects` or a single DOCUMENTS projection; every
@@ -720,6 +731,107 @@ mod tests {
         assert_eq!(verified.sub_results[0].counts().len(), 2);
         assert_eq!(verified.sub_results[1].documents().len(), 1);
         assert_eq!(verified.sub_results[2].documents().len(), 1);
+    }
+
+    #[test]
+    fn should_reject_oversized_sub_queries_before_decoding_or_contract_fetch() {
+        let (platform, state, version, feed, dashpay) = setup_feed_state();
+        let mut query = client_query(&feed, &dashpay);
+        query
+            .sub_queries
+            .resize(MAX_SUB_QUERIES + 1, query.sub_queries[0].clone());
+        let drive::error::Error::Query(QuerySyntaxError::Unsupported(expected_message)) = query
+            .validate_composite(version)
+            .expect_err("too many sub-queries")
+        else {
+            panic!("expected Drive's sub-query count rejection");
+        };
+
+        for prove in [false, true] {
+            let mut oversized = composite_request(prove, feed.id().to_vec(), dashpay.id().to_vec());
+            oversized
+                .sub_queries
+                .resize(MAX_SUB_QUERIES + 1, oversized.sub_queries[0].clone());
+            let mut missing_page_contract = oversized.clone();
+            missing_page_contract.data_contract_id = vec![0x99; 32];
+            let mut malformed_page_clause = oversized.clone();
+            malformed_page_clause.where_clauses[0].operator = i32::MAX;
+            let mut missing_sub_query_contract = oversized.clone();
+            missing_sub_query_contract.sub_queries[0].data_contract_id = vec![0x99; 32];
+            let mut malformed_sub_query = oversized.clone();
+            malformed_sub_query.sub_queries[0].kind = i32::MAX;
+
+            // The count rejection must precede both decoding errors and
+            // contract lookup errors, in either response mode.
+            for request in [
+                oversized,
+                missing_page_contract,
+                malformed_page_clause,
+                missing_sub_query_contract,
+                malformed_sub_query,
+            ] {
+                let result = platform
+                    .platform
+                    .query_documents_v1(request, &state, version)
+                    .expect("query returns a validation error");
+                assert!(result.data.is_none());
+                assert!(
+                    matches!(
+                        result.errors.as_slice(),
+                        [QueryError::Query(QuerySyntaxError::Unsupported(message))]
+                            if message == &expected_message
+                    ),
+                    "expected the sub-query count rejection, prove={prove}, got {:?}",
+                    result.errors
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_accept_sub_query_counts_through_the_maximum() {
+        let (platform, state, version, feed, dashpay) = setup_feed_state();
+        for count in [1, MAX_SUB_QUERIES] {
+            for prove in [false, true] {
+                let mut request =
+                    composite_request(prove, feed.id().to_vec(), dashpay.id().to_vec());
+                request.sub_queries = vec![request.sub_queries[0].clone(); count];
+                let result = platform
+                    .platform
+                    .query_documents_v1(request, &state, version)
+                    .expect("query executes");
+                assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+                match result.data.expect("response data").result.expect("result") {
+                    ResponseResult::Proof(proof) => {
+                        assert!(prove);
+                        let mut query = client_query(&feed, &dashpay);
+                        query.sub_queries = vec![query.sub_queries[0].clone(); count];
+                        let (_, verified) = query
+                            .verify_composite_documents_proof(&proof.grovedb_proof, version)
+                            .expect("composite proof verifies");
+                        assert_eq!(verified.page_documents.len(), 2);
+                        assert_eq!(verified.sub_results.len(), count);
+                        assert!(verified
+                            .sub_results
+                            .iter()
+                            .all(|sub| sub.counts().len() == 2));
+                    }
+                    ResponseResult::Data(data) => {
+                        assert!(!prove);
+                        let Some(result_data::Variant::Composite(composite)) = data.variant else {
+                            panic!("expected composite data");
+                        };
+                        assert_eq!(composite.page_documents.len(), 2);
+                        assert_eq!(composite.sub_results.len(), count);
+                        assert!(composite.sub_results.iter().all(|sub| matches!(
+                            &sub.result,
+                            Some(composite_documents::sub_query_result::Result::Counts(entries))
+                                if entries.entries.len() == 2
+                        )));
+                    }
+                }
+            }
+        }
     }
 
     #[test]
