@@ -35,7 +35,18 @@ use crate::sqlite::util::safe_cast;
 /// - `dashpay::overlay`: the `dashpay_profiles` /
 ///   `dashpay_payments_overlay` tables are a write-only indexed overlay;
 ///   DashPay state rehydrates from the identities blob, not these tables.
-pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &["token_balances", "dashpay::overlay"];
+/// - `pending_contact_crypto`: the deferred contact-crypto queue is written
+///   on the production path and has no production reader, so a restart
+///   abandons it. Listed so the loss is at least COUNTED; wiring a reader is
+///   a behaviour change, not an accounting one.
+/// - `invitations`: deliberately not rehydrated — the Swift SwiftData mirror
+///   is the UI's source — which is precisely what this list is for.
+pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &[
+    "token_balances",
+    "dashpay::overlay",
+    "pending_contact_crypto",
+    "invitations",
+];
 
 /// Tables backing [`LOAD_UNIMPLEMENTED`], probed for a row count so a
 /// `load()` can report how much persisted state it did not rehydrate.
@@ -45,6 +56,8 @@ const LOAD_UNIMPLEMENTED_TABLES: &[&str] = &[
     "token_balances",
     "dashpay_profiles",
     "dashpay_payments_overlay",
+    "pending_contact_crypto",
+    "invitations",
 ];
 
 /// The all-zero `WalletId` reserved as the storage spelling of "owned by
@@ -2078,6 +2091,106 @@ fn current_schema_version(conn: &Connection) -> Result<Option<i32>, WalletStorag
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every table in the migrated schema is accounted for: rehydrated by
+    /// `load()`, reachable through a dedicated production API, listed as
+    /// unimplemented, or schema infrastructure. A table in none of those
+    /// lists is state this crate persists and never reports — which is
+    /// exactly how `pending_contact_crypto` and `invitations` stayed
+    /// invisible while `unimplemented_rows` reported zero.
+    ///
+    /// The catalogue is read from `sqlite_master` rather than scanned out of
+    /// the migration text, because DDL text lies about `RENAME` and `DROP`
+    /// and this schema does several of both.
+    #[test]
+    fn every_table_in_the_schema_is_accounted_for() {
+        // Rehydrated into `ClientStartState` by `load()`.
+        const REHYDRATED_BY_LOAD: &[&str] = &[
+            "account_registrations",
+            "asset_locks",
+            "contacts",
+            "core_address_pool",
+            "core_instant_locks",
+            "core_sync_state",
+            "core_transactions",
+            "core_utxos",
+            "identities",
+            "identity_keys",
+            "identity_scan_failed_indices",
+            "identity_scan_states",
+            "ignored_senders",
+            "platform_address_sync",
+            "platform_addresses",
+            "wallets",
+        ];
+        // Not rehydrated by `load()`, but read on demand by a production
+        // entry point, so the state is reachable rather than abandoned.
+        const READ_BY_A_DEDICATED_API: &[&str] = &[
+            "dpns_name_states",      // get_dpns_name_state
+            "meta_contact",          // the kv object store
+            "meta_data_versions",    // schema::versions
+            "meta_global",           // the kv object store
+            "meta_identity",         // the kv object store
+            "meta_platform_address", // the kv object store
+            "meta_store_generation", // schema::versions
+            "meta_token",            // the kv object store
+            "meta_wallet",           // the kv object store
+            "tracked_masternodes",   // load_tracked_masternodes
+        ];
+        const INFRASTRUCTURE: &[&str] = &["refinery_schema_history"];
+        // `load()` rehydrates these only with the `shielded` feature on, so
+        // the classification follows the build rather than claiming one.
+        #[cfg(feature = "shielded")]
+        const FEATURE_GATED: &[&str] = &["shielded_viewing_keys"];
+        #[cfg(not(feature = "shielded"))]
+        const FEATURE_GATED: &[&str] = &[];
+        #[cfg(feature = "shielded")]
+        const NOT_REHYDRATED_WITHOUT_FEATURE: &[&str] = &[];
+        #[cfg(not(feature = "shielded"))]
+        const NOT_REHYDRATED_WITHOUT_FEATURE: &[&str] = &["shielded_viewing_keys"];
+
+        let mut conn = Connection::open_in_memory().expect("in-memory db");
+        crate::sqlite::migrations::run(&mut conn).expect("migrate");
+        let tables: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' \
+                       AND name NOT LIKE 'sqlite_%' ORDER BY name",
+                )
+                .expect("read the catalogue");
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(0))
+                .expect("read the catalogue")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("read the catalogue");
+            rows
+        };
+        assert!(
+            tables.len() > 20,
+            "the catalogue probe returned {} tables, which cannot be right — \
+             a probe that finds nothing proves nothing",
+            tables.len()
+        );
+
+        let unaccounted: Vec<&String> = tables
+            .iter()
+            .filter(|table| {
+                !REHYDRATED_BY_LOAD.contains(&table.as_str())
+                    && !READ_BY_A_DEDICATED_API.contains(&table.as_str())
+                    && !LOAD_UNIMPLEMENTED_TABLES.contains(&table.as_str())
+                    && !INFRASTRUCTURE.contains(&table.as_str())
+                    && !FEATURE_GATED.contains(&table.as_str())
+                    && !NOT_REHYDRATED_WITHOUT_FEATURE.contains(&table.as_str())
+            })
+            .collect();
+        assert!(
+            unaccounted.is_empty(),
+            "unaccounted tables: {unaccounted:?}. A new table must join one of \
+             this test's lists. If `load()` does not read it and no other entry \
+             point does, it belongs in LOAD_UNIMPLEMENTED_TABLES so its rows are \
+             COUNTED — do not add it here to silence the test."
+        );
+    }
 
     /// `LOAD_UNIMPLEMENTED_TABLES` is hand-maintained beside the logical
     /// `LOAD_UNIMPLEMENTED` list, so a table renamed in a migration would

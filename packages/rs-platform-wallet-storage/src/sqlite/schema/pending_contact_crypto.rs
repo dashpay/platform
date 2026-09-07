@@ -107,16 +107,22 @@ pub fn apply_pending_contact_crypto(
 /// Every wallet's deferred-crypto queue, grouped by `wallet_id`, decoded from
 /// the `payload` blob.
 ///
-/// The production consumer is the `load()` restore into each identity's
-/// each identity's `DashPayState.pending_contact_crypto`, fanned out by `owner_identity_id`
-/// (this reader returns entries grouped by `wallet_id`; the restore must apply
-/// the wallet's identities BEFORE routing each entry to its owner's queue, or an
-/// entry whose owner isn't resident yet is dropped). It is blocked on the
-/// upstream per-wallet state restore (`LOAD_UNIMPLEMENTED: ClientStartState::wallets`
-/// — see `persister.rs`). Until that lands this reader is exercised only by the
-/// round-trip test, so it is `cfg(test)`-gated to keep both the lib and the
-/// `__test-helpers` builds dead-code-clean; widen to
-/// `any(test, feature = "__test-helpers")` when the load restore consumes it.
+/// **Nothing on the production path calls this.** `load()` does not restore
+/// the queue, so a restart abandons whatever it holds — the table is listed
+/// in `LOAD_UNIMPLEMENTED` (see `persister.rs`) so the abandoned rows are at
+/// least counted on `LoadDegradation` rather than reported as none.
+///
+/// The precondition once cited here — an upstream per-wallet state restore —
+/// is met: `load()` rebuilds a full `ClientWalletStartState`. What remains is
+/// a decision nobody has taken, not a blocker. The consumer would be each
+/// identity's `DashPayState.pending_contact_crypto`, fanned out by
+/// `owner_identity_id`; this reader groups by `wallet_id`, so a restore must
+/// make the wallet's identities resident BEFORE routing entries, or an entry
+/// whose owner is not yet loaded is silently dropped.
+///
+/// `cfg(test)`-gated to keep the lib and `__test-helpers` builds
+/// dead-code-clean; widen to `any(test, feature = "__test-helpers")` when a
+/// production consumer exists.
 #[cfg(test)]
 pub(crate) fn all_pending_contact_crypto(
     conn: &Connection,
