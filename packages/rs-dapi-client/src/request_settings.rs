@@ -119,32 +119,24 @@ impl AppliedRequestSettings {
     pub(crate) fn connection_key(&self) -> String {
         // Exhaustive destructuring: adding a settings field breaks this
         // binding, forcing an explicit connection-affecting-or-not decision.
-        #[cfg(not(target_arch = "wasm32"))]
         let Self {
+            #[cfg(not(target_arch = "wasm32"))]
             connect_timeout,
+            #[cfg(target_arch = "wasm32")]
+                connect_timeout: _,
             timeout: _,
             retries: _,
             ban_failed_address: _,
             max_decoding_message_size,
+            #[cfg(not(target_arch = "wasm32"))]
             ca_certificate,
-        } = self;
-        #[cfg(target_arch = "wasm32")]
-        let Self {
-            connect_timeout,
-            timeout: _,
-            retries: _,
-            ban_failed_address: _,
-            max_decoding_message_size,
         } = self;
 
         // The wasm channel builder ignores `connect_timeout`, so it does not
         // split the key there. The decoding limit still participates because
         // `grpc.rs` applies it to the client after channel construction.
         #[cfg(target_arch = "wasm32")]
-        let connect_timeout = {
-            let _ = connect_timeout;
-            &None::<Duration>
-        };
+        let connect_timeout = None::<Duration>;
 
         // The full certificate bytes (hex), not a short hash: two trust
         // anchors must never share a pool key, or a request pinned to one CA

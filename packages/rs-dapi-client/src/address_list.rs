@@ -633,6 +633,12 @@ impl FromIterator<Address> for AddressList {
 mod tests {
     use super::*;
 
+    fn list_with_addresses(count: usize) -> AddressList {
+        (0..count)
+            .map(|i| format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap())
+            .collect()
+    }
+
     #[test]
     fn test_get_live_addresses_empty_list() {
         let list = AddressList::new();
@@ -878,10 +884,7 @@ mod tests {
 
     #[test]
     fn test_get_live_address_sticks_to_small_active_set() {
-        let mut list = AddressList::new();
-        for i in 0..50 {
-            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
-        }
+        let list = list_with_addresses(50);
 
         let distinct: std::collections::HashSet<String> = (0..200)
             .map(|_| list.get_live_address().unwrap().to_string())
@@ -896,10 +899,7 @@ mod tests {
 
     #[test]
     fn test_get_live_address_round_robins_over_active_set() {
-        let mut list = AddressList::new().with_active_set_size(2);
-        for i in 0..5 {
-            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
-        }
+        let list = list_with_addresses(5).with_active_set_size(2);
 
         let picks: Vec<String> = (0..6)
             .map(|_| list.get_live_address().unwrap().to_string())
@@ -915,10 +915,7 @@ mod tests {
 
     #[test]
     fn test_get_live_address_ban_evicts_active_and_promotes_standby() {
-        let mut list = AddressList::new().with_active_set_size(1);
-        for i in 0..3 {
-            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
-        }
+        let list = list_with_addresses(3).with_active_set_size(1);
 
         let first = list.get_live_address().unwrap();
         for _ in 0..5 {
@@ -944,10 +941,7 @@ mod tests {
 
     #[test]
     fn test_get_live_address_no_immediate_repeat_after_other_member_evicted() {
-        let mut list = AddressList::new().with_active_set_size(2);
-        for i in 0..3 {
-            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
-        }
+        let list = list_with_addresses(3).with_active_set_size(2);
 
         let first = list.get_live_address().unwrap();
         let second = list.get_live_address().unwrap();
@@ -1003,10 +997,7 @@ mod tests {
 
     #[test]
     fn test_get_live_address_expired_slot_is_recycled() {
-        let mut list = AddressList::new();
-        for i in 0..10 {
-            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
-        }
+        let list = list_with_addresses(10);
 
         // Populate the active set, then back-date every slot's expiry.
         list.get_live_address().unwrap();
@@ -1066,10 +1057,7 @@ mod tests {
 
     #[test]
     fn test_evict_from_rotation_removes_member_without_ban() {
-        let mut list = AddressList::new().with_active_set_size(2);
-        for i in 0..3 {
-            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
-        }
+        let list = list_with_addresses(3).with_active_set_size(2);
 
         let served = list.get_live_address().unwrap();
         list.evict_from_rotation(&served);
@@ -1116,10 +1104,7 @@ mod tests {
 
     #[test]
     fn should_use_all_live_standbys_before_recycling_expired_members() {
-        let mut list = AddressList::new().with_active_set_size(3);
-        for i in 0..4 {
-            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
-        }
+        let list = list_with_addresses(4).with_active_set_size(3);
         list.get_live_address().unwrap();
         let standby = list
             .get_live_addresses()
@@ -1155,41 +1140,22 @@ mod tests {
 
     #[test]
     fn test_update_address_ban_status_evicts_when_banning_disabled() {
-        use crate::{transport::AppliedRequestSettings, CanRetry, ExecutionError, ExecutionResult};
+        use crate::{transport::TransportError, ExecutionError, ExecutionResult, RequestSettings};
+        use dapi_grpc::tonic::Status;
 
-        #[derive(Debug)]
-        struct RetryableError;
-        impl std::fmt::Display for RetryableError {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "retryable")
-            }
-        }
-        impl CanRetry for RetryableError {
-            fn can_retry(&self) -> bool {
-                true
-            }
-        }
-
-        let mut list = AddressList::new().with_active_set_size(1);
-        for i in 0..2 {
-            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
-        }
+        let list = list_with_addresses(2).with_active_set_size(1);
         let failed = list.get_live_address().unwrap();
 
-        let result: ExecutionResult<i32, RetryableError> = Err(ExecutionError {
-            inner: RetryableError,
+        let result: ExecutionResult<i32, TransportError> = Err(ExecutionError {
+            inner: TransportError::Grpc(Status::unavailable("node down")),
             retries: 0,
             address: Some(failed.clone()),
         });
-        let settings = AppliedRequestSettings {
-            connect_timeout: None,
-            timeout: Duration::from_secs(10),
-            retries: 5,
-            ban_failed_address: false,
-            max_decoding_message_size: None,
-            #[cfg(not(target_arch = "wasm32"))]
-            ca_certificate: None,
-        };
+        let settings = RequestSettings {
+            ban_failed_address: Some(false),
+            ..RequestSettings::default()
+        }
+        .finalize();
         crate::update_address_ban_status(&list, &result, &settings);
 
         assert!(
@@ -1219,10 +1185,7 @@ mod tests {
 
     #[test]
     fn test_with_active_set_size_is_shared_across_clones_and_shrinks() {
-        let mut list = AddressList::new();
-        for i in 0..10 {
-            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
-        }
+        let list = list_with_addresses(10);
 
         // Fill the default-sized active set through the original handle.
         list.get_live_address().unwrap();
@@ -1246,10 +1209,7 @@ mod tests {
 
     #[test]
     fn test_with_active_set_size_max_uses_whole_list() {
-        let mut list = AddressList::new().with_active_set_size(usize::MAX);
-        for i in 0..3 {
-            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
-        }
+        let list = list_with_addresses(3).with_active_set_size(usize::MAX);
 
         // Must not over-allocate or panic; effectively disables stickiness.
         let distinct: std::collections::HashSet<String> = (0..9)
