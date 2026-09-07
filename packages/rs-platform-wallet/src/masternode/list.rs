@@ -29,6 +29,13 @@ pub struct MasternodeListSummary {
     /// Primary routable Core P2P endpoint. `None` for Tor / I2P / CJDNS /
     /// domain-only entries, which have no `SocketAddr` form.
     pub service_address: Option<SocketAddr>,
+    /// EVERY advertised endpoint with a socket form — the primary plus, for
+    /// a v3 extended entry, the rest of its endpoint map across all
+    /// purposes. Core registers each of them as a unique property of the
+    /// masternode (`bad-protx-dup-netinfo-entry`), so uniqueness preflights
+    /// must compare against all of these, never just `service_address`.
+    /// Defaults to the primary alone on pre-field snapshots.
+    pub service_addresses: Vec<SocketAddr>,
     /// Platform HTTP (DAPI gRPC) port — evonodes only.
     pub platform_http_port: Option<u16>,
     /// Operator BLS public key (48 bytes, as serialized in the list — the
@@ -86,6 +93,7 @@ impl MasternodeListSummary {
         Self {
             pro_tx_hash,
             service_address: entry.service_address.primary_service_address(),
+            service_addresses: all_socket_addresses(&entry.service_address),
             platform_http_port,
             operator_public_key,
             voting_key_id,
@@ -115,6 +123,52 @@ impl MasternodeListSummary {
         let mut out = self.pro_tx_hash;
         out.reverse();
         out
+    }
+}
+
+/// Every endpoint of `net_info` with a socket form, across all purposes —
+/// the shape Core's unique-property index holds them in (each entry of an
+/// extended map is registered individually). Tor / I2P / CJDNS / domain
+/// entries have no `SocketAddr` form and are skipped; a caller-supplied
+/// `ip:port` value can never collide with them anyway.
+fn all_socket_addresses(
+    net_info: &dashcore::sml::masternode_list_entry::MasternodeNetInfo,
+) -> Vec<SocketAddr> {
+    use dashcore::sml::masternode_list_entry::net_info::{Bip155Network, NetInfoEntry};
+    use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
+    use std::net::{SocketAddrV4, SocketAddrV6};
+
+    match net_info {
+        MasternodeNetInfo::Legacy(addr) => vec![*addr],
+        MasternodeNetInfo::Extended(info) => info
+            .purposes
+            .iter()
+            .flat_map(|(_, entries)| entries.iter())
+            .filter_map(|entry| match entry {
+                NetInfoEntry::Service {
+                    network: Bip155Network::Ipv4,
+                    addr,
+                    port,
+                } => {
+                    let octets: [u8; 4] = addr.as_slice().try_into().ok()?;
+                    Some(SocketAddr::V4(SocketAddrV4::new(octets.into(), *port)))
+                }
+                NetInfoEntry::Service {
+                    network: Bip155Network::Ipv6,
+                    addr,
+                    port,
+                } => {
+                    let octets: [u8; 16] = addr.as_slice().try_into().ok()?;
+                    Some(SocketAddr::V6(SocketAddrV6::new(
+                        octets.into(),
+                        *port,
+                        0,
+                        0,
+                    )))
+                }
+                _ => None,
+            })
+            .collect(),
     }
 }
 
@@ -173,12 +227,11 @@ pub(crate) mod test_support {
     /// operator key and voting key id are all derived from `seed` so every
     /// entry is distinct and recognizable.
     pub(crate) fn masternode(seed: u8) -> MasternodeListSummary {
+        let primary = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(10, 0, 0, seed), 9999));
         MasternodeListSummary {
             pro_tx_hash: [seed; 32],
-            service_address: Some(SocketAddr::V4(SocketAddrV4::new(
-                Ipv4Addr::new(10, 0, 0, seed),
-                9999,
-            ))),
+            service_address: Some(primary),
+            service_addresses: vec![primary],
             platform_http_port: None,
             operator_public_key: [seed; 48],
             voting_key_id: [seed; 20],
@@ -250,6 +303,11 @@ mod tests {
         assert_eq!(
             s.service_address,
             Some("1.2.3.4:19999".parse::<SocketAddr>().unwrap())
+        );
+        assert_eq!(
+            s.service_addresses,
+            vec!["1.2.3.4:19999".parse::<SocketAddr>().unwrap()],
+            "a legacy entry's endpoint list is its single address"
         );
         assert_eq!(s.platform_http_port, Some(1443));
         assert_eq!(s.operator_public_key, [9u8; 48]);

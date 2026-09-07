@@ -33,8 +33,11 @@ use zeroize::Zeroizing;
 
 use super::list::MasternodeListSummary;
 use super::locator::p2pkh_script_hash;
+use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderRegistrationPayload;
+
 use super::update_service::{
-    display_hex, fetch_registration_payload, require_standard_payout_script,
+    display_hex, fetch_registration_transaction, fetch_transaction_checked,
+    registration_payload_from_fetched, require_standard_payout_script,
 };
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -95,6 +98,47 @@ pub async fn prepare_masternode_update_registrar<S: TransactionSigner + ?Sized +
     owner: OwnerSecret,
     signer: &S,
 ) -> Result<SignedCoreTransaction, PlatformWalletError> {
+    let summaries = spv
+        .masternode_list_summaries()
+        .await
+        .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
+
+    // The owner key is immutable — set at registration, never rotatable —
+    // so the ProRegTx's keyIDOwner is the authority the supplied secret is
+    // verified against (the masternode list does not carry it). The full
+    // transaction is fetched because an internal collateral is one of its
+    // own outputs.
+    let registration_tx = fetch_registration_transaction(wallet, &params.pro_tx_hash).await?;
+    let registration =
+        registration_payload_from_fetched(&params.pro_tx_hash, registration_tx.clone())?;
+    let collateral_script =
+        resolve_collateral_script(wallet, &registration_tx, &registration).await?;
+
+    let placeholder = assemble_update_registrar_placeholder(
+        wallet,
+        &summaries,
+        &registration,
+        &collateral_script,
+        &params,
+        &owner,
+    )?;
+
+    build_sign_update_registrar(wallet.core(), placeholder, owner, signer).await
+}
+
+/// Everything between the network reads and the funding build: resolve the
+/// live entry, verify the owner secret, resolve every payload field, run
+/// the consensus preflights, and assemble the placeholder payload. Split
+/// out so the whole wiring is testable without SPV or DAPI — the public
+/// orchestrator adds only the three fetches around it.
+pub(crate) fn assemble_update_registrar_placeholder(
+    wallet: &PlatformWallet,
+    summaries: &[MasternodeListSummary],
+    registration: &ProviderRegistrationPayload,
+    collateral_script: &ScriptBuf,
+    params: &MasternodeUpdateRegistrarParams,
+    owner: &OwnerSecret,
+) -> Result<ProviderUpdateRegistrarPayload, PlatformWalletError> {
     if params.new_operator_key_index.is_none() && params.new_voting_key_index.is_none() {
         return Err(PlatformWalletError::InvalidParameter(
             "nothing to rotate: neither a new operator key nor a new voting key was chosen"
@@ -102,10 +146,6 @@ pub async fn prepare_masternode_update_registrar<S: TransactionSigner + ?Sized +
         ));
     }
 
-    let summaries = spv
-        .masternode_list_summaries()
-        .await
-        .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
     let entry = summaries
         .iter()
         .find(|entry| entry.pro_tx_hash == params.pro_tx_hash)
@@ -129,11 +169,7 @@ pub async fn prepare_masternode_update_registrar<S: TransactionSigner + ?Sized +
         ));
     }
 
-    // The owner key is immutable — set at registration, never rotatable —
-    // so the ProRegTx's keyIDOwner is the reliable authority to verify the
-    // supplied secret against (the masternode list does not carry it).
-    let registration = fetch_registration_payload(wallet, &params.pro_tx_hash).await?;
-    verify_owner_secret(&registration.owner_key_hash, &owner)?;
+    verify_owner_secret(&registration.owner_key_hash, owner)?;
 
     let script_payout = resolve_owner_payout_script(&params.payout_address, wallet.network())?;
 
@@ -160,7 +196,7 @@ pub async fn prepare_masternode_update_registrar<S: TransactionSigner + ?Sized +
                 .legacy_public_key_bytes
                 .as_deref()
                 .and_then(|b| b.try_into().ok());
-            ensure_operator_key_unused(&summaries, &bytes, legacy.as_ref())?;
+            ensure_operator_key_unused(summaries, &bytes, legacy.as_ref())?;
             bytes
         }
         None => normalize_operator_key_to_basic(
@@ -184,8 +220,15 @@ pub async fn prepare_masternode_update_registrar<S: TransactionSigner + ?Sized +
         &registration.owner_key_hash,
         &voting_key_hash,
     )?;
+    ensure_collateral_not_reused(
+        collateral_script,
+        &registration.owner_key_hash,
+        &voting_key_hash,
+        &script_payout,
+        entry.has_extended_net_info,
+    )?;
 
-    let placeholder = ProviderUpdateRegistrarPayload::new(
+    Ok(ProviderUpdateRegistrarPayload::new(
         Txid::from_byte_array(params.pro_tx_hash),
         0, // provider_mode — 0 is the only defined mode
         BLSPublicKey::from(operator_public_key),
@@ -193,9 +236,89 @@ pub async fn prepare_masternode_update_registrar<S: TransactionSigner + ?Sized +
         script_payout,
         dashcore::hash_types::InputsHash::all_zeros(),
         Vec::new(),
-    );
+    ))
+}
 
-    build_sign_update_registrar(wallet.core(), placeholder, owner, signer).await
+/// The collateral UTXO's scriptPubKey. A null collateral txid means the
+/// collateral is internal — an output of the ProRegTx itself; otherwise it
+/// is an output of a separately fetched transaction, txid-bound before
+/// anything is read from it. The script at that outpoint is immutable
+/// history, and the entry's presence in the live list proves the outpoint
+/// is unspent.
+async fn resolve_collateral_script(
+    wallet: &PlatformWallet,
+    registration_tx: &dashcore::Transaction,
+    registration: &ProviderRegistrationPayload,
+) -> Result<ScriptBuf, PlatformWalletError> {
+    let outpoint = registration.collateral_outpoint;
+    if outpoint.txid == Txid::all_zeros() {
+        collateral_output_script(registration_tx, outpoint.vout)
+    } else {
+        let external = fetch_transaction_checked(
+            wallet,
+            &outpoint.txid.to_byte_array(),
+            "collateral transaction",
+        )
+        .await?;
+        collateral_output_script(&external, outpoint.vout)
+    }
+}
+
+/// Output `vout`'s scriptPubKey, refusing an out-of-range index.
+pub(crate) fn collateral_output_script(
+    transaction: &dashcore::Transaction,
+    vout: u32,
+) -> Result<ScriptBuf, PlatformWalletError> {
+    transaction
+        .output
+        .get(vout as usize)
+        .map(|output| output.script_pubkey.clone())
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "the collateral outpoint index {vout} is out of range for its transaction"
+            ))
+        })
+}
+
+/// Core resolves the masternode's collateral UTXO and rejects a ProUpRegTx
+/// whose final voting key (or the immutable owner key) is the collateral's
+/// P2PKH destination (`bad-protx-collateral-reuse`) — the rule keeping the
+/// collateral key off an online voting server. Candidate discovery joins
+/// wallet keys against DML voting fields only, so a key whose address once
+/// funded this node's collateral looks unused there; this is the check that
+/// stops it before funding. From v3 (ExtAddr) entries Core also rejects a
+/// payout script equal to the collateral script (`bad-protx-payee-reuse`);
+/// this payload is version 2, so that arm applies exactly when the ENTRY is
+/// v3 — Core gates on `max(entry version, payload version)`, and an entry
+/// advertises extended net info exactly when it is v3+.
+pub(crate) fn ensure_collateral_not_reused(
+    collateral_script: &ScriptBuf,
+    owner_key_hash: &PubkeyHash,
+    final_voting_key_hash: &[u8; 20],
+    script_payout: &ScriptBuf,
+    entry_is_v3: bool,
+) -> Result<(), PlatformWalletError> {
+    if let Some(collateral_key) = p2pkh_script_hash(collateral_script.as_bytes()) {
+        if collateral_key == owner_key_hash.to_byte_array()
+            || collateral_key == *final_voting_key_hash
+        {
+            return Err(PlatformWalletError::InvalidParameter(
+                "the chosen voting key (or the owner key) is the masternode's collateral \
+                 address — consensus rejects reusing the collateral key \
+                 (`bad-protx-collateral-reuse`); pick a different voting key"
+                    .to_string(),
+            ));
+        }
+    }
+    if entry_is_v3 && script_payout == collateral_script {
+        return Err(PlatformWalletError::InvalidParameter(
+            "the payout address is the masternode's collateral address — consensus rejects \
+             paying the payout to the collateral (`bad-protx-payee-reuse`); pick a different \
+             payout address"
+                .to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// Refuse an owner secret whose public key hash does not match the
@@ -598,6 +721,170 @@ mod tests {
             .expect("an unused key passes");
     }
 
+    /// The full prepare wiring below the network fetches — entry lookup,
+    /// owner verification, fresh-key derivation, uniqueness and reuse
+    /// preflights, payload assembly — driven through the same seam the
+    /// public orchestrator uses, then funded, signed and broadcast. The
+    /// public function adds only the SPV summaries read, the txid-bound
+    /// ProRegTx fetch and the collateral resolution around this.
+    #[test]
+    fn assembles_and_signs_through_the_prepare_wiring() {
+        use dashcore::blockdata::transaction::special_transaction::provider_registration::{
+            ProviderMasternodeType, ProviderRegistrationPayload,
+        };
+        use dashcore::OutPoint;
+
+        let wallet = crate::test_support::sync_test_platform_wallet();
+
+        let derived_operator: [u8; 48] = wallet
+            .derive_provider_key_at_index(ProviderKeyKind::Operator, 0, None, false)
+            .expect("operator key 0")
+            .public_key_bytes
+            .as_slice()
+            .try_into()
+            .expect("48 bytes");
+        let derived_voting = wallet
+            .derive_provider_key_at_index(ProviderKeyKind::Voting, 0, None, false)
+            .expect("voting key 0");
+        let expected_voting_hash =
+            hash160::Hash::hash(&derived_voting.public_key_bytes).to_byte_array();
+
+        let summaries = vec![masternode(0x11), masternode(0x22)];
+        // The mock-SDK fixture reports mainnet, so the payout address must
+        // be a mainnet one — `wallet.network()` gates it.
+        let payout_address = DashAddress::dummy(Network::Mainnet, 3);
+        let params = MasternodeUpdateRegistrarParams {
+            pro_tx_hash: [0x11; 32],
+            new_operator_key_index: Some(0),
+            new_voting_key_index: Some(0),
+            payout_address: payout_address.to_string(),
+        };
+        let registration = ProviderRegistrationPayload {
+            version: ProviderRegistrationPayload::CURRENT_VERSION,
+            masternode_type: ProviderMasternodeType::Regular,
+            masternode_mode: 0,
+            collateral_outpoint: OutPoint {
+                txid: Txid::all_zeros(),
+                vout: 0,
+            },
+            service_address: "10.0.0.17:9999".parse().expect("socket address"),
+            owner_key_hash: owner_key_hash(),
+            operator_public_key: BLSPublicKey::from([0x11; 48]),
+            voting_key_hash: PubkeyHash::from_byte_array([0x11; 20]),
+            operator_reward: 0,
+            script_payout: ScriptBuf::new(),
+            inputs_hash: InputsHash::all_zeros(),
+            signature: vec![],
+            platform_node_id: None,
+            platform_p2p_port: None,
+            platform_http_port: None,
+        };
+        let collateral = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0xAB; 20]));
+
+        let placeholder = assemble_update_registrar_placeholder(
+            &wallet,
+            &summaries,
+            &registration,
+            &collateral,
+            &params,
+            &owner(),
+        )
+        .expect("the wiring assembles the placeholder");
+
+        assert_eq!(placeholder.pro_tx_hash, Txid::from_byte_array([0x11; 32]));
+        assert_eq!(placeholder.provider_mode, 0);
+        assert_eq!(
+            placeholder.operator_public_key,
+            BLSPublicKey::from(derived_operator),
+            "the chosen wallet operator key lands in the payload"
+        );
+        assert_eq!(
+            placeholder.voting_key_hash,
+            PubkeyHash::from_byte_array(expected_voting_hash),
+            "the chosen wallet voting key's hash160 lands in the payload"
+        );
+        assert_eq!(placeholder.script_payout, payout_address.script_pubkey());
+        assert_eq!(placeholder.inputs_hash, InputsHash::all_zeros());
+        assert!(placeholder.payload_sig.is_empty());
+
+        // The collateral preflight is wired through: a collateral paid to
+        // the chosen voting key's address refuses the whole assembly.
+        let voting_collateral =
+            ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array(expected_voting_hash));
+        let err = assemble_update_registrar_placeholder(
+            &wallet,
+            &summaries,
+            &registration,
+            &voting_collateral,
+            &params,
+            &owner(),
+        )
+        .expect_err("collateral reuse by the chosen voting key is refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+
+        // Fund, sign and broadcast the assembled placeholder end-to-end.
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime");
+        runtime.block_on(async move {
+            let (wallet_manager, wallet_id, generation, signer) =
+                funded_wallet_manager(StandardAccountType::BIP44Account).await;
+            let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+            let broadcaster = Arc::new(RecordingBroadcaster::default());
+            let core = CoreWallet::new(
+                sdk,
+                wallet_manager,
+                wallet_id,
+                broadcaster.clone(),
+                generation,
+            );
+
+            let prepared = build_sign_update_registrar(&core, placeholder, owner(), &signer)
+                .await
+                .expect("the assembled placeholder funds and signs");
+            let txid = core
+                .broadcast_finalized_transaction(&prepared)
+                .await
+                .expect("broadcasts");
+
+            let sent = broadcaster.sent.lock().expect("broadcaster lock");
+            assert_eq!(sent.len(), 1);
+            let tx = &sent[0];
+            assert_eq!(tx.txid(), txid);
+            let Some(TransactionPayload::ProviderUpdateRegistrarPayloadType(payload)) =
+                &tx.special_transaction_payload
+            else {
+                panic!("the broadcast transaction must carry the ProUpRegTx payload");
+            };
+            assert_eq!(payload.pro_tx_hash, Txid::from_byte_array([0x11; 32]));
+            assert_eq!(
+                payload.operator_public_key,
+                BLSPublicKey::from(derived_operator)
+            );
+            assert_eq!(
+                payload.voting_key_hash,
+                PubkeyHash::from_byte_array(expected_voting_hash)
+            );
+            assert_eq!(payload.inputs_hash, tx.hash_inputs());
+
+            // The owner signature recovers to the owner key id over the
+            // finished payload hash — Core's CheckHashSig check.
+            let secp = Secp256k1::new();
+            let recovery_id =
+                RecoveryId::try_from(i32::from(payload.payload_sig[0] - 27 - 4)).expect("recid");
+            let recoverable =
+                RecoverableSignature::from_compact(&payload.payload_sig[1..], recovery_id)
+                    .expect("compact body");
+            let digest = Message::from_digest(payload.base_payload_hash().to_byte_array());
+            let recovered = secp.recover_ecdsa(&digest, &recoverable).expect("recovers");
+            assert_eq!(
+                hash160::Hash::hash(&recovered.serialize()).to_byte_array(),
+                owner_key_hash().to_byte_array()
+            );
+        });
+    }
+
     #[tokio::test]
     async fn builds_signs_and_broadcasts_a_pro_up_reg_tx() {
         let (wallet_manager, wallet_id, generation, signer) =
@@ -738,6 +1025,68 @@ mod review_tests {
         let p2sh = ScriptBuf::new_p2sh(&dashcore::ScriptHash::from_byte_array([0x11; 20]));
         ensure_payout_not_reusing_keys(&p2sh, &owner, &voting)
             .expect("a P2SH payout cannot reuse a key id");
+    }
+
+    /// Consensus loads the collateral UTXO and rejects reusing its P2PKH
+    /// destination as the owner or final voting key
+    /// (`bad-protx-collateral-reuse`) — the DML never shows a collateral
+    /// address, so candidate discovery alone cannot catch this. For a v3
+    /// entry it also rejects a payout equal to the collateral script
+    /// (`bad-protx-payee-reuse`).
+    #[test]
+    fn collateral_reuse_is_refused() {
+        let owner = PubkeyHash::from_byte_array([0x11; 20]);
+        let voting = [0x22u8; 20];
+        let payout = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0x33; 20]));
+
+        let voting_collateral = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array(voting));
+        let err = ensure_collateral_not_reused(&voting_collateral, &owner, &voting, &payout, false)
+            .expect_err("a collateral at the final voting key's address is refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+
+        let owner_collateral = ScriptBuf::new_p2pkh(&owner);
+        let err = ensure_collateral_not_reused(&owner_collateral, &owner, &voting, &payout, false)
+            .expect_err("a collateral at the owner key's address is refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+
+        let unrelated = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0x44; 20]));
+        ensure_collateral_not_reused(&unrelated, &owner, &voting, &payout, true)
+            .expect("an unrelated collateral passes both gates");
+
+        // Payout == collateral: Core applies this arm only from v3
+        // (ExtAddr) entries — a P2SH collateral carries no key id, so only
+        // the gated script-equality check can fire.
+        let p2sh = ScriptBuf::new_p2sh(&dashcore::ScriptHash::from_byte_array([0x55; 20]));
+        ensure_collateral_not_reused(&p2sh, &owner, &voting, &p2sh, false)
+            .expect("payout-collateral reuse is not checked below v3");
+        let err = ensure_collateral_not_reused(&p2sh, &owner, &voting, &p2sh, true)
+            .expect_err("a v3 entry's payout must not be the collateral script");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+    }
+
+    /// The collateral script comes from an output index inside a fetched
+    /// transaction — bounds-checked, never a panic on hostile data.
+    #[test]
+    fn collateral_output_script_is_bounds_checked() {
+        let script = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0x66; 20]));
+        let transaction = dashcore::Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![dashcore::TxOut {
+                value: 1_000_000_000_000,
+                script_pubkey: script.clone(),
+            }],
+            special_transaction_payload: None,
+        };
+
+        assert_eq!(
+            collateral_output_script(&transaction, 0).expect("in-range output"),
+            script
+        );
+        let err = collateral_output_script(&transaction, 1)
+            .expect_err("an out-of-range outpoint index is refused");
+        assert!(matches!(err, PlatformWalletError::InvalidIdentityData(_)));
     }
 
     /// A kept operator key from a version-1 (legacy-serialized) entry is

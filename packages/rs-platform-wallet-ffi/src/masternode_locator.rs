@@ -314,6 +314,7 @@ mod tests {
         MasternodeListSummary {
             pro_tx_hash: [1u8; 32],
             service_address: Some("1.2.3.4:9999".parse().unwrap()),
+            service_addresses: vec!["1.2.3.4:9999".parse().unwrap()],
             platform_http_port: Some(443),
             operator_public_key: [2u8; 48],
             voting_key_id: [3u8; 20],
