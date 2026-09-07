@@ -11,16 +11,12 @@ export default function ensureTenderdashNodeKeyFactory() {
   /**
    * Fill in a missing tenderdash node identity on a config.
    *
-   * The interactive setup wizard is the only flow that collects a node key, so
-   * a config assembled any other way (dashmate config create, non-interactive
-   * setup, enabling platform on an existing node) carries
-   * platform.drive.tenderdash.node.{id,key} as null, and node_key.json is
-   * rendered with the literal string "null" - tenderdash panics at startup.
-   *
-   * Only the config it is given is changed. It runs before a config is saved
-   * and before its templates are rendered, so config.json and node_key.json
-   * agree on the identity and a restart reuses it. An existing key is never
-   * touched, which is what makes running it at both points safe.
+   * Only the setup wizard collects a node key, so a config assembled any other
+   * way carries node.{id,key} as null and node_key.json renders the literal
+   * string "null" - tenderdash panics at startup. Runs both before a config is
+   * saved and before its templates are rendered, so config.json and
+   * node_key.json agree; an existing key is never touched, which is what makes
+   * running it at both points safe.
    *
    * @typedef {ensureTenderdashNodeKey}
    * @param {Config} config
@@ -40,8 +36,7 @@ export default function ensureTenderdashNodeKeyFactory() {
     const existingKey = config.get(NODE_KEY_PATH);
 
     if (existingKey !== null) {
-      // The id is derivable, so a config carrying a key without one is
-      // completed rather than rejected.
+      // The id is derivable, so complete a key missing one rather than reject it
       if (config.get(NODE_ID_PATH) === null) {
         config.set(NODE_ID_PATH, deriveTenderdashNodeId(existingKey));
       }
@@ -49,11 +44,9 @@ export default function ensureTenderdashNodeKeyFactory() {
       return;
     }
 
-    // An evonode's node id is registered on chain in its ProRegTx. A key
+    // An evonode's node id is registered on chain in its ProRegTx, so a key
     // generated here would start a healthy-looking node under an identity the
-    // network does not know, instead of failing at startup. The wizard insists
-    // on the registered key for a masternode and doctor reports a mismatch, so
-    // this is left to the operator.
+    // network does not know instead of failing at startup. Left to the operator.
     if (config.get('core.masternode.enable') === true) {
       return;
     }

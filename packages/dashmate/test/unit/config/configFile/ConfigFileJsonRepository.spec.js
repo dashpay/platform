@@ -197,10 +197,28 @@ describe('ConfigFileJsonRepository', () => {
 
     // A caller holding the command-length lock may save multiple checkpoints
     // through the same repository instance.
+    it('should allow repeated writes from one long-lived instance', () => {
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
+      const configFile = repository.read();
+
+      configFile.getConfig('base').set('description', 'first');
+      repository.write(configFile);
+
+      configFile.getConfig('base').set('description', 'second');
+
+      expect(() => repository.write(configFile)).to.not.throw();
+
+      const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
+
+      expect(reread.getConfig('base').get('description')).to.equal('second');
+    });
+
     it('should complete a platform node identity before it reaches disk', () => {
       // The saved JSON and the node_key.json rendered from the same config must
-      // name one identity, so the identity is filled in on the way to disk
-      // rather than by a second, nested save.
+      // name one identity, so it is filled in on the way to disk rather than by
+      // a second, nested save.
       const generated = [];
       const ensureTenderdashNodeKey = (config) => {
         if (config.get('platform.drive.tenderdash.node.key') === null) {
@@ -224,9 +242,7 @@ describe('ConfigFileJsonRepository', () => {
 
       repository.write(configFile);
 
-      // Only the config with pending changes - the one about to be rendered.
-      // The untouched sibling would otherwise gain an identity in config.json
-      // that its node_key.json never receives.
+      // Only the config with pending changes - the one about to be rendered
       expect(generated).to.deep.equal(['node1']);
       expect(configFile.getConfig('base').get('platform.drive.tenderdash.node.key')).to.equal(null);
 
@@ -236,24 +252,6 @@ describe('ConfigFileJsonRepository', () => {
 
       // Completed configs stay dirty so the caller renders their service files.
       expect(configFile.getConfig('node1').isChanged()).to.be.true();
-    });
-
-    it('should allow repeated writes from one long-lived instance', () => {
-      seedConfigFile();
-
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
-      const configFile = repository.read();
-
-      configFile.getConfig('base').set('description', 'first');
-      repository.write(configFile);
-
-      configFile.getConfig('base').set('description', 'second');
-
-      expect(() => repository.write(configFile)).to.not.throw();
-
-      const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
-
-      expect(reread.getConfig('base').get('description')).to.equal('second');
     });
   });
 

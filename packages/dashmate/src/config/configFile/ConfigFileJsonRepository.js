@@ -455,17 +455,15 @@ export default class ConfigFileJsonRepository {
    * @param {ConfigFile} configFile
    */
   #save(configFile) {
-    // A platform node must not reach disk without its identity: the rendered
-    // node_key.json would then hold a key the saved config does not, and the
-    // next render would mint another. Every save path ends here, including the
-    // one that saves a migration after its templates were rendered, so the
-    // in-flight configs are completed rather than re-read and saved separately.
+    // A platform node must not reach disk without its identity, or the rendered
+    // node_key.json holds a key the saved config does not and the next render
+    // mints another. Every save path ends here, so the in-flight configs are
+    // completed rather than re-read and saved separately.
     //
-    // Only configs with pending changes: a config stays changed until its
-    // service files are rendered, so these are exactly the ones the caller
-    // renders next, and the identity saved is the identity rendered. A config
-    // nothing touched is left alone - completing it here would put an identity
-    // in config.json that its node_key.json never receives.
+    // Changed configs only: a config stays changed until its service files are
+    // rendered, so these are exactly the ones the caller renders next. An
+    // untouched config would otherwise gain an identity in config.json that its
+    // node_key.json never receives.
     configFile.getAllConfigs()
       .filter((config) => config.isChanged())
       .forEach((config) => this.ensureTenderdashNodeKey(config));
