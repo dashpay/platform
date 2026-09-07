@@ -143,10 +143,14 @@ pub unsafe extern "C" fn platform_wallet_manager_sync_progress(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_progress);
 
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.spv().sync_progress())
-    });
-    let progress = unwrap_option_or_return!(option);
+    // Look the runtime up under the registry guard, but wait on it outside:
+    // the wait parks the caller (the SPV client lock is held across start,
+    // stop and block processing), and a registry read guard held across it
+    // would stall `platform_wallet_manager_destroy` (a registry write) and,
+    // through parking_lot's writer preference, every other registry reader.
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_shared());
+    let spv = unwrap_option_or_return!(option);
+    let progress = runtime().block_on(spv.sync_progress());
     *out_progress = match progress {
         Some(p) => progress_to_ffi(&p),
         None => FFISpvSyncProgress::default(),
@@ -295,10 +299,10 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_connected_peers(
     *out_entries = std::ptr::null();
     *out_count = 0;
 
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.spv().connected_peers())
-    });
-    let peers = unwrap_option_or_return!(option);
+    // Waited on outside the registry guard — see `platform_wallet_manager_sync_progress`.
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_shared());
+    let spv = unwrap_option_or_return!(option);
+    let peers = runtime().block_on(spv.connected_peers());
     if peers.is_empty() {
         return PlatformWalletFFIResult::ok();
     }
@@ -370,10 +374,10 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_tip_unix_seconds(
     out_unix_seconds: *mut u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_unix_seconds);
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.spv().tip_block_time())
-    });
-    let tip = unwrap_option_or_return!(option);
+    // Waited on outside the registry guard — see `platform_wallet_manager_sync_progress`.
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_shared());
+    let spv = unwrap_option_or_return!(option);
+    let tip = runtime().block_on(spv.tip_block_time());
     *out_unix_seconds = tip.map(|t| t as u64).unwrap_or(0);
     PlatformWalletFFIResult::ok()
 }
