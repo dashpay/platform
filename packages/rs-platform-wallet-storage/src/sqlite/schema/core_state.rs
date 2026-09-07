@@ -88,8 +88,19 @@ pub fn apply(
         }
     }
     if !cs.spent_utxos.is_empty() {
-        let mut exists_stmt =
-            tx.prepare_cached("SELECT 1 FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2")?;
+        // Only a MATERIALISED row takes the in-place fast path. A
+        // never-materialised placeholder (`height IS NULL`, `apply_sweep`'s
+        // tombstone) must go through the full upsert instead: the wallet
+        // delivering the coin as spent is a delivery, and the collector's
+        // soundness argument assumes every delivery materialises the row.
+        // Marking the placeholder in place would leave `height` NULL and
+        // the stamp intact, so `collect_finalized_tombstones` would delete
+        // the only durable record of the spend once the boundary passed —
+        // and a later rescan re-delivery would land the coin unspent.
+        let mut materialised_stmt = tx.prepare_cached(
+            "SELECT 1 FROM core_utxos \
+             WHERE wallet_id = ?1 AND outpoint = ?2 AND height IS NOT NULL",
+        )?;
         let mut mark_spent_stmt = tx.prepare_cached(
             "UPDATE core_utxos SET spent = 1 WHERE wallet_id = ?1 AND outpoint = ?2",
         )?;
@@ -97,18 +108,21 @@ pub fn apply(
         let mut lookup_stmt = tx.prepare_cached(ACCOUNT_INDEX_BY_ADDRESS_SQL)?;
         for utxo in &cs.spent_utxos {
             let op = blob::encode_outpoint(&utxo.outpoint)?;
-            let exists: bool = exists_stmt
+            let materialised: bool = materialised_stmt
                 .query_row(params![wallet_id.as_slice(), &op[..]], |_| Ok(true))
                 .optional()?
                 .unwrap_or(false);
-            if exists {
+            if materialised {
                 mark_spent_stmt.execute(params![wallet_id.as_slice(), &op[..]])?;
             } else {
-                // Spent-only synthetic row: best-effort account_index
-                // from the derived-address map. A spend of an
-                // externally-funded address we never derived defaults
-                // to 0 (logged) — harmless, since spent rows are
-                // excluded from `list_unspent_utxos`.
+                // Missing row or held placeholder. For a missing row this
+                // is the spent-only synthetic row: best-effort
+                // account_index from the derived-address map. A spend of
+                // an externally-funded address we never derived defaults
+                // to 0 (logged) — harmless, since spent rows are excluded
+                // from `list_unspent_utxos`. For a placeholder the
+                // conflict clause materialises it with the delivered
+                // funding data, keeps it spent, and clears the stamp.
                 execute_upsert_utxo(&mut upsert_stmt, &mut lookup_stmt, wallet_id, utxo, true)?;
             }
         }
@@ -264,10 +278,10 @@ pub fn apply(
         // wipes a buffered round (the winner's record with it) while the
         // faulted wallet keeps persisting later rounds, and `apply_sweep`
         // above returns before its input loop when the swept txid has no
-        // row. Dropping the release set there would leave the
-        // `spent_in_txid` guard in `execute_upsert_utxo`'s conflict clause
-        // holding the placeholder's claim forever — the release is the one
-        // channel that clears it. Running after the loser loop
+        // row. Dropping the release set there would leave the held
+        // placeholder in place, with `execute_upsert_utxo`'s valve keeping
+        // it spent through every funding upsert, forever — the release is
+        // the one channel that clears it. Running after the loser loop
         // rather than inside it changes nothing for inputs the loop already
         // freed (same UPDATE, idempotent), and a coin a surviving record in
         // this round re-claimed was already filtered out of `released`
@@ -283,6 +297,19 @@ pub fn apply(
             // the real row freshly unspent, exactly as if the dead claim had
             // never existed. Materialised rows carry real funding data and
             // are released in place as before.
+            //
+            // An output of a transaction swept in this very round is the
+            // one exception, and it is deleted whatever its shape: a coin
+            // created by a dead transaction cannot be unspent, only gone.
+            // The loser loop already refuses to release such an outpoint
+            // (it deletes the row and moves on), but this pass runs
+            // regardless of whether the parent's own record survived —
+            // that is its whole point — and with the parent's row lost
+            // nothing above has removed the parent's materialised output,
+            // so releasing it in place would hand back a spendable coin
+            // from a transaction that can never confirm.
+            let mut swept_output_drop_stmt =
+                tx.prepare_cached("DELETE FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2")?;
             let mut release_drop_stmt = tx.prepare_cached(
                 "DELETE FROM core_utxos \
                  WHERE wallet_id = ?1 AND outpoint = ?2 AND height IS NULL",
@@ -293,6 +320,10 @@ pub fn apply(
             )?;
             for outpoint in &released {
                 let key = blob::encode_outpoint(outpoint)?;
+                if swept_txids.contains(&outpoint.txid) {
+                    swept_output_drop_stmt.execute(params![wallet_id.as_slice(), &key[..]])?;
+                    continue;
+                }
                 let dropped = release_drop_stmt.execute(params![wallet_id.as_slice(), &key[..]])?;
                 if dropped == 0 {
                     release_stmt.execute(params![wallet_id.as_slice(), &key[..]])?;
@@ -429,8 +460,13 @@ fn surviving_stored_input_claims(
 /// own here: `spent = 1`, `spent_in_txid = superseded_by`, everything else a
 /// placeholder the real funding data overwrites on arrival.
 /// `execute_upsert_utxo`'s conflict clause is what makes that placeholder
-/// durable — it refuses to clear `spent` while `spent_in_txid` is set, so the
-/// claim survives the funding upsert instead of being upserted away by it.
+/// durable — it refuses to clear `spent` on a never-materialised held row
+/// (`height IS NULL AND spent = 1`), so the claim survives the funding
+/// upsert instead of being upserted away by it. The hold is keyed on that
+/// shape rather than on `spent_in_txid`, which the
+/// `setnull_core_utxos_on_tx_delete` trigger can clear underneath it (see
+/// the valve's own comment); the link names the current claimant for the
+/// chained-sweep re-point below and is informational otherwise.
 ///
 /// The placeholder is created for EVERY sweep context; only the stamp
 /// differs. A BLOCK-CONTEXT sweep (`winner_mined_height` is `Some`)
@@ -579,7 +615,7 @@ fn apply_sweep(
     // Only reached for a held input with no existing row — see the doc
     // comment above. `value`/`script`/`height`/`account_index` are
     // placeholders; the funding UTXO's own upsert overwrites them (and,
-    // thanks to the `spent_in_txid` guard in `execute_upsert_utxo`, does
+    // thanks to the held-placeholder valve in `execute_upsert_utxo`, does
     // not clear `spent` while doing it). `winner_mined_height` is the
     // winner's own block height when the sweep has one — the row's whole
     // lifetime rule for `collect_finalized_tombstones` — and NULL for an
@@ -609,10 +645,12 @@ fn apply_sweep(
         //   dead output `spent = 0`, a phantom spendable coin `load()`
         //   hands back.
         // - Holding it instead (`spent = 1`, `spent_in_txid = winner`, the
-        //   ordinary path below) survives as a claim the funding upsert's
-        //   valve then defends — against the chainlocked reinstatement
-        //   that is the ONE event that can bring the coin back, whose
-        //   re-emitted output must land freshly unspent.
+        //   ordinary path below) either survives as a placeholder the
+        //   funding upsert's valve then defends — against the chainlocked
+        //   reinstatement that is the ONE event that can bring the coin
+        //   back, whose re-emitted output must land freshly unspent — or,
+        //   for a materialised row, keeps a dead coin on disk until that
+        //   reinstatement, with nothing else able to remove it.
         //
         // The delete is idempotent against the parent's own pass in either
         // batch order, and a reinstatement re-creates the real row through
@@ -663,17 +701,31 @@ fn apply_sweep(
 const ACCOUNT_INDEX_BY_ADDRESS_SQL: &str =
     "SELECT account_index FROM core_derived_addresses WHERE wallet_id = ?1 AND address = ?2";
 
-// `spent` only takes the incoming value when the existing row has no
-// `spent_in_txid`. A coin held spent with no spender on record is the
-// documented recovery state — the wallet handing it back as a UTXO is
-// what clears it. A coin held spent *with* `spent_in_txid` set is
-// `apply_sweep`'s tombstone for an input the loser claimed but the funding
-// row hadn't arrived for yet; the funding upsert (this statement) is
-// exactly the arrival that tombstone exists to survive, so it must not
-// double as the thing that erases it. `spent_in_txid` itself is left out of
-// the SET list entirely — untouched, it carries the claim forward.
-// `winner_mined_height` DOES clear: this statement always binds a real
-// funding `height`, so the row it lands on is materialised from here on —
+// The valve: `spent` keeps the stored value only for a held placeholder —
+// `height IS NULL AND spent = 1`, the row `apply_sweep`'s tombstone insert
+// writes for an input the loser claimed but the funding row hadn't arrived
+// for yet. The funding upsert (this statement) is exactly the arrival that
+// tombstone exists to survive, so it must not double as the thing that
+// erases it.
+//
+// The valve is keyed on the row's SHAPE, not on `spent_in_txid`, for two
+// reasons. A materialised row (`height` set) is the wallet's own coin: it
+// knows the funding, and any network-final spender of a coin it knows is
+// wallet-relevant by definition (BIP158 matches the input's prevout
+// script), so the wallet's own scan re-discovers the spend and its view of
+// `spent` is authoritative — if it re-delivers such a coin unspent, the
+// spender was reorged out and holding the row would lock a real coin out
+// forever. And `spent_in_txid` is not a durable key even on a placeholder:
+// `setnull_core_utxos_on_tx_delete` nulls it whenever the named winner's
+// own `core_transactions` row goes — including when that winner is itself
+// swept later and the placeholder was not one of its inputs, so the input
+// loop never re-points it — while the hold must outlive that.
+//
+// `spent_in_txid` follows the same rule: untouched while the valve holds
+// (it carries the claim forward), kept when the wallet itself says spent,
+// and cleared with `spent` when the wallet hands a materialised coin back.
+// `winner_mined_height` always clears: this statement binds a real funding
+// `height`, so the row it lands on is materialised from here on —
 // permanently outside `collect_finalized_tombstones`'s reach — and a stale
 // stamp would only mislead.
 const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
@@ -685,8 +737,12 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         height = excluded.height, \
         account_index = excluded.account_index, \
         winner_mined_height = NULL, \
-        spent = CASE WHEN core_utxos.spent_in_txid IS NOT NULL \
-            THEN core_utxos.spent ELSE excluded.spent END";
+        spent = CASE WHEN core_utxos.height IS NULL AND core_utxos.spent \
+            THEN 1 ELSE excluded.spent END, \
+        spent_in_txid = CASE \
+            WHEN core_utxos.height IS NULL AND core_utxos.spent THEN core_utxos.spent_in_txid \
+            WHEN excluded.spent THEN core_utxos.spent_in_txid \
+            ELSE NULL END";
 
 fn execute_upsert_utxo(
     stmt: &mut rusqlite::CachedStatement<'_>,
@@ -815,16 +871,14 @@ fn read_sync_heights(
 /// funding upsert materialising it, a later block-context sweep stamping
 /// it, or a release deleting it (see `apply_sweep`).
 ///
-/// Two passes, both narrowed to `height IS NULL` (only the tombstone
-/// insert leaves `height` NULL, so the set is exactly the
-/// never-materialised rows, served by the partial index):
-///
-/// 1. Released leftovers (`spent = 0`) are deleted outright — a released,
-///    never-materialised claim holds nothing and would read as a
-///    zero-value phantom coin. The release path now deletes these
-///    in-line; this pass self-heals rows written before it did.
-/// 2. Held rows whose winner height is at or below the boundary are
-///    collected.
+/// One pass, narrowed to `height IS NULL` (only the tombstone insert
+/// leaves `height` NULL, so the set is exactly the never-materialised
+/// rows, served by the partial index): held rows whose winner height is
+/// at or below the boundary are collected. There is no released-leftover
+/// shape to sweep up — a release deletes a never-materialised row in-line
+/// (see the release pass in [`apply`]), and the loser loop's transient
+/// `spent = 0` on a placeholder is always followed by that pass in the
+/// same transaction.
 ///
 /// Like upstream, a no-op until a chainlock height has been persisted —
 /// without a finality boundary nothing can be proven final.
@@ -832,22 +886,17 @@ fn collect_finalized_tombstones(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
 ) -> Result<(), WalletStorageError> {
-    tx.execute(
-        "DELETE FROM core_utxos \
-         WHERE wallet_id = ?1 AND height IS NULL AND spent = 0",
-        params![wallet_id.as_slice()],
-    )?;
     let (_, sy, cl) = read_sync_heights(tx, wallet_id)?;
     let (Some(sy), Some(cl)) = (sy, cl) else {
         return Ok(());
     };
     let boundary = cl.min(sy);
-    tx.execute(
+    let mut stmt = tx.prepare_cached(
         "DELETE FROM core_utxos \
          WHERE wallet_id = ?1 AND height IS NULL AND spent = 1 \
            AND winner_mined_height <= ?2",
-        params![wallet_id.as_slice(), i64::from(boundary)],
     )?;
+    stmt.execute(params![wallet_id.as_slice(), i64::from(boundary)])?;
     Ok(())
 }
 

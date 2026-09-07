@@ -36,14 +36,12 @@
 //! per-round sweep touches tombstones only, not the wallet's full
 //! spent history.
 //!
-//! Edited in place (formerly `V006__utxo_tombstone_stamp`, column
-//! `held_since_height`) under the same pre-release policy V001's test
-//! documents: nothing shipped has applied this migration, and a dev
-//! database that did apply the old shape fails refinery's divergence
-//! check and must be recreated. Renumbered `V006` → `V007` when the
-//! mainline's `V006__tracked_masternodes` merged in ahead of this
-//! unmerged branch: version numbers, like capability bits, are
-//! append-only and the already-merged assignment keeps its slot.
+//! Version numbers, like capability bits, are append-only: an already-
+//! merged assignment keeps its slot, so an unmerged migration takes the
+//! next free number whenever the mainline lands one ahead of it. Under
+//! the pre-release policy V001's test documents, an unshipped migration
+//! may still be edited in place; a dev database that applied an earlier
+//! shape fails refinery's divergence check and must be recreated.
 
 pub fn migration() -> String {
     "ALTER TABLE core_utxos ADD COLUMN winner_mined_height INTEGER;
