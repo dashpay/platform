@@ -313,22 +313,31 @@ final class CoreWalletDiagnosticsTests: XCTestCase {
             contentsOf: session.appendingPathComponent("swift/run.log"),
             encoding: .utf8
         )
-        let deepStartupEvents = [
-            "core_db_wallet_snapshot",
+        // The complete set of events the pre-export path emits, spelled exactly
+        // as `PlatformWalletManagerCoreDiagnostics` writes them — a name that
+        // is never emitted (`core_db_memory_diff`, say, whose real event is
+        // `core_db_memory_diff_item`) would make its guard vacuous.
+        let deepDiagnosticEvents = [
+            "asset_lock_db_group",
+            "asset_lock_db_memory_diff_item",
+            "asset_lock_db_memory_diff_summary",
+            "asset_lock_db_snapshot",
+            "asset_lock_memory_group",
+            "asset_lock_memory_snapshot",
             "core_db_account_snapshot",
             "core_db_anomaly_summary",
-            "core_db_txo_anomaly",
-            "core_owned_output_audit_summary",
-            "core_owned_output_anomaly",
-            "asset_lock_db_snapshot",
-            "shielded_store_snapshot",
-            "core_memory_account_snapshot",
+            "core_db_memory_diff_item",
             "core_db_memory_diff_summary",
-            "core_db_memory_diff",
-            "asset_lock_memory_snapshot",
-            "asset_lock_db_memory_diff_summary",
+            "core_db_txo_anomaly",
+            "core_db_wallet_snapshot",
+            "core_diagnostics_unavailable",
+            "core_memory_account_snapshot",
+            "core_memory_snapshot_unavailable",
+            "core_owned_output_anomaly",
+            "core_owned_output_audit_summary",
+            "shielded_store_snapshot",
         ]
-        for event in deepStartupEvents {
+        for event in deepDiagnosticEvents {
             XCTAssertFalse(completeLog.contains("event=\(event) "), event)
         }
     }

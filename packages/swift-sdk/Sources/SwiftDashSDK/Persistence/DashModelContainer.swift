@@ -8,12 +8,20 @@ public enum DashModelContainer {
         let wal: UInt64
         let shm: UInt64
 
+        /// Shares the exporter's saturating rule so a corrupt size can never
+        /// trap and so both totals move together if that rule ever changes.
         var total: UInt64 {
-            [main, wal, shm].reduce(0) { partial, value in
-                let (sum, overflow) = partial.addingReportingOverflow(value)
-                return overflow ? UInt64.max : sum
-            }
+            diagnosticSaturatingSum([main, wal, shm])
         }
+    }
+
+    /// Which of the two open attempts produced the result being reported.
+    private enum StoreMigrationPath: String {
+        /// `DashMigrationPlan` accepted the store.
+        case staged
+        /// The staged plan rejected the store and SwiftData's inferred
+        /// lightweight migration was used instead — see `create`.
+        case inferredFallback = "inferred_fallback"
     }
 
     /// Builds the common payload for both sides of the container open. The
@@ -23,6 +31,7 @@ public enum DashModelContainer {
     private static func storeOpenFields(
         succeeded: Bool,
         existedBefore: Bool,
+        migrationPath: StoreMigrationPath,
         startedAt: CFAbsoluteTime,
         sizeBefore: StoreFileSizes,
         sizeAfter: StoreFileSizes
@@ -50,8 +59,8 @@ public enum DashModelContainer {
 
         return [
             "container_result": .publicText(succeeded ? "opened" : "open_failed"),
-            "container_reused": .boolean(false),
             "duration_ms": .unsignedInteger(duration),
+            "migration_path": .publicText(migrationPath.rawValue),
             "result": .publicText(succeeded ? "success" : "failure"),
             "store_existed_before_open": .boolean(existedBefore),
             "store_main_size_bytes_after": .unsignedInteger(sizeAfter.main),
@@ -169,14 +178,21 @@ public enum DashModelContainer {
         cloudKit: Bool = false,
         groupContainer: ModelConfiguration.GroupContainer = .automatic
     ) throws -> ModelContainer {
-        let modelConfiguration = ModelConfiguration(
-            schema: schema,
-            isStoredInMemoryOnly: false,
-            allowsSave: true,
-            groupContainer: groupContainer,
-            cloudKitDatabase: cloudKit ? .automatic : .none
+        return try open(
+            ModelConfiguration(
+                schema: schema,
+                isStoredInMemoryOnly: false,
+                allowsSave: true,
+                groupContainer: groupContainer,
+                cloudKitDatabase: cloudKit ? .automatic : .none
+            )
         )
+    }
 
+    /// The store-opening path every host goes through, parameterised on the
+    /// configuration only so a fixture store can exercise exactly what ships
+    /// (`Dev1StoreUpgradeTests`) instead of a look-alike built in the test.
+    static func open(_ modelConfiguration: ModelConfiguration) throws -> ModelContainer {
         // Always wire the migration plan so stores created by an older SDK
         // advance through the registered versioned schemas. Record only
         // metadata about the store — never its device path.
@@ -184,42 +200,79 @@ public enum DashModelContainer {
         let existedBefore = FileManager.default.fileExists(atPath: storeURL.path)
         let sizeBefore = storeFileSizes(at: storeURL)
         let started = CFAbsoluteTimeGetCurrent()
+
+        func report(
+            succeeded: Bool,
+            migrationPath: StoreMigrationPath,
+            error: Error? = nil
+        ) {
+            SDKLogger.event(
+                "core_store_open_result",
+                category: .persistence,
+                severity: succeeded ? .info : .error,
+                fields: storeOpenFields(
+                    succeeded: succeeded,
+                    existedBefore: existedBefore,
+                    migrationPath: migrationPath,
+                    startedAt: started,
+                    sizeBefore: sizeBefore,
+                    sizeAfter: storeFileSizes(at: storeURL)
+                ),
+                error: error,
+                redacting: [storeURL.path]
+            )
+        }
+
         do {
             let container = try ModelContainer(
                 for: schema,
                 migrationPlan: DashMigrationPlan.self,
                 configurations: [modelConfiguration]
             )
-            let sizeAfter = storeFileSizes(at: storeURL)
-            SDKLogger.event(
-                "core_store_open_result",
-                category: .persistence,
-                fields: storeOpenFields(
-                    succeeded: true,
-                    existedBefore: existedBefore,
-                    startedAt: started,
-                    sizeBefore: sizeBefore,
-                    sizeAfter: sizeAfter
-                )
-            )
+            report(succeeded: true, migrationPath: .staged)
             return container
         } catch {
-            let sizeAfter = storeFileSizes(at: storeURL)
+            // Staged migration matches a store by the CHECKSUM of each
+            // registered `VersionedSchema`, and only `PersistentAssetLock` is
+            // frozen so far (see `DashSchemaFrozenModels.swift`). Every other
+            // V1/V2 model is still referenced live, so a shape that has drifted
+            // since — `PersistentDocumentType` and `PersistentIndex` for the
+            // v4.2.0-dev.1 stores `Dev1StoreUpgradeTests` pins — leaves the
+            // real store matching no registered version, and the staged open
+            // fails with Cocoa 134504 rather than migrating.
+            //
+            // Hosts turn that throw into `fatalError` at launch, so retry the
+            // way they already open the store themselves: the current schema
+            // with SwiftData's inferred lightweight migration and no plan.
+            // This only ever runs after the staged attempt has already failed,
+            // and inference still throws when it cannot map the store, so the
+            // fallback can only turn a crash into a successful open — never
+            // widen the set of stores that are opened destructively.
             SDKLogger.event(
-                "core_store_open_result",
+                "core_store_staged_migration_failed",
                 category: .persistence,
-                severity: .error,
-                fields: storeOpenFields(
-                    succeeded: false,
-                    existedBefore: existedBefore,
-                    startedAt: started,
-                    sizeBefore: sizeBefore,
-                    sizeAfter: sizeAfter
-                ),
+                severity: .warning,
+                fields: [
+                    "store_existed_before_open": .boolean(existedBefore),
+                ],
                 error: error,
                 redacting: [storeURL.path]
             )
-            throw error
+            do {
+                let container = try ModelContainer(
+                    for: schema,
+                    configurations: [modelConfiguration]
+                )
+                report(succeeded: true, migrationPath: .inferredFallback)
+                return container
+            } catch let fallbackError {
+                report(
+                    succeeded: false,
+                    migrationPath: .inferredFallback,
+                    error: fallbackError
+                )
+                throw fallbackError
+            }
         }
     }
 

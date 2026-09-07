@@ -4,19 +4,21 @@ import XCTest
 
 @testable import SwiftDashSDK
 
-/// Pins the store-opening semantics used by DashWallet's
-/// `SwiftDashSDKHost.buildModelContainer`: the current schema with inferred
-/// lightweight migration and no staged migration plan.
+/// Pins that a real v4.2.0-dev.1 store opens through the path the SDK actually
+/// ships, and keeps its Core wallet records.
 ///
-/// `DashModelContainer.create` currently supplies `DashMigrationPlan` and
-/// rejects the real v4.2.0-dev.1 checksum with Cocoa error 134504 because the
-/// historical `PersistentDocumentType` and `PersistentIndex` shapes are not
-/// registered as a frozen schema. This test deliberately does not exercise
-/// that known-broken factory path; it verifies that the app-compatible path
-/// opens the old store and preserves its Core wallet records.
+/// The staged `DashMigrationPlan` alone cannot open it: staged migration
+/// matches a store by each registered `VersionedSchema`'s checksum, and only
+/// `PersistentAssetLock` is frozen so far (`DashSchemaFrozenModels.swift`), so
+/// the drifted `PersistentDocumentType` / `PersistentIndex` shapes leave a
+/// dev.1 store matching no registered version — Cocoa error 134504. Hosts turn
+/// that throw into a launch crash, which is why `DashModelContainer.open` falls
+/// back to inferred lightweight migration. This test drives that production
+/// entry point rather than rebuilding a look-alike container, so the fallback
+/// cannot regress unnoticed.
 @MainActor
 final class Dev1StoreUpgradeTests: XCTestCase {
-    func testDev1StoreOpensWithoutStagedPlanAndPreservesCoreRows() throws {
+    func testDev1StoreOpensThroughProductionFactoryAndPreservesCoreRows() throws {
         let resourceURL = try XCTUnwrap(
             Bundle.module.url(
                 forResource: "DashModel-v4.2.0-dev.1.sqlite",
@@ -40,19 +42,31 @@ final class Dev1StoreUpgradeTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
 
-        let storeURL = directory.appendingPathComponent("DashModel.sqlite")
-        try sqlite.write(to: storeURL, options: .atomic)
+        func configuration(named name: String) throws -> ModelConfiguration {
+            let storeURL = directory.appendingPathComponent(name)
+            try sqlite.write(to: storeURL, options: .atomic)
+            return ModelConfiguration(
+                schema: DashModelContainer.schema,
+                url: storeURL,
+                allowsSave: true,
+                cloudKitDatabase: .none
+            )
+        }
 
-        let schema = DashModelContainer.schema
-        let configuration = ModelConfiguration(
-            schema: schema,
-            url: storeURL,
-            allowsSave: true,
-            cloudKitDatabase: .none
+        // The staged plan on its own is what crashes hosts today. Assert it on
+        // its own copy of the fixture — a failed open must not be what the
+        // production path below is then handed — so this test keeps naming the
+        // cause once the remaining models are frozen and it starts succeeding.
+        XCTAssertThrowsError(
+            try ModelContainer(
+                for: DashModelContainer.schema,
+                migrationPlan: DashMigrationPlan.self,
+                configurations: [try configuration(named: "StagedOnly.sqlite")]
+            )
         )
-        let container = try ModelContainer(
-            for: schema,
-            configurations: [configuration]
+
+        let container = try DashModelContainer.open(
+            try configuration(named: "DashModel.sqlite")
         )
         let context = ModelContext(container)
 

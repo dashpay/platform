@@ -92,21 +92,25 @@ public struct PlatformSpvSyncProgress: Sendable, Equatable {
 }
 
 enum CoreRescanDiagnosticResult: String, Sendable, Equatable {
+    /// The request lowered the checkpoint, so the filter sync will rescan.
     case armed
-    case acceptedNoRewind = "accepted_no_rewind"
+    /// The request was at or above the checkpoint: stored, but no rescan (see
+    /// ``PlatformWalletManager/spvRescanFilters(walletId:fromHeight:)``).
     case noOp = "no_op"
+    /// The checkpoint could not be read, so nothing about a rewind is known.
+    case unknownPreviousHeight = "unknown_previous_height"
 }
 
 /// Classifies only what can be proven from the checkpoint visible before the
-/// accepted FFI call. A missing checkpoint is not evidence of a rewind.
+/// accepted FFI call. A missing checkpoint is not evidence of a rewind: without
+/// it, an analyst must not be able to read the log as ruling one out, which is
+/// what any positive label would invite.
 func coreRescanDiagnosticResult(
     previousSyncedHeight: UInt32?,
     requestedStartHeight: UInt32
 ) -> CoreRescanDiagnosticResult {
-    guard let previousSyncedHeight else { return .acceptedNoRewind }
-    if requestedStartHeight < previousSyncedHeight { return .armed }
-    if requestedStartHeight == previousSyncedHeight { return .noOp }
-    return .acceptedNoRewind
+    guard let previousSyncedHeight else { return .unknownPreviousHeight }
+    return requestedStartHeight < previousSyncedHeight ? .armed : .noOp
 }
 
 /// Node type of a connected SPV peer, classified against the masternode

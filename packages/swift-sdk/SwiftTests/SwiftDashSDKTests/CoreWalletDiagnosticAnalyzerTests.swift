@@ -225,9 +225,57 @@ final class CoreWalletDiagnosticAnalyzerTests: XCTestCase {
         XCTAssertEqual(summary.candidateCount, 2)
         XCTAssertEqual(summary.candidateValueDuffs, 1_500)
         XCTAssertEqual(summary.missingAccountCount, 1)
-        XCTAssertEqual(summary.emittedCandidates.count, 1)
-        XCTAssertEqual(summary.emittedCandidates.first?.amount, acceptedTxo.amount)
+        XCTAssertEqual(summary.emittedCount, 1)
         XCTAssertEqual(summary.emittedValueDuffs, 800)
+        XCTAssertEqual(summary.emittedBip44Count, 1)
+        XCTAssertEqual(summary.emittedBip44ValueDuffs, 800)
+    }
+
+    /// A TXO linked to a mempool spender while still unspent is what
+    /// `reconcileSpendObservation` writes for every normal in-flight send, so
+    /// it must not be reported — otherwise one healthy unconfirmed transaction
+    /// buries the export in warnings.
+    func testUnconfirmedSpenderIsNotAnAnomalyButAConfirmedOneIs() {
+        let inFlightSend = CoreWalletDiagnosticAnalyzer.databaseTxoAnomalies([
+            .init(
+                txo: txo(0x32),
+                hasParentTransaction: true,
+                walletIdMismatch: false,
+                isSpent: false,
+                hasSpendingTransaction: true,
+                spendingTransactionIsInBlock: false
+            ),
+        ])
+        XCTAssertTrue(inFlightSend.details.isEmpty)
+
+        let confirmedButUnspent = CoreWalletDiagnosticAnalyzer.databaseTxoAnomalies([
+            .init(
+                txo: txo(0x33),
+                hasParentTransaction: true,
+                walletIdMismatch: false,
+                isSpent: false,
+                hasSpendingTransaction: true,
+                spendingTransactionIsInBlock: true
+            ),
+        ])
+        XCTAssertEqual(
+            confirmedButUnspent.count(reason: "unspent_with_confirmed_spending_transaction"),
+            1
+        )
+
+        let spentWithoutLink = CoreWalletDiagnosticAnalyzer.databaseTxoAnomalies([
+            .init(
+                txo: txo(0x34),
+                hasParentTransaction: true,
+                walletIdMismatch: false,
+                isSpent: true,
+                hasSpendingTransaction: false
+            ),
+        ])
+        XCTAssertEqual(
+            spentWithoutLink.count(reason: "spent_without_spending_transaction"),
+            1
+        )
     }
 
     func testShieldedStoreSummaryIncludesValuesActivityKeysAndWatermark() {
@@ -293,19 +341,23 @@ final class CoreWalletDiagnosticAnalyzerTests: XCTestCase {
             ),
             .noOp
         )
+        // Above the checkpoint is stored but arms nothing, exactly like the
+        // equal case — see `spvRescanFilters`.
         XCTAssertEqual(
             coreRescanDiagnosticResult(
                 previousSyncedHeight: 2_480_000,
                 requestedStartHeight: 2_484_000
             ),
-            .acceptedNoRewind
+            .noOp
         )
+        // No checkpoint was readable, so the log must not let an analyst rule
+        // a rewind in or out.
         XCTAssertEqual(
             coreRescanDiagnosticResult(
                 previousSyncedHeight: nil,
                 requestedStartHeight: 2_484_000
             ),
-            .acceptedNoRewind
+            .unknownPreviousHeight
         )
     }
 

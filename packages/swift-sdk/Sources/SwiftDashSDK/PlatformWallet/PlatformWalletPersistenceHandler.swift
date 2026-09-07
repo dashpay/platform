@@ -1392,7 +1392,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// persisted state reflects "still spendable from this row's POV",
     /// and the catch-up classifier on the next launch reloads the
     /// row and recognises it as ours when the block arrives.
-    private static func spendIsInBlock(_ tx: PersistentTransaction) -> Bool {
+    /// Internal rather than private so the read-only diagnostics extension
+    /// classifies a linked spender by the same rule that decided `isSpent`.
+    static func spendIsInBlock(_ tx: PersistentTransaction) -> Bool {
         tx.context >= TransactionContextType.inBlock.rawValue
     }
 
@@ -5256,10 +5258,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // called on the path through `loadAllocations` after the
         // pointer hand-off to Rust succeeds).
         var unspentBuckets: [Data: [PersistentTxo]] = [:]
-        // Mirrors the already-required restore fetch, but retains rows that
-        // have a denormalized wallet id and no account so the lightweight
-        // restore summary can report why they were not handed to Rust.
-        var restoreDiagnosticBuckets: [Data: [PersistentTxo]] = [:]
+        // Rows the restore fetch matched to a wallet but which carry no
+        // account, so they can never be marshalled. Kept apart from
+        // `unspentBuckets` — rather than duplicating every unspent row into a
+        // second map — so the lightweight restore summary can report why they
+        // were dropped at no cost to the launch path.
+        var accountLessBuckets: [Data: [PersistentTxo]] = [:]
         do {
             var unspentDescriptor = FetchDescriptor<PersistentTxo>(
                 predicate: #Predicate { $0.isSpent == false }
@@ -5365,7 +5369,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             }
             unspentBuckets.reserveCapacity(restorable.count)
-            restoreDiagnosticBuckets.reserveCapacity(restorable.count)
             for row in liveUnspent {
                 let key: Data
                 if !row.walletId.isEmpty {
@@ -5381,11 +5384,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 } else {
                     continue
                 }
-                restoreDiagnosticBuckets[key, default: []].append(row)
                 // Preserve the upstream restore contract: account-less rows
                 // are diagnostic candidates only and never enter FFI
                 // marshalling.
-                guard row.account != nil else { continue }
+                guard row.account != nil else {
+                    accountLessBuckets[key, default: []].append(row)
+                    continue
+                }
                 unspentBuckets[key, default: []].append(row)
             }
         }
@@ -5607,14 +5612,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // account isn't a funds variant get silently skipped on
             // the receiving side.
             let restoreRows = unspentBuckets[w.walletId] ?? []
-            let diagnosticRows = restoreDiagnosticBuckets[w.walletId] ?? restoreRows
             let (utxoBuf, utxoCount, utxoErrored) = buildUtxoRestoreBuffer(
                 rows: restoreRows,
                 allocation: allocation
             )
             logCoreRestoreBufferSnapshotOnQueue(
                 walletId: w.walletId,
-                rows: diagnosticRows,
+                rows: restoreRows,
+                accountLessRows: accountLessBuckets[w.walletId] ?? [],
                 emittedCount: utxoCount,
                 errored: utxoErrored
             )

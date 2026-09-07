@@ -222,7 +222,7 @@ enum CoreWalletDiagnosticAnalyzer {
         let candidateCoinJoinCount: Int
         let candidateCoinJoinValueDuffs: UInt64
         let builtCount: Int
-        let emittedCandidates: [RestoreCandidate]
+        let emittedCount: Int
         let emittedValueDuffs: UInt64
         let emittedBip44Count: Int
         let emittedBip44ValueDuffs: UInt64
@@ -235,50 +235,105 @@ enum CoreWalletDiagnosticAnalyzer {
 
     /// Reconciles the candidate list with the compact FFI buffer length. An
     /// errored build reports zero emitted rows even if validation failed late.
-    static func summarizeRestoreBuffer(
-        candidates: [RestoreCandidate],
+    ///
+    /// Deliberately a single pass that accumulates into locals. This runs on
+    /// the launch restore path while the persistence queue is held, so a large
+    /// CoinJoin wallet must not pay for a dozen full-length `filter`/`map`
+    /// allocations, and nothing here retains a per-row array.
+    static func summarizeRestoreBuffer<S: Sequence>(
+        candidates: S,
         emittedCount: Int,
         errored: Bool
-    ) -> RestoreBufferSummary {
-        let valid = candidates.filter { $0.rejectionReason == nil }
-        let emittedCandidates = errored ? [] : Array(valid.prefix(max(0, emittedCount)))
-        let candidateBip44 = candidates.filter {
-            $0.accountType == 0 && $0.standardTag == 0
+    ) -> RestoreBufferSummary where S.Element == RestoreCandidate {
+        // Rust is handed the first `emittedCount` rows that passed validation,
+        // in order; an errored build deallocated the whole buffer, so none of
+        // them reached it.
+        let emissionLimit = errored ? 0 : max(0, emittedCount)
+
+        var candidateCount = 0
+        var candidateValue: UInt64 = 0
+        var candidateBip44Count = 0
+        var candidateBip44Value: UInt64 = 0
+        var candidateCoinJoinCount = 0
+        var candidateCoinJoinValue: UInt64 = 0
+        var emitted = 0
+        var emittedValue: UInt64 = 0
+        var emittedBip44Count = 0
+        var emittedBip44Value: UInt64 = 0
+        var emittedCoinJoinCount = 0
+        var emittedCoinJoinValue: UInt64 = 0
+        var missingAccountCount = 0
+        var invalidTxidCount = 0
+        var invalidAccountTypeCount = 0
+        var validSeen = 0
+
+        for candidate in candidates {
+            candidateCount += 1
+            let isBip44 = candidate.accountType == 0 && candidate.standardTag == 0
+            let isCoinJoin = candidate.accountType == 1
+            candidateValue = diagnosticSaturatingAdd(candidateValue, candidate.amount)
+            if isBip44 {
+                candidateBip44Count += 1
+                candidateBip44Value = diagnosticSaturatingAdd(
+                    candidateBip44Value,
+                    candidate.amount
+                )
+            }
+            if isCoinJoin {
+                candidateCoinJoinCount += 1
+                candidateCoinJoinValue = diagnosticSaturatingAdd(
+                    candidateCoinJoinValue,
+                    candidate.amount
+                )
+            }
+
+            switch candidate.rejectionReason {
+            case .missingAccount:
+                missingAccountCount += 1
+            case .invalidTxid:
+                invalidTxidCount += 1
+            case .invalidAccountType:
+                invalidAccountTypeCount += 1
+            case nil:
+                let emissionIndex = validSeen
+                validSeen += 1
+                guard emissionIndex < emissionLimit else { continue }
+                emitted += 1
+                emittedValue = diagnosticSaturatingAdd(emittedValue, candidate.amount)
+                if isBip44 {
+                    emittedBip44Count += 1
+                    emittedBip44Value = diagnosticSaturatingAdd(
+                        emittedBip44Value,
+                        candidate.amount
+                    )
+                }
+                if isCoinJoin {
+                    emittedCoinJoinCount += 1
+                    emittedCoinJoinValue = diagnosticSaturatingAdd(
+                        emittedCoinJoinValue,
+                        candidate.amount
+                    )
+                }
+            }
         }
-        let candidateCoinJoin = candidates.filter { $0.accountType == 1 }
-        let emittedBip44 = emittedCandidates.filter {
-            $0.accountType == 0 && $0.standardTag == 0
-        }
-        let emittedCoinJoin = emittedCandidates.filter { $0.accountType == 1 }
+
         return RestoreBufferSummary(
-            candidateCount: candidates.count,
-            candidateValueDuffs: diagnosticSaturatingSum(candidates.map(\.amount)),
-            candidateBip44Count: candidateBip44.count,
-            candidateBip44ValueDuffs: diagnosticSaturatingSum(
-                candidateBip44.map(\.amount)
-            ),
-            candidateCoinJoinCount: candidateCoinJoin.count,
-            candidateCoinJoinValueDuffs: diagnosticSaturatingSum(
-                candidateCoinJoin.map(\.amount)
-            ),
+            candidateCount: candidateCount,
+            candidateValueDuffs: candidateValue,
+            candidateBip44Count: candidateBip44Count,
+            candidateBip44ValueDuffs: candidateBip44Value,
+            candidateCoinJoinCount: candidateCoinJoinCount,
+            candidateCoinJoinValueDuffs: candidateCoinJoinValue,
             builtCount: emittedCount,
-            emittedCandidates: emittedCandidates,
-            emittedValueDuffs: diagnosticSaturatingSum(emittedCandidates.map(\.amount)),
-            emittedBip44Count: emittedBip44.count,
-            emittedBip44ValueDuffs: diagnosticSaturatingSum(emittedBip44.map(\.amount)),
-            emittedCoinJoinCount: emittedCoinJoin.count,
-            emittedCoinJoinValueDuffs: diagnosticSaturatingSum(
-                emittedCoinJoin.map(\.amount)
-            ),
-            missingAccountCount: candidates.filter {
-                $0.rejectionReason == .missingAccount
-            }.count,
-            invalidTxidCount: candidates.filter {
-                $0.rejectionReason == .invalidTxid
-            }.count,
-            invalidAccountTypeCount: candidates.filter {
-                $0.rejectionReason == .invalidAccountType
-            }.count
+            emittedCount: emitted,
+            emittedValueDuffs: emittedValue,
+            emittedBip44Count: emittedBip44Count,
+            emittedBip44ValueDuffs: emittedBip44Value,
+            emittedCoinJoinCount: emittedCoinJoinCount,
+            emittedCoinJoinValueDuffs: emittedCoinJoinValue,
+            missingAccountCount: missingAccountCount,
+            invalidTxidCount: invalidTxidCount,
+            invalidAccountTypeCount: invalidAccountTypeCount
         )
     }
 
@@ -289,6 +344,27 @@ enum CoreWalletDiagnosticAnalyzer {
         let walletIdMismatch: Bool
         let isSpent: Bool
         let hasSpendingTransaction: Bool
+        /// Whether the linked spending transaction has reached a confirmed
+        /// context. `nil` when there is no spending transaction to ask.
+        /// Load-bearing: a linked-but-unconfirmed spender with `isSpent ==
+        /// false` is the normal in-flight send, not an anomaly.
+        let spendingTransactionIsInBlock: Bool?
+
+        init(
+            txo: CoreWalletDatabaseDiagnosticSnapshot.Txo,
+            hasParentTransaction: Bool,
+            walletIdMismatch: Bool,
+            isSpent: Bool,
+            hasSpendingTransaction: Bool,
+            spendingTransactionIsInBlock: Bool? = nil
+        ) {
+            self.txo = txo
+            self.hasParentTransaction = hasParentTransaction
+            self.walletIdMismatch = walletIdMismatch
+            self.isSpent = isSpent
+            self.hasSpendingTransaction = hasSpendingTransaction
+            self.spendingTransactionIsInBlock = spendingTransactionIsInBlock
+        }
     }
 
     /// A database anomaly whose raw TXO identity is later hashed by the logger.
@@ -329,10 +405,17 @@ enum CoreWalletDiagnosticAnalyzer {
                     reason: "spent_without_spending_transaction"
                 ))
             }
-            if !row.isSpent && row.hasSpendingTransaction {
+            // `reconcileSpendObservation` deliberately links a mempool
+            // spender while leaving `isSpent == false`, because a sighting
+            // alone is reversible by RBF or eviction. Only a spender that has
+            // landed in a block contradicts an unspent row; flagging the
+            // mempool case would put one warning per output on every wallet
+            // with an unconfirmed outgoing transaction and bury the real
+            // anomalies this export exists to surface.
+            if !row.isSpent && row.spendingTransactionIsInBlock == true {
                 details.append(.init(
                     txo: row.txo,
-                    reason: "unspent_with_spending_transaction"
+                    reason: "unspent_with_confirmed_spending_transaction"
                 ))
             }
             if row.txo.outpoint.count != 36 {

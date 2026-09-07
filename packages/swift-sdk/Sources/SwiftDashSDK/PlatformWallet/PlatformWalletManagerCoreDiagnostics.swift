@@ -106,13 +106,17 @@ private extension Data {
     }
 }
 
+/// Adds one diagnostic value without allowing corrupt data to trap the
+/// exporter. The single saturating rule every diagnostic total shares.
+func diagnosticSaturatingAdd(_ partial: UInt64, _ value: UInt64) -> UInt64 {
+    let (sum, overflow) = partial.addingReportingOverflow(value)
+    return overflow ? UInt64.max : sum
+}
+
 /// Adds diagnostic values without allowing corrupt data to trap the exporter.
 func diagnosticSaturatingSum<S: Sequence>(_ values: S) -> UInt64
 where S.Element == UInt64 {
-    values.reduce(0) { partial, value in
-        let (sum, overflow) = partial.addingReportingOverflow(value)
-        return overflow ? UInt64.max : sum
-    }
+    values.reduce(0, diagnosticSaturatingAdd)
 }
 
 private func diagnosticSignedSaturatingSum<S: Sequence>(_ values: S) -> Int64
@@ -502,13 +506,23 @@ extension PlatformWalletPersistenceHandler {
     /// Logs the exact UTXO slice handed to Rust, independently of the broader
     /// database snapshot. This sits after compact-write, so `emitted_count`
     /// cannot be confused with the number of fetched candidates.
+    ///
+    /// - Parameters:
+    ///   - rows: the rows the restore buffer was built from, in build order.
+    ///   - accountLessRows: rows the restore fetch matched to this wallet by its
+    ///     denormalized id but which carry no account, so they never reached FFI
+    ///     marshalling. Passed separately rather than merged upstream: they are
+    ///     rare, and keeping them out of `rows` avoids a second full-length copy
+    ///     of every unspent row on the launch path.
     func logCoreRestoreBufferSnapshotOnQueue(
         walletId: Data,
         rows: [PersistentTxo],
+        accountLessRows: [PersistentTxo] = [],
         emittedCount: Int,
         errored: Bool
     ) {
-        let candidates = rows.map { row in
+        func candidate(_ row: PersistentTxo)
+        -> CoreWalletDiagnosticAnalyzer.RestoreCandidate {
             let rejection: CoreWalletDiagnosticAnalyzer.RestoreCandidate.RejectionReason?
             if row.account == nil {
                 rejection = .missingAccount
@@ -527,6 +541,11 @@ extension PlatformWalletPersistenceHandler {
                 rejectionReason: rejection
             )
         }
+        // Lazily, and with the built rows first: the summary's emission window
+        // is positional, so the rejected rows must not shift it. Nothing here
+        // materializes a per-row array — this runs while the launch restore
+        // holds the persistence queue.
+        let candidates = [rows, accountLessRows].lazy.flatMap { $0 }.map(candidate)
         // A validation error deallocates the compact buffer and aborts the
         // whole callback, so zero rows were actually handed to Rust even if
         // some valid rows preceded the corrupt one.
@@ -556,7 +575,7 @@ extension PlatformWalletPersistenceHandler {
                 "candidate_value_duffs": .unsignedInteger(summary.candidateValueDuffs),
                 "built_count": .integer(Int64(summary.builtCount)),
                 "checkpoint": .publicText(CoreWalletDiagnosticCheckpoint.restoreBuffer.rawValue),
-                "emitted_count": .integer(Int64(summary.emittedCandidates.count)),
+                "emitted_count": .integer(Int64(summary.emittedCount)),
                 "emitted_bip44_count": .integer(Int64(summary.emittedBip44Count)),
                 "emitted_bip44_value_duffs": .unsignedInteger(
                     summary.emittedBip44ValueDuffs
@@ -624,7 +643,8 @@ extension PlatformWalletPersistenceHandler {
                     && relationshipWalletId != nil
                     && txo.walletId != relationshipWalletId,
                 isSpent: txo.isSpent,
-                hasSpendingTransaction: txo.spendingTransaction != nil
+                hasSpendingTransaction: txo.spendingTransaction != nil,
+                spendingTransactionIsInBlock: txo.spendingTransaction.map(spendIsInBlock)
             )
         })
         SDKLogger.event(
@@ -645,7 +665,7 @@ extension PlatformWalletPersistenceHandler {
                 )),
                 "spent_relation_mismatch_count": .integer(Int64(
                     result.count(reason: "spent_without_spending_transaction")
-                        + result.count(reason: "unspent_with_spending_transaction")
+                        + result.count(reason: "unspent_with_confirmed_spending_transaction")
                 )),
                 "truncated_count": .integer(Int64(result.truncatedCount)),
                 "wallet_mismatch_count": .integer(Int64(
@@ -675,6 +695,13 @@ extension PlatformWalletPersistenceHandler {
     /// transaction's persisted role: it decodes inputs, proves at least one
     /// spends a known CoinJoin TXO, then checks every decoded output against
     /// the persisted BIP44 address pool and the TXO table.
+    ///
+    /// Ownership is decided by the persisted `PersistentCoreAddress` pool, so
+    /// `coinjoin_to_bip44_missing_count == 0` proves only that every output the
+    /// audit could attribute is persisted. An output beyond the derived pool,
+    /// or one whose address row was never written, is attributable to nobody
+    /// and lands in `unattributed_output_count` instead — which is why the
+    /// summary reports that counter and the pool size next to the verdict.
     private static func auditCoinJoinOwnedBip44Outputs(
         wallet: PersistentWallet,
         walletId: Data,
@@ -682,9 +709,13 @@ extension PlatformWalletPersistenceHandler {
         allTxos: [PersistentTxo],
         allTransactions: [PersistentTransaction]
     ) {
+        // Match the wallet exactly as `walletTxos` does. Accepting only the
+        // relationship would drop a CoinJoin row whose `account.wallet` link is
+        // broken — the very corruption this audit exists to expose — and its
+        // spending transaction would never even become a candidate.
         let coinJoinOutpoints = Set(allTxos.compactMap { txo -> Data? in
-            guard relationshipWalletId(of: txo) == walletId,
-                  txo.account?.accountType == 1
+            guard txo.account?.accountType == 1,
+                  txo.walletId == walletId || relationshipWalletId(of: txo) == walletId
             else { return nil }
             return txo.outpoint
         })
@@ -700,6 +731,8 @@ extension PlatformWalletPersistenceHandler {
         var decodeFailureCount = 0
         var ownedOutputCount = 0
         var ownedOutputValue: UInt64 = 0
+        var unattributedOutputCount = 0
+        var undecodableAddressOutputCount = 0
         var validCount = 0
         var anomalies: [(tx: PersistentTransaction, vout: UInt32, amount: UInt64,
                          outpoint: Data, reason: String)] = []
@@ -740,15 +773,27 @@ extension PlatformWalletPersistenceHandler {
             candidateCount += 1
 
             for (index, output) in decoded.outputs.enumerated() {
-                guard let address = output.address,
-                      let expectedAccount = bip44Addresses[address]
-                else { continue }
+                guard let address = output.address else {
+                    // Non-P2PKH/P2SH scriptPubKey: nothing to match against the
+                    // address pool, so it is unclassified rather than foreign.
+                    undecodableAddressOutputCount += 1
+                    continue
+                }
+                guard let expectedAccount = bip44Addresses[address] else {
+                    // Either a genuine payment to someone else or one of our
+                    // own change addresses with no persisted row. The audit
+                    // cannot tell them apart, so it counts rather than clears.
+                    unattributedOutputCount += 1
+                    continue
+                }
                 ownedOutputCount += 1
-                let (newValue, overflow) = ownedOutputValue.addingReportingOverflow(output.valueDuffs)
-                ownedOutputValue = overflow ? UInt64.max : newValue
+                ownedOutputValue = diagnosticSaturatingAdd(ownedOutputValue, output.valueDuffs)
                 let vout = UInt32(index)
                 let outpoint = PersistentTxo.makeOutpoint(txid: decoded.txid, vout: vout)
-                guard let rows = txoByOutpoint[outpoint], let row = rows.first else {
+                guard let row = representativeTxo(
+                    rows: txoByOutpoint[outpoint],
+                    walletId: walletId
+                ) else {
                     anomalies.append((transaction, vout, output.valueDuffs, outpoint, "missing_txo"))
                     continue
                 }
@@ -797,16 +842,21 @@ extension PlatformWalletPersistenceHandler {
             severity: anomalies.isEmpty && decodeFailureCount == 0 ? .info : .warning,
             fields: [
                 "audit_incomplete": .boolean(decodeFailureCount > 0),
+                "bip44_address_pool_size": .integer(Int64(bip44Addresses.count)),
                 "candidate_transaction_count": .integer(Int64(candidateCount)),
                 "checkpoint": .publicText(checkpoint.rawValue),
                 "coinjoin_to_bip44_missing_count": .integer(Int64(missingCount)),
                 "coinjoin_to_bip44_missing_value_duffs": .unsignedInteger(missingValue),
                 "decode_failure_count": .integer(Int64(decodeFailureCount)),
+                "output_address_undecodable_count": .integer(
+                    Int64(undecodableAddressOutputCount)
+                ),
                 "owned_bip44_output_count": .integer(Int64(ownedOutputCount)),
                 "owned_bip44_output_value_duffs": .unsignedInteger(ownedOutputValue),
                 "persisted_valid_count": .integer(Int64(validCount)),
                 "total_anomaly_count": .integer(Int64(anomalies.count)),
                 "truncated_count": .integer(Int64(truncatedAnomalyCount)),
+                "unattributed_output_count": .integer(Int64(unattributedOutputCount)),
                 "wallet_reference": .reference(walletId),
             ]
         )
@@ -832,6 +882,46 @@ extension PlatformWalletPersistenceHandler {
                 )
             }
         }
+    }
+
+    /// Picks the row that represents one outpoint when the table holds more
+    /// than one.
+    ///
+    /// A duplicated outpoint split across wallets is precisely the `wrong_wallet`
+    /// corruption this audit names, so the choice must not depend on SwiftData's
+    /// fetch order — the same database would otherwise report `wrong_wallet` on
+    /// one run and a clean count on the next. A row this wallet owns wins (the
+    /// output IS persisted here, whatever else shares the outpoint); otherwise a
+    /// deterministic representative is chosen the way `compareTxos` resolves
+    /// duplicates before comparing.
+    private static func representativeTxo(
+        rows: [PersistentTxo]?,
+        walletId: Data
+    ) -> PersistentTxo? {
+        guard let rows, !rows.isEmpty else { return nil }
+        if rows.count == 1 { return rows[0] }
+        let ordered = rows.sorted {
+            duplicateResolutionKey($0).lexicographicallyPrecedes(
+                duplicateResolutionKey($1)
+            )
+        }
+        return ordered.first {
+            relationshipWalletId(of: $0) == walletId
+                && ($0.walletId.isEmpty || $0.walletId == walletId)
+        } ?? ordered[0]
+    }
+
+    /// Total order over rows sharing an outpoint. Uses only persisted bytes, so
+    /// two runs over the same database agree.
+    private static func duplicateResolutionKey(_ txo: PersistentTxo) -> Data {
+        var key = Data()
+        key.append(txo.walletId)
+        key.append(0)
+        key.append(relationshipWalletId(of: txo) ?? Data())
+        key.append(0)
+        withUnsafeBytes(of: txo.amount.littleEndian) { key.append(contentsOf: $0) }
+        key.append(txo.scriptPubKey)
+        return key
     }
 
     private static func logAssetLockDatabaseSnapshot(
@@ -1025,7 +1115,7 @@ extension PlatformWalletManager {
         let managerHandle = handle
         let managedWallet = wallets[walletId]
         await withCheckedContinuation { continuation in
-            Self.destroyQueue.async {
+            Self.coreDiagnosticsQueue.async {
                 Self.emitCoreMemoryDiagnostics(
                     managerHandle: managerHandle,
                     managedWallet: managedWallet,
@@ -1037,8 +1127,9 @@ extension PlatformWalletManager {
         }
     }
 
-    /// Runs all Rust-memory reads on `destroyQueue`. Each subsystem reports its
-    /// own unavailable state so one failed query does not hide the others.
+    /// Runs all Rust-memory reads on `coreDiagnosticsQueue`. Each subsystem
+    /// reports its own unavailable state so one failed query does not hide the
+    /// others.
     private nonisolated static func emitCoreMemoryDiagnostics(
         managerHandle: Handle,
         managedWallet: ManagedPlatformWallet?,
@@ -1246,6 +1337,24 @@ extension PlatformWalletManager {
                     "wallet_reference": .reference(database.walletId),
                 ]
             )
+            // Mirror the database-unavailable path below: an analyst greps for
+            // `asset_lock_db_memory_diff_summary`, and a missing line is
+            // indistinguishable from a truncated log. Say the diff is
+            // incomplete instead of saying nothing.
+            SDKLogger.event(
+                "asset_lock_db_memory_diff_summary",
+                category: .persistence,
+                severity: .warning,
+                fields: [
+                    "checkpoint": .publicText(checkpoint.rawValue),
+                    "database_query_available": .boolean(database.assetLocksAvailable),
+                    "diff_incomplete": .boolean(true),
+                    "memory_query_available": .boolean(false),
+                    "mismatch_count": .integer(0),
+                    "truncated_count": .integer(0),
+                    "wallet_reference": .reference(database.walletId),
+                ]
+            )
             return
         }
         SDKLogger.event(
@@ -1308,6 +1417,7 @@ extension PlatformWalletManager {
                     "checkpoint": .publicText(checkpoint.rawValue),
                     "database_query_available": .boolean(false),
                     "diff_incomplete": .boolean(true),
+                    "memory_query_available": .boolean(true),
                     "mismatch_count": .integer(0),
                     "truncated_count": .integer(0),
                     "wallet_reference": .reference(database.walletId),
@@ -1327,6 +1437,7 @@ extension PlatformWalletManager {
                 "checkpoint": .publicText(checkpoint.rawValue),
                 "database_query_available": .boolean(true),
                 "diff_incomplete": .boolean(false),
+                "memory_query_available": .boolean(true),
                 "mismatch_count": .integer(Int64(result.details.count)),
                 "truncated_count": .integer(Int64(result.truncatedCount)),
                 "wallet_reference": .reference(database.walletId),
@@ -1469,11 +1580,25 @@ extension PlatformWalletManager {
         )
     }
 
+    /// Renders the memory side of the AssetLock diff in the exact format the
+    /// database side is keyed by.
+    ///
+    /// `compareAssetLocks` matches the two sides on this string, so it must go
+    /// through `PersistentAssetLock.encodeOutPoint` rather than a second hex
+    /// loop: a hand-rolled copy agrees only by coincidence, and any later change
+    /// to the canonical encoder would silently make every lock report as both
+    /// `database_only` and `memory_only`.
     private nonisolated static func assetLockOutpointDisplay(
         txid: Data,
         vout: UInt32
     ) -> String {
-        let display = txid.reversed().map { String(format: "%02x", $0) }.joined()
-        return "\(display):\(vout)"
+        let raw = PersistentTxo.makeOutpoint(txid: txid, vout: vout)
+        // `encodeOutPoint` traps on a malformed outpoint. Diagnostics must
+        // survive corrupt input, so fall back to a clearly non-matching marker
+        // that shows up as `memory_only` instead of taking the process down.
+        guard raw.count == 36 else {
+            return "invalid_outpoint:\(raw.count)_bytes:\(vout)"
+        }
+        return PersistentAssetLock.encodeOutPoint(rawBytes: raw)
     }
 }

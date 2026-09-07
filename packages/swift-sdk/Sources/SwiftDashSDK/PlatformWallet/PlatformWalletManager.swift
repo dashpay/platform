@@ -568,6 +568,20 @@ public class PlatformWalletManager: ObservableObject {
         qos: .userInitiated
     )
 
+    /// Queue for the read-only Core diagnostic FFI reads. Deliberately NOT
+    /// [`destroyQueue`]: those reads are neither lifecycle operations nor
+    /// short, and putting them on the lifecycle queue would make one export
+    /// delay every manager's create/teardown, while a slow create or destroy
+    /// elsewhere would stall the diagnostics continuation — holding
+    /// `activeCoreDiagnosticsNativeOpCount` and so the next `shutdown()` drain.
+    /// Handle safety comes from that admission counter, not from FIFO ordering
+    /// with teardown, so a separate queue costs nothing. `.utility` because a
+    /// support export must never outrank the user's own wallet work.
+    nonisolated static let coreDiagnosticsQueue = DispatchQueue(
+        label: "org.dash.platform-wallet.core-diagnostics",
+        qos: .utility
+    )
+
     // MARK: - Init
 
     /// Empty init for `@StateObject` usage. Call [`configure`] before

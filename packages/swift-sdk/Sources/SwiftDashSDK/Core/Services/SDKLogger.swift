@@ -214,20 +214,47 @@ enum SDKLogFormatter {
 }
 
 private final class SDKLoggerState: @unchecked Sendable {
+    /// How many pre-install events are retained for replay. A host that never
+    /// installs a sink must not accumulate lines for the life of the process,
+    /// so the buffer drops its oldest entries and reports the loss instead.
+    private static let pendingLineLimit = 256
+
     private let lock = NSLock()
     private var sink: SDKLogFileSink?
     private var includeDebug = false
+    /// Events emitted before the file sink exists. `DashModelContainer.create`
+    /// runs in the host's `init()`, long before `LoggingPreferences.configure()`
+    /// installs the sink, so without this buffer the store-open result — and
+    /// every other launch-path event — would only ever reach the console and
+    /// never the exported `swift/run.log`.
+    private var pendingLines: [(severity: SDKLogSeverity, line: String)] = []
+    private var droppedPendingLineCount = 0
 
-    func installSink(at sessionDirectory: URL, includeDebug: Bool) -> Bool {
+    /// Installs the sink and replays what was emitted before it existed, in
+    /// emission order and under the sink's own debug filter.
+    func installSink(at sessionDirectory: URL, includeDebug: Bool) -> (
+        installed: Bool,
+        droppedPendingLineCount: Int
+    ) {
         do {
             let newSink = try SDKLogFileSink(sessionDirectory: sessionDirectory)
-            lock.withLock {
+            // Replay under the same lock `record` takes, so a line emitted
+            // concurrently with the install cannot land in front of the
+            // backlog it actually followed.
+            let dropped: Int = lock.withLock {
                 sink = newSink
                 self.includeDebug = includeDebug
+                for entry in pendingLines where entry.severity != .debug || includeDebug {
+                    newSink.write(entry.line)
+                }
+                let droppedCount = droppedPendingLineCount
+                pendingLines = []
+                droppedPendingLineCount = 0
+                return droppedCount
             }
-            return true
+            return (installed: true, droppedPendingLineCount: dropped)
         } catch {
-            return false
+            return (installed: false, droppedPendingLineCount: 0)
         }
     }
 
@@ -237,11 +264,22 @@ private final class SDKLoggerState: @unchecked Sendable {
         }
     }
 
-    func destination(for severity: SDKLogSeverity) -> SDKLogFileSink? {
-        lock.withLock {
+    /// Routes one formatted line to the sink, or buffers it for replay when no
+    /// sink has been installed yet.
+    func record(severity: SDKLogSeverity, line: String) {
+        let destination: SDKLogFileSink? = lock.withLock {
+            guard let sink else {
+                if pendingLines.count >= Self.pendingLineLimit {
+                    pendingLines.removeFirst()
+                    droppedPendingLineCount += 1
+                }
+                pendingLines.append((severity: severity, line: line))
+                return nil
+            }
             guard severity != .debug || includeDebug else { return nil }
             return sink
         }
+        destination?.write(line)
     }
 
     func flush() {
@@ -473,7 +511,7 @@ public enum SDKLogger {
             redacting: sensitiveValues
         )
 
-        state.destination(for: severity)?.write(line)
+        state.record(severity: severity, line: line)
 
         let shouldMirrorToConsole: Bool
         switch severity {
@@ -496,7 +534,25 @@ public enum SDKLogger {
     }
 
     static func installFileSink(at sessionDirectory: URL, includeDebug: Bool) -> Bool {
-        state.installSink(at: sessionDirectory, includeDebug: includeDebug)
+        let outcome = state.installSink(
+            at: sessionDirectory,
+            includeDebug: includeDebug
+        )
+        if outcome.droppedPendingLineCount > 0 {
+            // Emitted after the replay so the gap is visible at the point in
+            // the file where the missing lines would have been.
+            event(
+                "log_pre_install_buffer_overflow",
+                category: .lifecycle,
+                severity: .warning,
+                fields: [
+                    "dropped_line_count": .integer(
+                        Int64(outcome.droppedPendingLineCount)
+                    ),
+                ]
+            )
+        }
+        return outcome.installed
     }
 
     static func updateDebugSetting(_ includeDebug: Bool) {
