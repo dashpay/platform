@@ -1,6 +1,8 @@
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
-use crate::handle::{Handle, CORE_SIGNED_TRANSACTION_STORAGE, PLATFORM_WALLET_STORAGE};
+use crate::handle::{
+    Handle, CORE_SIGNED_TRANSACTION_STORAGE, CORE_WALLET_STORAGE, PLATFORM_WALLET_STORAGE,
+};
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
@@ -670,11 +672,17 @@ pub unsafe extern "C" fn core_wallet_tx_builder_use_only_added_inputs(
 ///
 /// Reservations are not subtracted; see `CoreWallet::pooled_spendable_balance`.
 ///
+/// `core_wallet` is the handle `platform_wallet_get_core` returns — the same
+/// one `core_wallet_get_balance` takes — NOT the platform-wallet handle the
+/// `core_wallet_tx_builder_*` entry points above take. Handles are drawn from
+/// one global counter, so a core handle looked up in the platform table (or
+/// vice versa) is always `NotFound`, never a wrong wallet.
+///
 /// # Safety
 /// `out_balance` must be a valid, writable pointer.
 #[no_mangle]
 pub unsafe extern "C" fn core_wallet_pooled_spendable_balance(
-    wallet: Handle,
+    core_wallet: Handle,
     account_type: CoreAccountTypeFFI,
     account_index: u32,
     out_balance: *mut u64,
@@ -682,12 +690,9 @@ pub unsafe extern "C" fn core_wallet_pooled_spendable_balance(
     check_ptr!(out_balance);
     *out_balance = 0;
 
-    let wallet = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet, |w| w.clone()));
-    let balance = unwrap_result_or_return!(runtime().block_on(
-        wallet
-            .core()
-            .pooled_spendable_balance(account_type.funding_sources(), account_index)
-    ));
+    let core = unwrap_option_or_return!(CORE_WALLET_STORAGE.with_item(core_wallet, |w| w.clone()));
+    let balance = unwrap_result_or_return!(runtime()
+        .block_on(core.pooled_spendable_balance(account_type.funding_sources(), account_index)));
 
     *out_balance = balance;
     PlatformWalletFFIResult::ok()
@@ -702,11 +707,14 @@ pub unsafe extern "C" fn core_wallet_pooled_spendable_balance(
 /// `fee_rate_sat_per_kb` — pass 0 for the same default `TransactionBuilder`
 /// starts from, or the rate the host sets on its builders.
 ///
+/// `core_wallet` is the core-wallet handle, as for
+/// `core_wallet_pooled_spendable_balance`.
+///
 /// # Safety
 /// `out_max_sendable` must be a valid, writable pointer.
 #[no_mangle]
 pub unsafe extern "C" fn core_wallet_pooled_max_sendable(
-    wallet: Handle,
+    core_wallet: Handle,
     account_type: CoreAccountTypeFFI,
     account_index: u32,
     fee_rate_sat_per_kb: u64,
@@ -716,12 +724,12 @@ pub unsafe extern "C" fn core_wallet_pooled_max_sendable(
     *out_max_sendable = 0;
 
     let fee_rate = (fee_rate_sat_per_kb != 0).then(|| FeeRate::new(fee_rate_sat_per_kb));
-    let wallet = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet, |w| w.clone()));
-    let max_sendable = unwrap_result_or_return!(runtime().block_on(
-        wallet
-            .core()
-            .pooled_max_sendable(account_type.funding_sources(), account_index, fee_rate)
-    ));
+    let core = unwrap_option_or_return!(CORE_WALLET_STORAGE.with_item(core_wallet, |w| w.clone()));
+    let max_sendable = unwrap_result_or_return!(runtime().block_on(core.pooled_max_sendable(
+        account_type.funding_sources(),
+        account_index,
+        fee_rate
+    )));
 
     *out_max_sendable = max_sendable;
     PlatformWalletFFIResult::ok()
@@ -930,4 +938,91 @@ pub unsafe extern "C" fn core_wallet_transaction_free(tx: *mut FFICoreTransactio
 
     tx.tx_bytes = std::ptr::null_mut();
     tx.tx_len = 0;
+}
+
+#[cfg(test)]
+mod pooled_balance_handle_tests {
+    //! The two pooled-balance entry points are exposed on the *core* wallet
+    //! (`ManagedCoreWallet` in the Swift SDK), so they must resolve the handle
+    //! `platform_wallet_get_core` hands out — the `CORE_WALLET_STORAGE` one —
+    //! not the platform-wallet handle their `core_wallet_tx_builder_*`
+    //! neighbours take. Looking a core handle up in the platform table failed
+    //! every call with `ErrorInvalidHandle`; the Swift caller swallowed it and
+    //! published a permanent 0, which zeroed Max and blocked every send on the
+    //! 2026-09-03 QA build (dashwallet-ios#1107 / platform#4582).
+
+    use key_wallet::account::account_type::StandardAccountType;
+    use platform_wallet::test_support::funded_spv_core_wallet;
+    use platform_wallet::SEND_FUNDING_SOURCES;
+
+    use super::*;
+
+    #[test]
+    fn pooled_spendable_balance_resolves_the_core_wallet_handle() {
+        let (core, _signer) =
+            runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let expected = runtime()
+            .block_on(core.pooled_spendable_balance(&SEND_FUNDING_SOURCES, 0))
+            .expect("direct pooled balance");
+        assert!(
+            expected > 0,
+            "the helper funds BIP44, so the pool is non-empty"
+        );
+
+        let core_handle = CORE_WALLET_STORAGE.insert(core.clone());
+        let mut out: u64 = 0;
+        let result = unsafe {
+            core_wallet_pooled_spendable_balance(
+                core_handle,
+                CoreAccountTypeFFI::AllSpendable,
+                0,
+                &mut out,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out, expected);
+        CORE_WALLET_STORAGE.remove(core_handle);
+    }
+
+    #[test]
+    fn pooled_max_sendable_resolves_the_core_wallet_handle() {
+        let (core, _signer) =
+            runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let expected = runtime()
+            .block_on(core.pooled_max_sendable(&SEND_FUNDING_SOURCES, 0, None))
+            .expect("direct pooled max");
+        assert!(expected > 0);
+
+        let core_handle = CORE_WALLET_STORAGE.insert(core.clone());
+        let mut out: u64 = 0;
+        let result = unsafe {
+            core_wallet_pooled_max_sendable(
+                core_handle,
+                CoreAccountTypeFFI::AllSpendable,
+                0,
+                0,
+                &mut out,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out, expected);
+        CORE_WALLET_STORAGE.remove(core_handle);
+    }
+
+    /// A handle that was never issued for a core wallet is refused, and the
+    /// out-parameter is left at 0 rather than at a stale value.
+    #[test]
+    fn unknown_handle_is_refused_with_zero_out() {
+        let mut out: u64 = 7;
+        let result = unsafe {
+            core_wallet_pooled_spendable_balance(
+                Handle::MAX,
+                CoreAccountTypeFFI::AllSpendable,
+                0,
+                &mut out,
+            )
+        };
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out, 0);
+    }
 }
