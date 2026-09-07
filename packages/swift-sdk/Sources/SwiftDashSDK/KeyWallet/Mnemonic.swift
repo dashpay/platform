@@ -60,11 +60,15 @@ public class Mnemonic {
         return isValid
     }
 
-    /// Convert mnemonic to seed
+    /// Convert mnemonic to its 64-byte BIP-39 seed.
+    ///
+    /// Language is auto-detected across every supported wordlist. The
+    /// passphrase is NFKD-normalized by the Rust side per BIP-39, so pass it
+    /// exactly as the user typed it; `nil` / empty means no passphrase.
     /// - Parameters:
     ///   - mnemonic: The mnemonic phrase
-    ///   - passphrase: Optional BIP39 passphrase
-    /// - Returns: The seed data (typically 64 bytes)
+    ///   - passphrase: Optional BIP39 passphrase ("25th word")
+    /// - Returns: The 64-byte seed
     public static func toSeed(mnemonic: String, passphrase: String? = nil) throws -> Data {
         try toSeed(mnemonicUTF8Bytes: Data(mnemonic.utf8), passphrase: passphrase)
     }
@@ -76,54 +80,40 @@ public class Mnemonic {
             throw KeyWalletError.invalidInput("Mnemonic must not be empty")
         }
 
-        var error = FFIError()
-        var seed = Data(count: 64)
-        var seedLen: size_t = 64
+        var seed = [UInt8](repeating: 0, count: 64)
         var mnemonicBytes = [UInt8](mnemonicUTF8Bytes)
         guard !mnemonicBytes.contains(0) else {
             scrubMnemonicBytes(&mnemonicBytes)
             throw KeyWalletError.invalidInput("Mnemonic bytes must not contain NUL")
         }
         mnemonicBytes.append(0)
+        defer { scrubMnemonicBytes(&mnemonicBytes) }
 
-        let success = mnemonicBytes.withUnsafeBufferPointer { mnemonicBuf in
+        let result: PlatformWalletFFIResult = mnemonicBytes.withUnsafeBufferPointer { mnemonicBuf in
             guard let mnemonicBase = mnemonicBuf.baseAddress else {
-                return false
+                return PlatformWalletFFIResult(
+                    code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_NULL_POINTER, message: nil)
             }
             return mnemonicBase.withMemoryRebound(to: CChar.self, capacity: mnemonicBuf.count) { mnemonicCStr in
-                seed.withUnsafeMutableBytes { seedBytes in
-                    let seedPtr = seedBytes.bindMemory(to: UInt8.self).baseAddress
-
-                    if let passphrase = passphrase {
+                seed.withUnsafeMutableBufferPointer { seedBuf -> PlatformWalletFFIResult in
+                    let seedPtr = seedBuf.baseAddress
+                    let seedLen = UInt(seedBuf.count)
+                    if let passphrase, !passphrase.isEmpty {
                         return passphrase.withCString { passphraseCStr in
-                            mnemonic_to_seed(mnemonicCStr, passphraseCStr,
-                                           seedPtr, &seedLen, &error)
+                            platform_wallet_mnemonic_to_seed(mnemonicCStr, passphraseCStr, seedPtr, seedLen)
                         }
-                    } else {
-                        return mnemonic_to_seed(mnemonicCStr, nil,
-                                              seedPtr, &seedLen, &error)
                     }
+                    return platform_wallet_mnemonic_to_seed(mnemonicCStr, nil, seedPtr, seedLen)
                 }
             }
         }
 
-        defer {
-            scrubMnemonicBytes(&mnemonicBytes)
-            if error.message != nil {
-                error_message_free(error.message)
-            }
+        do {
+            try result.check()
+        } catch {
+            throw KeyWalletError.invalidInput("mnemonic to seed failed: \(error.localizedDescription)")
         }
-
-        guard success else {
-            throw KeyWalletError(ffiError: error)
-        }
-
-        // Resize if necessary
-        if seedLen < 64 {
-            seed = seed.prefix(seedLen)
-        }
-
-        return seed
+        return Data(seed)
     }
 
     /// Get word count from a mnemonic phrase

@@ -474,13 +474,29 @@ unsafe fn create_wallet_from_seed_impl(
     PlatformWalletFFIResult::ok()
 }
 
+/// Read an optional BIP-39 passphrase C string. `NULL` means "no
+/// passphrase" and maps to the empty string, which is the BIP-39 default
+/// and what every pre-passphrase caller gets.
+unsafe fn passphrase_str<'a>(
+    passphrase: *const std::os::raw::c_char,
+) -> Result<&'a str, std::str::Utf8Error> {
+    if passphrase.is_null() {
+        Ok("")
+    } else {
+        std::ffi::CStr::from_ptr(passphrase).to_str()
+    }
+}
+
 /// Shared body for the mnemonic-based wallet-creation exports.
 ///
 /// `birth_height_override` is threaded verbatim into
 /// `create_wallet_from_mnemonic`; the no-override export passes `None`.
+/// `passphrase` may be `NULL` (no passphrase).
+#[allow(clippy::too_many_arguments)]
 unsafe fn create_wallet_from_mnemonic_impl(
     manager_handle: Handle,
     mnemonic: *const std::os::raw::c_char,
+    passphrase: *const std::os::raw::c_char,
     network: FFINetwork,
     account_options: u32,
     birth_height_override: Option<u32>,
@@ -492,6 +508,7 @@ unsafe fn create_wallet_from_mnemonic_impl(
     check_ptr!(out_wallet_id);
 
     let mnemonic_str = unwrap_result_or_return!(std::ffi::CStr::from_ptr(mnemonic).to_str());
+    let passphrase_str = unwrap_result_or_return!(passphrase_str(passphrase));
 
     let network: Network = network.into();
 
@@ -503,6 +520,7 @@ unsafe fn create_wallet_from_mnemonic_impl(
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
         runtime().block_on(manager.create_wallet_from_mnemonic(
             mnemonic_str,
+            passphrase_str,
             network,
             accounts,
             birth_height_override,
@@ -594,6 +612,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic(
     create_wallet_from_mnemonic_impl(
         manager_handle,
         mnemonic,
+        std::ptr::null(),
         network,
         account_options,
         None,
@@ -627,12 +646,92 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic_wit
     create_wallet_from_mnemonic_impl(
         manager_handle,
         mnemonic,
+        std::ptr::null(),
         network,
         account_options,
         birth_height_override_opt(has_birth_height_override, birth_height_override),
         out_wallet_handle,
         out_wallet_id,
     )
+}
+
+/// Create a wallet from a BIP39 mnemonic phrase plus an optional BIP-39
+/// passphrase ("25th word"), with an optional birth-height override.
+///
+/// Identical to
+/// [`platform_wallet_manager_create_wallet_from_mnemonic_with_birth_height`]
+/// except for `passphrase`: `NULL` or `""` means no passphrase and yields
+/// exactly the wallet (and wallet id) that export produces; any other
+/// value is folded into the seed as `PBKDF2(mnemonic, passphrase)`, so the
+/// resulting wallet id differs from the passphrase-less one. The passphrase
+/// is NFKD-normalized per BIP-39 — pass it as the user typed it.
+///
+/// The host must store the passphrase alongside the mnemonic and hand both
+/// back through its `MnemonicResolveCallback`, or the wallet will not sign
+/// with the keys it was created with.
+///
+/// On success, `out_wallet_handle` is set to a `PlatformWallet` handle and
+/// `out_wallet_id` is filled with the 32-byte wallet ID.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic_with_passphrase_and_birth_height(
+    manager_handle: Handle,
+    mnemonic: *const std::os::raw::c_char,
+    passphrase: *const std::os::raw::c_char,
+    network: FFINetwork,
+    account_options: u32,
+    has_birth_height_override: bool,
+    birth_height_override: u32,
+    out_wallet_handle: *mut Handle,
+    out_wallet_id: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
+    create_wallet_from_mnemonic_impl(
+        manager_handle,
+        mnemonic,
+        passphrase,
+        network,
+        account_options,
+        birth_height_override_opt(has_birth_height_override, birth_height_override),
+        out_wallet_handle,
+        out_wallet_id,
+    )
+}
+
+/// Derive the 64-byte BIP-39 seed for `(mnemonic, passphrase)` without
+/// creating a wallet. Language is auto-detected across every supported
+/// wordlist (unlike key-wallet-ffi's English-only `mnemonic_to_seed`), and
+/// `passphrase` may be `NULL` (no passphrase). Lets a host pre-derive the
+/// wallet id a passphrase create would produce (`Wallet::from_seed(...)
+/// .id`) before it commits any secret to storage.
+///
+/// # Safety
+/// `mnemonic` must be a valid NUL-terminated UTF-8 C string; `passphrase`
+/// must be `NULL` or a valid NUL-terminated UTF-8 C string; `out_seed` must
+/// be writable for `out_seed_len == 64` bytes. The caller owns the output
+/// and should scrub it once it has been consumed.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_mnemonic_to_seed(
+    mnemonic: *const std::os::raw::c_char,
+    passphrase: *const std::os::raw::c_char,
+    out_seed: *mut u8,
+    out_seed_len: usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(mnemonic);
+    check_ptr!(out_seed);
+    if out_seed_len != 64 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("out_seed must be 64 bytes, got {out_seed_len}"),
+        );
+    }
+    let mnemonic_str = unwrap_result_or_return!(std::ffi::CStr::from_ptr(mnemonic).to_str());
+    let passphrase_str = unwrap_result_or_return!(passphrase_str(passphrase));
+    let seed = match platform_wallet::seed_from_mnemonic(mnemonic_str, passphrase_str) {
+        Ok(seed) => seed,
+        Err(e) => return e.into(),
+    };
+    std::ptr::copy_nonoverlapping(seed.as_ptr(), out_seed, 64);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Hydrate the manager from its persister.
@@ -1078,6 +1177,73 @@ mod tests {
         let result = unsafe { platform_wallet_manager_persistence_capabilities(handle, &mut out) };
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         out
+    }
+
+    /// BIP-39 reference vectors (all-`abandon` phrase): the passphrase-less
+    /// seed and the `TREZOR` seed. Pins the FFI's NULL-means-empty contract
+    /// and that the passphrase actually reaches PBKDF2.
+    #[test]
+    fn mnemonic_to_seed_matches_bip39_vectors_with_and_without_passphrase() {
+        let phrase = std::ffi::CString::new(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        )
+        .unwrap();
+        let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+
+        let mut seed = [0u8; 64];
+        let rc = unsafe {
+            platform_wallet_mnemonic_to_seed(
+                phrase.as_ptr(),
+                std::ptr::null(),
+                seed.as_mut_ptr(),
+                seed.len(),
+            )
+        };
+        assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            hex(&seed),
+            "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4"
+        );
+
+        let empty = std::ffi::CString::new("").unwrap();
+        let mut seed_empty = [0u8; 64];
+        let rc = unsafe {
+            platform_wallet_mnemonic_to_seed(
+                phrase.as_ptr(),
+                empty.as_ptr(),
+                seed_empty.as_mut_ptr(),
+                seed_empty.len(),
+            )
+        };
+        assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(seed_empty, seed, "an empty passphrase must equal NULL");
+
+        let trezor = std::ffi::CString::new("TREZOR").unwrap();
+        let mut seed_pp = [0u8; 64];
+        let rc = unsafe {
+            platform_wallet_mnemonic_to_seed(
+                phrase.as_ptr(),
+                trezor.as_ptr(),
+                seed_pp.as_mut_ptr(),
+                seed_pp.len(),
+            )
+        };
+        assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            hex(&seed_pp),
+            "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"
+        );
+
+        let mut short = [0u8; 32];
+        let rc = unsafe {
+            platform_wallet_mnemonic_to_seed(
+                phrase.as_ptr(),
+                std::ptr::null(),
+                short.as_mut_ptr(),
+                short.len(),
+            )
+        };
+        assert_eq!(rc.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
     }
 
     #[test]

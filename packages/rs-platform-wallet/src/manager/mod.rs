@@ -10,6 +10,7 @@ pub mod platform_address_sync;
 pub mod shielded_sync;
 pub mod startup;
 mod wallet_lifecycle;
+pub use wallet_lifecycle::seed_from_mnemonic;
 
 use std::sync::Arc;
 use std::time::Duration;

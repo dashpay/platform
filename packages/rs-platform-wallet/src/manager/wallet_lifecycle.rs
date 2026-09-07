@@ -51,6 +51,21 @@ fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
     Err("phrase does not match any supported BIP-39 wordlist")
 }
 
+/// Derive the 64-byte BIP-39 seed for `(mnemonic_phrase, passphrase)`
+/// without registering a wallet. Same language auto-detection and
+/// passphrase normalization as
+/// [`PlatformWalletManager::create_wallet_from_mnemonic`], so a host can
+/// pre-compute the wallet id a create would produce
+/// (`Wallet::from_seed_bytes(seed, network, ..).wallet_id`).
+pub fn seed_from_mnemonic(
+    mnemonic_phrase: &str,
+    passphrase: &str,
+) -> Result<zeroize::Zeroizing<[u8; 64]>, PlatformWalletError> {
+    let mnemonic = parse_mnemonic_any_language(mnemonic_phrase)
+        .map_err(|e| PlatformWalletError::WalletCreation(format!("Invalid mnemonic: {}", e)))?;
+    Ok(zeroize::Zeroizing::new(mnemonic.to_seed(passphrase)))
+}
+
 /// Test-only rendezvous fired inside [`PlatformWalletManager::remove_wallet_with_teardown`],
 /// between the inner-manager removal and the public-map removal.
 ///
@@ -78,13 +93,24 @@ pub(crate) static REMOVE_WALLET_MIDPOINT_HOOK: std::sync::Mutex<Option<RemoveWal
     std::sync::Mutex::new(None);
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
-    /// Create a PlatformWallet from a BIP39 mnemonic phrase.
+    /// Create a PlatformWallet from a BIP39 mnemonic phrase and an
+    /// optional BIP-39 passphrase (`""` for none).
     ///
     /// The mnemonic's language is auto-detected by trying each
     /// supported BIP-39 wordlist in turn (see
-    /// [`parse_mnemonic_any_language`]). For passphrase-only flows or
-    /// out-of-band seed material, derive the seed externally and use
+    /// [`parse_mnemonic_any_language`]). The seed is
+    /// `PBKDF2(mnemonic, passphrase)`, so the same phrase with a
+    /// different passphrase is a different wallet with a different
+    /// network-scoped id. For out-of-band seed material use
     /// [`Self::create_wallet_from_seed_bytes`].
+    ///
+    /// The wallet is registered as a seed wallet
+    /// (`key_wallet::WalletType::Seed`) rather than a mnemonic wallet:
+    /// key-wallet's `Mnemonic` variant hardcodes the empty passphrase
+    /// (rust-dashcore #747 removed `MnemonicWithPassphrase`), and every
+    /// consumer in this crate reads key material through
+    /// `wallet_seed_bytes()` / the root extended key, which both variants
+    /// serve identically.
     ///
     /// `birth_height_override` controls SPV's compact-filter scan
     /// window for the new wallet. `None` (the default for fresh
@@ -103,13 +129,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub async fn create_wallet_from_mnemonic(
         &self,
         mnemonic_phrase: &str,
+        passphrase: &str,
         network: Network,
         accounts: WalletAccountCreationOptions,
         birth_height_override: Option<u32>,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
         let mnemonic = parse_mnemonic_any_language(mnemonic_phrase)
             .map_err(|e| PlatformWalletError::WalletCreation(format!("Invalid mnemonic: {}", e)))?;
-        let wallet = Wallet::from_mnemonic(mnemonic, network, accounts).map_err(|e| {
+        // `to_seed` NFKD-normalizes the passphrase per BIP-39.
+        let seed = zeroize::Zeroizing::new(mnemonic.to_seed(passphrase));
+        drop(mnemonic);
+        let wallet = Wallet::from_seed_bytes(*seed, network, accounts).map_err(|e| {
             PlatformWalletError::WalletCreation(format!(
                 "Failed to create wallet from mnemonic: {}",
                 e
@@ -1036,6 +1066,7 @@ mod register_wallet_duplicate_tests {
 
     use key_wallet::mnemonic::{Language, Mnemonic};
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::Wallet;
     use key_wallet::Network;
 
     use crate::changeset::{
@@ -1086,6 +1117,61 @@ mod register_wallet_duplicate_tests {
         let persister = Arc::new(NoopPersister);
         let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
         Arc::new(PlatformWalletManager::new(sdk, persister, event_handler))
+    }
+
+    /// The mnemonic create path must land on the same network-scoped id as
+    /// the seed path for the same `(phrase, passphrase)` — that is the
+    /// contract the iOS host relies on to pre-derive the id before it
+    /// persists the secret — and a passphrase must move the id.
+    #[tokio::test]
+    async fn mnemonic_create_matches_seed_create_and_passphrase_changes_the_id() {
+        let manager = make_manager();
+        let network = Network::Testnet;
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+
+        let via_mnemonic = manager
+            .create_wallet_from_mnemonic(
+                TEST_MNEMONIC,
+                "TREZOR",
+                network,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("create with passphrase");
+        let expected_seed = mnemonic.to_seed("TREZOR");
+        let via_seed_id = Wallet::from_seed_bytes(
+            expected_seed,
+            network,
+            WalletAccountCreationOptions::Default,
+        )
+        .expect("seed wallet")
+        .wallet_id;
+        assert_eq!(via_mnemonic.wallet_id(), via_seed_id);
+        assert_eq!(
+            *super::seed_from_mnemonic(TEST_MNEMONIC, "TREZOR").expect("seed"),
+            expected_seed
+        );
+
+        let without_passphrase = manager
+            .create_wallet_from_mnemonic(
+                TEST_MNEMONIC,
+                "",
+                network,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("create without passphrase is a distinct wallet");
+        assert_ne!(without_passphrase.wallet_id(), via_mnemonic.wallet_id());
+        assert_eq!(
+            without_passphrase.wallet_id(),
+            Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
+                .expect("mnemonic wallet")
+                .wallet_id,
+            "the empty passphrase must keep today's ids"
+        );
     }
 
     /// Registering the SAME wallet (same mnemonic/seed + network) twice

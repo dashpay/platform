@@ -62,9 +62,6 @@
 //! Combined, no private key bytes survive past the trait-method
 //! boundary.
 
-use std::ffi::c_void;
-use std::os::raw::c_char;
-
 use async_trait::async_trait;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::dashcore::secp256k1::{self, Secp256k1};
@@ -78,10 +75,7 @@ use key_wallet::Network;
 use thiserror::Error;
 use zeroize::Zeroizing;
 
-use crate::mnemonic_resolver::{
-    mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-};
-use crate::signer_simple::parse_mnemonic_any_language;
+use crate::mnemonic_resolver::{resolve_seed, MnemonicResolverHandle, ResolveSeedError};
 
 /// Failure modes for the
 /// [`MnemonicResolverCoreSigner`](crate::mnemonic_resolver_core_signer::MnemonicResolverCoreSigner)
@@ -149,6 +143,11 @@ pub enum MnemonicResolverSignerError {
     #[error("resolver returned invalid mnemonic length {0}")]
     InvalidMnemonicLength(usize),
 
+    /// The resolver declared a passphrase length beyond the buffer
+    /// capacity. Indicates a Swift-side framing bug.
+    #[error("resolver returned invalid passphrase length {0}")]
+    InvalidPassphraseLength(usize),
+
     /// The resolved string is not a valid BIP-39 mnemonic phrase
     /// (failed checksum or word-list lookup).
     #[error("invalid mnemonic phrase: {0}")]
@@ -167,6 +166,22 @@ pub enum MnemonicResolverSignerError {
     /// error.
     #[error("invalid private key scalar: {0}")]
     InvalidScalar(String),
+}
+
+impl From<ResolveSeedError> for MnemonicResolverSignerError {
+    fn from(e: ResolveSeedError) -> Self {
+        match e {
+            ResolveSeedError::NotFound => Self::NotFound,
+            ResolveSeedError::BufferTooSmall => Self::BufferTooSmall,
+            ResolveSeedError::ResolverFailed(code) => Self::ResolverFailed(code),
+            ResolveSeedError::InvalidMnemonicLength(len) => Self::InvalidMnemonicLength(len),
+            ResolveSeedError::InvalidPassphraseLength(len) => Self::InvalidPassphraseLength(len),
+            ResolveSeedError::InvalidUtf8 => Self::InvalidUtf8,
+            ResolveSeedError::InvalidMnemonic => {
+                Self::InvalidMnemonic("phrase does not match any supported BIP-39 wordlist".into())
+            }
+        }
+    }
 }
 
 /// `key_wallet::signer::Signer` implementation that derives ECDSA
@@ -249,7 +264,9 @@ impl MnemonicResolverCoreSigner {
     ///
     /// This is the single entry-point for all private-key material in this
     /// signer. It handles the full stack: resolver FFI call → result-code
-    /// mapping → UTF-8 + word-list validation → BIP-39 seed → master
+    /// mapping → UTF-8 + word-list validation → BIP-39 seed (with the
+    /// wallet's stored passphrase, via
+    /// [`crate::mnemonic_resolver::resolve_seed`]) → master
     /// `ExtendedPrivKey` → child `ExtendedPrivKey` at `path`.
     ///
     /// # Zeroization contract
@@ -278,57 +295,21 @@ impl MnemonicResolverCoreSigner {
             return Err(MnemonicResolverSignerError::NullHandle);
         }
 
-        // ---- Resolve mnemonic into a Zeroizing buffer -----------------------
-        let mut mnemonic_buf: Zeroizing<[u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]> =
-            Zeroizing::new([0u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]);
-        let mut mnemonic_len: usize = 0;
-
-        // SAFETY: We re-cast from `usize` to `*mut MnemonicResolverHandle`
+        // ---- Resolve seed via the shared vtable consumer -------------------
+        // SAFETY: We re-cast from `usize` to `*const MnemonicResolverHandle`
         // here. The caller of `new()` guaranteed the original pointer
         // outlives this signer (see the unsafety contract on
         // `Self::new`). `MnemonicResolverHandle`'s vtable + ctx are
         // thread-stable per the same module's `unsafe impl Send +
-        // Sync` justification.
-        let resolver = unsafe { &*(self.resolver_addr as *const MnemonicResolverHandle) };
-        let vtable = unsafe { &*resolver.vtable };
-        let rc = unsafe {
-            (vtable.resolve)(
-                resolver.ctx as *const c_void,
-                self.wallet_id.as_ptr(),
-                mnemonic_buf.as_mut_ptr() as *mut c_char,
-                MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-                &mut mnemonic_len,
-            )
+        // Sync` justification. `resolve_seed` folds in the wallet's
+        // stored BIP-39 passphrase, so a passphrase wallet signs with
+        // the same keys it was created with.
+        let seed: Zeroizing<[u8; 64]> = unsafe {
+            resolve_seed(
+                self.resolver_addr as *const MnemonicResolverHandle,
+                &self.wallet_id,
+            )?
         };
-        match rc {
-            x if x == mnemonic_resolver_result::SUCCESS => {}
-            x if x == mnemonic_resolver_result::NOT_FOUND => {
-                return Err(MnemonicResolverSignerError::NotFound);
-            }
-            x if x == mnemonic_resolver_result::BUFFER_TOO_SMALL => {
-                return Err(MnemonicResolverSignerError::BufferTooSmall);
-            }
-            other => {
-                return Err(MnemonicResolverSignerError::ResolverFailed(other));
-            }
-        }
-        if mnemonic_len == 0 || mnemonic_len > MNEMONIC_RESOLVER_BUFFER_CAPACITY {
-            return Err(MnemonicResolverSignerError::InvalidMnemonicLength(
-                mnemonic_len,
-            ));
-        }
-
-        // Parse mnemonic. UTF-8 validation runs on the prefix only —
-        // we never construct an owned `String` (the resulting buffer
-        // is dropped via Zeroizing).
-        let mnemonic_str = std::str::from_utf8(&mnemonic_buf[..mnemonic_len])
-            .map_err(|_| MnemonicResolverSignerError::InvalidUtf8)?;
-        let mnemonic = parse_mnemonic_any_language(mnemonic_str)
-            .map_err(|e| MnemonicResolverSignerError::InvalidMnemonic(e.to_string()))?;
-
-        // ---- Derive seed and BIP-32 key at `path` ---------------------------
-        let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
-        drop(mnemonic);
 
         let secp = Secp256k1::new();
         let master = ExtendedPrivKey::new_master(self.network, seed.as_ref())
@@ -690,9 +671,14 @@ impl ExtendedPubKeySigner for MnemonicResolverCoreSigner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::c_void;
+    use std::os::raw::c_char;
+
     use crate::mnemonic_resolver::{
         dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
+        mnemonic_resolver_result,
     };
+    use crate::signer_simple::parse_mnemonic_any_language;
     use std::str::FromStr;
 
     /// English BIP-39 test vector (all-zero entropy).
@@ -705,6 +691,9 @@ mod tests {
         out_buf: *mut c_char,
         out_capacity: usize,
         out_len: *mut usize,
+        _out_passphrase: *mut c_char,
+        _out_passphrase_capacity: usize,
+        out_passphrase_len: *mut usize,
     ) -> i32 {
         let phrase = ENGLISH_PHRASE.as_bytes();
         if phrase.len() + 1 > out_capacity {
@@ -713,6 +702,7 @@ mod tests {
         std::ptr::copy_nonoverlapping(phrase.as_ptr() as *const c_char, out_buf, phrase.len());
         *out_buf.add(phrase.len()) = 0;
         *out_len = phrase.len();
+        *out_passphrase_len = 0;
         mnemonic_resolver_result::SUCCESS
     }
 
@@ -722,6 +712,9 @@ mod tests {
         _out_buf: *mut c_char,
         _out_capacity: usize,
         _out_len: *mut usize,
+        _out_passphrase: *mut c_char,
+        _out_passphrase_capacity: usize,
+        _out_passphrase_len: *mut usize,
     ) -> i32 {
         mnemonic_resolver_result::NOT_FOUND
     }
