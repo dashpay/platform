@@ -540,9 +540,12 @@ fn load_ecdsa_state(
 /// nothing: V001 freezes its own copy of this domain, because a generated-SQL
 /// change breaks that migration's Refinery checksum on every database that
 /// already applied it. `account_type_labels_match_enum` pins this array to
-/// [`account_type_db_label`]; `account_type_labels_frozen_in_v001` pins it to
-/// V001's frozen list. An upstream variant addition therefore fails a test
-/// with instructions, instead of silently rewriting applied SQL.
+/// [`account_type_db_label`]; `account_type_labels_frozen_in_v007` pins it to
+/// the frozen list in `V007__rehydration_base_schema.rs`, which rebuilt
+/// `account_registrations` with the widened domain. V001 carries the narrower
+/// domain `v4.2-dev` shipped, in which both standard variants share the label
+/// `standard`. An upstream variant addition therefore fails a test with
+/// instructions, instead of silently rewriting applied SQL.
 ///
 /// `Standard` maps to two distinct labels by `StandardAccountType` variant
 /// (`"standard_bip44"` / `"standard_bip32"`) so BIP44 and BIP32 standard
@@ -1088,15 +1091,16 @@ mod tests {
         );
     }
 
-    /// Pins the live domain to the list frozen in `V001__initial.rs`.
+    /// Pins the live domain to the list frozen in the latest migration that
+    /// rebuilt `account_registrations` (`V007__rehydration_base_schema.rs`).
     ///
-    /// IF THIS FAILS: do NOT edit V001's list to match. Refinery checksums a
+    /// IF THIS FAILS: do NOT edit V007's list to match. Refinery checksums a
     /// migration's rendered SQL, so changing an applied migration's body makes
     /// every database that already ran it fail to open, permanently. Append a
     /// migration rebuilding the table with the widened CHECK (the
     /// `V004__asset_lock_recovered_status.rs` pattern), then update this pin.
     #[test]
-    fn account_type_labels_frozen_in_v001() {
+    fn account_type_labels_frozen_in_v007() {
         assert_eq!(
             ACCOUNT_TYPE_LABELS,
             &[

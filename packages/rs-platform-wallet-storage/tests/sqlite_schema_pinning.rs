@@ -15,13 +15,13 @@ use platform_wallet_storage::sqlite::{migrations as mig, schema::versions::Domai
 /// Golden `(version, name)` fingerprint of the frozen migration set. Bump
 /// deliberately only when adding/removing/renaming a migration file.
 const EXPECTED_ID_FINGERPRINT: &str =
-    "faf69a2b3385a66977779aa7d7789c8d20569af0047a62841900db24962af976";
+    "0ef38f22126957b909c3672c29073447d92caa51044a3727834c4e6e41d30908";
 
 /// Golden content-level fingerprint over every migration's rendered SQL.
 /// Bump it only when ADDING a migration file; a body change on an already
 /// applied migration is a defect, not a golden to refresh.
 const EXPECTED_SQL_FINGERPRINT: &str =
-    "cac813d424c307e73575c1f37400de4bfb8fb63913b637477272ce1f92e223bf";
+    "220433359df1d1b59267fd2486447416682e3d58c0d980f5ac119302bb72f33b";
 
 /// The migrations merged `v4.2-dev` already ships. Refinery keys
 /// `refinery_schema_history` by version and validates an applied migration's
@@ -37,8 +37,24 @@ const MERGED_MIGRATION_VERSIONS: &[(i32, &str)] = &[
     (6, "tracked_masternodes"),
 ];
 
-/// Table names that lost the cross-branch reconciliation and must never
-/// resurface as SQL identifiers on this frozen (`wallets`) baseline.
+/// Table names retired by `V007__rehydration_base_schema`. They are part of
+/// the migration history up to and including V007 — V001-V006 are byte-frozen
+/// published migrations that legitimately name them — so the guards below
+/// scope to what comes AFTER the rename, plus all writer/reader SQL.
+const FIRST_VERSION_AFTER_RENAME: i32 = 8;
+
+/// Migration files whose SQL may legitimately name a retired table: the
+/// published base set and the migration that performs the rename.
+const PRE_RENAME_MIGRATION_FILES: &[&str] = &[
+    "V001__initial.rs",
+    "V002__address_height_pin.rs",
+    "V003__invitations.rs",
+    "V004__asset_lock_recovered_status.rs",
+    "V005__dpns_name_states.rs",
+    "V006__tracked_masternodes.rs",
+    "V007__rehydration_base_schema.rs",
+];
+
 const RETIRED_SQL_NAMES: &[&str] = &[
     "wallet_metadata",
     "account_address_pools",
@@ -106,7 +122,10 @@ fn tc_b_040_sql_fingerprint_pinned() {
 /// The retired names appear nowhere as table identifiers in migration SQL.
 #[test]
 fn tc_b_041_migration_sql_has_no_retired_names() {
-    for sql in mig::embedded_migrations_sql() {
+    for (version, sql) in mig::embedded_migrations_sql_by_version() {
+        if version < FIRST_VERSION_AFTER_RENAME {
+            continue;
+        }
         for name in RETIRED_SQL_NAMES {
             for keyword in ["FROM", "INTO", "UPDATE", "TABLE", "JOIN", "ON"] {
                 assert!(
@@ -132,6 +151,10 @@ fn tc_b_041_no_retired_table_name_in_sql_strings() {
     let mut offenders = Vec::new();
     for dir in [src, migrations_dir] {
         visit(&dir, &mut |path, line_no, line| {
+            let file = path.file_name().unwrap_or_default().to_string_lossy();
+            if PRE_RENAME_MIGRATION_FILES.contains(&file.as_ref()) {
+                return;
+            }
             for name in RETIRED_SQL_NAMES {
                 for kw in sql_keywords {
                     if line.contains(&format!("{kw} {name}")) {

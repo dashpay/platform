@@ -335,8 +335,8 @@ fn should_create_the_scan_verdict_tables_when_upgrading_from_v014() {
     conn.pragma_update(None, "foreign_keys", true)
         .expect("enable foreign keys");
 
-    let to_v014 = mig::runner().set_target(refinery::Target::Version(14));
-    to_v014.run(&mut conn).expect("migrate to V014");
+    let to_v015 = mig::runner().set_target(refinery::Target::Version(15));
+    to_v015.run(&mut conn).expect("migrate to V015");
 
     let w = [0x4Au8; 32];
     conn.execute(

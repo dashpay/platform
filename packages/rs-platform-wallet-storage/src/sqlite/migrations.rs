@@ -175,6 +175,40 @@ pub(crate) fn assert_schema_history_well_formed(
     Ok(())
 }
 
+/// True when `refinery_schema_history` is non-empty and every applied
+/// `(version, name)` pair names a migration this binary embeds at that same
+/// version.
+///
+/// This is the positive identification behind
+/// [`crate::sqlite::conn::assert_wallet_application_id_or_legacy`]: a foreign
+/// SQLite database does not carry our migration names, so an unstamped file
+/// that passes here is a wallet database created before the header stamp
+/// existed. Deliberately name-only — a checksum comparison is refinery's job
+/// moments later, and doing it here would report a divergent body as
+/// "not a wallet database", which is the wrong diagnosis.
+pub(crate) fn applied_history_matches_embedded(
+    conn: &rusqlite::Connection,
+) -> Result<bool, WalletStorageError> {
+    let embedded: std::collections::HashMap<i32, String> =
+        embedded_migrations().into_iter().collect();
+    let mut stmt = conn.prepare("SELECT version, name FROM refinery_schema_history")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut saw_row = false;
+    for row in rows {
+        let (version, name) = row?;
+        saw_row = true;
+        let Ok(version) = i32::try_from(version) else {
+            return Ok(false);
+        };
+        if embedded.get(&version) != Some(&name) {
+            return Ok(false);
+        }
+    }
+    Ok(saw_row)
+}
+
 /// List `(version, name)` of every embedded migration. Used by tests and
 /// the migration-drift hash check.
 pub fn embedded_migrations() -> Vec<(i32, String)> {
@@ -233,6 +267,26 @@ pub fn embedded_migrations_sql_fingerprint() -> [u8; 32] {
         hasher.update([0u8]);
     }
     hasher.finalize().into()
+}
+
+/// Rendered SQL of every embedded migration paired with its version, in
+/// version order. The retired-name guard needs the version to skip the
+/// pre-rename history, where a retired table name is correct.
+#[cfg(any(test, feature = "__test-helpers"))]
+pub fn embedded_migrations_sql_by_version() -> Vec<(i32, String)> {
+    let mut migrations = migrations::runner().get_migrations().clone();
+    migrations.sort_by_key(|m| m.version());
+    migrations
+        .iter()
+        .map(|m| {
+            (
+                m.version(),
+                m.sql()
+                    .expect("embedded migrations always carry rendered SQL")
+                    .to_string(),
+            )
+        })
+        .collect()
 }
 
 /// Rendered SQL of every embedded migration, in version order. Used by the

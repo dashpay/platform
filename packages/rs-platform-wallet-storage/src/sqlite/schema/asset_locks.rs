@@ -207,7 +207,7 @@ pub fn apply(
 ///   codomain ([`status_str`]);
 /// - `asset_lock_status_labels_frozen_in_latest_migration` — this array
 ///   ⇔ the latest migration's frozen list, so ADDING a variant fails
-///   with instructions to append a new table-rebuild migration (V016+)
+///   with instructions to append a new table-rebuild migration (V017+)
 ///   instead of editing a shipped one.
 #[cfg(test)]
 pub(crate) const ASSET_LOCK_STATUS_LABELS: &[&str] = &[
@@ -664,7 +664,7 @@ mod tests {
     /// asset-lock migration (`V004__asset_lock_recovered_status.rs`).
     /// Shipped migrations interpolate nothing — their generated SQL is
     /// checksummed by Refinery, so widening the domain means APPENDING
-    /// a new table-rebuild migration (V016+) with the new frozen list
+    /// a new table-rebuild migration (V017+) with the new frozen list
     /// and updating this pin, never editing V001/V004 in place.
     ///
     /// IF THIS FAILS: do NOT edit a shipped migration (its Refinery

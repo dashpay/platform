@@ -1,6 +1,6 @@
 //! Close the asymmetry in the `identity_keys` NULL-scope guard.
 //!
-//! V001's trigger pair aborts a NULL-scoped key whose identity is
+//! V007's trigger pair aborts a NULL-scoped key whose identity is
 //! wallet-owned, but accepts one naming an identity that does not exist at
 //! all — `EXISTS(... AND wallet_id IS NOT NULL)` is false for a missing row
 //! just as it is for an unowned one. SQLite's MATCH SIMPLE leaves both of
@@ -12,10 +12,10 @@
 //! unowned, which covers the wallet-owned case the original caught and the
 //! missing-identity case it did not.
 //!
-//! Recreated rather than edited into V001: refinery never re-runs an
-//! applied migration, so editing V001 would tighten only freshly created
+//! Recreated rather than edited into V007: refinery never re-runs an
+//! applied migration, so editing V007 would tighten only freshly created
 //! databases and leave every existing wallet on the permissive trigger.
-//! `V010__drop_core_utxo_metadata` sets the same precedent.
+//! `V011__drop_core_utxo_metadata` sets the same precedent.
 //!
 //! The UPDATE twin is as load-bearing as the INSERT one — the writer's
 //! upsert resolves an existing key to `DO UPDATE`, and an UPDATE never

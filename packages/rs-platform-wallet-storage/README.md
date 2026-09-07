@@ -155,14 +155,14 @@ migration set is still unreleased, so a migration may be edited in place until
 the crate's first release. Once the schema ships, migrations become
 append-only.
 
-Two exceptions already bind, ahead of that release. A migration **version**
-that a base branch has published is never reassigned to different DDL — see
-`SCHEMA.md` § Migrations for the versions this applies to. And a `CHECK`
-domain inside a migration is a frozen literal, never interpolated from a live
-Rust const, so adding an enum variant cannot rewrite an applied migration's
-SQL. Both rules exist because refinery validates an applied migration's
-checksum against the embedded migration of the same version, and a mismatch
-means the database never opens again.
+Two exceptions already bind, ahead of that release, and they apply to
+V001-V006 — the set a base branch has already published. Those bodies are
+frozen byte-for-byte and their versions are never reassigned to different DDL.
+And a `CHECK` domain inside any migration is a frozen literal, never
+interpolated from a live Rust const, so adding an enum variant cannot rewrite
+an applied migration's SQL. Both rules exist because refinery validates an
+applied migration's checksum against the embedded migration of the same
+version, and a mismatch means the database never opens again.
 
 #### Flush semantics (store / flush)
 

@@ -256,7 +256,7 @@ mod tests {
         );
     }
 
-    /// Pins the encoded layout `V012__single_source_core_confirmation_height`
+    /// Pins the encoded layout `V013__single_source_core_confirmation_height`
     /// depends on: one length-prefix byte, then the 32 txid bytes. That
     /// migration lifts the txid with `substr(outpoint, 2, 32)`, so a change
     /// in the encoding must fail here rather than backfill the wrong bytes.

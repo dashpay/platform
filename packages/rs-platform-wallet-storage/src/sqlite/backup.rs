@@ -289,7 +289,7 @@ pub(crate) fn restore_from(
         return Err(WalletStorageError::SchemaHistoryMissing);
     }
     crate::sqlite::migrations::assert_schema_version_supported(&src)?;
-    crate::sqlite::conn::assert_wallet_application_id(&src)?;
+    crate::sqlite::conn::assert_wallet_application_id_or_legacy(&src)?;
     crate::sqlite::migrations::assert_schema_history_well_formed(&src)?;
     drop(src);
 
@@ -370,7 +370,7 @@ pub(crate) fn restore_from(
             return Err(WalletStorageError::SchemaHistoryMissing);
         }
         crate::sqlite::migrations::assert_schema_version_supported(&staged)?;
-        crate::sqlite::conn::assert_wallet_application_id(&staged)?;
+        crate::sqlite::conn::assert_wallet_application_id_or_legacy(&staged)?;
         crate::sqlite::migrations::assert_schema_history_well_formed(&staged)?;
     }
 
@@ -381,9 +381,9 @@ pub(crate) fn restore_from(
     //    The staged DB is switched to DELETE journaling first so the UPDATE
     //    lands in the main file with no `-wal` frames stranded outside the
     //    rename; the reopened destination is forced back to its configured
-    //    journal mode on its next open. A pre-V007 backup has no generation
+    //    journal mode on its next open. A pre-V008 backup has no generation
     //    table; `regenerate_generation` is a no-op there and the token is
-    //    (re)seeded on its later migration to V007.
+    //    (re)seeded on its later migration to V008.
     {
         let conn =
             crate::sqlite::conn::open_conn(tmp.path(), crate::sqlite::conn::Access::ReadWrite)?;

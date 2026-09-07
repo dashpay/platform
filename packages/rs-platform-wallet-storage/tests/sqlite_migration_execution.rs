@@ -55,10 +55,10 @@ fn fixture_src() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
-        .join("populated_v001.db")
+        .join("v4_2_dev_migrated.db")
 }
 
-/// Copy the committed V001 fixture into `dir` so migration runs on a
+/// Copy the committed `v4.2-dev` fixture into `dir` so migration runs on a
 /// throwaway copy, never the committed file.
 fn copy_fixture(dir: &Path) -> PathBuf {
     copy_fixture_as(dir, "wallet.db")
@@ -191,15 +191,24 @@ fn assert_full_data_preserved(conn: &Connection) {
     assert_eq!(gen_len, 16, "generation seeded at migration");
 }
 
-/// TC-B-031 — opening a populated V001 fixture with the post-redirect binary
-/// migrates it and preserves every pre-existing row.
+/// TC-B-031 — a database created by a `v4.2-dev` build opens under this
+/// branch, migrates the whole way forward, and keeps every pre-existing row.
+///
+/// This is the acceptance test for the published-version restoration: the
+/// fixture's `refinery_schema_history` was written by `v4.2-dev`'s own binary,
+/// so V001-V006 must still checksum identically here, and its unstamped
+/// `application_id` must not be mistaken for a foreign database.
 #[test]
-fn tc_b_031_populated_v001_migration_preserves_data() {
+fn tc_b_031_v4_2_dev_database_opens_and_migrates_forward() {
     let tmp = common::secure_tempdir().unwrap();
     let path = copy_fixture(tmp.path());
     let original_transaction = {
         let pre = ro_conn(&path);
-        assert_eq!(schema_version(&pre), 1, "fixture starts at V001");
+        assert_eq!(
+            schema_version(&pre),
+            6,
+            "fixture starts at the v4.2-dev schema"
+        );
         transaction_height_and_blob(&pre, &wid(FULL_WALLET))
     };
     let p = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
@@ -209,7 +218,7 @@ fn tc_b_031_populated_v001_migration_preserves_data() {
         assert_eq!(
             transaction_height_and_blob(&conn, &wid(FULL_WALLET)),
             original_transaction,
-            "V009 must preserve the fixture transaction height and blob byte-for-byte"
+            "the rebuild must preserve the fixture transaction height and blob byte-for-byte"
         );
     }
     // The full wallet reconstructs; the used-set falls back to the
@@ -227,15 +236,15 @@ fn tc_b_031_populated_v001_migration_preserves_data() {
     );
 }
 
-/// V012 must preserve a legacy confirmed UTXO whose transaction record was
+/// V013 must preserve a legacy confirmed UTXO whose transaction record was
 /// never persisted and whose confirmation height therefore lives only on the
-/// pre-V012 `core_utxos` row.
+/// pre-V013 `core_utxos` row.
 #[test]
-fn v012_backfills_recordless_confirmed_utxo_height() {
+fn v013_backfills_recordless_confirmed_utxo_height() {
     use dashcore::hashes::Hash;
 
     let tmp = common::secure_tempdir().unwrap();
-    let path = tmp.path().join("recordless-v011.db");
+    let path = tmp.path().join("recordless-v012.db");
     let wallet_id = wid(0xC3);
     let txid = dashcore::Txid::from_byte_array([0x91; 32]);
     let outpoint = dashcore::OutPoint::new(txid, 7);
@@ -251,7 +260,7 @@ fn v012_backfills_recordless_confirmed_utxo_height() {
     {
         let mut conn = Connection::open(&path).unwrap();
         mig::runner()
-            .set_target(refinery::Target::Version(11))
+            .set_target(refinery::Target::Version(12))
             .run(&mut conn)
             .unwrap();
         conn.execute(
@@ -274,7 +283,7 @@ fn v012_backfills_recordless_confirmed_utxo_height() {
             rusqlite::params![wallet_id.as_slice(), encoded_legacy_unconfirmed_outpoint],
         )
         .unwrap();
-        assert_eq!(schema_version(&conn), 11);
+        assert_eq!(schema_version(&conn), 12);
     }
 
     let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
@@ -348,28 +357,30 @@ fn tc_b_032_pre_migration_backup_created() {
         .find(|p| {
             p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
                 n.starts_with(&format!(
-                    "pre-migration-wallet-1-to-{}-",
+                    "pre-migration-wallet-6-to-{}-",
                     mig::max_supported_version()
                 )) && n.ends_with(".db")
             })
         })
         .expect("pre-migration backup must exist");
 
-    // The backup captured the PRE-migration state: schema version 1, and no
-    // V007 table.
+    // The backup captured the PRE-migration state: the v4.2-dev schema, and
+    // no post-reshape table.
     let bconn = ro_conn(&backup);
     assert_eq!(
         schema_version(&bconn),
-        1,
-        "backup is the pre-migration V001 state"
+        6,
+        "backup is the pre-migration v4.2-dev state"
     );
     assert!(
         !table_exists(&bconn, "core_address_pool"),
-        "backup must predate the V007 schema"
+        "backup must predate the V008 schema"
     );
+    // Still `wallet_metadata` in the backup: V007 is what renames it.
     assert_eq!(
         bconn
-            .query_row("SELECT COUNT(*) FROM wallets", [], |r| r.get::<_, i64>(0))
+            .query_row("SELECT COUNT(*) FROM wallet_metadata", [], |r| r
+                .get::<_, i64>(0))
             .unwrap(),
         2,
         "backup carries the original data"
@@ -427,19 +438,23 @@ fn tc_b_033_backup_restorable_and_remigration_deterministic() {
         .find(|p| {
             p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
                 n.starts_with(&format!(
-                    "pre-migration-wallet-1-to-{}-",
+                    "pre-migration-wallet-6-to-{}-",
                     mig::max_supported_version()
                 ))
             })
         })
         .expect("backup exists");
 
-    // Restore the V001 backup into a fresh dest, then reopen to re-migrate.
+    // Restore the v4.2-dev backup into a fresh dest, then reopen to re-migrate.
     let dest = tmp.path().join("restored.db");
-    SqlitePersister::restore_from_skip_backup(&dest, &backup).expect("restore V001 backup");
+    SqlitePersister::restore_from_skip_backup(&dest, &backup).expect("restore v4.2-dev backup");
     {
         let rconn = ro_conn(&dest);
-        assert_eq!(schema_version(&rconn), 1, "restored store is at V001");
+        assert_eq!(
+            schema_version(&rconn),
+            6,
+            "restored store is at the v4.2-dev schema"
+        );
     }
     let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&dest)).unwrap();
     let conn = p2.lock_conn_for_test();
@@ -563,7 +578,11 @@ fn tc_b_035_interrupted_migration_recovers_to_clean_state() {
         .unwrap();
         // The rolled-back DDL left no trace: still V001, no partial table.
         let pre = ro_conn(&crash_path);
-        assert_eq!(schema_version(&pre), 1, "interrupted migrate stays at V001");
+        assert_eq!(
+            schema_version(&pre),
+            6,
+            "interrupted migrate stays at the v4.2-dev schema"
+        );
         assert!(
             !table_exists(&pre, "core_address_pool"),
             "partial DDL must have rolled back"

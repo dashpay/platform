@@ -95,7 +95,7 @@ const TYPED_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
 ///
 /// The script guard binds new writes only. Empty scripts already present in
 /// an existing database file remain fatal to a strict load, and are
-/// deliberately left in place rather than purged — the same posture V013
+/// deliberately left in place rather than purged — the same posture V014
 /// took for the sibling `core_utxos.script` column, where it purged only
 /// legacy empty-script *spent* rows and left the surviving balance-bearing
 /// ones alone.

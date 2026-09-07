@@ -300,10 +300,11 @@ fn tc045_v004_widens_asset_lock_status_on_existing_db() {
     let to_v003 = mig::runner().set_target(refinery::Target::Version(3));
     to_v003.run(&mut conn).expect("migrate to V003");
 
-    // 2. Populate it the way a live wallet would have.
+    // 2. Populate it the way a live wallet would have. The table is still
+    //    `wallet_metadata` here — V007 is what renames it to `wallets`.
     let wallet_id = [42u8; 32];
     conn.execute(
-        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
         params![wallet_id.as_slice()],
     )
     .expect("insert wallet");
@@ -398,8 +399,8 @@ fn tc045_v004_widens_asset_lock_status_on_existing_db() {
     assert_eq!(remaining, 0, "ON DELETE CASCADE must survive the rebuild");
 }
 
-/// V012 → V013 upgrade path: a database created at the prior release
-/// schema (through V012) carrying a legacy empty-script spent row becomes
+/// V013 → V014 upgrade path: a database created at the prior release
+/// schema (through V013) carrying a legacy empty-script spent row becomes
 /// loadable again.
 ///
 /// The poisoned row is what the producer wrote before it reconstructed a
@@ -409,7 +410,7 @@ fn tc045_v004_widens_asset_lock_status_on_existing_db() {
 /// exactly the sequence an existing install experiences, asserting the read
 /// fails before the purge and recovers after it.
 #[test]
-fn tc046_v013_purges_legacy_empty_script_spent_utxos() {
+fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
     use platform_wallet_storage::sqlite::schema::core_state;
     use platform_wallet_storage::WalletStorageError;
     use rusqlite::params;
@@ -418,9 +419,9 @@ fn tc046_v013_purges_legacy_empty_script_spent_utxos() {
     conn.pragma_update(None, "foreign_keys", true)
         .expect("enable foreign keys");
 
-    // 1. Stand the database up at the PRIOR release schema (V012).
-    let to_v012 = mig::runner().set_target(refinery::Target::Version(12));
-    to_v012.run(&mut conn).expect("migrate to V012");
+    // 1. Stand the database up at the PRIOR release schema (V013).
+    let to_v013 = mig::runner().set_target(refinery::Target::Version(13));
+    to_v013.run(&mut conn).expect("migrate to V013");
 
     // 2. Two wallets: the poisoned one, and one holding the unspent
     //    empty-script edge case the predicate must NOT reach.
@@ -539,7 +540,7 @@ fn tc046_v013_purges_legacy_empty_script_spent_utxos() {
     );
 }
 
-/// V012 rebuilds `core_transactions` into an FK-declaring twin and backfills
+/// V013 rebuilds `core_transactions` into an FK-declaring twin and backfills
 /// height-only rows from `core_utxos`. Both sources can hold rows whose wallet
 /// was deleted while FK enforcement happened to be off — third-party SQLite
 /// tooling defaults `foreign_keys` OFF, and this database sits on an end
@@ -550,16 +551,16 @@ fn tc046_v013_purges_legacy_empty_script_spent_utxos() {
 /// Drives exactly that: one orphan in each source table, plus live rows that
 /// must survive untouched.
 #[test]
-fn tc047_v012_drops_orphans_instead_of_aborting_the_rebuild() {
+fn tc047_v013_drops_orphans_instead_of_aborting_the_rebuild() {
     use rusqlite::params;
 
     let mut conn = rusqlite::Connection::open_in_memory().expect("open in-memory db");
     conn.pragma_update(None, "foreign_keys", true)
         .expect("enable foreign keys");
 
-    // 1. Stand the database up at the PRIOR release schema (V011).
-    let to_v011 = mig::runner().set_target(refinery::Target::Version(11));
-    to_v011.run(&mut conn).expect("migrate to V011");
+    // 1. Stand the database up at the PRIOR release schema (V012).
+    let to_v012 = mig::runner().set_target(refinery::Target::Version(12));
+    to_v012.run(&mut conn).expect("migrate to V012");
 
     // 2. A live wallet with one real transaction and one real UTXO.
     let wallet_id = [42u8; 32];
@@ -616,7 +617,7 @@ fn tc047_v012_drops_orphans_instead_of_aborting_the_rebuild() {
             |row| row.get(0),
         )
         .expect("count orphan rows");
-    assert_eq!(ghost_rows, 0, "V012 must drop orphans, not abort");
+    assert_eq!(ghost_rows, 0, "V013 must drop orphans, not abort");
 
     // 6. The live transaction survived the rebuild with its record intact.
     let (height, finalized, blob): (i64, i64, Vec<u8>) = conn
@@ -638,4 +639,126 @@ fn tc047_v012_drops_orphans_instead_of_aborting_the_rebuild() {
         )
         .expect("count live utxos");
     assert_eq!(live_utxos, 1, "the live UTXO must survive the orphan sweep");
+}
+
+/// V007 rebuilds `identity_keys` with its own `wallet_id` scope, backfilled by
+/// joining `identities`. A key whose identity is gone cannot be carried across
+/// — the re-declared FK would abort the migration — so it is swept, and a key
+/// belonging to a live identity must land under that identity's wallet.
+#[test]
+fn tc048_v007_backfills_identity_key_wallet_scope() {
+    use rusqlite::params;
+
+    let mut conn = rusqlite::Connection::open_in_memory().expect("open in-memory db");
+    conn.pragma_update(None, "foreign_keys", true)
+        .expect("enable foreign keys");
+
+    // The published v4.2-dev schema, before the reshape.
+    let to_v006 = mig::runner().set_target(refinery::Target::Version(6));
+    to_v006.run(&mut conn).expect("migrate to V006");
+
+    let wallet_id = [0x51u8; 32];
+    let owned_identity = [0x61u8; 32];
+    let ghost_identity = [0x62u8; 32];
+    conn.execute(
+        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+        params![wallet_id.as_slice()],
+    )
+    .expect("insert wallet");
+    conn.execute(
+        "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+         VALUES (?1, ?2, 0, X'00', 0)",
+        params![owned_identity.as_slice(), wallet_id.as_slice()],
+    )
+    .expect("insert identity");
+    conn.execute(
+        "INSERT INTO identity_keys (identity_id, key_id, public_key_blob, public_key_hash) \
+         VALUES (?1, 0, X'00', X'00')",
+        params![owned_identity.as_slice()],
+    )
+    .expect("insert key for the live identity");
+
+    // A key whose identity never existed, plantable only with enforcement off.
+    conn.pragma_update(None, "foreign_keys", false)
+        .expect("disable foreign keys");
+    conn.execute(
+        "INSERT INTO identity_keys (identity_id, key_id, public_key_blob, public_key_hash) \
+         VALUES (?1, 0, X'00', X'00')",
+        params![ghost_identity.as_slice()],
+    )
+    .expect("insert orphan key with FK enforcement off");
+    conn.pragma_update(None, "foreign_keys", true)
+        .expect("re-enable foreign keys");
+
+    mig::run(&mut conn).expect("migrate to latest despite the orphan key");
+
+    let scope: Vec<u8> = conn
+        .query_row(
+            "SELECT wallet_id FROM identity_keys WHERE identity_id = ?1",
+            params![owned_identity.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("live key survives the rebuild");
+    assert_eq!(
+        scope,
+        wallet_id.to_vec(),
+        "the rebuilt key must be scoped to the wallet that owns its identity"
+    );
+    let ghosts: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM identity_keys WHERE identity_id = ?1",
+            params![ghost_identity.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("count orphan keys");
+    assert_eq!(
+        ghosts, 0,
+        "a key naming no identity must be swept, not copied"
+    );
+}
+
+/// V007 rewrites the legacy `standard` account label, which the widened CHECK
+/// no longer admits, and must leave the xpub blob it is paired with untouched.
+#[test]
+fn tc049_v007_rewrites_legacy_standard_account_label() {
+    use rusqlite::params;
+
+    let mut conn = rusqlite::Connection::open_in_memory().expect("open in-memory db");
+    conn.pragma_update(None, "foreign_keys", true)
+        .expect("enable foreign keys");
+    let to_v006 = mig::runner().set_target(refinery::Target::Version(6));
+    to_v006.run(&mut conn).expect("migrate to V006");
+
+    let wallet_id = [0x52u8; 32];
+    let xpub = vec![0xABu8; 78];
+    conn.execute(
+        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+        params![wallet_id.as_slice()],
+    )
+    .expect("insert wallet");
+    conn.execute(
+        "INSERT INTO account_registrations \
+             (wallet_id, account_type, account_index, account_xpub_bytes) \
+         VALUES (?1, 'standard', 0, ?2)",
+        params![wallet_id.as_slice(), xpub],
+    )
+    .expect("insert legacy standard registration");
+
+    mig::run(&mut conn).expect("migrate to latest");
+
+    let (label, blob, index): (String, Vec<u8>, i64) = conn
+        .query_row(
+            "SELECT account_type, account_xpub_bytes, account_index \
+             FROM account_registrations WHERE wallet_id = ?1",
+            params![wallet_id.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("registration survives the rebuild");
+    assert_eq!(label, "standard_bip44", "legacy label must be rewritten");
+    assert_eq!(
+        blob,
+        vec![0xABu8; 78],
+        "the xpub blob must survive byte-for-byte"
+    );
+    assert_eq!(index, 0, "the account index must be unchanged");
 }
