@@ -181,9 +181,6 @@ export default class BaseCommand extends Command {
               configFileRepository.write(configFile);
             }
 
-            const changedConfigs = configFile.getAllConfigs()
-              .filter((config) => config.isChanged());
-
             /**
              * @var {writeConfigTemplates} writeConfigTemplates
              */
@@ -192,6 +189,11 @@ export default class BaseCommand extends Command {
             // JSON is authoritative. If rendering fails or the process is killed
             // next, an explicit config render repairs the stale service files.
             configFileRepository.write(configFile);
+
+            // Selected after the save, which may complete a config (a node
+            // identity filled in) that then has service files to render too.
+            const changedConfigs = configFile.getAllConfigs()
+              .filter((config) => config.isChanged());
 
             changedConfigs.forEach(writeConfigTemplates);
           }

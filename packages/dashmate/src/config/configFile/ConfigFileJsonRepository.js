@@ -80,6 +80,8 @@ export default class ConfigFileJsonRepository {
    * @param {Object} [configFileLockOptions={}] - lock timing overrides
    * @param {number} [configFileLockOptions.stale]
    * @param {number} [configFileLockOptions.acquireTimeout]
+   * @param {ensureTenderdashNodeKey} [ensureTenderdashNodeKey] - completes a
+   *   platform config's node identity before it is saved
    */
   constructor(
     migrateConfigFile,
@@ -87,10 +89,12 @@ export default class ConfigFileJsonRepository {
     createConfigFile,
     configFormatVersion,
     configFileLockOptions = {},
+    ensureTenderdashNodeKey = () => {},
   ) {
     this.migrateConfigFile = migrateConfigFile;
     this.configFormatVersion = configFormatVersion;
     this.createConfigFile = createConfigFile;
+    this.ensureTenderdashNodeKey = ensureTenderdashNodeKey;
     this.ajv = new Ajv();
     this.lockStaleMs = configFileLockOptions.stale ?? LOCK_STALE_MS;
     this.lockAcquireTimeoutMs = configFileLockOptions.acquireTimeout ?? LOCK_ACQUIRE_TIMEOUT_MS;
@@ -451,6 +455,21 @@ export default class ConfigFileJsonRepository {
    * @param {ConfigFile} configFile
    */
   #save(configFile) {
+    // A platform node must not reach disk without its identity: the rendered
+    // node_key.json would then hold a key the saved config does not, and the
+    // next render would mint another. Every save path ends here, including the
+    // one that saves a migration after its templates were rendered, so the
+    // in-flight configs are completed rather than re-read and saved separately.
+    //
+    // Only configs with pending changes: a config stays changed until its
+    // service files are rendered, so these are exactly the ones the caller
+    // renders next, and the identity saved is the identity rendered. A config
+    // nothing touched is left alone - completing it here would put an identity
+    // in config.json that its node_key.json never receives.
+    configFile.getAllConfigs()
+      .filter((config) => config.isChanged())
+      .forEach((config) => this.ensureTenderdashNodeKey(config));
+
     const configFileJSON = `${JSON.stringify(configFile.toObject(), undefined, 2)}\n`;
 
     if (this.#compromised) {

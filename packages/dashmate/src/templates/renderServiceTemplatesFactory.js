@@ -18,7 +18,8 @@ export default function renderServiceTemplatesFactory(renderTemplate, ensureTend
   function renderServiceTemplates(config) {
     // node_key.json interpolates platform.drive.tenderdash.node.{id,key}
     // literally, so a null key must be filled in before rendering or
-    // tenderdash panics at startup on the string "null".
+    // tenderdash panics at startup on the string "null". Saving does the same,
+    // so the identity rendered here is the one that reaches config.json.
     ensureTenderdashNodeKey(config);
 
     const templatePaths = glob.sync(`${TEMPLATES_DIR}/**/*.dot`, {

@@ -5,6 +5,7 @@ import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import renderTemplateFactory from '../../../src/templates/renderTemplateFactory.js';
 import renderServiceTemplatesFactory from '../../../src/templates/renderServiceTemplatesFactory.js';
+import ensureTenderdashNodeKeyFactory from '../../../src/tenderdash/ensureTenderdashNodeKeyFactory.js';
 
 function getRsDapiBlock(dynamicComposeContent) {
   const match = dynamicComposeContent.match(/rs_dapi:\n((?: {2}.*\n)+)/);
@@ -18,7 +19,7 @@ describe('dynamic compose template', () => {
   beforeEach(() => {
     getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
     const renderTemplate = renderTemplateFactory();
-    const ensureTenderdashNodeKey = () => {};
+    const ensureTenderdashNodeKey = ensureTenderdashNodeKeyFactory();
     renderServiceTemplates = renderServiceTemplatesFactory(
       renderTemplate,
       ensureTenderdashNodeKey,
