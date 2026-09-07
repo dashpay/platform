@@ -169,10 +169,17 @@ config). Trailing bytes after a valid decode are also refused —
   the (attacker-controllable) header, so on a read the Argon2 ceiling
   is enforced **before** any derivation/allocation — both the wider
   `enforce_bounds` (algorithm id + floors/ceilings) AND a tighter
-  per-read gate that refuses any `m_kib > default_target().m_kib` OR
-  `t > default_target().t`. A forged header cannot inflate memory by
-  more than the shipped default or CPU by more than the shipped
-  iteration count.
+  per-read gate that refuses any `m_kib > ARGON2_READ_MAX_M_KIB` OR
+  `t > ARGON2_READ_MAX_T`. A forged header cannot inflate memory or CPU
+  beyond that ceiling.
+
+  Those two constants are **wire-format, not tunables**: the read gate is
+  deliberately decoupled from `default_target()`, which is an ordinary
+  write-side tunable, so lowering the shipped default can never orphan an
+  already-enrolled secret. A `const` assertion keeps the write target at or
+  below the ceiling, so raising the default past it breaks the build rather
+  than the users. The ceiling may only ever be RAISED — a header this build
+  refuses is unrecoverable.
 - **No vault format bump.** The envelope lives *inside* the entry
   bytes, identical over File and Os, so there is no vault-parser or
   migration change.
@@ -378,12 +385,19 @@ unwrapped copy is allocated.
   One file, one passphrase, one lock — a multi-wallet
   store cannot lock its other wallets out by construction. Errors
   surface as the typed `SecretStoreError` through `SecretStore`.
-  On Unix the vault's parent directory must not be group/other writable
-  (`mode & 0o022`): directory write access governs rename/replace of the
-  vault, so a writable parent is refused at `open` with
-  `SecretStoreError::InsecureParentDir` (the A1 guarantee depends on it).
-  A read-only group-accessible parent (`0o750`) is accepted — it only
-  leaks filenames, never the 0600-protected vault contents.
+  On Unix the check covers EVERY ancestor of the vault's parent up to `/`,
+  walked twice — over the lexical path and over its canonical target — so a
+  symlink cannot hide an unsafe ancestor behind a safe-looking one. An
+  ancestor is refused at `open` with `SecretStoreError::InsecureParentDir`
+  when it is group/other writable (`mode & 0o022`) WITHOUT the sticky bit,
+  or when it is owned by neither the effective user nor a root identity:
+  directory write access governs rename/replace of the vault, and an
+  untrusted owner can grant itself that access at will (the A1 guarantee
+  depends on both). A sticky writable directory such as `/tmp` (`0o1777`)
+  is accepted — the sticky bit is what stops one user replacing another's
+  entries. A read-only group-accessible ancestor (`0o750`) is accepted too
+  — it only leaks filenames, never the 0600-protected vault contents. The
+  walk is Unix-only; Windows ACLs are not inspected (issue #3754).
   Each secret is capped at `MAX_SECRET_LEN` (8176 B) at the write
   boundary — still ~30× any mnemonic/seed/xpriv — so a single oversized
   entry cannot inflate the shared document past the read-side 128 MiB
