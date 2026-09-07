@@ -1,10 +1,10 @@
 #![allow(clippy::field_reassign_with_default)]
 
 //! Migration execution against the populated-V001 fixture.
-//! Covers TC-B-031 (data preserved), TC-B-032 (pre-migration auto-backup),
-//! TC-B-033 (backup restorable + re-migration determinism), TC-B-034
-//! (forward-version rejection at the new max), TC-B-035 (idempotent
-//! re-entry), TC-B-036 (empty wallet through migration).
+//!
+//! Covers data preservation, the pre-migration auto-backup, that backup being
+//! restorable with a deterministic re-migration, forward-version rejection at
+//! the new max, idempotent re-entry, and an empty wallet through migration.
 
 mod common;
 
@@ -191,7 +191,7 @@ fn assert_full_data_preserved(conn: &Connection) {
     assert_eq!(gen_len, 16, "generation seeded at migration");
 }
 
-/// TC-B-031 — a database created by a `v4.2-dev` build opens under this
+/// A database created by a `v4.2-dev` build opens under this
 /// branch, migrates the whole way forward, and keeps every pre-existing row.
 ///
 /// This is the acceptance test for the published-version restoration: the
@@ -199,7 +199,7 @@ fn assert_full_data_preserved(conn: &Connection) {
 /// so V001-V006 must still checksum identically here, and its unstamped
 /// `application_id` must not be mistaken for a foreign database.
 #[test]
-fn tc_b_031_v4_2_dev_database_opens_and_migrates_forward() {
+fn v4_2_dev_database_opens_and_migrates_forward() {
     let tmp = common::secure_tempdir().unwrap();
     let path = copy_fixture(tmp.path());
     let original_transaction = {
@@ -318,10 +318,10 @@ fn v013_backfills_recordless_confirmed_utxo_height() {
     );
 }
 
-/// TC-B-036 — the empty wallet inside the populated store migrates without a
+/// The empty wallet inside the populated store migrates without a
 /// NOT NULL violation and reads empty-but-valid.
 #[test]
-fn tc_b_036_empty_wallet_through_migration() {
+fn empty_wallet_through_migration() {
     let tmp = common::secure_tempdir().unwrap();
     let path = copy_fixture(tmp.path());
     let p = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
@@ -337,10 +337,10 @@ fn tc_b_036_empty_wallet_through_migration() {
     );
 }
 
-/// TC-B-032 — a byte-faithful pre-migration auto-backup is written before the
+/// A byte-faithful pre-migration auto-backup is written before the
 /// schema changes are visible in the live file.
 #[test]
-fn tc_b_032_pre_migration_backup_created() {
+fn pre_migration_backup_created() {
     let tmp = common::secure_tempdir().unwrap();
     let path = copy_fixture(tmp.path());
     let backup_dir = tmp.path().join("backups");
@@ -418,10 +418,10 @@ fn sibling_dbs_get_distinct_pre_migration_backup_names() {
     }
 }
 
-/// TC-B-033 — the pre-migration backup restores cleanly and re-migrating it
+/// The pre-migration backup restores cleanly and re-migrating it
 /// reaches the identical end state as a direct migration (determinism).
 #[test]
-fn tc_b_033_backup_restorable_and_remigration_deterministic() {
+fn backup_restorable_and_remigration_deterministic() {
     let tmp = common::secure_tempdir().unwrap();
     let path = copy_fixture(tmp.path());
     let backup_dir = tmp.path().join("backups");
@@ -461,10 +461,10 @@ fn tc_b_033_backup_restorable_and_remigration_deterministic() {
     assert_full_data_preserved(&conn);
 }
 
-/// TC-B-034 — the forward-version gate rejects at the newest embedded
+/// The forward-version gate rejects at the newest embedded
 /// version; a forged row one version past it is refused.
 #[test]
-fn tc_b_034_forward_version_rejected_at_new_max() {
+fn forward_version_rejected_at_new_max() {
     let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("wallet.db");
     {
@@ -537,13 +537,13 @@ fn migration_snapshot(conn: &Connection) -> Vec<i64> {
     ]
 }
 
-/// TC-B-035 — crash mid-migrate: an interrupted V007 (partial DDL, no commit)
+/// Crash mid-migrate: an interrupted V007 (partial DDL, no commit)
 /// leaves the store at the last committed version (V002) with no partial
 /// tables; re-opening resumes and converges byte-equal to a clean direct
 /// migration. Empirically demonstrates refinery's per-migration transaction
 /// guarantee (one tx per migration — no `set_grouped`/`no_transaction`).
 #[test]
-fn tc_b_035_interrupted_migration_recovers_to_clean_state() {
+fn interrupted_migration_recovers_to_clean_state() {
     // Reference: a fresh copy migrated straight through.
     let clean_dir = common::secure_tempdir().unwrap();
     let clean_path = copy_fixture(clean_dir.path());

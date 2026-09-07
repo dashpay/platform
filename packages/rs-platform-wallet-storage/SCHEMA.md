@@ -550,7 +550,7 @@ nullable `identities.wallet_id` link; no direct `wallet_id` column exists.
 At most one DashPay profile blob per identity. `None` profile maps to a
 DELETE rather than a NULL blob — the row is absent, not nulled.
 `apply` writes these rows, but `load()` does not return them today;
-`IdentitySyncManager` rebuilds the canonical token-balance copy from Platform.
+`DashPaySyncManager` rebuilds the canonical profile from Platform.
 
 - PK: `identity_id` (single-row-per-identity).
 - FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
@@ -561,7 +561,8 @@ Payment overlay entries for DashPay, keyed by transaction-level
 `payment_id` string. Cascade flows through `identities` as with
 `token_balances`.
 `apply` writes these rows, but `load()` does not return them today;
-`IdentitySyncManager` rebuilds the canonical token-balance copy from Platform.
+`DashPaySyncManager` rebuilds the canonical payment-overlay state from
+Platform.
 
 - PK: `(identity_id, payment_id)`.
 - FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.

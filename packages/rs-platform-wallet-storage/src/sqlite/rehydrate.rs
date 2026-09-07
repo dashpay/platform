@@ -218,6 +218,10 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// - **Address-pool used-state**: every `used_pool_addresses` entry is
 ///   re-marked used (in union with the unspent-UTXO addresses), so an
 ///   address whose funds were since spent is not re-handed-out as fresh.
+/// - **InstantSend locks**: every `instant_locks_for_non_final_records`
+///   entry is replayed through `mark_instant_send_utxos` after the UTXO
+///   restore, so instant-locked funds come back instant-locked instead of
+///   waiting for the next sync to re-learn them.
 /// - **Sync watermarks**: `synced_height` / `last_processed_height`.
 ///
 /// # Reconstructed when the persister supplies it
@@ -250,10 +254,12 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   regardless of pool visibility); only the per-address view is
 ///   incomplete until that sync. This is the accepted behavior of the
 ///   horizon-walk algorithm — see [`extend_pools_for_restored_addresses`].
-/// - **Per-UTXO `is_coinbase` / `is_instantlocked` / `is_trusted`
-///   flags**: not columns in `core_utxos`; conservatively defaulted
-///   (non-coinbase, confirmed-by-height) and refreshed on the next
-///   scan. Coinbase-maturity nuance re-warms on sync.
+/// - **Per-UTXO `is_coinbase` / `is_trusted` flags**: not columns in
+///   `core_utxos`; conservatively defaulted (non-coinbase,
+///   confirmed-by-height) and refreshed on the next scan.
+///   Coinbase-maturity nuance re-warms on sync. `is_instantlocked` is NOT
+///   among them: it is rebuilt from `core_instant_locks` above, for every
+///   UTXO a replayed lock covers.
 /// - **Transaction-record history**: rebuilt by the next scan; not a
 ///   balance input.
 ///
@@ -296,12 +302,11 @@ pub fn apply_persisted_core_state(
         wallet_info.metadata.last_applied_chain_lock = Some(cl.clone());
     }
 
-    // INTENTIONAL(rehydration gaps): `core` also carries instant-send locks and
-    // transaction records, but neither can be replayed here —
-    // `ManagedWalletInfo.instant_send_locks` is `pub(crate)` with no public
-    // setter, and there is no public API to inject tx records. Both re-warm on
-    // the next sync (no regression vs. the prior loader); populating them at
-    // load needs an upstream key_wallet change.
+    // INTENTIONAL(tx-record-rehydration-gap): `core` also carries transaction
+    // records, but they cannot be replayed here — injecting one needs the raw
+    // `dashcore::Transaction`, and this crate persists only the abstracted
+    // `TransactionRecord` blob. History re-warms on the next scan and is not a
+    // balance input.
 
     // Restore the UTXO set, routing each unspent outpoint to its true owning
     // funds account via `utxo_accounts` (matched on the same account identity
@@ -400,6 +405,14 @@ pub fn apply_persisted_core_state(
                 )?;
             }
         }
+    }
+
+    // Replay persisted InstantSend locks AFTER the UTXO restore: this marks the
+    // UTXOs it finds, so running it earlier would record the txid and mark
+    // nothing. Without it, instant-locked funds come back as merely confirmed
+    // and stay that way until the next sync re-learns the lock.
+    for (txid, lock) in &core.instant_locks_for_non_final_records {
+        wallet_info.mark_instant_send_utxos(txid, lock);
     }
 
     // Recompute per-account + wallet balance from the restored set.
@@ -2941,6 +2954,123 @@ mod tests {
             external_pool_state(&fixture.wallet_info),
             Some(expected),
             "the refill must reach one gap window past the used index"
+        );
+    }
+
+    /// A restored UTXO whose transaction carried an InstantSend lock must come
+    /// back instant-locked, not wait for the next sync to re-learn it. The
+    /// persisted `core_instant_locks` rows arrive in
+    /// `CoreChangeSet::instant_locks_for_non_final_records`, and replaying them
+    /// has to happen AFTER the UTXO restore — `mark_instant_send_utxos` marks
+    /// the UTXOs it can find, so calling it first would insert the txid and
+    /// mark nothing.
+    #[test]
+    fn rehydration_restores_instant_send_locks_onto_restored_utxos() {
+        use dashcore::blockdata::transaction::txout::TxOut;
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dashcore::{OutPoint, Txid};
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::{Address, Utxo};
+
+        let seed = [37u8; 64];
+        let wallet = Wallet::from_seed_bytes(
+            seed,
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+
+        let bip44_type = wallet_info
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .unwrap()
+            .managed_account_type()
+            .to_account_type();
+        let xpub = manifest
+            .iter()
+            .find(|e| e.account_type == bip44_type)
+            .map(|e| e.account_xpub)
+            .expect("account xpub in manifest");
+        let address: Address = {
+            let mut pool = AddressPool::new_without_generation(
+                DerivationPath::master(),
+                AddressPoolType::External,
+                DEFAULT_EXTERNAL_GAP_LIMIT,
+                Network::Testnet,
+            );
+            pool.generate_addresses(1, &KeySource::Public(xpub), true)
+                .unwrap();
+            pool.address_at_index(0).unwrap()
+        };
+
+        let txid = Txid::from([0x5Au8; 32]);
+        let outpoint = OutPoint { txid, vout: 0 };
+        // `is_instantlocked: false` is the persisted shape: the flag is not a
+        // stored column, it is re-derived from the `core_instant_locks` row.
+        let utxo = Utxo {
+            outpoint,
+            txout: TxOut {
+                value: 12_345,
+                script_pubkey: address.script_pubkey(),
+            },
+            address,
+            height: 1,
+            is_coinbase: false,
+            is_confirmed: true,
+            is_instantlocked: false,
+            is_locked: false,
+            is_trusted: false,
+        };
+
+        // A real IS-lock always carries at least one input; `default()` leaves
+        // the vec empty.
+        let lock = InstantLock {
+            inputs: vec![OutPoint {
+                txid: Txid::from([0xA1u8; 32]),
+                vout: 7,
+            }],
+            txid,
+            ..Default::default()
+        };
+
+        let core = platform_wallet::changeset::CoreChangeSet {
+            new_utxos: vec![utxo],
+            instant_locks_for_non_final_records: [(txid, lock)].into_iter().collect(),
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &Default::default(),
+            &LoadCtx::strict(),
+        )
+        .unwrap();
+
+        assert!(
+            wallet_info.instant_send_locks().contains(&txid),
+            "the persisted InstantSend lock must be replayed onto the wallet"
+        );
+        let restored = wallet_info
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .and_then(|a| a.utxos.get(&outpoint))
+            .expect("the restored UTXO must be present on the BIP44 account");
+        assert!(
+            restored.is_instantlocked,
+            "the restored UTXO must carry instant-locked status, not wait for the next sync"
         );
     }
 }

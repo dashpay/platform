@@ -99,10 +99,16 @@ pub enum WalletStorageError {
 
     /// A database ancestor is writable without the sticky bit or is owned by
     /// neither the current user nor root, allowing replacement despite `0600`.
-    #[error("database parent directory has insecure permissions")]
+    ///
+    /// Names the offending ancestor rather than the database's own parent: the
+    /// walk runs to `/`, and a nine-component path leaves the user nothing to
+    /// act on otherwise.
+    #[error("{}", crate::parent_permissions::insecure_ancestor_message("database", .ancestor, .reason))]
     InsecureParentDir {
-        /// Offending POSIX mode bits on the ancestor directory.
-        mode: u32,
+        /// The ancestor that was refused, not the database's parent.
+        ancestor: PathBuf,
+        /// Which of the two conditions fired; they need different remediations.
+        reason: crate::parent_permissions::InsecureAncestor,
     },
 
     /// `delete_wallet` (or another wallet-id-keyed operation) was
@@ -437,6 +443,14 @@ pub enum WalletStorageError {
         actual: String,
     },
 
+    /// `PRAGMA secure_delete` was issued on open but read back as `0` (off).
+    /// Without it SQLite leaves deleted row content readable in freed pages,
+    /// and `Backup` copies those pages into every later snapshot, so a wallet
+    /// the user deleted would keep propagating. Hard-error at open rather than
+    /// running with an at-rest guarantee the crate documents and does not have.
+    #[error("PRAGMA secure_delete could not be enabled on this connection (reports {actual})")]
+    SecureDeleteNotApplied { actual: i64 },
+
     /// A pre-existing / restored DB passed `integrity_check` but its
     /// `refinery_schema_history` carries a malformed row (non-RFC3339
     /// `applied_on` or non-numeric `checksum`). Probed BEFORE refinery
@@ -717,6 +731,7 @@ impl WalletStorageError {
             | Self::BackupDestinationExists { .. }
             | Self::ForeignKeysNotEnforced
             | Self::JournalModeNotApplied { .. }
+            | Self::SecureDeleteNotApplied { .. }
             | Self::SchemaHistoryMalformed { .. }
             | Self::NotAWalletDb { .. }
             | Self::AlreadyOpen { .. }
@@ -787,7 +802,75 @@ impl WalletStorageError {
             // if that path leaks through here the typed variant lives in
             // `Self::Migration`, which we leave as `Fatal` since a
             // migration failure isn't a caller bug.
-            _ => PersistenceErrorKind::Fatal,
+            //
+            // Wildcard-free like `is_transient` above: a new variant must fail
+            // to compile here and force a decision, rather than inheriting
+            // `Fatal` — which is the wrong answer for every caller-data fault,
+            // as the hand-classified `Constraint` arms above attest. The
+            // transient variants are unreachable past the early return but
+            // still have to be named for exhaustiveness. The list is long; that
+            // is the cost of the guarantee.
+            Self::Sqlite(_)
+            | Self::FlushRetryable { .. }
+            | Self::Io(_)
+            | Self::Migration(_)
+            | Self::IntegrityCheckFailed { .. }
+            | Self::IntegrityCheckRunFailed { .. }
+            | Self::SourceOpenFailed { .. }
+            | Self::SchemaHistoryMissing
+            | Self::SchemaVersionUnsupported { .. }
+            | Self::AutoBackupDisabled { .. }
+            | Self::AutoBackupDirUnwritable { .. }
+            | Self::InsecureParentDir { .. }
+            | Self::WalletNotFound { .. }
+            | Self::WalletIdMismatch { .. }
+            | Self::LockPoisoned
+            | Self::RestoreDestinationLocked
+            | Self::InvalidWalletIdHex { .. }
+            | Self::InvalidWalletIdLength { .. }
+            | Self::ConfigInvalid { .. }
+            | Self::BincodeEncode { .. }
+            | Self::BincodeDecode { .. }
+            | Self::BlobDecode { .. }
+            | Self::HashDecode { .. }
+            | Self::ConsensusCodec { .. }
+            | Self::AddressDecode { .. }
+            | Self::BackupDestinationExists { .. }
+            | Self::ForeignKeysNotEnforced
+            | Self::JournalModeNotApplied { .. }
+            | Self::SecureDeleteNotApplied { .. }
+            | Self::SchemaHistoryMalformed { .. }
+            | Self::NotAWalletDb { .. }
+            | Self::AlreadyOpen { .. }
+            | Self::IdentityKeyEntryMismatch
+            | Self::IdentityEntryIdMismatch
+            | Self::IdentityScanStateContradiction { .. }
+            | Self::OrphanedIdentityEntry { .. }
+            | Self::WalletRehydrationFailed { .. }
+            | Self::AccountRegistrationEntryMismatch
+            | Self::ProviderKeyAccountEntryMismatch
+            | Self::ProviderKeyAccountConflict { .. }
+            | Self::TypedPoolKeyConflict { .. }
+            | Self::AccountRecordInvalid { .. }
+            | Self::MissingAccount { .. }
+            | Self::AccountRejected { .. }
+            | Self::AssetLockEntryMismatch { .. }
+            | Self::AssetLockStatusMismatch { .. }
+            | Self::CoreTransactionEntryMismatch { .. }
+            | Self::BlobTooLarge { .. }
+            | Self::IntegerOverflow { .. }
+            | Self::RehydrationPoolMismatch { .. }
+            | Self::RehydrationPoolTypeMismatch { .. }
+            | Self::ReadOnlyRecoveryMode { .. }
+            | Self::RehydrationEnsureDerivedFailed { .. }
+            | Self::RehydrationGapLimitRefillTooLarge { .. }
+            | Self::RehydrationGapLimitTargetOutOfRange { .. }
+            | Self::RehydrationGapLimitFailed { .. }
+            | Self::UsedAddressOwnerConflict { .. }
+            | Self::UnownedIdentityHasRegistrationIndex { .. }
+            | Self::EmptyUtxoScript { .. }
+            | Self::EmptyPoolAddressScript { .. }
+            | Self::DatabasePathIsSymlink { .. } => PersistenceErrorKind::Fatal,
         }
     }
 
@@ -834,6 +917,7 @@ impl WalletStorageError {
             Self::BackupDestinationExists { .. } => "backup_destination_exists",
             Self::ForeignKeysNotEnforced => "foreign_keys_not_enforced",
             Self::JournalModeNotApplied { .. } => "journal_mode_not_applied",
+            Self::SecureDeleteNotApplied { .. } => "secure_delete_not_applied",
             Self::SchemaHistoryMalformed { .. } => "schema_history_malformed",
             Self::NotAWalletDb { .. } => "not_a_wallet_db",
             Self::AlreadyOpen { .. } => "already_open",

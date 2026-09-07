@@ -373,11 +373,8 @@ impl EncryptedFileStore {
             crate::parent_permissions::ParentPermissionsError::Io(source) => {
                 SecretStoreError::io_at(parent, source)
             }
-            crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
-                SecretStoreError::InsecureParentDir {
-                    path: parent.to_path_buf(),
-                    mode,
-                }
+            crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
+                SecretStoreError::InsecureParentDir { ancestor, reason }
             }
         })?;
 
@@ -469,22 +466,18 @@ impl EncryptedFileStore {
     /// The vault is one shared fault domain: a corrupt entry blocks rekeying
     /// every wallet in the vault until that entry is manually removed.
     ///
-    /// The replacement header derives at the STRONGER of this handle's target
-    /// and the params the unlocked vault already carried, so rotating a
-    /// passphrase never weakens a vault hardened above the shipped default
-    /// while a raised default still upgrades an old one. That ratchet is
-    /// one-way: this API cannot lower a vault's Argon2 cost, so a vault
-    /// hardened for one host stays expensive to open on a weaker one.
+    /// The replacement header derives at this handle's own Argon2 target, which
+    /// for every non-test handle is [`KdfParams::default_target`] — the same
+    /// value a fresh vault gets. Rotating a passphrase therefore lands the
+    /// vault on the shipped parameters of the build doing the rotation.
     pub fn rekey(&self, new_passphrase: SecretString) -> Result<(), SecretStoreError> {
         // Rekey always advances to a passphrase meeting the same bounds as
         // open. Rejection leaves the resident and on-disk vault unchanged.
         validate_passphrase(&new_passphrase)?;
-        // Read the opened header, then release the lock: the derivation below
-        // must stay OUTSIDE the critical section. Reading it here rather than
-        // caching a copy at open keeps one source of truth for the params.
-        let header_kdf = lock_inner(&self.inner).vault.kdf;
-        let kdf = self.kdf.max_strength(header_kdf);
-        let (new_vault, new_key) = build_fresh_vault(&new_passphrase, kdf)?;
+        // Derive OUTSIDE the lock: it touches only the new passphrase and a
+        // fresh salt, so paying hundreds of ms inside the critical section
+        // would stall unrelated put/get ops for nothing.
+        let (new_vault, new_key) = build_fresh_vault(&new_passphrase, self.kdf)?;
         lock_inner(&self.inner).rekey(new_vault, new_key, new_passphrase)
     }
 
@@ -819,24 +812,26 @@ fn build_fresh_vault(
 }
 
 /// Derive the key from `passphrase` and verify it against the vault's
-/// token *before* any entry is touched. An authentication failure means either
-/// a wrong passphrase or a corrupted vault header; both yield
-/// `WrongPassphrase` with no plaintext.
+/// token *before* any entry is touched. An authentication failure means a
+/// wrong passphrase OR an edited header; both yield `WrongPassphrase` with no
+/// plaintext, because the two are cryptographically indistinguishable here —
+/// the header's `kdf` and `salt` feed both the derived key and the
+/// verify-token AAD, so tampering with either fails the tag exactly as a wrong
+/// passphrase does.
 ///
 /// The header's Argon2 params are bounded by `KdfParams::enforce_bounds`,
 /// which `crypto::derive_key` runs BEFORE touching the allocator. That band
 /// (`ARGON2_MIN_M_KIB..=ARGON2_MAX_M_KIB`, 19 MiB..=1 GiB) is deliberately far
-/// wider than the shipped `default_target()`: per-vault params exist precisely
-/// so a vault may be hardened above the default, and clamping reads to the
-/// current default would make every such vault — and every vault at all, were
-/// the default ever lowered — permanently unopenable. Do not narrow this to
-/// the target; the ceiling is the DoS control, the target is only what NEW
-/// vaults get.
+/// wider than the shipped `default_target()`, and the width buys VERSION
+/// TOLERANCE, not tunability: every header this crate writes carries
+/// `default_target()` (or, under `test-util`, `floor_target()`), so the only
+/// headers the extra width admits are those written by a build whose default
+/// differed. Clamping reads to the current default would make those — and
+/// every vault at all, were the default ever lowered — permanently unopenable.
 ///
-/// The Tier-2 envelope DOES clamp its own reads
-/// (`KdfParams::enforce_read_ceiling`); do not unify the two. A vault header
-/// is a local artefact its owner may harden at will, whereas an envelope's
-/// cost is paid on every read by whoever holds the object password.
+/// The Tier-2 envelope clamps its own reads
+/// (`KdfParams::enforce_read_ceiling`) because an envelope's cost is paid on
+/// every read by whoever holds the object password. Do not unify the two.
 fn derive_and_verify(
     vault: &Vault,
     passphrase: &SecretString,
@@ -2296,57 +2291,66 @@ mod tests {
         assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
     }
 
-    /// The read path must NOT clamp to `default_target()`: a vault hardened
-    /// above the shipped default stays openable. Guards against a
-    /// well-meaning "reject stronger-than-default" change bricking vaults.
+    /// The read path must NOT clamp to `default_target()`. `default_target` is
+    /// a write-side tunable; a read gate keyed to it orphans every vault
+    /// written under a different value the day it moves. This pins the
+    /// tolerance in the direction that is cheap to test — a header above the
+    /// current default still opens — which is the same property that keeps
+    /// vaults readable after the default is LOWERED.
     #[test]
-    fn vault_hardened_above_default_target_still_opens() {
+    fn vault_read_path_does_not_clamp_to_the_current_default_target() {
         let dir = tempfile::tempdir().unwrap();
         let path = vault_path(dir.path());
         let target = KdfParams::default_target();
-        // Only just above the target: enough to prove the read path does not
+        // Only just off the target: enough to prove the read path does not
         // clamp, without paying a second full-size Argon2 derivation.
-        let hardened = KdfParams {
+        let off_target = KdfParams {
             m_kib: target.m_kib + 1024,
             t: target.t + 1,
             ..target
         };
-        assert!(hardened.enforce_bounds().is_ok(), "fixture must be in-band");
-        assert!(hardened.m_kib > target.m_kib && hardened.t > target.t);
+        assert!(
+            off_target.enforce_bounds().is_ok(),
+            "fixture must be in-band"
+        );
+        assert!(off_target.m_kib > target.m_kib && off_target.t > target.t);
 
         let pass = SecretString::new("pw-correct");
-        let (vault, _key) = build_fresh_vault(&pass, hardened).expect("build hardened vault");
-        write_vault_at(&path, &vault, None).expect("write hardened vault");
+        let (vault, _key) = build_fresh_vault(&pass, off_target).expect("build off-target vault");
+        write_vault_at(&path, &vault, None).expect("write off-target vault");
         EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
-            .expect("a vault hardened above the shipped target must still open");
+            .expect("a vault whose header differs from the shipped target must still open");
     }
 
-    /// Rotating the passphrase must not discard the vault's own Argon2
-    /// hardening. A floor (mock) handle over a hardened vault is the
-    /// sharpest case: deriving under the handle's params alone rewrites
-    /// the header down to the weakest legal configuration, and nothing
-    /// about a successful `rekey` would reveal the downgrade.
+    /// A rotation rewrites the header to the rotating handle's own target, and
+    /// the vault stays openable under the new passphrase. A floor (mock)
+    /// handle over an off-target vault is the sharpest case: the two values
+    /// differ on both axes, so a header that came back unchanged would mean the
+    /// rotation had not rewritten it at all.
     #[test]
-    fn rekey_preserves_hardened_header_params() {
+    fn rekey_rewrites_the_header_to_the_handle_target() {
         let dir = tempfile::tempdir().unwrap();
         let path = vault_path(dir.path());
         let floor = KdfParams::floor_target();
-        // Just above the floor on both axes: enough to prove the header is
-        // carried forward, cheap enough to derive under three times.
-        let hardened = KdfParams {
+        // Just above the floor on both axes: distinguishable from the handle's
+        // own target, cheap enough to derive under three times.
+        let off_target = KdfParams {
             m_kib: floor.m_kib + 1024,
             t: floor.t + 1,
             ..floor
         };
-        assert!(hardened.enforce_bounds().is_ok(), "fixture must be in-band");
+        assert!(
+            off_target.enforce_bounds().is_ok(),
+            "fixture must be in-band"
+        );
 
-        let (vault, _key) = build_fresh_vault(&SecretString::new("pw-correct"), hardened)
-            .expect("build hardened vault");
-        write_vault_at(&path, &vault, None).expect("write hardened vault");
+        let (vault, _key) = build_fresh_vault(&SecretString::new("pw-correct"), off_target)
+            .expect("build off-target vault");
+        write_vault_at(&path, &vault, None).expect("write off-target vault");
 
         {
             let store = EncryptedFileStore::open_mock(&path, SecretString::new("pw-correct"))
-                .expect("open hardened vault with a floor handle");
+                .expect("open off-target vault with a floor handle");
             assert_eq!(
                 store.kdf_params(),
                 floor,
@@ -2357,11 +2361,11 @@ mod tests {
 
         let after = read_vault_at(&path).unwrap().unwrap();
         assert_eq!(
-            after.kdf, hardened,
-            "rekey silently downgraded the hardened header"
+            after.kdf, floor,
+            "rekey must rewrite the header to the rotating handle's target"
         );
-        EncryptedFileStore::open(&path, SecretString::new("pw-rotated"))
-            .expect("the rotated passphrase must open the preserved-header vault");
+        EncryptedFileStore::open_mock(&path, SecretString::new("pw-rotated"))
+            .expect("the rotated passphrase must open the rewritten vault");
     }
 
     #[test]
@@ -2542,7 +2546,15 @@ mod tests {
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("writable parent dir must be refused");
         assert!(
-            matches!(err, SecretStoreError::InsecureParentDir { mode, .. } if mode & 0o022 != 0),
+            matches!(
+                err,
+                SecretStoreError::InsecureParentDir {
+                    reason: crate::parent_permissions::InsecureAncestor::WritableWithoutSticky {
+                        mode
+                    },
+                    ..
+                } if mode & 0o022 != 0
+            ),
             "got {err:?}"
         );
         // Dropping the write bits (still group-readable at 0o750) lets the

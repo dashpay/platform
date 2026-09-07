@@ -36,6 +36,18 @@
 //! mismatched key is rejected before any entry is touched (no mixed-key
 //! corruption). The verify-token AAD is not bound to any wallet id, so it
 //! validates the store-wide passphrase once per op.
+//!
+//! # Warning: the header is authenticated — do not hand-edit it
+//!
+//! The document is human-readable JSON and the `kdf` block is legible, but it
+//! is not a settings file. `kdf` and `salt` feed BOTH the derived key and the
+//! verify-token AAD, so changing either byte-wise makes the vault permanently
+//! unopenable — and the failure surfaces as
+//! [`SecretStoreError::WrongPassphrase`](crate::secrets::SecretStoreError),
+//! because an edited header and a mistyped passphrase are cryptographically
+//! indistinguishable at that point. There is no API that raises a vault's
+//! Argon2 cost and no supported way to do it by hand; a vault edited this way
+//! is recoverable only from a backup.
 
 use std::collections::BTreeMap;
 

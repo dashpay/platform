@@ -61,6 +61,10 @@ tempfile = { version = "3", optional = true }
 chrono = { version = "0.4", default-features = false, features = [
     "clock",
 ], optional = true }
+# Backs the migration-set fingerprint helpers in `sqlite::migrations`, which
+# are test-only (`cfg(test)` / `__test-helpers`). Kept optional and pulled in
+# by `__test-helpers` alone, so a shipping build does not compile a hash
+# crate it never calls.
 sha2 = { version = "0.10", optional = true }
 # `JsonSchema` for `SecretString`, enabled by `secrets` (the only feature
 # under which the type exists). Reuses the workspace-locked 1.2.1.
@@ -202,7 +206,6 @@ sqlite = [
     "dep:bincode",
     "dep:tempfile",
     "dep:chrono",
-    "dep:sha2",
 ]
 # Maintenance CLI binary. Requires `sqlite` because the only subcommands
 # in scope today operate on the SQLite persister.
@@ -274,7 +277,7 @@ kv = ["sqlite"]
 # the write connection. The double-underscore prefix follows Cargo's
 # convention for "MUST NOT enable from downstream" features
 # (https://doc.rust-lang.org/cargo/reference/features.html#feature-resolver-version-2).
-__test-helpers = ["sqlite"]
+__test-helpers = ["sqlite", "dep:sha2"]
 # Exposes `SecretStore::file_mock` / `EncryptedFileStore::open_mock` — vault
 # constructors that use the Argon2id floor for fresh-vault creation and
 # per-secret wrapping; existing vaults retain their header parameters. Enable

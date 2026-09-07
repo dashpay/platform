@@ -36,6 +36,10 @@ pub const SIZE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
 
 #[cfg(any(feature = "sqlite", feature = "secrets"))]
 mod parent_permissions;
+// Named by both error enums' ancestor-rejection variants, so it has to be
+// reachable wherever either of them is.
+#[cfg(any(feature = "sqlite", feature = "secrets"))]
+pub use parent_permissions::InsecureAncestor;
 
 #[cfg(feature = "kv")]
 pub mod kv;
@@ -53,8 +57,8 @@ pub use kv::{KvError, KvStore, ObjectId};
 pub use sqlite::{
     default_auto_backup_dir, prune_backups_in, AutoBackupOperation, CommitReport,
     DeleteWalletReport, FlushMode, JournalMode, LoadCtx, LoadDegradation, LoadPolicy, LoadSite,
-    PruneReport, RetentionPolicy, SqlitePersister, SqlitePersisterConfig, Synchronous,
-    WalletStorageError,
+    OwningAccount, PruneReport, RetentionPolicy, SqlitePersister, SqlitePersisterConfig,
+    Synchronous, WalletStorageError,
 };
 
 // Compile-time assertions: `Send + Sync` and `PlatformWalletPersistence`

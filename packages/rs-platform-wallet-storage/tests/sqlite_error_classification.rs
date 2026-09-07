@@ -15,6 +15,7 @@ use dashcore::hashes::Hash;
 use platform_wallet::changeset::PersistenceError;
 use platform_wallet_storage::sqlite::error::AutoBackupOperation;
 use platform_wallet_storage::sqlite::util::safe_cast::SafeCastTarget;
+use platform_wallet_storage::InsecureAncestor;
 use platform_wallet_storage::WalletStorageError;
 use rusqlite::{Error as SqlErr, ErrorCode};
 
@@ -173,7 +174,10 @@ fn samples() -> Vec<WalletStorageError> {
             dir: PathBuf::from("/nope"),
             source: std::io::Error::other("nope"),
         },
-        WalletStorageError::InsecureParentDir { mode: 0o777 },
+        WalletStorageError::InsecureParentDir {
+            ancestor: PathBuf::from("/opt/dash"),
+            reason: InsecureAncestor::WritableWithoutSticky { mode: 0o777 },
+        },
         WalletStorageError::WalletNotFound {
             wallet_id: [0u8; 32],
         },
@@ -219,6 +223,7 @@ fn samples() -> Vec<WalletStorageError> {
             requested: "WAL",
             actual: "delete".into(),
         },
+        WalletStorageError::SecureDeleteNotApplied { actual: 0 },
         WalletStorageError::SchemaHistoryMalformed {
             reason: "bad applied_on",
         },
@@ -435,6 +440,9 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
             WalletStorageError::JournalModeNotApplied { .. } => (false, "journal_mode_not_applied"),
+            WalletStorageError::SecureDeleteNotApplied { .. } => {
+                (false, "secure_delete_not_applied")
+            }
             WalletStorageError::SchemaHistoryMalformed { .. } => {
                 (false, "schema_history_malformed")
             }

@@ -17,6 +17,7 @@ use common::{ensure_wallet_meta, wid};
 use platform_wallet::changeset::{
     CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
+use platform_wallet_storage::InsecureAncestor;
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig, WalletStorageError};
 
 #[test]
@@ -32,7 +33,10 @@ fn open_rejects_group_or_other_writable_parent() {
     assert!(
         matches!(
             result,
-            Err(WalletStorageError::InsecureParentDir { mode }) if mode & 0o022 != 0
+            Err(WalletStorageError::InsecureParentDir {
+            reason: InsecureAncestor::WritableWithoutSticky { mode },
+            ..
+        }) if mode & 0o022 != 0
         ),
         "open must return the typed insecure-parent error"
     );
@@ -66,9 +70,14 @@ fn open_rejects_parent_owned_by_another_user_when_chown_is_permitted() {
     let db_path = parent.join("wallet.db");
     let result = SqlitePersister::open(SqlitePersisterConfig::new(&db_path));
 
+    // Classified by OWNER, not by mode: 0755 is unremarkable, and reporting it
+    // as the fault would send the user to a `chmod` that cannot help.
     assert!(matches!(
         result,
-        Err(WalletStorageError::InsecureParentDir { mode }) if mode == 0o755
+        Err(WalletStorageError::InsecureParentDir {
+            ref ancestor,
+            reason: InsecureAncestor::UntrustedOwner { uid, current_uid: cur },
+        }) if uid == foreign_uid && cur == current_uid && ancestor == &parent
     ));
     assert!(!db_path.exists(), "the database must not be pre-created");
 }
@@ -87,7 +96,10 @@ fn open_rejects_writable_non_sticky_ancestor_above_secure_parent() {
 
     assert!(matches!(
         result,
-        Err(WalletStorageError::InsecureParentDir { mode }) if mode & 0o022 != 0
+        Err(WalletStorageError::InsecureParentDir {
+            reason: InsecureAncestor::WritableWithoutSticky { mode },
+            ..
+        }) if mode & 0o022 != 0
     ));
     assert!(
         !db_path.exists(),
@@ -119,7 +131,10 @@ fn open_rejects_insecure_ancestor_reached_through_parent_symlink() {
 
     assert!(matches!(
         result,
-        Err(WalletStorageError::InsecureParentDir { mode }) if mode & 0o022 != 0
+        Err(WalletStorageError::InsecureParentDir {
+            reason: InsecureAncestor::WritableWithoutSticky { mode },
+            ..
+        }) if mode & 0o022 != 0
     ));
     assert!(
         !secure_target_parent.join("wallet.db").exists(),
@@ -228,7 +243,10 @@ fn restore_rejects_insecure_destination_parent() {
 
     assert!(matches!(
         result,
-        Err(WalletStorageError::InsecureParentDir { mode }) if mode & 0o022 != 0
+        Err(WalletStorageError::InsecureParentDir {
+            reason: InsecureAncestor::WritableWithoutSticky { mode },
+            ..
+        }) if mode & 0o022 != 0
     ));
     assert!(
         !destination.exists(),
@@ -254,7 +272,10 @@ fn restore_checks_destination_permissions_before_auto_backup_policy() {
 
     assert!(matches!(
         result,
-        Err(WalletStorageError::InsecureParentDir { mode }) if mode & 0o022 != 0
+        Err(WalletStorageError::InsecureParentDir {
+            reason: InsecureAncestor::WritableWithoutSticky { mode },
+            ..
+        }) if mode & 0o022 != 0
     ));
     assert_eq!(
         std::fs::read(&destination).unwrap(),
