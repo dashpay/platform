@@ -747,11 +747,32 @@ pub(crate) fn account_index(at: &key_wallet::account::AccountType) -> u32 {
 /// Hardened `key_class` discriminator for `PlatformPayment`, persisted in the
 /// `account_registrations.key_class` PK column. `0` for every other variant —
 /// the sentinel "no key-class axis" value, matching the column default.
+///
+/// Wildcard-free on purpose, like [`account_index`] and
+/// [`account_type_db_label`]: this feeds a PRIMARY KEY column, so a variant
+/// this mapper has not been taught about would be given another variant's
+/// sentinel and collapse two distinct accounts onto one key — losing one of
+/// them at the next write, with no error anywhere. Listing the zeros costs a
+/// dozen lines and converts that silent loss into a compile error.
 pub(crate) fn account_key_class(at: &key_wallet::account::AccountType) -> u32 {
     use key_wallet::account::AccountType;
     match at {
         AccountType::PlatformPayment { key_class, .. } => *key_class,
-        _ => 0,
+        // No key-class axis: the column's sentinel default.
+        AccountType::Standard { .. }
+        | AccountType::CoinJoin { .. }
+        | AccountType::IdentityRegistration
+        | AccountType::IdentityTopUp { .. }
+        | AccountType::IdentityTopUpNotBoundToIdentity
+        | AccountType::IdentityInvitation
+        | AccountType::AssetLockAddressTopUp
+        | AccountType::AssetLockShieldedAddressTopUp
+        | AccountType::ProviderVotingKeys
+        | AccountType::ProviderOwnerKeys
+        | AccountType::ProviderOperatorKeys
+        | AccountType::ProviderPlatformKeys
+        | AccountType::DashpayReceivingFunds { .. }
+        | AccountType::DashpayExternalAccount { .. } => 0,
     }
 }
 
@@ -759,6 +780,10 @@ pub(crate) fn account_key_class(at: &key_wallet::account::AccountType) -> u32 {
 /// real account key for `DashpayReceivingFunds` / `DashpayExternalAccount`,
 /// persisted in the matching PK columns. All-zero for every non-DashPay
 /// variant (no identity axis), matching the column default.
+///
+/// Wildcard-free for the same reason as [`account_key_class`]: these are PK
+/// columns, and an untaught variant handed the all-zero sentinel shares a key
+/// with every other axis-less account at the same index.
 pub(crate) fn account_dashpay_ids(at: &key_wallet::account::AccountType) -> ([u8; 32], [u8; 32]) {
     use key_wallet::account::AccountType;
     match at {
@@ -772,7 +797,20 @@ pub(crate) fn account_dashpay_ids(at: &key_wallet::account::AccountType) -> ([u8
             friend_identity_id,
             ..
         } => (*user_identity_id, *friend_identity_id),
-        _ => ([0u8; 32], [0u8; 32]),
+        // No identity axis: the columns' sentinel default.
+        AccountType::Standard { .. }
+        | AccountType::CoinJoin { .. }
+        | AccountType::IdentityRegistration
+        | AccountType::IdentityTopUp { .. }
+        | AccountType::IdentityTopUpNotBoundToIdentity
+        | AccountType::IdentityInvitation
+        | AccountType::AssetLockAddressTopUp
+        | AccountType::AssetLockShieldedAddressTopUp
+        | AccountType::ProviderVotingKeys
+        | AccountType::ProviderOwnerKeys
+        | AccountType::ProviderOperatorKeys
+        | AccountType::ProviderPlatformKeys
+        | AccountType::PlatformPayment { .. } => ([0u8; 32], [0u8; 32]),
     }
 }
 
@@ -1152,6 +1190,35 @@ mod tests {
             }
         }
         variants
+    }
+
+    /// No two account types may share a full PK tuple, whatever axes they
+    /// carry. This is the runtime half of the wildcard-free mappers: those
+    /// make an untaught variant a compile error, and this makes a variant
+    /// that IS taught but mapped onto an existing key a test failure.
+    ///
+    /// Reached through `all_account_type_variants`, whose own exhaustive
+    /// match means a new upstream variant cannot arrive without a decision
+    /// being taken here.
+    #[test]
+    fn no_two_account_types_share_a_pk_tuple() {
+        let keys: Vec<_> = all_account_type_variants()
+            .into_iter()
+            .map(|at| {
+                (
+                    account_type_db_label(&at),
+                    account_index(&at),
+                    account_key_class(&at),
+                    account_dashpay_ids(&at),
+                )
+            })
+            .collect();
+        let distinct: HashSet<_> = keys.iter().collect();
+        assert_eq!(
+            distinct.len(),
+            keys.len(),
+            "two account types collapse onto one primary key: {keys:?}"
+        );
     }
 
     /// The reader's SQL inlines these two labels (SQLite has no list
