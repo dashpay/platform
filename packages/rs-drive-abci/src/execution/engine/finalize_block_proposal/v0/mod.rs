@@ -217,14 +217,15 @@ where
 
         laps.lap("fbp_block_info");
 
-        if !transaction_to_extension_matches.is_empty() {
+        let broadcast_withdrawals = !transaction_to_extension_matches.is_empty();
+        if broadcast_withdrawals {
             self.append_signatures_and_broadcast_withdrawal_transactions(
                 transaction_to_extension_matches,
                 platform_version,
             )?;
         }
 
-        laps.lap("fbp_wd_broadcast");
+        laps.lap_if(broadcast_withdrawals, "fbp_wd_broadcast");
 
         // Update platform (drive abci) state
 

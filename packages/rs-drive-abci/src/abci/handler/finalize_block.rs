@@ -110,7 +110,10 @@ where
         app.platform().create_grovedb_checkpoint(platform_version)?;
     }
 
-    laps.lap("fb_checkpoint");
+    laps.lap_if(
+        block_finalization_outcome.checkpoint_needed,
+        "fb_checkpoint",
+    );
     drop(laps);
     crate::perf::end_block(block_height);
 

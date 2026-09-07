@@ -246,7 +246,7 @@ where
             }
         }
 
-        laps.lap("chainlock");
+        laps.lap_if(core_chain_lock_update.is_some(), "chainlock");
 
         // Update the masternode list and create masternode identities and also update the active quorums
         self.update_core_info(
@@ -292,7 +292,9 @@ where
 
         // Mark all previously broadcasted and chainlocked withdrawals as complete
         // only when we are on a new core height
-        if block_state_info.core_chain_locked_height() != last_block_core_height {
+        let core_height_advanced =
+            block_state_info.core_chain_locked_height() != last_block_core_height;
+        if core_height_advanced {
             self.update_broadcasted_withdrawal_statuses(
                 &block_info,
                 transaction,
@@ -300,7 +302,7 @@ where
             )?;
         }
 
-        laps.lap("wd_status");
+        laps.lap_if(core_height_advanced, "wd_status");
 
         // Preparing withdrawal transactions for signing and broadcasting
         // To process withdrawals we need to dequeue untiled transactions from the withdrawal transactions queue

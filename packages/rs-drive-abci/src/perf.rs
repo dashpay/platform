@@ -4,8 +4,17 @@
 //! accumulated in memory and reported as means every `DRIVE_BLOCK_PERF_EVERY`
 //! blocks (default 500), so the measurement does not pay for a log line inside
 //! the very spans it is measuring.
+//!
+//! This is read straight from the environment rather than through
+//! `PlatformConfig` on purpose: it is a developer switch for replay benchmarks,
+//! it must cost nothing when off, and it should not need a config change to be
+//! flipped on a node under investigation.
+//!
+//! Phases nest where a handler times a call whose body is itself timed: the
+//! `fb_proposal` lap in `finalize_block` covers all of the `fbp_*` laps taken
+//! inside `finalize_block_proposal`. Add up laps from one level only.
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::Instant;
 
 fn enabled() -> bool {
@@ -38,6 +47,38 @@ impl Totals {
         } else {
             self.phases.push((name, micros, 1));
         }
+    }
+
+    /// One `name=mean/samples` term per phase, space separated. The mean is
+    /// over blocks, not over samples: a phase that only runs on some blocks
+    /// shows its share of the per-block cost, and the sample count shows how
+    /// often it ran.
+    fn report_line(&self) -> String {
+        let mut line = String::with_capacity(self.phases.len() * 20);
+        for (name, sum, samples) in &self.phases {
+            if !line.is_empty() {
+                line.push(' ');
+            }
+            line.push_str(name);
+            line.push('=');
+            line.push_str(&(*sum / self.blocks.max(1)).to_string());
+            line.push('/');
+            line.push_str(&samples.to_string());
+        }
+        line
+    }
+
+    /// Counts a finished block. Returns the report and resets when the
+    /// reporting interval is reached.
+    fn end_block(&mut self, every: u64) -> Option<(u64, String)> {
+        self.blocks += 1;
+        if self.blocks < every {
+            return None;
+        }
+        let report = (self.blocks, self.report_line());
+        self.phases.clear();
+        self.blocks = 0;
+        Some(report)
     }
 }
 
@@ -72,18 +113,23 @@ impl Laps {
 
     /// Record the time since the previous lap under `name`.
     pub fn lap(&mut self, name: &'static str) {
+        self.lap_if(true, name);
+    }
+
+    /// Like [`lap`](Self::lap), but only records a sample when `ran` is true.
+    /// Use it after work that runs on some blocks only, so the sample count in
+    /// the report is the number of blocks the work actually ran on. The lap
+    /// boundary moves either way.
+    pub fn lap_if(&mut self, ran: bool, name: &'static str) {
         if !self.on {
             return;
         }
         let now = Instant::now();
-        self.buf
-            .push((name, now.duration_since(self.last).as_micros() as u64));
+        if ran {
+            self.buf
+                .push((name, now.duration_since(self.last).as_micros() as u64));
+        }
         self.last = now;
-    }
-
-    /// True when perf logging is enabled.
-    pub fn on(&self) -> bool {
-        self.on
     }
 }
 
@@ -98,22 +144,13 @@ impl Drop for Laps {
         if !self.on || self.buf.is_empty() {
             return;
         }
-        let mut totals = totals().lock().expect("block perf totals poisoned");
+        // Telemetry only: a panic elsewhere while the lock was held must not
+        // turn into a second panic here, least of all during unwinding.
+        let mut totals = totals().lock().unwrap_or_else(PoisonError::into_inner);
         for (name, micros) in self.buf.drain(..) {
             totals.add(name, micros);
         }
     }
-}
-
-/// Record a non-timing value (e.g. a byte count) under `name`.
-pub fn value(name: &'static str, v: u64) {
-    if !enabled() {
-        return;
-    }
-    totals()
-        .lock()
-        .expect("block perf totals poisoned")
-        .add(name, v);
 }
 
 /// Called once per finalized block. Emits the means and resets every
@@ -122,32 +159,10 @@ pub fn end_block(height: u64) {
     if !enabled() {
         return;
     }
-    let every = report_every();
-    let report = {
-        let mut totals = totals().lock().expect("block perf totals poisoned");
-        totals.blocks += 1;
-        if totals.blocks < every {
-            None
-        } else {
-            let blocks = totals.blocks;
-            let mut line = String::with_capacity(totals.phases.len() * 20);
-            for (name, sum, samples) in &totals.phases {
-                if !line.is_empty() {
-                    line.push(' ');
-                }
-                // mean over blocks, not over samples: a phase that only runs on
-                // some blocks should show its share of the per-block cost
-                line.push_str(name);
-                line.push('=');
-                line.push_str(&(*sum / blocks).to_string());
-                line.push('/');
-                line.push_str(&samples.to_string());
-            }
-            totals.phases.clear();
-            totals.blocks = 0;
-            Some((blocks, line))
-        }
-    };
+    let report = totals()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .end_block(report_every());
     if let Some((blocks, line)) = report {
         tracing::info!(
             block_perf = "agg",
@@ -156,5 +171,54 @@ pub fn end_block(height: u64) {
             phases = line,
             "block perf"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn phases_keep_first_seen_order_and_sum_samples() {
+        let mut totals = Totals::default();
+        totals.add("b", 10);
+        totals.add("a", 5);
+        totals.add("b", 20);
+
+        assert_eq!(totals.phases, vec![("b", 30, 2), ("a", 5, 1)]);
+    }
+
+    #[test]
+    fn report_means_over_blocks_not_over_samples() {
+        let mut totals = Totals::default();
+        // Ran on one block out of four, costing 400 µs that time.
+        totals.add("rare", 400);
+        // Ran on every block.
+        for _ in 0..4 {
+            totals.add("common", 10);
+        }
+        totals.blocks = 4;
+
+        assert_eq!(totals.report_line(), "rare=100/1 common=10/4");
+    }
+
+    #[test]
+    fn end_block_reports_and_resets_at_the_interval() {
+        let mut totals = Totals::default();
+        totals.add("x", 30);
+        assert_eq!(totals.end_block(3), None);
+        totals.add("x", 30);
+        assert_eq!(totals.end_block(3), None);
+        totals.add("x", 30);
+
+        assert_eq!(totals.end_block(3), Some((3, "x=30/3".to_string())));
+        assert_eq!(totals.blocks, 0);
+        assert!(totals.phases.is_empty());
+    }
+
+    #[test]
+    fn report_line_is_empty_when_nothing_was_recorded() {
+        let mut totals = Totals::default();
+        assert_eq!(totals.end_block(1), Some((1, String::new())));
     }
 }
