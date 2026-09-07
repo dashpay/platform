@@ -934,6 +934,71 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertEqual(held.supersededByTxid, winnerTxid)
     }
 
+    /// A loser can reach persistence before an InstantSend winner replaces
+    /// its input relationship. Because that sweep carries no claimed inputs,
+    /// the winner relationship itself must still lead to the durable hold.
+    func testPersistedLoserWinnerRelinkStaysHeldAcrossRestartAndReplay() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("winner-relink.store")
+
+        do {
+            let (handler, container) = try makeHandler(url: storeURL)
+            let context = ModelContext(container)
+            context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+            try context.save()
+
+            deliverFundingUtxo(handler, vout: 0, amount: 100_000)
+            deliverRecordWithSpentEmit(
+                handler,
+                txid: sweptTxid,
+                context: 0,
+                inputOutpoint: (fundingTxid, 0)
+            )
+            let loserLinked = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+            XCTAssertEqual(loserLinked.spendingTransaction?.txid, sweptTxid)
+            XCTAssertFalse(loserLinked.isSpent)
+
+            deliverRecordWithSpentEmit(
+                handler,
+                txid: winnerTxid,
+                context: 1,
+                inputOutpoint: (fundingTxid, 0)
+            )
+            let winnerLinked = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+            XCTAssertEqual(winnerLinked.spendingTransaction?.txid, winnerTxid)
+            XCTAssertFalse(winnerLinked.isSpent)
+
+            XCTAssertTrue(sweep(handler, [Batch(
+                losers: [sweptTxid],
+                winner: winnerTxid,
+                winnerMinedHeight: nil
+            )]))
+            XCTAssertNil(transaction(container, txid: sweptTxid))
+            let held = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+            XCTAssertTrue(
+                held.isSpent,
+                "a persisted loser's winner-linked input must stay held"
+            )
+            XCTAssertEqual(held.spendingTransaction?.txid, winnerTxid)
+            XCTAssertEqual(held.spendingInputIndex, 0)
+            XCTAssertEqual(held.supersededByTxid, winnerTxid)
+        }
+
+        let (handler, container) = try makeHandler(url: storeURL)
+        deliverFundingUtxo(handler, vout: 0, amount: 100_000)
+        let replayed = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(
+            replayed.isSpent,
+            "a restart and funding replay must not restore the winner-consumed coin"
+        )
+        XCTAssertEqual(replayed.spendingTransaction?.txid, winnerTxid)
+        XCTAssertEqual(replayed.spendingInputIndex, 0)
+        XCTAssertEqual(replayed.supersededByTxid, winnerTxid)
+    }
+
     /// The same never-held loser, but the coin it spent has not been
     /// classified as ours yet: the claim must survive as the same detached
     /// tombstone a staged pending row turns into, so the funding TXO's

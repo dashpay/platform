@@ -157,6 +157,23 @@ interface TxoDao {
     ): Int
 
     /**
+     * Apply a sweep's durable hold to every coin of [walletId] already
+     * attributed to [winnerTxid]. A persisted winner can take the input link
+     * from the loser before the loser is swept, so the loser-based update no
+     * longer finds these rows even though the winner's unconfirmed record has
+     * not marked them spent yet.
+     *
+     * The winner link and input index stay intact: they are valid attribution,
+     * and matching by [winnerTxid] leaves every different surviving spender
+     * untouched.
+     */
+    @Query(
+        "UPDATE txos SET isSpent = 1, supersededByTxid = :winnerTxid " +
+            "WHERE spendingTxid = :winnerTxid AND walletId = :walletId",
+    )
+    suspend fun holdInputsLinkedToWinner(winnerTxid: ByteArray, walletId: ByteArray)
+
+    /**
      * Whether some wallet other than [walletId] still has a TXO pointing at
      * [spendingTxid] as its spender.
      *

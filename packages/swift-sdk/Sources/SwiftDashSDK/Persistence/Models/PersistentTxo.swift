@@ -88,9 +88,10 @@ public final class PersistentTxo {
 
     /// 32-byte txid of the transaction a sweep's winner is known to have
     /// beaten this coin to — the durable carrier of a sweep hold,
-    /// mirroring the SQLite store's `spent_in_txid`. Two writers set it:
-    /// `applySweptTransaction` holding an already-materialized input, and
-    /// `upsertUtxo` resolving a `PersistentPendingInput` tombstone
+    /// mirroring the SQLite store's `spent_in_txid`. Sweep processing sets
+    /// it when holding an already-materialized input, whether that input is
+    /// still linked to the loser or already linked to the winner;
+    /// `upsertUtxo` also sets it while resolving a `PersistentPendingInput` tombstone
     /// (`isSweptTombstone`) — the funding output arrived only after its
     /// loser was already swept and deleted. The winner named here need not
     /// have a row of its own (it can pay only outside addresses), which is

@@ -1502,6 +1502,15 @@ class PlatformWalletPersistenceHandler(
                     )
                 }
             }
+            // A winner recorded before this sweep can already own the input
+            // relationship, leaving the persisted loser with no link for the
+            // per-loser pass above to follow. The sweep still settles every
+            // coin attributed to its winner, independently of whether the
+            // batch needed to carry any claimed inputs.
+            val batchWinner = supersededBy.firstOrNull()
+            if (batchWinner != null) {
+                db.txoDao().holdInputsLinkedToWinner(batchWinner, walletId)
+            }
             // Inputs the batch vouches for on behalf of a loser this store
             // never held: it was swept before its own detection reached
             // persistence, so the loop above found no staged rows to hold
@@ -1522,8 +1531,7 @@ class PlatformWalletPersistenceHandler(
             // winner cannot be settled; failing the round keeps Rust from
             // clearing a sweep whose hold never landed, the same contract
             // as every other refusal here.
-            val claimedWinner = supersededBy.firstOrNull()
-            if (claimedWinner == null && claimedInputs.isNotEmpty()) {
+            if (batchWinner == null && claimedInputs.isNotEmpty()) {
                 throw IllegalStateException(
                     "sweep batch vouches for ${claimedInputs.size} input(s) but names no winner",
                 )
@@ -1534,7 +1542,7 @@ class PlatformWalletPersistenceHandler(
                 ) {
                     continue
                 }
-                val winner = claimedWinner ?: continue
+                val winner = batchWinner ?: continue
                 val held = db.txoDao().holdClaimedInput(outpoint, walletId, winner)
                 if (held > 0 || db.txoDao().getByOutpoint(outpoint) != null) continue
                 // Only an earlier tombstone for this winner (and this

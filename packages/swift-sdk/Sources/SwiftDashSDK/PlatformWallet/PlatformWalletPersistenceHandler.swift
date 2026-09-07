@@ -1474,6 +1474,30 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     }
                 }
 
+                // A winner recorded before this sweep can already own the
+                // input relationship, leaving the persisted loser with no
+                // link for `applySweptTransaction` to follow. The sweep still
+                // settles every coin this wallet attributes to its winner,
+                // independently of whether the batch carries claimed inputs.
+                let winnerRow: PersistentTransaction?
+                do {
+                    winnerRow = try fetchSweepTransactionRow(txid: supersededBy)
+                } catch {
+                    print(
+                        "⚠️ persistWalletChangesetSweeps: winner lookup failed: "
+                            + "\(error.localizedDescription); failing the round"
+                    )
+                    return false
+                }
+                if let winnerRow {
+                    for txo in winnerRow.inputs
+                    where !txo.isDeleted && Self.resolvedWalletId(of: txo) == walletId {
+                        txo.isSpent = true
+                        txo.supersededByTxid = supersededBy
+                        txo.lastUpdated = Date()
+                    }
+                }
+
                 // Inputs the batch vouches for on behalf of a loser this
                 // store never held: it was swept before its own detection
                 // reached persistence, so `fetchSweepTransactionRow` found

@@ -106,8 +106,9 @@ data class TxoEntity(
     /**
      * Port of Swift `PersistentTxo.supersededByTxid` — the winner a sweep
      * attributed this coin's consumption to, mirroring the SQLite store's
-     * `spent_in_txid`. Two writers set it: `holdSpentWithoutSpender`, when
-     * a sweep holds an already-materialized input, and
+     * `spent_in_txid`. Sweep processing sets it when holding an
+     * already-materialized input, whether that input is still linked to the
+     * loser or already linked to the winner; the other writer is
      * `onWalletChangesetUtxoAdded` resolving a `pending_inputs` row with
      * `isSweptTombstone` — the funding output arrived only after the loser
      * that spent it was swept and deleted. Deliberately NOT an FK: the

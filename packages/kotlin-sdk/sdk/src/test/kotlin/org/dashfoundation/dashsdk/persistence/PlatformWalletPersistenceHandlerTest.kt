@@ -2418,6 +2418,111 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun aPersistedLoserStillHoldsItsInputAfterTheWinnerTakesTheLink() = runTest {
+        val androidContext = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "persisted-loser-winner-link-${java.util.UUID.randomUUID()}"
+        db.close()
+        db = Room.databaseBuilder(androidContext, DashDatabase::class.java, databaseName)
+            .allowMainThreadQueries()
+            .build()
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 67 }
+        val funding = makeOutpoint(fundingTxid, 0)
+        val loser = ByteArray(32) { 68 }
+        val winner = ByteArray(32) { 69 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 50_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loser, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_050,
+            funding, 1,
+        )
+        assertEquals(0, handler.onChangesetEnd(walletId, success = true))
+        assertTrue(loser.contentEquals(db.txoDao().getByOutpoint(funding)!!.spendingTxid))
+
+        // The InstantSend winner is persisted next. It takes the input link,
+        // but its unconfirmed record deliberately does not spend-mark the coin.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, winner, ByteArray(10) { 6 }, 1, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_060,
+            funding, 1,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, winner)
+        handler.onChangesetEnd(walletId, success = true)
+        val winnerLinked = db.txoDao().getByOutpoint(funding)!!
+        assertFalse(winnerLinked.isSpent)
+        assertTrue(winner.contentEquals(winnerLinked.spendingTxid))
+
+        // The loser was already persisted, so the sweep carries no claimed
+        // inputs. The winner link is now the only route to the durable hold.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loser), arrayOf(winner), emptyArray(), emptyArray(), -1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull(db.transactionDao().getByTxid(loser))
+        val held = db.txoDao().getByOutpoint(funding)!!
+        assertTrue("the persisted loser's winner-linked input stays held", held.isSpent)
+        assertTrue(winner.contentEquals(held.spendingTxid))
+        assertEquals(0, held.spendingInputIndex)
+        assertTrue(winner.contentEquals(held.supersededByTxid))
+        assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
+
+        db.close()
+        db = Room.databaseBuilder(androidContext, DashDatabase::class.java, databaseName)
+            .allowMainThreadQueries()
+            .build()
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+        restarted.onChangesetBegin(walletId)
+        restarted.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        assertEquals(0, restarted.onChangesetEnd(walletId, success = true))
+
+        val replayed = db.txoDao().getByOutpoint(funding)!!
+        assertTrue(
+            "a reopen and funding replay must not restore the winner-consumed coin",
+            replayed.isSpent,
+        )
+        assertTrue(winner.contentEquals(replayed.spendingTxid))
+        assertEquals(0, replayed.spendingInputIndex)
+        assertTrue(winner.contentEquals(replayed.supersededByTxid))
+        assertTrue(restarted.onLoadWalletList().single().utxos.isEmpty())
+    }
+
+    @Test
     fun aClaimedInputWithNoFundingRowYetLeavesAStampedTombstone() = runTest {
         // The same never-held loser, but the coin it spent has not been
         // classified as ours yet. The batch's claim must survive as the
