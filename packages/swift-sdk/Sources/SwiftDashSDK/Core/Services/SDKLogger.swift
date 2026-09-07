@@ -288,6 +288,19 @@ final class SDKLoggerState: @unchecked Sendable {
     func flush() {
         lock.withLock { sink }?.flush()
     }
+
+    /// Test seam: drop the sink and everything buffered for it. `record`
+    /// buffers process-wide while no sink exists and `installSink` replays
+    /// the whole backlog into whichever session installs first, so a suite
+    /// asserting over a complete `run.log` must start from nothing.
+    func reset() {
+        lock.withLock {
+            sink = nil
+            includeDebug = false
+            pendingLines = []
+            droppedPendingLineCount = 0
+        }
+    }
 }
 
 // MARK: - Logging Preferences
@@ -560,6 +573,11 @@ public enum SDKLogger {
 
     static func updateDebugSetting(_ includeDebug: Bool) {
         state.updateDebugSetting(includeDebug)
+    }
+
+    /// Tests only. See `SDKLoggerState.reset()`.
+    static func resetForTesting() {
+        state.reset()
     }
 
     public static func log(_ message: String, minimumLevel level: LoggingPreset = .medium) {

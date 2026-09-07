@@ -5369,6 +5369,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             }
             unspentBuckets.reserveCapacity(restorable.count)
+            // Rows no wallet can claim — no denormalized id and either no
+            // account or an account whose wallet link is broken — belong to
+            // no bucket and so to no per-wallet snapshot. Counted here and
+            // reported once, or the restore summary would say nothing was
+            // dropped while exactly the corruption it exists to surface was.
+            var unroutableRowCount = 0
             for row in liveUnspent {
                 let key: Data
                 if !row.walletId.isEmpty {
@@ -5379,9 +5385,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // a relationship-store inconsistency would
                     // crash here, so guard via Optional cast.
                     let wallet: PersistentWallet? = account.wallet
-                    guard let resolved = wallet else { continue }
+                    guard let resolved = wallet else {
+                        unroutableRowCount += 1
+                        continue
+                    }
                     key = resolved.walletId
                 } else {
+                    unroutableRowCount += 1
                     continue
                 }
                 // Preserve the upstream restore contract: account-less rows
@@ -5393,6 +5403,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
                 unspentBuckets[key, default: []].append(row)
             }
+            SDKLogger.event(
+                "core_restore_unroutable_rows",
+                category: .persistence,
+                severity: unroutableRowCount == 0 ? .info : .warning,
+                fields: [
+                    "checkpoint": .publicText(CoreWalletDiagnosticCheckpoint.restoreBuffer.rawValue),
+                    "scanned_row_count": .integer(Int64(liveUnspent.count)),
+                    "unroutable_row_count": .integer(Int64(unroutableRowCount)),
+                ]
+            )
         }
 
         // Allocate `entriesPtr` and the `LoadAllocation` here — past

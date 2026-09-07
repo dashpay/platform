@@ -334,6 +334,19 @@ extension PlatformWalletManager {
     ///   - fromHeight: the core block height to rewind the filter scan to.
     public func spvRescanFilters(walletId: Data, fromHeight: UInt32) throws {
         guard walletId.count == 32 else {
+            // Every other way this method fails leaves a `core_rescan_armed`
+            // line; a rejected request must too, or the export reads as if
+            // no rescan was ever asked for.
+            SDKLogger.event(
+                "core_rescan_armed",
+                category: .persistence,
+                severity: .error,
+                fields: [
+                    "from_height": .unsignedInteger(UInt64(fromHeight)),
+                    "result": .publicText("invalid_wallet_id"),
+                    "wallet_reference": .reference(walletId),
+                ]
+            )
             throw PlatformWalletError.invalidParameter(
                 "walletId must be exactly 32 bytes"
             )

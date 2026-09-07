@@ -2,6 +2,14 @@ import CoreData
 import Foundation
 import SwiftData
 
+/// Why `DashModelContainer.open` refused to open a store.
+public enum DashModelContainerError: Error, Equatable {
+    /// The configuration was built from a `Schema` whose entity set differs
+    /// from the SDK's. `unexpected` names entities the SDK schema lacks;
+    /// `missing` names SDK entities the configuration lacks.
+    case schemaMismatch(unexpected: [String], missing: [String])
+}
+
 /// Factory for creating SwiftData model containers for Dash Platform persistence
 public enum DashModelContainer {
     private struct StoreFileSizes {
@@ -25,30 +33,83 @@ public enum DashModelContainer {
         case inferredFallback = "inferred_fallback"
     }
 
-    /// Whether the store at `storeURL` was written by a schema that
+    /// What the store at `storeURL` is, relative to the schemas
     /// `DashMigrationPlan` registers.
     ///
-    /// This is the question staged migration asks and answers with Cocoa
-    /// 134504 ("Cannot use staged migration with an unknown model version")
-    /// when the answer is no. It has to be asked here directly, because the
+    /// This is the question staged migration answers with Cocoa 134504 when
+    /// it cannot place a store. It has to be asked here directly, because the
     /// error SwiftData surfaces for it is `SwiftDataError.loadIssueModelContainer`
     /// with no explanation and no underlying `NSError` — the same value a
-    /// corrupt file produces — so nothing in the thrown error distinguishes the
-    /// one failure the fallback may answer from every failure it must not.
+    /// corrupt file produces — so nothing in the thrown error distinguishes
+    /// the one failure the fallback may answer from every failure it must not.
+    enum StoreSchemaVerdict: Equatable {
+        /// The metadata could not be read: not a version question.
+        case unreadable
+        /// A registered schema is compatible with it. The staged plan can
+        /// open it, so a failure to do so is something else entirely.
+        case matchesRegisteredVersion
+        /// Written by a registered version whose live models have since
+        /// drifted (every v4.2.0-dev.1 store, until the remaining V1/V2
+        /// shapes are frozen). Inferred migration may open it.
+        case driftedRegisteredVersion
+        /// Written by a build this SDK does not know — a version identifier
+        /// it never registered, or an entity its schema lacks. Inferred
+        /// migration would open it and silently drop what the newer build
+        /// wrote, so it must not run; the pre-fallback crash was the safe
+        /// outcome here.
+        case newerThanRegistered(reason: String)
+
+        var logLabel: String {
+            switch self {
+            case .unreadable: return "unreadable"
+            case .matchesRegisteredVersion: return "matches_registered_version"
+            case .driftedRegisteredVersion: return "drifted_registered_version"
+            case .newerThanRegistered(let reason): return "newer_than_registered:\(reason)"
+            }
+        }
+    }
+
+    /// Classifies the store from its metadata alone; never opens it.
     ///
-    /// Returns `nil` when the metadata cannot be read at all: that is not a
-    /// version question, and the caller treats it exactly like a match.
-    static func storeMatchesRegisteredSchema(at storeURL: URL) -> Bool? {
+    /// Known blind spot, recorded rather than hidden: a newer build that added
+    /// only an *attribute* to an existing entity and kept the version
+    /// identifier is indistinguishable here from drift, because both leave
+    /// the same entity names with different hashes. Freezing the remaining
+    /// shapes in `DashSchemaFrozenModels.swift` is what closes that, by
+    /// making every registered version's hashes stable.
+    static func classifyStore(at storeURL: URL) -> StoreSchemaVerdict {
         guard let metadata = try? NSPersistentStoreCoordinator.metadataForPersistentStore(
             ofType: NSSQLiteStoreType,
             at: storeURL,
             options: nil
-        ) else { return nil }
-        return DashMigrationPlan.schemas.contains { schema in
+        ) else { return .unreadable }
+
+        let matches = DashMigrationPlan.schemas.contains { schema in
             guard let model = NSManagedObjectModel.makeManagedObjectModel(for: schema.models)
             else { return false }
             return model.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata)
         }
+        if matches { return .matchesRegisteredVersion }
+
+        // SwiftData writes each `VersionedSchema.versionIdentifier` into the
+        // store; one this plan never registered was written by a newer build.
+        let registered = Set(DashMigrationPlan.schemas.map { $0.versionIdentifier.description })
+        let written = (metadata[NSStoreModelVersionIdentifiersKey] as? [String]) ?? []
+        if let unknown = written.first(where: { !registered.contains($0) }) {
+            return .newerThanRegistered(reason: "unregistered_version_identifier=\(unknown)")
+        }
+
+        // An entity the current schema does not have can only have been
+        // written by a newer build; inferred migration would drop its table.
+        let current = Set(schema.entities.map(\.name))
+        let stored = Set(((metadata[NSStoreModelVersionHashesKey] as? [String: Any]) ?? [:]).keys)
+        let unknownEntities = stored.subtracting(current).sorted()
+        if !unknownEntities.isEmpty {
+            return .newerThanRegistered(
+                reason: "unknown_entities=\(unknownEntities.joined(separator: "|"))"
+            )
+        }
+        return .driftedRegisteredVersion
     }
 
     /// Builds the common payload for both sides of the container open. The
@@ -107,7 +168,12 @@ public enum DashModelContainer {
     /// Read only sizes and never include any component of the device path.
     private static func storeFileSizes(at storeURL: URL) -> StoreFileSizes {
         func fileSize(at url: URL) -> UInt64 {
-            guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+            // A fresh URL each time: `resourceValues` bridges to `NSURL`,
+            // which caches a value per instance, and the same `storeURL` is
+            // read before and after the open. A cached size would report a
+            // migration that grew the store as no growth at all.
+            let fresh = URL(fileURLWithPath: url.path)
+            guard let size = try? fresh.resourceValues(forKeys: [.fileSizeKey]).fileSize,
                   size >= 0
             else { return 0 }
             return UInt64(size)
@@ -224,7 +290,23 @@ public enum DashModelContainer {
     /// instead of a bare `ModelContainer(for:configurations:)` that reports
     /// nothing. It is also what lets `Dev1StoreUpgradeTests` drive exactly the
     /// path that ships against a fixture store.
+    ///
+    /// The configuration contributes the store URL and options only. The
+    /// container is always built for the SDK's own `schema`, because that is
+    /// what `DashMigrationPlan` migrates toward; a configuration built from a
+    /// different `Schema` is refused with ``DashModelContainerError`` rather
+    /// than silently opened under the wrong one.
     public static func open(_ modelConfiguration: ModelConfiguration) throws -> ModelContainer {
+        if let provided = modelConfiguration.schema {
+            let providedNames = Set(provided.entities.map(\.name))
+            let sdkNames = Set(schema.entities.map(\.name))
+            guard providedNames == sdkNames else {
+                throw DashModelContainerError.schemaMismatch(
+                    unexpected: providedNames.subtracting(sdkNames).sorted(),
+                    missing: sdkNames.subtracting(providedNames).sorted()
+                )
+            }
+        }
         // Always wire the migration plan so stores created by an older SDK
         // advance through the registered versioned schemas. Record only
         // metadata about the store — never its device path.
@@ -236,20 +318,25 @@ public enum DashModelContainer {
         func report(
             succeeded: Bool,
             migrationPath: StoreMigrationPath,
-            error: Error? = nil
+            error: Error? = nil,
+            storeVerdict: StoreSchemaVerdict? = nil
         ) {
+            var fields = storeOpenFields(
+                succeeded: succeeded,
+                existedBefore: existedBefore,
+                migrationPath: migrationPath,
+                startedAt: started,
+                sizeBefore: sizeBefore,
+                sizeAfter: storeFileSizes(at: storeURL)
+            )
+            if let storeVerdict {
+                fields["store_verdict"] = .publicText(storeVerdict.logLabel)
+            }
             SDKLogger.event(
                 "core_store_open_result",
                 category: .persistence,
                 severity: succeeded ? .info : .error,
-                fields: storeOpenFields(
-                    succeeded: succeeded,
-                    existedBefore: existedBefore,
-                    migrationPath: migrationPath,
-                    startedAt: started,
-                    sizeBefore: sizeBefore,
-                    sizeAfter: storeFileSizes(at: storeURL)
-                ),
+                fields: fields,
                 error: error,
                 redacting: [storeURL.path]
             )
@@ -278,19 +365,22 @@ public enum DashModelContainer {
             // the current schema with SwiftData's inferred lightweight
             // migration and no plan. The match is deliberately exact, and it
             // is made on the store rather than the error (see
-            // `storeMatchesRegisteredSchema`). Every stage in
+            // `classifyStore`). Every stage in
             // `DashMigrationPlan` is `.lightweight` today, but the day a
             // custom stage lands, a failure inside it must surface — a store
             // that matches a registered version and still failed to open is
             // exactly that case, and falling back would reopen it without the
             // stage and stamp the current checksum on it, so the stage could
-            // never run later. Everything except "existing store, matches no
-            // registered version" is therefore rethrown untouched, with the
-            // failed staged attempt reported as such.
-            guard existedBefore,
-                  Self.storeMatchesRegisteredSchema(at: storeURL) == false
-            else {
-                report(succeeded: false, migrationPath: .staged, error: error)
+            // never run later. And a store written by a NEWER build — a
+            // downgrade — would be opened by inference and silently trimmed
+            // to this schema, which is worse than the crash it replaces.
+            // Everything except "existing store, drifted registered version"
+            // is therefore rethrown untouched, with the verdict in the log.
+            let verdict: StoreSchemaVerdict = existedBefore
+                ? Self.classifyStore(at: storeURL)
+                : .unreadable
+            guard case .driftedRegisteredVersion = verdict else {
+                report(succeeded: false, migrationPath: .staged, error: error, storeVerdict: verdict)
                 throw error
             }
             SDKLogger.event(
@@ -299,6 +389,7 @@ public enum DashModelContainer {
                 severity: .warning,
                 fields: [
                     "store_existed_before_open": .boolean(existedBefore),
+                    "store_verdict": .publicText(verdict.logLabel),
                 ],
                 error: error,
                 redacting: [storeURL.path]

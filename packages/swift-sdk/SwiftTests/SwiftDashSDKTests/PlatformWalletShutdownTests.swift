@@ -304,4 +304,16 @@ final class PlatformWalletShutdownTests: XCTestCase {
         )
         XCTAssertTrue(metrics.ranOffMainThread)
     }
+
+    /// The flag `shutdown()` raises is one-way and readable off the main
+    /// actor: a diagnostic pass polls it before each FFI read.
+    func testCoreDiagnosticsCancellationIsOneWay() {
+        let token = CoreDiagnosticsCancellation()
+        XCTAssertFalse(token.isCancelled)
+        token.cancel()
+        XCTAssertTrue(token.isCancelled)
+        token.cancel()
+        XCTAssertTrue(token.isCancelled, "a second cancel must not flip it back")
+    }
+
 }

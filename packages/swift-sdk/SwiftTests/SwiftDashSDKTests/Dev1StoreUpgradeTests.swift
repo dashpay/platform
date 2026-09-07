@@ -41,9 +41,10 @@ final class Dev1StoreUpgradeTests: XCTestCase {
             at: directory,
             withIntermediateDirectories: true
         )
-        // Every test installs its own sink before touching a store, so the
-        // log it reads holds only its own lines and nothing buffered by an
-        // earlier test can replay into it.
+        // Every test starts from an empty logger and installs its own sink
+        // before touching a store, so the log it reads holds only its own
+        // lines and nothing buffered by an earlier suite can replay into it.
+        SDKLogger.resetForTesting()
         XCTAssertTrue(SDKLogger.installFileSink(at: directory, includeDebug: false))
     }
 
@@ -106,7 +107,7 @@ final class Dev1StoreUpgradeTests: XCTestCase {
         // at which point the match flips to `true` and the staged attempt
         // starts succeeding.
         let stagedOnly = try dev1Configuration(named: "StagedOnly.sqlite")
-        XCTAssertEqual(DashModelContainer.storeMatchesRegisteredSchema(at: stagedOnly.url), false)
+        XCTAssertEqual(DashModelContainer.classifyStore(at: stagedOnly.url), .driftedRegisteredVersion)
         XCTAssertThrowsError(
             try ModelContainer(
                 for: DashModelContainer.schema,
@@ -134,7 +135,7 @@ final class Dev1StoreUpgradeTests: XCTestCase {
         let storeURL = directory.appendingPathComponent("DashModel.sqlite")
         try fixtureSQLite.write(to: storeURL, options: .atomic)
 
-        XCTAssertEqual(DashModelContainer.storeMatchesRegisteredSchema(at: storeURL), false)
+        XCTAssertEqual(DashModelContainer.classifyStore(at: storeURL), .driftedRegisteredVersion)
         try autoreleasepool {
             let first = try DashModelContainer.open(configuration(at: storeURL))
             try assertDev1Rows(in: first)
@@ -143,7 +144,7 @@ final class Dev1StoreUpgradeTests: XCTestCase {
         // Inferred migration rewrote the store under the current schema, so
         // it now matches a registered version and the fallback is never
         // needed again.
-        XCTAssertEqual(DashModelContainer.storeMatchesRegisteredSchema(at: storeURL), true)
+        XCTAssertEqual(DashModelContainer.classifyStore(at: storeURL), .matchesRegisteredVersion)
 
         let second = try DashModelContainer.open(configuration(at: storeURL))
         try assertDev1Rows(in: second)
@@ -168,14 +169,65 @@ final class Dev1StoreUpgradeTests: XCTestCase {
         try Data(repeating: 0x5A, count: 4096).write(to: storeURL, options: .atomic)
 
         // Unreadable metadata is not a version question.
-        XCTAssertNil(DashModelContainer.storeMatchesRegisteredSchema(at: storeURL))
+        XCTAssertEqual(DashModelContainer.classifyStore(at: storeURL), .unreadable)
         XCTAssertThrowsError(try DashModelContainer.open(configuration(at: storeURL)))
 
         XCTAssertTrue(try logLines(event: "core_store_staged_migration_failed").isEmpty)
         let result = try XCTUnwrap(try logLines(event: "core_store_open_result").last)
         XCTAssertTrue(result.contains(#"migration_path="staged""#), result)
         XCTAssertTrue(result.contains(#"result="failure""#), result)
+        XCTAssertTrue(result.contains(#"store_verdict="unreadable""#), result)
         // The failed store's path is redacted from the error message.
         XCTAssertFalse(result.contains(storeURL.path), result)
+    }
+
+    /// A store written by a newer build — here, one with an entity this SDK
+    /// does not have — fails the staged open like a drifted store does, but
+    /// must NOT be handed to inferred migration: that would open it and drop
+    /// the unknown entity's table without a word. The pre-fallback crash was
+    /// the safe outcome for a downgrade, and it must stay one.
+    func testStoreFromANewerSchemaIsRefusedWithoutFallback() throws {
+        let storeURL = directory.appendingPathComponent("DashModel.sqlite")
+        try autoreleasepool {
+            let newer = Schema(DashModelContainer.modelTypes + [FutureOnlyModel.self])
+            let configuration = ModelConfiguration(
+                schema: newer,
+                url: storeURL,
+                allowsSave: true,
+                cloudKitDatabase: .none
+            )
+            let container = try ModelContainer(for: newer, configurations: [configuration])
+            let context = ModelContext(container)
+            context.insert(FutureOnlyModel(marker: 7))
+            try context.save()
+        }
+
+        guard case .newerThanRegistered(let reason) = DashModelContainer.classifyStore(at: storeURL)
+        else {
+            return XCTFail("a store with an unknown entity must classify as newer")
+        }
+        XCTAssertTrue(reason.contains("FutureOnlyModel"), reason)
+
+        XCTAssertThrowsError(try DashModelContainer.open(configuration(at: storeURL)))
+        XCTAssertTrue(try logLines(event: "core_store_staged_migration_failed").isEmpty)
+        let result = try XCTUnwrap(try logLines(event: "core_store_open_result").last)
+        XCTAssertTrue(result.contains(#"migration_path="staged""#), result)
+        XCTAssertTrue(result.contains(#"result="failure""#), result)
+        XCTAssertTrue(result.contains("store_verdict=\"newer_than_registered:"), result)
+        // And the store is untouched: still newer, still refused.
+        guard case .newerThanRegistered = DashModelContainer.classifyStore(at: storeURL) else {
+            return XCTFail("a refused open must not rewrite the store")
+        }
+    }
+}
+
+/// An entity no registered SDK schema has — what a store written by a future
+/// build looks like to this one.
+@Model
+final class FutureOnlyModel {
+    var marker: Int
+
+    init(marker: Int) {
+        self.marker = marker
     }
 }

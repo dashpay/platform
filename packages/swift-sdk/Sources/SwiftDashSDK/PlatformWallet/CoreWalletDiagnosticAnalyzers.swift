@@ -378,9 +378,12 @@ enum CoreWalletDiagnosticAnalyzer {
         let details: [DatabaseTxoAnomaly]
         let emittedDetails: [DatabaseTxoAnomaly]
         let truncatedCount: Int
+        /// Per-reason totals, computed once from the grouping the truncation
+        /// already needed: the summary asks eight times, on the held queue.
+        let countsByReason: [String: Int]
 
         func count(reason: String) -> Int {
-            details.filter { $0.reason == reason }.count
+            countsByReason[reason] ?? 0
         }
     }
 
@@ -437,7 +440,12 @@ enum CoreWalletDiagnosticAnalyzer {
             emitted.append(contentsOf: rows.prefix(CoreDiagnosticConstants.detailLimit))
             truncated += max(0, rows.count - CoreDiagnosticConstants.detailLimit)
         }
-        return .init(details: details, emittedDetails: emitted, truncatedCount: truncated)
+        return .init(
+            details: details,
+            emittedDetails: emitted,
+            truncatedCount: truncated,
+            countsByReason: grouped.mapValues(\.count)
+        )
     }
 
     /// Value and spent state of a shielded note; identifiers are unnecessary

@@ -99,6 +99,22 @@ enum CoreDiagnosticConstants {
     static let detailLimit = 25
 }
 
+/// One-way flag from `PlatformWalletManager.shutdown()` to a diagnostic pass
+/// running off the main actor. Checked before every FFI read; once set, the
+/// pass reports the reads it skipped and returns, releasing its admission.
+final class CoreDiagnosticsCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var isCancelled: Bool {
+        lock.withLock { cancelled }
+    }
+
+    func cancel() {
+        lock.withLock { cancelled = true }
+    }
+}
+
 /// Ceilings on what one support export may materialize at once.
 ///
 /// The exact #4438 audit needs every TXO and every transaction cross-wallet —
@@ -204,7 +220,6 @@ extension PlatformWalletPersistenceHandler {
     /// resumed across the continuation.
     func emitCoreWalletDatabaseDiagnostics(
         walletId: Data,
-        checkpoint: CoreWalletDiagnosticCheckpoint,
         limits: CoreDiagnosticRowLimits = .production
     ) async -> CoreWalletDatabaseDiagnosticSnapshot? {
         await withCheckedContinuation { continuation in
@@ -212,7 +227,6 @@ extension PlatformWalletPersistenceHandler {
                 let snapshot = autoreleasepool { () -> CoreWalletDatabaseDiagnosticSnapshot? in
                     return emitCoreWalletDatabaseDiagnosticsOnQueue(
                         walletId: walletId,
-                        checkpoint: checkpoint,
                         limits: limits
                     )
                 }
@@ -227,9 +241,12 @@ extension PlatformWalletPersistenceHandler {
     @discardableResult
     func emitCoreWalletDatabaseDiagnosticsOnQueue(
         walletId: Data,
-        checkpoint: CoreWalletDiagnosticCheckpoint,
         limits: CoreDiagnosticRowLimits = .production
     ) -> CoreWalletDatabaseDiagnosticSnapshot? {
+        // This whole pass is export-only: the launch restore path takes
+        // `logCoreRestoreBufferSnapshotOnQueue` and never comes here, so the
+        // checkpoint every event below carries is a constant, not a parameter.
+        let checkpoint = CoreWalletDiagnosticCheckpoint.preExport
         do {
             let walletDescriptor = FetchDescriptor<PersistentWallet>(
                 predicate: PersistentWallet.predicate(walletId: walletId)
@@ -276,45 +293,30 @@ extension PlatformWalletPersistenceHandler {
             // intended to diagnose rather than reproduce.
             let allTransactions: [PersistentTransaction]?
             let walletTransactions: [PersistentTransaction]?
-            if checkpoint == .preExport {
-                do {
-                    let transactionRowCount = try backgroundContext.fetchCount(
+            do {
+                let transactionRowCount = try backgroundContext.fetchCount(
+                    FetchDescriptor<PersistentTransaction>()
+                )
+                // Both tables must fit: the audit resolves each decoded
+                // output against `txoByOutpoint`, so a wallet-only TXO
+                // scan would turn every foreign row into `missing_txo`.
+                if crossWalletTxoScan,
+                   transactionRowCount <= limits.exactAuditTransactionRows {
+                    allTransactions = try backgroundContext.fetch(
                         FetchDescriptor<PersistentTransaction>()
                     )
-                    // Both tables must fit: the audit resolves each decoded
-                    // output against `txoByOutpoint`, so a wallet-only TXO
-                    // scan would turn every foreign row into `missing_txo`.
-                    if crossWalletTxoScan,
-                       transactionRowCount <= limits.exactAuditTransactionRows {
-                        let fetched = try backgroundContext.fetch(
-                            FetchDescriptor<PersistentTransaction>()
-                        )
-                        allTransactions = fetched
-                        walletTransactions = fetched.filter {
-                            Self.walletOwnsTransaction(walletId: walletId, transaction: $0)
-                        }
-                    } else {
-                        allTransactions = nil
-                        walletTransactions = nil
-                        SDKLogger.event(
-                            "core_owned_output_audit_summary",
-                            category: .persistence,
-                            severity: .warning,
-                            fields: [
-                                "audit_incomplete": .boolean(true),
-                                "checkpoint": .publicText(checkpoint.rawValue),
-                                "reason": .publicText("tables_too_large_for_exact_audit"),
-                                "transaction_row_count": .integer(Int64(transactionRowCount)),
-                                "transaction_row_limit": .integer(
-                                    Int64(limits.exactAuditTransactionRows)
-                                ),
-                                "txo_row_count": .integer(Int64(txoRowCount)),
-                                "txo_row_limit": .integer(Int64(limits.crossWalletTxoRows)),
-                                "wallet_reference": .reference(walletId),
-                            ]
-                        )
-                    }
-                } catch {
+                    // Through the accounts' inverse relationship, not
+                    // `walletOwnsTransaction` over every row: that faults four
+                    // relationships per transaction and dominated the time the
+                    // queue is held, to feed two counts. This is the
+                    // `involvedAccounts` route only — a row tied to the wallet
+                    // solely through a TXO is not counted, which the field
+                    // names (`involved_…`) say.
+                    var seen = Set<ObjectIdentifier>()
+                    walletTransactions = wallet.accounts
+                        .flatMap(\.involvedTransactions)
+                        .filter { seen.insert(ObjectIdentifier($0)).inserted }
+                } else {
                     allTransactions = nil
                     walletTransactions = nil
                     SDKLogger.event(
@@ -324,14 +326,31 @@ extension PlatformWalletPersistenceHandler {
                         fields: [
                             "audit_incomplete": .boolean(true),
                             "checkpoint": .publicText(checkpoint.rawValue),
-                            "reason": .publicText("transaction_fetch_failed"),
+                            "reason": .publicText("tables_too_large_for_exact_audit"),
+                            "transaction_row_count": .integer(Int64(transactionRowCount)),
+                            "transaction_row_limit": .integer(
+                                Int64(limits.exactAuditTransactionRows)
+                            ),
+                            "txo_row_count": .integer(Int64(txoRowCount)),
+                            "txo_row_limit": .integer(Int64(limits.crossWalletTxoRows)),
                             "wallet_reference": .reference(walletId),
                         ]
                     )
                 }
-            } else {
+            } catch {
                 allTransactions = nil
                 walletTransactions = nil
+                SDKLogger.event(
+                    "core_owned_output_audit_summary",
+                    category: .persistence,
+                    severity: .warning,
+                    fields: [
+                        "audit_incomplete": .boolean(true),
+                        "checkpoint": .publicText(checkpoint.rawValue),
+                        "reason": .publicText("transaction_fetch_failed"),
+                        "wallet_reference": .reference(walletId),
+                    ]
+                )
             }
             let pending: [PersistentPendingInput]?
             do {
@@ -396,7 +415,7 @@ extension PlatformWalletPersistenceHandler {
                         diagnosticSaturatingSum(spent.map(\.amount))
                     ),
                     "synced_height": .unsignedInteger(UInt64(wallet.syncedHeight)),
-                    "transaction_count": .integer(
+                    "involved_transaction_count": .integer(
                         walletTransactions.map { Int64($0.count) } ?? -1
                     ),
                     "transaction_scan_available": .boolean(walletTransactions != nil),
@@ -418,32 +437,73 @@ extension PlatformWalletPersistenceHandler {
                 ]
             )
 
-            let sortedAccounts = wallet.accounts.sorted {
-                ($0.accountType, $0.standardTag, $0.accountIndex,
-                 $0.registrationIndex, $0.keyClass)
-                    < ($1.accountType, $1.standardTag, $1.accountIndex,
-                       $1.registrationIndex, $1.keyClass)
+            let sortedAccounts = wallet.accounts.sorted(by: Self.accountOrder)
+            // One pass over the wallet's rows, grouped by account, instead of an
+            // identity filter per account (O(accounts × rows)) followed by five
+            // more filters per account — all on the held persistence queue.
+            struct AccountTally {
+                var spentCount = 0, spentValue: UInt64 = 0
+                var unspentCount = 0, unspentValue: UInt64 = 0
+                var confirmedCount = 0, confirmedValue: UInt64 = 0
+                var unconfirmedCount = 0, unconfirmedValue: UInt64 = 0
+                var lockedCount = 0, lockedValue: UInt64 = 0
+                var fingerprintMaterial: [Data] = []
             }
+            var tallies: [ObjectIdentifier: AccountTally] = [:]
+            var accountKeys: [ObjectIdentifier: CoreWalletDatabaseDiagnosticSnapshot.AccountKey] = [:]
+            for txo in walletTxos {
+                // Rows without an account are `missing_account` anomalies,
+                // reported by `logTxoAnomalies`; no account snapshot owns them.
+                guard let account = txo.account else { continue }
+                let id = ObjectIdentifier(account)
+                let key: CoreWalletDatabaseDiagnosticSnapshot.AccountKey
+                if let known = accountKeys[id] {
+                    key = known
+                } else {
+                    key = Self.diagnosticAccountKey(account)!
+                    accountKeys[id] = key
+                }
+                var tally = tallies[id, default: AccountTally()]
+                if txo.isSpent {
+                    tally.spentCount += 1
+                    tally.spentValue = diagnosticSaturatingAdd(tally.spentValue, txo.amount)
+                } else {
+                    tally.unspentCount += 1
+                    tally.unspentValue = diagnosticSaturatingAdd(tally.unspentValue, txo.amount)
+                }
+                if txo.isConfirmed {
+                    tally.confirmedCount += 1
+                    tally.confirmedValue = diagnosticSaturatingAdd(tally.confirmedValue, txo.amount)
+                } else {
+                    tally.unconfirmedCount += 1
+                    tally.unconfirmedValue = diagnosticSaturatingAdd(tally.unconfirmedValue, txo.amount)
+                }
+                if txo.isLocked {
+                    tally.lockedCount += 1
+                    tally.lockedValue = diagnosticSaturatingAdd(tally.lockedValue, txo.amount)
+                }
+                tally.fingerprintMaterial.append(diagnosticTxoFingerprint(
+                    outpoint: txo.outpoint,
+                    amount: txo.amount,
+                    height: txo.height,
+                    scriptPubKey: txo.scriptPubKey,
+                    isLocked: txo.isLocked,
+                    account: key
+                ))
+                tallies[id] = tally
+            }
+
             for account in sortedAccounts {
                 let key = Self.diagnosticAccountKey(account)!
-                let accountTxos = walletTxos.filter { $0.account === account }
-                let accountSpent = accountTxos.filter(\.isSpent)
-                let accountUnspent = accountTxos.filter { !$0.isSpent }
-                let accountConfirmed = accountTxos.filter(\.isConfirmed)
-                let accountUnconfirmed = accountTxos.filter { !$0.isConfirmed }
-                let accountLocked = accountTxos.filter(\.isLocked)
-                let externalAddresses = account.coreAddresses.filter { $0.poolTypeTag == 0 }
-                let internalAddresses = account.coreAddresses.filter { $0.poolTypeTag == 1 }
-                let accountFingerprint = diagnosticFingerprint(accountTxos.map {
-                    diagnosticTxoFingerprint(
-                        outpoint: $0.outpoint,
-                        amount: $0.amount,
-                        height: $0.height,
-                        scriptPubKey: $0.scriptPubKey,
-                        isLocked: $0.isLocked,
-                        account: key
-                    )
-                })
+                let tally = tallies[ObjectIdentifier(account)] ?? AccountTally()
+                var externalAddressCount = 0
+                var internalAddressCount = 0
+                var usedAddressCount = 0
+                for address in account.coreAddresses {
+                    if address.poolTypeTag == 0 { externalAddressCount += 1 }
+                    if address.poolTypeTag == 1 { internalAddressCount += 1 }
+                    if address.isUsed { usedAddressCount += 1 }
+                }
                 SDKLogger.event(
                     "core_db_account_snapshot",
                     category: .persistence,
@@ -452,36 +512,24 @@ extension PlatformWalletPersistenceHandler {
                         "account_reference": .reference(key.referenceMaterial),
                         "account_type": .unsignedInteger(UInt64(account.accountType)),
                         "checkpoint": .publicText(checkpoint.rawValue),
-                        "confirmed_count": .integer(Int64(accountConfirmed.count)),
-                        "confirmed_value_duffs": .unsignedInteger(
-                            diagnosticSaturatingSum(accountConfirmed.map(\.amount))
-                        ),
-                        "external_address_count": .integer(Int64(externalAddresses.count)),
+                        "confirmed_count": .integer(Int64(tally.confirmedCount)),
+                        "confirmed_value_duffs": .unsignedInteger(tally.confirmedValue),
+                        "external_address_count": .integer(Int64(externalAddressCount)),
                         "external_highest_used": .integer(Int64(account.externalHighestUsed)),
-                        "internal_address_count": .integer(Int64(internalAddresses.count)),
+                        "internal_address_count": .integer(Int64(internalAddressCount)),
                         "internal_highest_used": .integer(Int64(account.internalHighestUsed)),
-                        "locked_count": .integer(Int64(accountLocked.count)),
-                        "locked_value_duffs": .unsignedInteger(
-                            diagnosticSaturatingSum(accountLocked.map(\.amount))
-                        ),
+                        "locked_count": .integer(Int64(tally.lockedCount)),
+                        "locked_value_duffs": .unsignedInteger(tally.lockedValue),
                         "registration_index": .unsignedInteger(UInt64(account.registrationIndex)),
-                        "spent_count": .integer(Int64(accountSpent.count)),
-                        "spent_value_duffs": .unsignedInteger(
-                            diagnosticSaturatingSum(accountSpent.map(\.amount))
-                        ),
+                        "spent_count": .integer(Int64(tally.spentCount)),
+                        "spent_value_duffs": .unsignedInteger(tally.spentValue),
                         "standard_tag": .unsignedInteger(UInt64(account.standardTag)),
-                        "txo_fingerprint": .reference(accountFingerprint),
-                        "unconfirmed_count": .integer(Int64(accountUnconfirmed.count)),
-                        "unconfirmed_value_duffs": .unsignedInteger(
-                            diagnosticSaturatingSum(accountUnconfirmed.map(\.amount))
-                        ),
-                        "unspent_count": .integer(Int64(accountUnspent.count)),
-                        "unspent_value_duffs": .unsignedInteger(
-                            diagnosticSaturatingSum(accountUnspent.map(\.amount))
-                        ),
-                        "used_address_count": .integer(
-                            Int64(account.coreAddresses.filter(\.isUsed).count)
-                        ),
+                        "txo_fingerprint": .reference(diagnosticFingerprint(tally.fingerprintMaterial)),
+                        "unconfirmed_count": .integer(Int64(tally.unconfirmedCount)),
+                        "unconfirmed_value_duffs": .unsignedInteger(tally.unconfirmedValue),
+                        "unspent_count": .integer(Int64(tally.unspentCount)),
+                        "unspent_value_duffs": .unsignedInteger(tally.unspentValue),
+                        "used_address_count": .integer(Int64(usedAddressCount)),
                         "wallet_reference": .reference(walletId),
                     ]
                 )
@@ -496,8 +544,7 @@ extension PlatformWalletPersistenceHandler {
             // be expensive. The exact #4438 audit is needed for the manually
             // exported artifact, not for restoring Rust, so keep startup's
             // persistence queue limited to lightweight summaries.
-            if checkpoint == .preExport,
-               let allTransactions {
+            if let allTransactions {
                 Self.auditCoinJoinOwnedBip44Outputs(
                     wallet: wallet,
                     walletId: walletId,
@@ -690,6 +737,13 @@ extension PlatformWalletPersistenceHandler {
         )
     }
 
+    /// The one ordering every per-account pass uses, so anything that picks
+    /// "the first account" picks the same one on every export.
+    private static func accountOrder(_ lhs: PersistentAccount, _ rhs: PersistentAccount) -> Bool {
+        (lhs.accountType, lhs.standardTag, lhs.accountIndex, lhs.registrationIndex, lhs.keyClass)
+            < (rhs.accountType, rhs.standardTag, rhs.accountIndex, rhs.registrationIndex, rhs.keyClass)
+    }
+
     /// Read the relationship-owned wallet independently of the denormalized
     /// `PersistentTxo.walletId`. Diagnostics must compare the two sources;
     /// `resolvedWalletId(of:)` deliberately prefers the denormalized value and
@@ -798,8 +852,15 @@ extension PlatformWalletPersistenceHandler {
             else { return nil }
             return txo.outpoint
         })
+        // `wallet.accounts` is unordered. Two BIP44 accounts holding a row for
+        // the same address would otherwise make `expectedAccount` — and so
+        // `wrong_account` — depend on which faulted first; the same ordering
+        // the account snapshots use makes the winner the same on every run.
         var bip44Addresses: [String: PersistentAccount] = [:]
-        for account in wallet.accounts where account.accountType == 0 && account.standardTag == 0 {
+        let bip44Accounts = wallet.accounts
+            .filter { $0.accountType == 0 && $0.standardTag == 0 }
+            .sorted(by: Self.accountOrder)
+        for account in bip44Accounts {
             for coreAddress in account.coreAddresses where bip44Addresses[coreAddress.address] == nil {
                 bip44Addresses[coreAddress.address] = account
             }
@@ -808,6 +869,7 @@ extension PlatformWalletPersistenceHandler {
 
         var candidateCount = 0
         var decodeFailureCount = 0
+        var transactionBytesMissingCount = 0
         var ownedOutputCount = 0
         var ownedOutputValue: UInt64 = 0
         var unattributedOutputCount = 0
@@ -830,7 +892,20 @@ extension PlatformWalletPersistenceHandler {
             return
         }
 
-        for transaction in allTransactions where !transaction.transactionData.isEmpty {
+        for transaction in allTransactions {
+            // A stub row with no consensus bytes is a real production state
+            // (an orphaned upsert reads back as empty) — and the half-written
+            // persistence #4438 is about. It cannot be decoded, so it cannot
+            // become a candidate; it must be counted rather than skipped, or
+            // the export reports a clean wallet with `audit_incomplete=false`.
+            // Stubs are rare, so the ownership check is cheap here even though
+            // it is the expensive one.
+            if transaction.transactionData.isEmpty {
+                if walletOwnsTransaction(walletId: walletId, transaction: transaction) {
+                    transactionBytesMissingCount += 1
+                }
+                continue
+            }
             let decoded: DecodedTransaction
             do {
                 decoded = try TransactionDecoder.decode(transaction.transactionData, network: network)
@@ -932,9 +1007,12 @@ extension PlatformWalletPersistenceHandler {
         SDKLogger.event(
             "core_owned_output_audit_summary",
             category: .persistence,
-            severity: anomalies.isEmpty && decodeFailureCount == 0 ? .info : .warning,
+            severity: anomalies.isEmpty && decodeFailureCount == 0
+                && transactionBytesMissingCount == 0 ? .info : .warning,
             fields: [
-                "audit_incomplete": .boolean(decodeFailureCount > 0),
+                "audit_incomplete": .boolean(
+                    decodeFailureCount > 0 || transactionBytesMissingCount > 0
+                ),
                 "bip44_address_pool_size": .integer(Int64(bip44Addresses.count)),
                 "candidate_transaction_count": .integer(Int64(candidateCount)),
                 "checkpoint": .publicText(checkpoint.rawValue),
@@ -948,6 +1026,7 @@ extension PlatformWalletPersistenceHandler {
                 "owned_bip44_output_value_duffs": .unsignedInteger(ownedOutputValue),
                 "persisted_valid_count": .integer(Int64(validCount)),
                 "total_anomaly_count": .integer(Int64(anomalies.count)),
+                "transaction_bytes_missing_count": .integer(Int64(transactionBytesMissingCount)),
                 "truncated_count": .integer(Int64(truncatedAnomalyCount)),
                 "unattributed_output_count": .integer(Int64(unattributedOutputCount)),
                 "wallet_reference": .reference(walletId),
@@ -1016,6 +1095,16 @@ extension PlatformWalletPersistenceHandler {
         key.append(relationshipWalletId(of: txo) ?? Data())
         key.append(0)
         withUnsafeBytes(of: txo.amount.littleEndian) { key.append(contentsOf: $0) }
+        // Two rows ours by id with the same amount and script but different
+        // accounts (BIP44 vs CoinJoin) must not tie: `sorted` is not stable,
+        // so a tie would make `wrong_account` depend on fetch order.
+        if let account = diagnosticAccountKey(txo.account) {
+            key.append(1)
+            key.append(account.referenceMaterial)
+        } else {
+            key.append(0)
+        }
+        key.append(0)
         key.append(txo.scriptPubKey)
         return key
     }
@@ -1036,7 +1125,7 @@ extension PlatformWalletPersistenceHandler {
             category: .persistence,
             fields: [
                 "checkpoint": .publicText(checkpoint.rawValue),
-                "core_type_8_transaction_count": .integer(
+                "involved_type_8_transaction_count": .integer(
                     walletTransactions.map { Int64($0.filter(\.isAssetLock).count) } ?? -1
                 ),
                 "core_transaction_scan_available": .boolean(walletTransactions != nil),
@@ -1157,17 +1246,12 @@ extension PlatformWalletManager {
     /// says so in `core_owned_output_audit_summary`. A paged variant that
     /// lifts the ceilings without losing the classification is tracked as a
     /// follow-up.
-    public func emitCoreWalletDiagnostics(for walletId: Data) async {
-        await emitCoreWalletDiagnostics(for: walletId, checkpoint: .preExport)
-    }
-
+    ///
     /// Coordinates the queue-owned SwiftData snapshot with read-only Rust FFI
     /// queries. Admission happens after the database await, then keeps the
     /// native handle alive until the off-main worker finishes.
-    private func emitCoreWalletDiagnostics(
-        for walletId: Data,
-        checkpoint: CoreWalletDiagnosticCheckpoint
-    ) async {
+    public func emitCoreWalletDiagnostics(for walletId: Data) async {
+        let checkpoint = CoreWalletDiagnosticCheckpoint.preExport
         guard walletId.count == 32, let handler = persistence else {
             SDKLogger.event(
                 "core_diagnostics_unavailable",
@@ -1181,10 +1265,7 @@ extension PlatformWalletManager {
             )
             return
         }
-        let database = await handler.emitCoreWalletDatabaseDiagnostics(
-            walletId: walletId,
-            checkpoint: checkpoint
-        )
+        let database = await handler.emitCoreWalletDatabaseDiagnostics(walletId: walletId)
         guard let database else { return }
         // The DB await above lets shutdown interleave. Admission is atomic on
         // MainActor and keeps the copied handle alive across the off-main FFI
@@ -1221,13 +1302,15 @@ extension PlatformWalletManager {
 
         let managerHandle = handle
         let managedWallet = wallets[walletId]
+        let cancellation = coreDiagnosticsCancellation
         await withCheckedContinuation { continuation in
             Self.coreDiagnosticsQueue.async {
                 Self.emitCoreMemoryDiagnostics(
                     managerHandle: managerHandle,
                     managedWallet: managedWallet,
                     database: database,
-                    checkpoint: checkpoint
+                    checkpoint: checkpoint,
+                    cancellation: cancellation
                 )
                 continuation.resume()
             }
@@ -1241,18 +1324,41 @@ extension PlatformWalletManager {
         managerHandle: Handle,
         managedWallet: ManagedPlatformWallet?,
         database: CoreWalletDatabaseDiagnosticSnapshot,
-        checkpoint: CoreWalletDiagnosticCheckpoint
+        checkpoint: CoreWalletDiagnosticCheckpoint,
+        cancellation: CoreDiagnosticsCancellation
     ) {
+        // Each FFI read below can park this thread on a Rust lock for as long
+        // as a wedged sync pass holds it, and `shutdown()` waits on this
+        // pass's admission. So before every read, ask whether shutdown has
+        // begun; if so, say which reads were skipped and let the drain go.
+        func shutdownBegan(before stage: String) -> Bool {
+            guard cancellation.isCancelled else { return false }
+            SDKLogger.event(
+                "core_memory_snapshot_unavailable",
+                category: .persistence,
+                severity: .warning,
+                fields: [
+                    "checkpoint": .publicText(checkpoint.rawValue),
+                    "reason": .publicText("shutdown_requested"),
+                    "skipped_from_stage": .publicText(stage),
+                    "wallet_reference": .reference(database.walletId),
+                ]
+            )
+            return true
+        }
+
         // Keep the two Rust-memory sources independent: corrupt account state
         // must not suppress the AssetLock evidence that can explain a missing
         // balance (and vice versa).
+        if shutdownBegan(before: "asset_locks") { return }
         compareAssetLocks(
             database,
             managedWallet: managedWallet,
             checkpoint: checkpoint
         )
-        let balanceQuery = diagnosticAccountBalances(
-            managerHandle: managerHandle,
+        if shutdownBegan(before: "account_balances") { return }
+        let balanceQuery = readAccountBalances(
+            handle: managerHandle,
             walletId: database.walletId
         )
         guard case .success(let balances) = balanceQuery else {
@@ -1278,6 +1384,7 @@ extension PlatformWalletManager {
         }
         for balance in sortedBalances {
             let key = Self.diagnosticAccountKey(balance)
+            if shutdownBegan(before: "account_utxos") { return }
             let query = diagnosticAccountUtxos(
                 managerHandle: managerHandle,
                 walletId: database.walletId,
@@ -1563,52 +1670,6 @@ extension PlatformWalletManager {
                 ]
             )
         }
-    }
-
-    /// Copies the Rust-owned account-balance array into Swift values and frees
-    /// the FFI allocation on every successful non-empty path.
-    private nonisolated static func diagnosticAccountBalances(
-        managerHandle: Handle,
-        walletId: Data
-    ) -> Result<[AccountBalance], PlatformWalletError> {
-        var outEntries: UnsafePointer<AccountBalanceEntryFFI>?
-        var outCount: UInt = 0
-        let ffi = walletId.withUnsafeBytes { raw in
-            platform_wallet_manager_get_account_balances(
-                managerHandle,
-                raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                &outEntries,
-                &outCount
-            )
-        }
-        let result = PlatformWalletResult(ffi)
-        guard result.isSuccess else { return .failure(PlatformWalletError(result: result)) }
-        guard let entries = outEntries, outCount > 0 else { return .success([]) }
-        defer {
-            platform_wallet_manager_free_account_balances(
-                UnsafeMutablePointer(mutating: entries), outCount
-            )
-        }
-        return .success((0..<Int(outCount)).map { index in
-            var entry = entries[index]
-            let userId = Swift.withUnsafeBytes(of: &entry.user_identity_id) { Data($0) }
-            let friendId = Swift.withUnsafeBytes(of: &entry.friend_identity_id) { Data($0) }
-            return AccountBalance(
-                typeTag: entry.type_tag,
-                standardTag: entry.standard_tag,
-                index: entry.index,
-                registrationIndex: entry.registration_index,
-                keyClass: entry.key_class,
-                userIdentityId: userId,
-                friendIdentityId: friendId,
-                confirmed: entry.confirmed,
-                unconfirmed: entry.unconfirmed,
-                immature: entry.immature,
-                locked: entry.locked,
-                keysUsed: entry.keys_used,
-                keysTotal: entry.keys_total
-            )
-        })
     }
 
     /// Marshals one account selector, copies its Rust-owned UTXO slice, and

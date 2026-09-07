@@ -472,6 +472,12 @@ public class PlatformWalletManager: ObservableObject {
     /// not make synchronous create/load/delete operations unsafe and therefore
     /// must not participate in `ensureSyncNativeOpAllowed`.
     private var activeCoreDiagnosticsNativeOpCount = 0
+    /// Set by `shutdown()` before it drains `activeCoreDiagnosticsNativeOpCount`.
+    /// A diagnostic pass checks it before every FFI read, so the drain waits
+    /// for at most the one read already in flight — never for the rest of an
+    /// export — and a support export can never outlive the process it is
+    /// diagnosing. Never reset: a manager is shut down once.
+    let coreDiagnosticsCancellation = CoreDiagnosticsCancellation()
     private var nativeOpDrainContinuations: [CheckedContinuation<Void, Never>] = []
 
     /// Admission + bookkeeping shared by the async native entrypoints:
@@ -678,6 +684,7 @@ public class PlatformWalletManager: ObservableObject {
                     ranOffMainThread: false)
             }
             shutdownRequested = true
+            coreDiagnosticsCancellation.cancel()
             if activeNativeOpCount == 0, activeCoreDiagnosticsNativeOpCount == 0 { break }
             await withCheckedContinuation { continuation in
                 nativeOpDrainContinuations.append(continuation)
@@ -2478,50 +2485,56 @@ public class PlatformWalletManager: ObservableObject {
             return []
         }
 
+        switch Self.readAccountBalances(handle: handle, walletId: walletId) {
+        case .success(let balances):
+            return balances
+        case .failure(let error):
+            self.lastError = error
+            return []
+        }
+    }
+
+
+    /// The one place `platform_wallet_manager_get_account_balances` is called
+    /// and its entries copied out. `nonisolated static` so the read-only
+    /// diagnostics, which run off the main actor, share it instead of carrying
+    /// a second copy that would report stale fields the day
+    /// `AccountBalanceEntryFFI` gains one. Frees the Rust allocation on every
+    /// successful non-empty path.
+    nonisolated static func readAccountBalances(
+        handle: Handle,
+        walletId: Data
+    ) -> Result<[AccountBalance], PlatformWalletError> {
         var outEntries: UnsafePointer<AccountBalanceEntryFFI>?
         var outCount: UInt = 0
-
-        let ffiResult = walletId.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
-            let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self)
-            return platform_wallet_manager_get_account_balances(
+        let ffi = walletId.withUnsafeBytes { raw in
+            platform_wallet_manager_get_account_balances(
                 handle,
-                base,
+                raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
                 &outEntries,
                 &outCount
             )
         }
-
-        let result = PlatformWalletResult(ffiResult)
-
-
-        guard result.isSuccess else {
-            self.lastError = PlatformWalletError(result: result)
-            return []
-        }
-
-        guard let entries = outEntries, outCount > 0 else {
-            return []
-        }
-
+        let result = PlatformWalletResult(ffi)
+        guard result.isSuccess else { return .failure(PlatformWalletError(result: result)) }
+        guard let entries = outEntries, outCount > 0 else { return .success([]) }
         defer {
             platform_wallet_manager_free_account_balances(
-                UnsafeMutablePointer(mutating: entries),
-                outCount
+                UnsafeMutablePointer(mutating: entries), outCount
             )
         }
-
-        return (0..<Int(outCount)).map { i in
-            var entry = entries[i]
-            let uid = withUnsafeBytes(of: &entry.user_identity_id) { Data($0) }
-            let fid = withUnsafeBytes(of: &entry.friend_identity_id) { Data($0) }
+        return .success((0..<Int(outCount)).map { index in
+            var entry = entries[index]
+            let userId = Swift.withUnsafeBytes(of: &entry.user_identity_id) { Data($0) }
+            let friendId = Swift.withUnsafeBytes(of: &entry.friend_identity_id) { Data($0) }
             return AccountBalance(
                 typeTag: entry.type_tag,
                 standardTag: entry.standard_tag,
                 index: entry.index,
                 registrationIndex: entry.registration_index,
                 keyClass: entry.key_class,
-                userIdentityId: uid,
-                friendIdentityId: fid,
+                userIdentityId: userId,
+                friendIdentityId: friendId,
                 confirmed: entry.confirmed,
                 unconfirmed: entry.unconfirmed,
                 immature: entry.immature,
@@ -2529,7 +2542,7 @@ public class PlatformWalletManager: ObservableObject {
                 keysUsed: entry.keys_used,
                 keysTotal: entry.keys_total
             )
-        }
+        })
     }
 
     // MARK: - Internals

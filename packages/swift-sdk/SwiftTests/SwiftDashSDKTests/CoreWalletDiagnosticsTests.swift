@@ -24,6 +24,12 @@ final class CoreWalletDiagnosticsTests: XCTestCase {
 
     private let walletId = Data(repeating: 0xa1, count: 32)
 
+    /// These tests assert over the complete `run.log`; a backlog buffered by
+    /// an earlier suite must not be replayed into it.
+    override func setUp() async throws {
+        SDKLogger.resetForTesting()
+    }
+
     private var fixtureData: Data {
         var data = Data()
         var index = Self.fixtureHex.startIndex
@@ -157,10 +163,7 @@ final class CoreWalletDiagnosticsTests: XCTestCase {
         let session = try temporaryDirectory()
         XCTAssertTrue(SDKLogger.installFileSink(at: session, includeDebug: false))
 
-        let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(
-            walletId: walletId,
-            checkpoint: .preExport
-        )
+        let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(walletId: walletId)
         XCTAssertNotNil(databaseSnapshot)
 
         let summaries = try logLines(in: session, event: "core_owned_output_audit_summary")
@@ -232,10 +235,7 @@ final class CoreWalletDiagnosticsTests: XCTestCase {
 
         let session = try temporaryDirectory()
         XCTAssertTrue(SDKLogger.installFileSink(at: session, includeDebug: false))
-        let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(
-            walletId: walletId,
-            checkpoint: .preExport
-        )
+        let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(walletId: walletId)
         XCTAssertNotNil(databaseSnapshot)
 
         let summaries = try logLines(in: session, event: "core_owned_output_audit_summary")
@@ -258,7 +258,6 @@ final class CoreWalletDiagnosticsTests: XCTestCase {
 
         let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(
             walletId: walletId,
-            checkpoint: .preExport,
             limits: CoreDiagnosticRowLimits(
                 crossWalletTxoRows: 100,
                 exactAuditTransactionRows: 1
@@ -299,7 +298,6 @@ final class CoreWalletDiagnosticsTests: XCTestCase {
 
         let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(
             walletId: walletId,
-            checkpoint: .preExport,
             limits: CoreDiagnosticRowLimits(
                 crossWalletTxoRows: 0,
                 exactAuditTransactionRows: 100
@@ -331,10 +329,7 @@ final class CoreWalletDiagnosticsTests: XCTestCase {
 
         let session = try temporaryDirectory()
         XCTAssertTrue(SDKLogger.installFileSink(at: session, includeDebug: false))
-        let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(
-            walletId: walletId,
-            checkpoint: .preExport
-        )
+        let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(walletId: walletId)
         XCTAssertNotNil(databaseSnapshot)
 
         let summary = try XCTUnwrap(
@@ -372,10 +367,7 @@ final class CoreWalletDiagnosticsTests: XCTestCase {
 
         let session = try temporaryDirectory()
         XCTAssertTrue(SDKLogger.installFileSink(at: session, includeDebug: false))
-        let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(
-            walletId: walletId,
-            checkpoint: .preExport
-        )
+        let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(walletId: walletId)
         XCTAssertNotNil(databaseSnapshot)
 
         let summary = try XCTUnwrap(

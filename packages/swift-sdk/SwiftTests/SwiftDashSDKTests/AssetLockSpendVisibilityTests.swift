@@ -82,6 +82,8 @@ final class AssetLockSpendVisibilityTests: XCTestCase {
 
     override func setUpWithError() throws {
         try super.setUpWithError()
+        // Whole-log assertions below must not inherit another suite's backlog.
+        SDKLogger.resetForTesting()
         container = try DashModelContainer.createInMemory()
         handler = PlatformWalletPersistenceHandler(
             modelContainer: container,
