@@ -5,6 +5,16 @@
 #
 # rustsec/audit-check runs from the repo root (.github/workflows/security-audit-rust.yml)
 # and only reads THIS file — a crate-local .cargo/audit.toml is never consulted by CI.
+#
+# TODO(dependency-audit-gate-not-run-on-pull-requests): that workflow fires on
+# workflow_dispatch and a nightly schedule only. A pull request may therefore
+# rewrite this file, or add a whole dependency subtree, without the audit ever
+# looking at it - the first run happens after merge, in a job nobody is
+# required to read. Add a pull_request trigger scoped to
+# paths: ['**/Cargo.toml', 'Cargo.lock', '.cargo/audit.toml'], which is what
+# makes this file a gate rather than a document. Get the job green first and
+# keep it so: the workspace graph carries live advisories today, and a
+# permanently-red gate cannot report a new one.
 ignore = [
     # RUSTSEC-2025-0141 — bincode is unmaintained (informational advisory,
     # not an exploitable CVE; published 2025-12-16, no patched release).
