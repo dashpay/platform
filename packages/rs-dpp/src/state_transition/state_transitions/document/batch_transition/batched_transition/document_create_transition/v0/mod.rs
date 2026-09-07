@@ -374,6 +374,7 @@ impl DocumentFromCreateTransitionV0 for Document {
             .document_structure_version
         {
             0 => Ok(DocumentV0 {
+                contract_version: None,
                 id: base.id(),
                 owner_id,
                 properties: data,
@@ -484,6 +485,7 @@ impl DocumentFromCreateTransitionV0 for Document {
             .document_structure_version
         {
             0 => Ok(DocumentV0 {
+                contract_version: None,
                 id: base.id(),
                 owner_id,
                 properties,

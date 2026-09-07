@@ -405,11 +405,16 @@ impl PlatformWallet {
     /// [`wallet_seed_bytes`](key_wallet::wallet::Wallet::wallet_seed_bytes).
     /// `include_private` additionally requests the raw private scalar.
     ///
-    /// The derivation delegates to key-wallet's gate-free provider-key
-    /// entry points (rust-dashcore #881) so every per-index key is
-    /// byte-identical to what `Wallet::from_mnemonic` account creation
-    /// produces; it never feeds a secp256k1 child scalar into a
-    /// BLS/Ed25519 master (the pre-#879 hybrid).
+    /// The BLS operator and Ed25519 platform-node kinds delegate to
+    /// key-wallet's gate-free provider-key entry points, which consume the
+    /// raw seed directly. secp256k1 has no such entry point, so the owner
+    /// and voting kinds take the public side off the account xpub and
+    /// derive the private side inline: raw seed to master xpriv to the
+    /// account's own DIP-3 path to a non-hardened child at `index`. Either
+    /// route yields a key byte-identical to what `Wallet::from_mnemonic`
+    /// account creation produces, and neither feeds a secp256k1 child
+    /// scalar into a BLS/Ed25519 master, which would yield keys that
+    /// differ from the ones the wallet's own accounts hold.
     ///
     /// # Errors
     /// - [`PlatformWalletError::AddressNotFound`] if this wallet has no

@@ -16,6 +16,7 @@
 //!
 //! [`DocumentHavingEntries`]: drive_proof_verifier::DocumentHavingEntries
 
+use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -71,8 +72,10 @@ pub(super) fn assert_having_shape(
              `.with_having(<one clause bounding the selected aggregate with a range \
              operator>)` and `.with_limit(n)`, optionally \
              `.order_by_selected_aggregate(<direction>)`, with no offset and no start_at; \
-             where clauses, when present, must be equality pins on the covering compound \
-             index's leading properties."
+             where clauses, when present, pin the covering compound index's leading \
+             properties — one equality pin per property, of which at most one may instead \
+             be an `IN` of 2..=10 elements (merged entries then carry `in_key`; a null pin \
+             on another property is rejected with `IN`)."
         ),
     })
 }
@@ -88,11 +91,30 @@ pub(super) fn assert_having_shape(
 /// quorum-signed app hash happens inside [`verify_having_range_proof`]
 /// and cannot be skipped through this helper.
 pub(super) fn verify_having_query(
-    request: DocumentQuery,
+    mut request: DocumentQuery,
     response: GetDocumentsResponse,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<Vec<RankedEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+    let proof = response
+        .proof()
+        .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
+    let mtd = response
+        .metadata()
+        .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
+
+    // Resolve any pending time-range selection through the shared
+    // normalization helper — the resolved bucket-start equality joins the
+    // where set as the pin on the bucketed first level, and the
+    // provenance is threaded into index resolution below. The picker's
+    // admissibility rule is the load-bearing half: the resolved pin is
+    // only ever matched against the index bucketing that field with
+    // exactly the resolved grid — never a plain index over raw
+    // timestamps, where a malicious node could authenticate
+    // boundary-timestamp matches as window membership.
+    let resolved_time_ranges =
+        normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
+
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -102,12 +124,6 @@ pub(super) fn verify_having_query(
                 request.document_type_name, e
             ),
         })?;
-    let proof = response
-        .proof()
-        .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
-    let mtd = response
-        .metadata()
-        .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
     let mode = assert_having_shape(&request, platform_version)?;
 
@@ -121,6 +137,7 @@ pub(super) fn verify_having_query(
         request.document_type_name.clone(),
         document_type.indexes(),
         &mode,
+        &resolved_time_ranges,
         platform_version,
     )
     .map_err(|e| drive_proof_verifier::Error::RequestError {
@@ -128,7 +145,8 @@ pub(super) fn verify_having_query(
             "document type `{}` cannot serve this having-range query: {e}. Ranked indexes \
              are opt-in contract grammar (meta-schema v3, protocol version 14+); a pinned \
              (compound-index) bound additionally needs every leading index property pinned \
-             by an equality where clause.",
+             by a where clause — equality pins, of which at most one may be an `IN` of \
+             2..=10 elements.",
             request.document_type_name,
         ),
     })?;

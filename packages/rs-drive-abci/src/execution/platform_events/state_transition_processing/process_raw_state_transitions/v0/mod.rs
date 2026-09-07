@@ -4,6 +4,7 @@ use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Method
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
+use dpp::fee::Credits;
 
 use crate::execution::types::state_transition_container::v0::{
     DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
@@ -17,7 +18,6 @@ use crate::platform_types::state_transitions_processing_result::{
 use dpp::util::hash::hash_single;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use drive::grovedb_storage::Error::RocksDBError;
 use std::time::Instant;
 
 use super::super::StateTransitionAwareError;
@@ -138,6 +138,11 @@ where
 
         let mut processing_result = StateTransitionsProcessingResult::default();
 
+        // Credits the block's applied operations mint into Platform (asset locks), summed
+        // across state transitions and recorded once per block as a credit inflow the net
+        // daily withdrawal limit adds to its daily maximum.
+        let mut block_credit_mints: Credits = 0;
+
         for decoded_state_transition in state_transition_container.into_iter() {
             // If we propose state transitions, we need to check if we have a time limit for processing
             // set and if we have exceeded it.
@@ -176,10 +181,12 @@ where
                         }
 
                         // Mark the state we can return to if this transition's result strips
-                        // it from the block (see `rollback_dropped_transitions` above).
+                        // it from the block (see `rollback_dropped_transitions` above). The
+                        // mint accumulator mirrors applied state, so it rewinds with it.
                         if rollback_dropped_transitions {
                             transaction.set_savepoint();
                         }
+                        let credit_mints_at_savepoint = block_credit_mints;
 
                         // Validate state transition and produce an execution event
                         let execution_result = process_state_transition(
@@ -198,6 +205,7 @@ where
                                 validation_result,
                                 block_info,
                                 transaction,
+                                &mut block_credit_mints,
                                 platform_version,
                                 platform_ref.state.previous_fee_versions(),
                             )
@@ -223,9 +231,14 @@ where
                                     // in the state the app hash is computed over. A rollback
                                     // failure means the proposal can no longer match the
                                     // block — fail it rather than continue on leaked state.
-                                    transaction.rollback_to_savepoint().map_err(|e| {
-                                        drive::grovedb::error::Error::StorageError(RocksDBError(e))
-                                    })?;
+                                    transaction
+                                        .rollback_to_savepoint()
+                                        .map_err(drive::grovedb::error::Error::StorageError)?;
+                                    // The rollback discarded this transition's writes; drop
+                                    // its mints with them, or the block would record a
+                                    // credit inflow for a transition the proposal omits and
+                                    // validators re-executing it would compute other state.
+                                    block_credit_mints = credit_mints_at_savepoint;
                                 }
                                 StateTransitionExecutionResult::SuccessfulExecution { .. }
                                 | StateTransitionExecutionResult::PaidConsensusError { .. } => {
@@ -320,6 +333,8 @@ where
 
             processing_result.add(execution_result)?;
         }
+
+        processing_result.set_credit_mints(block_credit_mints);
 
         Ok(processing_result)
     }

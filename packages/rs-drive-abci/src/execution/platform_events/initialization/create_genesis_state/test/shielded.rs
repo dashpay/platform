@@ -310,13 +310,18 @@ impl<C> Platform<C> {
                 .raw_storage()
                 .get_transactional_storage_context(subtree_path, Some(&data_batch), tx)
                 .unwrap();
-            let mut ct = CommitmentTree::<_, DashMemo>::open(0, chunk_power, storage_ctx)
-                .value
-                .map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                        format!("seed: CommitmentTree::open: {e}").into_boxed_str(),
-                    )))
-                })?;
+            let mut ct = CommitmentTree::<_, DashMemo>::open(
+                0,
+                chunk_power,
+                storage_ctx,
+                &platform_version.drive.grove_version,
+            )
+            .value
+            .map_err(|e| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                    format!("seed: CommitmentTree::open: {e}").into_boxed_str(),
+                )))
+            })?;
 
             // Batched seed via repeated `append_many_raw` (grovedb PR #751).
             // Each batch:
@@ -364,12 +369,15 @@ impl<C> Platform<C> {
                     cv_net: [0u8; 32],
                     payload: n.encrypted_note,
                 });
-                let append_result = ct.append_many_raw(iter).value.map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                        format!("seed: append_many_raw (batch {batch_index}): {e}")
-                            .into_boxed_str(),
-                    )))
-                })?;
+                let append_result = ct
+                    .append_many_raw(iter, &platform_version.drive.grove_version)
+                    .value
+                    .map_err(|e| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                            format!("seed: append_many_raw (batch {batch_index}): {e}")
+                                .into_boxed_str(),
+                        )))
+                    })?;
                 // Persist the Sinsemilla frontier per batch — cheap and
                 // gives durable mid-bake checkpoints if we ever want to
                 // resume from a crash. Mid-bake MMR `commit_mmr` is
@@ -381,11 +389,13 @@ impl<C> Platform<C> {
                 // between batches corrupts the in-memory overlay (manifests
                 // as "MMR get_root failed: Inconsistent store" on the next
                 // call). One final `commit_mmr` follows the loop below.
-                ct.save().value.map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                        format!("seed: ct.save (batch {batch_index}): {e}").into_boxed_str(),
-                    )))
-                })?;
+                ct.save(&platform_version.drive.grove_version)
+                    .value
+                    .map_err(|e| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                            format!("seed: ct.save (batch {batch_index}): {e}").into_boxed_str(),
+                        )))
+                    })?;
 
                 last_sinsemilla_root = append_result.sinsemilla_root;
                 last_bulk_state_root = append_result.bulk_state_root;
@@ -424,11 +434,12 @@ impl<C> Platform<C> {
             // overlay accumulates across `append_many_raw` calls and is
             // persisted only here. See the in-loop comment above and the
             // upstream fix `1340db71` for the rationale.
-            ct.commit_mmr().map_err(|e| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                    format!("seed: ct.commit_mmr (final): {e}").into_boxed_str(),
-                )))
-            })?;
+            ct.commit_mmr(&platform_version.drive.grove_version)
+                .map_err(|e| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                        format!("seed: ct.commit_mmr (final): {e}").into_boxed_str(),
+                    )))
+                })?;
 
             let combined_root = grovedb_commitment_tree::compute_commitment_tree_state_root(
                 &last_sinsemilla_root,

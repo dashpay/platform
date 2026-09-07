@@ -312,6 +312,7 @@ fn insert_tip_document(
     properties.insert("sentAt".to_string(), Value::U64(sent_at));
 
     let document: Document = DocumentV0 {
+        contract_version: None,
         id: Identifier::from(document_id(row)),
         owner_id: Identifier::from([7u8; 32]),
         properties,
@@ -1601,6 +1602,7 @@ fn display_proofs(fixture: &SumBenchFixture, platform_version: &PlatformVersion)
                 document_type,
                 SUM_PROPERTY_NAME,
                 &case.structured,
+                &[],
                 platform_version,
             )
             .expect("point-lookup path query builds"),
@@ -1609,6 +1611,7 @@ fn display_proofs(fixture: &SumBenchFixture, platform_version: &PlatformVersion)
                 document_type,
                 SUM_PROPERTY_NAME,
                 &case.structured,
+                &[],
                 platform_version,
             )
             .expect("aggregate-range path query builds"),
@@ -1620,6 +1623,7 @@ fn display_proofs(fixture: &SumBenchFixture, platform_version: &PlatformVersion)
                 document_type,
                 SUM_PROPERTY_NAME,
                 &case.structured,
+                &[],
                 limit,
                 left_to_right,
                 platform_version,
@@ -1913,6 +1917,7 @@ fn sum_request<'a>(
         limit,
         prove,
         drive_config: &fixture.drive_config,
+        resolved_time_ranges: vec![],
     }
 }
 

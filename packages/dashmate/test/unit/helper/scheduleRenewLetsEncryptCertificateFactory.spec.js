@@ -4,6 +4,7 @@ import LegoCertificate from '../../../src/ssl/letsencrypt/LegoCertificate.js';
 import scheduleRenewLetsEncryptCertificateFactory from '../../../src/helper/scheduleRenewLetsEncryptCertificateFactory.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import ConfigIsNotPresentError from '../../../src/config/errors/ConfigIsNotPresentError.js';
+import RenewalRecordRepository from '../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
 
 describe('scheduleRenewLetsEncryptCertificateFactory', () => {
   let config;
@@ -49,6 +50,7 @@ describe('scheduleRenewLetsEncryptCertificateFactory', () => {
       {
         joinPath: this.sinon.stub().returns('/tmp/lego'),
       },
+      new RenewalRecordRepository(HomeDir.createTemp()),
     );
   });
 
@@ -73,6 +75,7 @@ describe('scheduleRenewLetsEncryptCertificateFactory', () => {
     expect(run).to.have.been.calledOnceWith({
       expirationDays: LegoCertificate.EXPIRATION_LIMIT_DAYS,
       noRetry: true,
+      renewalGeneration: 1,
     });
     expect(configFileRepository.write).to.have.been.calledOnce();
     expect(writeConfigTemplates).to.have.been.calledOnceWith(config);
@@ -129,6 +132,7 @@ describe('scheduleRenewLetsEncryptCertificateFactory', () => {
         configFileRepository,
         writeConfigTemplates,
         homeDir,
+        new RenewalRecordRepository(homeDir),
       );
 
       await scheduleRenewLetsEncryptCertificate(config);

@@ -14,6 +14,7 @@ import getServiceListFactory from './docker/getServiceListFactory.js';
 import ensureFileMountExistsFactory from './docker/ensureFileMountExistsFactory.js';
 import getConnectionHostFactory from './docker/getConnectionHostFactory.js';
 import ConfigFileJsonRepository from './config/configFile/ConfigFileJsonRepository.js';
+import RenewalRecordRepository from './ssl/renewalRecord/RenewalRecordRepository.js';
 import createConfigFileFactory from './config/configFile/createConfigFileFactory.js';
 import migrateConfigFileFactory from './config/configFile/migrateConfigFileFactory.js';
 import DefaultConfigs from './config/DefaultConfigs.js';
@@ -96,6 +97,9 @@ import obtainZeroSSLCertificateTaskFactory from './listr/tasks/ssl/zerossl/obtai
 import obtainLetsEncryptCertificateTaskFactory from './listr/tasks/ssl/letsencrypt/obtainLetsEncryptCertificateTaskFactory.js';
 import VerificationServer from './listr/tasks/ssl/VerificationServer.js';
 import saveCertificateTaskFactory from './listr/tasks/ssl/saveCertificateTask.js';
+import installCertificateFilesTaskFactory from './listr/tasks/ssl/installCertificateFilesTaskFactory.js';
+import checkGatewayCertificateFactory from './ssl/checkGatewayCertificateFactory.js';
+import gatewayCertificateTaskFactory from './listr/tasks/update/gatewayCertificateTaskFactory.js';
 
 import createZeroSSLCertificate from './ssl/zerossl/createZeroSSLCertificate.js';
 import verifyDomain from './ssl/zerossl/verifyDomain.js';
@@ -163,6 +167,7 @@ export default async function createDIContainer(options = {}) {
     legoCaCertificatePath: asValue(null),
     legoContainerOptions: asValue({}),
     configFileRepository: asClass(ConfigFileJsonRepository).singleton(),
+    renewalRecordRepository: asClass(RenewalRecordRepository).singleton(),
     getBaseConfig: asFunction(getBaseConfigFactory).singleton(),
     getLocalConfig: asFunction(getLocalConfigFactory).singleton(),
     getTestnetConfig: asFunction(getTestnetConfigFactory).singleton(),
@@ -329,6 +334,8 @@ export default async function createDIContainer(options = {}) {
     obtainLetsEncryptCertificateTask: asFunction(obtainLetsEncryptCertificateTaskFactory)
       .singleton(),
     saveCertificateTask: asFunction(saveCertificateTaskFactory),
+    installCertificateFilesTask: asFunction(installCertificateFilesTaskFactory).singleton(),
+    gatewayCertificateTask: asFunction(gatewayCertificateTaskFactory).singleton(),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
     getCoreScope: asFunction(getCoreScopeFactory).singleton(),
     getMasternodeScope: asFunction(getMasternodeScopeFactory).singleton(),
@@ -354,6 +361,7 @@ export default async function createDIContainer(options = {}) {
   container.register({
     validateZeroSslCertificate: asFunction(validateZeroSslCertificateFactory).singleton(),
     validateLetsEncryptCertificate: asFunction(validateLetsEncryptCertificateFactory).singleton(),
+    checkGatewayCertificate: asFunction(checkGatewayCertificateFactory).singleton(),
     getCertificate: asValue(getCertificate),
   });
 

@@ -189,8 +189,21 @@ import kotlinx.serialization.Serializable
 /** Seed the shielded note pool (← `SeedShieldedPoolView.swift`). */
 @Serializable data class SeedShieldedPool(val walletIdHex: String)
 
-/** Shield funds from an asset lock (← `ShieldedFundFromAssetLockView.swift`). */
-@Serializable data class ShieldedFund(val walletIdHex: String)
+/**
+ * Shield funds from an asset lock (← `ShieldedFundFromAssetLockView.swift`).
+ *
+ * [resumeOutPointHex] carries the `<txid display hex>:<vout>` of an already-
+ * tracked orphan SHIELDED top-up lock (`fundingTypeRaw == 5`) when the
+ * screen is opened in RESUME mode — the shielded twin of
+ * [FundFromAssetLock.resumeOutPointHex], and the counterpart of the Swift
+ * view's `resumeFromLock` parameter. Empty means fresh-shield mode; nav args
+ * don't support a nullable `String`, so `""` stands in for "no lock to
+ * resume".
+ */
+@Serializable data class ShieldedFund(
+    val walletIdHex: String,
+    val resumeOutPointHex: String = "",
+)
 
 /**
  * Live shielded-funding progress (← `ShieldedFundFromAssetLockProgressView.swift`).

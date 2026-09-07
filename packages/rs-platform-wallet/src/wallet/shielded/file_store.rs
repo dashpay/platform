@@ -922,23 +922,22 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// Regression test for the "Shielded Merkle witness
-    /// unavailable" spend failure (multi-wallet shared-tree bug).
+    /// Guards against the "Shielded Merkle witness unavailable"
+    /// spend failure on a multi-wallet shared tree.
     ///
-    /// Root cause: the shared commitment tree previously appended
-    /// commitments as `Ephemeral` unless the owning wallet's IVK
-    /// recognized them in that very sync pass. With multiple
-    /// wallets sharing one tree and binding at different times, a
-    /// note appended before its owner bound stayed Ephemeral
-    /// forever — shardtree has no retroactive marking — so the
-    /// balance showed but the spend failed to build a witness.
-    /// Observed on-disk symptom: every position un-witnessable
-    /// (missing internal nodes at `Level(2) index 0` /
+    /// Invariant: the shared commitment tree marks EVERY position
+    /// (`append_commitment(.., true)`); per-wallet ownership is
+    /// tracked separately in the notes store. Appending a commitment
+    /// as `Ephemeral` unless the owning wallet's IVK recognizes it in
+    /// that very sync pass is wrong: with multiple wallets sharing
+    /// one tree and binding at different times, a note appended
+    /// before its owner binds stays Ephemeral forever — shardtree has
+    /// no retroactive marking — so the balance shows but the spend
+    /// fails to build a witness (on disk: every position
+    /// un-witnessable, missing internal nodes at `Level(2) index 0` /
     /// `Level(1) index 2`).
     ///
-    /// The fix: the shared tree marks EVERY position
-    /// (`append_commitment(.., true)`); per-wallet ownership is
-    /// tracked separately in the notes store. This test asserts
+    /// This test asserts
     /// that a fully-marked tree witnesses every position —
     /// including the rightmost (frontier) leaf whose sibling
     /// doesn't exist yet — across a persist + reload cycle (the

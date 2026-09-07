@@ -623,6 +623,59 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     })
 }
 
+/// `core_wallet_set_gap_limit` — widen an account's address-pool gap
+/// limit, generating the addresses the wider limit now requires (capped
+/// Rust-side at `MAX_GAP_LIMIT`). The window a compact-filter scan watches
+/// is `last used index + gap`, so this is the host's lever for wallets
+/// whose usage frontier moved OUTSIDE the SDK's view (another client on
+/// the same seed — dashj during the migration — spending past the default
+/// window; observed in the field as change addresses the SDK refused to
+/// recognise). `account_type`: 0 BIP44, 1 BIP32, 2 CoinJoin
+/// (3 AllSpendable is rejected — gap limits are per-account).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletSetGapLimit(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    account_type: jni::sys::jint,
+    account_index: jni::sys::jint,
+    gap_limit: jni::sys::jint,
+) {
+    guard(&mut env, (), |env| {
+        // A gap limit belongs to ONE account's address pools; the
+        // AllSpendable aggregate (3) has no pool of its own, so reject it
+        // here rather than letting the per-account FFI fail opaquely.
+        let account_type = match core_account_type(account_type) {
+            Some(platform_wallet_ffi::CoreAccountTypeFFI::AllSpendable) | None => {
+                throw_sdk_exception(
+                    env,
+                    1,
+                    "accountType must be a concrete account (0=BIP44, 1=BIP32, 2=CoinJoin)",
+                );
+                return;
+            }
+            Some(concrete) => concrete,
+        };
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return;
+        }
+        if gap_limit <= 0 {
+            throw_sdk_exception(env, 1, "gapLimit must be positive");
+            return;
+        }
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_set_gap_limit(
+                wallet_handle as Handle,
+                account_type,
+                account_index as u32,
+                gap_limit as u32,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
 // ── Core transaction builder (1:1 over `core_wallet_tx_builder_*`) ─────
 //
 // The base refactor replaced the one-shot `core_wallet_send_to_addresses`
@@ -1643,22 +1696,25 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 
 // ── Asset-lock funding of Platform addresses ──────────────────────────
 
-/// Decode the recipient BLOB into `FundingAddressEntryFFI` rows and derive
-/// the `ReduceOutput` fee step (at the first `hasBalance = false` remainder
-/// recipient, mirroring `ManagedPlatformAddressWallet.fundFromAssetLock`).
+/// Decode the recipient BLOB into `FundingAddressEntryFFI` rows.
 ///
 /// BLOB layout (big-endian): `u32 rowCount` then per row
 /// `u8 addressType, u8[20] hash, u8 hasBalance (0/1), u64 balance`.
 ///
-/// Returns `(entries, feeRows)` or throws + returns `None` on a malformed
-/// blob / missing remainder recipient.
+/// This used to also derive the `ReduceOutput` fee step from the row's
+/// position in the blob. That was WRONG: consensus resolves
+/// `ReduceOutput(i)` against the outputs `BTreeMap`'s lexicographic key
+/// order, not the caller's list order, so the fee landed on a payee's
+/// explicit output whenever the remainder recipient was not also first
+/// lexicographically. The index is now derived inside `platform-wallet`
+/// from the recipient map itself (`remainder_fee_strategy`), and the
+/// FFI's `fee_strategy` parameters are ignored.
+///
+/// Returns the entries, or throws + returns `None` on a malformed blob.
 fn decode_funding_recipients(
     env: &mut JNIEnv,
     arr: &JByteArray,
-) -> Option<(
-    Vec<platform_wallet_ffi::FundingAddressEntryFFI>,
-    Vec<platform_wallet_ffi::FeeStrategyStepFFI>,
-)> {
+) -> Option<Vec<platform_wallet_ffi::FundingAddressEntryFFI>> {
     let bytes = match env.convert_byte_array(arr) {
         Ok(b) => b,
         Err(_) => {
@@ -1693,7 +1749,6 @@ fn decode_funding_recipients(
         return None;
     }
     let mut entries = Vec::with_capacity(count);
-    let mut remainder_index: Option<u16> = None;
     for i in 0..count {
         let Some(type_byte) = read(&mut cursor, 1) else {
             throw_sdk_exception(
@@ -1730,9 +1785,6 @@ fn decode_funding_recipients(
         let mut hash = [0u8; 20];
         hash.copy_from_slice(&hash_bytes);
         let has_balance = has_balance_byte[0] != 0;
-        if !has_balance && remainder_index.is_none() {
-            remainder_index = Some(i as u16);
-        }
         let balance = u64::from_be_bytes(balance_bytes.as_slice().try_into().ok()?);
         // The Kotlin encoder writes this field from a signed long; a set
         // sign bit means a negative amount crossed the boundary — reject
@@ -1754,15 +1806,10 @@ fn decode_funding_recipients(
             balance,
         });
     }
-    // Exactly one remainder recipient must be present (the fee-absorbing
-    // output). The Rust FFI enforces this too, but we need its index for
-    // the ReduceOutput fee step.
-    let remainder = remainder_index.unwrap_or(0);
-    let fee_rows = vec![platform_wallet_ffi::FeeStrategyStepFFI {
-        step_type: 1, // 1 = ReduceOutput
-        index: remainder,
-    }];
-    Some((entries, fee_rows))
+    // The "exactly one remainder recipient" rule is enforced by
+    // `platform-wallet`'s pre-flight, which returns a typed error before
+    // anything is broadcast.
+    Some(entries)
 }
 
 /// Decode the credit-outputs BLOB for a wallet-signed platform-address
@@ -1931,7 +1978,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             return ptr::null_mut();
         }
 
-        let Some((entries, fee_rows)) = decode_funding_recipients(env, &recipients_blob) else {
+        let Some(entries) = decode_funding_recipients(env, &recipients_blob) else {
             return ptr::null_mut();
         };
 
@@ -1959,8 +2006,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 platform_account_index as u32,
                 entries.as_ptr(),
                 entries.len(),
-                fee_rows.as_ptr(),
-                fee_rows.len(),
+                // The fee strategy is derived Rust-side; these are ignored.
+                ptr::null(),
+                0,
                 signer_handle as *mut rs_sdk_ffi::SignerHandle,
                 core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
                 &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
@@ -2043,7 +2091,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             vout: out_point_vout as u32,
         };
 
-        let Some((entries, fee_rows)) = decode_funding_recipients(env, &recipients_blob) else {
+        let Some(entries) = decode_funding_recipients(env, &recipients_blob) else {
             return ptr::null_mut();
         };
 
@@ -2069,8 +2117,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 platform_account_index as u32,
                 entries.as_ptr(),
                 entries.len(),
-                fee_rows.as_ptr(),
-                fee_rows.len(),
+                // The fee strategy is derived Rust-side; these are ignored.
+                ptr::null(),
+                0,
                 signer_handle as *mut rs_sdk_ffi::SignerHandle,
                 core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
                 &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,

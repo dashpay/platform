@@ -1,6 +1,7 @@
 use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::CreditOperation;
 use dpp::consensus::ConsensusError;
+use dpp::fee::Credits;
 use std::collections::BTreeMap;
 
 use crate::error::Error;
@@ -68,6 +69,7 @@ pub struct StateTransitionsProcessingResult {
     valid_count: usize,
     failed_count: usize,
     fees: FeeResult,
+    credit_mints: Credits,
 }
 
 impl StateTransitionsProcessingResult {
@@ -172,6 +174,18 @@ impl StateTransitionsProcessingResult {
     /// Returns the number of failed state transitions
     pub fn failed_count(&self) -> usize {
         self.failed_count
+    }
+
+    /// Sets the credits the block's applied state transitions minted into Platform
+    pub fn set_credit_mints(&mut self, credit_mints: Credits) {
+        self.credit_mints = credit_mints;
+    }
+
+    /// Returns the credits the block's applied state transitions minted into Platform
+    /// (their `AddToSystemCredits` operations): the state-transition share of the block's
+    /// credit inflow, recorded for the net daily withdrawal limit.
+    pub fn credit_mints(&self) -> Credits {
+        self.credit_mints
     }
 
     /// Returns the aggregated fees

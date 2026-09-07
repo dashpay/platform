@@ -33,6 +33,46 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    func testAssetLockInsufficientFundsFFIResultMapping() {
+        // The asset-lock coin-selection shortfall (dashpay/platform#4073).
+        // Swift could not decode code 29 at all before this mirror existed —
+        // no raw-value case and no C-enum arm meant it fell through to
+        // .errorUnknown, so the Rust-side typed code died at the Swift
+        // boundary while Kotlin already branched on it.
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INSUFFICIENT_FUNDS
+            ),
+            .errorAssetLockInsufficientFunds
+        )
+        XCTAssertNotEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INSUFFICIENT_FUNDS
+            ),
+            .errorUnknown
+        )
+        // The raw value is hand-mirrored ABI, not a derived ordinal.
+        XCTAssertEqual(
+            PlatformWalletResultCode.errorAssetLockInsufficientFunds.rawValue,
+            29
+        )
+
+        // The structured available/required duffs ride the message string —
+        // PlatformWalletFFIResult is ABI-frozen at code + message — so the
+        // typed error must carry them through unaltered.
+        let rendered = "asset lock coin selection is short: available 18000000 duffs, "
+            + "required 100000000 duffs"
+        let error = PlatformWalletError(
+            code: .errorAssetLockInsufficientFunds,
+            message: rendered
+        )
+        guard case .assetLockInsufficientFunds(let message) = error else {
+            return XCTFail("expected typed assetLockInsufficientFunds error")
+        }
+        XCTAssertEqual(message, rendered)
+        XCTAssertEqual(error.errorDescription, rendered)
+    }
+
     func testPlatformWalletNotFoundFFIResultMapping() {
         // Code 98 (the blanket Option→result miss) stays typed inside the
         // wallet-error family — the mapping Kotlin now converges on

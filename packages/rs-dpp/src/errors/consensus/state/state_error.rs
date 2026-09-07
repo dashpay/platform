@@ -46,6 +46,8 @@ use crate::consensus::state::document::referenced_document_type_not_found_error:
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use crate::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
 use crate::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
+use crate::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
+use crate::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use crate::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
@@ -386,6 +388,14 @@ pub enum StateError {
 
     #[error(transparent)]
     ReferencedKeyIdPropertyInvalidError(ReferencedKeyIdPropertyInvalidError),
+
+    #[error(transparent)]
+    ReferencedDocumentPropertyAgreementInvalidError(
+        ReferencedDocumentPropertyAgreementInvalidError,
+    ),
+
+    #[error(transparent)]
+    ReferencedDocumentPropertyMismatchError(ReferencedDocumentPropertyMismatchError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -511,6 +521,27 @@ mod tests {
                 )
             )),
             98
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentPropertyAgreementInvalidError(
+                ReferencedDocumentPropertyAgreementInvalidError::new(
+                    "like.postId".to_string(),
+                    "hashtag".to_string(),
+                    "hashtag".to_string(),
+                    "missing".to_string(),
+                )
+            )),
+            99
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentPropertyMismatchError(
+                ReferencedDocumentPropertyMismatchError::new(
+                    "postId".to_string(),
+                    "hashtag".to_string(),
+                    "hashtag".to_string(),
+                )
+            )),
+            100
         );
     }
 }

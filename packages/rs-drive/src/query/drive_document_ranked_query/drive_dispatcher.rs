@@ -17,9 +17,11 @@
 use super::mode_detection::detect_ranked_mode;
 use super::{RankedPage, RankedPaginationInputs};
 use crate::drive::Drive;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::having::HavingClause;
 use crate::query::projection::SelectProjection;
+use crate::query::ResolvedTimeRange;
 use crate::query::{OrderClause, WhereClause};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -61,9 +63,25 @@ pub struct DocumentRankedRequest<'a> {
     /// field); its direction is the ranking direction.
     pub order_by: &'a [OrderClause],
     /// Structured `where` clauses. Empty for the single-property form;
-    /// equality pins on the covering compound index's leading
-    /// properties for the pinned-prefix form.
+    /// pins on the covering compound index's leading properties for
+    /// the pinned-prefix form: one equality pin per property, of which
+    /// at most one may instead be a bounded `IN` (one branch per
+    /// element, merged; entries then carry `in_key`).
     pub where_clauses: &'a [WhereClause],
+    /// The provenance of any `where_clauses` equality produced by
+    /// `IN_TIME_RANGE` resolution (see
+    /// [`crate::query::DriveDocumentQuery::resolved_time_ranges`]). At most
+    /// one, and its resolved bucket-start equality must appear among
+    /// `where_clauses` as the pin on the covering index's bucketed first
+    /// property. Index selection consumes it through
+    /// [`crate::query::index_admissible_for_resolved_time_range`]: a
+    /// resolved request is served only by the index bucketing that field
+    /// with exactly that grid, and a raw request never by a bucketed
+    /// index. Ranked levels sit strictly BELOW the bucketed one (contract
+    /// validation guarantees it), so the walk reads the pinned window's
+    /// own per-prefix secondary — one window, each document once,
+    /// regardless of grid overlap.
+    pub resolved_time_ranges: &'a [ResolvedTimeRange],
     /// Request `limit` — the ranking's `k`. **Required**; there is no
     /// server default a verifying client could reproduce.
     pub limit: Option<u32>,
@@ -113,7 +131,7 @@ impl Drive {
     /// Errors:
     /// - Request-shape failures (wrong `group_by` arity, an `order_by`
     ///   that does not name the `select`'s aggregate, a missing or
-    ///   out-of-range `limit`, a `where` clause, a `having`) come back
+    ///   out-of-range `limit`, a malformed `where` pin, a `having`) come back
     ///   as `Error::Query(QuerySyntaxError::*)` —
     ///   see [`super::mode_detection::detect_ranked_mode_v0`] for the
     ///   full grammar.
@@ -128,6 +146,18 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentRankedResponse, Error> {
+        // A transform's source must be its index's first property, so no
+        // single index can serve two resolved buckets; rejected before
+        // routing, mirroring `DriveDocumentQuery::select_best_index`.
+        if request.resolved_time_ranges.len() > 1 {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "at most one time-range selection (IN_TIME_RANGE) is supported per ranked \
+                 query; this one resolves {:?}, and no single index can bucket more than \
+                 one field",
+                request.resolved_time_ranges
+            ))));
+        }
+
         let mode = detect_ranked_mode(
             &request.select,
             request.group_by,
@@ -152,6 +182,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     &mode,
+                    request.resolved_time_ranges,
                     transaction,
                     platform_version,
                 )?,
@@ -163,6 +194,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     &mode,
+                    request.resolved_time_ranges,
                     transaction,
                     platform_version,
                 )?,

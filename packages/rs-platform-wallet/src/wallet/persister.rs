@@ -10,10 +10,11 @@ use dashcore::Txid;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 use crate::changeset::{
-    ClientStartState, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
-    PlatformWalletPersistence,
+    ClientStartState, DpnsNameStateEntry, PersistenceCapabilities, PersistenceError,
+    PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use crate::wallet::platform_wallet::WalletId;
+use dpp::prelude::Identifier;
 
 /// Per-wallet persistence handle.
 ///
@@ -72,6 +73,24 @@ impl WalletPersister {
         &self,
     ) -> Result<Option<Vec<crate::changeset::traits::ListedCoreTxid>>, PersistenceError> {
         self.inner.list_wallet_core_txids(self.wallet_id)
+    }
+
+    /// Look up the persisted DPNS marketplace row for
+    /// `(wallet_identity_id, normalized_label)` within this wallet.
+    ///
+    /// The durable fallback the DPNS marketplace sync pass uses to
+    /// recover a departed name's `document_id` once a process restart
+    /// has left the session-scoped in-memory map empty — see
+    /// [`PlatformWalletPersistence::get_dpns_name_state`] for the full
+    /// contract. `Ok(None)` means the backend does not index DPNS rows
+    /// by label (or holds no such row); it is not an error.
+    pub(crate) fn get_dpns_name_state(
+        &self,
+        wallet_identity_id: &Identifier,
+        normalized_label: &str,
+    ) -> Result<Option<DpnsNameStateEntry>, PersistenceError> {
+        self.inner
+            .get_dpns_name_state(self.wallet_id, wallet_identity_id, normalized_label)
     }
 }
 

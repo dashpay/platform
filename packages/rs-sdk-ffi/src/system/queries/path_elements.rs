@@ -203,6 +203,8 @@ fn format_element_data(element: &Element) -> String {
         Element::DenseAppendOnlyFixedSizeTree(_, _, _) => {
             "dense_append_only_fixed_size_tree".to_string()
         }
+
+        Element::PrivateDocumentStore(_, _, _, _) => "private_document_store".to_string(),
         Element::NonCounted(inner) => format!("non_counted({})", format_element_data(inner)),
         Element::NotSummed(inner) => format!("not_summed({})", format_element_data(inner)),
         Element::NotCountedOrSummed(inner) => {
@@ -241,6 +243,8 @@ fn format_element_type(element: &Element) -> String {
         Element::DenseAppendOnlyFixedSizeTree(_, _, _) => {
             "dense_append_only_fixed_size_tree".to_string()
         }
+
+        Element::PrivateDocumentStore(_, _, _, _) => "private_document_store".to_string(),
         Element::NonCounted(inner) => format!("non_counted({})", format_element_type(inner)),
         Element::NotSummed(inner) => format!("not_summed({})", format_element_type(inner)),
         Element::NotCountedOrSummed(inner) => {

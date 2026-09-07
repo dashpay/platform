@@ -1,3 +1,5 @@
+use crate::data_contract::document_type::class_methods::consensus_or_protocol_required_fields_error;
+use crate::data_contract::document_type::validate_required_since_within_contract_version;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -100,6 +102,9 @@ impl DataContractV1 {
             platform_version,
         )?;
 
+        validate_required_since_within_contract_version(&document_types, version)
+            .map_err(consensus_or_protocol_required_fields_error)?;
+
         let data_contract = DataContractV1 {
             id,
             version,
@@ -160,6 +165,9 @@ impl DataContractV1 {
             validation_operations,
             platform_version,
         )?;
+
+        validate_required_since_within_contract_version(&document_types, version)
+            .map_err(consensus_or_protocol_required_fields_error)?;
 
         let data_contract = DataContractV1 {
             id,

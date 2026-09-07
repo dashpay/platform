@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import { Listr } from 'listr2';
 import path from 'path';
 import process from 'process';
@@ -10,7 +11,7 @@ import Certificate from '../../../ssl/zerossl/Certificate.js';
 import probeServedCertificate, { STATE as PROBE_STATE } from '../../../ssl/probeServedCertificate.js';
 import readCertificateBundle from '../../../ssl/readCertificateBundle.js';
 import providers from '../../../status/providers.js';
-import hideString from '../../../util/hideString.js';
+import maskOperatorIdentity from '../../../util/maskOperatorIdentity.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
 import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
 
@@ -39,8 +40,59 @@ async function fetchTextOrError(url) {
  * @param {HomeDir} homeDir
  * @param {validateZeroSslCertificate} validateZeroSslCertificate
  * @param {validateLetsEncryptCertificate} validateLetsEncryptCertificate
+ * @param {checkGatewayCertificate} checkGatewayCertificate
+ * @param {RenewalRecordRepository} renewalRecordRepository
  * @return {collectSamplesTask}
  */
+/**
+ * Mask the name of whoever is running dashmate out of collected data.
+ *
+ * A report is the artefact an operator hands to whoever is helping them, and
+ * the paths in it are absolute, so they carry a home directory. The paths stay
+ * - they are what makes a problem actionable - and the name in them does not.
+ *
+ * The name is read from the operating system rather than the environment.
+ * Doctor runs unattended often enough - from cron, from a service manager -
+ * that USER cannot be relied on, and replacing an undefined needle silently
+ * masks nothing at all. When no name can be determined there is nothing to
+ * mask and the data is left alone rather than having "undefined" replaced in
+ * it.
+ *
+ * @return {{username: string|null, homePath: string|null}}
+ */
+function getOperatorIdentity() {
+  let username = null;
+  let homePath = null;
+
+  try {
+    ({ username, homedir: homePath } = os.userInfo());
+  } catch {
+    // A process running under a uid with no passwd entry has no name to read.
+  }
+
+  return {
+    username: username || process.env.USER || process.env.USERNAME || null,
+    homePath: homePath || os.homedir() || null,
+  };
+}
+
+/**
+ * @param {Object} data - mutated in place
+ */
+function obfuscateOperatorName(data) {
+  const identity = getOperatorIdentity();
+
+  obfuscateObjectRecursive(data, (_field, value) => maskOperatorIdentity(value, identity));
+}
+
+/**
+ * @param {string|undefined} text
+ * @return {string|undefined}
+ */
+function hideOperatorNameIn(text) {
+  return maskOperatorIdentity(text, getOperatorIdentity());
+}
+
 export default function collectSamplesTaskFactory(
   dockerCompose,
   createRpcClient,
@@ -51,6 +103,8 @@ export default function collectSamplesTaskFactory(
   homeDir,
   validateZeroSslCertificate,
   validateLetsEncryptCertificate,
+  checkGatewayCertificate,
+  renewalRecordRepository,
 ) {
   /**
    * @typedef {function} collectSamplesTask
@@ -112,10 +166,7 @@ export default function collectSamplesTaskFactory(
                         Certificate.EXPIRATION_LIMIT_DAYS,
                       );
 
-                      obfuscateObjectRecursive(data, (_field, value) => (typeof value === 'string' ? value.replaceAll(
-                        process.env.USER,
-                        hideString(process.env.USER),
-                      ) : value));
+                      obfuscateOperatorName(data);
 
                       ctx.samples.setServiceInfo('gateway', 'ssl', {
                         error,
@@ -133,10 +184,7 @@ export default function collectSamplesTaskFactory(
                         LegoCertificate.EXPIRATION_LIMIT_DAYS,
                       );
 
-                      obfuscateObjectRecursive(data, (_field, value) => (typeof value === 'string' ? value.replaceAll(
-                        process.env.USER,
-                        hideString(process.env.USER),
-                      ) : value));
+                      obfuscateOperatorName(data);
 
                       ctx.samples.setServiceInfo('gateway', 'ssl', {
                         error,
@@ -162,10 +210,7 @@ export default function collectSamplesTaskFactory(
                         privateFilePath,
                       };
 
-                      obfuscateObjectRecursive(data, (_field, value) => (typeof value === 'string' ? value.replaceAll(
-                        process.env.USER,
-                        hideString(process.env.USER),
-                      ) : value));
+                      obfuscateOperatorName(data);
 
                       if (!fs.existsSync(chainFilePath) || !fs.existsSync(privateFilePath)) {
                         ctx.samples.setServiceInfo('gateway', 'ssl', {
@@ -190,6 +235,84 @@ export default function collectSamplesTaskFactory(
                     default:
                       throw new Error('Unknown SSL provider');
                   }
+                },
+              },
+              {
+                // Judged where the files are, because an archived report is
+                // analysed somewhere else entirely. This is also the only
+                // certificate sample a stopped node produces: the probe below
+                // needs a listener to answer it, and the documented upgrade
+                // procedure leaves the gateway down.
+                enabled: () => config.get('platform.enable'),
+                title: 'Gateway certificate files',
+                task: async () => {
+                  const verdict = checkGatewayCertificate(config);
+
+                  const installed = {
+                    status: verdict.status,
+                    reasons: verdict.reasons,
+                    warnings: verdict.warnings,
+                    skipped: verdict.skipped,
+                    provider: verdict.provider,
+                    expiresInDays: verdict.expiresInDays,
+                    validTo: verdict.installed
+                      ? verdict.installed.validTo.toUTCString()
+                      : null,
+                    // When this certificate was issued, which is what says
+                    // whether a recorded renewal failure came before it. A
+                    // failure the certificate outlives has been overtaken.
+                    validFrom: verdict.installed
+                      ? verdict.installed.validFrom.toUTCString()
+                      : null,
+                    // Which pair was judged. The wire probe records the same
+                    // fingerprint for the file it read, so an analyser can tell
+                    // whether the two samples describe the same certificate
+                    // before acting on the verdict.
+                    fingerprint256: verdict.installed
+                      ? verdict.installed.fingerprint256
+                      : null,
+                  };
+
+                  // A problem with the files names the file it could not read,
+                  // which is an absolute path under the operator's home
+                  // directory. The report this ends up in is what an operator
+                  // hands to whoever is helping them, so the path stays - it is
+                  // what makes the problem actionable - and the name in it does
+                  // not.
+                  obfuscateOperatorName(installed);
+
+                  ctx.samples.setServiceInfo('gateway', 'installedCertificate', installed);
+                },
+              },
+              {
+                // Read next to the certificate it describes rather than
+                // anywhere else in this collection. The helper replaces the
+                // certificate and writes this seconds apart, and the rest of
+                // the collection takes long enough - there is a call out to the
+                // internet in it - that reading them minutes apart would
+                // routinely straddle a renewal and report a node that has just
+                // succeeded as one that is failing.
+                enabled: () => config.get('platform.enable'),
+                title: 'Gateway certificate renewal',
+                task: async () => {
+                  const renewal = renewalRecordRepository.read(config.getName());
+
+                  // Absent and unreadable are kept apart all the way to the
+                  // analyser. "Nothing was recorded" is a fair thing to say;
+                  // saying it about a file that could not be opened is not.
+                  const sample = {
+                    state: renewal.state,
+                    path: renewal.path,
+                    error: renewal.error,
+                    ...renewal.record?.toObject(),
+                  };
+
+                  // Same treatment as the certificate above: the path is what
+                  // makes a problem actionable and stays, the operator's name
+                  // in it does not.
+                  obfuscateOperatorName(sample);
+
+                  ctx.samples.setServiceInfo('gateway', 'certificateRenewal', sample);
                 },
               },
               {
@@ -423,28 +546,15 @@ export default function collectSamplesTaskFactory(
 
                 if (logs?.out) {
                   // Hide username & external ip from logs
-                  logs.out = logs.out.replaceAll(
-                    process.env.USER,
-                    hideString(process.env.USER),
-                  );
+                  logs.out = hideOperatorNameIn(logs.out);
                 }
 
                 if (logs?.err) {
-                  logs.err = logs.err.replaceAll(
-                    process.env.USER,
-                    hideString(process.env.USER),
-                  );
+                  logs.err = hideOperatorNameIn(logs.err);
                 }
 
                 // Hide username & external ip from inspect
-                obfuscateObjectRecursive(inspect, (_field, value) => (
-                  typeof value === 'string'
-                    ? value.replaceAll(
-                      process.env.USER,
-                      hideString(process.env.USER),
-                    )
-                    : value
-                ));
+                obfuscateOperatorName(inspect);
 
                 ctx.samples.setServiceInfo(service.name, 'stdOut', logs?.out);
                 ctx.samples.setServiceInfo(service.name, 'stdErr', logs?.err);

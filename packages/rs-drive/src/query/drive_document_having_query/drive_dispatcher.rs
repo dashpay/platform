@@ -5,10 +5,11 @@
 use super::super::drive_document_ranked_query::{RankedEntry, RankedPaginationInputs};
 use super::mode_detection::detect_having_mode;
 use crate::drive::Drive;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::having::HavingClause;
 use crate::query::projection::SelectProjection;
-use crate::query::{OrderClause, WhereClause};
+use crate::query::{OrderClause, ResolvedTimeRange, WhereClause};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -44,9 +45,21 @@ pub struct DocumentHavingRequest<'a> {
     /// one, naming the selected aggregate.
     pub order_by: &'a [OrderClause],
     /// Structured `where` clauses. Empty for the single-property form;
-    /// equality pins on the covering compound index's leading
-    /// properties for the pinned-prefix form.
+    /// pins on the covering compound index's leading properties for
+    /// the pinned-prefix form: one equality pin per property, of which
+    /// at most one may instead be a bounded `IN` (one branch per
+    /// element, merged; entries then carry `in_key`).
     pub where_clauses: &'a [WhereClause],
+    /// The provenance of any `where_clauses` equality produced by
+    /// `IN_TIME_RANGE` resolution (see
+    /// [`crate::query::DriveDocumentQuery::resolved_time_ranges`]). At most
+    /// one; index selection consumes it through
+    /// [`crate::query::index_admissible_for_resolved_time_range`], which
+    /// routes the resolved bucket-start pin to exactly the grid it was
+    /// resolved against — and keeps raw requests off bucketed indexes,
+    /// where a hand-written equality would authenticate raw-timestamp
+    /// matches at the bucket boundary instead of window membership.
+    pub resolved_time_ranges: &'a [ResolvedTimeRange],
     /// Request `limit`. **Required**; `1 ..= MAX_HAVING_LIMIT`.
     pub limit: Option<u32>,
     /// Request `offset`. Must be `None` — the range walk has no skip.
@@ -104,6 +117,22 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentHavingResponse, Error> {
+        // A transform's source must be its index's first property, so no
+        // single index can serve two resolved buckets; rejected before
+        // routing, mirroring the ranked dispatcher. A single resolution is
+        // consumed by index selection (the picker's admissibility rule
+        // routes it to exactly the grid it was resolved against, and keeps
+        // raw requests off bucketed indexes) — the resolved bucket-start
+        // equality pins the bucketed first level like any other leading
+        // property.
+        if request.resolved_time_ranges.len() > 1 {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "at most one time-range selection (IN_TIME_RANGE) is supported per \
+                 having-range query; this one resolves {:?}, and no single index can \
+                 bucket more than one field",
+                request.resolved_time_ranges
+            ))));
+        }
         let mode = detect_having_mode(
             &request.select,
             request.group_by,
@@ -128,6 +157,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     &mode,
+                    request.resolved_time_ranges,
                     transaction,
                     platform_version,
                 )?,
@@ -139,6 +169,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     &mode,
+                    request.resolved_time_ranges,
                     transaction,
                     platform_version,
                 )?,

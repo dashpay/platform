@@ -150,3 +150,111 @@ async fn shield_built_note_is_trial_decryptable_by_own_ivk() {
         "decrypted note value must equal the shielded amount"
     );
 }
+
+/// Shield to an EXTERNAL recipient (`shielded_shield_from_account_to_recipient`):
+/// the note must be spendable by the recipient's wallet, invisible to the
+/// sender's IVK, and recoverable as outgoing history under the sender's OVK
+/// (with the recipient address and memo intact) — the exact triple the
+/// scan relies on for the recipient's balance and the sender's `Sent` row.
+#[tokio::test]
+async fn shield_to_external_recipient_decrypts_for_recipient_and_recovers_for_sender() {
+    use dash_sdk::platform::shielded::try_recover_outgoing_note;
+
+    let sender_keys = OrchardKeySet::from_seed(&[0x42u8; 32], Network::Testnet, 0)
+        .expect("ZIP-32 derivation from a fixed seed should succeed");
+    let recipient_keys = OrchardKeySet::from_seed(&[0x77u8; 32], Network::Testnet, 0)
+        .expect("ZIP-32 derivation from a fixed seed should succeed");
+
+    let recipient_raw = recipient_keys.default_address.to_raw_address_bytes();
+    let recipient = OrchardAddress::from_raw_bytes(&recipient_raw)
+        .expect("recipient default address must convert to OrchardAddress");
+
+    let amount: u64 = 150_000_000_000; // 1.5 DASH in credits
+    let mut inputs = BTreeMap::new();
+    inputs.insert(
+        PlatformAddress::P2pkh([0xCD; 20]),
+        (0u32, 500_000_000_000u64),
+    );
+
+    let mut memo = [0u8; 36];
+    memo[..4].copy_from_slice(&[1, 0, 0, 0]);
+    memo[4..9].copy_from_slice(b"hello");
+
+    let prover = CachedOrchardProver::new();
+    let st = build_shield_transition(
+        &recipient,
+        amount,
+        inputs,
+        vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+        &DummySigner,
+        0,
+        &&prover,
+        memo,
+        // Production config (`operations::shield`): OVK-keyed to the
+        // SENDER, so the sender's scan can recover the send.
+        Some(sender_keys.outgoing_viewing_key.clone()),
+        PlatformVersion::latest(),
+    )
+    .await
+    .expect("shield transition build should succeed");
+
+    let StateTransition::Shield(ShieldTransition::V0(v0)) = st else {
+        panic!("expected a Shield state transition");
+    };
+    let wires: Vec<ShieldedEncryptedNote> = v0
+        .actions
+        .iter()
+        .map(|a| ShieldedEncryptedNote {
+            cmx: a.cmx.to_vec(),
+            nullifier: a.nullifier.to_vec(),
+            cv_net: a.cv_net.to_vec(),
+            encrypted_note: a.encrypted_note.clone(),
+        })
+        .collect();
+
+    // The recipient's scan sees exactly one spendable note of `amount`.
+    let recipient_ivk = recipient_keys.prepared_ivk();
+    let for_recipient: Vec<u64> = wires
+        .iter()
+        .filter_map(|w| try_decrypt_note(&recipient_ivk, w).map(|(note, _)| note.value().inner()))
+        .collect();
+    assert_eq!(
+        for_recipient,
+        vec![amount],
+        "exactly the real output must decrypt for the recipient, at the sent amount"
+    );
+
+    // The sender's IVK sees nothing — the note is not ours to spend.
+    let sender_ivk = sender_keys.prepared_ivk();
+    assert!(
+        wires
+            .iter()
+            .all(|w| try_decrypt_note(&sender_ivk, w).is_none()),
+        "no action may IVK-decrypt for the sender (the note belongs to the recipient)"
+    );
+
+    // The sender's OVK recovers the send — recipient and memo intact —
+    // which is what drives the pending-row confirmation and the
+    // restore-path `Sent` classification.
+    let recovered: Vec<_> = wires
+        .iter()
+        .filter_map(|w| try_recover_outgoing_note(&sender_keys.outgoing_viewing_key, w))
+        .collect();
+    assert_eq!(
+        recovered.len(),
+        1,
+        "exactly the real output must OVK-recover for the sender"
+    );
+    let (note, recovered_recipient, recovered_memo) = &recovered[0];
+    assert_eq!(note.value().inner(), amount);
+    assert_eq!(
+        recovered_recipient.to_raw_address_bytes(),
+        recipient_raw,
+        "OVK recovery must surface the external recipient's address"
+    );
+    assert_eq!(
+        &recovered_memo[..],
+        &memo[..],
+        "the 36-byte memo must round-trip through OVK recovery"
+    );
+}

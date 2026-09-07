@@ -86,6 +86,20 @@ pub struct SystemLimits {
     // do this that much
     pub max_token_redemption_cycles: u32,
     pub max_shielded_transition_actions: u16,
+    /// Maximum overlap factor (`range / step`) a `timeRange` index transform
+    /// may declare, enforced at contract registration.
+    ///
+    /// The overlap factor is the number of buckets that contain any given
+    /// timestamp — i.e. the write amplification of the index: every document
+    /// insert, delete, and (on a bucket-set change) update fans out into that
+    /// many index entries. The bound of 24 covers the natural worst case, a
+    /// day-long window sliding hourly, without letting a contract buy a
+    /// 256-entry fan-out per document.
+    ///
+    /// `None` preserves the behavior of protocol versions that predate
+    /// time-range indexes (nothing to bound: the `timeRange` keyword does not
+    /// parse there).
+    pub max_time_range_overlap_factor: Option<u64>,
 }
 
 #[cfg(test)]

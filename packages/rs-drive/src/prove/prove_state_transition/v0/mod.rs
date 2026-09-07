@@ -127,31 +127,75 @@ impl Drive {
                                 )))
                             })?;
 
-                        let contested_status =
-                            if let DocumentTransition::Create(create_transition) =
-                                document_transition
-                            {
-                                if create_transition.prefunded_voting_balance().is_some() {
-                                    SingleDocumentDriveQueryContestedStatus::Contested
-                                } else {
-                                    SingleDocumentDriveQueryContestedStatus::NotContested
-                                }
+                        // indexOnly documents have no primary row to prove by
+                        // id: the executed transition is proven against the
+                        // entry its values produce under the proof index —
+                        // the same single-entry path query the verifier
+                        // rebuilds from the transition.
+                        {
+                            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+                            use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
+                            if document_type.index_only() {
+                                let values = match document_transition {
+                                    DocumentTransition::Create(create_transition) => {
+                                        create_transition.data().clone()
+                                    }
+                                    // The indexOnlyDelete kind always carries
+                                    // its values — no fallible access needed.
+                                    DocumentTransition::IndexOnlyDelete(delete_transition) => {
+                                        delete_transition.data().clone()
+                                    }
+                                    _ => {
+                                        return Ok(ProofCreationResult::new_with_error(
+                                            ProofError::InvalidTransition(
+                                                "indexOnly documents only support create and \
+                                                 indexOnlyDelete"
+                                                    .to_string(),
+                                            ),
+                                        ));
+                                    }
+                                };
+                                crate::query::index_only_synthesis::index_only_transition_entry_path_query(
+                                    contract.id(),
+                                    document_type,
+                                    &values,
+                                    owner_id,
+                                    platform_version,
+                                )?
                             } else {
-                                SingleDocumentDriveQueryContestedStatus::NotContested
-                            };
+                                let contested_status =
+                                    if let DocumentTransition::Create(create_transition) =
+                                        document_transition
+                                    {
+                                        if create_transition.prefunded_voting_balance().is_some() {
+                                            SingleDocumentDriveQueryContestedStatus::Contested
+                                        } else {
+                                            SingleDocumentDriveQueryContestedStatus::NotContested
+                                        }
+                                    } else {
+                                        SingleDocumentDriveQueryContestedStatus::NotContested
+                                    };
 
-                        let query = SingleDocumentDriveQuery {
-                            contract_id: document_transition.data_contract_id().into_buffer(),
-                            document_type_name: document_transition.document_type_name().clone(),
-                            document_type_keeps_history: document_type.documents_keep_history(),
-                            document_id: document_transition.base().id().into_buffer(),
-                            block_time_ms: None, //None because we want latest
-                            contested_status,
-                        };
+                                let query = SingleDocumentDriveQuery {
+                                    contract_id: document_transition
+                                        .data_contract_id()
+                                        .into_buffer(),
+                                    document_type_name: document_transition
+                                        .document_type_name()
+                                        .clone(),
+                                    document_type_keeps_history: document_type
+                                        .documents_keep_history(),
+                                    document_id: document_transition.base().id().into_buffer(),
+                                    block_time_ms: None, //None because we want latest
+                                    contested_status,
+                                };
 
-                        let mut path_query = query.construct_path_query(platform_version)?;
-                        path_query.query.limit = None;
-                        path_query
+                                let mut path_query =
+                                    query.construct_path_query(platform_version)?;
+                                path_query.query.limit = None;
+                                path_query
+                            }
+                        }
                     }
                     BatchedTransitionRef::Token(token_transition) => {
                         let data_contract_id = token_transition.data_contract_id();

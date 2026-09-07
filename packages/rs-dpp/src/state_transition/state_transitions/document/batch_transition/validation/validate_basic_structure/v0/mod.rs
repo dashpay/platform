@@ -2,7 +2,9 @@ use crate::consensus::basic::document::{
     DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
     MaxDocumentsTransitionsExceededError, NonceOutOfBoundsError,
 };
+use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::BasicError;
+use crate::state_transition::batch_transition::batched_transition::DocumentIndexOnlyDeleteTransition;
 
 use crate::identity::identity_nonce::MISSING_IDENTITY_REVISIONS_FILTER;
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -101,6 +103,43 @@ impl BatchTransition {
                     result.add_error(BasicError::NonceOutOfBoundsError(
                         NonceOutOfBoundsError::new(transition.identity_contract_nonce()),
                     ));
+                }
+
+                // The indexOnlyDelete kind joined the wire at PV14. Old
+                // software cannot decode it at all, so no historical block
+                // can contain one — this check exists so that NEW software
+                // agrees with old software while a pre-PV14 protocol
+                // version is still active: without it, an indexOnly delete
+                // submitted at PV13 would decode fine here while being
+                // undecodable on 4.1 nodes.
+                if let DocumentTransition::IndexOnlyDelete(index_only_delete) = transition {
+                    let feature_version = match index_only_delete {
+                        DocumentIndexOnlyDeleteTransition::V0(_) => 0,
+                    };
+                    match &platform_version
+                        .dpp
+                        .state_transition_serialization_versions
+                        .document_index_only_delete_state_transition
+                    {
+                        None => {
+                            // The kind does not exist at this protocol
+                            // version; the empty supported range (min 1,
+                            // max 0) states exactly that.
+                            result.add_error(BasicError::UnsupportedVersionError(
+                                UnsupportedVersionError::new(feature_version, 1, 0),
+                            ));
+                        }
+                        Some(bounds) if !bounds.bounds.check_version(feature_version) => {
+                            result.add_error(BasicError::UnsupportedVersionError(
+                                UnsupportedVersionError::new(
+                                    feature_version,
+                                    bounds.bounds.min_version,
+                                    bounds.bounds.max_version,
+                                ),
+                            ));
+                        }
+                        Some(_) => {}
+                    }
                 }
             }
 
@@ -287,6 +326,57 @@ mod tests {
             signature_public_key_id: 0,
             signature: BinaryData::default(),
         })
+    }
+
+    // -----------------------------------------------------------------------
+    // indexOnlyDelete (delete-by-values kind) wire gate
+    // -----------------------------------------------------------------------
+
+    /// An indexOnlyDelete transition cannot decode at all on pre-4.2
+    /// software, so blocks never contain one below PV14 — this check is
+    /// what keeps NEW software agreeing with old software at check_tx
+    /// while an earlier protocol version is still active. Admitted at PV14
+    /// (`document_index_only_delete_state_transition` is `Some` in
+    /// STATE_TRANSITION_SERIALIZATION_VERSIONS_V3), rejected below (where
+    /// the kind's table entry is `None`).
+    #[test]
+    fn validate_base_structure_v0_gates_index_only_delete_by_protocol_version() {
+        use crate::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::DocumentIndexOnlyDeleteTransitionV0;
+
+        let index_only_delete = DocumentTransition::IndexOnlyDelete(
+            DocumentIndexOnlyDeleteTransition::V0(DocumentIndexOnlyDeleteTransitionV0 {
+                base: make_base(1, "like"),
+                data: Default::default(),
+            }),
+        );
+
+        let batch = make_batch_v0(vec![index_only_delete]);
+
+        let pv13 = PlatformVersion::get(13).expect("PV13 exists");
+        let result = batch
+            .validate_base_structure_v0(pv13)
+            .expect("no protocol err");
+        assert!(
+            result.errors.iter().any(|error| matches!(
+                error,
+                ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+            )),
+            "PV13 must reject an indexOnly delete as an unsupported version, got {:?}",
+            result.errors
+        );
+
+        let pv14 = PlatformVersion::get(14).expect("PV14 exists");
+        let result = batch
+            .validate_base_structure_v0(pv14)
+            .expect("no protocol err");
+        assert!(
+            !result.errors.iter().any(|error| matches!(
+                error,
+                ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+            )),
+            "PV14 must admit an indexOnly delete, got {:?}",
+            result.errors
+        );
     }
 
     // -----------------------------------------------------------------------

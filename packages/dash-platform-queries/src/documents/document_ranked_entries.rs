@@ -18,13 +18,19 @@
 //!
 //! Exactly one aggregate `select`, exactly one `group_by` property,
 //! exactly one `ORDER BY` clause naming that select's aggregate, and a
-//! `LIMIT` — plus an optional `OFFSET`. `where` clauses are equality
-//! pins on a covering compound ranked index's leading properties (one
-//! per leading property, selecting which prefix's own ranking the walk
-//! reads) — absent for a single-property index. No `having`, no
-//! `start_at`: each of those is rejected rather than ignored, on both
-//! sides, because a ranked walk cannot honour them and silently
-//! answering a different question is worse than an error.
+//! `LIMIT` — plus an optional `OFFSET`. `where` clauses are pins on a
+//! covering compound ranked index's leading properties (one per leading
+//! property, selecting which prefix's own ranking the walk reads) —
+//! absent for a single-property index. Each pin is an equality, except
+//! that **at most one** may be an `IN` of 2..=10 distinct elements: one
+//! walk per element, merged by `(aggregate, encoded pin, group key)`,
+//! with each merged entry carrying the encoded branch segment in
+//! `in_key` (unset on single-branch responses; a single-element `IN`
+//! normalizes to the equality pin). A non-zero `OFFSET` cannot combine
+//! with the `IN`, nor can a `null` pin on another property. No
+//! `having`, no `start_at`: each of those is rejected rather than
+//! ignored, on both sides, because a ranked walk cannot honour them and
+//! silently answering a different question is worse than an error.
 //!
 //! [`DocumentQuery::order_by_selected_aggregate`] builds the ordering
 //! clause, deriving the ordered field from the `select` through
@@ -37,8 +43,9 @@
 //! The index must opt in with `rankedCountable` / `rankedSummable` /
 //! `rankedAverageable` (meta-schema v3, **protocol version 14+**). The
 //! index may be single-property (`group_by` its property, no `where`)
-//! or compound (`group_by` its trailing property, equality-pin every
-//! leading one). Against a protocol-version-13
+//! or compound (`group_by` its trailing property, pin every leading one
+//! — equality pins, at most one of them an `IN`, as above). Against a
+//! protocol-version-13
 //! node the request is refused — v13's query table has no ranked path
 //! and rejects the ordering as `Unsupported`. That is the intended
 //! activation gate, not a bug: a v13 node and a v14 node must disagree
@@ -340,9 +347,11 @@ mod tests {
     }
 
     /// An offset far past any plausible population is **not** capped:
-    /// grovedb attests the skipped region from counted commitments
-    /// rather than walking it, so a deep page costs what a shallow one
-    /// does and there is nothing for a cap to protect.
+    /// grovedb counts the skipped region from the subtree aggregates
+    /// rather than walking it, on both `prove` settings, so the cost of
+    /// a deep page does not grow with the offset — `O(log n)` in the
+    /// size of the ranking, not in how far you page — and there is
+    /// nothing for a cap to protect.
     #[test]
     fn a_very_deep_offset_is_not_capped() {
         let query = top_five_by_avg_grade().with_limit(1).with_offset(u32::MAX);
@@ -492,9 +501,9 @@ mod tests {
     }
 
     /// The ranking's `n` rides `limit`, and an out-of-range one is
-    /// rejected rather than clamped: `k` is echoed inside the proof
-    /// envelope and re-checked by the verifier, so a silent clamp would
-    /// produce a proof the client's own reconstruction rejects.
+    /// rejected rather than clamped: `k` is part of the traversal the
+    /// client rebuilds to verify, so a silent clamp would produce a
+    /// page the client's reconstruction did not ask for.
     #[test]
     fn assert_ranked_shape_rejects_an_out_of_range_limit() {
         // `0` is `DocumentQuery`'s "unset" sentinel, and a ranking with

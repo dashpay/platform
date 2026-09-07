@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import tls from 'node:tls';
 import { Listr } from 'listr2';
@@ -10,8 +11,10 @@ import { SEVERITY } from '../../../../../src/doctor/Prescription.js';
 import Samples from '../../../../../src/doctor/Samples.js';
 import collectSamplesTaskFactory from '../../../../../src/listr/tasks/doctor/collectSamplesTaskFactory.js';
 import Certificate from '../../../../../src/ssl/zerossl/Certificate.js';
+import checkGatewayCertificateFactory from '../../../../../src/ssl/checkGatewayCertificateFactory.js';
 import validateZeroSslCertificateFactory, { ERRORS as ZEROSSL_ERRORS } from '../../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 import providers from '../../../../../src/status/providers.js';
+import RenewalRecordRepository from '../../../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
 
 const EXTERNAL_IP = '198.51.100.7';
 
@@ -47,6 +50,9 @@ describe('collectSamplesTaskFactory', () => {
   let collectSamplesTask;
   let analyseConfig;
   let samples;
+  let dockerCompose;
+  let rpcClient;
+  let originalUser;
 
   /**
    * Run the sample collection the same way the doctor command does: as a subtask
@@ -64,6 +70,7 @@ describe('collectSamplesTaskFactory', () => {
   }
 
   beforeEach(function beforeEach() {
+    originalUser = process.env.USER;
     homeDir = HomeDir.createTemp();
 
     config = getBaseConfigFactory()();
@@ -92,13 +99,13 @@ describe('collectSamplesTaskFactory', () => {
       text: async () => 'metrics_sample 1',
     });
 
-    const dockerCompose = {
+    dockerCompose = {
       throwErrorIfNotInstalled: this.sinon.stub().resolves(),
       inspectService: this.sinon.stub().resolves({}),
       logs: this.sinon.stub().resolves({ out: '', err: '' }),
     };
 
-    const rpcClient = {
+    rpcClient = {
       getBestChainLock: this.sinon.stub().resolves({ result: {} }),
       quorum: this.sinon.stub().resolves({ result: {} }),
       getBlockchainInfo: this.sinon.stub().resolves({ result: {} }),
@@ -117,6 +124,8 @@ describe('collectSamplesTaskFactory', () => {
       homeDir,
       validateZeroSslCertificateFactory(homeDir, getCertificate),
       this.sinon.stub().resolves({}),
+      checkGatewayCertificateFactory(homeDir),
+      new RenewalRecordRepository(homeDir),
     );
 
     analyseConfig = analyseConfigFactory();
@@ -126,6 +135,14 @@ describe('collectSamplesTaskFactory', () => {
 
   afterEach(() => {
     homeDir.remove();
+
+    // The masking cases below mutate and delete USER, and one of them leaves it
+    // deleted for every later test in the process otherwise.
+    if (originalUser === undefined) {
+      delete process.env.USER;
+    } else {
+      process.env.USER = originalUser;
+    }
   });
 
   it('should report a problem for a ZeroSSL certificate that expired months ago', async () => {
@@ -167,6 +184,116 @@ describe('collectSamplesTaskFactory', () => {
     expect(samples.getServiceInfo('gateway', 'ssl').error).to.be.undefined();
 
     expect(analyseConfig(samples)).to.be.empty();
+  });
+
+  // Doctor archives are the artefact operators hand to support, and a
+  // certificate problem names the file it could not read - an absolute path
+  // under the operator's home directory. Every neighbouring certificate branch
+  // masks the username before storing; this one has to as well.
+  // Read from the operating system rather than the environment, because the
+  // point of the test is that masking still happens when the environment does
+  // not say who is running.
+  const operator = os.userInfo().username;
+
+  [
+    ['with USER set', operator],
+    ['with USER unset', undefined],
+  ].forEach(([name, userValue]) => {
+    it(`should not put the operator's username in a shared archive, ${name}`, async function it() {
+      if (userValue === undefined) {
+        delete process.env.USER;
+      } else {
+        process.env.USER = userValue;
+      }
+
+      const leakyPath = `/Users/${operator}/.dashmate/base/platform/gateway/ssl/bundle.crt`;
+
+      const task = collectSamplesTaskFactory(
+        dockerCompose,
+        this.sinon.stub().returns(rpcClient),
+        this.sinon.stub().resolves('127.0.0.1'),
+        this.sinon.stub().returns({ request: this.sinon.stub().resolves({}) }),
+        this.sinon.stub().resolves([]),
+        this.sinon.stub().resolves({}),
+        homeDir,
+        validateZeroSslCertificateFactory(homeDir, getCertificate),
+        this.sinon.stub().resolves({}),
+        () => ({
+          status: 'INVALID',
+          reasons: [{
+            code: 'BUNDLE_MISSING',
+            message: `dashmate could not find the certificate bundle at ${leakyPath}`,
+          }],
+          warnings: [],
+          skipped: [],
+          provider: 'zerossl',
+          installed: null,
+          expiresInDays: null,
+        }),
+        new RenewalRecordRepository(homeDir),
+      );
+
+      getCertificate.resolves(new Certificate({
+        id: 'certificate-id',
+        common_name: EXTERNAL_IP,
+        status: 'issued',
+        created: toZeroSslDate(daysFromNow(-1)),
+        expires: toZeroSslDate(daysFromNow(89)),
+      }));
+
+      await new Listr([{ task: () => task(config) }], { renderer: 'silent' }).run({ samples });
+
+      const serialised = JSON.stringify(samples.getServiceInfo('gateway', 'installedCertificate'));
+
+      // The path is still there - it is what makes the problem actionable - but
+      // the name in it is not.
+      expect(serialised).to.contain('bundle.crt');
+      expect(serialised).to.not.contain(operator);
+    });
+  });
+
+  // Doctor will only advise loading the file over a working served certificate
+  // when the checks that judged the file describe the same file the probe
+  // measured. The two fingerprints come from different selectors - the probe
+  // takes the first non-CA block, the checks take the block matching the
+  // private key - so that they agree for an ordinary pair is a property worth
+  // holding, not an assumption. If it ever stops holding the advice silently
+  // stops being given.
+  it('should record the same certificate in the verdict and the wire sample', async () => {
+    const { cert, key } = createCertificateForTest({ ip: EXTERNAL_IP, days: 30 });
+    const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+
+    fs.writeFileSync(path.join(sslDir, 'bundle.crt'), cert, 'utf8');
+    fs.writeFileSync(path.join(sslDir, 'private.key'), key, 'utf8');
+
+    const server = tls.createServer({ cert, key }, (socket) => socket.end());
+    const liveSockets = [];
+    server.on('secureConnection', (socket) => liveSockets.push(socket));
+
+    await new Promise((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+
+    config.set('platform.gateway.listeners.dapiAndDrive.port', server.address().port);
+
+    getCertificate.resolves(new Certificate({
+      id: 'certificate-id',
+      common_name: EXTERNAL_IP,
+      status: 'issued',
+      created: toZeroSslDate(daysFromNow(-1)),
+      expires: toZeroSslDate(daysFromNow(89)),
+    }));
+
+    try {
+      await collectSamples();
+    } finally {
+      liveSockets.forEach((socket) => socket.destroy());
+      await new Promise((resolve) => { server.close(resolve); });
+    }
+
+    const installed = samples.getServiceInfo('gateway', 'installedCertificate');
+    const servedSample = samples.getServiceInfo('gateway', 'servedCertificate');
+
+    expect(installed.fingerprint256).to.be.a('string');
+    expect(servedSample.onDisk.fingerprint256).to.equal(installed.fingerprint256);
   });
 
   it('should collect the certificate the gateway actually serves', async () => {

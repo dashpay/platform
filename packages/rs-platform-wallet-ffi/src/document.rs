@@ -532,6 +532,7 @@ mod tests {
         );
 
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: Identifier::from([1u8; 32]),
             owner_id: Identifier::from([2u8; 32]),
             properties,

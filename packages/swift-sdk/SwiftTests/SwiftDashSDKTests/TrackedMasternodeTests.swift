@@ -49,4 +49,46 @@ final class TrackedMasternodeTests: XCTestCase {
         XCTAssertEqual(rows.count, 2, "the same proTxHash may be tracked on both networks")
         XCTAssertEqual(Set(rows.compactMap(\.network)), [.mainnet, .testnet])
     }
+
+    @MainActor
+    func testTrackedWritesCommitOutsideAndSurviveChangesetRollback() throws {
+        let container = try ModelContainer(
+            for: PersistentTrackedMasternode.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container, network: .testnet)
+        let walletId = Data(repeating: 1, count: 32)
+        let hash = Data(repeating: 9, count: 32)
+        let row = PlatformWalletPersistenceHandler.TrackedMasternodeRow(
+            proTxHash: hash,
+            label: "survives",
+            addedAt: 42,
+            snapshotJSON: #"{"v":1}"#)
+
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertTrue(handler.persistTrackedMasternodes(
+            networkRaw: Network.testnet.rawValue,
+            rows: [row]))
+        XCTAssertFalse(handler.endChangeset(walletId: walletId, success: false))
+
+        var verificationContext = ModelContext(container)
+        var persisted = try verificationContext.fetch(
+            FetchDescriptor<PersistentTrackedMasternode>())
+        XCTAssertEqual(persisted.count, 1)
+        XCTAssertEqual(persisted.first?.proTxHash, hash)
+        XCTAssertEqual(persisted.first?.label, "survives")
+
+        // Whole-set removal has the same independent durability guarantee.
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertTrue(handler.persistTrackedMasternodes(
+            networkRaw: Network.testnet.rawValue,
+            rows: []))
+        XCTAssertFalse(handler.endChangeset(walletId: walletId, success: false))
+
+        verificationContext = ModelContext(container)
+        persisted = try verificationContext.fetch(
+            FetchDescriptor<PersistentTrackedMasternode>())
+        XCTAssertTrue(persisted.isEmpty)
+    }
+
 }

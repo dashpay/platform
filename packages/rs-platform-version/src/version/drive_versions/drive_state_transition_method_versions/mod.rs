@@ -1,6 +1,7 @@
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 use crate::version::drive_versions::DriveDataContractOperationMethodVersions;
 use versioned_feature_core::FeatureVersion;
@@ -10,6 +11,18 @@ pub struct DriveStateTransitionMethodVersions {
     pub operations: DriveStateTransitionOperationMethodVersions,
     pub convert_to_high_level_operations:
         DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions,
+    pub document_from_action: DriveDocumentFromActionVersions,
+}
+
+/// Versions of the action → `Document` conversions. Generation 1 stamps the
+/// built document with the data contract version its bytes conform to
+/// (create assigns, replace re-assigns); it must only be selected by
+/// platform versions whose document serialization format writes the stamp
+/// (format 3, protocol v14+).
+#[derive(Clone, Debug, Default)]
+pub struct DriveDocumentFromActionVersions {
+    pub document_from_create_transition_action: FeatureVersion,
+    pub document_from_replace_transition_action: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -18,6 +31,7 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub data_contract_update_transition: FeatureVersion,
     pub document_create_transition: FeatureVersion,
     pub document_delete_transition: FeatureVersion,
+    pub document_index_only_delete_transition: FeatureVersion,
     pub document_purchase_transition: FeatureVersion,
     pub document_replace_transition: FeatureVersion,
     pub document_transfer_transition: FeatureVersion,

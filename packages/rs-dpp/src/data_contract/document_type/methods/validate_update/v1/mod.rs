@@ -20,7 +20,9 @@
 //! was always rejected by the `indices` schema-compatibility hard error) —
 //! it makes the rejection deterministic, clean, and correctly labeled.
 
-use crate::consensus::basic::data_contract::DataContractInvalidIndexDefinitionUpdateError;
+use crate::consensus::basic::data_contract::{
+    DataContractInvalidIndexDefinitionUpdateError, DataContractInvalidRequiredFieldsUpdateError,
+};
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::validation::SimpleConsensusValidationResult;
@@ -32,6 +34,7 @@ impl DocumentTypeRef<'_> {
     pub(super) fn validate_update_v1(
         &self,
         new_document_type: DocumentTypeRef,
+        new_contract_version: u32,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // Validate configuration
@@ -55,8 +58,100 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
+        // Validate required-field changes (the schema compatibility differ
+        // has the top-level `required` key stripped, so this is the only
+        // place top-level requiredness changes are judged)
+        let result = self.validate_required_fields_update(new_document_type, new_contract_version);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         // Validate schema compatibility
         self.validate_schema(new_document_type, platform_version)
+    }
+
+    /// Top-level requiredness may only change in one way: a brand-new
+    /// property may be added as required when it is annotated with
+    /// `requiredSince` equal to the contract version this update creates.
+    /// Everything else is frozen: requiredness is baked into the document
+    /// wire format (required properties serialize without a presence flag),
+    /// and the per-document contract-version stamp resolves layouts from the
+    /// latest schema alone only if annotations never change retroactively.
+    ///
+    /// Nested (dotted) required paths and the `requiredSince` keyword on
+    /// existing properties stay frozen by the schema compatibility differ;
+    /// this check judges the top-level `required` key, which is stripped
+    /// from the diff exactly like `indices`.
+    fn validate_required_fields_update(
+        &self,
+        new_document_type: DocumentTypeRef,
+        new_contract_version: u32,
+    ) -> SimpleConsensusValidationResult {
+        let old_required = self.required_fields();
+        let new_required = new_document_type.required_fields();
+
+        for name in old_required {
+            // Nested paths are governed by the schema compatibility differ
+            if name.contains('.') {
+                continue;
+            }
+            if !new_required.contains(name) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractInvalidRequiredFieldsUpdateError::new(
+                        self.name().to_string(),
+                        format!("removed required field '{name}'"),
+                    )
+                    .into(),
+                );
+            }
+        }
+
+        for name in new_required {
+            if name.contains('.') || old_required.contains(name) {
+                continue;
+            }
+            if name.starts_with('$') {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractInvalidRequiredFieldsUpdateError::new(
+                        self.name().to_string(),
+                        format!("system field '{name}' cannot become required"),
+                    )
+                    .into(),
+                );
+            }
+            if self.properties().contains_key(name) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractInvalidRequiredFieldsUpdateError::new(
+                        self.name().to_string(),
+                        format!("existing property '{name}' cannot become required"),
+                    )
+                    .into(),
+                );
+            }
+            let Some(new_property) = new_document_type.properties().get(name) else {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractInvalidRequiredFieldsUpdateError::new(
+                        self.name().to_string(),
+                        format!("added required field '{name}' references an unknown property"),
+                    )
+                    .into(),
+                );
+            };
+            if new_property.required_since != Some(new_contract_version) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractInvalidRequiredFieldsUpdateError::new(
+                        self.name().to_string(),
+                        format!(
+                            "new required field '{name}' must carry requiredSince {new_contract_version}, the contract version this update creates"
+                        ),
+                    )
+                    .into(),
+                );
+            }
+        }
+
+        SimpleConsensusValidationResult::new()
     }
 
     /// Index definitions are immutable once a document type is registered:
@@ -196,7 +291,7 @@ mod tests {
 
         let early_result = old
             .as_ref()
-            .validate_update(new_early_name.as_ref(), platform_version)
+            .validate_update(new_early_name.as_ref(), 2, platform_version)
             .expect("validate_update should not error");
 
         assert_matches!(
@@ -208,7 +303,7 @@ mod tests {
 
         let late_result = old
             .as_ref()
-            .validate_update(new_late_name.as_ref(), platform_version)
+            .validate_update(new_late_name.as_ref(), 2, platform_version)
             .expect("validate_update should not error");
 
         assert_matches!(
@@ -242,7 +337,7 @@ mod tests {
 
         let result = old
             .as_ref()
-            .validate_update(new.as_ref(), platform_version)
+            .validate_update(new.as_ref(), 2, platform_version)
             .expect("validate_update should not error");
 
         assert_matches!(
@@ -268,7 +363,7 @@ mod tests {
 
         let result = old
             .as_ref()
-            .validate_update(new.as_ref(), platform_version)
+            .validate_update(new.as_ref(), 2, platform_version)
             .expect("validate_update should not error");
 
         assert_matches!(
@@ -295,7 +390,7 @@ mod tests {
 
         let result = old
             .as_ref()
-            .validate_update(new.as_ref(), platform_version)
+            .validate_update(new.as_ref(), 2, platform_version)
             .expect("validate_update should not error");
 
         assert_matches!(
@@ -325,7 +420,7 @@ mod tests {
 
         let result = old
             .as_ref()
-            .validate_update(new.as_ref(), platform_version)
+            .validate_update(new.as_ref(), 2, platform_version)
             .expect("validate_update should not error");
 
         assert_matches!(
@@ -359,7 +454,7 @@ mod tests {
 
         let result = old
             .as_ref()
-            .validate_update(new.as_ref(), platform_version)
+            .validate_update(new.as_ref(), 2, platform_version)
             .expect("validate_update should not error");
 
         assert!(
@@ -378,7 +473,7 @@ mod tests {
 
         let result = old
             .as_ref()
-            .validate_update(new.as_ref(), platform_version)
+            .validate_update(new.as_ref(), 2, platform_version)
             .expect("validate_update should not error");
 
         assert!(
@@ -465,7 +560,7 @@ mod tests {
 
             let result = old
                 .as_ref()
-                .validate_update(new.as_ref(), platform_version)
+                .validate_update(new.as_ref(), 2, platform_version)
                 .expect("validate_update should not error");
 
             assert_matches!(
@@ -484,13 +579,248 @@ mod tests {
 
             let result = old
                 .as_ref()
-                .validate_update(new.as_ref(), platform_version)
+                .validate_update(new.as_ref(), 2, platform_version)
                 .expect("validate_update should not error");
 
             assert!(
                 result.is_valid(),
                 "an unchanged ranked index must not be rejected, got {:?}",
                 result.errors
+            );
+        }
+    }
+
+    // ================================================================
+    //  Required-field updates (`requiredSince`)
+    // ================================================================
+
+    mod required_fields_update {
+        use super::*;
+
+        fn doc_type_with(
+            properties: Value,
+            required: Value,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let schema = platform_value!({
+                "type": "object",
+                "properties": properties,
+                "required": required,
+                "additionalProperties": false,
+            });
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+            DocumentType::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        fn old_doc_type(platform_version: &PlatformVersion) -> DocumentType {
+            doc_type_with(
+                platform_value!({
+                    "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                }),
+                platform_value!(["a"]),
+                platform_version,
+            )
+        }
+
+        #[test]
+        fn should_allow_adding_new_required_property_with_correct_required_since() {
+            let platform_version = PlatformVersion::latest();
+
+            let old = old_doc_type(platform_version);
+            let new = doc_type_with(
+                platform_value!({
+                    "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                    "b": {"type": "string", "position": 1, "maxLength": 60_u32, "requiredSince": 2},
+                }),
+                platform_value!(["a", "b"]),
+                platform_version,
+            );
+
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+
+            assert!(
+                result.is_valid(),
+                "a new required property annotated with the version this \
+                 update creates must be accepted, got {:?}",
+                result.errors
+            );
+        }
+
+        #[test]
+        fn should_reject_new_required_property_with_retroactive_required_since() {
+            let platform_version = PlatformVersion::latest();
+
+            let old = old_doc_type(platform_version);
+            // Contract moving to version 3, but the annotation claims 2:
+            // documents stamped 2 would misparse
+            let new = doc_type_with(
+                platform_value!({
+                    "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                    "b": {"type": "string", "position": 1, "maxLength": 60_u32, "requiredSince": 2},
+                }),
+                platform_value!(["a", "b"]),
+                platform_version,
+            );
+
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), 3, platform_version)
+                .expect("validate_update should not error");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
+                )] if e.details().contains("must carry requiredSince 3")
+            );
+        }
+
+        #[test]
+        fn should_reject_new_required_property_without_required_since() {
+            let platform_version = PlatformVersion::latest();
+
+            let old = old_doc_type(platform_version);
+            let new = doc_type_with(
+                platform_value!({
+                    "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                    "b": {"type": "string", "position": 1, "maxLength": 60_u32},
+                }),
+                platform_value!(["a", "b"]),
+                platform_version,
+            );
+
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
+                )] if e.details().contains("must carry requiredSince 2")
+            );
+        }
+
+        #[test]
+        fn should_reject_promoting_existing_property_to_required() {
+            let platform_version = PlatformVersion::latest();
+
+            let old = doc_type_with(
+                platform_value!({
+                    "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                    "b": {"type": "string", "position": 1, "maxLength": 60_u32},
+                }),
+                platform_value!(["a"]),
+                platform_version,
+            );
+            let new = doc_type_with(
+                platform_value!({
+                    "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                    "b": {"type": "string", "position": 1, "maxLength": 60_u32},
+                }),
+                platform_value!(["a", "b"]),
+                platform_version,
+            );
+
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
+                )] if e.details() == "existing property 'b' cannot become required"
+            );
+        }
+
+        #[test]
+        fn should_reject_removing_required_field() {
+            let platform_version = PlatformVersion::latest();
+
+            let old = doc_type_with(
+                platform_value!({
+                    "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                    "b": {"type": "string", "position": 1, "maxLength": 60_u32},
+                }),
+                platform_value!(["a", "b"]),
+                platform_version,
+            );
+            let new = doc_type_with(
+                platform_value!({
+                    "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                    "b": {"type": "string", "position": 1, "maxLength": 60_u32},
+                }),
+                platform_value!(["a"]),
+                platform_version,
+            );
+
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
+                )] if e.details() == "removed required field 'b'"
+            );
+        }
+
+        #[test]
+        fn should_reject_mutating_required_since_on_existing_property() {
+            let platform_version = PlatformVersion::latest();
+
+            // The property was added as required at version 2; a later
+            // update must not move the annotation. This is caught by the
+            // compatibility differ's frozen `requiredSince` rule.
+            let old = doc_type_with(
+                platform_value!({
+                    "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                    "b": {"type": "string", "position": 1, "maxLength": 60_u32, "requiredSince": 2},
+                }),
+                platform_value!(["a", "b"]),
+                platform_version,
+            );
+            let new = doc_type_with(
+                platform_value!({
+                    "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                    "b": {"type": "string", "position": 1, "maxLength": 60_u32, "requiredSince": 3},
+                }),
+                platform_value!(["a", "b"]),
+                platform_version,
+            );
+
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), 3, platform_version)
+                .expect("validate_update should not error");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::IncompatibleDocumentTypeSchemaError(e)
+                )] if e.operation() == "replace" && e.property_path() == "/properties/b/requiredSince"
             );
         }
     }

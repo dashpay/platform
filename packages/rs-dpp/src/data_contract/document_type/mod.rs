@@ -16,6 +16,8 @@ pub mod restricted_creation;
 pub mod schema;
 
 mod token_costs;
+mod validate_required_since_within_contract_version;
+pub(crate) use validate_required_since_within_contract_version::validate_required_since_within_contract_version;
 pub mod v0;
 pub mod v1;
 pub mod v2;
@@ -39,6 +41,9 @@ pub const DEFAULT_FLOAT_SIZE: usize = 8;
 pub const EMPTY_TREE_STORAGE_SIZE: usize = 33;
 pub const MAX_INDEX_SIZE: usize = 255;
 pub const STORAGE_FLAGS_SIZE: usize = 2;
+/// Worst-case byte length of the contract-version stamp written by document
+/// serialization format 3: a u32 varint.
+pub const CONTRACT_VERSION_STAMP_MAX_SIZE: u16 = 5;
 
 pub(crate) mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
@@ -62,6 +67,7 @@ pub(crate) mod property_names {
     pub const PROPERTIES: &str = "properties";
     pub const POSITION: &str = "position";
     pub const REQUIRED: &str = "required";
+    pub const REQUIRED_SINCE: &str = "requiredSince";
     pub const TRANSIENT: &str = "transient";
     pub const TYPE: &str = "type";
     pub const REF: &str = "$ref";
@@ -83,6 +89,7 @@ pub(crate) mod property_names {
     pub const CONTRACT_ID: &str = "contractId";
     pub const DOCUMENT_TYPE: &str = "documentType";
     pub const KEY_ID_PROPERTY: &str = "keyIdProperty";
+    pub const PROPERTY_AGREEMENT: &str = "propertyAgreement";
     pub const DOCUMENTS_COUNTABLE: &str = "documentsCountable";
     pub const RANGE_COUNTABLE: &str = "rangeCountable";
     /// Doctype-level flag naming the property whose values are summed into
@@ -111,6 +118,14 @@ pub(crate) mod property_names {
     /// to be set (parallels the count/sum-individually rules: range
     /// axes require the corresponding base flag).
     pub const RANGE_AVERAGEABLE: &str = "rangeAverageable";
+    /// Doctype-level flag declaring an **indexOnly** document type: documents
+    /// are never written to primary storage — the index entries are the rows,
+    /// each terminating in an `Item` keyed by the index's `terminal` property
+    /// instead of a `Reference` keyed by the document id. Only what is in the
+    /// indexes exists and is recoverable. Meta-schema v3+ (protocol version
+    /// 14). See `apply_index_only` in `try_from_schema::common` for the
+    /// structural constraints the flag imposes.
+    pub const INDEX_ONLY: &str = "indexOnly";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

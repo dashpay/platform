@@ -33,21 +33,42 @@ class AssetLockDisplayTest {
     )
 
     @Test
-    fun `isVisibleAsResumable is true only for statusRaw 1 through 3`() {
+    fun `isVisibleAsResumable covers 1 through 3 plus RecoveredFromChain`() {
         assertFalse(lock(0).isVisibleAsResumable) // Built
         assertTrue(lock(1).isVisibleAsResumable) // Broadcast
         assertTrue(lock(2).isVisibleAsResumable) // InstantSendLocked
         assertTrue(lock(3).isVisibleAsResumable) // ChainLocked
         assertFalse(lock(4).isVisibleAsResumable) // Consumed
+        assertTrue(lock(5).isVisibleAsResumable) // RecoveredFromChain
     }
 
+    /**
+     * The exclusion of `4` is by NAME, not by an upper bound — `5` sits
+     * above it numerically and is resumable. A `statusRaw <= 3` bound reads
+     * as equivalent and silently hides every restored lock.
+     */
     @Test
-    fun `canFundIdentity is true only for statusRaw 2 or 3`() {
+    fun `isVisibleAsResumable excludes Consumed without bounding above it`() {
+        assertFalse(lock(4).isVisibleAsResumable)
+        assertTrue(lock(5).isVisibleAsResumable)
+    }
+
+    /**
+     * RecoveredFromChain (5) is FUNDABLE. The restore scan and the
+     * chainlock-promotion path attach a real `ChainAssetLockProof` before
+     * writing it, so Core-side finality is proven — treating it as
+     * not-yet-final routed the row into the "waiting for InstantSend /
+     * ChainLock finality" copy and told the user to wait for something that
+     * had already happened.
+     */
+    @Test
+    fun `canFundIdentity covers 2, 3 and RecoveredFromChain`() {
         assertFalse(lock(0).canFundIdentity)
         assertFalse(lock(1).canFundIdentity)
         assertTrue(lock(2).canFundIdentity)
         assertTrue(lock(3).canFundIdentity)
         assertFalse(lock(4).canFundIdentity)
+        assertTrue(lock(5).canFundIdentity)
     }
 
     @Test
@@ -57,6 +78,8 @@ class AssetLockDisplayTest {
         assertEquals("InstantSendLocked", lock(2).statusLabel)
         assertEquals("ChainLocked", lock(3).statusLabel)
         assertEquals("Consumed", lock(4).statusLabel)
+        // Regression: rendered as "Unknown(5)" before the branch existed.
+        assertEquals("RecoveredFromChain", lock(5).statusLabel)
         assertEquals("Unknown(7)", lock(7).statusLabel)
     }
 

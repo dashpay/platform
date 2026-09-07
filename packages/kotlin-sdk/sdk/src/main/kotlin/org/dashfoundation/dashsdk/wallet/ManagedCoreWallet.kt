@@ -27,14 +27,67 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
             check(it != 0L) { "ManagedCoreWallet has been closed" }
         }
 
-    /** Consume and broadcast a finalized transaction. */
-    fun broadcastTransaction(tx: FinalizedCoreTransaction): String =
+    /**
+     * Widen [accountType]/[accountIndex]'s address-pool gap limit,
+     * deriving the addresses the wider limit requires (Rust caps at
+     * 1000). Use when the seed's usage frontier moved outside the SDK's
+     * watched window — e.g. a migrated wallet whose other client (dashj)
+     * kept spending — then re-scan so the newly watched scripts match
+     * their history.
+     */
+    fun setGapLimit(
+        accountType: CoreTransactionBuilder.AccountType,
+        accountIndex: Int,
+        gapLimit: Int,
+    ): Unit = mapNativeErrors {
+        WalletManagerNative.coreWalletSetGapLimit(
+            handle,
+            accountType.ffiValue,
+            accountIndex,
+            gapLimit,
+        )
+    }
+
+    /**
+     * Consume and broadcast a finalized transaction. A handle held past the
+     * reservation age bound throws the typed
+     * [StaleReservationToken][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken]
+     * (native code 34, shared with the deferred-token surface) instead of
+     * broadcasting against inputs key-wallet's TTL may have re-selected.
+     *
+     * On that refusal the handle has **already been consumed** by this call and
+     * its funding reservation released owner-guarded (freed only while this
+     * build still owned it; a no-op once a TTL sweep or re-reservation
+     * transferred ownership). This call consumes the Kotlin-side handle up
+     * front (on EVERY outcome, success included), so a follow-up
+     * [abandonTransaction] fails locally with [IllegalStateException] because
+     * [FinalizedCoreTransaction] has already been consumed; it never re-enters
+     * native code and is not a recovery path — there is nothing left to
+     * release. Recover by rebuilding the transaction, which can reselect the
+     * freed inputs immediately.
+     */
+    fun broadcastTransaction(tx: FinalizedCoreTransaction): String = mapNativeErrors {
         WalletManagerNative.coreWalletBroadcastSignedTransaction(
             handle,
             tx.takeForBroadcast(),
         )
+    }
 
-    /** Consume without sending and release the selected inputs immediately. */
+    /**
+     * Consume a finalized transaction without sending. With the build's owner
+     * token present (the normal funded-finalize case) the release is
+     * owner-guarded and safe at any age: it frees the selected inputs while
+     * this build still owns them — so a rebuild can reselect them immediately —
+     * and no-ops once key-wallet's TTL sweep or a re-reservation transferred
+     * ownership. Only a token-less handle honours the reservation age bound and
+     * skips its unguarded by-outpoint release past it (releasing by outpoint
+     * could free a newer build's reservation), leaving the aged reservation for
+     * the TTL to reclaim. The handle is torn down either way.
+     *
+     * Consumes the Kotlin-side handle: calling this (or [broadcastTransaction])
+     * on an already-consumed [FinalizedCoreTransaction] fails locally with
+     * [IllegalStateException] before any native code runs.
+     */
     fun abandonTransaction(tx: FinalizedCoreTransaction) {
         WalletManagerNative.coreWalletAbandonSignedTransaction(
             handle,

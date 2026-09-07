@@ -33,6 +33,11 @@ mod add_indices_for_index_level_for_contract_operations;
 // This module contains functionality for adding indices for the top index level for contract operations
 mod add_indices_for_top_index_level_for_contract_operations;
 
+// Module: add_preallocated_index_tree_operations
+// This module contains functionality for preallocating refersTo-determined
+// indexOnly index trees when the referenced document is inserted
+mod add_preallocated_index_tree_operations;
+
 // Module: add_reference_for_index_level_for_contract_operations
 // This module contains functionality for adding a reference for an index level for contract operations
 mod add_reference_for_index_level_for_contract_operations;
@@ -455,7 +460,9 @@ mod tests {
                     &EPOCH_CHANGE_FEE_VERSION_TEST,
                     StorageDiskUsageCreditPerByte,
                 ),
-            processing_fee: 73253660,
+            // estimated_size v1 adds the contract-version stamp varint to
+            // the worst-case document size
+            processing_fee: 73323060,
             ..Default::default()
         };
 
