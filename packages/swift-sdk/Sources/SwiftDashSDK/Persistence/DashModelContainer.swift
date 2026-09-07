@@ -69,14 +69,31 @@ public enum DashModelContainer {
         }
     }
 
-    /// Classifies the store from its metadata alone; never opens it.
+    /// Entities whose live shape has changed in place since the registered
+    /// version a still-supported store was written with — the reason a
+    /// v4.2.0-dev.1 store no longer matches V1's checksum although it was
+    /// written by V1. A store is "drifted" only if the entities whose hashes
+    /// disagree with its declared version's model are all in this set; a
+    /// disagreement anywhere else can only have been written by a newer
+    /// build, and inferred migration would silently remove what it wrote.
     ///
-    /// Known blind spot, recorded rather than hidden: a newer build that added
-    /// only an *attribute* to an existing entity and kept the version
-    /// identifier is indistinguishable here from drift, because both leave
-    /// the same entity names with different hashes. Freezing the remaining
-    /// shapes in `DashSchemaFrozenModels.swift` is what closes that, by
-    /// making every registered version's hashes stable.
+    /// `Dev1StoreUpgradeTests` pins this to the fixture, so it cannot be
+    /// wider than reality. Shrink it as shapes get frozen in
+    /// `DashSchemaFrozenModels.swift`; when it is empty the fallback has no
+    /// case left to answer and can go.
+    static let knownDriftedEntities: Set<String> = [
+        "PersistentDocumentType",
+        "PersistentIndex",
+    ]
+
+    /// One registered version as the verdict sees it: its identifier and
+    /// the per-entity hashes of the model built from its live types.
+    struct RegisteredVersionHashes: Equatable {
+        let identifier: String
+        let entityHashes: [String: Data]
+    }
+
+    /// Classifies the store from its metadata alone; never opens it.
     static func classifyStore(at storeURL: URL) -> StoreSchemaVerdict {
         guard let metadata = try? NSPersistentStoreCoordinator.metadataForPersistentStore(
             ofType: NSSQLiteStoreType,
@@ -84,32 +101,78 @@ public enum DashModelContainer {
             options: nil
         ) else { return .unreadable }
 
-        let matches = DashMigrationPlan.schemas.contains { schema in
-            guard let model = NSManagedObjectModel.makeManagedObjectModel(for: schema.models)
-            else { return false }
-            return model.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata)
+        let models = DashMigrationPlan.schemas.compactMap { schema -> (String, NSManagedObjectModel)? in
+            NSManagedObjectModel.makeManagedObjectModel(for: schema.models)
+                .map { (schema.versionIdentifier.description, $0) }
         }
-        if matches { return .matchesRegisteredVersion }
+        let matches = models.contains { _, model in
+            model.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata)
+        }
+        return storeSchemaVerdict(
+            matchesRegisteredVersion: matches,
+            storeEntityHashes: (metadata[NSStoreModelVersionHashesKey] as? [String: Data]) ?? [:],
+            storeVersionIdentifiers: (metadata[NSStoreModelVersionIdentifiersKey] as? [String]) ?? [],
+            registered: models.map {
+                RegisteredVersionHashes(identifier: $0.0, entityHashes: $0.1.entityVersionHashesByName)
+            },
+            currentEntities: Set(schema.entities.map(\.name))
+        )
+    }
+
+    /// The decision behind `classifyStore`, on plain values so every branch
+    /// can be tested without building a store for it.
+    ///
+    /// The residual after all four checks, recorded rather than hidden: a
+    /// newer build that changed only one of `knownDriftedEntities` and kept
+    /// the version identifier still reads as drift. That is as narrow as
+    /// metadata allows; freezing those two shapes is what removes it.
+    static func storeSchemaVerdict(
+        matchesRegisteredVersion: Bool,
+        storeEntityHashes: [String: Data],
+        storeVersionIdentifiers: [String],
+        registered: [RegisteredVersionHashes],
+        currentEntities: Set<String>
+    ) -> StoreSchemaVerdict {
+        if matchesRegisteredVersion { return .matchesRegisteredVersion }
 
         // SwiftData writes each `VersionedSchema.versionIdentifier` into the
-        // store; one this plan never registered was written by a newer build.
-        let registered = Set(DashMigrationPlan.schemas.map { $0.versionIdentifier.description })
-        let written = (metadata[NSStoreModelVersionIdentifiersKey] as? [String]) ?? []
-        if let unknown = written.first(where: { !registered.contains($0) }) {
+        // store; one this plan never registered was written by a newer build,
+        // and a store carrying none cannot be placed at all.
+        let registeredIdentifiers = Set(registered.map(\.identifier))
+        if let unknown = storeVersionIdentifiers.first(where: { !registeredIdentifiers.contains($0) }) {
             return .newerThanRegistered(reason: "unregistered_version_identifier=\(unknown)")
+        }
+        guard !storeVersionIdentifiers.isEmpty else {
+            return .newerThanRegistered(reason: "no_version_identifier")
         }
 
         // An entity the current schema does not have can only have been
         // written by a newer build; inferred migration would drop its table.
-        let current = Set(schema.entities.map(\.name))
-        let stored = Set(((metadata[NSStoreModelVersionHashesKey] as? [String: Any]) ?? [:]).keys)
-        let unknownEntities = stored.subtracting(current).sorted()
+        let unknownEntities = Set(storeEntityHashes.keys).subtracting(currentEntities).sorted()
         if !unknownEntities.isEmpty {
             return .newerThanRegistered(
                 reason: "unknown_entities=\(unknownEntities.joined(separator: "|"))"
             )
         }
-        return .driftedRegisteredVersion
+
+        // Same entity names, so which ones disagree with the version the
+        // store declares? Drift changes only the known set; a newer build
+        // that added an attribute — same names, kept identifier — changes
+        // something outside it. Only the declared version's model is a fair
+        // comparison: later versions legitimately differ from the store.
+        var unexpectedDrift: Set<String> = []
+        for version in registered where storeVersionIdentifiers.contains(version.identifier) {
+            let disagreeing = Set(storeEntityHashes.compactMap { name, hash in
+                version.entityHashes[name] == hash ? nil : name
+            })
+            if disagreeing.isSubset(of: knownDriftedEntities) {
+                return .driftedRegisteredVersion
+            }
+            unexpectedDrift.formUnion(disagreeing.subtracting(knownDriftedEntities))
+        }
+        return .newerThanRegistered(
+            reason: "unexpected_entity_drift=\(unexpectedDrift.sorted().joined(separator: "|"))"
+        )
     }
 
     /// Builds the common payload for both sides of the container open. The

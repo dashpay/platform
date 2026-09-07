@@ -1,3 +1,4 @@
+import CoreData
 import Foundation
 import SwiftData
 import XCTest
@@ -219,6 +220,121 @@ final class Dev1StoreUpgradeTests: XCTestCase {
             return XCTFail("a refused open must not rewrite the store")
         }
     }
+    /// The attribute-only downgrade: a store written by a build that added one
+    /// attribute to `PersistentWalletManagerMetadata` and kept V3's version
+    /// identifier. Its identifier is registered and every entity name is
+    /// known, so only the per-entity comparison can tell it from drift — and
+    /// must, because inferred migration would drop the attribute's values
+    /// without a word.
+    func testStoreWithAnAttributeOnlyNewerEntityIsRefusedWithoutFallback() throws {
+        let storeURL = directory.appendingPathComponent("DashModel.sqlite")
+        try autoreleasepool {
+            let newer = Schema(versionedSchema: AttributeOnlyNewerSchema.self)
+            let configuration = ModelConfiguration(
+                schema: newer,
+                url: storeURL,
+                allowsSave: true,
+                cloudKitDatabase: .none
+            )
+            let container = try ModelContainer(for: newer, configurations: [configuration])
+            let context = ModelContext(container)
+            context.insert(AttributeOnlyNewerSchema.PersistentWalletManagerMetadata(
+                networkRaw: 1,
+                futureAttribute: 42
+            ))
+            try context.save()
+        }
+
+        XCTAssertEqual(
+            DashModelContainer.classifyStore(at: storeURL),
+            .newerThanRegistered(reason: "unexpected_entity_drift=PersistentWalletManagerMetadata")
+        )
+        XCTAssertThrowsError(try DashModelContainer.open(configuration(at: storeURL)))
+        XCTAssertTrue(try logLines(event: "core_store_staged_migration_failed").isEmpty)
+        let result = try XCTUnwrap(try logLines(event: "core_store_open_result").last)
+        XCTAssertTrue(result.contains(#"result="failure""#), result)
+        XCTAssertTrue(
+            result.contains("store_verdict=\"newer_than_registered:unexpected_entity_drift=PersistentWalletManagerMetadata\""),
+            result
+        )
+    }
+
+    /// `knownDriftedEntities` must be exactly what the fixture shows, no
+    /// wider: every entity it names is one whose hash disagrees with V1's
+    /// model for this store, and none disagrees that it does not name. When
+    /// a shape gets frozen, this is the test that says to shrink the set.
+    func testKnownDriftedEntitiesArePinnedToTheFixture() throws {
+        let storeURL = try dev1Configuration(named: "Pin.sqlite").url
+        let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+            ofType: NSSQLiteStoreType, at: storeURL, options: nil
+        )
+        let storeHashes = try XCTUnwrap(metadata[NSStoreModelVersionHashesKey] as? [String: Data])
+        let identifiers = try XCTUnwrap(metadata[NSStoreModelVersionIdentifiersKey] as? [String])
+        XCTAssertEqual(identifiers, [DashSchemaV1.versionIdentifier.description])
+
+        let v1 = try XCTUnwrap(NSManagedObjectModel.makeManagedObjectModel(for: DashSchemaV1.models))
+        let disagreeing = Set(storeHashes.compactMap { name, hash in
+            v1.entityVersionHashesByName[name] == hash ? nil : name
+        })
+        XCTAssertEqual(
+            disagreeing, DashModelContainer.knownDriftedEntities,
+            "fixture drifts on \(disagreeing.sorted()); the allowlist must match exactly"
+        )
+    }
+
+    /// The decision on plain values: which stores the fallback may answer.
+    func testStoreSchemaVerdictOnPlainValues() {
+        let a = Data([1]), b = Data([2])
+        let current: Set<String> = ["PersistentWallet", "PersistentDocumentType", "PersistentIndex"]
+        let v1 = DashModelContainer.RegisteredVersionHashes(
+            identifier: "1.0.0",
+            entityHashes: ["PersistentWallet": a, "PersistentDocumentType": a, "PersistentIndex": a]
+        )
+        func verdict(
+            _ store: [String: Data],
+            identifiers: [String] = ["1.0.0"],
+            matches: Bool = false
+        ) -> DashModelContainer.StoreSchemaVerdict {
+            DashModelContainer.storeSchemaVerdict(
+                matchesRegisteredVersion: matches,
+                storeEntityHashes: store,
+                storeVersionIdentifiers: identifiers,
+                registered: [v1],
+                currentEntities: current
+            )
+        }
+
+        // A compatible store is never inspected further.
+        XCTAssertEqual(verdict(["PersistentWallet": b], matches: true), .matchesRegisteredVersion)
+        // Drift confined to the known set may be migrated.
+        XCTAssertEqual(
+            verdict(["PersistentWallet": a, "PersistentDocumentType": b, "PersistentIndex": b]),
+            .driftedRegisteredVersion
+        )
+        // The attribute-only downgrade: same names, kept identifier, but the
+        // disagreement is on an entity that is not known to have drifted.
+        XCTAssertEqual(
+            verdict(["PersistentWallet": b, "PersistentDocumentType": a, "PersistentIndex": a]),
+            .newerThanRegistered(reason: "unexpected_entity_drift=PersistentWallet")
+        )
+        // Mixed: known drift plus one unexpected entity still refuses.
+        XCTAssertEqual(
+            verdict(["PersistentWallet": b, "PersistentDocumentType": b, "PersistentIndex": a]),
+            .newerThanRegistered(reason: "unexpected_entity_drift=PersistentWallet")
+        )
+        XCTAssertEqual(
+            verdict(["PersistentWallet": a], identifiers: ["9.0.0"]),
+            .newerThanRegistered(reason: "unregistered_version_identifier=9.0.0")
+        )
+        XCTAssertEqual(
+            verdict(["PersistentWallet": a], identifiers: []),
+            .newerThanRegistered(reason: "no_version_identifier")
+        )
+        XCTAssertEqual(
+            verdict(["PersistentWallet": a, "FutureOnlyModel": a]),
+            .newerThanRegistered(reason: "unknown_entities=FutureOnlyModel")
+        )
+    }
 }
 
 /// An entity no registered SDK schema has — what a store written by a future
@@ -229,5 +345,41 @@ final class FutureOnlyModel {
 
     init(marker: Int) {
         self.marker = marker
+    }
+}
+
+/// V3 exactly as a newer build would write it: the same version identifier
+/// and the same entity set, with one attribute added to a relationship-free
+/// entity. Nested so the clone shares the live entity's name (SwiftData
+/// derives it from the unqualified type name) without touching the live type.
+enum AttributeOnlyNewerSchema: VersionedSchema {
+    static var versionIdentifier: Schema.Version { DashSchemaV3.versionIdentifier }
+
+    static var models: [any PersistentModel.Type] {
+        DashModelContainer.modelTypes.filter {
+            ObjectIdentifier($0) != ObjectIdentifier(SwiftDashSDK.PersistentWalletManagerMetadata.self)
+        } + [PersistentWalletManagerMetadata.self]
+    }
+
+    @Model
+    final class PersistentWalletManagerMetadata {
+        @Attribute(.unique) var networkRaw: UInt32
+        var combinedSyncHeight: UInt32
+        var combinedSyncBlockHash: Data?
+        var walletCount: Int
+        var createdAt: Date
+        var lastUpdated: Date
+        /// The one thing this build has that the SDK's model does not.
+        var futureAttribute: Int
+
+        init(networkRaw: UInt32, futureAttribute: Int) {
+            self.networkRaw = networkRaw
+            self.combinedSyncHeight = 0
+            self.combinedSyncBlockHash = nil
+            self.walletCount = 0
+            self.createdAt = Date()
+            self.lastUpdated = Date()
+            self.futureAttribute = futureAttribute
+        }
     }
 }
