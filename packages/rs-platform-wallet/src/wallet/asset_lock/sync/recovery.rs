@@ -1264,7 +1264,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .await?;
         self.queue_asset_lock_changeset(cs);
 
-        // 4. Re-derive the one-time credit-output derivation path.
+        // 4. Re-derive the one-time credit-output derivation path. One read
+        //    guard for the whole step: the re-derivation reads the funding
+        //    account through the same `info`, so it must not take the lock
+        //    again (a second `read()` under a live guard parks behind any
+        //    queued writer, which then waits for this guard — a deadlock
+        //    that froze a host's main thread for good).
         let path = {
             let wm = self.wallet_manager.read().await;
             let info = wm
@@ -1274,7 +1279,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .tracked_asset_locks
                 .get(out_point)
                 .ok_or_else(|| PlatformWalletError::AssetLockNotTracked(*out_point))?;
-            self.rederive_credit_output_path(lock).await?
+            self.rederive_credit_output_path(info, lock)?
         };
 
         Ok((proof, path))
@@ -1294,8 +1299,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// xpriv is not in-process for `ExternalSignable` wallets, and the
     /// signer-based architecture doesn't need it — the signer owns
     /// derivation end-to-end.
-    async fn rederive_credit_output_path(
+    ///
+    /// Synchronous and lock-free by design: `info` is the wallet info the
+    /// caller already holds a wallet-manager guard for (and `lock` is
+    /// borrowed from it). Re-acquiring `wallet_manager` in here would be a
+    /// recursive read on tokio's fair `RwLock` — it parks behind any queued
+    /// writer while the caller's guard keeps that writer waiting.
+    fn rederive_credit_output_path(
         &self,
+        info: &PlatformWalletInfo,
         lock: &TrackedAssetLock,
     ) -> Result<DerivationPath, PlatformWalletError> {
         use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
@@ -1334,11 +1346,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 ))
             })?;
 
-        // 3. Find the derivation path in the funding account and derive key under a single lock.
-        let wm = self.wallet_manager.read().await;
-        let info = wm
-            .get_wallet_info(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        // 3. Find the derivation path in the funding account, through the
+        //    caller's guard (see the method doc: never re-lock here).
         let wi = &info.core_wallet;
         let funding_account = match lock.funding_type {
             AssetLockFundingType::IdentityRegistration => {
@@ -1971,17 +1980,37 @@ mod tests {
             Arc::new(AlwaysRejectedBroadcaster),
             WalletPersister::new(wallet_id, persistence as Arc<dyn PlatformWalletPersistence>),
         );
-        let rederived = restored_manager
-            .rederive_credit_output_path(&lock)
-            .await
-            .expect(
-                "credit-output path must re-derive from the persisted \
-                 IdentityTopUp account after a restart",
+        // Re-derive under a held read guard while a writer is queued behind
+        // it — the shape `resume_asset_lock` step 4 runs in. tokio's
+        // `RwLock` is fair, so a second `read()` inside the guard would park
+        // behind that writer forever; the re-derivation must therefore
+        // never take the lock itself.
+        let queued_writer = {
+            let wallet_manager = Arc::clone(&restored_manager.wallet_manager);
+            let guard = restored_manager.wallet_manager.read().await;
+            let writer = tokio::spawn(async move {
+                let _w = wallet_manager.write().await;
+            });
+            tokio::task::yield_now().await;
+            let info = guard
+                .get_wallet_info(&wallet_id)
+                .expect("restored wallet info");
+            let rederived = restored_manager
+                .rederive_credit_output_path(info, &lock)
+                .expect(
+                    "credit-output path must re-derive from the persisted \
+                     IdentityTopUp account after a restart",
+                );
+            assert_eq!(
+                rederived, path,
+                "re-derived credit-output path must match the build-time path"
             );
-        assert_eq!(
-            rederived, path,
-            "re-derived credit-output path must match the build-time path"
-        );
+            writer
+        };
+        tokio::time::timeout(Duration::from_secs(5), queued_writer)
+            .await
+            .expect("the queued writer must acquire the lock once the guard drops")
+            .expect("writer task");
     }
 
     // -----------------------------------------------------------------
