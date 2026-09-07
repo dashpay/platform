@@ -148,6 +148,17 @@ pub struct CoreChangeSet {
     #[cfg_attr(feature = "serde", serde(skip))]
     pub dropped_record_spends: BTreeMap<Txid, Vec<Utxo>>,
 
+    /// Raw inputs of a transaction the live wallet no longer holds, keyed
+    /// by that transaction's txid. Unlike [`Self::dropped_record_spends`],
+    /// this includes inputs whose funding output was unknown when the
+    /// transaction was detected and therefore had no `InputDetail` from
+    /// which to reconstruct a [`Utxo`]. The adapter attaches these outpoints
+    /// to the matching sweep's [`SweepBatch::claimed_inputs`] so every
+    /// persister can keep the winner's hold even if the funding output only
+    /// materializes later. Never journaled or passed to a persister.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub dropped_record_input_claims: BTreeMap<Txid, Vec<OutPoint>>,
+
     /// UTXOs to add — outputs created by records in this batch that pay
     /// to one of our addresses (i.e. `OutputRole::Received` or
     /// `OutputRole::Change` per the upstream `TransactionRecord`).
@@ -659,6 +670,12 @@ impl Merge for CoreChangeSet {
                 .or_default()
                 .extend(utxos);
         }
+        for (txid, outpoints) in other.dropped_record_input_claims {
+            self.dropped_record_input_claims
+                .entry(txid)
+                .or_default()
+                .extend(outpoints);
+        }
         self.new_utxos.extend(other.new_utxos);
 
         // IS-lock map: last-write-wins per txid. A second IS-lock for
@@ -766,6 +783,7 @@ impl Merge for CoreChangeSet {
             && self.account_records.is_empty()
             && self.spent_utxos.is_empty()
             && self.dropped_record_spends.is_empty()
+            && self.dropped_record_input_claims.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
             && self.last_processed_height.is_none()
@@ -803,6 +821,30 @@ impl CoreChangeSet {
                 for utxo in utxos {
                     if !batch.claimed_inputs.contains(&utxo.outpoint) {
                         batch.claimed_inputs.push(utxo.outpoint);
+                    }
+                }
+            }
+        }
+        pending
+    }
+
+    /// Attach raw input claims from dropped records to the sweep that
+    /// removed each record and return claims whose sweep is not in this
+    /// changeset. This is the funding-output-independent counterpart of
+    /// [`Self::settle_dropped_record_spends`].
+    pub(crate) fn settle_dropped_record_input_claims(&mut self) -> BTreeMap<Txid, Vec<OutPoint>> {
+        let mut pending = std::mem::take(&mut self.dropped_record_input_claims);
+        if pending.is_empty() {
+            return pending;
+        }
+        for batch in &mut self.sweeps {
+            for txid in &batch.txids {
+                let Some(outpoints) = pending.remove(txid) else {
+                    continue;
+                };
+                for outpoint in outpoints {
+                    if !batch.claimed_inputs.contains(&outpoint) {
+                        batch.claimed_inputs.push(outpoint);
                     }
                 }
             }

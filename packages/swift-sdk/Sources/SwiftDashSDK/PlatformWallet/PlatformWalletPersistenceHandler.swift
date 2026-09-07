@@ -1484,8 +1484,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // been — a released one is left to the outpoint pass below,
                 // a co-swept parent's output is nobody's coin, and every
                 // other one is held under the winner: on the coin's row
-                // when it exists and no surviving spender claims it,
-                // otherwise as the same detached tombstone
+                // when it is detached or already linked to that winner,
+                // otherwise as the same detached tombstone when no funding
+                // row exists,
                 // `applySweptTransaction` writes, so the funding TXO's
                 // arrival (even after a restart) drains into a held coin.
                 // Repeats of an input the loser loop already settled land
@@ -1526,7 +1527,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         for txo in txoRows where !txo.isDeleted {
                             unfunded.remove(txo.outpoint)
                             guard Self.resolvedWalletId(of: txo) == walletId,
-                                  txo.spendingTransaction == nil else { continue }
+                                  txo.spendingTransaction == nil
+                                    || txo.spendingTransaction?.txid == supersededBy
+                            else { continue }
                             txo.isSpent = true
                             txo.supersededByTxid = supersededBy
                             txo.spendingInputIndex = nil

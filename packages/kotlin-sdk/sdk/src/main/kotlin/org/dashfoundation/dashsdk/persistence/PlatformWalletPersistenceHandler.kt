@@ -1510,12 +1510,12 @@ class PlatformWalletPersistenceHandler(
             // is settled exactly like a deleted row's input — released ones
             // are left to the release pass below, a co-swept parent's
             // output is nobody's coin, and everything else is held spent
-            // under the winner: on the coin's row when it exists and is
-            // not claimed by a surviving spender, otherwise as the same
-            // tombstone the staged-row path writes, so the funding TXO's
-            // arrival (even after a restart) drains into a held coin rather
-            // than a fresh unspent one. Repeats of an input the loop above
-            // already settled land on the same values.
+            // under the winner: on the coin's row when it is detached or
+            // already linked to that winner, otherwise as the same tombstone
+            // the staged-row path writes when no funding row exists, so the
+            // funding TXO's arrival (even after a restart) drains into a held
+            // coin rather than a fresh unspent one. Repeats of an input the
+            // loop above already settled land on the same values.
             // The batch's winner is the same for every loser in it
             // (`supersededBy` is one value repeated per loser), so any slot
             // names it. A batch that vouches for inputs but names no
@@ -1540,10 +1540,10 @@ class PlatformWalletPersistenceHandler(
                 // Only an earlier tombstone for this winner (and this
                 // wallet) counts as "already written". An ordinary pending
                 // row the winner's own record staged is a surviving
-                // spender's claim, left alone exactly like a linked TXO
-                // above; the tombstone is written beside it, the same end
-                // state a stored loser's sweep leaves, and the drain prefers
-                // the tombstone regardless of age.
+                // spender's claim and stays in place; the tombstone is
+                // written beside it, leaving the same state as a stored
+                // loser's sweep, and the drain prefers the tombstone
+                // regardless of age.
                 val existing = db.documentDao().getPendingInputsByOutpoint(outpoint).firstOrNull {
                     it.walletId.contentEquals(walletId) && it.isSweptTombstone &&
                         it.spendingTxid.contentEquals(winner)

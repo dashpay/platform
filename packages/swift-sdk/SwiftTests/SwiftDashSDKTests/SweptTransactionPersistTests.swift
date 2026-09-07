@@ -880,6 +880,60 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertEqual(redelivered.supersededByTxid, externalWinner)
     }
 
+    /// A winner's InstantSend record can link a materialized coin while
+    /// leaving it unspent until confirmation. A later claimed-input sweep of
+    /// a loser this store never held must preserve that valid winner link and
+    /// apply the durable hold rather than treating the link as a reason to
+    /// skip the claim.
+    func testAClaimedInputAlreadyLinkedToTheWinnerIsStillHeld() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+
+        let funding = PersistentTransaction(
+            txid: fundingTxid,
+            transactionData: Data(repeating: 0x04, count: 10),
+            context: 2,
+            blockHeight: 100,
+            netAmount: 100_000
+        )
+        let winner = PersistentTransaction(
+            txid: winnerTxid,
+            transactionData: Data(repeating: 0x06, count: 10),
+            context: 1,
+            blockHeight: 0,
+            netAmount: -100_000
+        )
+        context.insert(funding)
+        context.insert(winner)
+
+        let coin = PersistentTxo(
+            transaction: funding,
+            vout: 0,
+            amount: 100_000,
+            address: "yFundAddr",
+            height: 100
+        )
+        coin.walletId = walletId
+        coin.spendingTransaction = winner
+        coin.isSpent = false
+        context.insert(coin)
+        try context.save()
+
+        let absentLoser = Data(repeating: 0x45, count: 32)
+        XCTAssertTrue(sweep(handler, [Batch(
+            losers: [absentLoser],
+            winner: winnerTxid,
+            winnerMinedHeight: nil,
+            claimedInputs: [(txid: fundingTxid, vout: 0)]
+        )]))
+
+        let held = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(held.isSpent, "a valid winner link does not replace the durable hold")
+        XCTAssertEqual(held.spendingTransaction?.txid, winnerTxid)
+        XCTAssertEqual(held.supersededByTxid, winnerTxid)
+    }
+
     /// The same never-held loser, but the coin it spent has not been
     /// classified as ours yet: the claim must survive as the same detached
     /// tombstone a staged pending row turns into, so the funding TXO's

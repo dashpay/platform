@@ -326,9 +326,9 @@ async fn run_wallet_event_adapter<P>(
     // One-shot latch so the hard "watermark frozen" line hits logcat exactly
     // once per session rather than once per faulted batch.
     let freeze_logged = Arc::new(AtomicBool::new(false));
-    // Spent-input evidence of records the live wallet had already dropped
-    // when their detection was projected, whose sweep has not been drained
-    // yet (see `settle_dropped_record_spends` below for its lifetime).
+    // Input evidence of records the live wallet had already dropped when
+    // their detection was projected, whose sweep has not been drained yet
+    // (see `settle_dropped_record_spends` below for its lifetime).
     let mut carried_record_spends: CarriedSpendsByWallet = BTreeMap::new();
 
     loop {
@@ -622,6 +622,7 @@ async fn run_wallet_event_adapter<P>(
 /// produced; see [`settle_dropped_record_spends`] for its lifetime.
 struct CarriedRecordSpends {
     utxos: Vec<Utxo>,
+    input_claims: Vec<OutPoint>,
     fresh: bool,
 }
 
@@ -666,7 +667,8 @@ fn settle_dropped_record_spends(
     core: &mut CoreChangeSet,
     carried: &mut CarriedSpendsByWallet,
 ) {
-    let fresh = std::mem::take(&mut core.dropped_record_spends);
+    let fresh_spends = std::mem::take(&mut core.dropped_record_spends);
+    let fresh_claims = std::mem::take(&mut core.dropped_record_input_claims);
     let previous = carried.remove(&wallet_id).unwrap_or_default();
     let mut still_carried: BTreeMap<Txid, CarriedRecordSpends> = BTreeMap::new();
     if !previous.is_empty() {
@@ -674,17 +676,54 @@ fn settle_dropped_record_spends(
             .iter()
             .map(|(txid, carried)| (*txid, carried.utxos.clone()))
             .collect();
+        core.dropped_record_input_claims = previous
+            .iter()
+            .map(|(txid, carried)| (*txid, carried.input_claims.clone()))
+            .collect();
         // Already written as unattributed spends by the drain that produced
         // them; pair what this drain's sweeps name, keep the rest waiting.
-        for (txid, utxos) in core.settle_dropped_record_spends() {
-            let fresh = previous.get(&txid).is_some_and(|c| c.fresh);
-            still_carried.insert(txid, CarriedRecordSpends { utxos, fresh });
+        let mut unpaired_spends = core.settle_dropped_record_spends();
+        let mut unpaired_claims = core.settle_dropped_record_input_claims();
+        for (txid, carried) in previous {
+            let utxos = unpaired_spends.remove(&txid).unwrap_or_default();
+            let input_claims = unpaired_claims.remove(&txid).unwrap_or_default();
+            if !utxos.is_empty() || !input_claims.is_empty() {
+                still_carried.insert(
+                    txid,
+                    CarriedRecordSpends {
+                        utxos,
+                        input_claims,
+                        fresh: carried.fresh,
+                    },
+                );
+            }
         }
     }
-    core.dropped_record_spends = fresh;
-    for (txid, utxos) in core.settle_dropped_record_spends() {
+    core.dropped_record_spends = fresh_spends;
+    core.dropped_record_input_claims = fresh_claims;
+    let mut unpaired_spends = core.settle_dropped_record_spends();
+    for (txid, input_claims) in core.settle_dropped_record_input_claims() {
+        let utxos = unpaired_spends.remove(&txid).unwrap_or_default();
         core.spent_utxos.extend(utxos.iter().cloned());
-        still_carried.insert(txid, CarriedRecordSpends { utxos, fresh: true });
+        still_carried.insert(
+            txid,
+            CarriedRecordSpends {
+                utxos,
+                input_claims,
+                fresh: true,
+            },
+        );
+    }
+    for (txid, utxos) in unpaired_spends {
+        core.spent_utxos.extend(utxos.iter().cloned());
+        still_carried.insert(
+            txid,
+            CarriedRecordSpends {
+                utxos,
+                input_claims: vec![],
+                fresh: true,
+            },
+        );
     }
     if !still_carried.is_empty() {
         carried.insert(wallet_id, still_carried);
@@ -1076,15 +1115,26 @@ async fn build_core_changeset(
             // recover the inputs of a row no store ever held. They are
             // kept aside under the record's txid for the adapter to
             // attach to whichever sweep in the drain removed it — see
-            // `CoreChangeSet::dropped_record_spends`.
+            // `CoreChangeSet::dropped_record_spends` and
+            // `CoreChangeSet::dropped_record_input_claims`.
             let slices: Vec<TransactionRecord> =
                 match wallet_slices_for_txid(wallet_manager, wallet_id, &record.txid).await {
                     Some(slices) => slices,
                     None => vec![(**record).clone()],
                 };
             let mut dropped_record_spends = BTreeMap::new();
+            let mut dropped_record_input_claims = BTreeMap::new();
             if slices.is_empty() {
                 dropped_record_spends.insert(record.txid, derive_spent_utxos(record));
+                dropped_record_input_claims.insert(
+                    record.txid,
+                    record
+                        .transaction
+                        .input
+                        .iter()
+                        .map(|input| input.previous_output)
+                        .collect(),
+                );
             }
             // A contact's watch-only chain never defines the wallet's
             // transaction row or its TXOs (see `is_contact_watch_only`);
@@ -1108,6 +1158,7 @@ async fn build_core_changeset(
                 new_utxos: owned.iter().flat_map(derive_new_utxos).collect(),
                 spent_utxos: slices.iter().flat_map(derive_spent_utxos).collect(),
                 dropped_record_spends,
+                dropped_record_input_claims,
                 records: folded,
                 account_records: owned,
                 // Mirror the upstream-emitted derived addresses
@@ -1729,6 +1780,7 @@ impl CoreChangeSet {
             && self.account_records.is_empty()
             && self.spent_utxos.is_empty()
             && self.dropped_record_spends.is_empty()
+            && self.dropped_record_input_claims.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
             && self.last_processed_height.is_none()
@@ -4316,6 +4368,18 @@ mod tests {
         dashcore::OutPoint,
         WalletEvent,
     ) {
+        swept_before_persisted_fixture_with_known_funding(true)
+    }
+
+    fn swept_before_persisted_fixture_with_known_funding(
+        funding_known: bool,
+    ) -> (
+        Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        WalletId,
+        dashcore::Transaction,
+        dashcore::OutPoint,
+        WalletEvent,
+    ) {
         use crate::wallet::core::WalletGeneration;
         use crate::wallet::identity::IdentityManager;
         use dashcore::hashes::Hash as _;
@@ -4357,11 +4421,14 @@ mod tests {
             TransactionContext::Mempool,
             TransactionType::Standard,
             TransactionDirection::Outgoing,
-            vec![InputDetail {
-                index: 0,
-                value: 100_000_000,
-                address: funding_address,
-            }],
+            funding_known
+                .then_some(InputDetail {
+                    index: 0,
+                    value: 100_000_000,
+                    address: funding_address,
+                })
+                .into_iter()
+                .collect(),
             vec![OutputDetail {
                 index: 0,
                 role: OutputRole::Sent,
@@ -4474,6 +4541,44 @@ mod tests {
             persisted.spent_utxos.is_empty(),
             "attributed evidence is not doubled as an unattributed spend"
         );
+    }
+
+    /// A delayed detection still carries every raw transaction input when
+    /// the wallet could not classify its funding output. The sweep must keep
+    /// that outpoint claimed even though there is no `InputDetail` from which
+    /// to synthesize an ordinary spent UTXO.
+    #[tokio::test]
+    async fn delayed_detection_after_sweep_claims_raw_input_when_funding_output_was_unknown() {
+        let (manager, wallet_id, loser, funding_outpoint, detected) =
+            swept_before_persisted_fixture_with_known_funding(false);
+        let (stored_tx, mut stored_rx) = unbounded_channel();
+        let persister = Arc::new(SweepProjectionPersister::new(stored_tx));
+        let (event_tx, event_rx) = unbounded_channel();
+        event_tx.send(detected).unwrap();
+        event_tx.send(sweep_of(wallet_id, &loser, 0x62)).unwrap();
+
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            manager,
+            Arc::clone(&persister),
+            event_rx,
+            Arc::new(AtomicBool::new(false)),
+            cancel.clone(),
+        ));
+        let persisted = next_store(&mut stored_rx).await;
+        cancel.cancel();
+        drop(event_tx);
+        handle.await.unwrap();
+
+        assert!(persisted.records.is_empty());
+        assert!(persisted.account_records.is_empty());
+        assert_eq!(persisted.sweeps.len(), 1);
+        assert_eq!(
+            persisted.sweeps[0].claimed_inputs,
+            vec![funding_outpoint],
+            "the external winner's hold must not depend on funding-output classification"
+        );
+        assert!(persisted.spent_utxos.is_empty());
     }
 
     /// The sweep event can sit just past the drain's fold limit. The
