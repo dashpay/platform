@@ -197,7 +197,9 @@ mod tests {
     use dpp::data_contract::DataContract;
     use dpp::platform_value::Value;
     use dpp::tests::json_document::json_document_to_contract;
-    use drive::query::{WhereClause, WhereOperator};
+    use drive::query::{
+        BindingSource, DriveSubQuery, SubQueryBinding, SubQueryKind, WhereClause, WhereOperator,
+    };
     use std::sync::Arc;
 
     const YAPPR_CONTRACT_PATH: &str =
@@ -285,6 +287,66 @@ mod tests {
             "postId"
         );
         assert_eq!(drive_query.limit, Some(10));
+    }
+
+    fn assert_plain_conversions_refuse(query: &DriveDocumentQuery) {
+        for result in [
+            DocumentQuery::try_from(query),
+            DocumentQuery::try_from(query.clone()),
+            DocumentQuery::new_with_drive_query(query),
+        ] {
+            assert!(
+                matches!(&result, Err(Error::Config(message)) if message.contains("sub-queries")),
+                "a plain conversion must refuse the composition, got {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_dropping_a_drive_join_during_plain_query_conversion() {
+        let query = posts_i_liked(10);
+        let drive_query: DriveDocumentQuery = (&query).try_into().expect("drive query");
+        drive_query
+            .validate_chained(platform_version())
+            .expect("valid chained shape");
+        assert_plain_conversions_refuse(&drive_query);
+    }
+
+    #[test]
+    fn should_refuse_dropping_a_composite_count_during_plain_query_conversion() {
+        let query = posts_i_liked(10);
+        let page: DriveDocumentQuery = (&query.inner).try_into().expect("drive page");
+        let count = DriveSubQuery {
+            contract: page.contract,
+            document_type: page.document_type,
+            kind: SubQueryKind::Count,
+            where_clauses: vec![],
+            order_by: vec![],
+            limit: None,
+            binding: Some(SubQueryBinding {
+                source: BindingSource::Page,
+                source_property: "postId".into(),
+                field: "postId".into(),
+            }),
+        };
+        let composite = page.with_sub_queries(vec![count]);
+        composite
+            .validate_composite(platform_version())
+            .expect("valid count composition");
+        assert_plain_conversions_refuse(&composite);
+    }
+
+    #[test]
+    fn should_preserve_plain_drive_query_conversion() {
+        let query = posts_i_liked(10).inner;
+        let drive_query: DriveDocumentQuery = (&query).try_into().expect("drive page");
+        for result in [
+            DocumentQuery::try_from(&drive_query),
+            DocumentQuery::try_from(drive_query.clone()),
+            DocumentQuery::new_with_drive_query(&drive_query),
+        ] {
+            assert_eq!(result.expect("plain conversion succeeds"), query);
+        }
     }
 
     #[test]

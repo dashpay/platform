@@ -217,6 +217,9 @@ impl DocumentQuery {
 
     /// Create new document query based on a [DriveDocumentQuery].
     ///
+    /// Fails when the drive query carries sub-queries, which this plain
+    /// query cannot preserve — use the chained or composite surface.
+    ///
     /// Fails when the drive query carries time-range resolution provenance
     /// (`resolved_time_ranges`): the resolved bucket equality cannot be
     /// represented without it — see the `TryFrom` impl. Build the query
@@ -973,6 +976,9 @@ fn encode_v0(
 impl<'a> TryFrom<&'a DriveDocumentQuery<'a>> for DocumentQuery {
     type Error = crate::error::Error;
 
+    /// Refuses sub-queries: a plain `DocumentQuery` cannot carry their
+    /// selections through SDK request construction and proof verification.
+    ///
     /// Fallible by necessity: a drive query carrying `resolved_time_ranges`
     /// holds bucket-start equalities whose meaning lives in the provenance,
     /// and `DocumentQuery` has no field to carry it — the original
@@ -982,6 +988,14 @@ impl<'a> TryFrom<&'a DriveDocumentQuery<'a>> for DocumentQuery {
     /// contract then rejects the request, while a contract with a competing
     /// plain index returns a different — but validly proven — result.
     fn try_from(value: &'a DriveDocumentQuery<'a>) -> Result<Self, Self::Error> {
+        if !value.sub_queries.is_empty() {
+            return Err(Error::Config(
+                "a drive query carrying sub-queries cannot be converted to a plain \
+                 DocumentQuery: its sub-queries would be discarded. Use the chained or \
+                 composite query surface instead"
+                    .to_string(),
+            ));
+        }
         if !value.resolved_time_ranges.is_empty() {
             return Err(Error::Config(
                 "a drive query carrying time-range resolution provenance cannot be \
@@ -1031,7 +1045,7 @@ impl<'a> TryFrom<DriveDocumentQuery<'a>> for DocumentQuery {
     type Error = crate::error::Error;
 
     /// By-value twin of the by-reference conversion above — same
-    /// provenance rejection, same rationale.
+    /// sub-query and provenance rejections, same rationale.
     fn try_from(value: DriveDocumentQuery<'a>) -> Result<Self, Self::Error> {
         DocumentQuery::try_from(&value)
     }
