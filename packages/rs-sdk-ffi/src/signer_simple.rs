@@ -12,42 +12,14 @@ use zeroize::Zeroizing;
 // `Runtime::new().block_on(...)`.
 use dash_async::block_on;
 
-/// Parse a BIP-39 mnemonic phrase against every supported wordlist
-/// in turn, returning the first language that yields a valid mnemonic.
-///
-/// `key_wallet::Mnemonic` only exposes language-tagged constructors
-/// (`Mnemonic::from_phrase(phrase, lang)`); the upstream `bip39` crate
-/// has a `Mnemonic::parse(phrase)` that auto-detects, but it is not
-/// re-exported through the `key_wallet` wrapper. Until that helper is
-/// surfaced upstream, callers who accept user-supplied mnemonics need
-/// to walk the language list themselves so a French / Japanese / etc.
-/// phrase is not rejected as "invalid English".
-///
-/// BIP-39 wordlists are designed to be mutually exclusive within a
-/// single phrase, so the first match is unambiguous.
+/// Parse a BIP-39 mnemonic phrase using the wordlist auto-detection provided
+/// by `key_wallet::Mnemonic`.
 pub(crate) fn parse_mnemonic_any_language(
     phrase: &str,
 ) -> Result<key_wallet::mnemonic::Mnemonic, &'static str> {
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
 
-    const LANGUAGES: [Language; 10] = [
-        Language::English,
-        Language::Spanish,
-        Language::French,
-        Language::Italian,
-        Language::Japanese,
-        Language::Korean,
-        Language::ChineseSimplified,
-        Language::ChineseTraditional,
-        Language::Czech,
-        Language::Portuguese,
-    ];
-    for lang in LANGUAGES {
-        if let Ok(m) = Mnemonic::from_phrase(phrase, lang) {
-            return Ok(m);
-        }
-    }
-    Err("phrase does not match any supported BIP-39 wordlist")
+    Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
 }
 
 /// Create a signer from a private key.

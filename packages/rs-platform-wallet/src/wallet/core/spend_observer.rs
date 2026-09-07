@@ -136,7 +136,8 @@ fn observing_wallet(event: &WalletEvent) -> Option<&WalletId> {
         | WalletEvent::BlockProcessed { wallet_id, .. } => Some(wallet_id),
         WalletEvent::TransactionInstantLocked { .. }
         | WalletEvent::ChainLockProcessed { .. }
-        | WalletEvent::SyncHeightAdvanced { .. } => None,
+        | WalletEvent::SyncHeightAdvanced { .. }
+        | WalletEvent::TransactionsSwept { .. } => None,
     }
 }
 
@@ -165,12 +166,13 @@ pub(crate) fn observed_spends(event: &WalletEvent) -> Vec<dashcore::OutPoint> {
             inserted.iter().flat_map(spent_outpoints).collect()
         }
         // Finality promotions of records the wallet already holds, and a bare
-        // watermark advance. No new spend in any of them — and note that the
-        // watermark is precisely the "chain moved" signal that must NOT touch
-        // a fence.
+        // watermark advance carry no new spend. A sweep carries removals and
+        // released outpoints, not a newly observed spend. The watermark is
+        // precisely the "chain moved" signal that must not touch a fence.
         WalletEvent::TransactionInstantLocked { .. }
         | WalletEvent::ChainLockProcessed { .. }
-        | WalletEvent::SyncHeightAdvanced { .. } => Vec::new(),
+        | WalletEvent::SyncHeightAdvanced { .. }
+        | WalletEvent::TransactionsSwept { .. } => Vec::new(),
     }
 }
 
@@ -327,6 +329,25 @@ mod tests {
         ]));
 
         assert_eq!(spends, [a, b]);
+    }
+
+    /// A sweep reports transactions that lost conflict resolution and
+    /// outpoints it released. Neither is a newly observed spend, so the event
+    /// must not retire an in-broadcast fence.
+    #[test]
+    fn swept_transactions_do_not_report_spend_observations() {
+        let event = WalletEvent::TransactionsSwept {
+            wallet_id: WALLET_ID,
+            txids: vec![Txid::from_slice(&[8u8; 32]).expect("valid txid")],
+            superseded_by: Txid::from_slice(&[9u8; 32]).expect("valid txid"),
+            winner_mined_height: None,
+            released_outpoints: vec![outpoint(10)],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+
+        assert!(observed_spends(&event).is_empty());
+        assert!(observing_wallet(&event).is_none());
     }
 
     /// THE VARIANT THAT MUST NEVER TOUCH A FENCE.

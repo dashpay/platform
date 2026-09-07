@@ -604,13 +604,23 @@ where
             wallet_id,
             wallet_batch,
             &mut diag,
-            fault,
-            sync_fault,
-            freeze_logged,
+            CommitFaults {
+                state: fault,
+                sync_fault,
+                freeze_logged,
+            },
             settled,
         );
     }
     diag
+}
+
+/// Mutable fault state and the two session latches updated when a wallet
+/// persistence round cannot be trusted.
+struct CommitFaults<'a> {
+    state: &'a mut AdapterFaultState,
+    sync_fault: &'a AtomicBool,
+    freeze_logged: &'a AtomicBool,
 }
 
 /// Commit one wallet's folded changeset — the per-wallet unit of
@@ -620,13 +630,16 @@ fn commit_wallet<P>(
     wallet_id: WalletId,
     wallet_batch: WalletBatch,
     diag: &mut BatchDiagnostics,
-    fault: &mut AdapterFaultState,
-    sync_fault: &AtomicBool,
-    freeze_logged: &AtomicBool,
+    faults: CommitFaults<'_>,
     settled: &mut Vec<WalletId>,
 ) where
     P: PlatformWalletPersistence + ?Sized,
 {
+    let CommitFaults {
+        state: fault,
+        sync_fault,
+        freeze_logged,
+    } = faults;
     let WalletBatch {
         mut core,
         asset_locks,
