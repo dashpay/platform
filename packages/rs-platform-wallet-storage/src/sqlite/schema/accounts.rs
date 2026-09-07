@@ -113,7 +113,10 @@ pub(crate) fn list_platform_payment_registrations(
 /// query.
 pub(crate) fn all_platform_payment_registrations(
     conn: &Connection,
-) -> Result<BTreeMap<WalletId, Vec<PlatformPaymentRegistration>>, WalletStorageError> {
+) -> Result<
+    BTreeMap<WalletId, Result<Vec<PlatformPaymentRegistration>, WalletStorageError>>,
+    WalletStorageError,
+> {
     let mut stmt = conn.prepare(
         "SELECT length(wallet_id), wallet_id, account_index, key_class, \
                 length(account_xpub_bytes), account_xpub_bytes \
@@ -122,18 +125,35 @@ pub(crate) fn all_platform_payment_registrations(
          ORDER BY wallet_id, account_index",
     )?;
     let mut rows = stmt.query([])?;
-    let mut out: BTreeMap<WalletId, Vec<PlatformPaymentRegistration>> = BTreeMap::new();
+    let mut out: BTreeMap<WalletId, Result<Vec<PlatformPaymentRegistration>, WalletStorageError>> =
+        BTreeMap::new();
     while let Some(row) = rows.next()? {
         blob::check_fixed_width(row.get::<_, i64>(0)?, 32, "account_registrations.wallet_id")?;
         let wid_bytes: Vec<u8> = row.get(1)?;
         let idx: i64 = row.get(2)?;
         let key_class: i64 = row.get(3)?;
-        blob::check_size(row.get::<_, i64>(4)?)?;
+        let payload_width: i64 = row.get(4)?;
         let bytes: Vec<u8> = row.get(5)?;
+        // An id that is not 32 bytes belongs to no wallet, so it stays
+        // file-fatal; everything after it is attributable to one.
         let wallet_id = super::id32("account_registrations.wallet_id", &wid_bytes)?;
-        out.entry(wallet_id)
-            .or_default()
-            .push(decode_platform_payment_row(idx, key_class, &bytes)?);
+        let decoded = blob::check_size(payload_width)
+            .and_then(|()| decode_platform_payment_row(idx, key_class, &bytes));
+        match decoded {
+            // A wallet already recorded as failed keeps its first cause;
+            // its remaining rows cannot change the outcome.
+            Ok(decoded) => {
+                if let Ok(rows) = out.entry(wallet_id).or_insert_with(|| Ok(Vec::new())) {
+                    rows.push(decoded);
+                }
+            }
+            Err(err) => {
+                let slot = out.entry(wallet_id).or_insert_with(|| Ok(Vec::new()));
+                if slot.is_ok() {
+                    *slot = Err(err);
+                }
+            }
+        }
     }
     Ok(out)
 }
@@ -727,11 +747,32 @@ pub(crate) fn account_index(at: &key_wallet::account::AccountType) -> u32 {
 /// Hardened `key_class` discriminator for `PlatformPayment`, persisted in the
 /// `account_registrations.key_class` PK column. `0` for every other variant —
 /// the sentinel "no key-class axis" value, matching the column default.
+///
+/// Wildcard-free on purpose, like [`account_index`] and
+/// [`account_type_db_label`]: this feeds a PRIMARY KEY column, so a variant
+/// this mapper has not been taught about would be given another variant's
+/// sentinel and collapse two distinct accounts onto one key — losing one of
+/// them at the next write, with no error anywhere. Listing the zeros costs a
+/// dozen lines and converts that silent loss into a compile error.
 pub(crate) fn account_key_class(at: &key_wallet::account::AccountType) -> u32 {
     use key_wallet::account::AccountType;
     match at {
         AccountType::PlatformPayment { key_class, .. } => *key_class,
-        _ => 0,
+        // No key-class axis: the column's sentinel default.
+        AccountType::Standard { .. }
+        | AccountType::CoinJoin { .. }
+        | AccountType::IdentityRegistration
+        | AccountType::IdentityTopUp { .. }
+        | AccountType::IdentityTopUpNotBoundToIdentity
+        | AccountType::IdentityInvitation
+        | AccountType::AssetLockAddressTopUp
+        | AccountType::AssetLockShieldedAddressTopUp
+        | AccountType::ProviderVotingKeys
+        | AccountType::ProviderOwnerKeys
+        | AccountType::ProviderOperatorKeys
+        | AccountType::ProviderPlatformKeys
+        | AccountType::DashpayReceivingFunds { .. }
+        | AccountType::DashpayExternalAccount { .. } => 0,
     }
 }
 
@@ -739,6 +780,10 @@ pub(crate) fn account_key_class(at: &key_wallet::account::AccountType) -> u32 {
 /// real account key for `DashpayReceivingFunds` / `DashpayExternalAccount`,
 /// persisted in the matching PK columns. All-zero for every non-DashPay
 /// variant (no identity axis), matching the column default.
+///
+/// Wildcard-free for the same reason as [`account_key_class`]: these are PK
+/// columns, and an untaught variant handed the all-zero sentinel shares a key
+/// with every other axis-less account at the same index.
 pub(crate) fn account_dashpay_ids(at: &key_wallet::account::AccountType) -> ([u8; 32], [u8; 32]) {
     use key_wallet::account::AccountType;
     match at {
@@ -752,7 +797,20 @@ pub(crate) fn account_dashpay_ids(at: &key_wallet::account::AccountType) -> ([u8
             friend_identity_id,
             ..
         } => (*user_identity_id, *friend_identity_id),
-        _ => ([0u8; 32], [0u8; 32]),
+        // No identity axis: the columns' sentinel default.
+        AccountType::Standard { .. }
+        | AccountType::CoinJoin { .. }
+        | AccountType::IdentityRegistration
+        | AccountType::IdentityTopUp { .. }
+        | AccountType::IdentityTopUpNotBoundToIdentity
+        | AccountType::IdentityInvitation
+        | AccountType::AssetLockAddressTopUp
+        | AccountType::AssetLockShieldedAddressTopUp
+        | AccountType::ProviderVotingKeys
+        | AccountType::ProviderOwnerKeys
+        | AccountType::ProviderOperatorKeys
+        | AccountType::ProviderPlatformKeys
+        | AccountType::PlatformPayment { .. } => ([0u8; 32], [0u8; 32]),
     }
 }
 
@@ -900,7 +958,14 @@ mod tests {
         )
         .unwrap();
 
-        let err = all_platform_payment_registrations(&conn)
+        // The bulk reader refuses the row per WALLET: the scan survives, and
+        // the wallet that owns the bad row carries the refusal.
+        let all = all_platform_payment_registrations(&conn)
+            .expect("the scan itself must survive one bad row");
+        let err = all
+            .get(&w)
+            .expect("the wallet must be present in the scan")
+            .as_ref()
             .expect_err("bulk reader must reject key_class mismatch");
         assert!(
             matches!(err, WalletStorageError::AccountRegistrationEntryMismatch),
@@ -1125,6 +1190,36 @@ mod tests {
             }
         }
         variants
+    }
+
+    /// No two account types may share a full PK tuple, whatever axes they
+    /// carry. This is the runtime half of the wildcard-free mappers: those
+    /// make an untaught variant a compile error, and this makes a variant
+    /// that IS taught but mapped onto an existing key a test failure.
+    ///
+    /// Reached through `all_account_type_variants`, whose own exhaustive
+    /// match means a new upstream variant cannot arrive without a decision
+    /// being taken here.
+    #[test]
+    fn no_two_account_types_share_a_pk_tuple() {
+        let keys: Vec<_> = all_account_type_variants()
+            .into_iter()
+            .map(|at| {
+                (
+                    account_type_db_label(&at),
+                    account_index(&at),
+                    account_key_class(&at),
+                    account_dashpay_ids(&at),
+                )
+            })
+            .collect();
+        let mut seen: HashSet<_> = HashSet::new();
+        let collisions: Vec<_> = keys.iter().filter(|key| !seen.insert(*key)).collect();
+        assert!(
+            collisions.is_empty(),
+            "these primary keys are claimed by more than one account type, so \
+             the second account written would overwrite the first: {collisions:?}"
+        );
     }
 
     /// The reader's SQL inlines these two labels (SQLite has no list

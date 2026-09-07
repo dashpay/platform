@@ -1401,3 +1401,105 @@ fn a_torn_contact_blob_costs_the_contact_not_the_wallet() {
     );
     assert_only_site(&persister, LoadSite::ContactRow, 1);
 }
+
+/// `platform_addresses` rows carry `balance`, so a row that cannot be read
+/// costs its whole WALLET, never just itself: skipping the row would report
+/// a smaller balance with no signal. The wallet is dropped and attributed;
+/// its healthy sibling in the same file still loads.
+#[test]
+fn an_unreadable_platform_address_row_costs_its_wallet_not_the_file() {
+    let healthy = wid(0x55);
+    let sick = wid(0x56);
+    let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
+        ensure_wallet_meta(strict, &healthy);
+        ensure_wallet_meta(strict, &sick);
+        let conn = strict.lock_conn_for_test();
+        conn.execute(
+            "INSERT INTO platform_addresses \
+                (wallet_id, account_index, address_index, address, balance, nonce) \
+             VALUES (?1, 0, 0, ?2, 0, 0)",
+            params![sick.as_slice(), [0xAB_u8; 19].as_slice()],
+        )
+        .expect("plant an address that is not 20 bytes");
+    });
+
+    let state = persister
+        .load()
+        .expect("one wallet's unreadable address row must not fail the file");
+    assert!(
+        !state.platform_addresses.contains_key(&sick),
+        "a wallet whose address rows cannot be read must not be served a partial set"
+    );
+    assert!(
+        !state.wallets.contains_key(&sick),
+        "and it must not be rebuilt from its other tables either"
+    );
+    let degradation = persister.last_load_degradation();
+    assert_eq!(
+        degradation.wallets_degraded.get(&sick).copied(),
+        Some("blob_decode"),
+        "the wallet must name itself and its cause: {:?}",
+        degradation.wallets_degraded
+    );
+    assert!(
+        !degradation.wallets_degraded.contains_key(&healthy),
+        "the healthy wallet must not be reported degraded"
+    );
+}
+
+/// An `identities` row carries the identity's CREDIT BALANCE, so it is not a
+/// row this reader may skip: dropping one would quietly lower the wallet's
+/// reported credits. Its failure therefore costs the whole wallet, counted
+/// and attributed like any other, while a sibling wallet still loads.
+///
+/// This test passes without a code change — the isolation boundary already
+/// gives these sites their policy at wallet granularity. It is here to stop
+/// the change it describes from being made: per-row tolerance for identities
+/// would turn one dropped wallet into a wallet with silently missing credits,
+/// and this assertion is what would fail.
+#[test]
+fn an_unreadable_identity_row_costs_its_wallet_not_just_the_identity() {
+    use platform_wallet_storage::sqlite::schema::blob;
+
+    let healthy = wid(0x57);
+    let sick = wid(0x58);
+    let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
+        ensure_wallet_meta(strict, &healthy);
+        ensure_wallet_meta(strict, &sick);
+        let conn = strict.lock_conn_for_test();
+        // The blob names a different identity than the column it is filed
+        // under, which is corruption the reader cannot resolve.
+        let entry = identity_entry(sick, 0x99, 0);
+        conn.execute(
+            "INSERT INTO identities \
+                (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
+             VALUES (?1, ?2, 0, ?3, 0)",
+            params![
+                [0x58_u8; 32].as_slice(),
+                sick.as_slice(),
+                blob::encode(&entry).unwrap()
+            ],
+        )
+        .expect("plant an identity whose blob contradicts its column");
+    });
+
+    let state = persister
+        .load()
+        .expect("one wallet's unreadable identity row must not fail the file");
+    assert!(
+        state.wallets.contains_key(&healthy),
+        "the healthy wallet must rehydrate"
+    );
+    assert!(
+        !state.wallets.contains_key(&sick),
+        "the wallet owning the unreadable identity must be dropped whole, \
+         not served with one identity's credits missing"
+    );
+    let degradation = persister.last_load_degradation();
+    assert_eq!(
+        degradation.wallets_degraded.get(&sick).copied(),
+        Some("identity_entry_id_mismatch"),
+        "the loss must be attributed to the wallet and its cause: {:?}",
+        degradation.wallets_degraded
+    );
+}
