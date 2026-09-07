@@ -36,7 +36,7 @@
 //! see (or care) which Rust crate produced
 //! `dash_sdk_sign_with_mnemonic_resolver_and_path`.
 
-use std::ffi::{c_void, CStr};
+use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::str::FromStr;
 
@@ -45,10 +45,7 @@ use dashcore::secp256k1::Secp256k1;
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
 use zeroize::Zeroizing;
 
-use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
-use rs_sdk_ffi::{
-    mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-};
+use rs_sdk_ffi::{resolve_seed, MnemonicResolverHandle, ResolveSeedError};
 
 // One-byte error tags. Mirror the shape of
 // `signer_simple::SIGN_WITH_MNEMONIC_ERR_*` so call sites already
@@ -213,49 +210,26 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
         return fail(SIGN_WITH_RESOLVER_ERR_UNSUPPORTED_KEY_TYPE);
     }
 
-    // ---- Resolve mnemonic ----------------------------------------------------
-    let mut mnemonic_buf: Zeroizing<[u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]> =
-        Zeroizing::new([0u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]);
-    let mut mnemonic_len: usize = 0;
-
-    let resolver = &*mnemonic_resolver_handle;
-    let resolver_vtable = &*resolver.vtable;
-    let rc = (resolver_vtable.resolve)(
-        resolver.ctx as *const c_void,
-        wallet_id_bytes,
-        mnemonic_buf.as_mut_ptr() as *mut c_char,
-        MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-        &mut mnemonic_len,
-    );
-    match rc {
-        x if x == mnemonic_resolver_result::SUCCESS => {}
-        x if x == mnemonic_resolver_result::NOT_FOUND => {
-            return fail(SIGN_WITH_RESOLVER_ERR_RESOLVER_NOT_FOUND);
+    // ---- Resolve seed (mnemonic + stored passphrase) -------------------------
+    let seed: Zeroizing<[u8; 64]> = match resolve_seed(
+        mnemonic_resolver_handle,
+        &*(wallet_id_bytes as *const [u8; 32]),
+    ) {
+        Ok(seed) => seed,
+        Err(ResolveSeedError::NotFound) => return fail(SIGN_WITH_RESOLVER_ERR_RESOLVER_NOT_FOUND),
+        Err(ResolveSeedError::BufferTooSmall) => {
+            return fail(SIGN_WITH_RESOLVER_ERR_BUFFER_TOO_SMALL)
         }
-        x if x == mnemonic_resolver_result::BUFFER_TOO_SMALL => {
-            return fail(SIGN_WITH_RESOLVER_ERR_BUFFER_TOO_SMALL);
+        Err(ResolveSeedError::InvalidUtf8) => return fail(SIGN_WITH_RESOLVER_ERR_INVALID_UTF8),
+        Err(ResolveSeedError::InvalidMnemonic) => {
+            return fail(SIGN_WITH_RESOLVER_ERR_INVALID_MNEMONIC)
         }
-        _ => return fail(SIGN_WITH_RESOLVER_ERR_RESOLVER_FAILED),
-    }
-    if mnemonic_len == 0 || mnemonic_len > MNEMONIC_RESOLVER_BUFFER_CAPACITY {
-        return fail(SIGN_WITH_RESOLVER_ERR_RESOLVER_FAILED);
-    }
-
-    // Parse mnemonic. UTF-8 validation runs on the prefix only —
-    // we never construct a `String` (Swift's String can't be
-    // zeroized; ours can).
-    let mnemonic_str = match std::str::from_utf8(&mnemonic_buf[..mnemonic_len]) {
-        Ok(s) => s,
-        Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_INVALID_UTF8),
+        Err(ResolveSeedError::ResolverFailed(_))
+        | Err(ResolveSeedError::InvalidMnemonicLength(_))
+        | Err(ResolveSeedError::InvalidPassphraseLength(_)) => {
+            return fail(SIGN_WITH_RESOLVER_ERR_RESOLVER_FAILED)
+        }
     };
-    let mnemonic = match parse_mnemonic_any_language(mnemonic_str) {
-        Ok(m) => m,
-        Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_INVALID_MNEMONIC),
-    };
-
-    // ---- Derive seed + derivation path --------------------------------------
-    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
-    drop(mnemonic);
 
     let path_str = match CStr::from_ptr(derivation_path_cstr).to_str() {
         Ok(s) => s,
@@ -337,7 +311,12 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rs_sdk_ffi::{dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy};
+    use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
+    use rs_sdk_ffi::{
+        dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
+        mnemonic_resolver_result,
+    };
+    use std::ffi::c_void;
     use std::ffi::CString;
 
     /// English BIP-39 test vector (all-zero entropy).
@@ -350,6 +329,9 @@ mod tests {
         out_buf: *mut c_char,
         out_capacity: usize,
         out_len: *mut usize,
+        _out_passphrase: *mut c_char,
+        _out_passphrase_capacity: usize,
+        out_passphrase_len: *mut usize,
     ) -> i32 {
         let phrase = ENGLISH_PHRASE.as_bytes();
         if phrase.len() + 1 > out_capacity {
@@ -358,6 +340,37 @@ mod tests {
         std::ptr::copy_nonoverlapping(phrase.as_ptr() as *const c_char, out_buf, phrase.len());
         *out_buf.add(phrase.len()) = 0;
         *out_len = phrase.len();
+        *out_passphrase_len = 0;
+        mnemonic_resolver_result::SUCCESS
+    }
+
+    /// Same phrase as [`english_resolve`], with the BIP-39 vector
+    /// passphrase `TREZOR` — exercises the passphrase leg of the vtable.
+    unsafe extern "C" fn english_trezor_resolve(
+        _ctx: *const c_void,
+        _wallet_id_bytes: *const u8,
+        out_buf: *mut c_char,
+        out_capacity: usize,
+        out_len: *mut usize,
+        out_passphrase: *mut c_char,
+        out_passphrase_capacity: usize,
+        out_passphrase_len: *mut usize,
+    ) -> i32 {
+        let phrase = ENGLISH_PHRASE.as_bytes();
+        let passphrase = b"TREZOR";
+        if phrase.len() + 1 > out_capacity || passphrase.len() + 1 > out_passphrase_capacity {
+            return mnemonic_resolver_result::BUFFER_TOO_SMALL;
+        }
+        std::ptr::copy_nonoverlapping(phrase.as_ptr() as *const c_char, out_buf, phrase.len());
+        *out_buf.add(phrase.len()) = 0;
+        *out_len = phrase.len();
+        std::ptr::copy_nonoverlapping(
+            passphrase.as_ptr() as *const c_char,
+            out_passphrase,
+            passphrase.len(),
+        );
+        *out_passphrase.add(passphrase.len()) = 0;
+        *out_passphrase_len = passphrase.len();
         mnemonic_resolver_result::SUCCESS
     }
 
@@ -367,6 +380,9 @@ mod tests {
         _out_buf: *mut c_char,
         _out_capacity: usize,
         _out_len: *mut usize,
+        _out_passphrase: *mut c_char,
+        _out_passphrase_capacity: usize,
+        _out_passphrase_len: *mut usize,
     ) -> i32 {
         mnemonic_resolver_result::NOT_FOUND
     }
@@ -572,6 +588,69 @@ mod tests {
         assert_eq!(err, SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH);
         assert_eq!(sig_len, 0, "no signature on a binding mismatch");
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// A wallet whose resolver carries a BIP-39 passphrase signs with the
+    /// passphrase-derived key: the key bound at `expected_key_data` is the
+    /// one `to_seed("TREZOR")` produces, and the same call bound to the
+    /// empty-passphrase key is refused. Pins that the passphrase leg of the
+    /// vtable reaches the signer instead of being dropped on the floor.
+    #[test]
+    fn passphrase_resolver_signs_with_the_passphrase_derived_key() {
+        use key_wallet::bip32::ExtendedPubKey;
+
+        let path_str = "m/9'/1'/5'/0'/0'/0'/0'";
+        let path = CString::new(path_str).unwrap();
+        let wallet_id = [0u8; 32];
+        let data = b"passphrase wallet sign";
+        let secp = Secp256k1::new();
+        let mnemonic = parse_mnemonic_any_language(ENGLISH_PHRASE).expect("mnemonic");
+        let derivation = DerivationPath::from_str(path_str).unwrap();
+
+        let pubkey_for = |passphrase: &str| -> [u8; 33] {
+            let seed = mnemonic.to_seed(passphrase);
+            let master = ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master");
+            let derived = master.derive_priv(&secp, &derivation).expect("derive");
+            ExtendedPubKey::from_priv(&secp, &derived)
+                .public_key
+                .serialize()
+        };
+        let with_passphrase = pubkey_for("TREZOR");
+        let without_passphrase = pubkey_for("");
+        assert_ne!(with_passphrase, without_passphrase);
+
+        let sign = |expected: &[u8; 33]| -> (i32, u8) {
+            let resolver = make_resolver(english_trezor_resolve);
+            let mut sig_buf = [0u8; 128];
+            let mut sig_len: usize = 0;
+            let mut err: u8 = 0;
+            let rc = unsafe {
+                dash_sdk_sign_with_mnemonic_resolver_and_path(
+                    resolver,
+                    wallet_id.as_ptr(),
+                    path.as_ptr(),
+                    data.as_ptr(),
+                    data.len(),
+                    0,
+                    FFINetwork::Testnet,
+                    expected.as_ptr(),
+                    expected.len(),
+                    sig_buf.as_mut_ptr(),
+                    sig_buf.len(),
+                    &mut sig_len,
+                    &mut err,
+                )
+            };
+            unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+            (rc, err)
+        };
+
+        assert_eq!(sign(&with_passphrase), (0, SIGN_WITH_RESOLVER_OK));
+        assert_eq!(
+            sign(&without_passphrase),
+            (-1, SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH),
+            "the empty-passphrase key must not bind for a passphrase wallet"
+        );
     }
 
     /// A `HASH160` identity key (key_type 2) binds by the 20-byte

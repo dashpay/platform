@@ -88,7 +88,6 @@
 //! call without performing a second derivation pass.
 
 use std::ffi::{c_void, CString};
-use std::os::raw::c_char;
 use std::ptr;
 
 use crate::types::{FFINetwork, Network};
@@ -103,13 +102,11 @@ use crate::derive_and_persist_callbacks::{
 use crate::error::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
 use crate::identity_keys_from_mnemonic::{
-    identity_auth_derivation_path, parse_mnemonic_any_language,
+    identity_auth_derivation_path, resolve_seed_from_resolver,
 };
 use crate::identity_registration_with_signer::IdentityRegistrationKeyDerivationsFFI;
 use crate::{check_ptr, unwrap_result_or_return};
-use rs_sdk_ffi::{
-    mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-};
+use rs_sdk_ffi::MnemonicResolverHandle;
 
 /// DPP `KeyType::ECDSA_SECP256K1` discriminant byte.
 const KEY_TYPE_ECDSA_SECP256K1: u8 = 0;
@@ -201,62 +198,16 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
         return PlatformWalletFFIResult::ok();
     }
 
-    // ---- Resolve mnemonic ----------------------------------------------------
-    // Stack-resident, zeroized-on-drop buffer the resolver writes into.
-    let mut mnemonic_buf: Zeroizing<[u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]> =
-        Zeroizing::new([0u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]);
-    let mut mnemonic_len: usize = 0;
-
-    let resolver = &*mnemonic_resolver_handle;
-    let resolver_vtable = &*resolver.vtable;
-    let rc = (resolver_vtable.resolve)(
-        resolver.ctx as *const c_void,
-        wallet_id_bytes,
-        mnemonic_buf.as_mut_ptr() as *mut c_char,
-        MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-        &mut mnemonic_len,
-    );
-    match rc {
-        x if x == mnemonic_resolver_result::SUCCESS => {}
-        x if x == mnemonic_resolver_result::NOT_FOUND => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic resolver: no mnemonic stored for the supplied wallet_id",
-            );
-        }
-        x if x == mnemonic_resolver_result::BUFFER_TOO_SMALL => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic resolver: mnemonic exceeded the FFI buffer capacity",
-            );
-        }
-        _ => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic resolver: failed (other / Keychain access error)",
-            );
-        }
-    }
-    if mnemonic_len == 0 || mnemonic_len > MNEMONIC_RESOLVER_BUFFER_CAPACITY {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            "mnemonic resolver: returned invalid length",
-        );
-    }
-
-    // Validate UTF-8 once over the prefix the resolver claimed to
-    // write. Done in-place so we never construct a `String`
-    // (Swift's String can't be zeroized; ours can).
-    let mnemonic_str = unwrap_result_or_return!(std::str::from_utf8(&mnemonic_buf[..mnemonic_len]));
-    let mnemonic = unwrap_result_or_return!(parse_mnemonic_any_language(mnemonic_str));
-
-    // ---- Derive seed + master xpriv ------------------------------------------
-    // Empty passphrase to mirror the rest of the SDK (no caller
-    // surface for a BIP-39 passphrase yet).
-    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
-    // Mnemonic is no longer needed; explicit drop releases its
-    // (non-zeroized) `String` storage early.
-    drop(mnemonic);
+    // ---- Resolve seed (mnemonic + stored passphrase) -------------------------
+    // Shared vtable consumer: the seed comes back in a `Zeroizing` buffer
+    // and already folds in the wallet's BIP-39 passphrase, if it has one.
+    let seed: Zeroizing<[u8; 64]> = match resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &*(wallet_id_bytes as *const [u8; 32]),
+    ) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
 
     let kw_network: Network = network.into();
     let master = unwrap_result_or_return!(ExtendedPrivKey::new_master(kw_network, seed.as_ref()));
@@ -436,8 +387,12 @@ mod tests {
     use crate::derive_and_persist_callbacks::{
         dash_sdk_identity_key_persister_create, dash_sdk_identity_key_persister_destroy,
     };
-    use rs_sdk_ffi::{dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy};
+    use rs_sdk_ffi::{
+        dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
+        mnemonic_resolver_result,
+    };
     use std::ffi::CStr;
+    use std::os::raw::c_char;
     use std::sync::Mutex;
 
     /// English BIP-39 test vector (all-zero entropy). Same fixture
@@ -476,6 +431,9 @@ mod tests {
         out_buf: *mut c_char,
         out_capacity: usize,
         out_len: *mut usize,
+        _out_passphrase: *mut c_char,
+        _out_passphrase_capacity: usize,
+        out_passphrase_len: *mut usize,
     ) -> i32 {
         let phrase = ENGLISH_PHRASE.as_bytes();
         if phrase.len() + 1 > out_capacity {
@@ -484,6 +442,7 @@ mod tests {
         std::ptr::copy_nonoverlapping(phrase.as_ptr() as *const c_char, out_buf, phrase.len());
         *out_buf.add(phrase.len()) = 0;
         *out_len = phrase.len();
+        *out_passphrase_len = 0;
         mnemonic_resolver_result::SUCCESS
     }
 
