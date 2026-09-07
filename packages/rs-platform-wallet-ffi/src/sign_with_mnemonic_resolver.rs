@@ -216,18 +216,20 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
         &*(wallet_id_bytes as *const [u8; 32]),
     ) {
         Ok(seed) => seed,
-        Err(ResolveSeedError::NotFound) => return fail(SIGN_WITH_RESOLVER_ERR_RESOLVER_NOT_FOUND),
-        Err(ResolveSeedError::BufferTooSmall) => {
-            return fail(SIGN_WITH_RESOLVER_ERR_BUFFER_TOO_SMALL)
-        }
-        Err(ResolveSeedError::InvalidUtf8) => return fail(SIGN_WITH_RESOLVER_ERR_INVALID_UTF8),
-        Err(ResolveSeedError::InvalidMnemonic) => {
-            return fail(SIGN_WITH_RESOLVER_ERR_INVALID_MNEMONIC)
-        }
-        Err(ResolveSeedError::ResolverFailed(_))
-        | Err(ResolveSeedError::InvalidMnemonicLength(_))
-        | Err(ResolveSeedError::InvalidPassphraseLength(_)) => {
-            return fail(SIGN_WITH_RESOLVER_ERR_RESOLVER_FAILED)
+        Err(e) => {
+            return fail(match e {
+                ResolveSeedError::NotFound => SIGN_WITH_RESOLVER_ERR_RESOLVER_NOT_FOUND,
+                ResolveSeedError::BufferTooSmall => SIGN_WITH_RESOLVER_ERR_BUFFER_TOO_SMALL,
+                ResolveSeedError::InvalidUtf8 => SIGN_WITH_RESOLVER_ERR_INVALID_UTF8,
+                ResolveSeedError::InvalidMnemonic => SIGN_WITH_RESOLVER_ERR_INVALID_MNEMONIC,
+                // Host-side framing bugs and Keychain failures share the
+                // generic tag; the distinction is not actionable in Swift.
+                ResolveSeedError::ResolverFailed(_)
+                | ResolveSeedError::InvalidMnemonicLength(_)
+                | ResolveSeedError::InvalidPassphraseLength(_) => {
+                    SIGN_WITH_RESOLVER_ERR_RESOLVER_FAILED
+                }
+            });
         }
     };
 

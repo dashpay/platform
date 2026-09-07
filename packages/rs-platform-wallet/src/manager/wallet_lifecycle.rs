@@ -134,11 +134,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         accounts: WalletAccountCreationOptions,
         birth_height_override: Option<u32>,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
-        let mnemonic = parse_mnemonic_any_language(mnemonic_phrase)
-            .map_err(|e| PlatformWalletError::WalletCreation(format!("Invalid mnemonic: {}", e)))?;
         // `to_seed` NFKD-normalizes the passphrase per BIP-39.
-        let seed = zeroize::Zeroizing::new(mnemonic.to_seed(passphrase));
-        drop(mnemonic);
+        let seed = seed_from_mnemonic(mnemonic_phrase, passphrase)?;
         let wallet = Wallet::from_seed_bytes(*seed, network, accounts).map_err(|e| {
             PlatformWalletError::WalletCreation(format!(
                 "Failed to create wallet from mnemonic: {}",

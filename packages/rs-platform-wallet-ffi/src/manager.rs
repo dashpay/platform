@@ -1189,16 +1189,17 @@ mod tests {
         )
         .unwrap();
         let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
-
-        let mut seed = [0u8; 64];
-        let rc = unsafe {
+        let to_seed = |passphrase: *const std::os::raw::c_char, out: &mut [u8]| unsafe {
             platform_wallet_mnemonic_to_seed(
                 phrase.as_ptr(),
-                std::ptr::null(),
-                seed.as_mut_ptr(),
-                seed.len(),
+                passphrase,
+                out.as_mut_ptr(),
+                out.len(),
             )
         };
+
+        let mut seed = [0u8; 64];
+        let rc = to_seed(std::ptr::null(), &mut seed);
         assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(
             hex(&seed),
@@ -1207,27 +1208,13 @@ mod tests {
 
         let empty = std::ffi::CString::new("").unwrap();
         let mut seed_empty = [0u8; 64];
-        let rc = unsafe {
-            platform_wallet_mnemonic_to_seed(
-                phrase.as_ptr(),
-                empty.as_ptr(),
-                seed_empty.as_mut_ptr(),
-                seed_empty.len(),
-            )
-        };
+        let rc = to_seed(empty.as_ptr(), &mut seed_empty);
         assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(seed_empty, seed, "an empty passphrase must equal NULL");
 
         let trezor = std::ffi::CString::new("TREZOR").unwrap();
         let mut seed_pp = [0u8; 64];
-        let rc = unsafe {
-            platform_wallet_mnemonic_to_seed(
-                phrase.as_ptr(),
-                trezor.as_ptr(),
-                seed_pp.as_mut_ptr(),
-                seed_pp.len(),
-            )
-        };
+        let rc = to_seed(trezor.as_ptr(), &mut seed_pp);
         assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(
             hex(&seed_pp),
@@ -1235,14 +1222,7 @@ mod tests {
         );
 
         let mut short = [0u8; 32];
-        let rc = unsafe {
-            platform_wallet_mnemonic_to_seed(
-                phrase.as_ptr(),
-                std::ptr::null(),
-                short.as_mut_ptr(),
-                short.len(),
-            )
-        };
+        let rc = to_seed(std::ptr::null(), &mut short);
         assert_eq!(rc.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
     }
 

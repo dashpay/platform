@@ -224,58 +224,40 @@ pub unsafe extern "C" fn dash_sdk_mnemonic_resolver_destroy(handle: *mut Mnemoni
 /// match, the length check, the UTF-8 check and the wordlist parse;
 /// this enum is the single shape those checks now report through so
 /// each FFI entry point only has to map it onto its own error surface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// The `Display` text is what the FFI entry points hand back as their
+/// error detail, so it deliberately carries no payload: a resolver
+/// return code or a bogus length is host-side framing noise, not
+/// something a caller can act on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ResolveSeedError {
     /// The resolver reported no stored mnemonic for this wallet id
     /// ([`mnemonic_resolver_result::NOT_FOUND`]).
+    #[error("mnemonic resolver: no mnemonic stored for the supplied wallet_id")]
     NotFound,
     /// The mnemonic or the passphrase did not fit its buffer
     /// ([`mnemonic_resolver_result::BUFFER_TOO_SMALL`]).
+    #[error("mnemonic resolver: mnemonic or passphrase exceeded the FFI buffer capacity")]
     BufferTooSmall,
     /// Any other resolver return code (Keychain locked / denied, …).
     /// Carries the raw code.
+    #[error("mnemonic resolver: failed (other / Keychain access error)")]
     ResolverFailed(i32),
     /// The resolver claimed a mnemonic length of zero or beyond the
     /// buffer capacity — a framing bug on the host side.
+    #[error("mnemonic resolver: returned invalid length")]
     InvalidMnemonicLength(usize),
     /// The resolver claimed a passphrase length beyond the buffer
     /// capacity — a framing bug on the host side.
+    #[error("mnemonic resolver: returned invalid length")]
     InvalidPassphraseLength(usize),
     /// Mnemonic or passphrase bytes were not valid UTF-8.
+    #[error("mnemonic resolver: returned invalid UTF-8")]
     InvalidUtf8,
     /// The mnemonic matched no supported BIP-39 wordlist / failed its
     /// checksum.
+    #[error("mnemonic resolver: returned an invalid mnemonic")]
     InvalidMnemonic,
-}
-
-impl std::fmt::Display for ResolveSeedError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NotFound => {
-                write!(
-                    f,
-                    "mnemonic resolver: no mnemonic stored for the supplied wallet_id"
-                )
-            }
-            Self::BufferTooSmall => write!(
-                f,
-                "mnemonic resolver: mnemonic or passphrase exceeded the FFI buffer capacity"
-            ),
-            Self::ResolverFailed(_) => {
-                write!(
-                    f,
-                    "mnemonic resolver: failed (other / Keychain access error)"
-                )
-            }
-            Self::InvalidMnemonicLength(_) | Self::InvalidPassphraseLength(_) => {
-                write!(f, "mnemonic resolver: returned invalid length")
-            }
-            Self::InvalidUtf8 => write!(f, "mnemonic resolver: returned invalid UTF-8"),
-            Self::InvalidMnemonic => {
-                write!(f, "mnemonic resolver: returned an invalid mnemonic")
-            }
-        }
-    }
 }
 
 /// Fire the resolver once for `wallet_id` and return the wallet's

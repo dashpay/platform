@@ -82,12 +82,11 @@ public class Mnemonic {
 
         var seed = [UInt8](repeating: 0, count: 64)
         var mnemonicBytes = [UInt8](mnemonicUTF8Bytes)
+        defer { scrubMnemonicBytes(&mnemonicBytes) }
         guard !mnemonicBytes.contains(0) else {
-            scrubMnemonicBytes(&mnemonicBytes)
             throw KeyWalletError.invalidInput("Mnemonic bytes must not contain NUL")
         }
         mnemonicBytes.append(0)
-        defer { scrubMnemonicBytes(&mnemonicBytes) }
 
         let result: PlatformWalletFFIResult = mnemonicBytes.withUnsafeBufferPointer { mnemonicBuf in
             guard let mnemonicBase = mnemonicBuf.baseAddress else {
@@ -98,12 +97,9 @@ public class Mnemonic {
                 seed.withUnsafeMutableBufferPointer { seedBuf -> PlatformWalletFFIResult in
                     let seedPtr = seedBuf.baseAddress
                     let seedLen = UInt(seedBuf.count)
-                    if let passphrase, !passphrase.isEmpty {
-                        return passphrase.withCString { passphraseCStr in
-                            platform_wallet_mnemonic_to_seed(mnemonicCStr, passphraseCStr, seedPtr, seedLen)
-                        }
+                    return withOptionalPassphraseCString(passphrase) { passphraseCStr in
+                        platform_wallet_mnemonic_to_seed(mnemonicCStr, passphraseCStr, seedPtr, seedLen)
                     }
-                    return platform_wallet_mnemonic_to_seed(mnemonicCStr, nil, seedPtr, seedLen)
                 }
             }
         }

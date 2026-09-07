@@ -68,20 +68,19 @@ public class WalletStorage {
 
     public init() {}
 
-    // MARK: - Per-Wallet Mnemonic Storage
+    // MARK: - Shared Keychain Item Primitives
     //
-    // Multi-wallet variant keyed by the 32-byte walletId. Stores each
-    // mnemonic at account `wallet.mnemonic.<hex-walletId>` so any
-    // number of wallets can coexist.
+    // Every per-wallet item (mnemonic, passphrase, metadata) is a
+    // `kSecClassGenericPassword` row under `keychainService` at
+    // `<prefix>.<hex-walletId>`. The typed accessors below differ only in
+    // that prefix and in the error they raise for a missing item, so the
+    // Keychain queries themselves live here once.
 
-    private func perWalletMnemonicAccount(for walletId: Data) -> String {
+    /// `<prefix>.<64-char-hex-walletId>` — the account layout shared by
+    /// every per-wallet item.
+    private func perWalletAccount(_ prefix: String, for walletId: Data) -> String {
         let hex = walletId.map { String(format: "%02x", $0) }.joined()
-        return "\(mnemonicKeychainAccount).\(hex)"
-    }
-
-    /// Store a mnemonic keyed by wallet id.
-    public func storeMnemonic(_ mnemonic: String, for walletId: Data) throws {
-        try replaceSecret(Data(mnemonic.utf8), account: perWalletMnemonicAccount(for: walletId))
+        return "\(prefix).\(hex)"
     }
 
     /// Delete-then-add write of a secret at `account` with the
@@ -113,12 +112,10 @@ public class WalletStorage {
         }
     }
 
-    /// Retrieve the mnemonic UTF-8 bytes keyed by wallet id.
-    ///
-    /// Returning raw bytes lets security-sensitive call sites avoid
-    /// materializing a Swift `String` unless they truly need one.
-    public func retrieveMnemonicUTF8Bytes(for walletId: Data) throws -> Data {
-        let account = perWalletMnemonicAccount(for: walletId)
+    /// Read the secret bytes at `account`. A missing item — and an item
+    /// whose payload is empty, which no writer here produces — throws
+    /// `notFound`; anything else throws the raw `OSStatus`.
+    private func secretData(account: String, notFound: WalletStorageError) throws -> Data {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -130,24 +127,108 @@ public class WalletStorage {
         let status = SecItemCopyMatching(query as CFDictionary, &result)
 
         if status == errSecItemNotFound {
-            throw WalletStorageError.mnemonicNotFound
+            throw notFound
         }
         guard status == errSecSuccess else {
             throw WalletStorageError.keychainError(status)
         }
         guard let data = result as? Data, !data.isEmpty else {
-            throw WalletStorageError.mnemonicNotFound
+            throw notFound
         }
         return data
     }
 
+    /// `secretData(account:notFound:)` decoded as a non-empty UTF-8 string.
+    private func secretString(account: String, notFound: WalletStorageError) throws -> String {
+        let data = try secretData(account: account, notFound: notFound)
+        guard let text = String(data: data, encoding: .utf8), !text.isEmpty else {
+            throw notFound
+        }
+        return text
+    }
+
+    /// Lookup of one item that returns its attributes rather than its
+    /// payload — the shape both `availability(account:)` and
+    /// `itemStamp(account:)` need, and the reason neither materializes a
+    /// secret.
+    private func attributeQuery(account: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: account,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnAttributes as String: true
+        ]
+    }
+
+    /// Attribute-only presence of one Keychain item, keeping "no such item"
+    /// apart from "could not tell". No secret is materialized.
+    private func availability(account: String) -> MnemonicAvailability {
+        var result: AnyObject?
+        switch SecItemCopyMatching(attributeQuery(account: account) as CFDictionary, &result) {
+        case errSecSuccess: return .present
+        case errSecItemNotFound: return .absent
+        case let status: return .unavailable(status)
+        }
+    }
+
+    /// Attribute-only creation + modification stamp of one Keychain item, or
+    /// `nil` when the item is missing or its attributes are unreadable.
+    private func itemStamp(account: String) -> String? {
+        var result: AnyObject?
+        let status = SecItemCopyMatching(attributeQuery(account: account) as CFDictionary, &result)
+        guard status == errSecSuccess,
+              let attrs = result as? [String: Any],
+              let modified = attrs[kSecAttrModificationDate as String] as? Date else {
+            return nil
+        }
+        let created = attrs[kSecAttrCreationDate as String] as? Date ?? modified
+        // Millisecond precision; both dates so delete-then-add and in-place
+        // update are each guaranteed to change the stamp.
+        return "c\(Int64(created.timeIntervalSince1970 * 1000))"
+            + "-m\(Int64(modified.timeIntervalSince1970 * 1000))"
+    }
+
+    private func deleteSecret(account: String) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: account
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw WalletStorageError.keychainError(status)
+        }
+    }
+
+    // MARK: - Per-Wallet Mnemonic Storage
+    //
+    // Multi-wallet variant keyed by the 32-byte walletId. Stores each
+    // mnemonic at account `wallet.mnemonic.<hex-walletId>` so any
+    // number of wallets can coexist.
+
+    private func perWalletMnemonicAccount(for walletId: Data) -> String {
+        perWalletAccount(mnemonicKeychainAccount, for: walletId)
+    }
+
+    /// Store a mnemonic keyed by wallet id.
+    public func storeMnemonic(_ mnemonic: String, for walletId: Data) throws {
+        try replaceSecret(Data(mnemonic.utf8), account: perWalletMnemonicAccount(for: walletId))
+    }
+
+    /// Retrieve the mnemonic UTF-8 bytes keyed by wallet id.
+    ///
+    /// Returning raw bytes lets security-sensitive call sites avoid
+    /// materializing a Swift `String` unless they truly need one.
+    public func retrieveMnemonicUTF8Bytes(for walletId: Data) throws -> Data {
+        try secretData(
+            account: perWalletMnemonicAccount(for: walletId), notFound: .mnemonicNotFound)
+    }
+
     /// Retrieve a mnemonic keyed by wallet id.
     public func retrieveMnemonic(for walletId: Data) throws -> String {
-        let data = try retrieveMnemonicUTF8Bytes(for: walletId)
-        guard let mnemonic = String(data: data, encoding: .utf8), !mnemonic.isEmpty else {
-            throw WalletStorageError.mnemonicNotFound
-        }
-        return mnemonic
+        try secretString(
+            account: perWalletMnemonicAccount(for: walletId), notFound: .mnemonicNotFound)
     }
 
     /// Three-way answer to "can this wallet's mnemonic be read right now?".
@@ -170,20 +251,7 @@ public class WalletStorage {
     /// Whether the wallet's mnemonic is readable, keeping "no such item" apart
     /// from "could not tell". Attribute-only; no secret is materialized.
     public func mnemonicAvailability(for walletId: Data) -> MnemonicAvailability {
-        let account = perWalletMnemonicAccount(for: walletId)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: account,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecReturnAttributes as String: true
-        ]
-        var result: AnyObject?
-        switch SecItemCopyMatching(query as CFDictionary, &result) {
-        case errSecSuccess: return .present
-        case errSecItemNotFound: return .absent
-        case let status: return .unavailable(status)
-        }
+        availability(account: perWalletMnemonicAccount(for: walletId))
     }
 
     /// Cheap existence check used by signer preflight paths.
@@ -238,30 +306,6 @@ public class WalletStorage {
         }
     }
 
-    /// Attribute-only creation + modification stamp of one Keychain item, or
-    /// `nil` when the item is missing or its attributes are unreadable.
-    private func itemStamp(account: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: account,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecReturnAttributes as String: true
-        ]
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess,
-              let attrs = result as? [String: Any],
-              let modified = attrs[kSecAttrModificationDate as String] as? Date else {
-            return nil
-        }
-        let created = attrs[kSecAttrCreationDate as String] as? Date ?? modified
-        // Millisecond precision; both dates so delete-then-add and in-place
-        // update are each guaranteed to change the stamp.
-        return "c\(Int64(created.timeIntervalSince1970 * 1000))"
-            + "-m\(Int64(modified.timeIntervalSince1970 * 1000))"
-    }
-
     /// Delete a mnemonic keyed by wallet id. Idempotent.
     ///
     /// Deletes only the mnemonic item; a passphrase stored for the same
@@ -270,18 +314,6 @@ public class WalletStorage {
     /// `PlatformWalletManager.deleteWallet`).
     public func deleteMnemonic(for walletId: Data) throws {
         try deleteSecret(account: perWalletMnemonicAccount(for: walletId))
-    }
-
-    private func deleteSecret(account: String) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: account
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw WalletStorageError.keychainError(status)
-        }
     }
 
     // MARK: - Per-Wallet BIP-39 Passphrase Storage
@@ -293,8 +325,7 @@ public class WalletStorage {
     // as the mnemonic: the Keychain is the security boundary for both.
 
     private func perWalletPassphraseAccount(for walletId: Data) -> String {
-        let hex = walletId.map { String(format: "%02x", $0) }.joined()
-        return "\(Self.passphraseAccountPrefix).\(hex)"
+        perWalletAccount(Self.passphraseAccountPrefix, for: walletId)
     }
 
     /// Store the BIP-39 passphrase for `walletId`. An empty passphrase is
@@ -312,51 +343,20 @@ public class WalletStorage {
     /// `passphraseNotFound` when the wallet has none — callers that only
     /// need to know whether one exists should use `hasPassphrase(for:)`.
     public func retrievePassphraseUTF8Bytes(for walletId: Data) throws -> Data {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: perWalletPassphraseAccount(for: walletId),
-            kSecReturnData as String: true
-        ]
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound {
-            throw WalletStorageError.passphraseNotFound
-        }
-        guard status == errSecSuccess else {
-            throw WalletStorageError.keychainError(status)
-        }
-        guard let data = result as? Data, !data.isEmpty else {
-            throw WalletStorageError.passphraseNotFound
-        }
-        return data
+        try secretData(
+            account: perWalletPassphraseAccount(for: walletId), notFound: .passphraseNotFound)
     }
 
     /// Retrieve the passphrase for `walletId` as a `String`.
     public func retrievePassphrase(for walletId: Data) throws -> String {
-        let data = try retrievePassphraseUTF8Bytes(for: walletId)
-        guard let passphrase = String(data: data, encoding: .utf8), !passphrase.isEmpty else {
-            throw WalletStorageError.passphraseNotFound
-        }
-        return passphrase
+        try secretString(
+            account: perWalletPassphraseAccount(for: walletId), notFound: .passphraseNotFound)
     }
 
     /// Whether the wallet's passphrase item is readable, keeping "no such
     /// item" apart from "could not tell". Attribute-only.
     public func passphraseAvailability(for walletId: Data) -> MnemonicAvailability {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: perWalletPassphraseAccount(for: walletId),
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecReturnAttributes as String: true
-        ]
-        var result: AnyObject?
-        switch SecItemCopyMatching(query as CFDictionary, &result) {
-        case errSecSuccess: return .present
-        case errSecItemNotFound: return .absent
-        case let status: return .unavailable(status)
-        }
+        availability(account: perWalletPassphraseAccount(for: walletId))
     }
 
     /// Cheap existence check: `true` only when a passphrase item is present.
@@ -415,8 +415,7 @@ public class WalletStorage {
     // live here, not derived/cached state like sync heights.
 
     private func perWalletMetadataAccount(for walletId: Data) -> String {
-        let hex = walletId.map { String(format: "%02x", $0) }.joined()
-        return "\(Self.metadataAccountPrefix).\(hex)"
+        perWalletAccount(Self.metadataAccountPrefix, for: walletId)
     }
 
     /// Write (or replace) the metadata blob for `walletId`. Uses the
