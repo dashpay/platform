@@ -19,6 +19,7 @@ use platform_wallet::changeset::{
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob;
 
 /// On-disk wire shape for `IdentityKeyEntry`, with `public_key_bincode`
@@ -227,12 +228,23 @@ pub fn decode_entry(payload: &[u8]) -> Result<IdentityKeyEntry, WalletStorageErr
 /// `IdentityPublicKey`; private keys are NOT stored or read here).
 ///
 /// Keyed by `(identity_id, key_id)`; `removed` is always empty (deletes
-/// reach storage as `DELETE`s, never as rows). Any row whose blob fails
-/// to decode is a hard, typed [`WalletStorageError`] — corruption is
-/// never silently dropped.
+/// reach storage as `DELETE`s, never as rows).
+///
+/// A row that cannot be read — a blob that fails to decode, or one that
+/// contradicts the columns it was selected by — is routed through `ctx`:
+/// fatal under [`LoadPolicy::Strict`](crate::LoadPolicy::Strict), skipped
+/// and counted at [`LoadSite::IdentityKeyRow`] under `Recovery`. A key
+/// carries no funds, so losing one costs a signing option rather than a
+/// balance, which is why this row is skippable where a balance-bearing row
+/// would have to take its whole wallet down.
+///
+/// Structural failures are NOT routed here and stay fatal in both policies:
+/// a wrong-width id, an integer that will not narrow, and the blob-size
+/// guard, which rejects on the stored length before any buffer exists.
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
+    ctx: &LoadCtx,
 ) -> Result<IdentityKeysChangeSet, WalletStorageError> {
     let mut cs = IdentityKeysChangeSet::default();
     // NULL-safe `IS`, the read counterpart of the writer's scope mapping:
@@ -256,7 +268,13 @@ pub fn load_state(
         let identity_id = Identifier::from(id32);
         let key_id: KeyID =
             crate::sqlite::util::safe_cast::i64_to_u32("identity_keys.key_id", key_id)?;
-        let entry = decode_entry(&payload)?;
+        let entry = match decode_entry(&payload) {
+            Ok(entry) => entry,
+            Err(err) => {
+                ctx.tolerate(LoadSite::IdentityKeyRow, err)?;
+                continue;
+            }
+        };
         // Cross-check the decoded blob against the typed columns it was
         // selected by (mirrors `accounts`/`asset_locks` readers): a row whose
         // blob names a different identity / key / wallet than its indexed
@@ -267,17 +285,19 @@ pub fn load_state(
         // `public_key_hash` is the indexed lookup column while the blob is
         // what callers receive, so a divergence makes a key findable under a
         // hash it does not carry.
-        if entry.identity_id != identity_id
+        let contradicts_columns = entry.identity_id != identity_id
             || entry.key_id != key_id
             || entry.public_key.id() != key_id
             || entry.public_key_hash[..] != typed_public_key_hash[..]
-        {
-            return Err(WalletStorageError::IdentityKeyEntryMismatch);
-        }
-        if let Some(entry_wallet_id) = entry.wallet_id {
-            if entry_wallet_id != *wallet_id {
-                return Err(WalletStorageError::IdentityKeyEntryMismatch);
-            }
+            || entry
+                .wallet_id
+                .is_some_and(|entry_wallet_id| entry_wallet_id != *wallet_id);
+        if contradicts_columns {
+            ctx.tolerate(
+                LoadSite::IdentityKeyRow,
+                WalletStorageError::IdentityKeyEntryMismatch,
+            )?;
+            continue;
         }
         cs.upserts.insert((identity_id, key_id), entry);
     }
@@ -406,7 +426,8 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_state(&conn, &wallet).expect_err("key_id overflow must fail");
+        let err =
+            load_state(&conn, &wallet, &LoadCtx::strict()).expect_err("key_id overflow must fail");
         assert!(
             matches!(
                 err,
@@ -439,7 +460,8 @@ mod tests {
         };
         insert_key_row(&conn, &wallet, &typed_identity, &wire);
 
-        let err = load_state(&conn, &wallet).expect_err("identity_id mismatch must fail");
+        let err = load_state(&conn, &wallet, &LoadCtx::strict())
+            .expect_err("identity_id mismatch must fail");
         assert!(
             matches!(err, WalletStorageError::IdentityKeyEntryMismatch),
             "expected IdentityKeyEntryMismatch, got {err:?}"
@@ -464,7 +486,8 @@ mod tests {
         };
         insert_key_row(&conn, &wallet, &typed_identity, &wire);
 
-        let err = load_state(&conn, &wallet).expect_err("wallet_id mismatch must fail");
+        let err = load_state(&conn, &wallet, &LoadCtx::strict())
+            .expect_err("wallet_id mismatch must fail");
         assert!(
             matches!(err, WalletStorageError::IdentityKeyEntryMismatch),
             "expected IdentityKeyEntryMismatch, got {err:?}"
@@ -493,7 +516,8 @@ mod tests {
         };
         insert_key_row(&conn, &wallet, &typed_identity, &wire);
 
-        let err = load_state(&conn, &wallet).expect_err("public_key_hash mismatch must fail");
+        let err = load_state(&conn, &wallet, &LoadCtx::strict())
+            .expect_err("public_key_hash mismatch must fail");
         assert!(
             matches!(err, WalletStorageError::IdentityKeyEntryMismatch),
             "expected IdentityKeyEntryMismatch, got {err:?}"
@@ -531,7 +555,8 @@ mod tests {
         };
         insert_key_row(&conn, &wallet, &typed_identity, &wire);
 
-        let err = load_state(&conn, &wallet).expect_err("public_key.id() mismatch must fail");
+        let err = load_state(&conn, &wallet, &LoadCtx::strict())
+            .expect_err("public_key.id() mismatch must fail");
         assert!(
             matches!(err, WalletStorageError::IdentityKeyEntryMismatch),
             "expected IdentityKeyEntryMismatch, got {err:?}"

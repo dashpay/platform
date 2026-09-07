@@ -419,8 +419,8 @@ pub fn load_prekeyed(
     ctx: &LoadCtx,
 ) -> Result<platform_wallet::changeset::IdentityManagerStartState, WalletStorageError> {
     let mut state = load_state_with_ctx(conn, wallet_id, ctx)?;
-    let identity_keys = crate::sqlite::schema::identity_keys::load_state(conn, wallet_id)?;
-    let records = crate::sqlite::schema::contacts::load_state(conn, wallet_id)?;
+    let identity_keys = crate::sqlite::schema::identity_keys::load_state(conn, wallet_id, ctx)?;
+    let records = crate::sqlite::schema::contacts::load_state(conn, wallet_id, ctx)?;
     // Ignored senders restore in `load_state` from the authoritative
     // `ignored_senders` table, so only the request / established maps ride
     // this changeset; `removed_*` / `ignored` / `unignored` stay empty.

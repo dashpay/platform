@@ -510,7 +510,7 @@ fn blob_gate_identity_keys_load_state_rejects_oversize_public_key_blob() {
     )
     .expect("insert oversize public_key_blob row");
 
-    let err = identity_keys::load_state(&conn, &w)
+    let err = identity_keys::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
         .expect_err("load_state must reject an oversize public_key_blob");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),

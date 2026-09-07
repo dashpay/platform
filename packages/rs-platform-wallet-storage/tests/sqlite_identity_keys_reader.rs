@@ -90,7 +90,8 @@ fn gk1_identity_keys_roundtrip() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let cs = identity_keys::load_state(&conn, &w).expect("load_state");
+    let cs = identity_keys::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load_state");
     drop(conn);
 
     assert_eq!(cs.upserts.len(), 3);
@@ -109,7 +110,8 @@ fn gk2_empty_identity_keys_is_ok() {
     drop(persister);
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let cs = identity_keys::load_state(&conn, &w).expect("load_state");
+    let cs = identity_keys::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load_state");
     drop(conn);
     assert!(cs.upserts.is_empty());
 }
@@ -141,7 +143,7 @@ fn gk3_corrupt_blob_is_hard_error() {
     drop(persister);
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let result = identity_keys::load_state(&conn, &w);
+    let result = identity_keys::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict());
     drop(conn);
     assert!(
         matches!(result, Err(WalletStorageError::BincodeDecode { .. })),

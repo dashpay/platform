@@ -14,6 +14,7 @@ use platform_wallet::changeset::ContactChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob;
 
 use dpp::prelude::Identifier;
@@ -280,13 +281,22 @@ pub fn apply(
 }
 
 /// Build a [`ContactsRecords`] for one wallet from the unified
-/// `contacts` table, bucketing rows by `state`. Any row that fails to
-/// decode (bad blob, non-32-byte id, unknown state, or a pending row
-/// missing its request blob) is a hard error — corruption is never
-/// silently dropped.
+/// `contacts` table, bucketing rows by `state`.
+///
+/// A row that cannot be read — a bad blob, an unknown state, or a pending
+/// row missing the request blob its state requires — is routed through
+/// `ctx`: fatal under [`LoadPolicy::Strict`](crate::LoadPolicy::Strict),
+/// skipped and counted at [`LoadSite::ContactRow`] under `Recovery`. A
+/// contact carries no funds, so losing one costs a contact rather than a
+/// balance; that is what makes the row a legitimate unit to skip, where a
+/// balance-bearing row would have to take its whole wallet down.
+///
+/// A non-32-byte id stays fatal in both policies: it is structural, not a
+/// payload the reader can decline.
 pub(crate) fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
+    ctx: &LoadCtx,
 ) -> Result<ContactsRecords, WalletStorageError> {
     let mut state = ContactsRecords::default();
 
@@ -299,75 +309,120 @@ pub(crate) fn load_state(
     while let Some(row) = rows.next()? {
         let owner: Vec<u8> = row.get(0)?;
         let contact: Vec<u8> = row.get(1)?;
-        let label: String = row.get(2)?;
-        let outgoing: Option<Vec<u8>> = row.get(3)?;
-        let incoming: Option<Vec<u8>> = row.get(4)?;
         let (owner_id, contact_id) =
             decode_pair_key("contacts.owner_id", &owner, "contacts.contact_id", &contact)?;
-
-        match contact_state_from_label(&label)? {
-            ContactState::Sent => {
-                let request = decode_request("outgoing_request", outgoing.as_deref())?;
-                state.sent_requests.insert(
-                    SentContactRequestKey {
-                        owner_id,
-                        recipient_id: contact_id,
-                    },
-                    ContactRequestEntry { request },
-                );
-            }
-            ContactState::Received => {
-                let request = decode_request("incoming_request", incoming.as_deref())?;
-                state.incoming_requests.insert(
-                    ReceivedContactRequestKey {
-                        owner_id,
-                        sender_id: contact_id,
-                    },
-                    ContactRequestEntry { request },
-                );
-            }
-            ContactState::Established => {
-                let outgoing_request = decode_request("outgoing_request", outgoing.as_deref())?;
-                let incoming_request = decode_request("incoming_request", incoming.as_deref())?;
-                let alias: Option<String> = row.get(5)?;
-                let note: Option<String> = row.get(6)?;
-                let is_hidden: bool = row.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0;
-                let accepted_blob: Option<Vec<u8>> = row.get(8)?;
-                let accepted_accounts: Vec<u32> = match accepted_blob {
-                    Some(bytes) => blob::decode(&bytes)?,
-                    None => Vec::new(),
-                };
-                let payment_channel_broken: bool = row.get::<_, Option<i64>>(9)?.unwrap_or(0) != 0;
-                state.established.insert(
-                    SentContactRequestKey {
-                        owner_id,
-                        recipient_id: contact_id,
-                    },
-                    EstablishedContact {
-                        contact_identity_id: contact_id,
-                        outgoing_request,
-                        incoming_request,
-                        alias,
-                        note,
-                        is_hidden,
-                        accepted_accounts,
-                        payment_channel_broken,
-                        // System-derived incoming-only label; this backend has
-                        // no column for it, so it restores empty and re-derives
-                        // on the next contact-info sweep.
-                        contact_account_label: None,
-                        // Rotation self-heal marker; this backend has no column
-                        // for it, so it restores `None` — which conservatively
-                        // forces the next sweep to re-verify (tear down + rebuild)
-                        // the external account once, then re-stamp it.
-                        external_account_reference: None,
-                    },
-                );
-            }
+        // Every column is read before any is interpreted, so the row's
+        // decode is one all-or-nothing unit the policy can judge.
+        let columns = ContactRowColumns {
+            owner_id,
+            contact_id,
+            label: row.get(2)?,
+            outgoing: row.get(3)?,
+            incoming: row.get(4)?,
+            alias: row.get(5)?,
+            note: row.get(6)?,
+            is_hidden: row.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
+            accepted_accounts: row.get(8)?,
+            payment_channel_broken: row.get::<_, Option<i64>>(9)?.unwrap_or(0) != 0,
+        };
+        if let Err(err) = bucket_contact_row(&mut state, columns) {
+            ctx.tolerate(LoadSite::ContactRow, err)?;
         }
     }
 
     Ok(state)
+}
+
+/// One `contacts` row's columns, read but not yet interpreted.
+struct ContactRowColumns {
+    owner_id: Identifier,
+    contact_id: Identifier,
+    label: String,
+    outgoing: Option<Vec<u8>>,
+    incoming: Option<Vec<u8>>,
+    alias: Option<String>,
+    note: Option<String>,
+    is_hidden: bool,
+    accepted_accounts: Option<Vec<u8>>,
+    payment_channel_broken: bool,
+}
+
+/// File one read row into the bucket its `state` names, decoding the blobs
+/// that state requires. Every failure here is a property of the row, which
+/// is what lets the caller decide the row's fate rather than the load's.
+fn bucket_contact_row(
+    state: &mut ContactsRecords,
+    columns: ContactRowColumns,
+) -> Result<(), WalletStorageError> {
+    let ContactRowColumns {
+        owner_id,
+        contact_id,
+        label,
+        outgoing,
+        incoming,
+        alias,
+        note,
+        is_hidden,
+        accepted_accounts,
+        payment_channel_broken,
+    } = columns;
+
+    match contact_state_from_label(&label)? {
+        ContactState::Sent => {
+            let request = decode_request("outgoing_request", outgoing.as_deref())?;
+            state.sent_requests.insert(
+                SentContactRequestKey {
+                    owner_id,
+                    recipient_id: contact_id,
+                },
+                ContactRequestEntry { request },
+            );
+        }
+        ContactState::Received => {
+            let request = decode_request("incoming_request", incoming.as_deref())?;
+            state.incoming_requests.insert(
+                ReceivedContactRequestKey {
+                    owner_id,
+                    sender_id: contact_id,
+                },
+                ContactRequestEntry { request },
+            );
+        }
+        ContactState::Established => {
+            let outgoing_request = decode_request("outgoing_request", outgoing.as_deref())?;
+            let incoming_request = decode_request("incoming_request", incoming.as_deref())?;
+            let accepted_accounts: Vec<u32> = match accepted_accounts {
+                Some(bytes) => blob::decode(&bytes)?,
+                None => Vec::new(),
+            };
+            state.established.insert(
+                SentContactRequestKey {
+                    owner_id,
+                    recipient_id: contact_id,
+                },
+                EstablishedContact {
+                    contact_identity_id: contact_id,
+                    outgoing_request,
+                    incoming_request,
+                    alias,
+                    note,
+                    is_hidden,
+                    accepted_accounts,
+                    payment_channel_broken,
+                    // System-derived incoming-only label; this backend has
+                    // no column for it, so it restores empty and re-derives
+                    // on the next contact-info sweep.
+                    contact_account_label: None,
+                    // Rotation self-heal marker; this backend has no column
+                    // for it, so it restores `None` — which conservatively
+                    // forces the next sweep to re-verify (tear down + rebuild)
+                    // the external account once, then re-stamp it.
+                    external_account_reference: None,
+                },
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Decode a `ContactRequest` from a nullable request column. A NULL
@@ -405,8 +460,9 @@ fn decode_pair_key(
 pub fn load_state_for_test(
     conn: &Connection,
     wallet_id: &WalletId,
+    ctx: &LoadCtx,
 ) -> Result<ContactsRecords, WalletStorageError> {
-    load_state(conn, wallet_id)
+    load_state(conn, wallet_id, ctx)
 }
 
 /// Read the wallet's `ignored_senders` rows, grouped per owner identity.

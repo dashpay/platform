@@ -153,8 +153,12 @@ fn constraint_abort_wipes_buffer_no_silent_retry() {
     PlatformWalletPersistence::flush(&persister, w).expect("post-abort flush is a clean no-op");
 
     // And nothing was committed for the orphan identity.
-    let on_disk =
-        identity_keys::load_state(&persister.lock_conn_for_test(), &w).expect("load identity_keys");
+    let on_disk = identity_keys::load_state(
+        &persister.lock_conn_for_test(),
+        &w,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("load identity_keys");
     assert!(
         on_disk.upserts.is_empty(),
         "no identity_keys row may have been committed for the orphaned identity"
@@ -217,8 +221,12 @@ fn parent_and_child_in_same_changeset_commits() {
         )
         .expect("parent+child in one changeset must commit under the fixed dispatch order");
 
-    let on_disk =
-        identity_keys::load_state(&persister.lock_conn_for_test(), &w).expect("load identity_keys");
+    let on_disk = identity_keys::load_state(
+        &persister.lock_conn_for_test(),
+        &w,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("load identity_keys");
     assert_eq!(
         on_disk.upserts.len(),
         1,
@@ -261,8 +269,12 @@ fn wallets_anchor_and_children_in_same_changeset_commits() {
         )
         .expect("wallets anchor + children in one changeset must commit");
 
-    let on_disk =
-        identity_keys::load_state(&persister.lock_conn_for_test(), &w).expect("load identity_keys");
+    let on_disk = identity_keys::load_state(
+        &persister.lock_conn_for_test(),
+        &w,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("load identity_keys");
     assert_eq!(
         on_disk.upserts.len(),
         1,

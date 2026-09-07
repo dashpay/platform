@@ -1237,3 +1237,167 @@ fn the_isolation_boundary_reports_the_original_cause_under_strict() {
         "strict must surface the original cause, not the boundary wrapper: {err:?}"
     );
 }
+
+/// An `identity_keys` entry with a distinguishable public key.
+fn identity_key_entry(
+    identity_id: dpp::prelude::Identifier,
+    key_id: u32,
+    byte: u8,
+) -> platform_wallet::changeset::IdentityKeyEntry {
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+
+    platform_wallet::changeset::IdentityKeyEntry {
+        identity_id,
+        key_id,
+        public_key: IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: key_id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![byte; 33]),
+            disabled_at: None,
+        }),
+        public_key_hash: [byte; 20],
+        wallet_id: None,
+        derivation_indices: None,
+    }
+}
+
+/// One identity carrying two keys, both written through the production
+/// writer so the rows are exactly what a real save produces.
+fn seed_identity_with_two_keys(
+    strict: &SqlitePersister,
+    wallet: WalletId,
+) -> dpp::prelude::Identifier {
+    use platform_wallet::changeset::{IdentityChangeSet, IdentityKeysChangeSet};
+
+    ensure_wallet_meta(strict, &wallet);
+    let entry = identity_entry(wallet, 0x5A, 0);
+    let identity_id = entry.id;
+    let mut identities = IdentityChangeSet::default();
+    identities.identities.insert(identity_id, entry);
+    let mut keys = IdentityKeysChangeSet::default();
+    keys.upserts
+        .insert((identity_id, 0), identity_key_entry(identity_id, 0, 0xA1));
+    keys.upserts
+        .insert((identity_id, 1), identity_key_entry(identity_id, 1, 0xB2));
+
+    let mut cs = PlatformWalletChangeSet::default();
+    cs.identities = Some(identities);
+    cs.identity_keys = Some(keys);
+    strict
+        .store(wallet, cs)
+        .expect("seed identity and its keys");
+    identity_id
+}
+
+/// A single unreadable `identity_keys` row costs THAT ROW. Keys carry no
+/// funds, so the whole-wallet granularity that balance-bearing rows demand
+/// would be needless damage here: the wallet, its identity, and its other
+/// keys all come back.
+#[test]
+fn a_corrupt_identity_key_row_costs_the_row_not_the_wallet() {
+    let wallet = wid(0x53);
+    let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
+        let identity_id = seed_identity_with_two_keys(strict, wallet);
+        let conn = strict.lock_conn_for_test();
+        // The indexed hash no longer matches the blob it was selected by.
+        conn.execute(
+            "UPDATE identity_keys SET public_key_hash = ?1 \
+             WHERE identity_id = ?2 AND key_id = 1",
+            params![[0x00_u8; 20].as_slice(), identity_id.as_slice()],
+        )
+        .expect("plant a key row whose hash contradicts its blob");
+    });
+
+    let state = persister.load().expect("one bad key row must not be fatal");
+    let start = state
+        .wallets
+        .get(&wallet)
+        .expect("the wallet must survive a single unreadable key row");
+    let identity = &start.identity_manager.wallet_identities[&wallet][&0];
+    let key_ids: Vec<u32> = identity.identity.public_keys().keys().copied().collect();
+    assert_eq!(
+        key_ids,
+        vec![0],
+        "the readable key must survive and the unreadable one must not"
+    );
+    assert_only_site(&persister, LoadSite::IdentityKeyRow, 1);
+}
+
+/// A single unreadable `contacts` row costs THAT ROW. Contacts carry no
+/// funds either, so the wallet, its identity and its other contacts survive
+/// a torn request blob.
+#[test]
+fn a_torn_contact_blob_costs_the_contact_not_the_wallet() {
+    use platform_wallet::changeset::{
+        ContactChangeSet, ContactRequestEntry, SentContactRequestKey,
+    };
+    use platform_wallet::wallet::identity::ContactRequest;
+
+    let wallet = wid(0x54);
+    let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
+        let identity_id = seed_identity_with_two_keys(strict, wallet);
+        let request = |recipient: dpp::prelude::Identifier| ContactRequestEntry {
+            request: ContactRequest {
+                sender_id: identity_id,
+                recipient_id: recipient,
+                sender_key_index: 0,
+                recipient_key_index: 0,
+                account_reference: 0,
+                encrypted_account_label: None,
+                encrypted_public_key: Vec::new(),
+                auto_accept_proof: None,
+                core_height_created_at: 0,
+                created_at: 0,
+            },
+        };
+        let readable = dpp::prelude::Identifier::from([0x71; 32]);
+        let torn = dpp::prelude::Identifier::from([0x72; 32]);
+        let mut contacts = ContactChangeSet::default();
+        for recipient in [readable, torn] {
+            contacts.sent_requests.insert(
+                SentContactRequestKey {
+                    owner_id: identity_id,
+                    recipient_id: recipient,
+                },
+                request(recipient),
+            );
+        }
+        let mut cs = PlatformWalletChangeSet::default();
+        cs.contacts = Some(contacts);
+        strict.store(wallet, cs).expect("seed two sent requests");
+
+        let conn = strict.lock_conn_for_test();
+        conn.execute(
+            "UPDATE contacts SET outgoing_request = X'00' WHERE contact_id = ?1",
+            params![torn.as_slice()],
+        )
+        .expect("tear one request blob");
+    });
+
+    let state = persister
+        .load()
+        .expect("one torn contact must not be fatal");
+    let start = state
+        .wallets
+        .get(&wallet)
+        .expect("the wallet must survive a single torn contact blob");
+    let identity = &start.identity_manager.wallet_identities[&wallet][&0];
+    let recipients: Vec<[u8; 32]> = identity
+        .dashpay()
+        .sent_contact_requests()
+        .keys()
+        .map(|id| id.to_buffer())
+        .collect();
+    assert_eq!(
+        recipients,
+        vec![[0x71_u8; 32]],
+        "the readable request must survive and the torn one must not"
+    );
+    assert_only_site(&persister, LoadSite::ContactRow, 1);
+}

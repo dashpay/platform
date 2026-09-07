@@ -1,10 +1,29 @@
 //! Load-time policy context — the one place [`LoadPolicy`] is branched on.
 //!
-//! Every reader that meets a recoverable inconsistency routes it through
+//! A reader that meets a recoverable inconsistency routes it through
 //! `LoadCtx::tolerate` (fatal under [`LoadPolicy::Strict`]) or
 //! `LoadCtx::note_degraded` (never fatal). No site open-codes the branch,
 //! so strictness cannot drift apart between readers. Both are crate-private:
 //! the policy decision belongs to the readers, not to callers.
+//!
+//! # What "recoverable" excludes
+//!
+//! Not every failure is a policy question, and this module does not claim
+//! otherwise:
+//!
+//! - **Structural failures** — a wrong-width id, an integer that will not
+//!   narrow, the blob-size guard — are fatal in both policies. They say the
+//!   row is not the shape the schema promises, which no projection survives.
+//! - **Balance-bearing rows** are never dropped individually. Skipping one
+//!   would under-report a balance with no signal, so their failure degrades
+//!   the whole owning wallet instead, at [`LoadSite::WalletRehydration`],
+//!   and the wallet is named in [`LoadDegradation::wallets_degraded`].
+//! - **Open-time gates** run before `load()` and never reach a `LoadCtx` at
+//!   all — see [`LoadPolicy`]'s own documentation.
+//!
+//! So `Recovery` is never-fatal for the persisted-data inconsistencies a
+//! reader can decline, at the cost of whichever unit — row or wallet — the
+//! declining loses.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
@@ -53,6 +72,10 @@ pub enum LoadSite {
     UndecodableAddressScript,
     /// One used address resolves to two different owning accounts.
     UsedAddressOwnerConflict,
+    /// An `identity_keys` row was unreadable or contradicted its columns.
+    IdentityKeyRow,
+    /// A `contacts` row was unreadable or contradicted its columns.
+    ContactRow,
     /// One wallet could not be rehydrated at all; the rest of the file was.
     WalletRehydration,
     /// An `identity_keys` / `contacts` row's owner identity is tombstoned.
@@ -86,6 +109,8 @@ impl LoadSite {
             Self::ShieldedViewingKeyRow => "shielded_viewing_key_row",
             Self::CoreTransactionColumnDrift => "core_transaction_column_drift",
             Self::AccountRegistrationDrift => "account_registration_drift",
+            Self::IdentityKeyRow => "identity_key_row",
+            Self::ContactRow => "contact_row",
             Self::WalletRehydration => "wallet_rehydration",
             Self::ProviderKeyRegistrationDrift => "provider_key_registration_drift",
             Self::ProviderKeyCurveMismatch => "provider_key_curve_mismatch",
@@ -158,6 +183,8 @@ impl LoadSite {
             | Self::UnownedIdentityHasRegistrationIndex
             | Self::IdentityIndexCollision
             | Self::IdentityScanStateContradiction
+            | Self::IdentityKeyRow
+            | Self::ContactRow
             | Self::TrackedMasternodeIdLength => {
                 "recovery mode: tolerating a persisted inconsistency instead of failing the load"
             }
