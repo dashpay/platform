@@ -3,8 +3,6 @@
 //! Provider key-material account persistence (dashpay/platform#4113): the BLS
 //! operator-key and EdDSA platform-node-key accounts survive `store()` →
 //! `load()` on par with the ECDSA `account_registrations` manifest.
-//!
-//! Test-case IDs follow `docs/testspec-4113.md` (`TC-PKA-0NN`).
 
 mod common;
 
@@ -113,12 +111,12 @@ fn wallet_storage_error(err: PersistenceError) -> Box<WalletStorageError> {
         .unwrap_or_else(|source| panic!("expected WalletStorageError, got {source}"))
 }
 
-/// TC-PKA-001 — a reloaded wallet gets its BLS operator and EdDSA
+/// A reloaded wallet gets its BLS operator and EdDSA
 /// platform-node accounts back. The end-to-end contract #4113 exists for:
 /// a seedless/external-signable wallet can list its provider key accounts
 /// after a restart without the mnemonic.
 #[test]
-fn tc_pka_001_provider_accounts_survive_store_load() {
+fn provider_accounts_survive_store_load() {
     let (persister, _tmp, path) = fresh_persister();
     let w: WalletId = wid(0xC1);
     persister
@@ -163,11 +161,11 @@ fn tc_pka_001_provider_accounts_survive_store_load() {
     assert!(eddsa.is_watch_only, "a rehydrated account is watch-only");
 }
 
-/// TC-PKA-008 — a changeset carrying only provider-key registrations bumps
+/// A changeset carrying only provider-key registrations bumps
 /// the `account_registrations` domain seq and no other. The forgotten-domain
 /// guard (R8): a field that reaches the DB must invalidate a cache.
 #[test]
-fn tc_pka_008_provider_only_changeset_bumps_account_registrations_domain() {
+fn provider_only_changeset_bumps_account_registrations_domain() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xC2);
     ensure_wallet_meta(&persister, &w);
@@ -195,10 +193,10 @@ fn tc_pka_008_provider_only_changeset_bumps_account_registrations_domain() {
     }
 }
 
-/// TC-PKA-002 — a BLS operator account decodes back as BLS, never as the
+/// A BLS operator account decodes back as BLS, never as the
 /// other curve, and its xpub bytes survive verbatim.
 #[test]
-fn tc_pka_002_bls_decodes_as_bls() {
+fn bls_decodes_as_bls() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xC3);
     ensure_wallet_meta(&persister, &w);
@@ -232,12 +230,12 @@ fn tc_pka_002_bls_decodes_as_bls() {
     );
 }
 
-/// TC-PKA-003 — an EdDSA account decodes as EdDSA, and a row whose
+/// An EdDSA account decodes as EdDSA, and a row whose
 /// `account_type` column claims the other curve's account is rejected: the
 /// column is the decode discriminator, so cross-curve confusion must be a
 /// hard error, never a silently-wrong account.
 #[test]
-fn tc_pka_003_eddsa_decodes_as_eddsa_and_cross_curve_row_is_rejected() {
+fn eddsa_decodes_as_eddsa_and_cross_curve_row_is_rejected() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xC4);
     ensure_wallet_meta(&persister, &w);
@@ -334,10 +332,10 @@ fn tc_pka_003_eddsa_decodes_as_eddsa_and_cross_curve_row_is_rejected() {
     }
 }
 
-/// TC-PKA-005 — no provider accounts is a clean round-trip: no rows, no
+/// No provider accounts is a clean round-trip: no rows, no
 /// error, and the ECDSA manifest beside it is untouched.
 #[test]
-fn tc_pka_005_empty_provider_set_round_trips() {
+fn empty_provider_set_round_trips() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xC6);
     ensure_wallet_meta(&persister, &w);
@@ -369,10 +367,10 @@ fn tc_pka_005_empty_provider_set_round_trips() {
     assert_eq!(manifest.ecdsa.len(), 1, "the ECDSA entry is unaffected");
 }
 
-/// TC-PKA-009 — a corrupt provider blob fails the whole load. Skipping the
+/// A corrupt provider blob fails the whole load. Skipping the
 /// row would hand back a wallet silently missing its operator account.
 #[test]
-fn tc_pka_009_corrupt_provider_blob_hard_errors() {
+fn corrupt_provider_blob_hard_errors() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xC7);
     ensure_wallet_meta(&persister, &w);
@@ -401,10 +399,10 @@ fn tc_pka_009_corrupt_provider_blob_hard_errors() {
     );
 }
 
-/// TC-PKA-010 — an oversize provider blob is rejected by the `length()` gate
+/// An oversize provider blob is rejected by the `length()` gate
 /// before the `Vec<u8>` is materialized.
 #[test]
-fn tc_pka_010_oversize_provider_blob_is_rejected() {
+fn oversize_provider_blob_is_rejected() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xC8);
     ensure_wallet_meta(&persister, &w);
@@ -427,9 +425,9 @@ fn tc_pka_010_oversize_provider_blob_is_rejected() {
     );
 }
 
-/// TC-PKA-015 — a retried `store()` updates the account row in place.
+/// A retried `store()` updates the account row in place.
 #[test]
-fn tc_pka_015_idempotent_repersist_does_not_duplicate() {
+fn idempotent_repersist_does_not_duplicate() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xCA);
     ensure_wallet_meta(&persister, &w);

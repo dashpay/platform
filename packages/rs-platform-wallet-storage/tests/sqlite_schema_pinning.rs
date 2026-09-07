@@ -2,9 +2,9 @@
 
 //! Content-level schema-freeze guards.
 //!
-//! TC-B-040: pin the rendered migration SQL with a golden fingerprint so an
+//! Pin the rendered migration SQL with a golden fingerprint so an
 //! in-place DDL edit (which the identity-only fingerprint is documented not
-//! to catch) breaks CI. TC-B-041: assert the retired cross-branch table
+//! to catch) breaks CI. Separately, assert the retired cross-branch table
 //! names never appear as SQL identifiers in the writer/reader/migration/
 //! backup SQL — the drift the content-blind fingerprint cannot catch.
 
@@ -94,9 +94,9 @@ fn merged_migration_versions_keep_their_shipped_names() {
     }
 }
 
-/// TC-B-040 (identity) — the migration set's identity is pinned.
+/// The migration set's identity is pinned.
 #[test]
-fn tc_b_040_identity_fingerprint_pinned() {
+fn identity_fingerprint_pinned() {
     assert_eq!(
         hex::encode(mig::embedded_migrations_fingerprint()),
         EXPECTED_ID_FINGERPRINT,
@@ -105,10 +105,10 @@ fn tc_b_040_identity_fingerprint_pinned() {
     );
 }
 
-/// TC-B-040 (content) — the rendered migration SQL is pinned, closing the
+/// The rendered migration SQL is pinned, closing the
 /// content-blind gap the identity fingerprint documents.
 #[test]
-fn tc_b_040_sql_fingerprint_pinned() {
+fn sql_fingerprint_pinned() {
     assert_eq!(
         hex::encode(mig::embedded_migrations_sql_fingerprint()),
         EXPECTED_SQL_FINGERPRINT,
@@ -121,7 +121,7 @@ fn tc_b_040_sql_fingerprint_pinned() {
 
 /// The retired names appear nowhere as table identifiers in migration SQL.
 #[test]
-fn tc_b_041_migration_sql_has_no_retired_names() {
+fn migration_sql_has_no_retired_names() {
     for (version, sql) in mig::embedded_migrations_sql_by_version() {
         if version < FIRST_VERSION_AFTER_RENAME {
             continue;
@@ -137,13 +137,13 @@ fn tc_b_041_migration_sql_has_no_retired_names() {
     }
 }
 
-/// TC-B-041 — no writer/reader/migration/backup SQL string references a
+/// No writer/reader/migration/backup SQL string references a
 /// retired table name. `wallet_metadata` / `account_address_pools` are also
 /// legitimate Rust changeset fields, so the scan flags only SQL-keyword-led
 /// table usage (`FROM`/`INTO`/`UPDATE`/`TABLE`/`JOIN`/`ON <name>`), never a
 /// bare `cs.<field>` access.
 #[test]
-fn tc_b_041_no_retired_table_name_in_sql_strings() {
+fn no_retired_table_name_in_sql_strings() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let migrations_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
     let sql_keywords = ["FROM", "INTO", "UPDATE", "TABLE", "JOIN", "ON"];

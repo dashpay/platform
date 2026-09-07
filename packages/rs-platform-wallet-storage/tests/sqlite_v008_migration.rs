@@ -4,9 +4,9 @@
 //! the six migrations `v4.2-dev` already ships (V001-V006), whose version
 //! numbers are owned by merged history and must never be reassigned.
 //!
-//! Covers TC-B-030 (fresh store migrates clean to the new target version),
-//! TC-B-003 (`meta_data_versions` shape + PK), the schema half of TC-B-001
-//! (`core_address_pool` shape + PK), and the store-generation seed.
+//! Covers a fresh store migrating clean to the new target version, the
+//! `meta_data_versions` shape and PK, the `core_address_pool` shape and PK,
+//! and the store-generation seed.
 
 mod common;
 
@@ -62,11 +62,11 @@ fn v008_is_embedded_and_supported() {
     assert!(mig::max_supported_version() >= 8, "V008 must be applicable");
 }
 
-/// TC-B-030 — a fresh store applies V008 and migrates clean through to the
+/// A fresh store applies V008 and migrates clean through to the
 /// newest embedded migration (e.g. V004's DIP-13 invitations table), and
 /// every V008 table exists.
 #[test]
-fn tc_b_030_fresh_store_migrates_to_version_three() {
+fn fresh_store_migrates_to_version_three() {
     let (persister, _tmp, _path) = fresh_persister();
     let conn = persister.lock_conn_for_test();
     let applied: i64 = conn
@@ -98,7 +98,7 @@ fn tc_b_030_fresh_store_migrates_to_version_three() {
     }
 }
 
-/// Schema half of TC-B-001 — `core_address_pool` carries per-index rows
+/// Schema half of the pool coverage: `core_address_pool` carries per-index rows
 /// scoped by `(wallet_id, account_type, account_index, key_class,
 /// user_identity_id, friend_identity_id, pool_type, address_index)`, a
 /// stored `script`, and a `used` flag. The DashPay identity pair is in the PK
@@ -106,7 +106,7 @@ fn tc_b_030_fresh_store_migrates_to_version_three() {
 /// collapse to the same `(dashpay_receiving, 0)` sentinel, never overwrite
 /// each other's pool rows (T5).
 #[test]
-fn tc_b_001_core_address_pool_shape() {
+fn core_address_pool_shape() {
     let (persister, _tmp, _path) = fresh_persister();
     let conn = persister.lock_conn_for_test();
     let cols = table_columns(&conn, "core_address_pool");
@@ -157,10 +157,10 @@ fn tc_b_001_core_address_pool_shape() {
     );
 }
 
-/// TC-B-003 — `meta_data_versions` is `(wallet_id BLOB, domain TEXT, seq
+/// `meta_data_versions` is `(wallet_id BLOB, domain TEXT, seq
 /// INTEGER)` with composite PK `(wallet_id, domain)`; `seq` defaults to 0.
 #[test]
-fn tc_b_003_meta_data_versions_shape() {
+fn meta_data_versions_shape() {
     let (persister, _tmp, _path) = fresh_persister();
     let conn = persister.lock_conn_for_test();
     let cols = table_columns(&conn, "meta_data_versions");

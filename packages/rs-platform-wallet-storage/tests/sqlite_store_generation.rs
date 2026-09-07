@@ -1,8 +1,8 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Store-generation token behaviour. Covers TC-B-004
-//! (present + stable across a normal flush) and TC-B-024 (regenerated on
-//! restore so a restored copy is distinguishable from its source).
+//! Store-generation token behaviour: present and stable across a normal
+//! flush, and regenerated on restore so a restored copy is distinguishable
+//! from its source.
 
 mod common;
 
@@ -13,10 +13,10 @@ use platform_wallet::changeset::{
 use platform_wallet_storage::sqlite::schema::versions;
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
 
-/// TC-B-004 — the generation is present, 16 bytes, and unchanged by a normal
+/// The generation is present, 16 bytes, and unchanged by a normal
 /// changeset flush (it only rotates on migrate/restore).
 #[test]
-fn tc_b_004_generation_present_and_stable_across_flush() {
+fn generation_present_and_stable_across_flush() {
     let (persister, _tmp, path) = fresh_persister();
     let w = wid(0x01);
     ensure_wallet_meta(&persister, &w);
@@ -54,11 +54,11 @@ fn tc_b_004_generation_present_and_stable_across_flush() {
     let _ = path;
 }
 
-/// TC-B-024 — restoring from a backup rotates the generation, so a client
+/// Restoring from a backup rotates the generation, so a client
 /// cache keyed on the pre-restore generation misses rather than serving
 /// stale entries.
 #[test]
-fn tc_b_024_generation_rotates_on_restore() {
+fn generation_rotates_on_restore() {
     let (persister, tmp, path) = fresh_persister();
     let w = wid(0x02);
     ensure_wallet_meta(&persister, &w);

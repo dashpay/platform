@@ -1,9 +1,8 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! `meta_data_versions` bump discipline. Covers TC-B-011
-//! (bump rides the flush tx), TC-B-012 (atomic rollback — data and bump are
-//! all-or-nothing), TC-B-013 (every domain maps to a bump; none silently
-//! excluded), TC-B-014 (saturating seq, never wraps).
+//! `meta_data_versions` bump discipline: the bump rides the flush tx, rollback
+//! is atomic (data and bump are all-or-nothing), every domain maps to its own
+//! bump with none silently excluded, and the seq saturates rather than wrapping.
 
 mod common;
 
@@ -375,12 +374,12 @@ fn asset_lock_changeset() -> AssetLockChangeSet {
     cs
 }
 
-/// TC-B-013 — every domain maps to exactly its own bump; none silently
+/// Every domain maps to exactly its own bump; none silently
 /// excluded. Each single-field changeset yields exactly its domain, and the
 /// union covers `Domain::ALL`. The exhaustive destructure in
 /// `touched_domains` makes a newly added field a compile error there.
 #[test]
-fn tc_b_013_every_domain_maps_and_isolates() {
+fn every_domain_maps_and_isolates() {
     use std::collections::BTreeSet;
     assert_eq!(
         Domain::ALL.len(),
@@ -402,10 +401,10 @@ fn tc_b_013_every_domain_maps_and_isolates() {
     assert_eq!(covered, all, "all domains must be reachable");
 }
 
-/// TC-B-011 — a flush touching the core-pool domain commits the pool row and
+/// A flush touching the core-pool domain commits the pool row and
 /// its `meta_data_versions.seq` together (same connection, same tx).
 #[test]
-fn tc_b_011_bump_rides_the_flush() {
+fn bump_rides_the_flush() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xB1);
     ensure_wallet_meta(&persister, &w);
@@ -455,11 +454,11 @@ fn repeated_flush_increments_seq() {
     assert_eq!(versions::read_seq(&conn, &w, Domain::Wallets).unwrap(), 2);
 }
 
-/// TC-B-012 — atomicity: a flush that fails partway persists neither the
+/// Atomicity: a flush that fails partway persists neither the
 /// data nor the version bump. A pool write plus a token-balance write whose
 /// identity FK is absent must roll the whole tx back.
 #[test]
-fn tc_b_012_partial_failure_rolls_back_data_and_bump() {
+fn partial_failure_rolls_back_data_and_bump() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xB2);
     ensure_wallet_meta(&persister, &w);
@@ -507,10 +506,10 @@ fn tc_b_012_partial_failure_rolls_back_data_and_bump() {
     assert_eq!(version_rows, 0, "no bump may survive a rolled-back flush");
 }
 
-/// TC-B-014 — a seq pre-seeded to i64::MAX saturates on the next bump and
+/// A seq pre-seeded to i64::MAX saturates on the next bump and
 /// never wraps to a lower value (which would look like a cache rollback).
 #[test]
-fn tc_b_014_seq_saturates_at_i64_max() {
+fn seq_saturates_at_i64_max() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xB4);
     ensure_wallet_meta(&persister, &w);
