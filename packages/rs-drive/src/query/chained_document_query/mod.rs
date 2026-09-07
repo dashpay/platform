@@ -12,11 +12,24 @@
 //! binds that root to the quorum-signed app hash (see
 //! `rs-drive-proof-verifier`).
 //!
+//! There is no separate chained query type: a chained query is a
+//! [`DriveDocumentQuery`] — the inner half — whose
+//! [`sub_queries`](DriveDocumentQuery::sub_queries) carry exactly one
+//! by-id join bound to it, the shape
+//! [`DriveDocumentQuery::with_by_id_join`] builds (the same shape the
+//! composite surface generalizes). This module holds the chained
+//! behaviour of `DriveDocumentQuery`: shape validation, join-value
+//! derivation, the outer by-ids builder, proof merging, and the
+//! server-side executors behind `Drive::query_chained_documents` /
+//! `query_chained_documents_with_proof` (the verifier half lives in
+//! `verify::chained_document`).
+//!
 //! Soundness never rests on the server's join: the verifier re-derives
-//! the outer query from the INNER proof's results ([`Self::join_values`]
-//! → [`Self::derive_outer_query`], the same functions the server
-//! executes), so a server cannot substitute, omit, or inject outer
-//! documents. Because the join property's `refersTo` targets a
+//! the outer query from the INNER proof's results
+//! ([`DriveDocumentQuery::chained_join_values`] →
+//! [`DriveDocumentQuery::derive_chained_outer_query`], the same functions
+//! the server executes), so a server cannot substitute, omit, or inject
+//! outer documents. Because the join property's `refersTo` targets a
 //! `permanentDocument` type (non-deletable, enforced at write time),
 //! every proven join value MUST resolve to a document — a missing outer
 //! document is an invalid proof, not an absence.
@@ -33,12 +46,16 @@
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+use crate::query::{
+    BindingSource, DriveDocumentQuery, InternalClauses, SubQueryBinding, SubQueryKind, WhereClause,
+    WhereOperator,
+};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
 };
+use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
@@ -46,35 +63,12 @@ use dpp::version::PlatformVersion;
 
 /// The most join values one chained query can carry — the derived
 /// outer query is a single `$id IN [...]` clause, and `in` clauses
-/// admit at most 100 values (`WhereClause::in_values`). `validate`
-/// caps the inner limit here so every reachable page fits, and
-/// [`DriveChainedDocumentQuery::proof_path_queries`] enforces it on
-/// the (untrusted, verifier-supplied) join-value list itself.
+/// admit at most 100 values (`WhereClause::in_values`).
+/// [`DriveDocumentQuery::validate_chained`] caps the inner limit here so
+/// every reachable page fits, and
+/// [`DriveDocumentQuery::chained_proof_path_queries`] enforces it on the
+/// (untrusted, verifier-supplied) join-value list itself.
 pub const MAX_CHAINED_JOIN_VALUES: usize = 100;
-
-/// A chained document query: an inner indexOnly query whose proven join
-/// values become the outer query's primary keys.
-///
-/// Construction contract: `outer_document_type` MUST be a document type
-/// of `inner.contract` — build it via
-/// [`DataContract::document_type_for_name`] on the same contract the
-/// inner query was built from. [`Self::validate`] enforces everything
-/// derivable from the types themselves.
-///
-/// [`DataContract::document_type_for_name`]:
-///     dpp::data_contract::accessors::v0::DataContractV0Getters::document_type_for_name
-#[derive(Debug, Clone)]
-pub struct DriveChainedDocumentQuery<'a> {
-    /// The inner query. Must target an indexOnly document type and
-    /// resolve to an index carrying [`Self::join_property`].
-    pub inner: DriveDocumentQuery<'a>,
-    /// The inner property whose values feed the outer query's `$id`s.
-    /// Must carry a same-contract `refersTo: permanentDocument`
-    /// declaration targeting [`Self::outer_document_type`].
-    pub join_property: String,
-    /// The outer document type — the `refersTo` target.
-    pub outer_document_type: DocumentTypeRef<'a>,
-}
 
 /// The materialized result of a chained query, in inner-proof order.
 #[derive(Debug, Default)]
@@ -88,26 +82,84 @@ pub struct ChainedDocumentsResult {
     pub outer_documents: Vec<Document>,
 }
 
-impl<'a> DriveChainedDocumentQuery<'a> {
-    /// Validates the chained shape. Called by the server before
-    /// executing and by the verifier before verifying, so an invalid
-    /// spec fails identically on both sides.
-    pub fn validate(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
+impl<'a> DriveDocumentQuery<'a> {
+    /// The join edge of a chained query. There is no separate chained
+    /// query type: a chained query is this query (the inner half) whose
+    /// [`sub_queries`](Self::sub_queries) carry EXACTLY ONE by-id join
+    /// bound to it — the shape [`Self::with_by_id_join`] builds. Returns
+    /// the join's source property (the inner property whose proven values
+    /// become the outer `$id`s) and the outer document type with its
+    /// contract; refuses any other sub-query shape.
+    pub(crate) fn chained_join(
+        &self,
+    ) -> Result<(&str, DocumentTypeRef<'a>, &'a DataContract), Error> {
+        let unsupported =
+            |message: &str| Error::Query(QuerySyntaxError::Unsupported(message.to_string()));
+        let [join] = self.sub_queries.as_slice() else {
+            return Err(unsupported(
+                "a chained query carries exactly one sub-query: the by-id join whose source \
+                 property's proven values become the outer `$id`s (build it with \
+                 with_by_id_join); a query with more sub-queries belongs on the composite \
+                 surface",
+            ));
+        };
+        let Some(SubQueryBinding {
+            source: BindingSource::Page,
+            source_property,
+            field,
+        }) = &join.binding
+        else {
+            return Err(unsupported(
+                "a chained query's sub-query must be bound to the inner query itself",
+            ));
+        };
+        if field.as_str() != dpp::document::property_names::ID {
+            return Err(unsupported(
+                "a chained query's sub-query must be a by-id join (bound field `$id`); other \
+                 bindings live on the composite surface",
+            ));
+        }
+        if join.kind != SubQueryKind::Documents {
+            return Err(unsupported(
+                "a chained join returns documents; counts live on the composite surface",
+            ));
+        }
+        if !join.where_clauses.is_empty() || !join.order_by.is_empty() || join.limit.is_some() {
+            return Err(unsupported(
+                "a chained by-id join takes no fixed clauses, no ordering and no limit: the \
+                 outer half is purely the derived by-ids fetch, complete by set equality",
+            ));
+        }
+        Ok((source_property.as_str(), join.document_type, join.contract))
+    }
+
+    /// Validates the chained shape: this query as the inner indexOnly
+    /// half plus the single by-id join its
+    /// [`sub_queries`](Self::sub_queries) carry (see
+    /// [`Self::chained_join`]). Called by the server before executing and
+    /// by the verifier before verifying, so an invalid spec fails
+    /// identically on both sides.
+    pub fn validate_chained(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
         let unsupported = |message: String| Error::Query(QuerySyntaxError::Unsupported(message));
 
-        // A chained inner query is the whole request's page; composite
-        // sub-queries have their own surface and would be silently
-        // ignored here.
-        self.inner
-            .ensure_no_sub_queries("a chained query's inner query")?;
-        if !self.inner.document_type.index_only() {
+        let (join_property, outer_document_type, outer_contract) = self.chained_join()?;
+        // Chained joins are same-contract (v1): the join sub-query's
+        // contract must be the inner query's own.
+        if outer_contract.id() != self.contract.id() {
+            return Err(unsupported(
+                "chained document queries support same-contract joins only: the join \
+                 sub-query targets another contract"
+                    .to_string(),
+            ));
+        }
+        if !self.document_type.index_only() {
             return Err(unsupported(
                 "chained document queries require an indexOnly inner document type: only \
                  indexOnly projections prove their values positionally"
                     .to_string(),
             ));
         }
-        if self.outer_document_type.index_only() {
+        if outer_document_type.index_only() {
             return Err(unsupported(
                 "the outer document type of a chained query cannot be indexOnly: outer \
                  documents are fetched by id from primary storage, which indexOnly types \
@@ -115,7 +167,7 @@ impl<'a> DriveChainedDocumentQuery<'a> {
                     .to_string(),
             ));
         }
-        match self.inner.limit {
+        match self.limit {
             None => {
                 return Err(unsupported(
                     "chained document queries require an explicit limit on the inner query: \
@@ -132,7 +184,7 @@ impl<'a> DriveChainedDocumentQuery<'a> {
             }
             Some(_) => {}
         }
-        if self.inner.offset.is_some() {
+        if self.offset.is_some() {
             return Err(unsupported(
                 "chained document queries do not support an inner offset; paginate with a \
                  range clause on the join property"
@@ -146,17 +198,14 @@ impl<'a> DriveChainedDocumentQuery<'a> {
         // deleted, so every proven join value MUST resolve — which is
         // what lets the verifier treat a missing outer document as an
         // invalid proof instead of needing absence proofs.
-        let Some(join_document_property) = self
-            .inner
-            .document_type
-            .flattened_properties()
-            .get(self.join_property.as_str())
+        let Some(join_document_property) =
+            self.document_type.flattened_properties().get(join_property)
         else {
             return Err(unsupported(format!(
                 "chained query join property \"{}\" does not name a property of inner \
                  document type \"{}\"",
-                self.join_property,
-                self.inner.document_type.name(),
+                join_property,
+                self.document_type.name(),
             )));
         };
         match &join_document_property.property_type {
@@ -168,7 +217,7 @@ impl<'a> DriveChainedDocumentQuery<'a> {
                 },
             ) => {
                 if let Some(referenced_contract_id) = contract_id {
-                    if *referenced_contract_id != self.inner.contract.id() {
+                    if *referenced_contract_id != self.contract.id() {
                         return Err(unsupported(
                             "chained document queries support same-contract joins only: \
                              the join property's refersTo names another contract"
@@ -176,11 +225,11 @@ impl<'a> DriveChainedDocumentQuery<'a> {
                         ));
                     }
                 }
-                if document_type_name != self.outer_document_type.name() {
+                if document_type_name != outer_document_type.name() {
                     return Err(unsupported(format!(
                         "chained query outer document type \"{}\" does not match the join \
                          property's refersTo target \"{}\"",
-                        self.outer_document_type.name(),
+                        outer_document_type.name(),
                         document_type_name,
                     )));
                 }
@@ -190,25 +239,24 @@ impl<'a> DriveChainedDocumentQuery<'a> {
                     "chained query join property \"{}\" must carry a `refersTo: \
                      permanentDocument` declaration: only a permanent-document reference \
                      guarantees every proven join value resolves to an outer document",
-                    self.join_property,
+                    join_property,
                 )));
             }
         }
 
         // The resolved index must carry the join property, so every
         // synthesized inner projection provably carries its value.
-        let index = self.inner.index_only_query_index(platform_version)?;
-        let index_carries_join_property = index.terminal.as_deref()
-            == Some(self.join_property.as_str())
+        let index = self.index_only_query_index(platform_version)?;
+        let index_carries_join_property = index.terminal.as_deref() == Some(join_property)
             || index
                 .properties
                 .iter()
-                .any(|property| property.name == self.join_property);
+                .any(|property| property.name == join_property);
         if !index_carries_join_property {
             return Err(unsupported(format!(
                 "the inner query resolves to index \"{}\", which does not carry the join \
                  property \"{}\"; constrain the query so an index carrying it serves it",
-                index.name, self.join_property,
+                index.name, join_property,
             )));
         }
 
@@ -219,23 +267,27 @@ impl<'a> DriveChainedDocumentQuery<'a> {
     /// order, deduplicated to first appearance. ONE extraction both the
     /// server and the verifier run — the single-builder rule that keeps
     /// the derived outer query identical on both sides.
-    pub fn join_values(&self, inner_documents: &[Document]) -> Result<Vec<Identifier>, Error> {
+    pub fn chained_join_values(
+        &self,
+        inner_documents: &[Document],
+    ) -> Result<Vec<Identifier>, Error> {
         use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 
+        let (join_property, _, _) = self.chained_join()?;
         let mut seen: std::collections::BTreeSet<Identifier> = std::collections::BTreeSet::new();
         let mut join_values = Vec::with_capacity(inner_documents.len());
         for document in inner_documents {
-            // Path-aware read: `validate` admits any property
+            // Path-aware read: `validate_chained` admits any property
             // `flattened_properties()` names — dotted (nested) keys
             // included — and the synthesis builder stores those nested
             // (`insert_at_path`), so a flat `.get` would miss them.
             let value = document
                 .properties()
-                .get_optional_at_path(self.join_property.as_str())
+                .get_optional_at_path(join_property)
                 .ok()
                 .flatten()
                 .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "an inner projection is missing the join property: validate() \
+                    "an inner projection is missing the join property: validate_chained() \
                      guarantees the resolved index carries it",
                 )))?;
             let identifier = value.to_identifier().map_err(|_| {
@@ -255,16 +307,20 @@ impl<'a> DriveChainedDocumentQuery<'a> {
     /// from the outer type's primary storage. No clauses, no limit, no
     /// cursor — completeness is set-equality against `join_values`,
     /// checked by the verifier.
-    pub fn derive_outer_query(&self, join_values: &[Identifier]) -> DriveDocumentQuery<'a> {
+    pub fn derive_chained_outer_query(
+        &self,
+        join_values: &[Identifier],
+    ) -> Result<DriveDocumentQuery<'a>, Error> {
+        let (_, outer_document_type, outer_contract) = self.chained_join()?;
         // Canonical value order: byte-ascending. Grove sorts query keys
         // internally either way; sorting here keeps the built query —
         // and therefore the proof — byte-identical between the server
         // and a verifier that extracted the ids in any order.
         let mut ids: Vec<Identifier> = join_values.to_vec();
         ids.sort();
-        DriveDocumentQuery {
-            contract: self.inner.contract,
-            document_type: self.outer_document_type,
+        Ok(DriveDocumentQuery {
+            contract: outer_contract,
+            document_type: outer_document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: Some(WhereClause {
                     field: dpp::document::property_names::ID.to_string(),
@@ -288,7 +344,7 @@ impl<'a> DriveChainedDocumentQuery<'a> {
             block_time_ms: None,
             resolved_time_ranges: Vec::new(),
             sub_queries: vec![],
-        }
+        })
     }
 
     /// Reorders the outer documents (returned in key order by the by-ids
@@ -297,7 +353,7 @@ impl<'a> DriveChainedDocumentQuery<'a> {
     /// values — both directions. Shared by the server (where a mismatch
     /// is corrupted state: permanentDocument references cannot dangle)
     /// and the verifier (where it is an invalid proof).
-    pub fn assemble_outer_documents(
+    pub fn assemble_chained_outer_documents(
         &self,
         join_values: &[Identifier],
         outer_documents: Vec<Document>,
@@ -349,7 +405,7 @@ impl<'a> DriveChainedDocumentQuery<'a> {
     /// `SizedQuery::limit` into its branch's per-instance
     /// `Query::limit`, which is exact here: the branch instance
     /// executes once.
-    pub fn proof_path_queries(
+    pub fn chained_proof_path_queries(
         &self,
         join_values: &[Identifier],
         platform_version: &PlatformVersion,
@@ -358,7 +414,8 @@ impl<'a> DriveChainedDocumentQuery<'a> {
         // before deriving, so an oversized list fails here with a clear
         // message instead of deep in the `in`-clause lowering. An
         // honest list cannot exceed this: it is deduplicated from an
-        // inner page whose limit `validate` bounds to the same cap.
+        // inner page whose limit `validate_chained` bounds to the same
+        // cap.
         if join_values.len() > MAX_CHAINED_JOIN_VALUES {
             return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
                 "{} chained join values exceed the {} an outer `$id IN` clause admits",
@@ -366,21 +423,21 @@ impl<'a> DriveChainedDocumentQuery<'a> {
                 MAX_CHAINED_JOIN_VALUES,
             ))));
         }
-        let inner = self.inner.construct_path_query(None, platform_version)?;
+        let inner = self.construct_path_query(None, platform_version)?;
         if join_values.is_empty() {
             return Ok(vec![inner]);
         }
         let outer = self
-            .derive_outer_query(join_values)
+            .derive_chained_outer_query(join_values)?
             .construct_path_query(None, platform_version)?;
         Ok(vec![inner, outer])
     }
 }
 
 #[cfg(feature = "server")]
-impl DriveChainedDocumentQuery<'_> {
+impl DriveDocumentQuery<'_> {
     /// Executes the chained query without proofs.
-    pub(crate) fn execute_no_proof_internal(
+    pub(crate) fn execute_chained_no_proof_internal(
         &self,
         drive: &crate::drive::Drive,
         transaction: grovedb::TransactionArg,
@@ -389,16 +446,15 @@ impl DriveChainedDocumentQuery<'_> {
     ) -> Result<ChainedDocumentsResult, Error> {
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 
-        self.validate(platform_version)?;
+        self.validate_chained(platform_version)?;
 
-        let (inner_documents, _skipped) =
-            self.inner.execute_index_only_documents_no_proof_internal(
-                drive,
-                transaction,
-                drive_operations,
-                platform_version,
-            )?;
-        let join_values = self.join_values(&inner_documents)?;
+        let (inner_documents, _skipped) = self.execute_index_only_documents_no_proof_internal(
+            drive,
+            transaction,
+            drive_operations,
+            platform_version,
+        )?;
+        let join_values = self.chained_join_values(&inner_documents)?;
         if join_values.is_empty() {
             return Ok(ChainedDocumentsResult {
                 inner_documents,
@@ -406,7 +462,8 @@ impl DriveChainedDocumentQuery<'_> {
             });
         }
 
-        let outer_query = self.derive_outer_query(&join_values);
+        let outer_query = self.derive_chained_outer_query(&join_values)?;
+        let outer_document_type = outer_query.document_type;
         let (serialized_outer, _outer_skipped) = outer_query
             .execute_raw_results_no_proof_internal(
                 drive,
@@ -417,15 +474,12 @@ impl DriveChainedDocumentQuery<'_> {
         let outer_documents = serialized_outer
             .into_iter()
             .map(|serialized| {
-                Document::from_bytes(
-                    serialized.as_slice(),
-                    self.outer_document_type,
-                    platform_version,
-                )
-                .map_err(|e| Error::Protocol(Box::new(e)))
+                Document::from_bytes(serialized.as_slice(), outer_document_type, platform_version)
+                    .map_err(|e| Error::Protocol(Box::new(e)))
             })
             .collect::<Result<Vec<Document>, Error>>()?;
-        let outer_documents = self.assemble_outer_documents(&join_values, outer_documents)?;
+        let outer_documents =
+            self.assemble_chained_outer_documents(&join_values, outer_documents)?;
 
         Ok(ChainedDocumentsResult {
             inner_documents,
@@ -437,7 +491,7 @@ impl DriveChainedDocumentQuery<'_> {
     /// proof.
     ///
     /// The inner page and the derived outer by-ids fetch are proven as
-    /// ONE grovedb proof: [`Self::proof_path_queries`] builds the
+    /// ONE grovedb proof: [`Self::chained_proof_path_queries`] builds the
     /// component path queries and `prove_query_many` merges them
     /// (grovedb merge slot 2 LIFTS the inner query's global limit into
     /// its merged branch's per-instance `Query::limit` — semantically
@@ -459,13 +513,13 @@ impl DriveChainedDocumentQuery<'_> {
     /// deliberately NOT materialized here — the proof pass covers them,
     /// so reading their bodies a second time would double the state
     /// reads for data the proved response never carries inline.
-    pub(crate) fn execute_with_proof_internal(
+    pub(crate) fn execute_chained_with_proof_internal(
         &self,
         drive: &crate::drive::Drive,
         drive_operations: &mut Vec<crate::fees::op::LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<u8>, Vec<Document>), Error> {
-        self.validate(platform_version)?;
+        self.validate_chained(platform_version)?;
 
         // Block commits are seconds apart while an attempt is
         // milliseconds, so a bracket collision is rare and two in a row
@@ -479,16 +533,15 @@ impl DriveChainedDocumentQuery<'_> {
 
             // Materialize the INNER half only — the join values the
             // outer component derives from live in its projections.
-            let (inner_documents, _skipped) =
-                self.inner.execute_index_only_documents_no_proof_internal(
-                    drive,
-                    None,
-                    drive_operations,
-                    platform_version,
-                )?;
-            let join_values = self.join_values(&inner_documents)?;
+            let (inner_documents, _skipped) = self.execute_index_only_documents_no_proof_internal(
+                drive,
+                None,
+                drive_operations,
+                platform_version,
+            )?;
+            let join_values = self.chained_join_values(&inner_documents)?;
 
-            let path_queries = self.proof_path_queries(&join_values, platform_version)?;
+            let path_queries = self.chained_proof_path_queries(&join_values, platform_version)?;
             let path_query_refs: Vec<&grovedb::PathQuery> = path_queries.iter().collect();
             let proof = drive
                 .grove

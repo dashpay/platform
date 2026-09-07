@@ -875,7 +875,7 @@ fn should_refuse_composite_queries_on_plain_surfaces() {
         .query_documents(query.clone(), None, false, None, None)
         .expect_err("plain query_documents must refuse sub-queries");
     assert!(
-        refused.to_string().contains("composite sub-queries"),
+        refused.to_string().contains("would silently ignore"),
         "{refused}"
     );
     let refused = query
@@ -883,14 +883,14 @@ fn should_refuse_composite_queries_on_plain_surfaces() {
         .execute_with_proof(&drive, None, None, pv)
         .expect_err("the plain proof surface must refuse sub-queries");
     assert!(
-        refused.to_string().contains("composite sub-queries"),
+        refused.to_string().contains("would silently ignore"),
         "{refused}"
     );
     let refused = query
         .verify_proof(&[], pv)
         .expect_err("the plain verifier must refuse sub-queries");
     assert!(
-        refused.to_string().contains("composite sub-queries"),
+        refused.to_string().contains("would silently ignore"),
         "{refused}"
     );
 }

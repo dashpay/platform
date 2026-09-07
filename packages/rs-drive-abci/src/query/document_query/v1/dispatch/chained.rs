@@ -34,7 +34,6 @@ use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
-use drive::query::drive_chained_document_query::DriveChainedDocumentQuery;
 use drive::query::DriveDocumentQuery;
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -160,14 +159,10 @@ impl<C> Platform<C> {
                 platform_version,
             ));
 
-        let chained_query = DriveChainedDocumentQuery {
-            inner: inner_query,
-            join_property: chained.join_property,
-            outer_document_type: outer_type,
-        };
+        let chained_query = inner_query.with_by_id_join(chained.join_property, outer_type);
         // Fail the shape checks as query errors (client-attributable),
         // before any execution.
-        match chained_query.validate(platform_version) {
+        match chained_query.validate_chained(platform_version) {
             Ok(()) => {}
             Err(drive::error::Error::Query(query_error)) => {
                 return Ok(QueryValidationResult::new_with_error(QueryError::Query(
@@ -231,14 +226,9 @@ impl<C> Platform<C> {
                         })
                         .collect()
                 };
-            let inner_documents = serialize_all(
-                &outcome.result.inner_documents,
-                chained_query.inner.document_type,
-            )?;
-            let outer_documents = serialize_all(
-                &outcome.result.outer_documents,
-                chained_query.outer_document_type,
-            )?;
+            let inner_documents =
+                serialize_all(&outcome.result.inner_documents, chained_query.document_type)?;
+            let outer_documents = serialize_all(&outcome.result.outer_documents, outer_type)?;
 
             GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Data(ResultData {
@@ -439,13 +429,12 @@ mod tests {
             resolved_time_ranges: vec![],
             sub_queries: vec![],
         };
-        let chained = DriveChainedDocumentQuery {
-            inner,
-            join_property: "postId".to_string(),
-            outer_document_type: contract
+        let chained = inner.with_by_id_join(
+            "postId",
+            contract
                 .document_type_for_name("post")
                 .expect("post doctype"),
-        };
+        );
         let (_root_hash, verified) = chained
             .verify_chained_documents_proof(proof.grovedb_proof.as_slice(), version)
             .expect("chained proof verifies — the proof alone carries everything");

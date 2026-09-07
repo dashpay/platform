@@ -7,7 +7,7 @@
 //! server derives the outer by-ids query from the inner results, and the
 //! verifier re-derives it from the PROVEN inner results, so the join can
 //! never be steered by the responding node. See
-//! `drive::query::drive_chained_document_query` for the trust model.
+//! `drive::query::chained_document_query` for the trust model.
 
 use crate::documents::document_query::DocumentQuery;
 use crate::error::Error;
@@ -20,7 +20,6 @@ use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use dpp::ProtocolError;
-use drive::query::drive_chained_document_query::DriveChainedDocumentQuery;
 use drive::query::DriveDocumentQuery;
 use drive_proof_verifier::{
     verify_chained_documents_tenderdash_proof, ChainedDocuments, FromProof,
@@ -122,7 +121,7 @@ impl TryFromPlatformVersioned<ChainedDocumentQuery> for GetDocumentsRequest {
     }
 }
 
-impl<'a> TryFrom<&'a ChainedDocumentQuery> for DriveChainedDocumentQuery<'a> {
+impl<'a> TryFrom<&'a ChainedDocumentQuery> for DriveDocumentQuery<'a> {
     type Error = Error;
 
     fn try_from(request: &'a ChainedDocumentQuery) -> Result<Self, Self::Error> {
@@ -132,11 +131,7 @@ impl<'a> TryFrom<&'a ChainedDocumentQuery> for DriveChainedDocumentQuery<'a> {
             .data_contract
             .document_type_for_name(&request.outer_document_type_name)
             .map_err(|e| Error::Protocol(ProtocolError::DataContractError(e)))?;
-        Ok(DriveChainedDocumentQuery {
-            inner,
-            join_property: request.join_property.clone(),
-            outer_document_type,
-        })
+        Ok(inner.with_by_id_join(request.join_property.clone(), outer_document_type))
     }
 }
 
@@ -157,7 +152,7 @@ impl FromProof<ChainedDocumentQuery> for ChainedDocuments {
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
 
-        let query: DriveChainedDocumentQuery = (&request).try_into().map_err(|e: Error| {
+        let query: DriveDocumentQuery = (&request).try_into().map_err(|e: Error| {
             drive_proof_verifier::Error::RequestError {
                 error: e.to_string(),
             }
@@ -276,13 +271,20 @@ mod tests {
     #[test]
     fn converts_to_a_valid_drive_query() {
         let query = posts_i_liked(10);
-        let drive_query: DriveChainedDocumentQuery =
+        let drive_query: DriveDocumentQuery =
             (&query).try_into().expect("converts to a drive query");
         drive_query
-            .validate(platform_version())
+            .validate_chained(platform_version())
             .expect("the byLiker shape validates");
-        assert_eq!(drive_query.join_property, "postId");
-        assert_eq!(drive_query.inner.limit, Some(10));
+        assert_eq!(
+            drive_query.sub_queries[0]
+                .binding
+                .as_ref()
+                .expect("the join is bound")
+                .source_property,
+            "postId"
+        );
+        assert_eq!(drive_query.limit, Some(10));
     }
 
     #[test]
@@ -294,9 +296,9 @@ mod tests {
             "hashtag",
             "post",
         );
-        let drive_query: DriveChainedDocumentQuery =
+        let drive_query: DriveDocumentQuery =
             (&query).try_into().expect("conversion itself succeeds");
-        let refused = drive_query.validate(platform_version());
+        let refused = drive_query.validate_chained(platform_version());
         assert!(
             refused.is_err(),
             "a non-refersTo join property must fail validation"

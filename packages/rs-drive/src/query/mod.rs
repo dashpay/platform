@@ -3,6 +3,10 @@ use std::sync::Arc;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
+    // Chained-query building blocks: the result shape and the join-value
+    // cap. The join itself is a by-id join sub-query in
+    // [`DriveDocumentQuery::sub_queries`].
+    chained_document_query::{ChainedDocumentsResult, MAX_CHAINED_JOIN_VALUES},
     // Composite-query building blocks: the sub-query shapes carried by
     // [`DriveDocumentQuery::sub_queries`] and the assembled result. The
     // verifier needs them all to rebuild and route the merged proof.
@@ -295,10 +299,12 @@ pub mod drive_document_ranked_query;
 pub(crate) mod index_only_synthesis;
 
 /// Chained document queries — a provable semi-join: an inner indexOnly
-/// query whose proven `refersTo` values become the outer query's
-/// primary keys, proven against one state root. See the module docs.
+/// [`DriveDocumentQuery`] whose proven `refersTo` values become the outer
+/// query's primary keys (carried as a single by-id join in
+/// [`DriveDocumentQuery::sub_queries`]), proven against one state root.
+/// See the module docs.
 #[cfg(any(feature = "server", feature = "verify"))]
-pub mod drive_chained_document_query;
+pub mod chained_document_query;
 
 /// Composite document queries — a [`DriveDocumentQuery`] page plus
 /// sub-queries derived from its proven results (joins, lookups, counts),
@@ -1207,6 +1213,40 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
+    /// Appends a by-id join sub-query: `source_property`'s values, read
+    /// off this query's proven documents, become the `$id`s of
+    /// `document_type` documents fetched from the same contract. The
+    /// property must carry a `refersTo: permanentDocument` declaration
+    /// targeting `document_type`, so every derived id resolves.
+    ///
+    /// This is the one shape the chained surface
+    /// (`Drive::query_chained_documents`,
+    /// `verify_chained_documents_proof`) requires exactly one of, and one
+    /// of the composite sub-query shapes. A cross-contract by-id join
+    /// (composite only) is built by pushing a [`DriveSubQuery`] with the
+    /// target contract instead.
+    pub fn with_by_id_join(
+        mut self,
+        source_property: impl Into<String>,
+        document_type: DocumentTypeRef<'a>,
+    ) -> Self {
+        self.sub_queries.push(DriveSubQuery {
+            contract: self.contract,
+            document_type,
+            kind: SubQueryKind::Documents,
+            where_clauses: vec![],
+            order_by: vec![],
+            limit: None,
+            binding: Some(SubQueryBinding {
+                source: BindingSource::Page,
+                source_property: source_property.into(),
+                field: document::property_names::ID.to_string(),
+            }),
+        });
+        self
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Refuses a query carrying composite sub-queries on a plain
     /// (page-only) surface, which would otherwise silently ignore them —
     /// on the verify side that would mean reporting the composition
@@ -1216,9 +1256,10 @@ impl<'a> DriveDocumentQuery<'a> {
             return Ok(());
         }
         Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-            "this query carries {} composite sub-queries, which {} would silently ignore; \
-             use query_composite_documents / query_composite_documents_with_proof to execute \
-             it and verify_composite_documents_proof to verify its proof",
+            "this query carries {} sub-queries, which {} would silently ignore; execute and \
+             verify it on the composite surface (query_composite_documents / \
+             verify_composite_documents_proof) or, for a single by-id join, the chained one \
+             (query_chained_documents / verify_chained_documents_proof)",
             self.sub_queries.len(),
             surface,
         ))))

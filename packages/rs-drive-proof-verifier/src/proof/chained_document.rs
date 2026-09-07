@@ -5,7 +5,7 @@
 //! grovedb proof: the limited inner indexOnly page and the outer
 //! by-ids fetch derived from its values, merged by the server (grovedb
 //! lifts the inner limit into a per-instance branch limit). The
-//! verifier ([`DriveChainedDocumentQuery::verify_chained_documents_proof`])
+//! verifier ([`DriveDocumentQuery::verify_chained_documents_proof`])
 //! reconstructs the merged query from the response's UNTRUSTED
 //! join-value hint, verifies in one pass, and requires the proven
 //! outer documents to match the PROVEN inner join values exactly — a
@@ -29,7 +29,7 @@ use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
-use drive::query::drive_chained_document_query::DriveChainedDocumentQuery;
+use drive::query::DriveDocumentQuery;
 use drive::verify::RootHash;
 
 /// The verified result of a chained document query, both halves in
@@ -51,14 +51,17 @@ pub struct ChainedDocuments {
 /// The merk-level composition (bootstrap subset pass on the inner
 /// query, merged-query re-derivation, authoritative full verification,
 /// exact set equality against the PROVEN join values) lives in rs-drive's
-/// [`DriveChainedDocumentQuery::verify_chained_documents_proof`]; this
+/// [`DriveDocumentQuery::verify_chained_documents_proof`]; this
 /// wrapper adds the [`verify_tenderdash_proof`] binding — the root hash
 /// the proof commits to is only an attested fact once it is tied to the
 /// quorum-signed app hash, and this function exists so the composition
 /// can never be skipped by accident.
 ///
+/// The query is the chained shape: the inner [`DriveDocumentQuery`]
+/// carrying its single by-id join in `sub_queries` (see
+/// `DriveDocumentQuery::with_by_id_join`).
 pub fn verify_chained_documents_proof(
-    query: &DriveChainedDocumentQuery,
+    query: &DriveDocumentQuery,
     proof: &Proof,
     mtd: &ResponseMetadata,
     platform_version: &PlatformVersion,
@@ -81,7 +84,7 @@ pub fn verify_chained_documents_proof(
 
 impl<'dq, Q> FromProof<Q> for ChainedDocuments
 where
-    Q: TryInto<DriveChainedDocumentQuery<'dq>> + Clone + 'dq,
+    Q: TryInto<DriveDocumentQuery<'dq>> + Clone + 'dq,
     Q::Error: std::fmt::Display,
 {
     type Request = Q;
@@ -100,7 +103,7 @@ where
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
 
-        let query: DriveChainedDocumentQuery<'dq> =
+        let query: DriveDocumentQuery<'dq> =
             request
                 .clone()
                 .try_into()

@@ -2,15 +2,15 @@ mod v0;
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::query::drive_chained_document_query::{
-    ChainedDocumentsResult, DriveChainedDocumentQuery,
-};
+use crate::query::{ChainedDocumentsResult, DriveDocumentQuery};
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 
-impl DriveChainedDocumentQuery<'_> {
-    /// Verifies a chained query's single merged proof and returns
-    /// `(root_hash, result)`.
+impl DriveDocumentQuery<'_> {
+    /// Verifies a chained query's single merged proof — this query as the
+    /// inner half plus the single by-id join its
+    /// [`sub_queries`](DriveDocumentQuery::sub_queries) carry — and
+    /// returns `(root_hash, result)`.
     ///
     /// The verifier trusts nothing about the join, and needs nothing
     /// beyond the proof itself: a BOOTSTRAP subset pass runs the inner
@@ -46,7 +46,7 @@ impl DriveChainedDocumentQuery<'_> {
         {
             0 => self.verify_chained_documents_proof_v0(proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "DriveChainedDocumentQuery::verify_chained_documents_proof".to_string(),
+                method: "DriveDocumentQuery::verify_chained_documents_proof".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -80,29 +80,26 @@ mod tests {
             .chained_document
             .verify_chained_documents_proof = 255;
 
-        let query = DriveChainedDocumentQuery {
-            inner: DriveDocumentQuery {
-                contract: &contract,
-                document_type,
-                internal_clauses: Default::default(),
-                offset: None,
-                limit: Some(1),
-                order_by: Default::default(),
-                start_at: None,
-                start_at_included: false,
-                block_time_ms: None,
-                resolved_time_ranges: vec![],
-                sub_queries: vec![],
-            },
-            join_property: "records".to_string(),
-            outer_document_type: document_type,
-        };
+        let query = DriveDocumentQuery {
+            contract: &contract,
+            document_type,
+            internal_clauses: Default::default(),
+            offset: None,
+            limit: Some(1),
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
+        }
+        .with_by_id_join("records", document_type);
 
         let result = query.verify_chained_documents_proof(&[], &platform_version);
         assert!(matches!(
             result,
             Err(Error::Drive(DriveError::UnknownVersionMismatch { method, .. }))
-                if method == "DriveChainedDocumentQuery::verify_chained_documents_proof"
+                if method == "DriveDocumentQuery::verify_chained_documents_proof"
         ));
     }
 }
