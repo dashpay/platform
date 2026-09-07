@@ -52,8 +52,9 @@ impl Totals {
     /// One `name=mean/samples` term per phase, space separated. The mean is
     /// over blocks, not over samples: a phase that only runs on some blocks
     /// shows its share of the per-block cost, and the sample count shows how
-    /// often it ran.
+    /// often it ran. Only called from `end_block`, after a block was counted.
     fn report_line(&self) -> String {
+        debug_assert!(self.blocks > 0, "report_line before any block was counted");
         let mut line = String::with_capacity(self.phases.len() * 20);
         for (name, sum, samples) in &self.phases {
             if !line.is_empty() {
@@ -69,7 +70,7 @@ impl Totals {
     }
 
     /// Counts a finished block. Returns the report and resets when the
-    /// reporting interval is reached.
+    /// reporting interval is reached. An interval of zero reports every block.
     fn end_block(&mut self, every: u64) -> Option<(u64, String)> {
         self.blocks += 1;
         if self.blocks < every {
@@ -214,6 +215,25 @@ mod tests {
         assert_eq!(totals.end_block(3), Some((3, "x=30/3".to_string())));
         assert_eq!(totals.blocks, 0);
         assert!(totals.phases.is_empty());
+    }
+
+    #[test]
+    fn a_lap_that_did_not_run_moves_the_boundary_without_a_sample() {
+        let mut laps = Laps {
+            last: Instant::now(),
+            on: true,
+            buf: Vec::new(),
+        };
+        let before = laps.last;
+        laps.lap_if(false, "skipped");
+        assert!(laps.buf.is_empty());
+        assert!(laps.last >= before);
+
+        laps.lap_if(true, "ran");
+        assert_eq!(laps.buf.len(), 1);
+        assert_eq!(laps.buf[0].0, "ran");
+        // Drop must not merge test laps into the process-wide totals.
+        laps.buf.clear();
     }
 
     #[test]

@@ -246,7 +246,11 @@ where
             }
         }
 
-        laps.lap_if(core_chain_lock_update.is_some(), "chainlock");
+        // The verification only runs for a chain lock we did not propose ourselves.
+        laps.lap_if(
+            core_chain_lock_update.is_some() && !known_from_us,
+            "chainlock",
+        );
 
         // Update the masternode list and create masternode identities and also update the active quorums
         self.update_core_info(
