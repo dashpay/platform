@@ -30,6 +30,7 @@ pub use dapi_grpc::platform::v0 as proto;
 pub use dash_context_provider::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use dash_context_provider::MockContextProvider;
+pub use documents::chained_document_query::ChainedDocumentQuery;
 pub use documents::document_history_query::DocumentHistoryQuery;
 pub use documents::document_query::DocumentQuery;
 /// Sdk-bound constructors for [`DocumentQuery`]. Must be in scope to call
@@ -41,6 +42,7 @@ pub use dpp::{
     prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision},
 };
 pub use drive::query::DriveDocumentQuery;
+pub use drive_proof_verifier::ChainedDocuments;
 pub use rs_dapi_client as dapi;
 pub use {
     fetch::Fetch,

@@ -58,11 +58,10 @@ fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
 /// publish a NEW generation into both maps — the id is free in the inner
 /// manager from the moment the removal above completes, and nothing gates
 /// registration. Reproducing it deterministically from outside is not possible:
-/// the window is bounded by two *different* locks, and the only lock a test
-/// could hold to park the remover inside it (`self.wallets`) is the same lock
-/// the registration must acquire to publish, so parking the remover would also
-/// block the registration — and `tokio`'s `RwLock` hands the writer queue out
-/// in FIFO order, which puts the remover first. A rendezvous is therefore the
+/// the window is bounded by two *different* synchronization domains — the
+/// inner manager's lock and the public map's `ArcSwap` publication — and a
+/// test holds no lock that could park the remover between them without also
+/// stalling the registration's own publish. A rendezvous is therefore the
 /// only way to pin this ordering without a sleep or a completion-order race.
 ///
 /// Compiled under `cfg(test)` only: neither this static nor its call site
@@ -174,7 +173,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // downstream `walletId`-keyed structure network-correct by
         // construction — no per-network disambiguation needed in the
         // persistence layer, and network-blind child tables (UTXOs,
-        // asset locks, platform addresses) can no longer cross-feed
+        // asset locks, platform addresses) cannot cross-feed
         // between a mnemonic's per-network wallets. The watch-only
         // restore path (`Wallet::new_external_signable`) reuses the
         // persisted id verbatim, so it stays self-consistent across
@@ -218,9 +217,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // A registration under an id a previous generation held is exactly the
         // remove-and-recreate case: that generation's pending-spend fences
         // protect signed transactions that are still valid and still relayable,
-        // so the replacement inherits them rather than starting clean
-        // (`dashpay/platform#4309`, review round 8). A first registration finds
-        // no entry and gets an empty map, as before.
+        // so the replacement inherits them rather than starting clean. A first
+        // registration finds no entry and gets an empty map.
         let registration_wallet_id = wallet.compute_wallet_id();
         let generation = Arc::new(WalletGeneration::with_fences(
             self.in_broadcast_fences_for(&registration_wallet_id),
@@ -579,11 +577,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         let platform_wallet = Arc::new(platform_wallet);
 
-        // Register the PlatformWallet handle.
-        {
-            let mut wallets = self.wallets.write().await;
+        // Register the PlatformWallet handle. `rcu` publishes a new map
+        // snapshot; the closure can rerun under a concurrent-writer
+        // retry, so it must stay pure map manipulation.
+        self.wallets.rcu(|wallets| {
+            let mut wallets = std::collections::BTreeMap::clone(wallets);
             wallets.insert(wallet_id, Arc::clone(&platform_wallet));
-        }
+            wallets
+        });
 
         // Re-seed the lock-free balance atomic from the wallet's inner
         // balance now that the wallet is in `self.wallets`.
@@ -600,6 +601,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // into the atomic here (as `manager::load` does for restored
         // wallets); any later block events are applied normally now that
         // the wallet is mapped.
+        //
+        // Last writer wins between this seed and the handler: if SPV
+        // processes another block between the read below and the `set`, the
+        // atomic briefly goes back to the older totals. The next
+        // balance-bearing event corrects it, and during the rescan this
+        // exists for those arrive continuously.
         {
             let wm = self.wallet_manager.read().await;
             if let Some(info) = wm.get_wallet_info(&wallet_id) {
@@ -660,8 +667,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// inside it, `CoreWallet::is_same_generation` passes for a removed
     /// generation (a removed generation matches itself), and the reservation age
     /// guard is disabled once `last_processed_height` returns `None`. So a
-    /// payment for a wallet the host already deleted reaches the network
-    /// (`dashpay/platform#4185`).
+    /// payment for a wallet the host already deleted reaches the network.
     ///
     /// Taking the gate *inside* this method rather than leaving it to the caller
     /// is deliberate: `PlatformWalletManager` is public and `SignedPaymentRegistry`
@@ -695,7 +701,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// So once this method has removed generation G1 from the inner
     /// `wallet_manager`, the id is free and a concurrent registration can publish
     /// a *different* generation G2 into both maps before this method reaches its
-    /// own `self.wallets` removal — the two removals are separately locked, with
+    /// own `self.wallets` removal — the two removals are separately synchronized, with
     /// no happens-before edge between them and the registration. Removing by key
     /// there would take G2 out of the public map (leaving it registered in the
     /// inner manager, invisible and unremovable) and hand G2 to `tear_down`,
@@ -706,11 +712,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// The `Arc<PlatformWallet>` validated under the gate is therefore retained,
     /// and the public-map entry is removed only while it still names that same
     /// generation. Both maps, the returned handle and the `tear_down` argument
-    /// are then all that one generation (`dashpay/platform#4185`). The one
-    /// remaining id-keyed step is the shielded coordinator detach below, which
-    /// has no generation concept at all; a generation that has just been
-    /// registered has not run `bind_shielded` yet, so it holds no coordinator
-    /// entry to detach.
+    /// then all name that one generation. The one remaining id-keyed step is
+    /// the shielded coordinator detach below, which has no generation concept
+    /// at all; a generation that has just been registered has not run
+    /// `bind_shielded` yet, so it holds no coordinator entry to detach.
     ///
     /// The inner-manager removal needs no such check: G1 can only leave
     /// `wallet_manager` through this method (which requires G1's gate, held here)
@@ -736,7 +741,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // matched against.
         let (removed, _teardown) = loop {
             let candidate = {
-                let wallets = self.wallets.read().await;
+                let wallets = self.wallets.load();
                 match wallets.get(wallet_id) {
                     None => {
                         return Err(PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))
@@ -746,7 +751,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             };
             let guard = candidate.generation().teardown_guard().await;
             let still_current = {
-                let wallets = self.wallets.read().await;
+                let wallets = self.wallets.load();
                 wallets
                     .get(wallet_id)
                     .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), candidate.generation()))
@@ -877,13 +882,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // this method); removing by key would evict that live wallet and hand it
         // to `tear_down` under the wrong gate.
         {
-            let mut wallets = self.wallets.write().await;
-            let entry_is_ours = wallets
-                .get(wallet_id)
-                .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), &generation));
-            if entry_is_ours {
-                wallets.remove(wallet_id);
-            } else {
+            // `rcu` keeps the generation check and the removal atomic: the
+            // closure sees the map the CAS will replace, and a concurrent
+            // publication retries the whole closure against the new map.
+            // The `Cell` therefore ends up holding the verdict of the
+            // attempt that actually committed.
+            let entry_is_ours = std::cell::Cell::new(false);
+            self.wallets.rcu(|wallets| {
+                let ours = wallets
+                    .get(wallet_id)
+                    .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), &generation));
+                entry_is_ours.set(ours);
+                if ours {
+                    let mut next = std::collections::BTreeMap::clone(wallets);
+                    next.remove(wallet_id);
+                    Arc::new(next)
+                } else {
+                    // Not ours: publish the map unchanged.
+                    Arc::clone(wallets)
+                }
+            });
+            if !entry_is_ours.get() {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
                     "remove_wallet: a new generation was registered under this id while the \
@@ -1116,25 +1135,25 @@ mod register_wallet_duplicate_tests {
         );
     }
 
-    /// `dashpay/platform#4309`, REVIEW ROUND 8 — PENDING-SPEND PROTECTION MUST
-    /// SURVIVE WALLET RECREATION.
+    /// PENDING-SPEND PROTECTION MUST SURVIVE WALLET RECREATION.
     ///
-    /// The in-broadcast fence used to live in the `WalletGeneration` itself, so
-    /// it was not merely process-local but *generation*-local. Removing a wallet
-    /// and re-creating it under the same id mints a fresh generation, and the
-    /// fence map went with the old one — while the signed transaction it was
-    /// protecting stays perfectly valid and can still be relayed by a DAPI
-    /// endpoint or a peer that retained it. The re-created wallet restored the
-    /// persisted UTXO with neither the fence nor key-wallet's memory-only
-    /// reservation holding it, and could sign a conflicting spend of the very
-    /// same outpoint.
+    /// If the in-broadcast fence lived in the `WalletGeneration` itself, it
+    /// would be not merely process-local but *generation*-local. Removing a
+    /// wallet and re-creating it under the same id mints a fresh generation,
+    /// and the fence map would go with the old one — while the signed
+    /// transaction it protects stays perfectly valid and can still be relayed
+    /// by a DAPI endpoint or a peer that retained it. The re-created wallet
+    /// would restore the persisted UTXO with neither the fence nor key-wallet's
+    /// memory-only reservation holding it, and could sign a conflicting spend
+    /// of the very same outpoint.
     ///
     /// Fences are therefore keyed by WALLET, not by generation: a generation
     /// that replaces another under the same id inherits its predecessor's
     /// pending-spend fences, and they are retired by the same evidence as ever —
     /// an observed spend — not by the replacement.
     ///
-    /// Red before the fix: the re-created wallet reported no conflict at all.
+    /// Without wallet-keyed fences the re-created wallet reports no conflict
+    /// at all.
     #[tokio::test]
     async fn a_recreated_wallet_inherits_the_pending_fences_of_the_generation_it_replaces() {
         use dashcore::hashes::Hash;
@@ -1275,8 +1294,7 @@ mod register_wallet_duplicate_tests {
     }
 }
 
-/// Removal versus a same-id re-registration that lands *during* the removal
-/// (`dashpay/platform#4185` review).
+/// Removal versus a same-id re-registration that lands *during* the removal.
 ///
 /// The invariant: `remove_wallet_with_teardown` removes, returns and tears down
 /// exactly the wallet generation it validated under that generation's lifecycle

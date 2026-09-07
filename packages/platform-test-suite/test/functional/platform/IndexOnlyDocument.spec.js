@@ -4,6 +4,19 @@ const { expect } = require('chai');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
+const createPlatformProofVerifier = require('../../../lib/test/createPlatformProofVerifier');
+
+function identifierLikeToBase58(evo, value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (value && typeof value.toBase58 === 'function') {
+    return value.toBase58();
+  }
+
+  return evo.Identifier.fromBytes(Array.from(value)).toBase58();
+}
 
 const {
   Errors: {
@@ -295,6 +308,39 @@ describe('Platform', () => {
       expect(fullLike.getId().toString()).to.not.equal(like.getId().toString());
 
       fetchedLike = fullLike;
+    });
+
+    it('should fetch liked posts through a chained query with verified proofs', async () => {
+      // The provable semi-join: SELECT * FROM post WHERE $id IN
+      // (SELECT postId FROM like WHERE $ownerId = me). Served by the
+      // dedicated getChainedDocuments endpoint through the WASM SDK,
+      // which verifies ONE merged grovedb proof against the
+      // quorum-signed root, re-deriving the outer query and checking
+      // it against the proven inner values — the node cannot steer
+      // the join.
+      const { evo, sdk: evoSdk } = await createPlatformProofVerifier
+        .getEvoSdkForNetwork(process.env.NETWORK);
+
+      const page = await evoSdk.documents.chained({
+        dataContractId: dataContract.getId().toString(),
+        innerDocumentType: 'like',
+        where: [['$ownerId', '==', identity.getId().toString()]],
+        innerLimit: 10,
+        joinProperty: 'postId',
+        outerDocumentType: 'post',
+      });
+
+      expect(page.innerDocuments).to.have.lengthOf(1);
+      expect(page.outerDocuments).to.have.lengthOf(1);
+
+      const [likedPost] = page.outerDocuments;
+      expect(likedPost.id.toBase58()).to.equal(post.getId().toString());
+      expect(likedPost.properties.message).to.equal('a post worth liking');
+
+      // The inner projection carries the pagination cursor.
+      const [innerLike] = page.innerDocuments;
+      expect(identifierLikeToBase58(evo, innerLike.properties.postId))
+        .to.equal(post.getId().toString());
     });
 
     it('should fail to query a subset-index projection without proofs', async () => {

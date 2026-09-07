@@ -305,9 +305,8 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ///
     // TODO: wallet-less / global objects (the `WalletId::default()` /
     // `[0u8; 32]` sentinel scope for parentless or global metadata) are
-    // not yet expressible through `flush`. Hosts that previously called
-    // the now-removed `commit_writes` should call `flush` per wallet
-    // instead; a sentinel-scope flush path is still to be designed.
+    // not yet expressible through `flush`. Hosts call `flush` per wallet;
+    // a sentinel-scope flush path is still to be designed.
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError>;
 
     /// Replace the persisted tracked-masternode set for `network` with

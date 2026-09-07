@@ -26,6 +26,7 @@
 //!   this file and is declared with `#[path]` so it can reuse that
 //!   suite's fixture and assertion helpers.
 
+mod chained_query_e2e_tests;
 mod countable_e2e_tests;
 mod index_only_e2e_tests;
 mod noncounted_sibling_e2e_tests;

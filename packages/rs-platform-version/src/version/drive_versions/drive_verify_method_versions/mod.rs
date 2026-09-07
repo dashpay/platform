@@ -7,6 +7,7 @@ pub mod v2;
 pub struct DriveVerifyMethodVersions {
     pub contract: DriveVerifyContractMethodVersions,
     pub document: DriveVerifyDocumentMethodVersions,
+    pub chained_document: DriveVerifyChainedDocumentMethodVersions,
     pub document_count: DriveVerifyDocumentCountMethodVersions,
     pub document_sum: DriveVerifyDocumentSumMethodVersions,
     pub document_ranked: DriveVerifyDocumentRankedMethodVersions,
@@ -44,6 +45,14 @@ pub struct DriveVerifyDocumentMethodVersions {
     pub verify_proof_keep_serialized: FeatureVersion,
     pub verify_document_history: FeatureVersion,
     pub verify_start_at_document_in_proof: FeatureVersion,
+}
+
+/// Versions for the chained document query (provable semi-join)
+/// prove-path verifier (grovedb-level — the tenderdash composition
+/// layer lives in rs-drive-proof-verifier).
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyChainedDocumentMethodVersions {
+    pub verify_chained_documents_proof: FeatureVersion,
 }
 
 /// Versions for the `GetDocumentsCount` prove-path verifiers

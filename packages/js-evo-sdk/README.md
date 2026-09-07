@@ -16,6 +16,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Facades](#facades)
 - [Ranked queries](#ranked-queries)
 - [Document references (`refersTo`)](#document-references-refersto)
+- [Chained queries (provable semi-join)](#chained-queries-provable-semi-join)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -187,6 +188,40 @@ try {
   }
 }
 ```
+
+## Chained queries (provable semi-join)
+
+A `refersTo: permanentDocument` declaration also lights up the read side: a **chained query** answers `SELECT * FROM post WHERE $id IN (SELECT postId FROM like WHERE $ownerId = me)` in one verified round trip. The node returns the inner indexOnly page and the referenced documents under ONE merged proof — a single quorum-signed state root by construction — and the SDK re-derives the outer query itself and checks it against the *proven* inner values — the node cannot substitute, omit, or inject joined documents (a missing referenced document fails verification outright, since `permanentDocument` references cannot dangle).
+
+```ts
+// The posts I liked, newest page first by postId.
+const page = await sdk.documents.chained({
+  dataContractId: YAPPR,
+  innerDocumentType: 'like',
+  where: [['$ownerId', '==', me]],
+  innerLimit: 25,
+  joinProperty: 'postId',
+  outerDocumentType: 'post',
+});
+
+for (const post of page.outerDocuments) {
+  console.log(post.properties.message);
+}
+
+// Next page: continue past the last proven join value.
+const cursor = page.innerDocuments.at(-1)?.properties.postId;
+const next = await sdk.documents.chained({
+  dataContractId: YAPPR,
+  innerDocumentType: 'like',
+  where: [['$ownerId', '==', me], ['postId', '>', cursor]],
+  orderBy: [['postId', 'asc']],
+  innerLimit: 25,
+  joinProperty: 'postId',
+  outerDocumentType: 'post',
+});
+```
+
+The inner query must target an indexOnly document type and resolve to an index carrying `joinProperty`, and `joinProperty` must declare a same-contract `refersTo: permanentDocument` targeting `outerDocumentType`. `innerLimit` is required — it bounds the derived outer fetch, so there is no server-default fallback. There are no outer-side clauses by design; filter `outerDocuments` locally. `sdk.documents.chainedWithProof(...)` returns the same result with the metadata and proof envelope attached.
 
 ## Contributing
 

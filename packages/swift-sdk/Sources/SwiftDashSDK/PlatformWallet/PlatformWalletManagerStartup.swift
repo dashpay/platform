@@ -167,6 +167,15 @@ extension PlatformWalletManager {
                 "walletId must be 32 bytes, got \(walletId.count)"
             )
         }
+        SDKLogger.event(
+            "wallet_startup_started",
+            category: .lifecycle,
+            fields: [
+                "budget_provided": .boolean(budget != nil),
+                "gap_limit_provided": .boolean(gapLimit != nil),
+                "wallet_reference": .reference(walletId),
+            ]
+        )
 
         // Nothing below may run on a seed that does not own this wallet.
         // Everything this call does with key material is unauthenticated —
@@ -211,10 +220,15 @@ extension PlatformWalletManager {
         case .present:
             coreSigner = MnemonicResolver(storage: storage)
         case .unavailable(let status):
-            SDKLogger.log(
-                "startup: mnemonic availability unknown (OSStatus \(status)); "
-                    + "passing a resolver so the scan can defer rather than fail",
-                minimumLevel: .medium)
+            SDKLogger.event(
+                "wallet_startup_mnemonic_unavailable",
+                category: .lifecycle,
+                severity: .warning,
+                fields: [
+                    "os_status": .integer(Int64(status)),
+                    "wallet_reference": .reference(walletId),
+                ]
+            )
             coreSigner = MnemonicResolver(storage: storage)
         }
         // Identity signer for the DIP-15 auto-accept pass. Nil without a
@@ -251,23 +265,51 @@ extension PlatformWalletManager {
             budgetSecs = max(1, converted)
         }
 
-        return try await Task.detached(priority: .userInitiated) { () -> WalletStartupOutcome in
-            try withExtendedLifetime((coreSigner, identitySigner)) {
-                var out = WalletStartupOutcomeFFI()
-                try walletId.withUnsafeBytes { raw in
-                    try platform_wallet_manager_start_wallet_subsystems(
-                        handle,
-                        raw.bindMemory(to: UInt8.self).baseAddress,
-                        coreSigner?.handle,
-                        identitySigner?.handle,
-                        budgetSecs,
-                        gapLimit ?? 0,
-                        &out
-                    ).check()
+        do {
+            let outcome = try await Task.detached(priority: .userInitiated) { () -> WalletStartupOutcome in
+                try withExtendedLifetime((coreSigner, identitySigner)) {
+                    var out = WalletStartupOutcomeFFI()
+                    try walletId.withUnsafeBytes { raw in
+                        try platform_wallet_manager_start_wallet_subsystems(
+                            handle,
+                            raw.bindMemory(to: UInt8.self).baseAddress,
+                            coreSigner?.handle,
+                            identitySigner?.handle,
+                            budgetSecs,
+                            gapLimit ?? 0,
+                            &out
+                        ).check()
+                    }
+                    return WalletStartupOutcome(out)
                 }
-                return WalletStartupOutcome(out)
+            }.value
+            var fields: [String: SDKLogValue] = [
+                "contact_accounts_drained": .unsignedInteger(UInt64(outcome.contactAccountsDrained)),
+                "contact_accounts_pending": .unsignedInteger(UInt64(outcome.contactAccountsPending)),
+                "discovery_attempts": .unsignedInteger(UInt64(outcome.discoveryAttempts)),
+                "duration_ms": .integer(Int64(outcome.elapsed * 1_000)),
+                "status": .publicText(String(describing: outcome.status)),
+                "wallet_reference": .reference(walletId),
+            ]
+            if let identityId = outcome.identityId {
+                fields["identity_reference"] = .reference(identityId)
             }
-        }.value
+            SDKLogger.event(
+                "wallet_startup_completed",
+                category: .lifecycle,
+                fields: fields
+            )
+            return outcome
+        } catch {
+            SDKLogger.event(
+                "wallet_startup_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["wallet_reference": .reference(walletId)],
+                error: error
+            )
+            throw error
+        }
     }
 }
 

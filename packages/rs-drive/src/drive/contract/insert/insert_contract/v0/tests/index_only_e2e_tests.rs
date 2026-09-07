@@ -52,7 +52,7 @@ pub(super) fn platform_version() -> &'static PlatformVersion {
     PlatformVersion::latest()
 }
 
-fn setup_likes() -> (Drive, DataContract) {
+pub(super) fn setup_likes() -> (Drive, DataContract) {
     let drive = setup_drive_with_initial_state_structure(None);
     let pv = platform_version();
     let contract = json_document_to_contract(

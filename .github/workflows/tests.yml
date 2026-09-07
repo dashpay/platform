@@ -102,6 +102,8 @@ jobs:
               - packages/js-dash-sdk/**
               - packages/wallet-lib/**
               - packages/wasm-sdk/**
+              - packages/wasm-dpp2/**
+              - packages/js-evo-sdk/**
               - packages/dapi/.env.example
               - packages/rs-drive-abci/.env.local
               - .github/actions/aws_ecr_login/**
