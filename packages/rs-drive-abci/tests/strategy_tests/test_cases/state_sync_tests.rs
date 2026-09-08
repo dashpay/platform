@@ -1,15 +1,6 @@
 //! Two-instance ABCI state sync integration tests: a source chain serves snapshots from
 //! its checkpoint registry and a fresh target restores one chunk by chunk, then
 //! reconstructs its platform state.
-//!
-//! KNOWN LIMITATION at the pinned grovedb revision (6c882c3): state sync does not
-//! faithfully restore SumTree subtrees — the copied node hashes reproduce the source
-//! root hash, but re-opening a restored sum tree recomputes a different root (latent
-//! corruption), which the strict `verify_grovedb` call in `apply_snapshot_chunk`
-//! correctly refuses. See `tests/sum_tree_sync_probe.rs` for the minimal upstream
-//! reproducer. The full happy-path test below is therefore `#[ignore]`d until the
-//! grovedb pin includes the sum-tree restore fix (dashpay/grovedb#840), and an active
-//! test pins today's refusal behavior instead.
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -173,12 +164,10 @@ pub(crate) mod tests {
     /// hash) and keep requesting whatever the target asks for next.
     ///
     /// When `tamper_with_first_chunk` is set, the first served chunk is corrupted to
-    /// prove the target answers RETRY with a refetch of exactly that chunk (banning
-    /// the sender) instead of killing the session. At the current grovedb revision the
-    /// refetched chunk cannot be re-applied within the session (grovedb removes a
-    /// chunk id from its pending set before processing), so the target then answers
-    /// RETRY_SNAPSHOT; the driver handles that the way Tenderdash would, by
-    /// re-offering the same snapshot and restarting the transfer.
+    /// prove the target answers RETRY_SNAPSHOT (banning the sender) instead of killing
+    /// the session: grovedb invalidates its session on a failed chunk, so the driver
+    /// handles that the way Tenderdash would, by re-offering the same snapshot and
+    /// restarting the transfer.
     /// How a snapshot transfer ended.
     ///
     /// `Rejected` is not an error: the target restored the snapshot, found it unusable,
@@ -237,14 +226,10 @@ pub(crate) mod tests {
                         })?;
                     assert_eq!(
                         response.result,
-                        i32::from(response_apply_snapshot_chunk::Result::Retry),
-                        "a tampered chunk must be answered with a retry, not kill the session"
+                        i32::from(response_apply_snapshot_chunk::Result::RetrySnapshot),
+                        "a tampered chunk must be answered with a snapshot restart, not an error"
                     );
-                    assert_eq!(
-                        response.refetch_chunks,
-                        vec![chunk_id.clone()],
-                        "the tampered chunk must be refetched"
-                    );
+                    assert!(response.refetch_chunks.is_empty());
                     assert_eq!(response.reject_senders, vec!["malicious-peer".to_string()]);
                     assert!(
                         target_app
@@ -252,8 +237,10 @@ pub(crate) mod tests {
                             .read()
                             .unwrap()
                             .is_some(),
-                        "the session must survive a tampered chunk"
+                        "the session stays in place until the re-offer replaces it"
                     );
+                    restarts += 1;
+                    continue 'snapshot_attempt;
                 }
 
                 let response =
@@ -373,9 +360,8 @@ pub(crate) mod tests {
     /// along the way to prove refetch/restart recovery), reconstruct the target
     /// platform state, and verify the target matches the source checkpoint exactly.
     #[tokio::test]
-    #[ignore = "the pinned grovedb (6c882c3) cannot faithfully restore sum trees; un-ignore \
-                when the pin includes the sum-tree restore fix (dashpay/grovedb#840) — see \
-                tests/sum_tree_sync_probe.rs and state_sync_transfer_detects_sum_tree_restore_defect"]
+    #[ignore = "needs the grovedb sum-tree restore fix (dashpay/grovedb#840), which reaches \
+                this workspace with the GroveDB 6.0.0 bump in #4635; un-ignore at that re-pin"]
     async fn run_state_sync_between_two_platforms() {
         let config = state_sync_platform_config();
         let mut source_platform = TestPlatformBuilder::new()
@@ -513,70 +499,8 @@ pub(crate) mod tests {
         assert_eq!(info.last_block_app_hash, snapshot.hash);
     }
 
-    /// Pins today's behavior at the pinned grovedb revision: the transfer itself
-    /// completes (including recovery from a tampered chunk via RETRY and a snapshot
-    /// restart), but the strict post-restore verification detects that grovedb did not
-    /// faithfully restore the sum trees and refuses the snapshot instead of accepting
-    /// latent corruption. When this test starts failing because the sync SUCCEEDS,
-    /// grovedb has been fixed: un-ignore `run_state_sync_between_two_platforms` and
-    /// drop this pin.
-    #[tokio::test]
-    async fn state_sync_transfer_detects_sum_tree_restore_defect() {
-        let config = state_sync_platform_config();
-        let mut source_platform = TestPlatformBuilder::new()
-            .with_config(config.clone())
-            .build_with_mock_rpc();
-        let source = run_source_chain(&mut source_platform, &config).await;
-
-        let mut target_platform = TestPlatformBuilder::new()
-            .with_config(config.clone())
-            .build_with_mock_rpc();
-        install_reconstruction_core_mocks(
-            &mut target_platform.platform,
-            source.proposers.clone(),
-            &source.validator_quorums,
-        );
-        let target_app = FullAbciApplication::new(&target_platform);
-
-        let outcome = sync_snapshot(&source.source_app, &target_app, &source.snapshot, true)
-            .expect("a refused snapshot is answered, not errored");
-        assert_eq!(
-            outcome,
-            SnapshotSyncOutcome::Rejected,
-            "at grovedb rev 6c882c3 the restored sum trees must fail verification — if this \
-             now completes, grovedb is fixed: un-ignore run_state_sync_between_two_platforms \
-             and remove this pin"
-        );
-
-        // The target refused the snapshot: it never advanced past genesis, and — since the
-        // refusal happens after the session was already committed — it wiped itself back to
-        // a clean slate rather than keeping the unusable state.
-        assert_eq!(
-            target_platform.state.load().last_committed_block_height(),
-            0
-        );
-        assert_eq!(
-            target_platform
-                .committed_block_height_guard
-                .load(std::sync::atomic::Ordering::Relaxed),
-            0,
-            "a rejected restore must not open the query height gate"
-        );
-        assert_ne!(
-            target_platform
-                .drive
-                .grove
-                .root_hash(None, &PlatformVersion::latest().drive.grove_version)
-                .unwrap()
-                .expect("target root hash")
-                .to_vec(),
-            source.snapshot.hash,
-            "a refused snapshot must not be left on disk"
-        );
-    }
-
     /// Exercises the platform state reconstruction end to end without going through
-    /// the (currently defective, see above) grovedb chunk restore: the source chain's
+    /// the grovedb chunk restore: the source chain's
     /// own grovedb IS a faithfully "restored" snapshot of itself, so reconstructing
     /// on it must (a) not change the grovedb root hash — the proof that re-deriving
     /// masternode identities from Core is byte-idempotent — and (b) reproduce the
@@ -826,10 +750,8 @@ pub(crate) mod tests {
         };
 
         // Even if a peer maliciously offers such a snapshot — lying in the metadata that
-        // it is restorable — the target must refuse to restore it. (At the current grovedb
-        // revision the refusal comes from the post-restore verification; once grovedb
-        // faithfully restores sum trees it comes from the missing reduced platform state
-        // at the reconstruction step. Either way the snapshot must not be accepted.)
+        // it is restorable — the target must refuse to restore it: the chunk transfer
+        // completes, but the reconstruction step finds no reduced platform state.
         let (height, checkpoint) = {
             let checkpoints = source_app.platform.drive.checkpoints.load();
             let (height, info) = checkpoints
