@@ -18,6 +18,24 @@ final class SyncGenerationCounter: @unchecked Sendable {
     @discardableResult func bump() -> UInt64 { lock.withLock { value &+= 1; return value } }
 }
 
+/// One-shot claim so a continuation fed by two racing closures (a queue
+/// drain and its timeout) is resumed exactly once. A local function cannot
+/// do this under Swift 6: it would have to be captured by both `@Sendable`
+/// closures along with the mutable state it guards.
+final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+
+    /// `true` for the first caller only.
+    func claim() -> Bool {
+        lock.withLock {
+            if claimed { return false }
+            claimed = true
+            return true
+        }
+    }
+}
+
 /// Per-wallet DashPay "needs unlock / verify failed" status, surfaced for the
 /// UI. One coherent snapshot per wallet (not parallel dictionaries) so a banner
 /// is a pure function of one `Equatable` value.
@@ -2768,20 +2786,13 @@ public class PlatformWalletManager: ObservableObject {
     @discardableResult
     nonisolated static func drainQueue(_ queue: DispatchQueue, within timeout: Duration) async -> Bool {
         let milliseconds = Int(timeout / .milliseconds(1))
+        let once = ResumeOnce()
         return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            let lock = NSLock()
-            var resumed = false
-            func finish(_ drained: Bool) {
-                let first = lock.withLock { () -> Bool in
-                    if resumed { return false }
-                    resumed = true
-                    return true
-                }
-                if first { continuation.resume(returning: drained) }
+            queue.async {
+                if once.claim() { continuation.resume(returning: true) }
             }
-            queue.async { finish(true) }
             DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(milliseconds)) {
-                finish(false)
+                if once.claim() { continuation.resume(returning: false) }
             }
         }
     }
