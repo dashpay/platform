@@ -69,46 +69,36 @@ where
 
     let result = app.commit_transaction(platform_version);
 
-    // We had a sequence of errors on the mainnet started since block 32326.
-    // We got RocksDB's "transaction is busy" error because of a bug (https://github.com/dashpay/platform/pull/2309).
-    // Due to another bug in Tenderdash (https://github.com/dashpay/tenderdash/pull/966),
-    // validators just proceeded to the next block partially committing the state and updating the cache.
-    // Full nodes are stuck and proceeded after re-sync.
-    // For the mainnet chain, we enable these fixes at the block when we consider the state is consistent.
+    // Mainnet's vote-cleanup incident began at 32326 (platform#2309). Tenderdash#966
+    // let validators continue after the resulting commit conflict with partially committed
+    // state and updated caches. Reproduce that outcome only for the expected Busy error.
+    // The upper bound must match Drive::remove_all_votes_given_by_identities: starting
+    // at 32329, vote deletions stay inside the block transaction again.
     let config = &app.platform().config;
+    let historical_conflict = config.network == Network::Mainnet
+        && config.abci.chain_id == "evo1"
+        && (32326..32329).contains(&block_height)
+        && matches!(
+            &result,
+            Err(Error::Drive(drive::error::Error::GroveDB(error)))
+                if matches!(
+                    error.as_ref(),
+                    drive::grovedb::Error::StorageError(
+                        drive::grovedb_storage::error::Error::RocksDBError(error)
+                    ) if error.kind() == rocksdb::ErrorKind::Busy
+                )
+        );
 
-    if config.network == Network::Mainnet && config.abci.chain_id == "evo1" && block_height < 32329
-    {
-        // Old behaviour on mainnet below block 32329. This window must match the one in
-        // Drive::remove_all_votes_given_by_identities: it is exactly the range where Drive
-        // deliberately commits its own grovedb transaction mid-block, so it is the only
-        // range where a commit failure here is the reproduced historical outcome rather
-        // than a real fault.
-        //
-        // The commit fails here with RocksDB "transaction is busy", because
-        // remove_all_votes_given_by_identities deliberately reproduces the historical
-        // bug by committing its own grovedb transaction mid-block. At the time, the
-        // node kept going: tenderdash#966 meant validators ignored the ABCI error and
-        // moved to the next block with the state partially committed and caches
-        // updated. That tenderdash bug is fixed, so returning the error here aborts
-        // replay instead — which makes mainnet blocks 32326..32329 unreplayable.
-        //
-        // Reproduce the historical *outcome* rather than an error only a buggy
-        // tenderdash could survive.
-        if let Err(error) = result {
-            tracing::warn!(
-                ?error,
-                block_height,
-                "commit failed for a mainnet block below 32329; proceeding as the \
-                 network did at the time (see platform#2309, tenderdash#966)"
-            );
-        }
+    if historical_conflict {
+        tracing::warn!(
+            error = ?result.as_ref().err(),
+            block_height,
+            "historical mainnet vote-cleanup commit conflict; proceeding as the \
+             network did at the time (see platform#2309, tenderdash#966)"
+        );
     } else {
-        // In case if transaction commit failed we still have caches in memory that
-        // corresponds to the data that we weren't able to commit.
-        // The simplified solution is to restart the Drive, so all caches
-        // will be restored from the disk and try to process this block again.
-        // TODO: We need a better handling of the transaction is busy error with retry logic.
+        // A failed commit leaves caches ahead of durable state. Restart Drive so the
+        // caches are restored from disk before retrying the block.
         result.expect("commit transaction");
     }
 
@@ -150,11 +140,11 @@ mod tests {
 
     /// An ABCI application whose `commit_transaction` always fails.
     ///
-    /// Stands in for the RocksDB "transaction is busy" conflict that the mainnet compat window
-    /// exists for, so the tests can prove exactly where the finalize handler tolerates a failed
-    /// commit and where it must not.
+    /// Injects either a real RocksDB error or an unrelated execution error to verify
+    /// that only historical transaction conflicts are tolerated.
     struct FailingCommitApplication<'a> {
         platform: &'a Platform<MockCoreRPCLike>,
+        commit_error: RwLock<Option<Error>>,
         transaction: RwLock<Option<Transaction<'a>>>,
         block_execution_context: RwLock<Option<BlockExecutionContext>>,
     }
@@ -184,9 +174,12 @@ mod tests {
         fn commit_transaction(&self, _platform_version: &PlatformVersion) -> Result<(), Error> {
             // Consume the transaction like the real implementation would, then fail.
             self.transaction.write().unwrap().take();
-            Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "injected commit failure",
-            )))
+            Err(self
+                .commit_error
+                .write()
+                .unwrap()
+                .take()
+                .expect("commit error"))
         }
     }
 
@@ -195,6 +188,7 @@ mod tests {
     fn finalize_block_with_failing_commit(
         config: PlatformConfig,
         height: u64,
+        commit_error: Error,
     ) -> Result<proto::ResponseFinalizeBlock, Error> {
         let platform: TempPlatform<MockCoreRPCLike> = TestPlatformBuilder::new()
             .with_config(config)
@@ -204,6 +198,7 @@ mod tests {
 
         let app = FailingCommitApplication {
             platform: &platform.platform,
+            commit_error: RwLock::new(Some(commit_error)),
             transaction: Default::default(),
             block_execution_context: Default::default(),
         };
@@ -302,34 +297,105 @@ mod tests {
         config
     }
 
+    /// Produce the actual RocksDB error returned when another transaction writes the same key.
+    fn busy_commit_error() -> Error {
+        let directory = tempfile::tempdir().expect("temporary database directory");
+        let db = rocksdb::OptimisticTransactionDB::<rocksdb::SingleThreaded>::open_default(
+            directory.path(),
+        )
+        .expect("open database");
+        let transaction = db.transaction();
+        transaction
+            .put(b"key", b"pending")
+            .expect("transaction write");
+        db.put(b"key", b"committed").expect("independent write");
+        let error = transaction
+            .commit()
+            .expect_err("conflicting commit must fail");
+        assert_eq!(error.kind(), rocksdb::ErrorKind::Busy);
+        drive::grovedb::Error::StorageError(drive::grovedb_storage::error::Error::RocksDBError(
+            error,
+        ))
+        .into()
+    }
+
     #[test]
-    fn finalize_block_tolerates_failed_commit_on_mainnet_evo1_before_32329() {
-        for height in [32326u64, 32328] {
-            let result = finalize_block_with_failing_commit(mainnet_evo1_config(), height);
+    fn finalize_block_tolerates_busy_commit_on_mainnet_evo1_during_incident() {
+        for height in 32326..32329 {
+            let result = finalize_block_with_failing_commit(
+                mainnet_evo1_config(),
+                height,
+                busy_commit_error(),
+            );
             assert!(
                 result.is_ok(),
-                "height {height} is inside the mainnet compat window and must tolerate a failed \
-                 commit, got: {result:?}"
+                "historical conflict at {height}: {result:?}"
             );
         }
     }
 
     #[test]
     #[should_panic(expected = "commit transaction")]
-    fn finalize_block_panics_on_failed_commit_on_mainnet_evo1_at_32329() {
-        // 32329 is the first height where Drive keeps vote deletions inside the block
-        // transaction again, so a failed commit there is a real fault.
-        let _ = finalize_block_with_failing_commit(mainnet_evo1_config(), 32329);
+    fn finalize_block_panics_on_busy_commit_before_incident() {
+        let _ =
+            finalize_block_with_failing_commit(mainnet_evo1_config(), 32325, busy_commit_error());
     }
 
     #[test]
     #[should_panic(expected = "commit transaction")]
-    fn finalize_block_panics_on_failed_commit_outside_mainnet_evo1() {
-        // Same height as the incident, but not the mainnet evo1 chain.
+    fn finalize_block_panics_on_busy_commit_on_mainnet_evo1_at_32329() {
+        // The second crash is prevented by keeping vote deletions inside the transaction
+        // at 32329, not by tolerating another failed commit here.
+        let _ =
+            finalize_block_with_failing_commit(mainnet_evo1_config(), 32329, busy_commit_error());
+    }
+
+    #[test]
+    #[should_panic(expected = "commit transaction")]
+    fn finalize_block_panics_on_busy_commit_outside_mainnet() {
         let mut config = PlatformConfig::default_testnet();
         config.abci.chain_id = "evo1".to_string();
         config.testing_configs.block_commit_signature_verification = false;
-        let _ = finalize_block_with_failing_commit(config, 32326);
+        let _ = finalize_block_with_failing_commit(config, 32326, busy_commit_error());
+    }
+
+    #[test]
+    #[should_panic(expected = "commit transaction")]
+    fn finalize_block_panics_on_busy_commit_with_another_mainnet_chain_id() {
+        let mut config = mainnet_evo1_config();
+        config.abci.chain_id = "another-chain".to_string();
+        let _ = finalize_block_with_failing_commit(config, 32326, busy_commit_error());
+    }
+
+    #[test]
+    #[should_panic(expected = "commit transaction")]
+    fn finalize_block_panics_on_io_error_during_incident() {
+        // A regular file cannot serve as RocksDB's write-ahead log directory.
+        let directory = tempfile::tempdir().expect("temporary database directory");
+        let file = tempfile::NamedTempFile::new().expect("temporary file");
+        let mut options = rocksdb::Options::default();
+        options.create_if_missing(true);
+        options.set_wal_dir(file.path());
+        let error = rocksdb::OptimisticTransactionDB::<rocksdb::SingleThreaded>::open(
+            &options,
+            directory.path(),
+        )
+        .expect_err("WAL path is not a directory");
+        assert_eq!(error.kind(), rocksdb::ErrorKind::IOError);
+        let error = drive::grovedb::Error::StorageError(
+            drive::grovedb_storage::error::Error::RocksDBError(error),
+        )
+        .into();
+        let _ = finalize_block_with_failing_commit(mainnet_evo1_config(), 32328, error);
+    }
+
+    #[test]
+    #[should_panic(expected = "commit transaction")]
+    fn finalize_block_panics_on_execution_error_during_incident() {
+        let error = Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "injected commit failure",
+        ));
+        let _ = finalize_block_with_failing_commit(mainnet_evo1_config(), 32326, error);
     }
 
     #[test]
