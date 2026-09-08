@@ -123,17 +123,22 @@ public enum DashModelContainer {
             + [PersistentTrackedMasternode.self]
     }
 
-    /// All persistent model types in the current Dash SDK schema (V4).
+    /// The V4 model set includes the sweep columns, before payment metadata.
+    fileprivate static var v4ModelTypes: [any PersistentModel.Type] {
+        allModelTypes(assetLock: PersistentAssetLock.self) + [PersistentTrackedMasternode.self]
+    }
+
+    /// All persistent model types in the current Dash SDK schema (V5).
     /// Unlike the lists above this one tracks the LIVE models, so it moves
     /// whenever a model gains a property — which is exactly why the
     /// released versions must not.
     public static var modelTypes: [any PersistentModel.Type] {
-        allModelTypes(assetLock: PersistentAssetLock.self) + [PersistentTrackedMasternode.self]
+        v4ModelTypes + [PersistentDashpayPaymentAddresses.self]
     }
 
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(versionedSchema: DashSchemaV4.self)
+        Schema(versionedSchema: DashSchemaV5.self)
     }
 
     /// Create a persistent model container for storing data
@@ -181,14 +186,15 @@ public enum DashModelContainer {
 /// SwiftData migration plan for Dash Platform model updates
 public enum DashMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self]
+        [DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self, DashSchemaV5.self]
     }
 
     public static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV2.self),
             .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self),
-            .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self)
+            .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self),
+            .lightweight(fromVersion: DashSchemaV4.self, toVersion: DashSchemaV5.self)
         ]
     }
 }
@@ -391,6 +397,12 @@ public enum DashSchemaV4: VersionedSchema {
     }
 
     public static var models: [any PersistentModel.Type] {
-        DashModelContainer.modelTypes
+        DashModelContainer.v4ModelTypes
     }
+}
+
+/// Version 5 adds a separate payment-address metadata table for DashPay profiles.
+public enum DashSchemaV5: VersionedSchema {
+    public static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
+    public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }
 }

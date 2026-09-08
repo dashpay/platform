@@ -11,8 +11,9 @@ mod deletion_tests {
         run_document_delete_on_document_type_that_is_mutable_and_can_be_deleted_at_protocol_version(
             PlatformVersion::latest().protocol_version,
             // v14: the deleted document carries the contract-version stamp
-            // (one stored byte, five estimated), shifting processing costs
-            1699620,
+            // (one stored byte, five estimated); the larger DashPay v2 schema
+            // also increases byte-billed contract-tree reads.
+            1720780,
         )
         .await;
     }

@@ -598,3 +598,30 @@ do {
 - [SwiftExampleApp Integration](../../../SwiftExampleApp/SwiftExampleApp/Services/DashPayService.swift) - Real-world usage example
 - [Unit Tests](../../../SwiftTests/SwiftDashSDKTests/PlatformWalletTests.swift) - Comprehensive test examples
 - [Integration Tests](../../../SwiftTests/SwiftDashSDKTests/PlatformWalletIntegrationTests.swift) - Full workflow examples
+
+### Shielded DashPay tips
+
+DashPay profiles can publish `shieldedAddress`, a complete 43-byte raw Orchard
+address. `DashPayProfileUpdate` uses `.keep`, `.set(Data)`, and `.remove` for
+payment address changes; unrelated profile edits preserve the published address.
+Wallet-generated tip addresses use a dedicated shielded account for each local
+identity. Call `prepareShieldedTipAddress` and then explicitly publish the returned
+address through a signed profile update. External receiving addresses may also be
+published; their funds are managed and recovered by the external wallet.
+
+For seed restoration, discover the wallet's identities and call `bindShielded`
+again. The next shielded sync automatically scans historical notes for newly
+bound tip accounts; no reset is needed. Rust derives the reserved tip accounts
+from the recovered identity indices, including accounts whose profile addresses
+were subsequently removed. Removing a published address does not revoke copies
+already shared or stop monitoring previously received tips.
+
+To pay a username, call `resolveShieldedTip`, show the returned identity and
+address for confirmation, then call `sendShieldedTip` with that recipient. The
+send operation verifies fresh resolution still matches the confirmed recipient.
+A `shieldedSpendUnconfirmed` error must not be retried automatically: the payment
+may already have been accepted.
+
+The published address is publicly associated with the username. Dedicated
+accounts isolate viewing keys and ordinary receiving activity; transfers between
+accounts can still introduce correlations.

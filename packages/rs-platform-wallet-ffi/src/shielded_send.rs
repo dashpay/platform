@@ -2606,3 +2606,187 @@ mod tests {
         );
     }
 }
+
+/// Derive and register the identity's dedicated tip account, without publishing it.
+/// All ID pointers must reference 32 bytes; `out_address` must reference 43 writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_prepare_shielded_tip_address(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    identity_id_bytes: *const u8,
+    out_address: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
+    check_ptr!(identity_id_bytes);
+    check_ptr!(out_address);
+    std::ptr::write_bytes(out_address, 0, 43);
+    let wallet_id: [u8; 32] = std::slice::from_raw_parts(wallet_id_bytes, 32)
+        .try_into()
+        .unwrap();
+    let identity_id = match crate::types::read_identifier(identity_id_bytes) {
+        Ok(id) => id,
+        Err(e) => return e.into(),
+    };
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(value) => value,
+        Err(e) => return e,
+    };
+    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+    ) {
+        Ok(value) => value,
+        Err(e) => return e,
+    };
+    match block_on_worker(async move {
+        wallet
+            .prepare_shielded_tip_address(seed.as_ref(), &identity_id, &coordinator)
+            .await
+    }) {
+        Ok(address) => {
+            std::ptr::copy_nonoverlapping(address.as_ptr(), out_address, 43);
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => e.into(),
+    }
+}
+
+/// Resolve a username using verified current DPNS and profile documents.
+/// Outputs are 32-byte identity ID and 43-byte Orchard address buffers.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_resolve_shielded_tip(
+    wallet_handle: Handle,
+    username: *const c_char,
+    out_identity_id: *mut u8,
+    out_address: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(username);
+    check_ptr!(out_identity_id);
+    check_ptr!(out_address);
+    std::ptr::write_bytes(out_identity_id, 0, 32);
+    std::ptr::write_bytes(out_address, 0, 43);
+    let username = match CStr::from_ptr(username).to_str() {
+        Ok(s) => s.to_owned(),
+        Err(e) => return e.into(),
+    };
+    let result = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        block_on_worker(async move { identity.dashpay().resolve_shielded_tip(&username).await })
+    });
+    match result {
+        Some(Ok(recipient)) => {
+            std::ptr::copy_nonoverlapping(
+                recipient.identity_id.to_buffer().as_ptr(),
+                out_identity_id,
+                32,
+            );
+            std::ptr::copy_nonoverlapping(recipient.address.as_ptr(), out_address, 43);
+            PlatformWalletFFIResult::ok()
+        }
+        Some(Err(e)) => e.into(),
+        None => {
+            PlatformWalletFFIResult::err(PlatformWalletFFIResultCode::NotFound, "Wallet not found")
+        }
+    }
+}
+
+/// Send a tip only if fresh resolution matches the recipient the user confirmed.
+/// ID/address pointers must reference 32/43 readable bytes respectively.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    username: *const c_char,
+    expected_identity_id: *const u8,
+    expected_address: *const u8,
+    amount: u64,
+    memo_text: *const c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
+    check_ptr!(username);
+    check_ptr!(expected_identity_id);
+    check_ptr!(expected_address);
+    let username = match CStr::from_ptr(username).to_str() {
+        Ok(s) => s.to_owned(),
+        Err(e) => return e.into(),
+    };
+    let wallet_id: [u8; 32] = std::slice::from_raw_parts(wallet_id_bytes, 32)
+        .try_into()
+        .unwrap();
+    let identity_id = match crate::types::read_identifier(expected_identity_id) {
+        Ok(id) => id,
+        Err(e) => return e.into(),
+    };
+    let address: [u8; 43] = std::slice::from_raw_parts(expected_address, 43)
+        .try_into()
+        .unwrap();
+    let memo_str = match crate::dashpay_profile::decode_opt_c_str(memo_text) {
+        Ok(value) => value,
+        Err(e) => return e,
+    };
+    let memo = match encode_memo_text(memo_str.as_deref()) {
+        Ok(value) => value,
+        Err(e) => return e,
+    };
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(value) => value,
+        Err(e) => return e,
+    };
+    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+    ) {
+        Ok(value) => value,
+        Err(e) => return e,
+    };
+    let result = block_on_worker(async move {
+        let recipient = platform_wallet::ShieldedTipRecipient {
+            identity_id,
+            address,
+        };
+        let prover = CachedOrchardProver::new();
+        let result = wallet
+            .send_shielded_tip(
+                &coordinator,
+                seed.as_ref(),
+                account,
+                &username,
+                &recipient,
+                amount,
+                memo,
+                &prover,
+            )
+            .await;
+        poke_sync_on_unconfirmed(&result, handle);
+        result
+    });
+    map_spend_result(result, "shielded tip")
+}
+
+/// Return the dedicated ZIP-32 tip account for a wallet identity derivation index.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_shielded_tip_account_index(
+    identity_index: u32,
+    out_account: *mut u32,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_account);
+    *out_account = 0;
+    match platform_wallet::wallet::shielded::tips::shielded_tip_account_index(identity_index) {
+        Ok(account) => {
+            *out_account = account;
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => e.into(),
+    }
+}
+
+/// Whether an account is reserved for explicitly selected DashPay tip activity.
+#[no_mangle]
+pub extern "C" fn platform_wallet_is_shielded_tip_account(account: u32) -> bool {
+    platform_wallet::wallet::shielded::is_shielded_tip_account(account)
+}

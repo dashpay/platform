@@ -10,8 +10,9 @@
 //! `_blob` columns carry the full sub-changeset entry encoded with
 //! `bincode::serde::encode_to_vec` against the serde-derived types in
 //! `platform-wallet` — see [`blob::encode`] / [`blob::decode`].
-//! Schema evolution is gated by the refinery migration version on
-//! the database; individual blobs have no inline revision tag.
+//! Schema evolution is gated by refinery migrations. Identity and profile rows
+//! additionally carry an encoding column because legacy positional bincode
+//! records remain readable until the row is rewritten.
 
 pub mod accounts;
 pub mod asset_locks;
@@ -95,3 +96,6 @@ pub(crate) fn assert_identities_belong_to_wallet(
     }
     Ok(())
 }
+
+#[cfg(any(test, feature = "__test-helpers"))]
+mod identity_profile_encoding;

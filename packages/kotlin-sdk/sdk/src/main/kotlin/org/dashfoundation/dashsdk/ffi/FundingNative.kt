@@ -16,6 +16,17 @@ package org.dashfoundation.dashsdk.ffi
  * non-shielded build throws [UnsatisfiedLinkError].
  */
 internal object FundingNative {
+    external fun tipAccountIndex(identityIndex: Int): Int
+    external fun prepareShieldedTipAddress(
+        manager: Long, walletId: ByteArray, resolver: Long, identityId: ByteArray,
+    ): ByteArray
+    external fun resolveShieldedTip(wallet: Long, username: String): ByteArray
+    external fun sendShieldedTip(
+        manager: Long, walletId: ByteArray, resolver: Long, account: Int,
+        username: String, expectedId: ByteArray, expectedAddress: ByteArray,
+        amount: Long, memo: String?,
+    )
+
 
     /** Kick the ~30s Halo 2 proving-key build onto a background thread. Idempotent. */
     external fun warmUpProver()

@@ -16,13 +16,12 @@ DETAIL_VIEWS="$REPO_ROOT/packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/View
 
 errors=0
 
-# Extract model type names from DashModelContainer.modelTypes array.
+# Extract model type names from the current schema's model list and its
+# shared declarations: modelTypes -> v3ModelTypes -> allModelTypes.
 # Matches lines like "PersistentFoo.self," and extracts "PersistentFoo".
-# Scoped to the body of the `modelTypes` computed property so other
-# `.self` references in the file (e.g. `migrationPlan:
-# DashMigrationPlan.self` passed to ModelContainer) aren't mistaken
-# for SwiftData models.
-model_types=$(awk '/var modelTypes/{flag=1} flag{print} flag && /^    \}/{flag=0}' "$CONTAINER" \
+# Scope the scan to these declarations so frozen schema substitutions and
+# unrelated references (e.g. DashMigrationPlan.self) aren't treated as models.
+model_types=$(awk '/static func allModelTypes\(|static var (v3ModelTypes|modelTypes):/{flag=1} flag{print} flag && /^    \}/{flag=0}' "$CONTAINER" \
     | grep -oE '[A-Z][A-Za-z0-9]+\.self' \
     | sed 's/\.self//' \
     | sort -u)

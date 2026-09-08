@@ -750,3 +750,180 @@ async fn rebind_without_persisted_rows_reports_false_and_binds_nothing() {
         "malformed persisted viewing key must surface as an error"
     );
 }
+
+/// A profile is not a recovery record. Identity discovery alone must restore
+/// the reserved account, even when the owner removed the tip address entirely.
+#[tokio::test]
+async fn should_restore_tip_account_from_identity_discovery_and_register_for_sync() {
+    use crate::shielded_tip_account_index;
+    use dpp::identity::{Identity, IdentityV0};
+    use dpp::prelude::Identifier;
+    let phrase = crate::test_support::MESSAGE_SIGNING_TEST_MNEMONIC;
+    let seed = key_wallet::Mnemonic::from_phrase(phrase)
+        .unwrap()
+        .to_seed("");
+    let id = Identifier::from([0x33; 32]);
+    let account = shielded_tip_account_index(3).unwrap();
+    let mut original = None;
+    for session in 0..2 {
+        let persister = Arc::new(CapturingPersistence::default());
+        let (wallet_manager, wallet_id, _, _) =
+            crate::test_support::mnemonic_wallet_manager(phrase).await;
+        let generation = wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&wallet_id)
+            .unwrap()
+            .generation
+            .clone();
+        let spv = Arc::new(crate::spv::SpvRuntime::new(
+            Arc::clone(&wallet_manager),
+            Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
+        ));
+        let sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .build()
+            .unwrap();
+        let wallet = PlatformWallet::new(
+            Arc::new(sdk),
+            wallet_id,
+            wallet_manager,
+            generation,
+            Arc::new(tokio::sync::Notify::new()),
+            persister.clone(),
+            Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+        );
+        {
+            let mut wm = wallet.wallet_manager().write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id())
+                .unwrap()
+                .identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id,
+                        public_keys: BTreeMap::new(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    3,
+                    wallet.wallet_id(),
+                    wallet.persister(),
+                )
+                .unwrap();
+        }
+        {
+            let mut wm = wallet.wallet_manager().write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id())
+                .unwrap()
+                .identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id: Identifier::from([0x44; 32]),
+                        public_keys: BTreeMap::new(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    crate::SHIELDED_TIP_ACCOUNT_BASE,
+                    wallet.wallet_id(),
+                    wallet.persister(),
+                )
+                .unwrap();
+        }
+        let coordinator = coordinator_at(&temp_dir(&format!("tips_restore_{session}")));
+        // Fresh database, no viewing keys, no published profile, and caller
+        // only knows about ordinary account zero.
+        assert!(!wallet
+            .bind_shielded_from_persisted(&[0], &coordinator)
+            .await
+            .unwrap());
+        // Upgrading an existing wallet can leave account zero persisted while
+        // identity discovery introduces a tip account without an FVK. Seedless
+        // success here would suppress the host's seed fallback and lose scans
+        // for that identity's tip history.
+        let ordinary = super::OrchardKeySet::from_seed(&seed, Network::Testnet, 0).unwrap();
+        persister.serve_viewing_keys(BTreeMap::from([(
+            SubwalletId::new(wallet.wallet_id(), 0),
+            ordinary.full_viewing_key.to_bytes().to_vec(),
+        )]));
+        assert!(!wallet
+            .bind_shielded_from_persisted(&[0], &coordinator)
+            .await
+            .unwrap());
+        assert!(!wallet.is_shielded_bound().await);
+        assert!(wallet
+            .prepare_shielded_tip_address(&[0x11; 64], &id, &coordinator)
+            .await
+            .is_err());
+        assert!(persister.captured_viewing_keys().is_empty());
+        assert!(coordinator.registered_subwallets().await.is_empty());
+        wallet
+            .bind_shielded(&seed, &[0], &coordinator)
+            .await
+            .unwrap();
+        assert!(coordinator
+            .registered_subwallets()
+            .await
+            .contains(&SubwalletId::new(wallet.wallet_id(), account)));
+        assert!(wallet
+            .prepare_shielded_tip_address(&[0x11; 64], &id, &coordinator)
+            .await
+            .is_err());
+        let address = wallet
+            .prepare_shielded_tip_address(&seed, &id, &coordinator)
+            .await
+            .unwrap();
+        assert!(wallet
+            .prepare_shielded_tip_address(&seed, &Identifier::from([0x44; 32]), &coordinator)
+            .await
+            .is_err());
+        assert_ne!(wallet.shielded_default_address(0).await.unwrap(), address);
+        assert_eq!(
+            wallet
+                .prepare_shielded_tip_address(&seed, &id, &coordinator)
+                .await
+                .unwrap(),
+            address
+        );
+        assert!(persister
+            .captured_viewing_keys()
+            .contains_key(&SubwalletId::new(wallet.wallet_id(), account)));
+        if let Some(first) = original {
+            assert_eq!(first, address);
+        } else {
+            original = Some(address);
+        }
+    }
+}
+
+#[tokio::test]
+async fn should_rebind_retired_tip_accounts_without_profile_or_identity() {
+    let seed = [0x42; 64];
+    let account = crate::shielded_tip_account_index(7).unwrap();
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let keys = super::OrchardKeySet::from_seed(&seed, Network::Testnet, account).unwrap();
+    let ordinary = super::OrchardKeySet::from_seed(&seed, Network::Testnet, 0).unwrap();
+    persister.serve_viewing_keys(BTreeMap::from([
+        (
+            SubwalletId::new(wallet.wallet_id(), 0),
+            ordinary.full_viewing_key.to_bytes().to_vec(),
+        ),
+        (
+            SubwalletId::new(wallet.wallet_id(), account),
+            keys.full_viewing_key.to_bytes().to_vec(),
+        ),
+    ]));
+    let coordinator = coordinator_at(&temp_dir("retired_tips"));
+    assert!(wallet
+        .bind_shielded_from_persisted(&[0], &coordinator)
+        .await
+        .unwrap());
+    assert_eq!(
+        wallet.shielded_default_address(account).await.unwrap(),
+        keys.default_address.to_raw_address_bytes()
+    );
+    assert!(coordinator
+        .registered_subwallets()
+        .await
+        .contains(&SubwalletId::new(wallet.wallet_id(), account)));
+}

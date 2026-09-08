@@ -37,6 +37,15 @@ pub struct DashPayProfile {
     pub avatar_fingerprint: Option<[u8; 8]>,
     /// Public message broadcast to contacts.
     pub public_message: Option<String>,
+    /// Core P2PKH/P2SH storage address (type byte plus HASH160, 21 bytes).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub core_payment_address: Option<Vec<u8>>,
+    /// Platform P2PKH/P2SH storage address (21 bytes).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub platform_payment_address: Option<Vec<u8>>,
+    /// Complete raw Orchard address (11-byte diversifier + 32-byte pk_d).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub shielded_address: Option<Vec<u8>>,
 }
 
 /// A cached **contact** profile, keyed by the contact's identity id on the
@@ -79,6 +88,49 @@ pub struct ProfileUpdate {
     /// includes them in the document, then drops the bytes.
     /// `None` = no avatar / remove avatar.
     pub avatar_bytes: Option<Vec<u8>>,
+    pub core_payment_address: PaymentAddressUpdate,
+    pub platform_payment_address: PaymentAddressUpdate,
+    pub shielded_address: PaymentAddressUpdate,
+}
+
+/// Explicit patch semantics: omission must never remove a published address.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum PaymentAddressUpdate {
+    #[default]
+    Keep,
+    Set(Vec<u8>),
+    Remove,
+}
+
+/// Recipient shown at confirmation. Re-resolve before sending and compare both
+/// fields so a changed DPNS owner or profile cannot silently redirect a tip.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShieldedTipRecipient {
+    pub identity_id: dpp::prelude::Identifier,
+    pub address: [u8; 43],
+}
+
+/// Decode a raw Orchard recipient using the same decoder as shielded transfers.
+/// Without shielded support an address must never be advertised as payable.
+pub fn validated_shielded_address(bytes: &[u8]) -> Option<[u8; 43]> {
+    #[cfg(feature = "shielded")]
+    {
+        let raw: [u8; 43] = bytes.try_into().ok()?;
+        Option::<grovedb_commitment_tree::PaymentAddress>::from(
+            grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(&raw),
+        )
+        .map(|_| raw)
+    }
+    #[cfg(not(feature = "shielded"))]
+    {
+        let _ = bytes;
+        None
+    }
+}
+
+/// Storage-form transparent address validation, matching the DashPay trigger.
+pub fn valid_transparent_payment_address(bytes: &[u8]) -> bool {
+    bytes.len() == 21 && matches!(bytes.first(), Some(0x00 | 0x01))
 }
 
 /// Compute SHA-256 hash of image bytes (DIP-15 `avatarHash` field).

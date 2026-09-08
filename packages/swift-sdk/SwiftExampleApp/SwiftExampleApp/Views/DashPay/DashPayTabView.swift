@@ -33,6 +33,7 @@ struct DashPayTabView: View {
 
     @State private var segment: DashPaySegment = .contacts
     @State private var showAddContact = false
+    @State private var showShieldedTip = false
     @State private var showAddViaQR = false
 
     /// Drives the claim sheet via `.sheet(item:)`. A fresh value (new `id`)
@@ -163,6 +164,11 @@ struct DashPayTabView: View {
                 .navigationTitle("DashPay")
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
+                        Button { showShieldedTip = true } label: { Image(systemName: "gift") }
+                            .accessibilityLabel("Send shielded tip")
+                            .disabled(walletManager.firstWallet == nil)
+                    }
+                    ToolbarItem(placement: .navigationBarTrailing) {
                         Button {
                             refresh()
                         } label: {
@@ -240,6 +246,11 @@ struct DashPayTabView: View {
                             .accessibilityLabel("Sent invitations")
                             .accessibilityIdentifier("dashpay.openSentInvitations")
                         }
+                    }
+                }
+                .sheet(isPresented: $showShieldedTip) {
+                    if let walletId = activeIdentity?.wallet?.walletId ?? walletManager.firstWallet?.walletId {
+                        SendShieldedTipSheet(walletId: walletId)
                     }
                 }
                 .sheet(isPresented: $showAddViaQR) {
@@ -818,7 +829,10 @@ struct DashPayTabView: View {
                 publicMessage: persisted.publicMessage,
                 avatarUrl: persisted.avatarUrl,
                 avatarHash: persisted.avatarHash,
-                avatarFingerprint: persisted.avatarFingerprint
+                avatarFingerprint: persisted.avatarFingerprint,
+                corePaymentAddress: persisted.corePaymentAddress,
+                platformPaymentAddress: persisted.platformPaymentAddress,
+                shieldedAddress: persisted.shieldedAddress
             )
         }
     }
@@ -1015,6 +1029,101 @@ private struct AddViaQRSheet: View {
                 dismiss()
             } catch {
                 errorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+/// Resolve first, then explicitly confirm the identity, address, and amount.
+struct SendShieldedTipSheet: View {
+    let walletId: Data
+    var account: UInt32 = 0
+    var sourceLabel: String = "ordinary shielded account"
+    @EnvironmentObject private var walletManager: PlatformWalletManager
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var username = ""
+    @State private var amount = ""
+    @State private var recipient: ShieldedTipRecipient?
+    @State private var busy = false
+    @State private var error: String?
+    @State private var submitted = false
+    @State private var showRecipientChanged = false
+
+
+    private var credits: UInt64? {
+        guard let value = Decimal(string: amount, locale: Locale(identifier: "en_US_POSIX")), value > 0 else { return nil }
+        let scaled = value * 100_000_000_000
+        let number = NSDecimalNumber(decimal: scaled)
+        guard scaled <= Decimal(UInt64.max), Decimal(number.uint64Value) == scaled else { return nil }
+        return number.uint64Value
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Username", text: $username)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .disabled(busy || submitted)
+                    .onChange(of: username) { _, _ in recipient = nil }
+                TextField("Amount in DASH", text: $amount).keyboardType(.decimalPad)
+                    .disabled(busy || submitted)
+                if let recipient {
+                    Section("Confirm recipient") {
+                        Text(username)
+                        Text(recipient.identityId.toBase58String()).font(.caption).textSelection(.enabled)
+                        Text(DashAddress.encodeOrchard(rawBytes: recipient.address, network: appState.currentNetwork) ?? "")
+                            .font(.caption2).textSelection(.enabled)
+                        Text("Send \(amount) DASH from your \(sourceLabel).")
+                    }
+                }
+                if let error { Text(error).foregroundStyle(.red) }
+                if submitted {
+                    Text("Tip submitted. Check shielded activity for confirmation.")
+                } else {
+                    Button(recipient == nil ? "Review recipient" : "Confirm and send tip") { submit() }
+                        .disabled(busy || username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || credits == nil)
+                }
+                if busy { ProgressView() }
+            }
+            .navigationTitle("Shielded tip")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.disabled(busy) } }
+            .interactiveDismissDisabled(busy)
+            .alert("Tip recipient changed", isPresented: $showRecipientChanged) {
+                Button("Review new recipient") {}
+                Button("Cancel", role: .cancel) { recipient = nil }
+            } message: {
+                Text("This username now resolves to a different identity or shielded address than your last confirmation. Verify the change with the recipient before sending.")
+            }
+        }
+    }
+
+    private func submit() {
+        guard let wallet = walletManager.wallet(for: walletId), let credits else { return }
+        busy = true
+        error = nil
+        Task { @MainActor in
+            defer { busy = false }
+            do {
+                if let recipient {
+                    ShieldedTipRecipientHistory().confirm(network: appState.currentNetwork, walletId: walletId,
+                        username: username, recipient: recipient)
+                    try await walletManager.sendShieldedTip(walletId: walletId, resolver: MnemonicResolver(),
+                        account: account, username: username, recipient: recipient, amount: credits)
+                    submitted = true
+                } else {
+                    let resolved = try await wallet.resolveShieldedTip(username: username)
+                    if ShieldedTipRecipientHistory().hasChanged(network: appState.currentNetwork, walletId: walletId,
+                        username: username, recipient: resolved) {
+                        showRecipientChanged = true
+                    }
+                    recipient = resolved
+                }
+            } catch {
+                self.error = error.localizedDescription
+                // A relay-accepted payment may already exist; prevent a second send.
+                if case PlatformWalletError.shieldedSpendUnconfirmed = error { submitted = true }
+                recipient = nil
             }
         }
     }

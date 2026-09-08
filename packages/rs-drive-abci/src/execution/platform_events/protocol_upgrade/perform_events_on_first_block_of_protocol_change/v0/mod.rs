@@ -1117,6 +1117,8 @@ mod tests {
             "profile must not carry platformPaymentAddress before transition_to_version_14"
         );
 
+        assert!(!pre_profile.iter().any(|p| p == "shieldedAddress"));
+
         let result = platform.transition_to_version_14(&block_info, &transaction, platform_version);
         assert!(result.is_ok(), "transition failed: {:?}", result.err());
 
@@ -1153,6 +1155,7 @@ mod tests {
             profile.iter().any(|p| p == "platformPaymentAddress"),
             "profile must carry platformPaymentAddress after transition_to_version_14"
         );
+        assert!(profile.iter().any(|p| p == "shieldedAddress"));
     }
 
     /// The v13→v14 boundary through the production dispatcher
@@ -1286,7 +1289,11 @@ mod tests {
             .keys()
             .cloned()
             .collect::<Vec<_>>();
-        for field in ["corePaymentAddress", "platformPaymentAddress"] {
+        for field in [
+            "corePaymentAddress",
+            "platformPaymentAddress",
+            "shieldedAddress",
+        ] {
             assert!(
                 !pre_profile_properties.iter().any(|p| p == field),
                 "profile must not carry {field} before the upgrade"
@@ -1338,7 +1345,11 @@ mod tests {
             .keys()
             .cloned()
             .collect::<Vec<_>>();
-        for field in ["corePaymentAddress", "platformPaymentAddress"] {
+        for field in [
+            "corePaymentAddress",
+            "platformPaymentAddress",
+            "shieldedAddress",
+        ] {
             assert!(
                 post_profile_properties.iter().any(|p| p == field),
                 "profile must carry {field} after the upgrade"
@@ -2641,5 +2652,49 @@ mod tests {
              v11 construction to make this pass; surface and analyze the discrepancy.\n{}",
             diffs.join("\n"),
         );
+    }
+}
+
+#[cfg(test)]
+mod shielded_profile_schema_tests {
+    use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
+    use dpp::platform_value::{platform_value, Value};
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_validate_shielded_profile_address_boundaries() {
+        for version in [13, 14] {
+            let pv = PlatformVersion::get(version).unwrap();
+            let contract = load_system_data_contract(SystemDataContract::Dashpay, pv).unwrap();
+            for length in [0, 42, 43, 44] {
+                let properties =
+                    platform_value!({ "shieldedAddress": Value::Bytes(vec![0; length]) });
+                let result = contract
+                    .validate_document_properties("profile", properties, pv)
+                    .unwrap();
+                assert_eq!(
+                    result.is_valid(),
+                    version == 14 && length == 43,
+                    "protocol {version}, address length {length}: {result:?}"
+                );
+            }
+            let result = contract
+                .validate_document_properties(
+                    "profile",
+                    platform_value!({"shieldedAddress": "not bytes"}),
+                    pv,
+                )
+                .unwrap();
+            assert!(!result.is_valid());
+            let legacy = contract
+                .validate_document_properties(
+                    "profile",
+                    platform_value!({"displayName": "Alice"}),
+                    pv,
+                )
+                .unwrap();
+            assert!(legacy.is_valid());
+        }
     }
 }

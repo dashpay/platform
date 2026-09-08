@@ -5523,6 +5523,9 @@ fn build_wallet_identity_bucket(
         unsafe { restore_dashpay_payments(spec, &mut managed) };
         unsafe { restore_dashpay_ignored(spec, &mut managed) };
         unsafe { restore_contact_profiles(spec, &mut managed) };
+        if let Some(profile) = unsafe { spec.dashpay_profile.as_ref() } {
+            *managed.dashpay_profile_mut() = Some(unsafe { profile_from_restore_row(profile) });
+        }
         bucket.insert(spec.identity_index, managed);
     }
 
@@ -5683,6 +5686,42 @@ fn is_valid_avatar_url(url: &str) -> bool {
     !url.is_empty() && url.len() <= MAX_AVATAR_URL_LEN && url.starts_with("https://")
 }
 
+/// Copy a host-owned profile row, retaining the avatar URL validation used for
+/// cached contact profiles. The host frees the buffers after restoration returns.
+///
+/// # Safety
+/// The row's string pointers must be null or readable NUL-terminated strings.
+unsafe fn profile_from_restore_row(
+    row: &ContactProfileRestoreEntryFFI,
+) -> platform_wallet::DashPayProfile {
+    let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
+        if ptr.is_null() {
+            None
+        } else {
+            CStr::from_ptr(ptr).to_str().ok().map(str::to_string)
+        }
+    };
+    platform_wallet::DashPayProfile {
+        display_name: opt_string(row.display_name),
+        bio: opt_string(row.bio),
+        avatar_url: opt_string(row.avatar_url).filter(|u| is_valid_avatar_url(u)),
+        avatar_hash: row.avatar_hash_present.then_some(row.avatar_hash),
+        avatar_fingerprint: row
+            .avatar_fingerprint_present
+            .then_some(row.avatar_fingerprint),
+        public_message: opt_string(row.public_message),
+        core_payment_address: row
+            .core_payment_address_present
+            .then(|| row.core_payment_address.to_vec()),
+        platform_payment_address: row
+            .platform_payment_address_present
+            .then(|| row.platform_payment_address.to_vec()),
+        shielded_address: row
+            .shielded_address_present
+            .then(|| row.shielded_address.to_vec()),
+    }
+}
+
 /// Fold a slice of [`ContactProfileRestoreEntryFFI`] rows into
 /// the managed identity's contact-profile cache. Split out from
 /// [`restore_contact_profiles`] so the c-string decode + avatar-url
@@ -5696,43 +5735,11 @@ unsafe fn apply_contact_profile_rows(
     rows: &[ContactProfileRestoreEntryFFI],
     managed: &mut ManagedIdentity,
 ) {
-    use platform_wallet::{ContactProfileEntry, DashPayProfile};
-
-    let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
-        if ptr.is_null() {
-            None
-        } else {
-            CStr::from_ptr(ptr).to_str().ok().map(str::to_string)
-        }
-    };
-
     for row in rows {
-        let avatar_hash = if row.avatar_hash_present {
-            Some(row.avatar_hash)
-        } else {
-            None
-        };
-        let avatar_fingerprint = if row.avatar_fingerprint_present {
-            Some(row.avatar_fingerprint)
-        } else {
-            None
-        };
-        // Re-validate the public, attacker-controlled avatar URL; drop
-        // just the URL field (keep the rest of the profile) if it no
-        // longer passes the `https://` / length rule.
-        let avatar_url = opt_string(row.avatar_url).filter(|u| is_valid_avatar_url(u));
-
         managed.dashpay_contact_profiles_mut().insert(
             Identifier::from(row.contact_id),
-            ContactProfileEntry {
-                profile: Some(DashPayProfile {
-                    display_name: opt_string(row.display_name),
-                    bio: opt_string(row.bio),
-                    avatar_url,
-                    avatar_hash,
-                    avatar_fingerprint,
-                    public_message: opt_string(row.public_message),
-                }),
+            platform_wallet::ContactProfileEntry {
+                profile: Some(profile_from_restore_row(row)),
                 checked_at_ms: row.checked_at_ms,
             },
         );
@@ -8704,6 +8711,13 @@ mod tests {
                 avatar_hash_present: true,
                 avatar_fingerprint: [0x22; 8],
                 avatar_fingerprint_present: true,
+                core_payment_address: [0; 21],
+                core_payment_address_present: false,
+                platform_payment_address: [0; 21],
+                platform_payment_address_present: false,
+                shielded_address: [3; 43],
+                shielded_address_present: true,
+
                 public_message: public_message.as_ptr(),
                 checked_at_ms: 1_700_000_000_000,
             },
@@ -8716,6 +8730,13 @@ mod tests {
                 avatar_hash_present: false,
                 avatar_fingerprint: [0u8; 8],
                 avatar_fingerprint_present: false,
+                core_payment_address: [0; 21],
+                core_payment_address_present: false,
+                platform_payment_address: [0; 21],
+                platform_payment_address_present: false,
+                shielded_address: [0; 43],
+                shielded_address_present: false,
+
                 public_message: std::ptr::null(),
                 checked_at_ms: 1_700_000_000_001,
             },
@@ -8740,6 +8761,7 @@ mod tests {
         );
         assert_eq!(alice_profile.avatar_hash, Some([0x11; 32]));
         assert_eq!(alice_profile.avatar_fingerprint, Some([0x22; 8]));
+        assert_eq!(alice_profile.shielded_address, Some(vec![3; 43]));
         assert!(alice_profile.bio.is_none());
 
         let bob = managed

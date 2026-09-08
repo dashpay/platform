@@ -1019,3 +1019,155 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         let _ = take_pwffi_error(env, result);
     })
 }
+
+/// Dedicated tip account preparation; returns the complete raw Orchard address.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_prepareShieldedTipAddress(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager: jlong,
+    wallet_id: JByteArray,
+    resolver: jlong,
+    identity_id: JByteArray,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let mut address = [0; 43];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_prepare_shielded_tip_address(
+                manager as Handle,
+                wid.as_ptr(),
+                resolver as *mut MnemonicResolverHandle,
+                id.as_ptr(),
+                address.as_mut_ptr(),
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        env.byte_array_from_slice(&address)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Current verified recipient: 32-byte identity ID followed by 43-byte address.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_resolveShieldedTip(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet: jlong,
+    username: JString,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let username = match read_cstring_opt(env, &username, "username") {
+            Ok(Some(name)) => name,
+            _ => {
+                throw_sdk_exception(env, 1, "username is required");
+                return ptr::null_mut();
+            }
+        };
+        let mut recipient = [0; 75];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_resolve_shielded_tip(
+                wallet as Handle,
+                username.as_ptr(),
+                recipient.as_mut_ptr(),
+                recipient.as_mut_ptr().add(32),
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        env.byte_array_from_slice(&recipient)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Revalidates the confirmed recipient before spending.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShieldedTip(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager: jlong,
+    wallet_id: JByteArray,
+    resolver: jlong,
+    account: jint,
+    username: JString,
+    expected_id: JByteArray,
+    expected_address: JByteArray,
+    amount: jlong,
+    memo: JString,
+) {
+    guard(&mut env, (), |env| {
+        if account < 0 || amount <= 0 {
+            throw_sdk_exception(env, 1, "Invalid account or amount");
+            return;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        let Some(id) = read_id32(env, &expected_id, "expectedIdentityId") else {
+            return;
+        };
+        let Some(address) = read_recipient43(env, &expected_address) else {
+            return;
+        };
+        let username = match read_cstring_opt(env, &username, "username") {
+            Ok(Some(name)) => name,
+            _ => {
+                throw_sdk_exception(env, 1, "username is required");
+                return;
+            }
+        };
+        let memo = match read_cstring_opt(env, &memo, "memo") {
+            Ok(value) => value,
+            Err(()) => return,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_send_shielded_tip(
+                manager as Handle,
+                wid.as_ptr(),
+                resolver as *mut MnemonicResolverHandle,
+                account as u32,
+                username.as_ptr(),
+                id.as_ptr(),
+                address.as_ptr(),
+                amount as u64,
+                memo.as_ref().map_or(ptr::null(), |m| m.as_ptr()),
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_tipAccountIndex(
+    mut env: JNIEnv,
+    _class: JClass,
+    identity_index: jint,
+) -> jint {
+    guard(&mut env, -1, |env| {
+        if identity_index < 0 {
+            throw_sdk_exception(env, 1, "identity index must be non-negative");
+            return -1;
+        }
+        let mut account = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_shielded_tip_account_index(
+                identity_index as u32,
+                &mut account,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return -1;
+        }
+        account as jint
+    })
+}

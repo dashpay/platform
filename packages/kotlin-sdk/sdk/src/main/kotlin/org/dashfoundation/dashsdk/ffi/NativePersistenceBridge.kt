@@ -402,7 +402,7 @@ abstract class NativePersistenceBridge {
     /**
      * One `IdentityEntryFFI` upsert. DPNS labels + acquired-at timestamps
      * ride as parallel arrays. Descriptor
-     * `([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;)I`.
+     * `([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;[B[B[B)I`.
      */
     @Suppress("LongParameterList")
     open fun onPersistIdentityUpsert(
@@ -426,6 +426,9 @@ abstract class NativePersistenceBridge {
         dashpayAvatarFingerprint: ByteArray,
         dashpayAvatarFingerprintPresent: Boolean,
         dashpayPublicMessage: String?,
+        dashpayCorePaymentAddress: ByteArray? = null,
+        dashpayPlatformPaymentAddress: ByteArray? = null,
+        dashpayShieldedAddress: ByteArray? = null,
     ): Int = 0
 
     /** One identity-id removal. Descriptor `([B[B)I`. */
@@ -573,7 +576,7 @@ abstract class NativePersistenceBridge {
     /**
      * One `ContactProfileRowFFI` delta riding an identity upsert
      * (`IdentityEntryFFI.contact_profiles`). Descriptor
-     * `([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;J)I`.
+     * `([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;J[B[B[B)I`.
      *
      * [isPresent] `true` ⇒ upsert the cached contact-profile row for
      * `(ownerId, contactId)`; `false` ⇒ tombstone — the contact removed
@@ -597,6 +600,9 @@ abstract class NativePersistenceBridge {
         avatarFingerprintPresent: Boolean,
         publicMessage: String?,
         checkedAtMs: Long,
+        corePaymentAddress: ByteArray? = null,
+        platformPaymentAddress: ByteArray? = null,
+        shieldedAddress: ByteArray? = null,
     ): Int = 0
 
     // ── Asset locks ───────────────────────────────────────────────────
@@ -1139,6 +1145,7 @@ class IdentityRestoreData(
      * re-fetches every contact.
      */
     @JvmField val contactProfiles: Array<ContactProfileRestoreData>,
+    @JvmField val dashpayProfile: ContactProfileRestoreData? = null,
 )
 
 /**
@@ -1171,6 +1178,9 @@ class ContactProfileRestoreData(
     @JvmField val avatarFingerprint: ByteArray?,
     @JvmField val publicMessage: String?,
     @JvmField val checkedAtMs: Long,
+    @JvmField val corePaymentAddress: ByteArray? = null,
+    @JvmField val platformPaymentAddress: ByteArray? = null,
+    @JvmField val shieldedAddress: ByteArray? = null,
 )
 
 /**

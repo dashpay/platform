@@ -1146,6 +1146,8 @@ struct DashPayProfileEditorView: View {
     @State private var displayName: String = ""
     @State private var publicMessage: String = ""
     @State private var avatarUrl: String = ""
+    @State private var shieldedTipAddress: String = ""
+    @EnvironmentObject private var appState: AppState
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -1203,6 +1205,22 @@ struct DashPayProfileEditorView: View {
                         .foregroundColor(.secondary)
                 }
 
+                Section {
+                    TextField("Shielded receiving address", text: $shieldedTipAddress, axis: .vertical)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("dashpay.profile.shieldedAddress")
+                    Button("Use a dedicated tip account") { prepareTipAddress() }
+                        .disabled(isSaving)
+                    if !shieldedTipAddress.isEmpty {
+                        Button("Remove tip address", role: .destructive) { shieldedTipAddress = "" }
+                    }
+                } header: {
+                    Text("Shielded tips")
+                } footer: {
+                    Text("This address is public. Use a separate account for tips, or paste an address from another wallet. Save to publish. Removing it does not revoke copies already shared.")
+                }
+
                 if let err = errorMessage {
                     Section {
                         Text(err)
@@ -1238,8 +1256,24 @@ struct DashPayProfileEditorView: View {
                     displayName = existing.displayName ?? ""
                     publicMessage = existing.publicMessage ?? ""
                     avatarUrl = existing.avatarUrl ?? ""
+                    shieldedTipAddress = existing.shieldedAddress.flatMap { DashAddress.encodeOrchard(rawBytes: $0, network: appState.currentNetwork) } ?? ""
                 }
             }
+        }
+    }
+
+    private func prepareTipAddress() {
+        guard let walletId else { errorMessage = "This identity has no local wallet."; return }
+        isSaving = true
+        errorMessage = nil
+        Task { @MainActor in
+            defer { isSaving = false }
+            do {
+                let address = try await walletManager.prepareShieldedTipAddress(
+                    walletId: walletId, identityId: identityId, resolver: MnemonicResolver()
+                )
+                shieldedTipAddress = DashAddress.encodeOrchard(rawBytes: address, network: appState.currentNetwork) ?? ""
+            } catch { errorMessage = error.localizedDescription }
         }
     }
 
@@ -1294,11 +1328,22 @@ struct DashPayProfileEditorView: View {
                     avatarBytes = nil
                 }
 
+                let tipUpdate: DashPayPaymentAddressUpdate
+                let tipText = shieldedTipAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                if tipText.isEmpty {
+                    tipUpdate = existing?.shieldedAddress == nil ? .keep : .remove
+                } else if case .orchard(let address) = DashAddress.parse(tipText, network: appState.currentNetwork).type {
+                    tipUpdate = address == existing?.shieldedAddress ? .keep : .set(address)
+                } else {
+                    errorMessage = "Enter a valid shielded address for this network."
+                    return
+                }
                 let update = DashPayProfileUpdate(
                     displayName: cleanedDisplay.isEmpty ? nil : cleanedDisplay,
                     publicMessage: cleanedMsg.isEmpty ? nil : cleanedMsg,
                     avatarUrl: cleanedUrl.isEmpty ? nil : cleanedUrl,
-                    avatarBytes: avatarBytes
+                    avatarBytes: avatarBytes,
+                    shieldedAddress: tipUpdate
                 )
 
                 // Resolve the wallet via the identity's `walletId`;

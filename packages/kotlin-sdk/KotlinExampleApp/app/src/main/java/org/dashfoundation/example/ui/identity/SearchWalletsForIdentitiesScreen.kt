@@ -140,6 +140,9 @@ fun SearchWalletsForIdentitiesScreen(navController: NavHostController) {
                             walletHandle = wallet.handle,
                             mnemonicResolverHandle = mgr.mnemonicResolverHandle,
                         )
+                        if (container.shieldedService.isAvailable && found.isNotEmpty()) {
+                            mgr.bindShielded(wallet.walletId)
+                        }
                         summary = "Found ${found.size} identity(ies)."
                         if (found.isEmpty()) {
                             previewPaths = mgr.identityRegistration.previewRegistrationKeys(

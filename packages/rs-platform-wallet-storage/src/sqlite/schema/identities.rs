@@ -31,13 +31,13 @@ pub fn apply(
         // by the per-entry cross-check below.
         let scope_is_sentinel = wallet_id.iter().all(|b| *b == 0);
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
-             VALUES (?1, ?2, ?3, ?4, 0) \
+            "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned, entry_format) \
+             VALUES (?1, ?2, ?3, ?4, 0, 1) \
              ON CONFLICT(identity_id) DO UPDATE SET \
                 wallet_id = COALESCE(identities.wallet_id, excluded.wallet_id), \
                 wallet_index = excluded.wallet_index, \
                 entry_blob = excluded.entry_blob, \
-                tombstoned = 0",
+                tombstoned = 0, entry_format = 1",
         )?;
         let wallet_id_param = wallet_id_to_param(wallet_id);
         for (id, entry) in &cs.identities {
@@ -118,17 +118,20 @@ pub fn fetch(
     // wallet_id); a real WalletId matches only that wallet's rows.
     // `IS` is NULL-safe equality so the NULL branch works uniformly.
     let wallet_id_param = wallet_id_to_param(wallet_id);
-    let row: Option<(Vec<u8>, i64)> = conn
+    let row: Option<(Vec<u8>, i64, i64)> = conn
         .query_row(
-            "SELECT entry_blob, tombstoned FROM identities \
+            "SELECT entry_blob, tombstoned, entry_format FROM identities \
              WHERE identity_id = ?1 AND wallet_id IS ?2",
             params![&identity_id[..], wallet_id_param],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
     match row {
         None => Ok(None),
-        Some((payload, tombstoned)) => Ok(Some((blob::decode(&payload)?, tombstoned != 0))),
+        Some((payload, tombstoned, format)) => Ok(Some((
+            super::identity_profile_encoding::decode_identity(&payload, format)?,
+            tombstoned != 0,
+        ))),
     }
 }
 
@@ -156,7 +159,7 @@ pub fn load_state(
     // clause matches by wallet_id (orphan identities — wallet_id NULL —
     // are out of scope for this per-wallet loader).
     let mut stmt = conn.prepare(
-        "SELECT identity_id, entry_blob, tombstoned FROM identities WHERE wallet_id = ?1",
+        "SELECT identity_id, entry_blob, tombstoned, entry_format FROM identities WHERE wallet_id = ?1",
     )?;
     // The ignored-senders TABLE is the authoritative ignore record (every
     // ignore/un-ignore maintains it transactionally); the `entry_blob`'s
@@ -172,7 +175,7 @@ pub fn load_state(
         if tombstoned != 0 {
             continue;
         }
-        let entry: IdentityEntry = blob::decode(&payload)?;
+        let entry = super::identity_profile_encoding::decode_identity(&payload, row.get(3)?)?;
         let ignored = ignored_by_owner.remove(&entry.id).unwrap_or_default();
         let managed = managed_identity_from_entry(&entry, wallet_id, ignored);
         match entry.identity_index {
@@ -283,8 +286,8 @@ pub fn ensure_exists(
     let wallet_id_param = wallet_id_to_param(wallet_id);
     conn.execute(
         "INSERT OR IGNORE INTO identities \
-            (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
-         VALUES (?1, ?2, NULL, ?3, 0)",
+            (identity_id, wallet_id, wallet_index, entry_blob, tombstoned, entry_format) \
+         VALUES (?1, ?2, NULL, ?3, 0, 1)",
         params![&identity_id[..], wallet_id_param, payload],
     )?;
     Ok(())
