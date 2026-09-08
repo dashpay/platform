@@ -316,29 +316,22 @@ mod tests {
                 .expect("failed to deserialize state");
         }
 
-        /// Serializing through the borrowed conversion must produce exactly the
-        /// bytes the owned conversion produced, since it writes the same aux record.
+        /// Serializing through the borrowed conversion must preserve the saved format.
         #[test]
-        fn borrowed_serialization_matches_owned() {
+        fn should_preserve_pre_change_serialization_hash() {
             let serialized_state =
                 hex::decode(PLATFORM_STATE_V8_DEVNET.deref()).expect("failed to decode hex");
 
             let state = PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V9)
                 .expect("failed to deserialize state");
 
-            let platform_version = state
-                .current_platform_version()
-                .expect("state must know its version");
-            let config = config::standard().with_big_endian().with_no_limit();
-            let owned: PlatformStateForSaving = state
-                .clone()
-                .try_into_platform_versioned(platform_version)
-                .expect("owned conversion");
-            let owned_bytes = bincode::encode_to_vec(owned, config).expect("owned encode");
-
+            // Generated with serialize_to_bytes() at pre-change commit
+            // 9dfffa611a9554cb14c9464374c8de1356c1d92f, using the fixture above.
             assert_eq!(
-                state.serialize_to_bytes().expect("borrowed serialize"),
-                owned_bytes
+                hex::encode(hash_double(
+                    state.serialize_to_bytes().expect("borrowed serialize")
+                )),
+                "079e5cb38c07a9e1818a4a71a40fe8936e7c93bf2fec39c7d346afa215b76679"
             );
         }
 
