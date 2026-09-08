@@ -592,7 +592,7 @@ mod deletion_tests {
                         dpp::consensus::basic::BasicError::InvalidDocumentTransitionActionError(error)
                     ),
                     ..
-                }] if error.action() == "documents of type note keep history and therefore can not be deleted"
+                }] if error.action() == "documents of type note can not be deleted"
             );
         }
     }
