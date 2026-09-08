@@ -24,7 +24,7 @@ final class DashModelMigrationTests: XCTestCase {
         var v1Container: ModelContainer? = try ModelContainer(
             for: v1Schema,
             configurations: [v1Configuration])
-        // V1 registers the FROZEN component (see `DashSchemaFrozenModels`),
+        // V1 registers the frozen graph (see `FrozenSchemas/`),
         // so a row written into a V1 container is that type — inserting the
         // live one would materialise as the frozen entity and then fail its
         // cast on read.
@@ -51,7 +51,9 @@ final class DashModelMigrationTests: XCTestCase {
             FetchDescriptor<DashSchemaV1.PersistentKeyword>())
         XCTAssertEqual(keywords.map(\.keyword), ["preserved"])
 
-        migrated.mainContext.insert(PersistentTrackedMasternode(
+        // V2 registers the frozen `PersistentTrackedMasternode`, so the row
+        // written into a V2 container is that type too.
+        migrated.mainContext.insert(DashSchemaV2.PersistentTrackedMasternode(
             networkRaw: Network.testnet.rawValue,
             proTxHash: Data(repeating: 7, count: 32),
             label: "new in V2",
@@ -60,13 +62,13 @@ final class DashModelMigrationTests: XCTestCase {
         try migrated.mainContext.save()
         XCTAssertEqual(
             try migrated.mainContext.fetchCount(
-                FetchDescriptor<PersistentTrackedMasternode>()),
+                FetchDescriptor<DashSchemaV2.PersistentTrackedMasternode>()),
             1)
     }
 
     /// The stage this change adds: a V3 store must migrate to V4 and read
     /// back with the sweep columns backfilled to their "nothing swept yet"
-    /// values. V3 registers the frozen component, so the row goes in as the
+    /// values. V3 registers the frozen graph, so the row goes in as the
     /// frozen type and comes out as the live one — which is the whole point
     /// of the freeze: the same entity, one property wider. A pending-input
     /// row rides along so the tombstone index V4 adds is exercised by the
@@ -160,7 +162,7 @@ final class DashModelMigrationTests: XCTestCase {
     /// The whole chain from the oldest registered version, on the models this
     /// change actually widens: a V1 store carrying a wallet, a transaction
     /// and a coin must arrive at V4 with every row intact and the V4 columns
-    /// at their backfill values. V1 and V2 register the frozen component,
+    /// at their backfill values. V1 and V2 register the frozen graph,
     /// so the rows go in as frozen types and come out live — the property
     /// the freeze exists to guarantee, pinned here where it matters most.
     @MainActor
@@ -361,8 +363,10 @@ final class DashModelMigrationTests: XCTestCase {
             migrationPlan: DashMigrationPlan.self,
             configurations: [v3Configuration])
 
+        // V3 registers the frozen `DashSchemaV3.PersistentAssetLock`, the
+        // shape that gained the column, so the read side is that type.
         let locks = try migrated.mainContext.fetch(
-            FetchDescriptor<PersistentAssetLock>())
+            FetchDescriptor<DashSchemaV3.PersistentAssetLock>())
         XCTAssertEqual(locks.count, 1)
         let lock = try XCTUnwrap(locks.first)
         XCTAssertEqual(lock.outPointHex, outPointHex)
@@ -376,7 +380,7 @@ final class DashModelMigrationTests: XCTestCase {
         lock.recipientIsExternal = true
         try migrated.mainContext.save()
         XCTAssertEqual(
-            try migrated.mainContext.fetch(FetchDescriptor<PersistentAssetLock>())
+            try migrated.mainContext.fetch(FetchDescriptor<DashSchemaV3.PersistentAssetLock>())
                 .first?.recipientIsExternal,
             true)
     }
