@@ -53,14 +53,14 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "7e315af582bc6ec9c088447a7699099b5fbf0f96" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "7e315af582bc6ec9c088447a7699099b5fbf0f96" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "7e315af582bc6ec9c088447a7699099b5fbf0f96" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "7e315af582bc6ec9c088447a7699099b5fbf0f96" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "7e315af582bc6ec9c088447a7699099b5fbf0f96" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "7e315af582bc6ec9c088447a7699099b5fbf0f96" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "7e315af582bc6ec9c088447a7699099b5fbf0f96" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "7e315af582bc6ec9c088447a7699099b5fbf0f96" }
 tokio-metrics = "0.5"
 
 # Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which
