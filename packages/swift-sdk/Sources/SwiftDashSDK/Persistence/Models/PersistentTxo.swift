@@ -96,15 +96,24 @@ public final class PersistentTxo {
     /// have a row of its own (it can pay only outside addresses), which is
     /// why the stamp is a bare txid rather than a relationship.
     ///
-    /// `upsertUtxo`'s recovery clear keys on it: a coin the wallet
-    /// re-delivers as unspent lifts `isSpent` only when both
-    /// `spendingTransaction` and this are nil — a rescan re-finds the
-    /// funding output precisely because it is blind to an unconfirmed
-    /// winner no block carries yet, so re-delivery cannot outrank the
-    /// sweep's verdict. Cleared only by the sweep release pass, when a
-    /// later sweep proves the coin came free after all; a pre-stamp row
-    /// (written before holds named their winner) still frees on
-    /// re-delivery.
+    /// What the stamp does on a materialised row: it keeps `isSpent` up on
+    /// the record and spend-emit channels (`reconcileSpendObservation`
+    /// treats a stamped row as spent whatever the arriving spender's
+    /// context — the sharp case is the winner's own record arriving
+    /// IS-locked, below in-block), and it names a claimant the sweep
+    /// release veto (`releaseIsVetoed`) checks against the named
+    /// transaction's stored bytes. It does NOT refuse a re-delivery: a
+    /// coin the wallet hands back as unspent through `utxos_added` follows
+    /// the wallet — `isSpent` and this stamp clear together (see
+    /// `upsertUtxo`), because the wallet knows this coin, so any
+    /// network-final spender of it is wallet-relevant by BIP158 prevout
+    /// matching and the wallet's own scan re-discovers the spend; refusing
+    /// would lock a real coin out forever after a reorg of the winner. The
+    /// hold that must survive a funding delivery is the never-materialised
+    /// one, carried by a `PersistentPendingInput` tombstone until the
+    /// delivery drains it into this stamp. Also cleared by the sweep
+    /// release pass, when a later sweep proves the coin came free after
+    /// all.
     public var supersededByTxid: Data?
 
     /// Position of this output within `spendingTransaction.input`

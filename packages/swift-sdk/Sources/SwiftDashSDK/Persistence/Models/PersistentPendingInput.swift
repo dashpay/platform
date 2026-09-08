@@ -39,17 +39,23 @@ import SwiftData
 /// upsert outright.
 @Model
 public final class PersistentPendingInput {
-    /// Two single-column indexes:
+    /// Three indexes:
     ///   * `outpoint` — the per-outpoint reconciliation lookup that
     ///     runs on every `upsertUtxo`.
     ///   * `walletId` — per-wallet pending-input scans (cleanup when
     ///     a wallet is removed, the storage explorer's network
     ///     scope, "long-lived non-zero pending count" diagnostics).
+    ///   * `(walletId, isSweptTombstone)` — the tombstone collector's
+    ///     once-per-round scan (`collectFinalizedSweptTombstones`),
+    ///     which must select tombstones only: the ordinary rows on this
+    ///     table — one per foreign input of every incoming payment —
+    ///     are never pruned, so a scan that materialised them would grow
+    ///     with the wallet's history.
     ///
     /// SwiftData allows only a single `#Index` macro per model;
     /// passing multiple key-path arrays declares multiple separate
     /// indexes from one macro call.
-    #Index<PersistentPendingInput>([\.outpoint], [\.walletId])
+    #Index<PersistentPendingInput>([\.outpoint], [\.walletId], [\.walletId, \.isSweptTombstone])
     public var outpoint: Data
 
     /// Position of this input in the spending transaction's input
@@ -79,18 +85,23 @@ public final class PersistentPendingInput {
     public var createdAt: Date
 
     /// Set when `applySweptTransaction` repurposes this row as a durable
-    /// claim rather than an ordinary in-flight spend: the original
-    /// spending transaction turned out to be a loser, this input wasn't in
-    /// `released`, and the funding `PersistentTxo` still hasn't arrived to
-    /// hold the claim itself. `spendingTxid` is overwritten to the winner
+    /// claim rather than an ordinary in-flight spend — or writes it fresh
+    /// for a held input that had no row: the original spending transaction
+    /// turned out to be a loser, this input wasn't released, and the
+    /// funding `PersistentTxo` still hasn't arrived to hold the claim
+    /// itself. `spendingTxid` is overwritten to the winner
     /// (`superseded_by`) and `spendingTransaction` is detached so the row
-    /// survives the loser's cascade-delete. `upsertUtxo` checks this flag
-    /// on resolve: a tombstone forces `PersistentTxo.isSpent = true`
+    /// survives the loser's deletion. `upsertUtxo` checks this flag on
+    /// resolve: a tombstone forces `PersistentTxo.isSpent = true`
     /// unconditionally (a sweep's winner is already final, unlike an
     /// ordinary pending spend whose confirmation is still pending) and
     /// stamps `PersistentTxo.supersededByTxid` so the mark survives even
-    /// when the winner's own row never materializes. Defaulted `false` so
-    /// existing rows migrate as ordinary pending entries.
+    /// when the winner's own row never materializes — and nothing else:
+    /// the spender link and the vin index come only from an ordinary row,
+    /// never from a tombstone (its `inputIndex` is the loser's). Rows are
+    /// per (outpoint, spending txid, wallet); the drain prefers the
+    /// tombstone tagged with the wallet delivering the coin. Defaulted
+    /// `false` so existing rows migrate as ordinary pending entries.
     public var isSweptTombstone: Bool = false
 
     /// The WINNER'S own mined block height, stamped when a block-context

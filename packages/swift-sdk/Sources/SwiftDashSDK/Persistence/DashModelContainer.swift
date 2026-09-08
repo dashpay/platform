@@ -309,24 +309,6 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 ///     migrate with a nil `documentIdBase58`, which is the documented
 ///     "no marketplace state tracked" signal — the next marketplace
 ///     sync pass fills them in.
-///   - `PersistentTxo` gained the optional `supersededByTxid`, and
-///     `PersistentPendingInput` gained `isSweptTombstone` (defaulted
-///     `false`). Together they let a sweep's claim on an input whose
-///     funding TXO hasn't arrived yet survive the loser transaction's
-///     deletion — previously that claim lived only on the doomed row's
-///     `PersistentPendingInput`, which cascades away with it. Both
-///     additive with defaults ⇒ lightweight migration; existing rows
-///     migrate as ordinary (non-tombstone, non-superseded) entries.
-///   - `PersistentPendingInput` gained the optional `winnerMinedHeight`
-///     (a block-context sweep tombstone's finality stamp — the winner's
-///     own mined height) and `PersistentWallet` gained the optional
-///     `lastAppliedChainLockHeight` (the numeric chainlock watermark
-///     delivered by `on_persist_wallet_changeset_chain_lock_height_fn`,
-///     stored monotonic-max). Together they drive the bounded tombstone
-///     lifetime: a tombstone is collected exactly when
-///     `min(chainlockHeight, syncedHeight)` reaches its stamp. Both
-///     optional ⇒ lightweight migration; pre-existing rows read as
-///     unstamped (held forever) over a wallet with no boundary yet.
 /// Each of those is a destructive change to a unique-attribute
 /// column or to relationship topology, so any pre-existing dev
 /// store will fail to open and get rebuilt from scratch on next
@@ -377,17 +359,32 @@ public enum DashSchemaV3: VersionedSchema {
     }
 }
 
-/// Version 4 adds the sweep columns: `isGloballySwept` on
-/// `PersistentTransaction`, `supersededByTxid` on `PersistentTxo`,
-/// `isSweptTombstone` / `winnerMinedHeight` on `PersistentPendingInput`,
-/// and `lastAppliedChainLockHeight` on `PersistentWallet`. Every one is
-/// additive with a default or optional, so a lightweight migration
-/// preserves each existing row: transactions read as not swept, TXOs as
-/// unsuperseded, pending inputs as ordinary unstamped claims, and a wallet
-/// as having no chainlock boundary yet.
+/// Version 4 adds the sweep columns, on the same entity set as V3:
+///   - `PersistentTxo.supersededByTxid` (optional) and
+///     `PersistentPendingInput.isSweptTombstone` (defaulted `false`).
+///     Together they let a sweep's claim on an input whose funding TXO
+///     hasn't arrived yet survive the loser transaction's deletion —
+///     previously that claim lived only on the doomed row's
+///     `PersistentPendingInput`, which cascades away with it. Existing
+///     rows migrate as ordinary (non-tombstone, non-superseded) entries.
+///   - `PersistentPendingInput.winnerMinedHeight` (optional — a
+///     block-context sweep tombstone's finality stamp, the winner's own
+///     mined height) and `PersistentWallet.lastAppliedChainLockHeight`
+///     (optional — the numeric chainlock watermark delivered by
+///     `on_persist_wallet_changeset_chain_lock_height_fn`, stored
+///     monotonic-max). Together they drive the bounded tombstone lifetime:
+///     a tombstone is collected exactly when
+///     `min(chainlockHeight, syncedHeight)` reaches its stamp.
+///     Pre-existing rows read as unstamped (held forever) over a wallet
+///     with no boundary yet.
+///   - The `(walletId, isSweptTombstone)` index on
+///     `PersistentPendingInput`, serving the collector's tombstone-only
+///     scan.
+/// Every column is additive with a default or optional and the index is
+/// additive, so a lightweight migration preserves each existing row.
 ///
 /// Registering it required freezing the whole relationship component those
-/// four models sit in — see `DashSchemaFrozenModels.swift`.
+/// three models sit in — see `DashSchemaFrozenModels.swift`.
 public enum DashSchemaV4: VersionedSchema {
     public static var versionIdentifier: Schema.Version {
         Schema.Version(4, 0, 0)
