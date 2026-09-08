@@ -121,6 +121,9 @@ platform-encryption:
 dash-platform-queries:
   - packages/dash-platform-queries/**
 
+dash-platform-cxx:
+  - packages/rs-platform-cxx/**
+
 dash-sdk:
   - packages/rs-sdk/**
 
