@@ -11,7 +11,9 @@ import SwiftData
 /// * inputs with unknown funding keep the unconditional pending row —
 ///   the out-of-order spend-repair mechanism the cache must not regress;
 /// * round cost scales near-linearly with record count (the quadratic
-///   pending-scan regression guard).
+///   pending-scan regression guard);
+/// * a thrown single-row fallback fetch rejects the round instead of
+///   reading as "row absent" and licensing a duplicate insert.
 @MainActor
 final class WalletChangesetRoundTests: XCTestCase {
 
@@ -28,9 +30,15 @@ final class WalletChangesetRoundTests: XCTestCase {
         var outputs: [UInt32] = []
     }
 
-    private func makeHandler() throws -> (PlatformWalletPersistenceHandler, ModelContainer) {
+    private func makeHandler(
+        modelFetcher: ModelFetching = LiveModelFetcher()
+    ) throws -> (PlatformWalletPersistenceHandler, ModelContainer) {
         let container = try DashModelContainer.createInMemory()
-        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container,
+            network: .testnet,
+            modelFetcher: modelFetcher
+        )
         // The changeset path drops writes for unknown wallets — seed
         // the row the way the wallet-metadata callback would have.
         let context = ModelContext(container)
@@ -39,9 +47,25 @@ final class WalletChangesetRoundTests: XCTestCase {
         return (handler, container)
     }
 
+    /// `txs` where tx_i spends tx_{i-1}'s only output: the same-round
+    /// chain that exercises every pending-input path.
+    private func spendChain(count: Int) -> [TestTx] {
+        (0..<count).map { i in
+            var tx = TestTx(txid: makeTxid(i), outputs: [0])
+            if i > 0 { tx.inputs = [(makeTxid(i - 1), 0)] }
+            return tx
+        }
+    }
+
     /// Build the C changeset for `txs`, run one begin→persist→end
-    /// round through `handler`, and free every allocation.
-    private func runRound(handler: PlatformWalletPersistenceHandler, txs: [TestTx]) {
+    /// round through `handler`, and free every allocation. Returns
+    /// what `endChangeset` reported; `expectPersisted` pins what the
+    /// changeset callback itself must have reported.
+    private func runRound(
+        handler: PlatformWalletPersistenceHandler,
+        txs: [TestTx],
+        expectPersisted: Bool = true
+    ) -> Bool {
         var cStrings: [UnsafeMutablePointer<CChar>] = []
         var inputBuffers: [(UnsafeMutablePointer<OutPointFFI>, Int)] = []
         defer {
@@ -122,15 +146,18 @@ final class WalletChangesetRoundTests: XCTestCase {
         account.utxos_added = utxoCount > 0 ? utxoBuffer : nil
         account.utxos_added_count = UInt(utxoCount)
 
-        withUnsafeMutablePointer(to: &account) { accountPtr in
+        return withUnsafeMutablePointer(to: &account) { accountPtr in
             var changeset = WalletChangeSetFFI()
             changeset.accounts = accountPtr
             changeset.accounts_count = 1
             handler.beginChangeset(walletId: walletId)
-            withUnsafePointer(to: changeset) {
+            let persisted = withUnsafePointer(to: changeset) {
                 handler.persistWalletChangeset(walletId: walletId, changeset: $0)
             }
-            XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+            XCTAssertEqual(persisted, expectPersisted, "changeset callback result")
+            // What Rust does with the callback's code: close the round
+            // as failed when any per-kind callback reported failure.
+            return handler.endChangeset(walletId: walletId, success: persisted)
         }
     }
 
@@ -149,13 +176,7 @@ final class WalletChangesetRoundTests: XCTestCase {
     func testSameRoundSpendChainResolvesAndDrainsPendingRows() throws {
         let (handler, container) = try makeHandler()
         let count = 50
-        var txs: [TestTx] = []
-        for i in 0..<count {
-            var tx = TestTx(txid: makeTxid(i), outputs: [0])
-            if i > 0 { tx.inputs = [(makeTxid(i - 1), 0)] }
-            txs.append(tx)
-        }
-        runRound(handler: handler, txs: txs)
+        XCTAssertTrue(runRound(handler: handler, txs: spendChain(count: count)))
 
         let transactions = try fetchAll(PersistentTransaction.self, in: container)
         XCTAssertEqual(transactions.count, count)
@@ -188,9 +209,9 @@ final class WalletChangesetRoundTests: XCTestCase {
     func testUnknownFundingInputWritesPendingRow() throws {
         let (handler, container) = try makeHandler()
         let unknownFunding = makeTxid(500)
-        runRound(handler: handler, txs: [
+        XCTAssertTrue(runRound(handler: handler, txs: [
             TestTx(txid: makeTxid(1), inputs: [(unknownFunding, 2)]),
-        ])
+        ]))
 
         let pending = try fetchAll(PersistentPendingInput.self, in: container)
         XCTAssertEqual(pending.count, 1)
@@ -199,6 +220,34 @@ final class WalletChangesetRoundTests: XCTestCase {
             PersistentTxo.makeOutpoint(txid: unknownFunding, vout: 2)
         )
         XCTAssertEqual(pending.first?.spendingTxid, makeTxid(1))
+    }
+
+    // MARK: - Fetch failure
+
+    /// A thrown single-row fallback fetch must reject the round, not
+    /// read as "row absent": the callers take `nil` as license to
+    /// insert over a `.unique` column, and that duplicate would only
+    /// surface as a failed `save()` at `endChangeset`. Faulting every
+    /// `PersistentTransaction` read fails the bulk prefetch (which
+    /// demotes the chunk to per-row fetches) and then the first
+    /// fallback, so this pins both halves of the contract.
+    func testThrownFallbackFetchRejectsTheRound() throws {
+        let injector = FetchFaultInjector(faulting: PersistentTransaction.self)
+        let (handler, container) = try makeHandler(modelFetcher: injector)
+
+        XCTAssertFalse(
+            runRound(handler: handler, txs: spendChain(count: 3), expectPersisted: false),
+            "an unreadable transaction table must fail the round"
+        )
+        XCTAssertTrue(
+            injector.observedReads.contains("PersistentTransaction"),
+            "the faulted read must be the transaction fetch"
+        )
+        XCTAssertTrue(
+            try fetchAll(PersistentTransaction.self, in: container).isEmpty,
+            "nothing from the rejected round may reach the store"
+        )
+        XCTAssertTrue(try fetchAll(PersistentTxo.self, in: container).isEmpty)
     }
 
     // MARK: - Scaling
@@ -211,14 +260,8 @@ final class WalletChangesetRoundTests: XCTestCase {
     func testRoundCostScalesNearLinearly() throws {
         func measureRound(count: Int) throws -> TimeInterval {
             let (handler, _) = try makeHandler()
-            var txs: [TestTx] = []
-            for i in 0..<count {
-                var tx = TestTx(txid: makeTxid(i), outputs: [0])
-                if i > 0 { tx.inputs = [(makeTxid(i - 1), 0)] }
-                txs.append(tx)
-            }
             let start = Date()
-            runRound(handler: handler, txs: txs)
+            XCTAssertTrue(runRound(handler: handler, txs: spendChain(count: count)))
             return Date().timeIntervalSince(start)
         }
 
