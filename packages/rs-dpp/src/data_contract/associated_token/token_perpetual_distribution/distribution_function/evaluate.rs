@@ -10,7 +10,6 @@ use platform_version::version::PlatformVersion;
 /// Transcendental float operations used by the Polynomial, Exponential, Logarithmic and
 /// InvertedLogarithmic distribution functions, selected once per
 /// `distribution_function_evaluate_version`.
-#[derive(Clone, Copy)]
 struct FloatOps {
     pow: fn(f64, f64) -> f64,
     exp: fn(f64) -> f64,
@@ -656,7 +655,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::LazyLock;
 
-    /// `v0()` with `distribution_function_evaluate_version` forced to
+    /// `PlatformVersion::latest()` with `distribution_function_evaluate_version` forced to
     /// `version`, so a test's expectations do not silently move when `latest()` does.
     fn evaluate_version(version: FeatureVersion) -> PlatformVersion {
         let mut platform_version = PlatformVersion::latest().clone();
@@ -749,6 +748,21 @@ mod tests {
                 max_value: None,
             },
         ];
+
+        // Compile error when a variant is added: extend `variants` above.
+        for distribution in &variants {
+            match distribution {
+                DistributionFunction::FixedAmount { .. }
+                | DistributionFunction::Random { .. }
+                | DistributionFunction::StepDecreasingAmount { .. }
+                | DistributionFunction::Stepwise(_)
+                | DistributionFunction::Linear { .. }
+                | DistributionFunction::Polynomial { .. }
+                | DistributionFunction::Exponential { .. }
+                | DistributionFunction::Logarithmic { .. }
+                | DistributionFunction::InvertedLogarithmic { .. } => {}
+            }
+        }
 
         for distribution in variants {
             assert!(
@@ -1051,82 +1065,6 @@ mod tests {
                 v0_result == 4 || v0_result == 5,
                 "std powf(125, 1/3) truncated to {v0_result}"
             );
-        }
-
-        /// Exact-value fixtures lifted from the drive-abci `inverted_logarithmic` and
-        /// polynomial block-based tests, evaluated under both versions, so the magnitude
-        /// of the v0 -> v1 change on real distribution shapes is pinned rather than
-        /// implicit. These all agree today (on every platform CI runs on); a fixture
-        /// that starts disagreeing is a divergence between std and libm worth knowing
-        /// about before activation.
-        #[test]
-        fn test_v0_and_v1_agree_on_block_based_fixtures() {
-            let fixtures: [(DistributionFunction, &[(u64, u64)]); 3] = [
-                (
-                    DistributionFunction::InvertedLogarithmic {
-                        a: 10000,
-                        d: 1,
-                        m: 1,
-                        n: 5000,
-                        o: 0,
-                        start_moment: Some(0),
-                        b: 0,
-                        min_value: None,
-                        max_value: None,
-                    },
-                    &[
-                        (1, 85171),
-                        (2, 78240),
-                        (1000, 16094),
-                        (4000, 2231),
-                        (5000, 0),
-                        (6000, 0),
-                    ],
-                ),
-                (
-                    DistributionFunction::InvertedLogarithmic {
-                        a: -2200,
-                        d: 1,
-                        m: 1,
-                        n: 10000,
-                        o: 3000,
-                        start_moment: Some(0),
-                        b: 4000,
-                        min_value: None,
-                        max_value: None,
-                    },
-                    &[(1, 1351), (2, 1352), (1000, 1984), (4000, 3215)],
-                ),
-                (
-                    DistributionFunction::Polynomial {
-                        a: 1,
-                        d: 1,
-                        m: 3,
-                        n: 2,
-                        o: 0,
-                        start_moment: Some(0),
-                        b: 0,
-                        min_value: None,
-                        max_value: None,
-                    },
-                    &[(4, 8), (9, 27), (16, 64), (100, 1000)],
-                ),
-            ];
-
-            for (distribution, expectations) in fixtures {
-                for (x, expected) in expectations {
-                    assert_eq!(
-                        distribution.evaluate(0, *x, v1()).unwrap(),
-                        *expected,
-                        "v1 {distribution:?} at x={x}"
-                    );
-                    assert_eq!(
-                        distribution.evaluate(0, *x, v0()).unwrap(),
-                        *expected,
-                        "v0 {distribution:?} at x={x}"
-                    );
-                }
-            }
         }
 
         // Test: Negative coefficient a (should flip the sign)
@@ -1824,6 +1762,64 @@ mod tests {
 
             let v1_result = distribution.evaluate(0, 0, v1()).unwrap();
             assert_eq!(v1_result, 51);
+        }
+
+        /// The exact-value fixtures from the drive-abci `inverted_logarithmic` block-based
+        /// tests, pinned under v1 and then checked for agreement with v0, so a std/libm
+        /// divergence on a real distribution shape surfaces before activation rather
+        /// than as a chain split. The v0 values are not pinned: they are
+        /// platform-dependent by construction, and today agree on every platform CI runs.
+        #[test]
+        fn test_v0_and_v1_agree_on_block_based_fixtures() {
+            let fixtures: [(DistributionFunction, &[(u64, u64)]); 2] = [
+                (
+                    DistributionFunction::InvertedLogarithmic {
+                        a: 10000,
+                        d: 1,
+                        m: 1,
+                        n: 5000,
+                        o: 0,
+                        start_moment: Some(0),
+                        b: 0,
+                        min_value: None,
+                        max_value: None,
+                    },
+                    &[
+                        (1, 85171),
+                        (2, 78240),
+                        (1000, 16094),
+                        (4000, 2231),
+                        (5000, 0),
+                        (6000, 0),
+                    ],
+                ),
+                (
+                    DistributionFunction::InvertedLogarithmic {
+                        a: -2200,
+                        d: 1,
+                        m: 1,
+                        n: 10000,
+                        o: 3000,
+                        start_moment: Some(0),
+                        b: 4000,
+                        min_value: None,
+                        max_value: None,
+                    },
+                    &[(1, 1351), (2, 1352), (1000, 1984), (4000, 3215)],
+                ),
+            ];
+
+            for (distribution, expectations) in fixtures {
+                for &(x, expected) in expectations {
+                    let v1_value = distribution.evaluate(0, x, v1()).unwrap();
+                    assert_eq!(v1_value, expected, "v1 {distribution:?} at x={x}");
+                    assert_eq!(
+                        distribution.evaluate(0, x, v0()).unwrap(),
+                        v1_value,
+                        "v0 disagrees with v1 for {distribution:?} at x={x}"
+                    );
+                }
+            }
         }
     }
 }
