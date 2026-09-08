@@ -158,7 +158,7 @@ export default function setupRegularPresetTaskFactory(
           if (ctx.enableTor === undefined) {
             ctx.enableTor = await task.prompt({
               type: 'toggle',
-              header: `  Dashmate can run a Tor sidecar next to Core. Core then reaches onion peers
+              header: `  Dashmate runs a Tor sidecar next to Core. Core then reaches onion peers
   through it and publishes its own onion service, so peers on Tor can reach
   this node too. Clearnet traffic, including masternode quorum traffic, stays
   direct, and the node keeps its public IPv4 address: masternodes must still be
@@ -166,7 +166,7 @@ export default function setupRegularPresetTaskFactory(
               message: 'Enable Tor?',
               enabled: 'Yes',
               disabled: 'No',
-              initial: false,
+              initial: true,
             });
           }
 

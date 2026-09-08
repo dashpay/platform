@@ -17,14 +17,14 @@ describe('generateEnvsFactory', () => {
   });
 
   it('should not include the Tor compose file when Tor is disabled', () => {
+    config.set('core.tor.enabled', false);
+
     const envs = generateEnvs(config);
 
     expect(envs.COMPOSE_FILE.split(':')).to.not.include('docker-compose.tor.yml');
   });
 
-  it('should include the Tor compose file and image when Tor is enabled', () => {
-    config.set('core.tor.enabled', true);
-
+  it('should include the Tor compose file and image by default', () => {
     const envs = generateEnvs(config);
 
     expect(envs.COMPOSE_FILE.split(':')).to.include('docker-compose.tor.yml');

@@ -14,6 +14,8 @@ describe('Tor templates', () => {
   });
 
   it('should leave onion listening off and set no proxy when Tor is disabled', () => {
+    config.set('core.tor.enabled', false);
+
     const dashConf = renderServiceTemplates(config)['core/dash.conf'];
 
     expect(dashConf).to.match(/^listenonion=0$/m);
@@ -22,8 +24,7 @@ describe('Tor templates', () => {
     expect(dashConf).to.not.match(/^proxy=/m);
   });
 
-  it('should point Core at the sidecar on loopback when Tor is enabled', () => {
-    config.set('core.tor.enabled', true);
+  it('should point Core at the sidecar on loopback by default', () => {
     config.set('core.tor.control.password', 'dashmatetest');
 
     const dashConf = renderServiceTemplates(config)['core/dash.conf'];

@@ -343,7 +343,8 @@ export default {
             enabled: {
               type: 'boolean',
               description: 'Run a Tor sidecar so Core reaches onion peers and '
-                + 'publishes an onion service for inbound connections. The '
+                + 'publishes an onion service for inbound connections. On by '
+                + 'default. The '
                 + 'node keeps its IPv4 address: the onion service is an '
                 + 'additional address, not a replacement for the one in the '
                 + 'masternode registration.',

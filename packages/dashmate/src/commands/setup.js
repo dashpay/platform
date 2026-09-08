@@ -34,7 +34,7 @@ export default class SetupCommand extends BaseCommand {
     'debug-logs': Flags.boolean({ char: 'd', description: 'enable debug logs', allowNo: true }),
     'node-count': Flags.integer({ char: 'c', description: 'number of nodes to setup' }),
     'miner-interval': Flags.string({ char: 'm', description: 'interval between blocks' }),
-    'enable-tor': Flags.boolean({ description: 'run a Tor sidecar so Core reaches onion peers and publishes an onion service', allowNo: true }),
+    'enable-tor': Flags.boolean({ description: 'run a Tor sidecar so Core reaches onion peers and publishes an onion service (default: enabled)', allowNo: true }),
 
     verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
   };

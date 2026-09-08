@@ -10,6 +10,7 @@ import {
   SSL_PROVIDERS,
 } from '../src/constants.js';
 import { stockImagePattern, historicalStockImagePattern } from '../src/config/stockImages.js';
+import generateRandomString from '../src/util/generateRandomString.js';
 
 /**
  * @param {HomeDir} homeDir
@@ -1726,11 +1727,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         // skip anything keyed there.
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            // The Tor sidecar is new and off by default, so an existing node
-            // keeps behaving as before. The schema requires the section, so a
-            // config without it cannot be loaded.
+            // The Tor sidecar is new and on by default, and an existing node
+            // gets it too: the next start pulls the image and Core registers
+            // its onion service. Each node gets its own control password, as
+            // setup would have given it.
             if (options.core && options.core.tor === undefined) {
               options.core.tor = base.getStored('core.tor');
+              options.core.tor.control.password = generateRandomString(12);
             }
           });
 

@@ -94,7 +94,7 @@ The `core.tor` section runs a Tor daemon next to Core. Core then reaches onion p
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `core.tor.enabled` | Run the Tor sidecar | `false` | `true` |
+| `core.tor.enabled` | Run the Tor sidecar | `true` | `false` |
 | `core.tor.docker.image` | Docker image for the Tor daemon | `osminogin/tor-simple:0.4.9.11` | `osminogin/tor-simple:latest` |
 | `core.tor.control.password` | Password Core uses on the Tor control port | random on setup | `"s3cret"` |
 
@@ -107,7 +107,7 @@ What it does not do:
 - It does not route clearnet traffic through Tor. Masternode quorum traffic stays direct, so enabling Tor does not put the node at risk of PoSe penalties from Tor exit latency.
 - It does not change the address a masternode is registered with. Dash Core requires an IPv4 address in the masternode registration and checks it on startup, so `externalIp` still has to be a public IPv4 address. The onion service is an additional way to reach the node.
 
-Enable it on an existing node with `dashmate config set core.tor.enabled true` and then `dashmate restart`.
+Tor is on by default, for new nodes and for nodes upgraded from an earlier dashmate: the upgrade adds the section to every config, and the next `dashmate update` or `dashmate start` pulls the image and starts the sidecar. To run without it, `dashmate config set core.tor.enabled false` and then `dashmate restart`. On a node that was set up with `--no-enable-tor`, `dashmate config set core.tor.enabled true` followed by `dashmate restart` turns it on.
 
 ## Sporks
 
