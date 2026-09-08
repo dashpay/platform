@@ -1091,7 +1091,7 @@ mod register_wallet_duplicate_tests {
             event_handler,
         ));
 
-        let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid test mnemonic")
             .to_seed("");
         let wallet = manager
