@@ -1158,14 +1158,15 @@ extension PlatformWalletPersistenceHandler {
         // change no longer inflates it.
         // A partially lost pool is not distinguishable from a small one here;
         // `bip44_address_pool_size` sits beside this flag for that reading.
-        // Both pools, now that both are audited. A wallet always has BIP44
-        // accounts, so an empty BIP44 pool is unconditionally wrong; CoinJoin
-        // accounts only exist on a mixed wallet, so an empty CoinJoin pool is
-        // only evidence when there are accounts that should have filled it.
-        // Without the second clause, widening `ownedAddresses` to CoinJoin
-        // would have added a fourth route to the false all-clear: a lost
-        // CoinJoin pool, on the mixed wallet this audit is written for.
-        let addressPoolEmpty = bip44AddressCount == 0
+        // Per pool, and symmetrically: an empty pool is evidence only where
+        // there are accounts that should have filled it. Judging BIP44
+        // unconditionally called a CoinJoin-only wallet incomplete although
+        // attribution had worked — noise rather than danger, but noise in the
+        // one field an analyst uses to decide whether to keep reading.
+        // Nothing owned at all is incomplete however few accounts exist:
+        // no address means nothing can be attributed.
+        let addressPoolEmpty = ownedAddresses.isEmpty
+            || (!bip44Accounts.isEmpty && bip44AddressCount == 0)
             || (!coinJoinAccounts.isEmpty && coinJoinAddressCount == 0)
         let auditIncomplete = decodeFailureCount > 0
             || transactionBytesMissingCount > 0
@@ -1176,7 +1177,7 @@ extension PlatformWalletPersistenceHandler {
             severity: anomalies.isEmpty && !auditIncomplete ? .info : .warning,
             fields: [
                 "audit_incomplete": .boolean(auditIncomplete),
-                "bip44_address_pool_empty": .boolean(addressPoolEmpty),
+                "address_pool_empty": .boolean(addressPoolEmpty),
                 "bip44_address_pool_size": .integer(Int64(bip44AddressCount)),
                 "coinjoin_address_pool_size": .integer(Int64(coinJoinAddressCount)),
                 "coinjoin_to_coinjoin_missing_count": .integer(Int64(missingCoinJoinCount)),
