@@ -224,6 +224,15 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
     }
 }
 
+/// Derive Platform deserialization using bincode's untrusted native decoder.
+///
+/// Serialized types and their fields need `DecodeUntrusted`, including when
+/// decoding through the no-limit entry point. Existing configured budgets and
+/// domain validation still apply; untrusted decoding adds no universal budget.
+/// Local mock formats containing ordinary-only foreign types may explicitly use
+/// `#[platform_serialize(unversioned, trusted)]`. Do not use that exception for
+/// network input or imported data. The separate `PlatformVersionedDecode` APIs
+/// retain their ordinary decoding contract for existing internal and mock callers.
 #[proc_macro_derive(
     PlatformDeserialize,
     attributes(platform_error_type, platform_serialize)
