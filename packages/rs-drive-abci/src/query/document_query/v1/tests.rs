@@ -11,6 +11,7 @@
 
 use super::*;
 use crate::query::tests::{setup_platform, store_data_contract, store_document};
+use crate::test::helpers::fast_forward_to_block::TEST_BLOCK_SIGNATURE;
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::{
     select as v1_select, Select as V1Select, Start as V1Start,
 };
@@ -4549,7 +4550,7 @@ mod time_range_proof_verification {
                 quorum_hash: [0u8; 32],
                 block_id_hash: [0u8; 32],
                 proposer_pro_tx_hash: [0u8; 32],
-                signature: [0u8; 96],
+                signature: TEST_BLOCK_SIGNATURE,
                 round: 0,
             }
             .into(),
