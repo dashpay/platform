@@ -9,7 +9,10 @@ use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
-use super::{build_spend_bundle, serialize_authorized_bundle, OrchardProver, SpendableNote};
+use super::{
+    build_spend_bundle, serialize_authorized_bundle, shielded_bundle_action_count, OrchardProver,
+    SpendableNote,
+};
 
 /// Builds an Unshield state transition (shielded pool -> platform address).
 ///
@@ -64,7 +67,19 @@ pub fn build_unshield_transition<P: OrchardProver>(
     // actions. Price the fee against that same floor (matching shielded_transfer);
     // otherwise consensus recomputes min_fee from the on-wire actions.len() == 2 and
     // rejects an honest single-spend unshield with InsufficientShieldedFeeError.
-    let num_actions = spends.len().max(2);
+    //
+    // Routed through the shared predictor (1 shielded output — the change note), which is
+    // numerically `spends.len().max(2)` AND enforces both consensus ceilings (the structural
+    // action cap and the transition-size-derived one) BEFORE the ~30 s Halo 2 proof.
+    let num_actions = shielded_bundle_action_count(
+        spends.len(),
+        1,
+        // No variable-length envelope beyond the measured baseline: this
+        // transition's non-Orchard fields are fixed-size (no embedded
+        // asset-lock proof or identity key set).
+        0,
+        platform_version,
+    )?;
     // The fee is fixed at the unshield minimum: consensus always carves exactly
     // `compute_shielded_unshield_fee` from the pool — the base shielded minimum fee PLUS the flat
     // storage cost of the single `AddBalanceToAddress` write this transition performs — and the net

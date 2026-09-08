@@ -189,6 +189,26 @@ internal object FundingNative {
     )
 
     /**
+     * Multi-output shielded → shielded transfer, Type 16 (bridges
+     * `platform_wallet_manager_shielded_transfer_multi`).
+     *
+     * [recipientsRaw43] holds `amounts.size` raw 43-byte Orchard addresses
+     * laid out back to back (length must be `43 * amounts.size`), and
+     * [amounts] the matching credit values. Each pair becomes its own note;
+     * repeating the same address funds it with several independent notes.
+     * [memoText] is attached to every recipient note.
+     */
+    external fun shieldedTransferMulti(
+        managerHandle: Long,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        account: Int,
+        recipientsRaw43: ByteArray,
+        amounts: LongArray,
+        memoText: String?,
+    )
+
+    /**
      * Shielded → Platform unshield, Type 17 (bridges
      * `platform_wallet_manager_shielded_unshield`). [toPlatformAddress] is a
      * bech32m string (`dash1…` / `tdash1…`) parsed and network-checked on

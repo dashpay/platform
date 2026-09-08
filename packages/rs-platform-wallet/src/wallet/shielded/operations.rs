@@ -19,13 +19,15 @@
 //! - **IdentityCreateFromShieldedPool** (Type 20): shielded pool → a brand-new Platform identity
 //!   funded by a fixed denomination leaving the pool (any excess re-enters as a change note)
 
-use super::activity::{ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection};
+use super::activity::{
+    live_transfer_multi_row, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
+};
 use super::activity_recorder::{
     build_pending_entry, changeset_for_entry, non_zero_memo, with_status, LiveEntryParams,
 };
 use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
-    select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind,
+    select_notes_for_denomination, select_notes_with_fee, ChangeRequirement, ShieldedFeeKind,
 };
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
@@ -52,8 +54,9 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
 use dpp::shielded::builder::{
     build_identity_create_from_shielded_pool_transition, build_shield_transition,
-    build_shielded_transfer_transition, build_shielded_withdrawal_transition,
-    build_unshield_transition, OrchardProver, SpendableNote,
+    build_shielded_transfer_transition, build_shielded_transfer_transition_multi,
+    build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver,
+    ShieldedTransferOutput, SpendableNote,
 };
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -815,16 +818,28 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
 
-    // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
-    // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
-    // for 1 would under-fee a single-note transition and the builder would reject it locally.
+    // Reserve against the builder's actual bundle shape: 1 shielded output (the change note —
+    // the unshielded value leaves the pool as `value_balance`, not as a note), matching
+    // `build_unshield_transition`'s `shielded_bundle_action_count(spends, 1, …)`. The selector
+    // derives the action count from that shape through the same shared entry point, so
+    // Orchard's 2-action minimum padding comes from the shared layout rule, not a local floor.
     // Unshield is carved with `compute_shielded_unshield_fee` (the base fee PLUS the flat storage
     // cost of the single `AddBalanceToAddress` write crediting the net to the output address), so
     // reserve against `ShieldedFeeKind::Unshield` — reserving the base fee here would under-fund the
     // address-write cost and the builder would reject the spend (and the `fee_used == exact_fee`
     // debug assert below would fire).
-    let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Unshield).await?;
+    let (selected_notes, total_input, exact_fee) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        1,
+        ShieldedFeeKind::Unshield,
+        // `build_unshield_transition` accepts a zero-valued change output (it rejects only
+        // `required > total_spent`), so exact coverage is a fundable selection.
+        ChangeRequirement::Optional,
+    )
+    .await?;
 
     info!(
         account,
@@ -854,18 +869,26 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
-        let (state_transition, fee_used) = build_unshield_transition(
-            spends,
-            *to_address,
-            amount,
-            &change_addr,
-            &keys.full_viewing_key,
-            &keys.spend_auth_key,
-            anchor,
-            prover,
-            [0u8; 36],
-            sdk.version(),
-        )
+        //
+        // Build + prove runs under the pre-broadcast panic guard (see
+        // `catch_pre_broadcast_panic`): a prover panic here is provably pre-broadcast, so it
+        // must become a DEFINITIVE error the outer failure arm releases the reservation on —
+        // not an unwind past these match arms into the FFI guard's ambiguous contract, which
+        // strands the anchor-less reservation for the rest of the process lifetime.
+        let (state_transition, fee_used) = catch_pre_broadcast_panic("unshield", || {
+            build_unshield_transition(
+                spends,
+                *to_address,
+                amount,
+                &change_addr,
+                &keys.full_viewing_key,
+                &keys.spend_auth_key,
+                anchor,
+                prover,
+                [0u8; 36],
+                sdk.version(),
+            )
+        })?
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         // The builder's fee and the wallet's reserved `exact_fee` both come from
         // compute_shielded_unshield_fee with the same action count; lock that they agree.
@@ -1008,10 +1031,22 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
 
-    // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so reserve
-    // against `ShieldedFeeKind::Base`.
-    let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Base).await?;
+    // Reserve against the builder's actual bundle shape: 2 shielded outputs (recipient +
+    // change), matching `build_shielded_transfer_transition`'s
+    // `shielded_bundle_action_count(spends, 2, …)`. ShieldedTransfer is carved with the base
+    // `compute_minimum_shielded_fee`, so reserve against `ShieldedFeeKind::Base`.
+    let (selected_notes, total_input, exact_fee) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        2,
+        ShieldedFeeKind::Base,
+        // `build_shielded_transfer_transition` emits change only when there is some, so an
+        // exact-coverage selection is fundable.
+        ChangeRequirement::Optional,
+    )
+    .await?;
 
     info!(
         account,
@@ -1032,18 +1067,24 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
-        let (state_transition, fee_used) = build_shielded_transfer_transition(
-            spends,
-            &recipient_addr,
-            amount,
-            &change_addr,
-            &keys.full_viewing_key,
-            &keys.spend_auth_key,
-            anchor,
-            prover,
-            memo,
-            sdk.version(),
-        )
+        //
+        // Build + prove runs under the pre-broadcast panic guard, exactly as in `transfer_multi`
+        // (see `catch_pre_broadcast_panic`): a prover panic must release the reservation rather
+        // than unwind past these match arms into the FFI guard's ambiguous contract.
+        let (state_transition, fee_used) = catch_pre_broadcast_panic("transfer", || {
+            build_shielded_transfer_transition(
+                spends,
+                &recipient_addr,
+                amount,
+                &change_addr,
+                &keys.full_viewing_key,
+                &keys.spend_auth_key,
+                anchor,
+                prover,
+                memo,
+                sdk.version(),
+            )
+        })?
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         // The builder's fee and the wallet's reserved `exact_fee` both come from
         // compute_minimum_shielded_fee with the same action count; lock that they agree.
@@ -1140,6 +1181,236 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     }
 }
 
+/// Transfer funds privately from `account`'s shielded notes to
+/// SEVERAL Orchard outputs in one atomic transition (Type 16).
+///
+/// Multi-output sibling of [`transfer`]. Each `(address, amount)` pair becomes its own note —
+/// including when several pairs name the SAME address, which is how one transition funds an
+/// address with more than one note.
+///
+/// `memo` is attached to every recipient note (the change note always carries the empty memo).
+///
+/// # Fee sizing
+///
+/// The bundle publishes `max(spends, recipients + 1, 2)` actions and a `ShieldedTransfer`'s
+/// `value_balance` must equal `compute_minimum_shielded_fee(actions.len())` EXACTLY. Note
+/// selection therefore reserves against `recipients.len() + 1` outputs — the same floor the
+/// builder sizes its fee from — so the reserved and carved fees cannot diverge.
+#[allow(clippy::too_many_arguments)]
+pub async fn transfer_multi<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    outputs: &[(PaymentAddress, u64)],
+    memo: [u8; 36],
+    prover: &P,
+) -> Result<(), PlatformWalletError> {
+    if outputs.is_empty() {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "a multi-output shielded transfer needs at least one recipient output".to_string(),
+        ));
+    }
+
+    let builder_outputs: Vec<ShieldedTransferOutput> = outputs
+        .iter()
+        .map(|(addr, amount)| {
+            Ok(ShieldedTransferOutput {
+                recipient: payment_address_to_orchard(addr)?,
+                amount: *amount,
+                memo,
+            })
+        })
+        .collect::<Result<_, PlatformWalletError>>()?;
+
+    let total_amount = outputs
+        .iter()
+        .try_fold(0u64, |acc, (_, amount)| acc.checked_add(*amount))
+        .ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "multi-output shielded transfer amounts overflow u64".to_string(),
+            )
+        })?;
+
+    let views = keys.viewing_keys();
+    let change_addr = default_orchard_address(&views)?;
+    let id = SubwalletId::new(wallet_id, account);
+
+    // Reserve against the SAME output count the builder sizes its fee from: every recipient
+    // output plus the unconditional change output.
+    //
+    // That change output is unconditional and must carry a positive value, so the builder
+    // rejects `total_input == total_amount + fee`. Selection must therefore demand STRICTLY
+    // more, or a wallet holding e.g. `[total_amount + fee, 1]` would have the exact-coverage
+    // note reserved on its own and the build would fail despite the balance being sufficient.
+    let num_outputs = builder_outputs.len() + 1;
+    let (selected_notes, total_input, exact_fee) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        total_amount,
+        num_outputs,
+        ShieldedFeeKind::Base,
+        ChangeRequirement::StrictlyPositive,
+    )
+    .await?;
+
+    info!(
+        account,
+        credits = total_amount,
+        note_outputs = builder_outputs.len(),
+        fee = exact_fee,
+        inputs = selected_notes.len(),
+        total_input,
+        "Shielded multi-output transfer"
+    );
+
+    let mut pending_entry = None;
+    let result = async {
+        let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        let anchor_bytes = anchor.to_bytes();
+
+        // Build + prove under a pre-broadcast panic guard: a prover panic here must become a
+        // DEFINITIVE error (broadcast provably never happened) so the outer failure arm
+        // releases the reservation — otherwise the panic unwinds to the FFI boundary, which
+        // keeps the (anchor-less) reservation under its ambiguous-outcome contract and no
+        // sync can ever free the notes (`stale_pending_spends` skips unarmed reservations).
+        let (state_transition, fee_used) = catch_pre_broadcast_panic("transfer_multi", || {
+            build_shielded_transfer_transition_multi(
+                spends,
+                &builder_outputs,
+                &change_addr,
+                &keys.full_viewing_key,
+                &keys.spend_auth_key,
+                anchor,
+                prover,
+                sdk.version(),
+            )
+        })?
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        debug_assert_eq!(
+            fee_used, exact_fee,
+            "builder fee must match the reserved minimum fee"
+        );
+
+        // One activity row for the whole transition.
+        //
+        // Kind / amount / counterparty come from the shared
+        // `live_transfer_multi_row` rule (activity.rs): partition the
+        // requested outputs into EXTERNAL payments vs WALLET-OWNED receipts
+        // with this account's `IncomingViewingKey::diversifier_index` — the
+        // same ownership test `coordinator::is_own_orchard_recipient` feeds
+        // the cold-restore deriver — then derive the row from the external
+        // subset only, with the counterparty through the shared
+        // `unanimous_bytes` rule over the canonical 43-byte raw address
+        // encodings. The `live_and_restored_agree_*` parity tests
+        // (activity.rs) run THIS function against the deriver, so the two
+        // paths cannot drift apart silently (#4312 review finding
+        // 379da4cc0ad0).
+        //
+        // The public multi-transfer API accepts ANY valid Orchard address,
+        // including this account's own diversified ones. Without the split,
+        // 10 credits to an external address plus 20 to an own address
+        // recorded live as a 30-credit `Sent` with no counterparty but
+        // restored as a 10-credit `Sent` to the external address, and an
+        // all-own output set recorded live as `Sent` but restored as a
+        // shielded spend.
+        let (kind, amount, counterparty) =
+            live_transfer_multi_row(&views.incoming_viewing_key, outputs, fee_used);
+
+        // No memo is claimed on a row that paid no one: the deriver's
+        // own-only arms record none, and the only credits that left the
+        // pool are the fee.
+        let entry_memo = match kind {
+            ShieldedActivityKind::Sent => non_zero_memo(&memo),
+            _ => None,
+        };
+
+        pending_entry = record_pending_activity(
+            store,
+            persister,
+            wallet_id,
+            id,
+            &views,
+            LiveEntryParams {
+                kind,
+                direction: ShieldedDirection::Out,
+                amount,
+                fee: Some(fee_used),
+                counterparty,
+                memo: entry_memo,
+                actions: shielded_actions(&state_transition),
+                spent_notes: &selected_notes,
+            },
+        )
+        .await;
+        arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
+
+        trace!("Shielded multi-output transfer: state transition built, broadcasting...");
+        broadcast_shielded_spend_with_redrive(
+            sdk,
+            store,
+            id,
+            &pending_entry,
+            anchor_bytes,
+            &selected_notes,
+            &state_transition,
+            "transfer_multi",
+        )
+        .await
+    }
+    .await;
+
+    match result {
+        Ok(()) => {
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                ShieldedActivityStatus::Confirmed,
+                None,
+            )
+            .await;
+            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
+            {
+                warn!(
+                    account,
+                    error = %e,
+                    "Shielded multi-output transfer broadcast succeeded but local spent-state \
+                     update failed; will heal on next sync"
+                );
+            }
+            info!(
+                account,
+                credits = total_amount,
+                "Shielded multi-output transfer broadcast succeeded"
+            );
+            Ok(())
+        }
+        // Ambiguous post-broadcast confirmation failure: leave the reservation (and the Pending
+        // activity row) in place — a later scan flips it to Confirmed (see `unshield`).
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
+        Err(e) => {
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                ShieldedActivityStatus::Failed,
+                None,
+            )
+            .await;
+            cancel_pending(store, id, &selected_notes).await;
+            Err(e)
+        }
+    }
+}
+
 // -------------------------------------------------------------------------
 // Withdraw: shielded pool -> Core L1 address (Type 19)
 // -------------------------------------------------------------------------
@@ -1163,16 +1434,28 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     let id = SubwalletId::new(wallet_id, account);
     let output_script = CoreScript::from_bytes(to_address.script_pubkey().to_bytes());
 
-    // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
-    // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
-    // for 1 would under-fee a single-note transition and the builder would reject it locally.
+    // Reserve against the builder's actual bundle shape: 1 shielded output (the change note —
+    // the withdrawn value leaves the pool as `value_balance`), matching
+    // `build_shielded_withdrawal_transition`'s `shielded_bundle_action_count(spends, 1, …)`.
+    // The selector derives the action count from that shape through the same shared entry
+    // point, so Orchard's 2-action minimum padding comes from the shared layout rule, not a
+    // local floor.
     // ShieldedWithdrawal is carved with `compute_shielded_withdrawal_fee` (the base fee PLUS the
     // flat Core withdrawal-document storage cost), so reserve against
     // `ShieldedFeeKind::Withdrawal` — reserving the base fee here would under-fund the document
     // cost and the builder would reject the spend (and the `fee_used == exact_fee` debug assert
     // below would fire).
-    let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Withdrawal).await?;
+    let (selected_notes, total_input, exact_fee) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        1,
+        ShieldedFeeKind::Withdrawal,
+        // `build_shielded_withdrawal_transition` likewise accepts zero change.
+        ChangeRequirement::Optional,
+    )
+    .await?;
 
     info!(
         account,
@@ -1198,21 +1481,27 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
-        let (state_transition, fee_used) = build_shielded_withdrawal_transition(
-            spends,
-            amount,
-            output_script,
-            core_fee_per_byte,
-            // Consensus pins shielded-withdrawal pooling to Never (validate_structure).
-            Pooling::Never,
-            &change_addr,
-            &keys.full_viewing_key,
-            &keys.spend_auth_key,
-            anchor,
-            prover,
-            [0u8; 36],
-            sdk.version(),
-        )
+        //
+        // Build + prove runs under the pre-broadcast panic guard (see
+        // `catch_pre_broadcast_panic`): a prover panic must release the reservation rather than
+        // unwind past these match arms into the FFI guard's ambiguous contract.
+        let (state_transition, fee_used) = catch_pre_broadcast_panic("withdraw", || {
+            build_shielded_withdrawal_transition(
+                spends,
+                amount,
+                output_script,
+                core_fee_per_byte,
+                // Consensus pins shielded-withdrawal pooling to Never (validate_structure).
+                Pooling::Never,
+                &change_addr,
+                &keys.full_viewing_key,
+                &keys.spend_auth_key,
+                anchor,
+                prover,
+                [0u8; 36],
+                sdk.version(),
+            )
+        })?
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         // The builder's fee and the wallet's reserved `exact_fee` both come from
         // compute_shielded_withdrawal_fee with the same action count; lock that they agree.
@@ -1362,9 +1651,12 @@ where
     // Exact-equality model: reserve notes covering the denomination itself (NOT denomination + fee
     // — the fee is metered FROM the denomination at execution). The reservation also gates on
     // `denomination > predicted_fee` so the new identity can't be created with a non-positive
-    // balance. Orchard's BundleType::DEFAULT pads single-spend bundles to a 2-action floor.
+    // balance. The bundle shape is 1 shielded output (the change note — the denomination leaves
+    // the pool as `value_balance`), matching the builder's
+    // `shielded_bundle_action_count(spends, 1, …)`; Orchard's 2-action minimum padding comes
+    // from that shared layout rule.
     let (selected_notes, total_input, predicted_fee) =
-        reserve_unspent_notes_for_denomination(sdk, store, id, denomination, 2, num_keys).await?;
+        reserve_unspent_notes_for_denomination(sdk, store, id, denomination, 1, num_keys).await?;
 
     info!(
         account,
@@ -1401,21 +1693,32 @@ where
         // this anchor is pruned from Platform's recorded set.
         let anchor_bytes = anchor.to_bytes();
 
-        let build = build_identity_create_from_shielded_pool_transition(
-            public_keys,
-            denomination,
-            send_to_address_on_creation_failure,
-            spends,
-            &change_addr,
-            &keys.full_viewing_key,
-            &keys.spend_auth_key,
-            anchor,
-            prover,
-            identity_signer,
-            [0u8; 36],
-            sdk.version(),
+        // Build + prove runs under the ASYNC pre-broadcast panic guard (see
+        // `catch_pre_broadcast_panic_async`). This builder is a future — it awaits the per-key
+        // proof-of-possession signer, which on a host build is a foreign callback — but it still
+        // runs strictly before the broadcast below, so a panic on any of its polls is provably
+        // pre-broadcast and must become a DEFINITIVE error the outer failure arm releases the
+        // reservation on, rather than unwinding past these match arms into the FFI guard's
+        // ambiguous contract (which strands the anchor-less reservation for the process
+        // lifetime).
+        let build = catch_pre_broadcast_panic_async(
+            "identity_create",
+            build_identity_create_from_shielded_pool_transition(
+                public_keys,
+                denomination,
+                send_to_address_on_creation_failure,
+                spends,
+                &change_addr,
+                &keys.full_viewing_key,
+                &keys.spend_auth_key,
+                anchor,
+                prover,
+                identity_signer,
+                [0u8; 36],
+                sdk.version(),
+            ),
         )
-        .await
+        .await?
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
         let identity_id = build.identity_id;
@@ -2018,6 +2321,11 @@ async fn mark_notes_spent<S: ShieldedStore>(
 /// Callers must pair this with [`finalize_pending`] (on
 /// broadcast success) or [`cancel_pending`] (on failure) so the
 /// reservation is always released.
+///
+/// `outputs` is the number of shielded outputs the builder will
+/// publish, INCLUDING its change output — the bundle shape
+/// [`select_notes_with_fee`] prices the fee from via the shared
+/// `shielded_bundle_action_count` layout rule.
 async fn reserve_unspent_notes<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -2025,13 +2333,15 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
     amount: u64,
     outputs: usize,
     fee_kind: ShieldedFeeKind,
+    change: ChangeRequirement,
 ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
     let mut store = store.write().await;
     let unspent = store
         .get_unspent_notes(id)
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
     let (selected, total_input, exact_fee) =
-        select_notes_with_fee(&unspent, amount, outputs, fee_kind, sdk.version())?.into_owned();
+        select_notes_with_fee(&unspent, amount, outputs, fee_kind, change, sdk.version())?
+            .into_owned();
     for note in &selected {
         store
             .mark_pending(id, &note.nullifier)
@@ -2051,7 +2361,7 @@ async fn reserve_unspent_notes_for_denomination<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     denomination: u64,
-    min_actions: usize,
+    num_outputs: usize,
     num_keys: usize,
 ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
     let mut store = store.write().await;
@@ -2061,7 +2371,7 @@ async fn reserve_unspent_notes_for_denomination<S: ShieldedStore>(
     let (selected, total_input, predicted_fee) = select_notes_for_denomination(
         &unspent,
         denomination,
-        min_actions,
+        num_outputs,
         num_keys,
         sdk.version(),
     )?
@@ -2105,6 +2415,72 @@ async fn cancel_pending<S: ShieldedStore>(
             );
         }
     }
+}
+
+/// Run a synchronous build/prove `step` that executes strictly BEFORE any broadcast,
+/// converting a panic into a definitive [`PlatformWalletError::ShieldedBuildError`].
+///
+/// Why: a panic that unwinds out of an operation skips its `match result` arms, so
+/// `cancel_pending` never runs and the FFI boundary's panic guard has no choice but the
+/// conservative ambiguous contract ("the spend may have broadcast — keep the reservation").
+/// For a reservation that was never armed with an anchor that contract is a trap:
+/// `stale_pending_spends` skips anchor-less reservations, so no later sync can release the
+/// notes — they stay unselectable for the rest of the process lifetime, and the host is
+/// explicitly told not to retry. A panic INSIDE the build/prove step, by contrast, is
+/// provably pre-broadcast (the broadcast call sits strictly after it in the same operation),
+/// so it is safe — and required — to convert it to a definitive error here, while the
+/// operation still owns the selected notes: the operation's ordinary failure arm then
+/// releases the reservation via `cancel_pending`. Panics during or after broadcast are NOT
+/// caught by this helper; those remain genuinely ambiguous and keep the FFI guard's
+/// conservative contract.
+fn catch_pre_broadcast_panic<T>(
+    operation: &'static str,
+    step: impl FnOnce() -> T,
+) -> Result<T, PlatformWalletError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(step))
+        .map_err(|payload| pre_broadcast_panic_error(operation, payload))
+}
+
+/// `async` sibling of [`catch_pre_broadcast_panic`] for an operation whose build/prove step is a
+/// future (`identity_create_from_shielded_pool`, whose builder awaits the per-key
+/// proof-of-possession signer).
+///
+/// Same contract, same conversion — only the shape of the guarded step differs. `catch_unwind`
+/// cannot wrap a future's *polls* from the outside, so this drives the future through
+/// `FutureExt::catch_unwind`, which applies the guard to every poll: a panic raised on any poll
+/// of the builder (Halo 2 synthesis, note bookkeeping, a host signer callback) is caught while
+/// the operation still owns the reservation. `AssertUnwindSafe` is the same assertion the
+/// synchronous guard makes and is sound for the same reason: the caught panic is converted into
+/// a definitive error whose failure arm RELEASES the shared state (the reservation) rather than
+/// continuing to use it.
+async fn catch_pre_broadcast_panic_async<T>(
+    operation: &'static str,
+    step: impl std::future::Future<Output = T>,
+) -> Result<T, PlatformWalletError> {
+    use futures::FutureExt;
+
+    std::panic::AssertUnwindSafe(step)
+        .catch_unwind()
+        .await
+        .map_err(|payload| pre_broadcast_panic_error(operation, payload))
+}
+
+/// The single panic-payload -> definitive-error conversion both pre-broadcast guards funnel
+/// through, so the synchronous and asynchronous entry points cannot drift in the error they
+/// produce (both must stay a `ShieldedBuildError`, the class
+/// [`error_releases_note_reservation`] releases on).
+fn pre_broadcast_panic_error(
+    operation: &'static str,
+    payload: Box<dyn std::any::Any + Send>,
+) -> PlatformWalletError {
+    let message = payload
+        .downcast_ref::<&str>()
+        .map(|s| (*s).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "non-string panic payload".to_string());
+    PlatformWalletError::ShieldedBuildError(format!(
+        "{operation}: build/prove panicked before broadcast: {message}"
+    ))
 }
 
 /// Record the recorded `anchor` the spend was built against and the
@@ -3162,6 +3538,451 @@ mod note_reservation_release_tests {
                 "{e:?} must release the note reservation"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod pre_broadcast_panic_guard_tests {
+    use super::*;
+    use crate::wallet::shielded::store::InMemoryShieldedStore;
+
+    /// A panic inside the guarded build/prove step becomes a DEFINITIVE `ShieldedBuildError`
+    /// carrying the operation and the panic message — the class of error whose failure arm
+    /// releases the note reservation (see `error_releases_note_reservation`).
+    #[test]
+    fn prover_panic_maps_to_a_releasing_build_error() {
+        let err = catch_pre_broadcast_panic::<()>("transfer_multi", || {
+            panic!("halo2 constraint system failure")
+        })
+        .expect_err("a panicking step must surface as an error");
+        match &err {
+            PlatformWalletError::ShieldedBuildError(m) => {
+                assert!(m.contains("transfer_multi"), "missing operation: {m}");
+                assert!(
+                    m.contains("halo2 constraint system failure"),
+                    "missing panic message: {m}"
+                );
+                assert!(m.contains("before broadcast"), "missing provenance: {m}");
+            }
+            other => panic!("expected ShieldedBuildError, got: {other:?}"),
+        }
+        assert!(
+            error_releases_note_reservation(&err),
+            "the converted error must be one that RELEASES the reservation — the whole point \
+             of catching pre-broadcast"
+        );
+    }
+
+    /// Owned-String panic payloads (`panic!("{x}")` formatting) are preserved too.
+    #[test]
+    fn string_panic_payloads_are_preserved() {
+        let position = 7u64;
+        let err = catch_pre_broadcast_panic::<()>("transfer_multi", || {
+            panic!("witness for position {position} out of range")
+        })
+        .expect_err("a panicking step must surface as an error");
+        match err {
+            PlatformWalletError::ShieldedBuildError(m) => {
+                assert!(m.contains("witness for position 7"), "got: {m}");
+            }
+            other => panic!("expected ShieldedBuildError, got: {other:?}"),
+        }
+    }
+
+    /// A non-panicking step passes its value through untouched.
+    #[test]
+    fn success_passes_through() {
+        let out = catch_pre_broadcast_panic("transfer_multi", || 41 + 1)
+            .expect("a non-panicking step must succeed");
+        assert_eq!(out, 42);
+    }
+
+    /// End of the chain the guard exists for: once the definitive error reaches the operation's
+    /// failure arm, `cancel_pending` releases the reservation and the notes are SELECTABLE
+    /// again — unlike the unwinding path, where the anchor-less reservation was unreleasable
+    /// for the process lifetime (`stale_pending_spends` skips unarmed reservations).
+    #[tokio::test]
+    async fn cancel_pending_makes_reserved_notes_selectable_again() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([0xEE; 32], 0);
+        let note = ShieldedNote {
+            position: 0,
+            cmx: [1u8; 32],
+            nullifier: [2u8; 32],
+            block_height: 10,
+            is_spent: false,
+            value: 5_000,
+            note_data: vec![0u8; 115],
+        };
+        {
+            let mut s = store.write().await;
+            s.save_note(id, &note).unwrap();
+            s.mark_pending(id, &note.nullifier).unwrap();
+            assert!(
+                s.get_unspent_notes(id).unwrap().is_empty(),
+                "a reserved note must be excluded from selection"
+            );
+        }
+
+        cancel_pending(&store, id, std::slice::from_ref(&note)).await;
+
+        let unspent = store.read().await.get_unspent_notes(id).unwrap();
+        assert_eq!(
+            unspent.len(),
+            1,
+            "a cancelled reservation must make the note selectable again"
+        );
+    }
+}
+
+/// OPERATION-level coverage for the pre-broadcast panic guard: every note-spending operation is
+/// driven for real with a prover that panics, and the notes it reserved must be selectable again
+/// by the time it returns.
+///
+/// The helper-level tests above pin the conversion; these pin that each operation actually
+/// APPLIES it. They run the real `transfer` / `unshield` / `withdraw` /
+/// `identity_create_from_shielded_pool` bodies over a real SQLite commitment tree — so note
+/// selection, the anchor probe and the builder all execute for real — with only the recorded-
+/// anchor fetch served by the mock SDK. Before the guard was extended to these four paths the
+/// prover panic unwound straight out of the operation, skipping the failure arm that calls
+/// `cancel_pending`, and each test here failed with that panic instead of an error; the
+/// reservation left behind was never armed with an anchor, which `stale_pending_spends` skips,
+/// so nothing could release it for the rest of the process lifetime.
+#[cfg(test)]
+mod operation_pre_broadcast_panic_tests {
+    use super::*;
+    use crate::wallet::shielded::file_store::FileBackedShieldedStore;
+    use dash_sdk::query_types::{NoParamQuery, ShieldedAnchors};
+    use dashcore::Network;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use grovedb_commitment_tree::{
+        ExtractedNoteCommitment, Note, NoteValue, ProvingKey, RandomSeed, Rho,
+    };
+
+    const WALLET_ID: WalletId = [0x5A; 32];
+    const ACCOUNT: u32 = 0;
+    /// 0.6 DASH in credits — comfortably above every amount + fee exercised below, and above
+    /// the identity-create denomination, so note selection always succeeds and the operations
+    /// reach their build/prove step.
+    const NOTE_VALUE: u64 = 60_000_000_000;
+    /// 0.1 DASH in credits: a member of the versioned exit-denomination set.
+    const DENOMINATION: u64 = 10_000_000_000;
+
+    /// An `OrchardProver` whose proving-key access panics.
+    ///
+    /// This is the faithful injection point: `prove_and_sign_bundle` evaluates
+    /// `prover.proving_key()` after `Builder::build` has fixed the action set and before
+    /// `create_proof` — i.e. deep inside the guarded build/prove step and strictly before every
+    /// one of these operations broadcasts anything.
+    struct PanicProver;
+
+    impl dpp::shielded::builder::OrchardProver for PanicProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("halo2 proving key unavailable")
+        }
+    }
+
+    /// Fixed 65-byte proof-of-possession stub for the identity-create key set. The builder
+    /// fills (and never verifies) these signatures, and the panic fires before the signing loop
+    /// is reached anyway.
+    #[derive(Debug)]
+    struct DummyIdentitySigner;
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for DummyIdentitySigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, dpp::ProtocolError> {
+            Ok(BinaryData::new(vec![0u8; 65]))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+            Err(dpp::ProtocolError::ShieldedBuildError(
+                "identity PoP signer never creates address witnesses".to_string(),
+            ))
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    /// One AUTHENTICATION/MASTER ECDSA key in both forms the identity-create builder takes.
+    fn key_pair() -> (IdentityPublicKey, IdentityPublicKeyInCreation) {
+        let public = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0xAB; 33]),
+            disabled_at: None,
+        });
+        let in_creation = IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+            id: 0,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            read_only: false,
+            data: BinaryData::new(vec![0xAB; 33]),
+            signature: BinaryData::new(vec![]),
+        });
+        (public, in_creation)
+    }
+
+    /// Serialize an Orchard note into the 115-byte store form.
+    ///
+    /// Mirrors `sync.rs`'s `serialize_note` (private to that module); [`deserialize_note`] is
+    /// the parser the operations run it back through, and `fixture` asserts the round trip so
+    /// this copy cannot drift from the canonical layout undetected.
+    fn serialize_note(note: &Note) -> Vec<u8> {
+        let mut data = Vec::with_capacity(115);
+        data.extend_from_slice(&note.recipient().to_raw_address_bytes());
+        data.extend_from_slice(&note.value().inner().to_le_bytes());
+        data.extend_from_slice(&note.rho().to_bytes());
+        data.extend_from_slice(note.rseed().as_bytes());
+        data
+    }
+
+    /// Unique temp path for a test tree (no `tempfile` dev-dep — the convention `file_store`'s
+    /// own tests use).
+    fn temp_tree_path(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after the unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("shielded_panic_guard_{tag}_{nanos}.sqlite"))
+    }
+
+    /// A wallet holding exactly one real, witnessable note over a real SQLite commitment tree,
+    /// with the mock SDK serving that tree's own root as the single recorded anchor — everything
+    /// the operations need to get past note selection and the anchor probe and into build/prove.
+    struct Fixture {
+        sdk: Arc<dash_sdk::Sdk>,
+        store: Arc<RwLock<FileBackedShieldedStore>>,
+        keys: OrchardKeySet,
+        id: SubwalletId,
+        path: std::path::PathBuf,
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    async fn fixture(tag: &str) -> Fixture {
+        let keys = OrchardKeySet::from_seed(&[0x42u8; 32], Network::Testnet, ACCOUNT)
+            .expect("ZIP-32 derivation from a fixed seed should succeed");
+        let id = SubwalletId::new(WALLET_ID, ACCOUNT);
+
+        // A real Orchard note paying this account's own default address, so the builders'
+        // `add_spend` accepts it under `keys.full_viewing_key`.
+        let rho: Rho =
+            Option::from(Rho::from_bytes(&[0u8; 32])).expect("zero is a valid pallas::Base");
+        let rseed: RandomSeed =
+            Option::from(RandomSeed::from_bytes([1u8; 32], &rho)).expect("valid random seed");
+        let note: Note = Option::from(Note::from_parts(
+            keys.default_address,
+            NoteValue::from_raw(NOTE_VALUE),
+            rho,
+            rseed,
+        ))
+        .expect("note commitment should be valid");
+
+        let cmx = ExtractedNoteCommitment::from(note.commitment());
+        let note_data = serialize_note(&note);
+        assert!(
+            deserialize_note(&note_data).is_some(),
+            "the test note serialization must round-trip through the parser the operations use"
+        );
+
+        let path = temp_tree_path(tag);
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open test tree");
+        store
+            .append_commitment(&cmx.to_bytes(), true)
+            .expect("append the note commitment");
+        store.checkpoint_tree(1).expect("checkpoint the tree");
+        store
+            .save_note(
+                id,
+                &ShieldedNote {
+                    position: 0,
+                    cmx: cmx.to_bytes(),
+                    nullifier: note.nullifier(&keys.full_viewing_key).to_bytes(),
+                    block_height: 1,
+                    is_spent: false,
+                    value: NOTE_VALUE,
+                    note_data,
+                },
+            )
+            .expect("save the note");
+
+        // The anchor each operation derives is the root the note's OWN witness computes
+        // (`select_recorded_spends`), so serve exactly that as the recorded set — otherwise the
+        // probe fails with `ShieldedNoRecordedAnchor` long before the prover is reached.
+        let witness = store
+            .witness_at_depth(0, 0)
+            .expect("witness query should succeed")
+            .expect("a marked, checkpointed note must be witnessable at depth 0");
+        let anchor = witness.root(cmx).to_bytes();
+
+        // Pin the newest protocol version: an unpinned mock seeds at its network's protocol
+        // FLOOR, whose `shielded_identity_create_denominations` set is still empty, so
+        // identity-create would be rejected on the denomination long before the prover ran.
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("mock sdk should build");
+        sdk.mock()
+            .expect_fetch::<ShieldedAnchors, NoParamQuery>(
+                NoParamQuery {},
+                Some(ShieldedAnchors(vec![anchor])),
+            )
+            .await
+            .expect("recorded-anchor expectation should register");
+
+        Fixture {
+            sdk: Arc::new(sdk),
+            store: Arc::new(RwLock::new(store)),
+            keys,
+            id,
+            path,
+        }
+    }
+
+    /// The shared assertion: the prover panic surfaced as a DEFINITIVE, reservation-releasing
+    /// error naming this operation, and the note it had reserved is selectable again.
+    async fn assert_panic_released_the_reservation<T: std::fmt::Debug>(
+        fx: &Fixture,
+        result: Result<T, PlatformWalletError>,
+        operation: &str,
+    ) {
+        let err = result.expect_err("a panicking prover must surface as an error, not a value");
+        match &err {
+            PlatformWalletError::ShieldedBuildError(m) => {
+                assert!(m.contains(operation), "error must name the operation: {m}");
+                assert!(
+                    m.contains("before broadcast"),
+                    "error must record that the panic was provably pre-broadcast: {m}"
+                );
+                assert!(
+                    m.contains("halo2 proving key unavailable"),
+                    "error must carry the prover's panic message — otherwise the build failed \
+                     before the prover was ever reached and this test proves nothing: {m}"
+                );
+            }
+            other => panic!("expected a definitive ShieldedBuildError, got {other:?}"),
+        }
+        assert!(
+            error_releases_note_reservation(&err),
+            "the converted error must be one whose failure arm releases the reservation"
+        );
+
+        let unspent = fx
+            .store
+            .read()
+            .await
+            .get_unspent_notes(fx.id)
+            .expect("unspent notes");
+        assert_eq!(
+            unspent.len(),
+            1,
+            "the reserved note must be SELECTABLE again after a pre-broadcast prover panic: the \
+             reservation was never armed with an anchor, and `stale_pending_spends` skips \
+             anchor-less entries, so if the operation does not release it here nothing ever can"
+        );
+    }
+
+    #[tokio::test]
+    async fn transfer_prover_panic_releases_the_note_reservation() {
+        let fx = fixture("transfer").await;
+        let recipient = fx.keys.default_address;
+        let result = transfer(
+            &fx.sdk,
+            &fx.store,
+            None,
+            WALLET_ID,
+            &fx.keys,
+            ACCOUNT,
+            &recipient,
+            1_000_000_000,
+            [0u8; 36],
+            &PanicProver,
+        )
+        .await;
+        assert_panic_released_the_reservation(&fx, result, "transfer").await;
+    }
+
+    #[tokio::test]
+    async fn unshield_prover_panic_releases_the_note_reservation() {
+        let fx = fixture("unshield").await;
+        let result = unshield(
+            &fx.sdk,
+            &fx.store,
+            None,
+            WALLET_ID,
+            &fx.keys,
+            ACCOUNT,
+            &PlatformAddress::P2pkh([0xCD; 20]),
+            1_000_000_000,
+            &PanicProver,
+        )
+        .await;
+        assert_panic_released_the_reservation(&fx, result, "unshield").await;
+    }
+
+    #[tokio::test]
+    async fn withdraw_prover_panic_releases_the_note_reservation() {
+        let fx = fixture("withdraw").await;
+        let to = dashcore::Address::dummy(Network::Testnet, 42);
+        let result = withdraw(
+            &fx.sdk,
+            &fx.store,
+            None,
+            WALLET_ID,
+            &fx.keys,
+            ACCOUNT,
+            &to,
+            1_000_000_000,
+            1,
+            &PanicProver,
+        )
+        .await;
+        assert_panic_released_the_reservation(&fx, result, "withdraw").await;
+    }
+
+    /// The async sibling: identity-create's builder is a future, so its panic is caught by
+    /// `catch_pre_broadcast_panic_async` rather than the synchronous guard. Same contract.
+    #[tokio::test]
+    async fn identity_create_prover_panic_releases_the_note_reservation() {
+        let fx = fixture("identity_create").await;
+        let result = identity_create_from_shielded_pool(
+            &fx.sdk,
+            &fx.store,
+            None,
+            WALLET_ID,
+            &fx.keys,
+            ACCOUNT,
+            vec![key_pair()],
+            DENOMINATION,
+            PlatformAddress::P2pkh([0xCD; 20]),
+            &DummyIdentitySigner,
+            &PanicProver,
+        )
+        .await;
+        assert_panic_released_the_reservation(&fx, result, "identity_create").await;
     }
 }
 

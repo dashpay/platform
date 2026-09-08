@@ -21,7 +21,10 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
-use super::{build_spend_bundle_with, serialize_authorized_bundle, OrchardProver, SpendableNote};
+use super::{
+    build_spend_bundle_with, serialize_authorized_bundle, serialized_envelope_bytes,
+    shielded_bundle_action_count, OrchardProver, SpendableNote, PER_KEY_SIGNATURE_ALLOWANCE_BYTES,
+};
 
 /// Output of [`build_identity_create_from_shielded_pool_transition`]: everything the SDK's
 /// `IdentityCreateFromShieldedPool::identity_create_from_shielded_pool` broadcast helper needs.
@@ -158,7 +161,24 @@ where
     // Orchard's BundleType::DEFAULT pads single-spend bundles to a 2-action minimum, matching the
     // other spend-side builders. The fee predictor is only informational here (the metered fee at
     // execution is authoritative); we report it so the caller's reservation math lines up.
-    let num_actions = spends.len().max(2);
+    //
+    // Routed through the shared predictor (1 shielded output — the change note), which is
+    // numerically `spends.len().max(2)` AND enforces both consensus ceilings (the structural
+    // action cap and the transition-size-derived one) BEFORE the ~30 s Halo 2 proof. The size
+    // side must price THIS transition's variable key set: up to six identity keys ride the
+    // envelope, and at gate time their PoP `signature` fields are still empty — so add a
+    // per-key allowance for the largest signature a key type can carry (BLS, 96 bytes, plus
+    // its length prefix), keeping the estimate conservative rather than optimistic.
+    let key_set_envelope_bytes = serialized_envelope_bytes(
+        &public_keys
+            .iter()
+            .map(|(_, c)| c.clone())
+            .collect::<Vec<IdentityPublicKeyInCreation>>(),
+        "the identity key set",
+    )?
+    .saturating_add(public_keys.len() as u64 * PER_KEY_SIGNATURE_ALLOWANCE_BYTES);
+    let num_actions =
+        shielded_bundle_action_count(spends.len(), 1, key_set_envelope_bytes, platform_version)?;
     let fee =
         compute_shielded_identity_create_fee(num_actions, public_keys.len(), platform_version)?;
 
@@ -351,6 +371,64 @@ mod tests {
     /// 0.1 DASH in credits — the smallest member of the versioned exit-denomination set.
     const DENOMINATION: u64 = 10_000_000_000;
 
+    /// The identity-create gate must price its variable key set into the size
+    /// budget (#4312 review finding e90e9cf15f52): a maximal six-key set —
+    /// measured pre-PoP-signing plus the per-key signature allowance — is a
+    /// real envelope cost, and at current constants the padded two-action
+    /// claim shape must still clear the gate with it (a maximal key set must
+    /// not brick identity creation; it only tightens how many spends fit).
+    #[test]
+    fn identity_key_set_envelope_is_priced_into_the_gate() {
+        use crate::shielded::builder::{
+            serialized_envelope_bytes, shielded_bundle_action_count,
+            PER_KEY_SIGNATURE_ALLOWANCE_BYTES,
+        };
+        use crate::shielded::{
+            max_shielded_actions_for_envelope, max_shielded_actions_per_transition,
+        };
+
+        let platform_version = PlatformVersion::latest();
+        let baseline = max_shielded_actions_per_transition(platform_version);
+
+        // Six keys — the identity-create maximum the finding names.
+        let keys: Vec<IdentityPublicKeyInCreation> = (0..6u32).map(|id| key_pair(id).1).collect();
+        let measured =
+            serialized_envelope_bytes(&keys, "the identity key set").expect("measurable key set");
+        let envelope = measured + keys.len() as u64 * PER_KEY_SIGNATURE_ALLOWANCE_BYTES;
+        assert!(
+            measured > 0,
+            "a six-key set must have a nonzero serialized envelope"
+        );
+
+        let ceiling = max_shielded_actions_for_envelope(platform_version, envelope);
+        assert!(
+            (2..=baseline).contains(&ceiling),
+            "a six-key envelope ({envelope} bytes) must leave at least the padded 2-action \
+             claim shape and never exceed the baseline ceiling {baseline}, got {ceiling}"
+        );
+
+        // The padded single-spend claim (2 actions on the wire) must pass the
+        // gate under the maximal key set.
+        let num_actions = shielded_bundle_action_count(1, 1, envelope, platform_version)
+            .expect("the padded 2-action identity create must clear the gate with six keys");
+        assert_eq!(num_actions, 2);
+
+        // A spend-fragmented claim at the BASELINE ceiling must be rejected
+        // once the key envelope eats the slack — or accepted if the envelope
+        // still fits; either way the gate's verdict must match the derived
+        // ceiling exactly (no drift between the gate and the derivation).
+        match shielded_bundle_action_count(baseline, 1, envelope, platform_version) {
+            Ok(n) => {
+                assert_eq!(n, baseline);
+                assert_eq!(ceiling, baseline);
+            }
+            Err(e) => {
+                assert!(ceiling < baseline, "rejection requires a tightened ceiling");
+                assert!(e.to_string().contains("max_state_transition_size"));
+            }
+        }
+    }
+
     /// The padded-bundle regression test for the dummy-nullifier bug: a SINGLE-spend bundle is
     /// padded by `BundleType::DEFAULT` to the 2-action minimum, and the padding action's random
     /// dummy nullifier is published on the wire. The identity id MUST be derived from the FULL
@@ -413,6 +491,13 @@ mod tests {
             result.identity_id,
             identity_id_from_nullifiers(&[real_nullifier]),
             "the padding action's dummy nullifier must participate in the id derivation"
+        );
+        // …which is precisely what `shielded_identity_id_is_reproducible` reports: with one real
+        // spend the published set contains fresh randomness, so the id cannot be re-derived
+        // offline (a retry would build a different dummy and thus a different id).
+        assert!(
+            !crate::state_transition::identity_create_from_shielded_pool_transition::shielded_identity_id_is_reproducible(1),
+            "a single-spend bundle is padded, so its id must be reported as NOT reproducible"
         );
         assert!(
             result.predicted_fee < DENOMINATION,
@@ -496,6 +581,13 @@ mod tests {
             result.identity_id,
             identity_id_from_nullifiers(&[nf_a, nf_b]),
             "with no padding, the published set is exactly the real spends' nullifiers"
+        );
+        // …which is precisely what `shielded_identity_id_is_reproducible` reports: with two real
+        // spends no padding is added, so the id is a pure function of the spent notes and a retry
+        // re-derives the SAME id. This is the property two-note funding buys.
+        assert!(
+            crate::state_transition::identity_create_from_shielded_pool_transition::shielded_identity_id_is_reproducible(2),
+            "a two-spend bundle needs no padding, so its id must be reported as reproducible"
         );
     }
 }

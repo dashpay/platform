@@ -41,6 +41,8 @@
 
 use std::collections::BTreeMap;
 
+use grovedb_commitment_tree::{IncomingViewingKey, PaymentAddress};
+
 use crate::wallet::shielded::store::{ShieldedNote, ShieldedOutgoingNote};
 
 /// How an entry's net direction reads relative to the wallet.
@@ -385,9 +387,13 @@ fn cluster_events(input: &ScanDeriveInput) -> BTreeMap<u64, HeightCluster> {
 /// Classification (client-side only — Option B), in priority order:
 /// - cluster has OVK outgoing note(s) to a NON-own address → [`Sent`]
 ///   (counterparty / value / memo from the outgoing notes; own receipts
-///   are the change and excluded from the amount). When the rho linkage
-///   (see [`note_rho`]) identifies the consumed note(s), the exact fee
-///   (spent − sent − change) is recovered too.
+///   are the change and excluded from the amount). The amount is the SUM
+///   over every external output, so a multi-output transfer yields one
+///   aggregate row; its `counterparty` / `memo` are filled only when all
+///   those outputs agree (see [`unanimous_bytes`]), matching the live
+///   `transfer_multi` recorder. When the rho linkage (see [`note_rho`])
+///   identifies the consumed note(s), the exact fee (spent − sent −
+///   change) is recovered too.
 /// - rho-linked cluster with no external recipient → [`ShieldedSpend`]
 ///   with direction `Out` and the exact amount that left the pool
 ///   (spent − change). This is provably our own spend (unshield /
@@ -552,12 +558,23 @@ pub fn derive_activity_from_scan_data(
         }
         let change_total: u64 = cluster.received.iter().map(|n| n.value).sum();
 
-        let entry = if let Some(send) = external.first() {
+        let entry = if !external.is_empty() {
             // SENT: at least one outgoing note to an address we don't own.
             // Amount = sum of external sends; own receipts in the cluster
             // are the change and are excluded. When the rho linkage
             // identified the consumed note(s), the exact fee falls out:
             // spent − sent − change.
+            //
+            // A multi-output transfer (Type 16 paying several recipients
+            // in one transition) restores as ONE such cluster, so
+            // `counterparty` and `memo` go through the shared
+            // [`unanimous_bytes`] rule: recorded only when every external
+            // output agrees, `None` otherwise. That is the same rule the
+            // live `transfer_multi` recorder applies — literally the same
+            // function — so a restored row names a recipient exactly when
+            // the live row would. Copying `external.first()` here instead
+            // would pin the whole aggregate amount on one of several
+            // distinct recipients.
             let amount: u64 = external.iter().map(|o| o.value).sum();
             let fee = (!linked_nullifiers.is_empty())
                 .then(|| {
@@ -572,8 +589,9 @@ pub fn derive_activity_from_scan_data(
                 direction: ShieldedDirection::Out,
                 amount,
                 fee,
-                counterparty: Some(send.recipient.clone()),
-                memo: non_zero_memo(&send.memo),
+                counterparty: unanimous_bytes(external.iter().map(|o| o.recipient.as_slice())),
+                memo: unanimous_bytes(external.iter().map(|o| o.memo.as_slice()))
+                    .and_then(|m| non_zero_memo(&m)),
                 block_height: None,
                 status: ShieldedActivityStatus::Confirmed,
                 created_at_ms: 0,
@@ -673,6 +691,36 @@ pub fn derive_activity_from_scan_data(
     out
 }
 
+/// Collapse a transfer's per-output byte values into the ONE value that
+/// describes the whole transfer, or `None` when the outputs disagree.
+///
+/// A shielded transfer publishes exactly one activity row per
+/// transition — the row's id is `sha256(sorted visible output cmxs)`
+/// over the WHOLE cluster, so per-recipient rows could never dedupe
+/// against the live row and a rescan would double-count. That single
+/// row's scalar fields (`counterparty`, `memo`) are therefore only
+/// meaningful when EVERY external output agrees on them: the
+/// fund-one-address-with-N-notes shape. When they disagree there is no
+/// honest single answer, and picking one output's value would attribute
+/// the full aggregate amount to one of several distinct recipients.
+/// "The first one" is not even a stable choice — Orchard's builder
+/// shuffles outputs before pairing them into actions, so the winner
+/// varies per build (and, on the restore path, per scan order).
+///
+/// Both the live recorder (`transfer_multi`) and the cold-restore
+/// deriver ([`derive_activity_from_scan_data`]) route their
+/// `counterparty` through this one function over the same canonical
+/// 43-byte raw address encoding, so the two paths reach an identical
+/// verdict for a given transition by construction rather than by two
+/// copies of the rule agreeing.
+///
+/// Returns `None` for an empty iterator (no outputs, nothing to name).
+pub(crate) fn unanimous_bytes<'a>(values: impl IntoIterator<Item = &'a [u8]>) -> Option<Vec<u8>> {
+    let mut values = values.into_iter();
+    let first = values.next()?;
+    values.all(|v| v == first).then(|| first.to_vec())
+}
+
 /// Return `Some(memo)` when `memo` is non-empty and not all-zero;
 /// `None` otherwise. A zero-filled 36-byte `DashMemo` is the "no memo"
 /// sentinel and shouldn't surface as an attached memo.
@@ -681,6 +729,54 @@ pub(crate) fn non_zero_memo(memo: &[u8]) -> Option<Vec<u8>> {
         None
     } else {
         Some(memo.to_vec())
+    }
+}
+
+/// The live `transfer_multi` activity ROW: classify ONE multi-output
+/// shielded transfer's requested `(recipient, amount)` outputs into the
+/// `(kind, amount, counterparty)` the live recorder writes.
+///
+/// Partition the outputs into EXTERNAL payments vs WALLET-OWNED
+/// receipts by testing each recipient against the account's
+/// `IncomingViewingKey::diversifier_index` — Orchard addresses are
+/// diversified, so a fixed-address comparison cannot work; this is the
+/// same ownership test `coordinator::is_own_orchard_recipient` uses to
+/// build the deriver's own-address set — then derive the row from the
+/// external subset only:
+///
+/// - No external output: nothing was paid to anyone, only the fee left
+///   the pool → (`ShieldedSpend`, `fee`, no counterparty). Mirrors the
+///   deriver's all-own arm, which has no external recipient to
+///   aggregate and can never classify the cluster as `Sent`.
+/// - Otherwise → (`Sent`, sum of the external amounts, counterparty by
+///   the shared [`unanimous_bytes`] rule over the external recipients'
+///   canonical 43-byte raw encodings — the exact form the deriver
+///   recovers from the OVK-decrypted outgoing notes).
+///
+/// `operations::transfer_multi` records its live row through THIS
+/// function, and the `live_and_restored_agree_*` parity tests below run
+/// the same function against [`derive_activity_from_scan_data`] — so
+/// the parity those tests prove binds the production code path, not a
+/// test-local restatement of it (#4312 review finding 379da4cc0ad0).
+pub(crate) fn live_transfer_multi_row(
+    ivk: &IncomingViewingKey,
+    outputs: &[(PaymentAddress, u64)],
+    fee: u64,
+) -> (ShieldedActivityKind, u64, Option<Vec<u8>>) {
+    let external: Vec<&(PaymentAddress, u64)> = outputs
+        .iter()
+        .filter(|(recipient, _)| ivk.diversifier_index(recipient).is_none())
+        .collect();
+    if external.is_empty() {
+        (ShieldedActivityKind::ShieldedSpend, fee, None)
+    } else {
+        let amount = external.iter().map(|(_, amount)| *amount).sum();
+        let recipients: Vec<Vec<u8>> = external
+            .iter()
+            .map(|(recipient, _)| recipient.to_raw_address_bytes().to_vec())
+            .collect();
+        let counterparty = unanimous_bytes(recipients.iter().map(|r| r.as_slice()));
+        (ShieldedActivityKind::Sent, amount, counterparty)
     }
 }
 
@@ -925,6 +1021,320 @@ mod tests {
         assert_eq!(d[0].amount, 750);
         assert_eq!(d[0].counterparty.as_deref(), Some(addr(0xEE).as_slice()));
         assert_eq!(d[0].memo, Some(memo));
+    }
+
+    // ── multi-output transfers on the restore path ─────────────────
+
+    /// The live `transfer_multi` counterparty rule, evaluated exactly as
+    /// `operations::transfer_multi` evaluates it: the raw 43-byte
+    /// encoding of each `(address, amount)` output, in call order,
+    /// through the shared [`unanimous_bytes`] helper. The restore path
+    /// must agree with this for the same transition.
+    fn live_counterparty(recipients: &[Vec<u8>]) -> Option<Vec<u8>> {
+        unanimous_bytes(recipients.iter().map(|r| r.as_slice()))
+    }
+
+    /// Real Orchard key material for the live/restored parity tests. The
+    /// live row's ownership predicate is the account IVK itself
+    /// (`IncomingViewingKey::diversifier_index`, inside
+    /// [`live_transfer_multi_row`]), so exercising the production
+    /// classifier needs addresses a real IVK does and does not recognize.
+    fn parity_keys(seed_byte: u8) -> crate::wallet::shielded::keys::OrchardKeySet {
+        crate::wallet::shielded::keys::OrchardKeySet::from_seed(
+            &[seed_byte; 64],
+            dashcore::Network::Testnet,
+            0,
+        )
+        .expect("a 64-byte seed satisfies the ZIP-32 bounds")
+    }
+
+    /// Canonical 43-byte raw encoding of `addr` — the form outgoing notes
+    /// store recipients in and the deriver matches own-addresses against.
+    fn raw(addr: &PaymentAddress) -> Vec<u8> {
+        addr.to_raw_address_bytes().to_vec()
+    }
+
+    #[test]
+    fn live_and_restored_agree_on_a_mixed_external_and_own_output_set() {
+        // The reviewer's mixed case: ONE Type-16 transition paying 10
+        // credits to an EXTERNAL address and 20 to one of the account's
+        // OWN diversified addresses (the public API accepts both).
+        //
+        // The live side of this check is the PRODUCTION classifier —
+        // [`live_transfer_multi_row`], the function
+        // `operations::transfer_multi` records its row through — run with
+        // real Orchard key material, so the ownership predicate under test
+        // is the real IVK one.
+        //
+        // Restoration removes the own output before aggregating, so it
+        // records a 10-credit send to the external address. The live
+        // recorder must reach the same verdict — before the fix it summed
+        // every requested output and recorded a 30-credit send with no
+        // counterparty (#4312 review finding 379da4cc0ad0).
+        let ours = parity_keys(7);
+        let theirs = parity_keys(9);
+        let external = theirs.default_address;
+        // A non-default diversified address: only the IVK predicate can
+        // recognize it as ours — a fixed-address comparison against the
+        // default address could not (`coordinator::is_own_orchard_recipient`
+        // builds the deriver's own-address set from the same predicate).
+        let own = ours.address_at(5);
+        let fee = 7u64;
+
+        let input = ScanDeriveInput {
+            notes: vec![],
+            outgoing: vec![
+                outgoing(0x70, raw(&external), 800, 10, vec![0u8; 36]),
+                outgoing(0x71, raw(&own), 800, 20, vec![0u8; 36]),
+            ],
+            own_addresses: vec![raw(&own)],
+        };
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
+        assert_eq!(d.len(), 1, "one transition restores as one activity row");
+
+        let (kind, amount, counterparty) = live_transfer_multi_row(
+            &ours.incoming_viewing_key,
+            &[(external, 10), (own, 20)],
+            fee,
+        );
+
+        assert_eq!(d[0].kind, kind, "kind must agree");
+        assert_eq!(kind, ShieldedActivityKind::Sent);
+        assert_eq!(
+            d[0].amount, amount,
+            "amount must agree, and must count only the external payment"
+        );
+        assert_eq!(amount, 10, "the own output is change, not a payment");
+        assert_eq!(d[0].counterparty, counterparty, "counterparty must agree");
+        assert_eq!(
+            counterparty,
+            Some(raw(&external)),
+            "one external recipient names itself"
+        );
+
+        // Pin the regression itself: the pre-fix live row was the SUM over
+        // every output with no counterparty, which restoration never
+        // produces for this transition.
+        assert_ne!(amount, 30, "the own output must not inflate the amount");
+    }
+
+    #[test]
+    fn live_and_restored_agree_that_an_all_own_output_set_is_not_a_send() {
+        // Every output lands on an address this account's IVK recognizes,
+        // so nothing was paid to anyone. Restoration cannot classify this
+        // as `Sent` (it has no external recipient to aggregate); the live
+        // classifier — the production [`live_transfer_multi_row`] that
+        // `operations::transfer_multi` records through — must not either.
+        let ours = parity_keys(7);
+        let own_a = ours.default_address;
+        let own_b = ours.address_at(3);
+        let fee = 7u64;
+
+        let (kind, amount, counterparty) =
+            live_transfer_multi_row(&ours.incoming_viewing_key, &[(own_a, 10), (own_b, 20)], fee);
+        assert_eq!(
+            kind,
+            ShieldedActivityKind::ShieldedSpend,
+            "an all-own output set is a shielded spend, not a send"
+        );
+        assert_eq!(amount, fee, "only the fee left the pool");
+        assert_eq!(counterparty, None, "there is no counterparty to name");
+
+        // The restore side agrees on the kind: with both outgoing notes
+        // recognized as own, the cluster has no external recipient, so the
+        // `Sent` arm cannot fire.
+        let input = ScanDeriveInput {
+            notes: vec![own_note(0x80, 0x81, 900, 1_000, true)],
+            outgoing: vec![
+                outgoing(0x82, raw(&own_a), 900, 10, vec![0u8; 36]),
+                outgoing(0x83, raw(&own_b), 900, 20, vec![0u8; 36]),
+            ],
+            own_addresses: vec![raw(&own_a), raw(&own_b)],
+        };
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
+        assert_eq!(d.len(), 1);
+        assert_ne!(
+            d[0].kind,
+            ShieldedActivityKind::Sent,
+            "restoration must not call an all-own output set a send"
+        );
+        assert_eq!(d[0].kind, kind, "kind must agree with the live row");
+    }
+
+    #[test]
+    fn multi_recipient_restore_aggregates_without_attributing_to_one_recipient() {
+        // The reviewer's case: ONE Type-16 transition paying 10 credits to
+        // A and 20 to B. Both outgoing notes are OVK-recovered into the
+        // same height cluster, so restoration must produce ONE aggregate
+        // row of 30 — and must NOT pin that 30 on either recipient.
+        let a = addr(0xAA);
+        let b = addr(0xBB);
+        let input = ScanDeriveInput {
+            notes: vec![],
+            outgoing: vec![
+                outgoing(0x60, a.clone(), 700, 10, vec![0u8; 36]),
+                outgoing(0x61, b.clone(), 700, 20, vec![0u8; 36]),
+            ],
+            own_addresses: vec![addr(0x01)],
+        };
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
+
+        assert_eq!(d.len(), 1, "one transition restores as one activity row");
+        assert_eq!(d[0].kind, ShieldedActivityKind::Sent);
+        assert_eq!(d[0].direction, ShieldedDirection::Out);
+        assert_eq!(d[0].amount, 30, "amount is the sum over both outputs");
+        assert_eq!(
+            d[0].counterparty, None,
+            "a 30-credit row covering two distinct recipients must name \
+             neither of them"
+        );
+        // Live-path parity: the same rule, over the same raw encodings,
+        // is what `transfer_multi` records for this transition.
+        assert_eq!(
+            d[0].counterparty,
+            live_counterparty(&[a, b]),
+            "restored attribution must match what the live recorder writes"
+        );
+    }
+
+    #[test]
+    fn multi_recipient_restore_is_independent_of_output_order() {
+        // Orchard's builder shuffles outputs before pairing them into
+        // actions, so "the first external output" is not a stable choice.
+        // Feeding the same two outputs in the opposite order must derive
+        // a byte-identical row (id included).
+        let a = addr(0xAA);
+        let b = addr(0xBB);
+        let forward = outgoing(0x60, a.clone(), 700, 10, vec![0u8; 36]);
+        let reverse = outgoing(0x61, b.clone(), 700, 20, vec![0u8; 36]);
+
+        let mut d1 = derive_activity_from_scan_data(
+            &ScanDeriveInput {
+                notes: vec![],
+                outgoing: vec![forward.clone(), reverse.clone()],
+                own_addresses: vec![addr(0x01)],
+            },
+            &BTreeMap::new(),
+        )
+        .new_entries;
+        let mut d2 = derive_activity_from_scan_data(
+            &ScanDeriveInput {
+                notes: vec![],
+                outgoing: vec![reverse, forward],
+                own_addresses: vec![addr(0x01)],
+            },
+            &BTreeMap::new(),
+        )
+        .new_entries;
+
+        assert_eq!(d1.len(), 1);
+        assert_eq!(d2.len(), 1);
+        // `created_at_ms` is wall-clock; everything that describes the
+        // transition must match. `note_cmxs` is stored in encounter
+        // order (only `compute_activity_id` sorts), so it is compared as
+        // the SET it represents — which is what the id contract keys on.
+        let (e1, e2) = (d1.remove(0), d2.remove(0));
+        assert_eq!(e1.id, e2.id, "cluster id is order-independent");
+        assert_eq!(e1.amount, e2.amount);
+        assert_eq!(
+            e1.counterparty, e2.counterparty,
+            "attribution must not depend on which output the scan saw first"
+        );
+        assert_eq!(e1.memo, e2.memo);
+        let (mut c1, mut c2) = (e1.note_cmxs.clone(), e2.note_cmxs.clone());
+        c1.sort_unstable();
+        c2.sort_unstable();
+        assert_eq!(c1, c2, "same cluster covers the same cmx set");
+    }
+
+    #[test]
+    fn multi_note_restore_to_a_single_address_keeps_the_counterparty() {
+        // The fund-one-address-with-N-notes shape (how a two-note invite
+        // is funded): every output names the SAME address, so the row
+        // still has one honest counterparty and must keep it — the fix
+        // must not over-correct into always dropping attribution.
+        let target = addr(0xCC);
+        let memo = {
+            let mut m = vec![0u8; 36];
+            m[0] = 1;
+            m
+        };
+        let input = ScanDeriveInput {
+            notes: vec![],
+            outgoing: vec![
+                outgoing(0x70, target.clone(), 800, 100, memo.clone()),
+                outgoing(0x71, target.clone(), 800, 250, memo.clone()),
+            ],
+            own_addresses: vec![addr(0x01)],
+        };
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
+
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].kind, ShieldedActivityKind::Sent);
+        assert_eq!(d[0].amount, 350);
+        assert_eq!(
+            d[0].counterparty.as_deref(),
+            Some(target.as_slice()),
+            "all outputs agree on the address, so the row keeps it"
+        );
+        assert_eq!(
+            d[0].memo,
+            Some(memo),
+            "transfer_multi attaches one memo to every recipient note, so \
+             the unanimous memo survives"
+        );
+        assert_eq!(
+            d[0].counterparty,
+            live_counterparty(&[target.clone(), target]),
+            "restored attribution must match what the live recorder writes"
+        );
+    }
+
+    #[test]
+    fn multi_recipient_restore_drops_a_memo_the_outputs_disagree_on() {
+        // Same misattribution class as the counterparty: a memo that only
+        // one output carried must not be presented as the whole
+        // transfer's memo.
+        let mut memo_a = vec![0u8; 36];
+        memo_a[0] = 1;
+        let input = ScanDeriveInput {
+            notes: vec![],
+            outgoing: vec![
+                outgoing(0x80, addr(0xAA), 900, 10, memo_a),
+                outgoing(0x81, addr(0xBB), 900, 20, vec![0u8; 36]),
+            ],
+            own_addresses: vec![addr(0x01)],
+        };
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
+
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].amount, 30);
+        assert_eq!(d[0].counterparty, None);
+        assert_eq!(d[0].memo, None, "outputs disagree, so no memo is claimed");
+    }
+
+    #[test]
+    fn unanimous_bytes_rule() {
+        assert_eq!(unanimous_bytes(std::iter::empty()), None, "no outputs");
+        assert_eq!(
+            unanimous_bytes([b"abc".as_slice()]),
+            Some(b"abc".to_vec()),
+            "a single output always names itself"
+        );
+        assert_eq!(
+            unanimous_bytes([b"abc".as_slice(), b"abc".as_slice()]),
+            Some(b"abc".to_vec())
+        );
+        assert_eq!(
+            unanimous_bytes([b"abc".as_slice(), b"abd".as_slice()]),
+            None
+        );
+        // Disagreement anywhere in the list counts, not just against the
+        // second element.
+        assert_eq!(
+            unanimous_bytes([b"abc".as_slice(), b"abc".as_slice(), b"zzz".as_slice()]),
+            None
+        );
     }
 
     #[test]
