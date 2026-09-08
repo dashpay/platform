@@ -148,30 +148,33 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         XCTAssertLessThan(ContinuousClock.now - started, .milliseconds(500))
         XCTAssertTrue(
             manager.spvIsRunning,
-            "the manager-level stage publishes while the per-wallet read is still parked")
-        XCTAssertEqual(recorder.count(named: "spv_is_running"), 1, "a slow tick must not be overlapped")
+            "the manager loop publishes while the per-wallet read is still parked")
         XCTAssertEqual(recorder.handles.first, 77)
         XCTAssertFalse(recorder.mainThreadFlags.contains(true), "native reads never run on the main thread")
 
         gate.signal()
         try await waitUntil {
-            manager.spvIsRunning
-                && manager.dashPayUnlockStatus[wallet.walletId]?.pendingAccountBuilds == 3
+            manager.dashPayUnlockStatus[wallet.walletId]?.pendingAccountBuilds == 3
         }
         XCTAssertEqual(manager.spvPeers.map(\.address), ["1.2.3.4:9999"])
         XCTAssertEqual(manager.spvTipBlockTime, Date(timeIntervalSince1970: 1_700_000_000))
         XCTAssertFalse(manager.dashPaySyncIsSyncing, "a failed read keeps the previously published value")
 
-        // Ticks keep coming (the gate parks only the first per-wallet read).
+        // The manager loop keeps ticking while the per-wallet read is still
+        // parked — the whole point of the two loops being independent.
+        XCTAssertEqual(
+            recorder.count(named: "pending_account_build_count"), 1,
+            "the wallet loop stays parked in its first read")
         try await waitUntil { recorder.count(named: "spv_is_running") >= 3 }
         XCTAssertFalse(recorder.mainThreadFlags.contains(true))
 
         await manager.shutdown()
-        // Drain a tick that was already in flight, without a wait that can
+        // Drain ticks that were already in flight, without a wait that can
         // hang the run: an unbounded `sync {}` would.
         let drained = DispatchGroup()
         manager.pollQueue.async(group: drained) {}
-        XCTAssertEqual(drained.wait(timeout: .now() + 5), .success, "the poll queue must drain")
+        manager.walletPollQueue.async(group: drained) {}
+        XCTAssertEqual(drained.wait(timeout: .now() + 5), .success, "the poll queues must drain")
         let countAfterShutdown = recorder.count
         try await Task.sleep(for: .milliseconds(100))  // ≈10 poll intervals
         XCTAssertEqual(
@@ -313,6 +316,34 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         XCTAssertEqual(
             recorder.count, afterShutdown,
             "no native read may start once shutdown bumped the poll epoch")
+    }
+
+    /// A status left behind by a removed wallet is pruned even when no
+    /// wallet is loaded at all — the case the per-wallet stage skips.
+    func testUnlockStatusIsPrunedWithNoWalletsLoaded() async throws {
+        let recorder = PollRecorder()
+        let manager = PlatformWalletManager.makeForTesting(handle: 95, calls: Self.makeTeardownCalls())
+        manager.nativeCreateCalls = Self.makeCreateCalls()
+        manager.nativePollCalls = recorder.makeCalls()
+        let wallet = try await manager.createWallet(mnemonic: "m", network: .testnet)
+
+        let baseline = PlatformWalletPollBaseline(
+            spvProgress: .empty, spvIsRunning: false, spvPeers: [],
+            platformAddressSyncIsSyncing: false, shieldedSyncIsSyncing: false,
+            dashPaySyncIsSyncing: false, spvTipBlockTime: nil, pendingAccountBuilds: [:])
+        let counts = [wallet.walletId: PlatformWalletPendingBuildCount(handle: wallet.handle, count: 2)]
+        manager.applyWalletCounts(counts, baseline: baseline)
+        XCTAssertEqual(manager.dashPayUnlockStatus[wallet.walletId]?.pendingAccountBuilds, 2)
+
+        // The wallet goes away; with none loaded the per-wallet stage does
+        // not run at all, so the prune cannot live inside it.
+        manager.removeAllWalletsForTesting()
+        manager.pruneStaleUnlockStatus()
+        XCTAssertNil(
+            manager.dashPayUnlockStatus[wallet.walletId],
+            "a removed wallet's status must not survive with no wallets loaded")
+
+        await manager.shutdown()
     }
 
     /// The FFI's in-band "no tip" is a successful read that publishes `nil`;
