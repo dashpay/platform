@@ -3,9 +3,50 @@ use crate::data_contract::associated_token::token_perpetual_distribution::distri
     DistributionFunction, DEFAULT_STEP_DECREASING_AMOUNT_MAX_CYCLES_BEFORE_TRAILING_DISTRIBUTION,
     MAX_DISTRIBUTION_PARAM,
 };
+use crate::version::FeatureVersion;
 use crate::ProtocolError;
-use libm::{exp, log, pow};
 use platform_version::version::PlatformVersion;
+
+/// Transcendental float operations used by the Polynomial, Exponential, Logarithmic and
+/// InvertedLogarithmic distribution functions, selected once per
+/// `distribution_function_evaluate_version`.
+#[derive(Clone, Copy)]
+struct FloatOps {
+    pow: fn(f64, f64) -> f64,
+    exp: fn(f64) -> f64,
+    ln: fn(f64) -> f64,
+}
+
+/// `distribution_function_evaluate_version` values `evaluate()` knows how to run.
+const KNOWN_EVALUATE_VERSIONS: [FeatureVersion; 2] = [0, 1];
+
+impl FloatOps {
+    /// v0: std `f64` methods (platform-dependent results).
+    /// v1: `libm` (bit-identical results on every platform).
+    fn for_version(platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .token_versions
+            .distribution_function_evaluate_version
+        {
+            0 => Ok(FloatOps {
+                pow: f64::powf,
+                exp: f64::exp,
+                ln: f64::ln,
+            }),
+            1 => Ok(FloatOps {
+                pow: libm::pow,
+                exp: libm::exp,
+                ln: libm::log,
+            }),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DistributionFunction::evaluate".to_string(),
+                known_versions: KNOWN_EVALUATE_VERSIONS.to_vec(),
+                received: version,
+            }),
+        }
+    }
+}
 
 impl DistributionFunction {
     /// Evaluates the distribution function at the given period `x`.
@@ -23,6 +64,9 @@ impl DistributionFunction {
         x: u64,
         platform_version: &PlatformVersion,
     ) -> Result<TokenAmount, ProtocolError> {
+        // Resolved up front so an unknown version is rejected uniformly for every variant,
+        // including the integer-only ones that never call into it.
+        let float_ops = FloatOps::for_version(platform_version)?;
         match self {
             DistributionFunction::FixedAmount { amount: n } => {
                 // For fixed amount, simply return n.
@@ -225,21 +269,7 @@ impl DistributionFunction {
                     ));
                 }
 
-                let diff_exp = match platform_version
-                    .dpp
-                    .token_versions
-                    .distribution_function_evaluate_version
-                {
-                    0 => (diff as f64).powf(exponent),
-                    1 => pow(diff as f64, exponent),
-                    version => {
-                        return Err(ProtocolError::UnknownVersionMismatch {
-                            method: "DistributionFunction::evaluate (Polynomial)".to_string(),
-                            known_versions: vec![0, 1],
-                            received: version,
-                        })
-                    }
-                };
+                let diff_exp = (float_ops.pow)(diff as f64, exponent);
 
                 if !diff_exp.is_finite() {
                     return if diff_exp.is_sign_positive() {
@@ -343,21 +373,7 @@ impl DistributionFunction {
                 }
 
                 let exponent = (*m as f64) * (diff as f64) / (*n as f64);
-                let exp_val = match platform_version
-                    .dpp
-                    .token_versions
-                    .distribution_function_evaluate_version
-                {
-                    0 => exponent.exp(),
-                    1 => exp(exponent),
-                    version => {
-                        return Err(ProtocolError::UnknownVersionMismatch {
-                            method: "DistributionFunction::evaluate (Exponential)".to_string(),
-                            known_versions: vec![0, 1],
-                            received: version,
-                        })
-                    }
-                };
+                let exp_val = (float_ops.exp)(exponent);
                 let value = ((*a as f64) * exp_val / (*d as f64)) + (*b as f64);
                 if let Some(max_value) = max_value {
                     if value.is_infinite() && value.is_sign_positive() || value > *max_value as f64
@@ -432,21 +448,7 @@ impl DistributionFunction {
                     (*m as f64) * (diff as f64) / (*n as f64)
                 };
 
-                let log_val = match platform_version
-                    .dpp
-                    .token_versions
-                    .distribution_function_evaluate_version
-                {
-                    0 => argument.ln(),
-                    1 => log(argument),
-                    version => {
-                        return Err(ProtocolError::UnknownVersionMismatch {
-                            method: "DistributionFunction::evaluate (Logarithmic)".to_string(),
-                            known_versions: vec![0, 1],
-                            received: version,
-                        })
-                    }
-                };
+                let log_val = (float_ops.ln)(argument);
 
                 // Ensure the computed value is finite and within the u64 range.
                 if !log_val.is_finite() || log_val > (u64::MAX as f64) {
@@ -584,22 +586,7 @@ impl DistributionFunction {
                     ));
                 }
 
-                let log_val = match platform_version
-                    .dpp
-                    .token_versions
-                    .distribution_function_evaluate_version
-                {
-                    0 => argument.ln(),
-                    1 => log(argument),
-                    version => {
-                        return Err(ProtocolError::UnknownVersionMismatch {
-                            method: "DistributionFunction::evaluate (InvertedLogarithmic)"
-                                .to_string(),
-                            known_versions: vec![0, 1],
-                            received: version,
-                        })
-                    }
-                };
+                let log_val = (float_ops.ln)(argument);
 
                 // Ensure the computed value is finite and within the u64 range.
                 if !log_val.is_finite() || log_val > (u64::MAX as f64) {
