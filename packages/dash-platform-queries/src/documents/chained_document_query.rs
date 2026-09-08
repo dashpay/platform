@@ -74,6 +74,9 @@ impl TryFromPlatformVersioned<ChainedDocumentQuery> for GetDocumentsRequest {
             outer_document_type_name,
         } = value;
 
+        inner
+            .ensure_no_sub_queries()
+            .map_err(|e| Error::Config(e.to_string()))?;
         if inner.limit == 0 {
             return Err(Error::Config(
                 "a chained document query requires an explicit non-zero inner limit: it \
@@ -125,6 +128,10 @@ impl<'a> TryFrom<&'a ChainedDocumentQuery> for DriveDocumentQuery<'a> {
     type Error = Error;
 
     fn try_from(request: &'a ChainedDocumentQuery) -> Result<Self, Self::Error> {
+        request
+            .inner
+            .ensure_no_sub_queries()
+            .map_err(|e| Error::Config(e.to_string()))?;
         let inner: DriveDocumentQuery<'a> = (&request.inner).try_into()?;
         let outer_document_type = request
             .inner
@@ -289,31 +296,54 @@ mod tests {
         assert_eq!(drive_query.limit, Some(10));
     }
 
-    fn assert_plain_conversions_refuse(query: &DriveDocumentQuery) {
+    #[test]
+    fn should_reject_sub_queries_inside_a_chained_inner_query() {
+        use crate::documents::composite_document_query::CompositeSubQuery;
+
+        let mut query = posts_i_liked(10);
+        query.inner.sub_queries.push(
+            CompositeSubQuery::documents(query.inner.data_contract.clone(), "post")
+                .expect("post doctype exists")
+                .bound_to_page("postId", "$id"),
+        );
+        let refused =
+            GetDocumentsRequest::try_from_platform_versioned(query.clone(), platform_version());
+        assert!(matches!(refused, Err(Error::Config(message)) if message.contains("sub-queries")));
+        let refused = DriveDocumentQuery::try_from(&query);
+        assert!(matches!(refused, Err(Error::Config(message)) if message.contains("sub-queries")));
+    }
+
+    fn assert_conversions_preserve_sub_queries(query: &DriveDocumentQuery) {
         for result in [
             DocumentQuery::try_from(query),
             DocumentQuery::try_from(query.clone()),
             DocumentQuery::new_with_drive_query(query),
         ] {
-            assert!(
-                matches!(&result, Err(Error::Config(message)) if message.contains("sub-queries")),
-                "a plain conversion must refuse the composition, got {result:?}"
-            );
+            let sdk_query = result.expect("conversion preserves sub-queries");
+            let restored: DriveDocumentQuery = (&sdk_query).try_into().expect("converts back");
+            assert_eq!(&restored, query);
+            let request =
+                GetDocumentsRequest::try_from_platform_versioned(sdk_query, platform_version())
+                    .expect("the composition encodes");
+            let Some(RequestVersion::V1(v1)) = request.version else {
+                panic!("expected V1");
+            };
+            assert_eq!(v1.sub_queries.len(), query.sub_queries.len());
         }
     }
 
     #[test]
-    fn should_refuse_dropping_a_drive_join_during_plain_query_conversion() {
+    fn should_preserve_a_drive_join_during_query_conversion() {
         let query = posts_i_liked(10);
         let drive_query: DriveDocumentQuery = (&query).try_into().expect("drive query");
         drive_query
             .validate_chained(platform_version())
             .expect("valid chained shape");
-        assert_plain_conversions_refuse(&drive_query);
+        assert_conversions_preserve_sub_queries(&drive_query);
     }
 
     #[test]
-    fn should_refuse_dropping_a_composite_count_during_plain_query_conversion() {
+    fn should_preserve_a_composite_count_during_query_conversion() {
         let query = posts_i_liked(10);
         let page: DriveDocumentQuery = (&query.inner).try_into().expect("drive page");
         let count = DriveSubQuery {
@@ -333,7 +363,7 @@ mod tests {
         composite
             .validate_composite(platform_version())
             .expect("valid count composition");
-        assert_plain_conversions_refuse(&composite);
+        assert_conversions_preserve_sub_queries(&composite);
     }
 
     #[test]
