@@ -1681,7 +1681,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         self.queue_asset_lock_changeset(cs);
         drop(dispatch_claim.take());
 
-        // 4. Re-derive the one-time credit-output derivation path.
+        // 4. Re-derive the one-time credit-output derivation path. One read
+        //    guard for the whole step: the re-derivation reads the funding
+        //    account through the same `info`, so it must not take the lock
+        //    again (a second `read()` under a live guard parks behind any
+        //    queued writer, which then waits for this guard — a deadlock
+        //    that froze a host's main thread for good).
         let path = {
             let wm = self.wallet_manager.read().await;
             let info = wm
@@ -1691,7 +1696,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .tracked_asset_locks
                 .get(out_point)
                 .ok_or_else(|| PlatformWalletError::AssetLockNotTracked(*out_point))?;
-            self.rederive_credit_output_path(lock).await?
+            self.rederive_credit_output_path(info, lock)?
         };
 
         Ok((proof, path))
@@ -1711,8 +1716,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// xpriv is not in-process for `ExternalSignable` wallets, and the
     /// signer-based architecture doesn't need it — the signer owns
     /// derivation end-to-end.
-    async fn rederive_credit_output_path(
+    ///
+    /// Synchronous and lock-free by design: `info` is the wallet info the
+    /// caller already holds a wallet-manager guard for (and `lock` is
+    /// borrowed from it). Re-acquiring `wallet_manager` in here would be a
+    /// recursive read on tokio's fair `RwLock` — it parks behind any queued
+    /// writer while the caller's guard keeps that writer waiting.
+    fn rederive_credit_output_path(
         &self,
+        info: &PlatformWalletInfo,
         lock: &TrackedAssetLock,
     ) -> Result<DerivationPath, PlatformWalletError> {
         use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
@@ -1751,11 +1763,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 ))
             })?;
 
-        // 3. Find the derivation path in the funding account and derive key under a single lock.
-        let wm = self.wallet_manager.read().await;
-        let info = wm
-            .get_wallet_info(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        // 3. Find the derivation path in the funding account, through the
+        //    caller's guard (see the method doc: never re-lock here).
         let wi = &info.core_wallet;
         let funding_account = match lock.funding_type {
             AssetLockFundingType::IdentityRegistration => {
@@ -2453,17 +2462,109 @@ mod tests {
             Arc::new(AlwaysRejectedBroadcaster),
             WalletPersister::new(wallet_id, persistence as Arc<dyn PlatformWalletPersistence>),
         );
-        let rederived = restored_manager
-            .rederive_credit_output_path(&lock)
+        // Re-derive under a held read guard while a writer is queued behind
+        // it — the shape `resume_asset_lock` step 4 runs in. tokio's
+        // `RwLock` is fair, so a second `read()` inside the guard would park
+        // behind that writer forever; the re-derivation must therefore
+        // never take the lock itself.
+        let queued_writer = {
+            use std::future::Future;
+
+            let wallet_manager = Arc::clone(&restored_manager.wallet_manager);
+            let guard = restored_manager.wallet_manager.read().await;
+            let mut writer = Box::pin(async move {
+                let _w = wallet_manager.write().await;
+            });
+            // Queue the writer deterministically: poll it once by hand. The
+            // read guard above is live, so the poll must return `Pending`
+            // with the writer parked in the lock's queue — no scheduler
+            // timing (`yield_now`) involved.
+            let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+            assert!(
+                writer.as_mut().poll(&mut cx).is_pending(),
+                "the writer must queue behind the held read guard"
+            );
+            let info = guard
+                .get_wallet_info(&wallet_id)
+                .expect("restored wallet info");
+            let rederived = restored_manager
+                .rederive_credit_output_path(info, &lock)
+                .expect(
+                    "credit-output path must re-derive from the persisted \
+                     IdentityTopUp account after a restart",
+                );
+            assert_eq!(
+                rederived, path,
+                "re-derived credit-output path must match the build-time path"
+            );
+            writer
+        };
+        tokio::time::timeout(Duration::from_secs(5), queued_writer)
+            .await
+            .expect("the queued writer must acquire the lock once the guard drops");
+
+        // End to end through the call site the deadlock lived at: drive
+        // `resume_asset_lock` itself while a writer repeatedly contends for
+        // the wallet-manager lock. Step 4 holds a read guard across the
+        // re-derivation, so any `read().await` reintroduced inside that
+        // block parks behind a queued writer that in turn waits for the
+        // guard — the permanent freeze this fix removed. A settled
+        // chain-proof row is used so the resume reaches step 4 without a
+        // network wait.
+        {
+            let chain_proof = dpp::prelude::AssetLockProof::Chain(
+                dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof {
+                    core_chain_locked_height: 1_234,
+                    out_point,
+                },
+            );
+            {
+                let mut wm = restored_manager.wallet_manager.write().await;
+                let tracked = wm
+                    .get_wallet_info_mut(&wallet_id)
+                    .expect("wallet info")
+                    .tracked_asset_locks
+                    .get_mut(&out_point)
+                    .expect("tracked lock");
+                tracked.status = AssetLockStatus::ChainLocked;
+                tracked.proof = Some(chain_proof);
+            }
+
+            let contend = Arc::new(std::sync::atomic::AtomicBool::new(true));
+            let writer = {
+                let wallet_manager = Arc::clone(&restored_manager.wallet_manager);
+                let contend = Arc::clone(&contend);
+                tokio::spawn(async move {
+                    while contend.load(std::sync::atomic::Ordering::Relaxed) {
+                        {
+                            let _w = wallet_manager.write().await;
+                        }
+                        tokio::task::yield_now().await;
+                    }
+                })
+            };
+
+            let (_proof, resumed_path) = tokio::time::timeout(
+                Duration::from_secs(10),
+                restored_manager.resume_asset_lock(&out_point, Some(Duration::from_millis(10))),
+            )
             .await
             .expect(
-                "credit-output path must re-derive from the persisted \
-                 IdentityTopUp account after a restart",
+                "resume_asset_lock must complete while a writer contends for \
+                 the wallet-manager lock",
+            )
+            .expect("a chain-locked lock resumes from its own proof");
+            assert_eq!(
+                resumed_path, path,
+                "the resumed credit-output path must match the build-time path"
             );
-        assert_eq!(
-            rederived, path,
-            "re-derived credit-output path must match the build-time path"
-        );
+
+            contend.store(false, std::sync::atomic::Ordering::Relaxed);
+            tokio::time::timeout(Duration::from_secs(5), writer)
+                .await
+                .expect("the contending writer must finish")
+                .expect("writer task");
+        }
     }
 
     // -----------------------------------------------------------------

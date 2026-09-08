@@ -24,7 +24,12 @@ pub use v0::{AssetLockValueGettersV0, AssetLockValueSettersV0};
     serde::Deserialize,
     DecodeUntrusted,
 )]
-#[platform_serialize(unversioned)]
+// Stored asset-lock values are decoded from GroveDB proof elements on the
+// client before the quorum signature is checked, so the byte budget must be
+// enforced by the decoder itself. A valid value is well under 1 KiB (P2PKH
+// script, at most `max_asset_lock_usage_attempts` 32-byte tags); the limit
+// leaves room for Core's 10,000-byte script ceiling.
+#[platform_serialize(limit = 15000, unversioned)]
 #[serde(tag = "$formatVersion")]
 pub enum AssetLockValue {
     #[serde(rename = "0")]
@@ -223,6 +228,66 @@ mod json_convertible_tests {
         assert_eq!(json["remaining_credit_value"], json!(500_000));
         // And the string form round-trips back to the exact u64.
         let recovered = AssetLockValue::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+}
+
+#[cfg(test)]
+mod deserialize_limit_tests {
+    use super::*;
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+
+    /// Bincode-encode the V0 shape by hand so the `tx_out_script` length prefix
+    /// can claim more bytes than exist in the payload.
+    fn payload_with_script_length(fake_len: u64) -> Vec<u8> {
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        let mut buf = Vec::new();
+        // enum discriminant: V0
+        buf.extend_from_slice(&bincode::encode_to_vec(0u32, config).unwrap());
+        // initial_credit_value
+        buf.extend_from_slice(&bincode::encode_to_vec(1_000u64, config).unwrap());
+        // tx_out_script length prefix, with no bytes following it
+        buf.extend_from_slice(&bincode::encode_to_vec(fake_len, config).unwrap());
+        buf
+    }
+
+    /// A proof element is untrusted input: a length prefix must be rejected
+    /// against the byte budget before it sizes an allocation. Without the
+    /// limit this was `vec.resize(8_000_000_000, 0)` and an abort.
+    #[test]
+    fn rejects_script_length_prefix_beyond_budget_without_allocating() {
+        let payload = payload_with_script_length(8_000_000_000);
+        let err = AssetLockValue::deserialize_from_bytes(&payload)
+            .expect_err("oversized length prefix must be rejected");
+        assert!(
+            matches!(err, ProtocolError::MaxEncodedBytesReachedError { .. }),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// The largest value the server can legitimately store must stay inside
+    /// the budget on both the encode and decode side, or the node could fail
+    /// to persist it.
+    #[test]
+    fn largest_valid_value_round_trips_under_limit() {
+        let platform_version = PlatformVersion::latest();
+        let max_tags = platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .max_asset_lock_usage_attempts as usize;
+        let original = AssetLockValue::new(
+            u64::MAX,
+            vec![0xffu8; 10_000],
+            u64::MAX,
+            vec![Bytes32::new([0xff; 32]); max_tags],
+            platform_version,
+        )
+        .expect("value");
+        let bytes = original.serialize_to_bytes().expect("serialize");
+        let recovered = AssetLockValue::deserialize_from_bytes(&bytes).expect("deserialize");
         assert_eq!(original, recovered);
     }
 }
