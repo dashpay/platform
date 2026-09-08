@@ -258,10 +258,20 @@ final class Dev1StoreUpgradeTests: XCTestCase {
             try context.save()
         }
 
-        XCTAssertEqual(
-            DashModelContainer.classifyStore(at: storeURL),
-            .unplaceable(reason: "unexpected_entity_drift=PersistentWalletManagerMetadata")
-        )
+        // The reason lists every entity that disagrees, and this fixture is a
+        // real store built from the live models, so any change to any of them
+        // adds a name — as the swept-transaction work did to
+        // `PersistentPendingInput`, `PersistentTxo` and `PersistentWallet`.
+        // Assert the verdict and the entity this test actually creates, not
+        // the whole list, or this becomes a tripwire for unrelated schema work
+        // rather than a test of the classification.
+        guard case .unplaceable(let reason) =
+            DashModelContainer.classifyStore(at: storeURL)
+        else {
+            return XCTFail("an attribute-only disagreement must be unplaceable")
+        }
+        XCTAssertTrue(reason.hasPrefix("unexpected_entity_drift="), reason)
+        XCTAssertTrue(reason.contains("PersistentWalletManagerMetadata"), reason)
         XCTAssertThrowsError(try DashModelContainer.open(configuration(at: storeURL))) { error in
             XCTAssertNil(
                 error as? DashModelContainerError,
@@ -272,9 +282,10 @@ final class Dev1StoreUpgradeTests: XCTestCase {
         let result = try XCTUnwrap(try logLines(event: "core_store_open_result").last)
         XCTAssertTrue(result.contains(#"result="failure""#), result)
         XCTAssertTrue(
-            result.contains("store_verdict=\"unplaceable:unexpected_entity_drift=PersistentWalletManagerMetadata\""),
+            result.contains("store_verdict=\"unplaceable:unexpected_entity_drift="),
             result
         )
+        XCTAssertTrue(result.contains("PersistentWalletManagerMetadata"), result)
     }
 
     /// `knownDriftedEntityHashes` must be exactly what the fixture shows, no
