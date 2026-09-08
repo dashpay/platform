@@ -148,27 +148,29 @@ internal object WalletManagerNative {
     /**
      * One bounded page of the engine's UTXO inventory for one wallet,
      * across every account, as JSON
-     * `{"utxos":[...],"errors":[...],"cursor":<string|null>,"hasMore":<bool>}`
-     * — the source of truth the TXO-store reconciler
+     * `{"utxos":[...],"cursor":<string|null>,"hasMore":<bool>}` — the
+     * source of truth the TXO-store reconciler
      * ([PlatformWalletManager.reconcileTxoStore]) diffs against the Room
-     * `txos` mirror.
+     * `txos` mirror. A thin shim over one Rust call
+     * (`platform_wallet_wallet_utxos_page`): account ordering, cursor
+     * semantics and the page bound live in `platform-wallet`.
      *
      * Paged, not swept whole: a wallet's UTXO count is chain-controlled
      * (anyone who knows a watched address can keep sending dust to it), so
      * a full-inventory read would let a remote party decide how much this
      * process allocates on every SYNCED transition and every 30-minute
      * pass. Pass [cursor] `null` to start, then hand back the returned
-     * `cursor` verbatim while `hasMore` is true. [limit] caps the rows in
-     * one page; non-positive means the native default, and oversized
-     * values are clamped natively.
+     * `cursor` verbatim while `hasMore` is true — a cursor this export did
+     * not produce throws. [limit] caps the rows in one page; non-positive
+     * means the native default, and oversized values are clamped natively.
      *
-     * Each `utxos` row carries the owning account tags, the txid hex in
-     * the same byte order the changeset path hands
-     * [PlatformWalletPersistenceHandler] (so hex→bytes reproduces the
+     * Each `utxos` row is a
+     * [org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler.EngineUtxoRow]:
+     * the owning account tuple, the txid hex in the same byte order the
+     * changeset path hands the handler (so hex→bytes reproduces the
      * `txos.txid` blob), vout, amount (duffs), derived address (empty when
      * the script has no address form), scriptHex, height and isLocked.
-     * Per-account read failures land in `errors` instead of failing the
-     * page. `network` is [org.dashfoundation.dashsdk.Network.ffiValue].
+     * `network` is [org.dashfoundation.dashsdk.Network.ffiValue].
      */
     external fun walletManagerUtxosPageJson(
         managerHandle: Long,

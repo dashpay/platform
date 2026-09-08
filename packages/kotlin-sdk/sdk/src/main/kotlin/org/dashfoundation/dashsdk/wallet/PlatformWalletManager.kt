@@ -1262,46 +1262,58 @@ class PlatformWalletManager(
      * sweep). Returns null when the engine inventory read failed at the
      * FIRST page: there is nothing to reconcile against, so there is no
      * report to make. A page or classification batch failing later
-     * truncates the sweep instead, which the report's
-     * `transportFailures` records.
+     * truncates the sweep instead, which the report's `transportFailures`
+     * records. Native failures surface through [mapNativeErrors] as
+     * exceptions; both transport lambdas turn them into the null the
+     * handler's truncate-and-report contract is written against (and log
+     * them), so a mid-sweep fault yields a partial report rather than
+     * discarding the sweep. A malformed page is NOT absorbed: the handler's
+     * strict decode throws, and that propagates.
      */
     suspend fun reconcileTxoStore(
         walletId: ByteArray,
         tipHeight: Int,
         minConfirmations: Int = 100,
-    ): PlatformWalletPersistenceHandler.TxoReconcileReport? {
-        suspend fun page(cursor: String?, limit: Int): String? = withContext(Dispatchers.IO) {
-            mapNativeErrors {
-                WalletManagerNative.walletManagerUtxosPageJson(
-                    managerHandle, walletId, network.ffiValue, cursor, limit,
-                )
-            }
-        }
-        val pageSize = PlatformWalletPersistenceHandler.TXO_RECONCILE_PAGE_SIZE
-        // Read the first page before entering the reconcile so a dead
-        // transport still means "no report", the contract callers had
-        // before the sweep was paged. The handler asks for the null cursor
-        // exactly once, so this page is spent, not re-read.
-        val firstPage = page(null, pageSize) ?: return null
-        return persistenceHandler.reconcileTxos(
+    ): PlatformWalletPersistenceHandler.TxoReconcileReport? =
+        persistenceHandler.reconcileTxos(
             walletId = walletId,
             tipHeight = tipHeight,
             minConfirmations = minConfirmations,
-            pageSize = pageSize,
             engineUtxoPage = { cursor, limit ->
-                if (cursor == null) firstPage else page(cursor, limit)
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        mapNativeErrors {
+                            WalletManagerNative.walletManagerUtxosPageJson(
+                                managerHandle, walletId, network.ffiValue, cursor, limit,
+                            )
+                        }
+                    }.onFailure { t ->
+                        android.util.Log.w(
+                            "PlatformWalletManager",
+                            "txos reconcile: engine inventory page failed (cursor=$cursor)",
+                            t,
+                        )
+                    }.getOrNull()
+                }
             },
             classifyOutpoints = { outpoints ->
                 withContext(Dispatchers.IO) {
-                    mapNativeErrors {
-                        WalletManagerNative.walletManagerClassifyOutpoints(
-                            managerHandle, walletId, outpoints,
+                    runCatching {
+                        mapNativeErrors {
+                            WalletManagerNative.walletManagerClassifyOutpoints(
+                                managerHandle, walletId, outpoints,
+                            )
+                        }
+                    }.onFailure { t ->
+                        android.util.Log.w(
+                            "PlatformWalletManager",
+                            "txos reconcile: outpoint classification failed",
+                            t,
                         )
-                    }
+                    }.getOrNull()
                 }
             },
         )
-    }
 
     /**
      * Refresh the persisted DashPay payment history for one identity:
@@ -2115,8 +2127,23 @@ class PlatformWalletManager(
         if (!synced) return
         val now = System.currentTimeMillis()
         if (!transitioned && now - lastTxoReconcileAtMs < TXO_RECONCILE_INTERVAL_MS) return
-        val tipHeight = (progress.filters?.currentHeight ?: 0L).toInt()
-        if (tipHeight <= 0) return
+        // The filter sub-phase is the wallet-relevant height; if dash-spv
+        // reports SYNCED without one (filter sync disabled, or the phase
+        // dropped after completion) fall back to the header tip rather than
+        // silently skipping the heal this exists to deliver.
+        val tipHeight = (
+            progress.filters?.currentHeight?.takeIf { it > 0L }
+                ?: progress.headers?.currentHeight
+                ?: 0L
+            ).toInt()
+        if (tipHeight <= 0) {
+            android.util.Log.w(
+                "PlatformWalletManager",
+                "txos reconcile skipped: SYNCED progress carries no tip height " +
+                    "(filters=${progress.filters?.currentHeight} headers=${progress.headers?.currentHeight})",
+            )
+            return
+        }
         val walletIds = wallets.value.values.map { it.walletId }
         if (walletIds.isEmpty()) return
         lastTxoReconcileAtMs = now

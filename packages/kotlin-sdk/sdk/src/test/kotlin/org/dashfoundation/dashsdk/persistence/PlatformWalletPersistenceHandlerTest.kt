@@ -6008,7 +6008,7 @@ class PlatformWalletPersistenceHandlerTest {
     ): String =
         """{"utxos":[{"typeTag":0,"standardTag":0,"index":0,"txid":"$txidHex","vout":$vout,""" +
             """"amount":$amount,"address":"$address","scriptHex":"76a914000088ac",""" +
-            """"height":$height,"isLocked":false}],"errors":[]}"""
+            """"height":$height,"isLocked":false}]}"""
 
     private fun ByteArray.toHexLower() = joinToString("") { "%02x".format(it) }
 
@@ -6624,7 +6624,7 @@ class PlatformWalletPersistenceHandlerTest {
         val spentRows = spent.joinToString(",") { (txid, vout) ->
             """{"txid":"$txid","vout":$vout}"""
         }
-        return """{"utxos":[$utxoRows],"spent":[$spentRows],"errors":[]}"""
+        return """{"utxos":[$utxoRows],"spent":[$spentRows]}"""
     }
 
     @Test
@@ -6685,7 +6685,7 @@ class PlatformWalletPersistenceHandlerTest {
             """{"utxos":[{"typeTag":0,"standardTag":0,"index":0,""" +
                 """"txid":"${changeTxid.toHexLower()}","vout":5,"amount":42,""" +
                 """"address":"yTestAddr","scriptHex":"51",""" +
-                """"height":${reconcileTip - 3},"isLocked":false}],"spent":[],"errors":[]}"""
+                """"height":${reconcileTip - 3},"isLocked":false}],"spent":[]}"""
         val report = handler.reconcileFromInventory(walletId, json, tipHeight = reconcileTip)
         assertEquals(0, report.wouldFlipSpent)
         assertEquals(0, report.wouldRemove)
@@ -6804,7 +6804,7 @@ class PlatformWalletPersistenceHandlerTest {
             """{"utxos":[{"typeTag":0,"standardTag":0,"index":0,""" +
                 """"txid":"${changeTxid.toHexLower()}","vout":9,"amount":10000,""" +
                 """"address":"yContactPaid","scriptHex":"51",""" +
-                """"height":1400000,"isLocked":false}],"spent":[],"errors":[]}"""
+                """"height":1400000,"isLocked":false}],"spent":[]}"""
         val report = handler.reconcileFromInventory(walletId, json, tipHeight = reconcileTip)
 
         assertEquals(0, report.inserted)
@@ -6878,7 +6878,7 @@ class PlatformWalletPersistenceHandlerTest {
                 """"userIdentityId":"${"11".repeat(32)}","friendIdentityId":"${"22".repeat(32)}",""" +
                 """"txid":"${changeTxid.toHexLower()}","vout":13,"amount":10000,""" +
                 """"address":"yContactNoRow","scriptHex":"51",""" +
-                """"height":1400000,"isLocked":false}],"spent":[],"errors":[]}"""
+                """"height":1400000,"isLocked":false}],"spent":[]}"""
         val report = handler.reconcileFromInventory(walletId, json, tipHeight = reconcileTip)
 
         assertEquals(0, report.inserted)
@@ -6936,7 +6936,7 @@ class PlatformWalletPersistenceHandlerTest {
             pageSize = 2,
             engineUtxoPage = engine::page,
             classifyOutpoints = engine::classify,
-        )
+        )!!
 
         assertEquals("3 pages for 5 rows at 2 per page", 3, engine.pages)
         assertEquals(5, report.engineUtxos)
@@ -6969,7 +6969,7 @@ class PlatformWalletPersistenceHandlerTest {
                 if (cursor == null) engine.page(cursor, limit) else null
             },
             classifyOutpoints = engine::classify,
-        )
+        )!!
 
         assertEquals(1, report.transportFailures)
         assertEquals("only the page that arrived", 2, report.inserted)
@@ -6996,7 +6996,7 @@ class PlatformWalletPersistenceHandlerTest {
             pageSize = 1,
             engineUtxoPage = engine::page,
             classifyOutpoints = engine::classify,
-        )
+        )!!
 
         assertEquals("one classification batch per store page", 3, engine.batches)
         assertEquals("every store row reached the classifier", 3, engine.classified)
@@ -7021,10 +7021,53 @@ class PlatformWalletPersistenceHandlerTest {
             pageSize = 1,
             engineUtxoPage = engine::page,
             classifyOutpoints = { null },
-        )
+        )!!
 
         assertEquals(1, report.transportFailures)
         assertEquals(0, report.wouldRemove)
+    }
+
+    @Test
+    fun reconcileReturnsNoReportWhenTheFirstPageIsUnavailable() = runTest {
+        // No first page means nothing to reconcile against — the contract
+        // callers had before the sweep was paged, now enforced inside the
+        // handler rather than by a prefetch in the caller.
+        var classifyCalls = 0
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            tipHeight = reconcileTip,
+            engineUtxoPage = { _, _ -> null },
+            classifyOutpoints = { outpoints -> classifyCalls++; ByteArray(outpoints.size / 36) },
+        )
+        assertNull("a dead transport yields no report", report)
+        assertEquals("and the classification pass never runs", 0, classifyCalls)
+    }
+
+    @Test
+    fun reconcileRejectsAMalformedInventoryRowInsteadOfHealingIt() = runTest {
+        // The transport is a typed contract on both ends. A row missing its
+        // amount (or carrying a key this reader does not know) must fail the
+        // decode loudly — the alternative is a defaulted row written into
+        // the mirror the engine reloads from.
+        val malformed = """{"utxos":[{"typeTag":0,"txid":"${changeTxid.toHexLower()}",""" +
+            """"vout":40,"address":"yStxXHHzhAx58JhaPBNhn3xsH93UwBM2nd","height":1400000}],""" +
+            """"cursor":null,"hasMore":false}"""
+        val thrown = runCatching {
+            handler.reconcileTxos(
+                walletId = walletId,
+                tipHeight = reconcileTip,
+                engineUtxoPage = { _, _ -> malformed },
+                classifyOutpoints = { outpoints -> ByteArray(outpoints.size / 36) },
+            )
+        }.exceptionOrNull()
+        assertTrue(
+            "strict decode must throw, got $thrown",
+            thrown is kotlinx.serialization.SerializationException,
+        )
+        assertNull(
+            "nothing was healed from the malformed page",
+            db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 40)),
+        )
     }
 
     /**
@@ -7046,14 +7089,16 @@ class PlatformWalletPersistenceHandlerTest {
         pageSize: Int = 2,
     ): PlatformWalletPersistenceHandler.TxoReconcileReport {
         val engine = FakeEngine(inventoryJson)
-        return reconcileTxos(
-            walletId = walletId,
-            tipHeight = tipHeight,
-            minConfirmations = minConfirmations,
-            pageSize = pageSize,
-            engineUtxoPage = engine::page,
-            classifyOutpoints = engine::classify,
-        )
+        return checkNotNull(
+            reconcileTxos(
+                walletId = walletId,
+                tipHeight = tipHeight,
+                minConfirmations = minConfirmations,
+                pageSize = pageSize,
+                engineUtxoPage = engine::page,
+                classifyOutpoints = engine::classify,
+            ),
+        ) { "the fake engine always serves a first page" }
     }
 
     /**
@@ -7066,7 +7111,6 @@ class PlatformWalletPersistenceHandlerTest {
      */
     private class FakeEngine(inventoryJson: String) {
         private val utxos: List<kotlinx.serialization.json.JsonObject>
-        private val errors: List<kotlinx.serialization.json.JsonElement>
         private val unspentKeys: Set<String>
         private val spentKeys: Set<String>
 
@@ -7083,7 +7127,6 @@ class PlatformWalletPersistenceHandlerTest {
             val root = kotlinx.serialization.json.Json
                 .parseToJsonElement(inventoryJson).jsonObject
             utxos = root["utxos"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
-            errors = root["errors"]?.jsonArray?.toList() ?: emptyList()
             unspentKeys = utxos.map {
                 key(
                     it["txid"]!!.jsonPrimitive.content,
@@ -7104,12 +7147,7 @@ class PlatformWalletPersistenceHandlerTest {
             val slice = utxos.drop(start).take(limit)
             val next = start + slice.size
             val hasMore = next < utxos.size
-            // Account read failures belong to the sweep, not to a page: the
-            // native side reports each faulted account once, so the fake
-            // puts them all on the first page.
-            val faults = if (start == 0) errors.joinToString(",") { it.toString() } else ""
             return """{"utxos":[${slice.joinToString(",") { it.toString() }}],""" +
-                """"errors":[$faults],""" +
                 """"cursor":${if (hasMore) "\"$next\"" else "null"},"hasMore":$hasMore}"""
         }
 
