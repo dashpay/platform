@@ -14,11 +14,6 @@ pub enum PlatformWalletError {
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
 
-    /// Updating a managed platform-node address pool failed structurally.
-    #[cfg(feature = "eddsa")]
-    #[error("platform-node pool update failed: {0}")]
-    PlatformNodePool(#[from] crate::wallet::provider_key_at_index::PlatformNodePoolError),
-
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
 

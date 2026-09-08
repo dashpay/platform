@@ -11,12 +11,11 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
-use platform_wallet::changeset::{
-    rebuild_provider_key_account, AccountRegistrationEntry, CoreChangeSet,
+use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
+
+use crate::sqlite::provider_accounts::{
+    insert_platform_node_pool_entry, rebuild_provider_key_account, PlatformNodePoolError,
     ProviderAccountRebuildError,
-};
-use platform_wallet::wallet::provider_key_at_index::{
-    insert_platform_node_pool_entry, PlatformNodePoolError,
 };
 
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
@@ -50,8 +49,7 @@ pub(crate) fn build_wallet(
             .insert(account)
             .map_err(|_| WalletStorageError::AccountRegistrationEntryMismatch)?;
     }
-    // Provider key-material accounts take the shared rebuild path (the FFI
-    // backend's restore side calls the same helper).
+    // Provider accounts use separate curve-specific slots in the collection.
     for entry in &manifest.provider {
         rebuild_provider_key_account(
             &mut accounts,
@@ -103,7 +101,7 @@ pub(crate) fn restore_provider_platform_node_pool(
     }
 
     // TODO(#4188): `reserved_at` is persisted but deliberately not consumed here;
-    // restoring it requires widening `insert_platform_node_pool_entry` in rs-platform-wallet.
+    // restoring it requires widening `provider_accounts::insert_platform_node_pool_entry`.
     for (index, script_bytes, public_key, used) in entries {
         let PublicKeyType::EdDSA(public_key) = public_key else {
             return Err(WalletStorageError::blob_decode(
