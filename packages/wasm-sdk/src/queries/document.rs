@@ -616,7 +616,7 @@ pub(super) fn parse_time_range_clause(
 }
 
 /// Parse JSON order by clause into OrderClause
-fn parse_order_clause(json_clause: &JsonValue) -> Result<OrderClause, WasmSdkError> {
+pub(super) fn parse_order_clause(json_clause: &JsonValue) -> Result<OrderClause, WasmSdkError> {
     let clause_array = json_clause
         .as_array()
         .ok_or_else(|| WasmSdkError::invalid_argument("order by clause must be an array"))?;

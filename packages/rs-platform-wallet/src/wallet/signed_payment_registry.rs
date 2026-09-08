@@ -24,8 +24,7 @@
 //!   unknown / already-consumed token is a silent no-op.
 //! * A token is bound to the exact wallet *generation* it was minted against
 //!   ([`CoreWallet::is_same_generation`](crate::CoreWallet::is_same_generation) —
-//!   the same identity the V2 finalized-transaction handle path
-//!   (`dashpay/platform#4196`) uses). Two
+//!   the same identity the V2 finalized-transaction handle path uses). Two
 //!   wallets sharing one multi-wallet `PlatformWalletManager`, or a re-created
 //!   wallet under the same id whose in-memory `ReservationSet` no longer holds
 //!   the inputs, are both told apart: broadcasting through either is a
@@ -155,7 +154,7 @@ pub enum SignedPaymentError {
     ///
     /// Refusing here is what stops a retained handle from pushing a removed
     /// wallet's payment onto the network after the host believed the wallet was
-    /// gone (`dashpay/platform#4185`). The network was NOT touched.
+    /// gone. The network was NOT touched.
     #[error("reservation token {0} belongs to a wallet that is no longer in the manager")]
     WalletRemoved(ReservationToken),
 
@@ -183,8 +182,7 @@ pub enum SignedPaymentError {
 /// generation the payment was finalized against, so registering it would bind
 /// the reservation to the wrong wallet. Registration is refused up front rather
 /// than minting a token that later broadcasts through — and runs cleanup
-/// against — a wallet whose `ReservationSet` never held the inputs
-/// (`dashpay/platform#4185`).
+/// against — a wallet whose `ReservationSet` never held the inputs.
 ///
 /// The rejected [`SignedCoreTransaction`] is returned so its held funding
 /// reservation is **never stranded**: the caller still owns it and can release
@@ -239,8 +237,7 @@ struct RegisteredPayment<B: TransactionBroadcaster + ?Sized> {
     /// key-wallet's TTL may sweep its reservation and a concurrent build
     /// re-reserve the same inputs under a new token before this entry is
     /// broadcast or released. Presenting this token to the owner-guarded release
-    /// frees only inputs still owned by this build, never the other build's
-    /// (`dashpay/platform#4185`).
+    /// frees only inputs still owned by this build, never the other build's.
     funding_reservation_token: Option<FundingReservationToken>,
 }
 
@@ -290,7 +287,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
     /// `signed` is **consumed**, which is what enforces unique reservation
     /// ownership: `SignedCoreTransaction` is not `Clone`, so a single finalize
     /// can be registered at most once — there is no way to mint two live tokens
-    /// that name the same held reservation (`dashpay/platform#4185`). The built
+    /// that name the same held reservation. The built
     /// transaction, the funding account, the mandatory reservation height
     /// (`SignedCoreTransaction::reservation_height` — captured inside the
     /// funding critical section before the potentially-slow external signer ran,
@@ -319,8 +316,8 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
     /// before its first poll and silently drop the consumed `signed` — and its
     /// held reservation — without inserting it. An `async fn` here would only
     /// move `signed` into a future whose body runs on the first poll; dropping
-    /// that future before polling would leak the reservation to key-wallet's TTL
-    /// (`dashpay/platform#4185`). Callers invoke it directly.
+    /// that future before polling would leak the reservation to key-wallet's TTL.
+    /// Callers invoke it directly.
     ///
     /// # Liveness is the caller's obligation
     ///
@@ -416,8 +413,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         // `StaleToken`), or it stays live until we leave. Shared, so concurrent
         // payments — on this generation and on every other — are unaffected, and
         // scoped per generation, so holding it across the network send below
-        // blocks only THIS wallet's teardown rather than every wallet's
-        // (`dashpay/platform#4185`).
+        // blocks only THIS wallet's teardown rather than every wallet's.
         //
         // Taking `current`'s gate rather than the entry's is sound because the
         // only path that proceeds past the check below is one where
@@ -456,7 +452,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         // handle broadcasts a removed wallet's payment onto the network, and the
         // teardown sweep cannot stop it: the sweep and the removal are one
         // linearization point, but a broadcast that entered the gate first is
-        // outside it (`dashpay/platform#4185`).
+        // outside it.
         //
         // The entry is already removed, so we drop it WITHOUT releasing — the
         // reservation ceased to exist with the generation, and a release by
@@ -600,8 +596,8 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
     /// caller holds that generation's exclusive lifecycle gate across BOTH.
     /// Sweeping without it leaves two windows a payment operation slips through —
     /// a broadcast between the removal and this sweep still finds its entry, and
-    /// an in-flight finalizer registers a fresh token *after* this sweep has run
-    /// (`dashpay/platform#4185`). This function cannot take the gate itself: it
+    /// an in-flight finalizer registers a fresh token *after* this sweep has run.
+    /// This function cannot take the gate itself: it
     /// is synchronous, and the removal it must be atomic with is `async`.
     ///
     /// [`PlatformWalletManager::remove_wallet_with_teardown`](crate::PlatformWalletManager::remove_wallet_with_teardown)
@@ -1139,7 +1135,7 @@ mod tests {
         );
     }
 
-    /// Regression for `dashpay/platform#4185` blocker: registration must bind the
+    /// Invariant: registration must bind the
     /// token to the SAME wallet generation the payment was finalized against, not
     /// to a separately-supplied wallet. Registering a payment finalized through
     /// wallet A through an unrelated wallet B is refused up front with
@@ -1314,9 +1310,9 @@ mod tests {
     // NOTE: the former `concurrent_registers_yield_distinct_tokens` test
     // registered sixteen clones of ONE reserved transaction to probe the token
     // allocator. That is exactly the duplicate-capability pattern unique
-    // ownership now forbids: `register` consumes a non-`Clone`
+    // ownership forbids: `register` consumes a non-`Clone`
     // `SignedCoreTransaction`, so a single reservation can be registered at most
-    // once (`dashpay/platform#4185`). Token distinctness is guaranteed by
+    // once. Token distinctness is guaranteed by
     // construction (the `AtomicU64` allocator), and concurrent consumption is
     // covered by `concurrent_broadcasts_serialize_to_one_send`.
 
@@ -1566,11 +1562,9 @@ mod tests {
         );
     }
 
-    // NOTE: the former `release_entries_for_wallet_frees_the_reservation` test
-    // is removed with the `release_entries_for_wallet` method it exercised.
-    // Destroying wrapper aliases no longer releases deferred-payment tokens: a
-    // wrapper handle does not own the payment, so its destruction must leave the
-    // token live and broadcastable (`dashpay/platform#4185`, blocker 2). Token
+    // NOTE: destroying wrapper aliases must not release deferred-payment
+    // tokens: a wrapper handle does not own the payment, so its destruction
+    // must leave the token live and broadcastable. Token
     // reservations are reconciled by the payment owner (explicit
     // broadcast/release) or dropped at actual generation teardown
     // (`remove_entries_for_wallet`).
@@ -1827,7 +1821,7 @@ mod tests {
             .release_reservation(tx);
     }
 
-    /// Owner-guarded release regression (`dashpay/platform#4185`): a rejected
+    /// Owner-guarded release: a rejected
     /// deferred broadcast must free ONLY the inputs its own build still owns. If
     /// key-wallet's TTL swept this build's reservation and a concurrent build
     /// re-reserved the same outpoint under a new token, the rejection's release

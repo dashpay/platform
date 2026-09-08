@@ -90,7 +90,7 @@ erDiagram
         BLOB outpoint PK "bincode-encoded OutPoint"
         INTEGER value "satoshis"
         BLOB script "scriptPubKey bytes"
-        INTEGER height "NULL if unconfirmed"
+        INTEGER height "funding height, 0 if unconfirmed; NULL only for an unmaterialised sweep placeholder"
         INTEGER account_index
         INTEGER spent "0 | 1"
         BLOB spent_in_txid "set by apply_sweep for an unresolved held input; else NULL"
@@ -385,14 +385,21 @@ is `1` once block context is present.
 
 One row per UTXO, spent or unspent. `spent_in_txid` is written only by
 `apply_sweep`, naming the winner that took an input a swept loser claimed
-but this store had no released record for. Its presence gates the funding
-UTXO's own later upsert (`execute_upsert_utxo`): a coin held spent with a
-`spent_in_txid` stays spent when the wallet redelivers it, unlike a coin
-held spent with none (the ordinary "sweep couldn't resolve it" state, which
-does clear on redelivery). It is set to NULL by a trigger when its
-referenced `core_transactions` row is deleted (instead of a native
+but this store had no released record for. It is set to NULL by a trigger
+when its referenced `core_transactions` row is deleted (instead of a native
 `ON DELETE SET NULL`, which would also null the NOT NULL `wallet_id`
 column) — and by a later sweep that releases the same outpoint.
+
+What gates the funding UTXO's own later upsert (`execute_upsert_utxo`) is
+the row's shape, not that link: a never-materialised held row (`height`
+NULL, `spent = 1` — the placeholder `apply_sweep` writes for an input whose
+funding this store had not seen) stays spent when the funding arrives, with
+or without a `spent_in_txid` (the trigger can null it underneath a live
+hold). A materialised row follows the wallet: it knows the coin, any
+network-final spender of a coin it knows is wallet-relevant, so its view of
+`spent` is authoritative and a re-delivery clears both `spent` and the
+link. A delivery through `spent_utxos` onto a placeholder materialises it
+the same way instead of marking it in place.
 
 `winner_mined_height` (V007) stamps that claim with the mined height of the
 winner named in `spent_in_txid`, and decides the placeholder's lifetime

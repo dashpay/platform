@@ -76,16 +76,18 @@ pub fn apply(
         // deliberately retained for historical lookup, and neither
         // removal producer can legitimately name one — a Built row
         // rejected at broadcast (`untrack_asset_lock`) never got that
-        // far, and a sweep of the funding transaction
-        // (`remove_tracked_asset_locks_for_swept`) only tombstones
-        // entries still tracked, which a consumed lock no longer is —
-        // so a removal reaching a consumed row is by construction a
-        // stale write. `AssetLockChangeSet::merge` guarantees a stored
-        // changeset never carries an upsert and a tombstone for the
-        // same outpoint (a reinstating reconstruction cancels a folded
-        // sweep tombstone; a folding tombstone takes the dead upsert
-        // with it), so the upserts-then-removals order here is layout,
-        // not load-bearing sequencing.
+        // far, and the sweep-driven removal that arrives with the
+        // producer only tombstones entries still tracked, which a
+        // consumed lock no longer is — so a removal reaching a consumed
+        // row is by construction a stale write.
+        //
+        // Ordering note, scoped honestly: this applies upserts before
+        // removals. On this branch that is layout rather than a
+        // guarantee — the fold-level cancellation that would make an
+        // upsert and a tombstone for one outpoint impossible lands with
+        // the producer, and even there it does not cover every status.
+        // The `status != 'consumed'` predicate is what this statement
+        // actually relies on, and it holds regardless of the fold.
         let mut stmt = tx.prepare_cached(
             "DELETE FROM asset_locks \
              WHERE wallet_id = ?1 AND outpoint = ?2 AND status != 'consumed'",

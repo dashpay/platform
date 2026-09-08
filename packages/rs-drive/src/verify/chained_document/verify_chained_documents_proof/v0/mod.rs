@@ -1,9 +1,7 @@
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::query::drive_chained_document_query::{
-    ChainedDocumentsResult, DriveChainedDocumentQuery,
-};
 use crate::query::index_only_synthesis::synthesize_index_only_document;
+use crate::query::{ChainedDocumentsResult, DriveDocumentQuery};
 use crate::verify::RootHash;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -12,7 +10,7 @@ use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::{GroveDb, PathQuery};
 
-impl DriveChainedDocumentQuery<'_> {
+impl DriveDocumentQuery<'_> {
     /// v0 of the chained proof verification — see the versioned wrapper
     /// for the trust model.
     #[inline(always)]
@@ -21,8 +19,11 @@ impl DriveChainedDocumentQuery<'_> {
         proof: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, ChainedDocumentsResult), Error> {
-        self.validate(platform_version)?;
+        self.validate_chained(platform_version)?;
         let grove_version = &platform_version.drive.grove_version;
+        // The join edge: `validate_chained` just admitted exactly one
+        // by-id join, so this cannot fail past it.
+        let (_, outer_document_type, _) = self.chained_join()?;
 
         // BOOTSTRAP PASS: run the inner query alone against the merged
         // proof (subset verification — succinctness off, so the outer
@@ -31,24 +32,24 @@ impl DriveChainedDocumentQuery<'_> {
         // for reconstructing the merged query; the full pass below is
         // the authority, so nothing rests on this pass's completeness
         // semantics.
-        let inner_path_query = self.inner.construct_path_query(None, platform_version)?;
+        let inner_path_query = self.construct_path_query(None, platform_version)?;
         let (_, bootstrap_trios) =
             GroveDb::verify_subset_query(proof, &inner_path_query, grove_version)?;
-        let index = self.inner.index_only_query_index(platform_version)?;
+        let index = self.index_only_query_index(platform_version)?;
         let bootstrap_documents = bootstrap_trios
             .into_iter()
             .filter(|(_, _, element)| element.is_some())
             .map(|(path, key, _)| {
                 synthesize_index_only_document(
-                    self.inner.contract.id(),
-                    self.inner.document_type,
+                    self.contract.id(),
+                    self.document_type,
                     index,
                     &path,
                     &key,
                 )
             })
             .collect::<Result<Vec<Document>, Error>>()?;
-        let candidate_join_values = self.join_values(&bootstrap_documents)?;
+        let candidate_join_values = self.chained_join_values(&bootstrap_documents)?;
 
         // AUTHORITATIVE PASS: re-derive the outer component from the
         // candidates, re-merge at the same grove version (identical to
@@ -60,7 +61,8 @@ impl DriveChainedDocumentQuery<'_> {
         // plain inner query) fails this pass whenever the candidates
         // are non-empty: the merged query demands outer coverage the
         // proof cannot supply.
-        let path_queries = self.proof_path_queries(&candidate_join_values, platform_version)?;
+        let path_queries =
+            self.chained_proof_path_queries(&candidate_join_values, platform_version)?;
         let path_query_refs: Vec<&PathQuery> = path_queries.iter().collect();
         let merged_query = if path_query_refs.len() > 1 {
             PathQuery::merge(path_query_refs, grove_version)?
@@ -74,8 +76,8 @@ impl DriveChainedDocumentQuery<'_> {
         // Split the proved trios between the halves by their doctype
         // path segment: `[DataContractDocuments, contract_id, 1,
         // <doctype>, …]`.
-        let inner_type_name = self.inner.document_type.name().as_bytes();
-        let outer_type_name = self.outer_document_type.name().as_bytes();
+        let inner_type_name = self.document_type.name().as_bytes();
+        let outer_type_name = outer_document_type.name().as_bytes();
         let mut inner_documents: Vec<Document> = Vec::new();
         let mut outer_documents: Vec<Document> = Vec::new();
         for (path, key, element) in proved_path_key_values {
@@ -85,8 +87,8 @@ impl DriveChainedDocumentQuery<'_> {
             match path.get(3).map(|segment| segment.as_slice()) {
                 Some(segment) if segment == inner_type_name => {
                     inner_documents.push(synthesize_index_only_document(
-                        self.inner.contract.id(),
-                        self.inner.document_type,
+                        self.contract.id(),
+                        self.document_type,
                         index,
                         &path,
                         &key,
@@ -103,7 +105,7 @@ impl DriveChainedDocumentQuery<'_> {
                     outer_documents.push(
                         Document::from_bytes(
                             serialized.as_slice(),
-                            self.outer_document_type,
+                            outer_document_type,
                             platform_version,
                         )
                         .map_err(|e| Error::Protocol(Box::new(e)))?,
@@ -123,8 +125,9 @@ impl DriveChainedDocumentQuery<'_> {
         // bootstrap candidates were only for reconstructing the query —
         // and the exact-set assembly refuses any divergence between
         // them and the proven outer documents, in either direction.
-        let join_values = self.join_values(&inner_documents)?;
-        let outer_documents = self.assemble_outer_documents(&join_values, outer_documents)?;
+        let join_values = self.chained_join_values(&inner_documents)?;
+        let outer_documents =
+            self.assemble_chained_outer_documents(&join_values, outer_documents)?;
 
         Ok((
             root_hash,

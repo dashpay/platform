@@ -25,7 +25,7 @@
 /// once the process exited. An identity at the unanswered index then stayed
 /// invisible for the life of the installation, along with all of its contacts
 /// — a silent, permanent gap whose only symptom is a missing identity and
-/// DPNS name after a restore. See dashpay/platform#4365.
+/// DPNS name after a restore.
 ///
 /// This is that missing fact. `complete` is stored rather than derived from
 /// `failed_indices` because the two ways a scan can end early are different:

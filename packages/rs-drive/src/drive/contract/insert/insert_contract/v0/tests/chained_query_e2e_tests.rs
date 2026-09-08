@@ -12,7 +12,6 @@
 
 use super::index_only_e2e_tests::{build_like, insert_like, platform_version, setup_likes};
 use crate::error::Error;
-use crate::query::drive_chained_document_query::DriveChainedDocumentQuery;
 use crate::query::{DriveDocumentQuery, OrderClause, WhereClause, WhereOperator};
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
@@ -119,6 +118,7 @@ fn my_likes_query<'a>(
         start_at_included: false,
         block_time_ms: None,
         resolved_time_ranges: vec![],
+        sub_queries: vec![],
     }
 }
 
@@ -127,14 +127,13 @@ fn chained_posts_i_liked<'a>(
     owner: [u8; 32],
     after: Option<[u8; 32]>,
     limit: Option<u16>,
-) -> DriveChainedDocumentQuery<'a> {
-    DriveChainedDocumentQuery {
-        inner: my_likes_query(contract, owner, after, limit),
-        join_property: "postId".to_string(),
-        outer_document_type: contract
+) -> DriveDocumentQuery<'a> {
+    my_likes_query(contract, owner, after, limit).with_by_id_join(
+        "postId",
+        contract
             .document_type_for_name("post")
             .expect("post doctype exists"),
-    }
+    )
 }
 
 /// The full round trip: the server's materialized result and the
@@ -306,7 +305,11 @@ fn should_reject_invalid_chained_shapes() {
 
     // Join property without a refersTo declaration.
     let mut bad_join = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
-    bad_join.join_property = "hashtag".to_string();
+    bad_join.sub_queries[0]
+        .binding
+        .as_mut()
+        .expect("the join is bound")
+        .source_property = "hashtag".to_string();
     assert!(
         matches!(
             drive.query_chained_documents(&bad_join, None, None, pv),
@@ -318,7 +321,7 @@ fn should_reject_invalid_chained_shapes() {
     // Outer type that is not the refersTo target (and is itself
     // indexOnly, which is refused in its own right).
     let mut bad_outer = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
-    bad_outer.outer_document_type = contract
+    bad_outer.sub_queries[0].document_type = contract
         .document_type_for_name("tip")
         .expect("tip doctype exists");
     assert!(
@@ -379,9 +382,9 @@ fn should_reject_an_inner_only_proof() {
     let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
 
     // What an old node would return: a proof of ONLY the inner query.
-    let inner_only_proof = chained
-        .inner
-        .clone()
+    let mut inner_alone = chained.clone();
+    inner_alone.sub_queries = vec![];
+    let inner_only_proof = inner_alone
         .execute_with_proof(&drive, None, None, pv)
         .expect("inner-only proof generates")
         .0;

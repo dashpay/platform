@@ -274,12 +274,12 @@ impl IdentityWallet {
         // `ASSET_LOCK_FUNDING_SOURCES` — the BIP44 and BIP32 accounts at
         // `funding_account_index` plus every DashPay contact-receiving account
         // — so an invitation can be funded from a balance spread across
-        // accounts, without the sweep-then-lock hop that used to be required.
+        // accounts, with no sweep-then-lock hop.
         // `identity_index` is unused for the
         // `IdentityInvitation` funding type. Only the broadcast half runs here —
         // the proof wait is deferred until AFTER the invitation record below is
         // durably persisted, so an interruption during the (potentially long)
-        // proof wait can no longer orphan the funded lock from the reclaim UI.
+        // proof wait cannot orphan the funded lock from the reclaim UI.
         let (path, out_point) = self
             .asset_locks
             .broadcast_funded_asset_lock(
