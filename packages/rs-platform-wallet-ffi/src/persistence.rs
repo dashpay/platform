@@ -7774,7 +7774,7 @@ mod tests {
     use key_wallet::account::{Account, AccountType, StandardAccountType};
     use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::Wallet;
 
     /// Regression: restored pool addresses must be tagged with the
@@ -7923,7 +7923,6 @@ mod tests {
         // `account_collection_test.rs` uses.
         let mnemonic = Mnemonic::from_phrase(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-            Language::English,
         )
         .expect("static BIP-39 vector must parse");
         let seed = mnemonic.to_seed("");
@@ -7957,7 +7956,6 @@ mod tests {
     fn test_managed_wallet_info_with_account(account_type: AccountType) -> ManagedWalletInfo {
         let mnemonic = Mnemonic::from_phrase(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-            Language::English,
         )
         .expect("static BIP-39 vector must parse");
         let seed = mnemonic.to_seed("");
@@ -8073,7 +8071,6 @@ mod tests {
     fn test_managed_wallet_info_with_provider_owner() -> ManagedWalletInfo {
         let mnemonic = Mnemonic::from_phrase(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-            Language::English,
         )
         .expect("static BIP-39 vector must parse");
         let seed = mnemonic.to_seed("");
@@ -8516,7 +8513,6 @@ mod tests {
     fn account_xpub_survives_persist_restore_round_trip() {
         let mnemonic = Mnemonic::from_phrase(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-            Language::English,
         )
         .expect("static BIP-39 vector must parse");
         let seed = mnemonic.to_seed("");
