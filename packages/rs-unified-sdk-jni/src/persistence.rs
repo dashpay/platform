@@ -238,7 +238,12 @@ fn bridge_overrides(env: &mut JNIEnv, bridge: &JObject, name: &str) -> bool {
                 return Ok(false);
             }
             let methods: JObjectArray = env
-                .call_method(&class, "getDeclaredMethods", "()[Ljava/lang/reflect/Method;", &[])?
+                .call_method(
+                    &class,
+                    "getDeclaredMethods",
+                    "()[Ljava/lang/reflect/Method;",
+                    &[],
+                )?
                 .l()?
                 .into();
             let count = env.get_array_length(&methods)?;
@@ -248,7 +253,11 @@ fn bridge_overrides(env: &mut JNIEnv, bridge: &JObject, name: &str) -> bool {
                     .call_method(&method, "getName", "()Ljava/lang/String;", &[])?
                     .l()?
                     .into();
-                let matches = env.get_string(&method_name)?.to_str().map(|s| s == name).unwrap_or(false);
+                let matches = env
+                    .get_string(&method_name)?
+                    .to_str()
+                    .map(|s| s == name)
+                    .unwrap_or(false);
                 if matches {
                     return Ok(true);
                 }
@@ -685,7 +694,11 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
                 &[
                     (&wid).into(),
                     JValue::Bool(has_synced as u8),
-                    JValue::Int(if has_synced { jint_height(synced_height)? } else { 0 }),
+                    JValue::Int(if has_synced {
+                        jint_height(synced_height)?
+                    } else {
+                        0
+                    }),
                     JValue::Bool(cs.has_balance as u8),
                     JValue::Long(cs.balance.confirmed_delta),
                     JValue::Long(cs.balance.unconfirmed_delta),
