@@ -14,7 +14,7 @@ license = "MIT"
 
 [dependencies]
 arc-swap = "1.7.0"
-bincode = { version = "=2.0.1", features = ["serde"] }
+bincode = { workspace = true, features = ["serde"] }
 ciborium = { version = "0.2.2" }
 chrono = "0.4.35"
 serde = { version = "1.0.219", features = ["derive"] }
@@ -82,11 +82,11 @@ derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "6fc7e1e82de27a56c3428c0d5dd15b5f6a0ea23e" }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "985ece6574f5fc8fe80db7b304a9a701c0f4afa6" }
 nonempty = "0.11"
 # Shielded-pool snapshot needs raw RocksDB SstFileWriter + ingest_external_file_cf
 # bindings, and blake3 for the snapshot-file checksum.
-rocksdb = { git = "https://github.com/QuantumExplorer/rust-rocksdb.git", rev = "52772eea7bcd214d1d07d80aa538b1d24e5015b7" }
+rocksdb = "0.25.0"
 blake3 = "1.5"
 
 [dev-dependencies]
@@ -108,7 +108,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "6fc7e1e82de27a56c3428c0d5dd15b5f6a0ea23e", features = ["client"] }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "985ece6574f5fc8fe80db7b304a9a701c0f4afa6", features = ["client"] }
 assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks", "shielded_test_data"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }
@@ -117,13 +117,13 @@ dash-platform-macros = { path = "../rs-dash-platform-macros" }
 libc = "0.2"
 
 # For tests of grovedb verify
-rocksdb = { git = "https://github.com/QuantumExplorer/rust-rocksdb.git", rev = "52772eea7bcd214d1d07d80aa538b1d24e5015b7" }
+rocksdb = "0.25.0"
 integer-encoding = { version = "4.0.0" }
 
 # For dump_only_default_and_aux_cfs_under_shielded_subtree_prefix — same
 # subtree-prefix algorithm grovedb uses internally.
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "6fc7e1e82de27a56c3428c0d5dd15b5f6a0ea23e" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "6fc7e1e82de27a56c3428c0d5dd15b5f6a0ea23e" }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "985ece6574f5fc8fe80db7b304a9a701c0f4afa6" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "985ece6574f5fc8fe80db7b304a9a701c0f4afa6" }
 
 [features]
 default = ["bls-signatures"]

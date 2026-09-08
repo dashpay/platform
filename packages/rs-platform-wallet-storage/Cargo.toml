@@ -55,7 +55,7 @@ refinery = { version = "0.9", default-features = false, features = [
 # (which derives bincode 2 `Encode`/`Decode`) and decode
 # `dpp::AssetLockProof` from the asset-lock blob column. Exact-pinned to
 # the lock-resolved version to match the crate's `=`-pin discipline.
-bincode = { version = "=2.0.1", optional = true }
+bincode = { workspace = true, optional = true }
 tempfile = { version = "3", optional = true }
 chrono = { version = "0.4", default-features = false, features = [
     "clock",

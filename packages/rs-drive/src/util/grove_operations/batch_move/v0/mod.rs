@@ -60,6 +60,7 @@ impl Drive {
         // ── 2. Build the delete op ──────────────────────────────────────────
         let current_batch = LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
         let delete_opts = DeleteOptions {
+            propagate_backward_references: false,
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,

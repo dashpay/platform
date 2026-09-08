@@ -47,7 +47,7 @@ jsonschema = { git = "https://github.com/dashpay/jsonschema-rs", branch = "confi
 ], optional = true }
 lazy_static = { version = "1.4" }
 num_enum = "0.7"
-bincode = { version = "=2.0.1", features = ["serde"] }
+bincode = { workspace = true, features = ["serde"] }
 rand = { version = "0.8.5", features = ["small_rng"] }
 regex = { version = "1.10.4" }
 serde = { version = "1.0.219", features = ["derive"] }
@@ -71,7 +71,7 @@ strum = { version = "0.26", features = ["derive"] }
 json-schema-compatibility-validator = { path = '../rs-json-schema-compatibility-validator', optional = true }
 once_cell = "1.19.0"
 tracing = { version = "0.1.41" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "6fc7e1e82de27a56c3428c0d5dd15b5f6a0ea23e", optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "985ece6574f5fc8fe80db7b304a9a701c0f4afa6", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["full"] }
