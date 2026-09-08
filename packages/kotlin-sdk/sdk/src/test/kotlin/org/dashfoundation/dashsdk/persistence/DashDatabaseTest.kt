@@ -233,6 +233,35 @@ class DashDatabaseTest {
     }
 
     @Test
+    fun schemaIsAtVersion11WithTheSweepHoldIndexes() = runTest {
+        // The sweep-hold columns land in ONE migration (10 → 11), with the
+        // two `pending_inputs` indexes the sweep's claimed-row lookup
+        // (`spendingTxid`) and the end-of-round collector
+        // (`walletId, isSweptTombstone, winnerMinedHeight`) rely on.
+        assertEquals(11, db.openHelper.readableDatabase.version)
+        val indexes = mutableSetOf<String>()
+        db.openHelper.readableDatabase.query("PRAGMA index_list('pending_inputs')").use { c ->
+            val nameColumn = c.getColumnIndexOrThrow("name")
+            while (c.moveToNext()) indexes += c.getString(nameColumn)
+        }
+        assertTrue(indexes.contains("index_pending_inputs_spendingTxid"))
+        assertTrue(indexes.contains("index_pending_inputs_walletId_isSweptTombstone_winnerMinedHeight"))
+    }
+
+    @Test
+    fun advanceChainLockHeightIsANarrowMonotonicMaxWrite() = runTest {
+        db.walletDao().upsert(WalletEntity(walletId = walletId, networkRaw = 1, name = "w", syncedHeight = 7))
+        assertEquals(1, db.walletDao().advanceChainLockHeight(walletId, 500, 1L))
+        assertEquals(500, db.walletDao().getByWalletId(walletId)!!.lastAppliedChainLockHeight)
+        assertEquals(1, db.walletDao().advanceChainLockHeight(walletId, 400, 2L))
+        assertEquals("a stale height never lowers it", 500, db.walletDao().getByWalletId(walletId)!!.lastAppliedChainLockHeight)
+        val row = db.walletDao().getByWalletId(walletId)!!
+        assertEquals("sibling columns are untouched", 7, row.syncedHeight)
+        assertEquals("w", row.name)
+        assertEquals(0, db.walletDao().advanceChainLockHeight(ByteArray(32) { 9 }, 1, 3L))
+    }
+
+    @Test
     fun storageCountsCoverEveryTable() = runTest {
         val counts = db.storageCountsDao()
         assertEquals(0L, counts.countWallets().first())
