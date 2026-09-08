@@ -1,0 +1,36 @@
+name: Label Merge Conflicts
+
+on:
+  # Recheck PRs targeting any branch that receives a push.
+  push:
+    branches: ['**']
+  # Allow label and comment updates for fork PRs without running their code.
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+# Each PR event scans all open PRs; serialize runs to avoid duplicate comments.
+concurrency:
+  group: label-merge-conflicts
+  cancel-in-progress: false
+
+jobs:
+  label-merge-conflicts:
+    if: github.repository == 'dashpay/platform'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update merge conflict labels
+        uses: eps1lon/actions-label-merge-conflict@0273be72a0bbd58fcd71d0d6c02c209b50d1e5e1 # v3.1.0
+        with:
+          dirtyLabel: needs rebase
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          commentOnDirty: |
+            This pull request has conflicts, please rebase.
+
+            ---
+            🤖 Posted autonomously by Codex on behalf of pasta.
