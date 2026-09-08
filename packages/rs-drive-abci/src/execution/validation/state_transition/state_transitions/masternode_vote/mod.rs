@@ -3007,6 +3007,19 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
+                // The verifier has to walk the proof the way the request asked
+                // for it, as the SDK's proof verifier does when it mirrors the
+                // request: grovedb refuses a layer proof read in the other
+                // direction.
+                let verifier_start_at = start_at_identifier_info.as_ref().map(|info| {
+                    let start_identifier: [u8; 32] = info
+                        .start_identifier
+                        .clone()
+                        .try_into()
+                        .expect("expected a 32 byte start identifier");
+                    (start_identifier, info.start_identifier_included)
+                });
+
                 let query_validation_result = platform
                     .query_contested_resource_voters_for_identity(
                         GetContestedResourceVotersForIdentityRequest {
@@ -3063,9 +3076,9 @@ mod tests {
                         },
                         contestant_id: contender_id,
                         offset: None,
-                        limit: None,
-                        start_at: None,
-                        order_ascending: true,
+                        limit: count.map(|count| count as u16),
+                        start_at: verifier_start_at,
+                        order_ascending,
                     };
 
                 let (_, voters) = resolved_contested_document_vote_poll_drive_query
