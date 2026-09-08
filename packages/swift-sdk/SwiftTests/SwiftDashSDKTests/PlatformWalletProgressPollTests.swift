@@ -152,6 +152,16 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         XCTAssertEqual(recorder.handles.first, 77)
         XCTAssertFalse(recorder.mainThreadFlags.contains(true), "native reads never run on the main thread")
 
+        // Still BEFORE the gate is released: the manager loop must keep
+        // ticking while the per-wallet read is parked — the whole point of
+        // the two loops being independent. Asserted after the release, these
+        // counts could equally be explained by the read having returned.
+        try await waitUntil { recorder.count(named: "spv_is_running") >= 3 }
+        XCTAssertEqual(
+            recorder.count(named: "pending_account_build_count"), 1,
+            "the wallet loop stays parked in its first read")
+        XCTAssertFalse(recorder.mainThreadFlags.contains(true))
+
         gate.signal()
         try await waitUntil {
             manager.dashPayUnlockStatus[wallet.walletId]?.pendingAccountBuilds == 3
@@ -159,14 +169,6 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         XCTAssertEqual(manager.spvPeers.map(\.address), ["1.2.3.4:9999"])
         XCTAssertEqual(manager.spvTipBlockTime, Date(timeIntervalSince1970: 1_700_000_000))
         XCTAssertFalse(manager.dashPaySyncIsSyncing, "a failed read keeps the previously published value")
-
-        // The manager loop keeps ticking while the per-wallet read is still
-        // parked — the whole point of the two loops being independent.
-        XCTAssertEqual(
-            recorder.count(named: "pending_account_build_count"), 1,
-            "the wallet loop stays parked in its first read")
-        try await waitUntil { recorder.count(named: "spv_is_running") >= 3 }
-        XCTAssertFalse(recorder.mainThreadFlags.contains(true))
 
         await manager.shutdown()
         // Drain ticks that were already in flight, without a wait that can
