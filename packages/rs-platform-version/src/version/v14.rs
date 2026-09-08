@@ -23,6 +23,8 @@ use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DR
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::fee::v2::FEE_VERSION2;
+use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
+use crate::version::fee::FeeVersion;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v3::SYSTEM_DATA_CONTRACT_VERSIONS_V3;
 use crate::version::system_limits::v4::SYSTEM_LIMITS_V4;
@@ -222,7 +224,15 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
-    fee_version: FEE_VERSION2,
+    // Contested contributions use the active protocol, not the historical
+    // storage-fee cache, so the storage fee version remains unchanged.
+    fee_version: FeeVersion {
+        vote_resolution_fund_fees: VoteResolutionFundFees {
+            contested_document_vote_resolution_fund_required_amount: 10_000_000_000, // 0.1 DASH
+            ..FEE_VERSION2.vote_resolution_fund_fees
+        },
+        ..FEE_VERSION2
+    },
     system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
@@ -233,6 +243,27 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
 mod tests {
     use super::*;
     use crate::version::v13::PLATFORM_V13;
+
+    #[test]
+    fn should_halve_only_the_contested_document_fee_at_protocol_14() {
+        for protocol_version in 1..14 {
+            let version = PlatformVersion::get(protocol_version).expect("known protocol version");
+            assert_eq!(
+                version
+                    .fee_version
+                    .vote_resolution_fund_fees
+                    .contested_document_vote_resolution_fund_required_amount,
+                20_000_000_000,
+                "protocol {protocol_version} must preserve the 0.2 DASH contribution"
+            );
+        }
+
+        let mut expected_fees = PLATFORM_V13.fee_version.clone();
+        expected_fees
+            .vote_resolution_fund_fees
+            .contested_document_vote_resolution_fund_required_amount = 10_000_000_000;
+        assert_eq!(PLATFORM_V14.fee_version, expected_fees);
+    }
 
     /// The ranked / boolean-HAVING routing gate lives in v14's own query
     /// table, so flipping it touches only v14: a v13 node keeps running

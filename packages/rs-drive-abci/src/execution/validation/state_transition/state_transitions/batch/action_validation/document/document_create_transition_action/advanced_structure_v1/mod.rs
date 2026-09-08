@@ -291,6 +291,89 @@ mod tests {
     }
 
     #[test]
+    fn should_require_the_exact_contested_dpns_fee_for_each_protocol_version() {
+        for (protocol_version, expected_amount) in [(13, 20_000_000_000), (14, 10_000_000_000)] {
+            let platform_version = PlatformVersion::get(protocol_version).expect("known version");
+            for paid_amount in [
+                9_999_999_999,
+                10_000_000_000,
+                10_000_000_001,
+                20_000_000_000,
+                20_000_000_001,
+            ] {
+                let mut action = create_action(
+                    CONTESTED_LABEL,
+                    Some(CONTESTED_INDEX_NAME),
+                    platform_version,
+                );
+                let DocumentCreateTransitionAction::V0(action_data) = &mut action;
+                action_data
+                    .prefunded_voting_balance
+                    .as_mut()
+                    .expect("prefunded contest")
+                    .1 = paid_amount;
+
+                let errors = validate(&action, platform_version);
+                let contest_errors = contest_errors(&errors);
+                if paid_amount == expected_amount {
+                    assert!(
+                        contest_errors.is_empty(),
+                        "protocol {protocol_version}: {errors:?}"
+                    );
+                } else {
+                    let [StateError::DocumentContestNotPaidForError(error)] =
+                        contest_errors.as_slice()
+                    else {
+                        panic!("protocol {protocol_version}: expected a fee error, got {errors:?}");
+                    };
+                    assert_eq!(error.expected_amount(), expected_amount);
+                    assert_eq!(error.paid_amount(), paid_amount);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn should_construct_dpns_transitions_with_the_protocol_contested_fee() {
+        use dpp::document::{Document, DocumentV0};
+        use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
+
+        for (protocol_version, expected_amount) in [(13, 20_000_000_000), (14, 10_000_000_000)] {
+            let platform_version = PlatformVersion::get(protocol_version).expect("known version");
+            let contract = DataContractFetchInfo::dpns_contract_fixture(protocol_version);
+            let document_type = contract
+                .contract
+                .document_type_for_name("domain")
+                .expect("domain type");
+
+            for label in [CONTESTED_LABEL, NON_CONTESTED_LABEL] {
+                let document = Document::V0(DocumentV0 {
+                    id: Identifier::from([0xAA; 32]),
+                    owner_id: Identifier::from([0xBB; 32]),
+                    properties: domain_properties(label),
+                    ..Default::default()
+                });
+                let DocumentCreateTransition::V0(transition) =
+                    DocumentCreateTransition::from_document(
+                        document,
+                        document_type,
+                        [0xCC; 32],
+                        None,
+                        1,
+                        platform_version,
+                        None,
+                        None,
+                    )
+                    .expect("create transition");
+
+                let expected = (label == CONTESTED_LABEL)
+                    .then(|| (CONTESTED_INDEX_NAME.to_string(), expected_amount));
+                assert_eq!(transition.prefunded_voting_balance, expected);
+            }
+        }
+    }
+
+    #[test]
     fn should_reject_a_prefunded_voting_balance_naming_another_index() {
         let platform_version = PlatformVersion::latest();
 
