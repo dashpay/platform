@@ -13,7 +13,7 @@ describe('generate-tenderdash-seeds CLI', () => {
   let command;
 
   function run(args = [], env = {}) {
-    return spawnSync(process.execPath, [path.join(dir, 'scripts/generate-tenderdash-seeds.js'), ...args], {
+    return spawnSync(process.execPath, ['--import', path.join(dir, 'fetch.js'), path.join(dir, 'scripts/generate-tenderdash-seeds.js'), ...args], {
       encoding: 'utf8',
       env: {
         ...process.env,
@@ -55,6 +55,25 @@ describe('generate-tenderdash-seeds CLI', () => {
       }
     `);
     command = [process.execPath, fixture];
+    fs.writeFileSync(path.join(dir, 'fetch.js'), `
+      globalThis.fetch = async (url, options) => {
+        const network = url === 'https://quorums.mainnet.networks.dash.org/masternodes' ? 'mainnet'
+          : url === 'https://quorums.testnet.networks.dash.org/masternodes' ? 'testnet' : null;
+        if (!network || options.redirect !== 'error' || !options.signal) throw new Error('Unexpected HTTP request');
+        if (process.env.SEED_TEST_FETCH_MODE === 'fail-testnet' && network === 'testnet') {
+          return { ok: false, status: 503 };
+        }
+        if (process.env.SEED_TEST_FETCH_MODE === 'forbid') throw new Error('HTTP must not be called');
+        return { ok: true, json: async () => ({success: true, lastUpdated: Math.floor(Date.now() / 1000),
+          data: Array.from({length: 5}, (_, i) => ({
+            platformNodeID: (i + 1).toString(16).padStart(40, '0'),
+            address: '8.1.1.' + (i + 1) + ':9999',
+            status: 'ENABLED', versionCheck: 'success',
+            platformP2PPort: network === 'mainnet' ? 26656 : 36656,
+          }))
+        })};
+      };
+    `);
   });
 
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -85,5 +104,43 @@ describe('generate-tenderdash-seeds CLI', () => {
     expect(failed.status).not.to.equal(0);
     expect(failed.stderr).to.include('Core RPC getblockchaininfo failed');
     expect(failed.stderr).not.to.include(secret);
+  });
+
+  it('should generate both networks from quorum servers with no CLI configuration', () => {
+    const env = { DASHMATE_MAINNET_CLI: undefined, DASHMATE_TESTNET_CLI: undefined };
+    const result = run([], env);
+    expect(result.status, result.stderr).to.equal(0);
+    const snapshots = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+    expect(snapshots.version).to.equal('5.0.0');
+    for (const network of ['mainnet', 'testnet']) {
+      expect(snapshots[network].source).to.equal(`https://quorums.${network}.networks.dash.org/masternodes`);
+      expect(snapshots[network].seeds).to.have.length(5);
+      expect(snapshots[network]).not.to.have.property('blockHash');
+    }
+    expect(snapshots.testnet.seeds[0].port).to.equal(36656);
+    // Publishing checks the committed data offline, even with no CLI overrides.
+    const check = run(['--check'], { ...env, SEED_TEST_FETCH_MODE: 'forbid' });
+    expect(check.status, check.stderr).to.equal(0);
+  });
+
+  it('should preserve both snapshots when the second quorum server fails', () => {
+    const result = run([], {
+      DASHMATE_MAINNET_CLI: undefined,
+      DASHMATE_TESTNET_CLI: undefined,
+      SEED_TEST_FETCH_MODE: 'fail-testnet',
+    });
+    expect(result.status).not.to.equal(0);
+    expect(result.stdout).to.include('mainnet: 5 seeds');
+    expect(result.stderr).to.include('HTTP 503');
+    expect(fs.readFileSync(snapshotPath, 'utf8')).to.equal(original);
+  });
+
+  it('should allow a Core override for one network and the quorum server for the other', () => {
+    const result = run([], { DASHMATE_TESTNET_CLI: undefined });
+    expect(result.status, result.stderr).to.equal(0);
+    const snapshots = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+    expect(snapshots.mainnet.blockHash).to.equal('a'.repeat(64));
+    expect(snapshots.mainnet).not.to.have.property('source');
+    expect(snapshots.testnet.source).to.include('quorums.testnet');
   });
 });

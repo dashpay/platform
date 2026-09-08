@@ -6,31 +6,40 @@ file. Do not edit seed addresses by hand.
 
 ## Preparing a release
 
-Provide access to a synced Core node on each network using JSON argument arrays:
+Run the normal release command; no Core credentials or environment setup is required:
 
 ```sh
-export DASHMATE_MAINNET_CLI='["dash-cli","-conf=/secure/mainnet.conf"]'
-export DASHMATE_TESTNET_CLI='["dash-cli","-conf=/secure/testnet.conf"]'
 yarn release
 ```
 
-The arrays can also prefix `dash-cli` with `docker exec <container>` or
-`ssh <host> docker exec <container>`. Keep authentication in the node's config or
-cookie file, not command arguments. Generation runs `getblockchaininfo`,
-`protx list valid true <height>`, and `getblockhash <height>`; it does not modify
-Core. Both nodes must have finished initial sync, have caught up to their headers,
-and have a tip less than 24 hours old.
+Release preparation reads the public quorum servers:
 
-`yarn release` regenerates both snapshots before creating the release commit.
-Generation records the Core height, hash, time, and package version. It selects up
-to 20 distinct evonodes and hosts, excluding PoSe-banned and locally Platform-banned
-entries. Registered Platform endpoints take precedence over legacy service IPs.
-The current generator uses IPv4 endpoints, which all Dashmate transports support.
-At least five candidates per network are required. These are registry-derived
-bootstrap peers; registry membership does not guarantee a live Tenderdash handshake.
+- `https://quorums.mainnet.networks.dash.org/masternodes`
+- `https://quorums.testnet.networks.dash.org/masternodes`
+
+These endpoints must support the bootstrap metadata added in
+[dashpay/quorum-list-server#14](https://github.com/dashpay/quorum-list-server/pull/14).
+The response must have `success: true`, a `data` array, and `lastUpdated` in Unix
+seconds. Cache data more than 30 minutes old is rejected. HTTP requests time out
+after 15 seconds and do not follow redirects. Old server responses missing the
+new fields fail with an actionable error; deploy the server change before using
+this default release path.
+
+The generator selects up to 20 distinct evonodes and hosts with `status: ENABLED`
+and `versionCheck: success`. It reads `platformNodeID` and prefers registered
+`addresses.platform_p2p` endpoints, falling back to the host in `address` with
+`platformP2PPort` for older Core registries. Ports are never guessed. At least five
+eligible IPv4 peers per network are required; malformed or unsupported endpoints
+are skipped. Registry membership and a successful DAPI version check do not
+prove that a Tenderdash P2P handshake will succeed.
+
+The committed snapshots record the package version, source URL, and server's
+`lastUpdated` timestamp. The HTTPS quorum server is the trusted registry source;
+its cache timestamp does not independently prove Core synchronization. No Core
+block height, hash, or time is fabricated for this source.
 
 If either network fails, no snapshot is replaced and release preparation stops.
-Fix Core access and retry generation before continuing release preparation:
+After resolving the error, regenerate before continuing release preparation:
 
 ```sh
 node packages/dashmate/scripts/generate-tenderdash-seeds.js
@@ -42,6 +51,25 @@ that both snapshots match the package version and are at most seven days old,
 even when it reuses cached build artifacts. A delayed release needs refreshed
 snapshots in its release commit. Ordinary builds and tests remain offline and
 reproducible; publishing never silently changes tagged source data.
+
+### Optional local Core override
+
+To use your own synced Core node instead of a public quorum server, set the
+corresponding optional variable (either network can be overridden independently):
+
+```sh
+export DASHMATE_MAINNET_CLI='["dash-cli","-conf=/secure/mainnet.conf"]'
+export DASHMATE_TESTNET_CLI='["dash-cli","-conf=/secure/testnet.conf"]'
+```
+
+The JSON arrays can prefix `dash-cli` with `docker exec <container>` or
+`ssh <host> docker exec <container>`. Keep credentials in config or cookie files.
+An explicitly configured but invalid override fails rather than silently using
+the public server. This path verifies Core synchronization, a tip under 24 hours
+old, and a stable block hash around `protx list valid true <height>`. It preserves
+Core block provenance in the snapshot and excludes PoSe-banned and locally
+Platform-banned entries. It is not an automatic fallback on public-server errors.
+Both sources retain the same history of stock seed sets for config migration.
 
 ## Existing installations
 
