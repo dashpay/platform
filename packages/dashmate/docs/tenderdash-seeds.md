@@ -1,8 +1,9 @@
 # Tenderdash bootstrap seeds
 
-Dashmate ships `configs/defaults/tenderdash-seeds.json`, generated from the on-chain
-Core evonode registry for mainnet and testnet. Both default configs consume this
-file. Do not edit seed addresses by hand.
+Dashmate ships `configs/defaults/tenderdash-seeds.json`, generated from the public
+quorum servers for mainnet and testnet by default. A `DASHMATE_*_CLI` override reads
+the Core evonode registry directly. Both default configs consume this file. Do not
+edit seed addresses by hand.
 
 ## Preparing a release
 
