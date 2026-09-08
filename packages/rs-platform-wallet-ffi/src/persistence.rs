@@ -4431,21 +4431,13 @@ unsafe fn restore_core_address_pools(
                 .ok()
                 .map(|check_type| {
                     let account_index = match &account_type {
-                        AccountType::Standard {
-                            index, ..
+                        AccountType::Standard { index, .. }
+                        | AccountType::CoinJoin { index }
+                        | AccountType::DashpayReceivingFunds { index, .. }
+                        | AccountType::DashpayExternalAccount { index, .. } => Some(*index),
+                        AccountType::IdentityTopUp { registration_index } => {
+                            Some(*registration_index)
                         }
-                        | AccountType::CoinJoin {
-                            index,
-                        }
-                        | AccountType::DashpayReceivingFunds {
-                            index, ..
-                        }
-                        | AccountType::DashpayExternalAccount {
-                            index, ..
-                        } => Some(*index),
-                        AccountType::IdentityTopUp {
-                            registration_index,
-                        } => Some(*registration_index),
                         _ => None,
                     };
                     wallet.key_source_for_account_type(&check_type, account_index)
@@ -4479,39 +4471,39 @@ unsafe fn restore_core_address_pools(
                     // material, not an account xpub) — and their pools are
                     // re-derived by DashPay contact sync at runtime, so a
                     // sparse restore self-heals through that path instead.
-                    // Hardened pools cannot be publicly derived at all.
-                    tracing::info!(
+                    // Hardened pools cannot be publicly derived at all. An
+                    // expected condition on every contact pool of every load,
+                    // so it is a debug line, not an info line per pool.
+                    tracing::debug!(
                         wallet_id = %hex::encode(wallet_id),
                         ?account_type,
                         ?pool_type,
-                        "load: address-pool hole repair skipped (no public key                          source); pool restored as persisted"
+                        "load: address-pool hole repair skipped (no public key source); \
+                         pool restored as persisted"
                     );
-                }
-                if repairable {
-                    if let Some(max_idx) = pool.highest_generated {
-                        match pool.ensure_contiguous_to(max_idx, &key_source) {
-                            Ok(0) => {}
-                            Ok(filled) => {
-                                tracing::warn!(
-                                    wallet_id = %hex::encode(wallet_id),
-                                    ?account_type,
-                                    ?pool_type,
-                                    filled,
-                                    "load: repaired address-pool holes left by dropped \
-                                     persisted rows; outputs paying these addresses are \
-                                     recognizable again"
-                                );
-                            }
-                            Err(e) => {
-                                tracing::warn!(
-                                    wallet_id = %hex::encode(wallet_id),
-                                    ?account_type,
-                                    ?pool_type,
-                                    error = %e,
-                                    "load: address-pool hole repair failed; pool restored \
-                                     as persisted (sparse)"
-                                );
-                            }
+                } else if let Some(max_idx) = pool.highest_generated {
+                    match pool.ensure_contiguous_to(max_idx, &key_source) {
+                        Ok(0) => {}
+                        Ok(filled) => {
+                            tracing::warn!(
+                                wallet_id = %hex::encode(wallet_id),
+                                ?account_type,
+                                ?pool_type,
+                                filled,
+                                "load: repaired address-pool holes left by dropped \
+                                 persisted rows; outputs paying these addresses are \
+                                 recognizable again"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                wallet_id = %hex::encode(wallet_id),
+                                ?account_type,
+                                ?pool_type,
+                                error = %e,
+                                "load: address-pool hole repair failed; pool restored \
+                                 as persisted (sparse)"
+                            );
                         }
                     }
                 }

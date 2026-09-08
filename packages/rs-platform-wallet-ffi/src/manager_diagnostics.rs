@@ -21,16 +21,16 @@ use platform_wallet::manager::accessors::{
     AccountTransactionSnapshot, AccountUtxoSnapshot, AddressBanInfoSnapshot,
     CoreWalletStateSnapshot, IdentitySyncConfigSnapshot, IdentityWalletStateSnapshot,
     PlatformAddressProviderStateSnapshot, PlatformAddressSyncConfigSnapshot,
-    TrackedAssetLockSnapshot, WalletIdentityRowSnapshot,
+    TrackedAssetLockSnapshot, WalletIdentityRowSnapshot, WalletUtxoCursor, WalletUtxoRow,
 };
 
 use crate::check_ptr;
 use crate::core_wallet_types::{
     AccountAddressPoolEntryFFI, AccountMetadataFFI, AccountTransactionEntryFFI,
     AccountUtxoEntryFFI, AddressBanInfoFFI, AddressInfoFFI, CoreWalletStateFFI,
-    IdentitySyncConfigFFI, IdentityWalletStateFFI, OutPointFFI,
-    PlatformAddressProviderStateFFI, PlatformAddressSyncConfigFFI,
-    TrackedAssetLockEntryFFI, WalletIdentityRowFFI,
+    IdentitySyncConfigFFI, IdentityWalletStateFFI, OutPointFFI, PlatformAddressProviderStateFFI,
+    PlatformAddressSyncConfigFFI, TrackedAssetLockEntryFFI, WalletIdentityRowFFI,
+    WalletUtxoEntryFFI,
 };
 use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::{Handle, PLATFORM_WALLET_MANAGER_STORAGE};
@@ -614,33 +614,38 @@ pub unsafe extern "C" fn platform_wallet_account_utxos_free(
     let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(utxos, count));
 }
 
-/// One outpoint-ordered page of an account's UTXO inventory — the bounded
+/// One page of the wallet's UTXO inventory across EVERY funds account, in
+/// `(account, outpoint)` order under one read lock — the bounded, host-neutral
 /// form of `platform_wallet_account_utxos`.
 ///
 /// A wallet's UTXO count is chain-controlled (anyone who knows a watched
-/// address can keep sending dust to it), so a periodic host-side audit
-/// must never materialize the whole inventory at once. `after_txid` +
-/// `after_vout` name the last outpoint of the previous page; pass a NULL
-/// `after_txid` to start at the beginning. `limit` caps the rows returned
-/// (0 means "no limit" — a paging caller should always pass a real cap),
-/// and `out_has_more` reports whether further pages remain.
+/// address can keep sending dust to it), so a periodic host-side audit must
+/// never materialize the whole inventory at once. The page is wallet-wide so
+/// the host neither enumerates accounts nor stitches per-account cursors:
+/// the ordering invariant lives in `platform-wallet` once
+/// (`wallet_utxos_page_blocking`) and every host walks it the same way.
 ///
-/// Rows are freed with `platform_wallet_account_utxos_free`, the same
-/// entry type and the same deallocator as the unpaged call.
+/// Resume with the LAST ROW of the previous page: `after_spec` (its account
+/// tuple, xpub ignored) + `after_txid`/`after_vout` (its outpoint). Pass a
+/// NULL `after_spec` to start at the beginning. `limit` caps the rows in one
+/// page (0 means "no limit" — a paging caller should always pass a real cap);
+/// `out_has_more` reports whether further pages remain. An unknown wallet is
+/// an empty terminal page.
+///
+/// Rows are freed with `platform_wallet_wallet_utxos_free`.
 #[no_mangle]
-pub unsafe extern "C" fn platform_wallet_account_utxos_page(
+pub unsafe extern "C" fn platform_wallet_wallet_utxos_page(
     manager_handle: Handle,
     wallet_id: *const u8,
-    spec: *const AccountSpecFFI,
+    after_spec: *const AccountSpecFFI,
     after_txid: *const u8,
     after_vout: u32,
     limit: usize,
-    out_utxos: *mut *const AccountUtxoEntryFFI,
+    out_utxos: *mut *const WalletUtxoEntryFFI,
     out_count: *mut usize,
     out_has_more: *mut bool,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id);
-    check_ptr!(spec);
     check_ptr!(out_utxos);
     check_ptr!(out_count);
     check_ptr!(out_has_more);
@@ -648,28 +653,32 @@ pub unsafe extern "C" fn platform_wallet_account_utxos_page(
     *out_count = 0;
     *out_has_more = false;
     let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
-    let target = match account_type_from_spec_ref(&*spec) {
-        Ok(at) => at,
-        Err(e) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                e,
-            );
-        }
-    };
-    // A NULL cursor is "from the beginning" — the only way to say it, since
-    // the all-zero txid is a legal (if unreachable) outpoint.
-    let after = if after_txid.is_null() {
+    // A NULL spec is "from the beginning" — the only way to say it, since
+    // every tuple/outpoint pair is a legal cursor.
+    let after: Option<WalletUtxoCursor> = if after_spec.is_null() {
         None
     } else {
+        check_ptr!(after_txid);
+        let account_type = match account_type_from_spec_ref(&*after_spec) {
+            Ok(at) => at,
+            Err(e) => {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                    e,
+                );
+            }
+        };
         let raw: [u8; 32] = std::ptr::read(after_txid as *const [u8; 32]);
-        Some(dashcore::OutPoint::from(&OutPointFFI {
-            txid: raw,
-            vout: after_vout,
-        }))
+        Some((
+            account_type,
+            dashcore::OutPoint::from(&OutPointFFI {
+                txid: raw,
+                vout: after_vout,
+            }),
+        ))
     };
     let Some((rows, has_more)) = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| {
-        m.account_utxos_page_blocking(&wid, &target, after, limit)
+        m.wallet_utxos_page_blocking(&wid, after.as_ref(), limit)
     }) else {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidHandle,
@@ -680,11 +689,53 @@ pub unsafe extern "C" fn platform_wallet_account_utxos_page(
     if rows.is_empty() {
         return PlatformWalletFFIResult::ok();
     }
-    let entries: Vec<AccountUtxoEntryFFI> = rows.into_iter().map(utxo_entry_ffi).collect();
+    let entries: Vec<WalletUtxoEntryFFI> = rows.into_iter().map(wallet_utxo_entry_ffi).collect();
     let count = entries.len();
     *out_utxos = Box::into_raw(entries.into_boxed_slice()) as *const _;
     *out_count = count;
     PlatformWalletFFIResult::ok()
+}
+
+fn wallet_utxo_entry_ffi(row: WalletUtxoRow) -> WalletUtxoEntryFFI {
+    let tags = crate::core_wallet_types::account_type_to_tags(&row.account_type);
+    let coin = utxo_entry_ffi(row.utxo);
+    WalletUtxoEntryFFI {
+        type_tag: tags.type_tag,
+        standard_tag: tags.standard_tag,
+        index: tags.index,
+        registration_index: tags.registration_index,
+        key_class: tags.key_class,
+        user_identity_id: tags.user_identity_id,
+        friend_identity_id: tags.friend_identity_id,
+        outpoint_txid: coin.outpoint_txid,
+        outpoint_vout: coin.outpoint_vout,
+        value_duffs: coin.value_duffs,
+        script_pubkey: coin.script_pubkey,
+        script_pubkey_len: coin.script_pubkey_len,
+        height: coin.height,
+        is_locked: coin.is_locked,
+    }
+}
+
+/// Free a page returned by `platform_wallet_wallet_utxos_page`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_wallet_utxos_free(
+    utxos: *mut WalletUtxoEntryFFI,
+    count: usize,
+) {
+    if utxos.is_null() || count == 0 {
+        return;
+    }
+    let slice = std::slice::from_raw_parts(utxos, count);
+    for entry in slice {
+        if !entry.script_pubkey.is_null() && entry.script_pubkey_len > 0 {
+            let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                entry.script_pubkey,
+                entry.script_pubkey_len,
+            ));
+        }
+    }
+    let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(utxos, count));
 }
 
 /// Classify `count` outpoints against the wallet's live engine state, in
@@ -744,65 +795,6 @@ pub unsafe extern "C" fn platform_wallet_classify_outpoints_free(classes: *mut u
         return;
     }
     let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(classes, count));
-}
-
-/// The account's spent-outpoint inventory — the second half of the
-/// store-reconcile surface (`platform_wallet_account_utxos` is the unspent
-/// half). A persistence-mirror row still marked unspent whose outpoint
-/// appears here lost its spend update (dashpay/platform#4425); a row in
-/// NEITHER inventory is swept/abandoned residue (pre-rust-dashcore#971
-/// stores). Free with `platform_wallet_account_spent_outpoints_free`.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_account_spent_outpoints(
-    manager_handle: Handle,
-    wallet_id: *const u8,
-    spec: *const AccountSpecFFI,
-    out_outpoints: *mut *const OutPointFFI,
-    out_count: *mut usize,
-) -> PlatformWalletFFIResult {
-    check_ptr!(wallet_id);
-    check_ptr!(spec);
-    check_ptr!(out_outpoints);
-    check_ptr!(out_count);
-    *out_outpoints = std::ptr::null();
-    *out_count = 0;
-    let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
-    let target = match account_type_from_spec_ref(&*spec) {
-        Ok(at) => at,
-        Err(e) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                e,
-            );
-        }
-    };
-    let Some(rows) = PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(manager_handle, |m| m.account_spent_outpoints_blocking(&wid, &target))
-    else {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidHandle,
-            "Manager handle invalid".to_string(),
-        );
-    };
-    if rows.is_empty() {
-        return PlatformWalletFFIResult::ok();
-    }
-    let entries: Vec<OutPointFFI> = rows.iter().map(OutPointFFI::from).collect();
-    let count = entries.len();
-    *out_outpoints = Box::into_raw(entries.into_boxed_slice()) as *const _;
-    *out_count = count;
-    PlatformWalletFFIResult::ok()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_account_spent_outpoints_free(
-    outpoints: *mut OutPointFFI,
-    count: usize,
-) {
-    if outpoints.is_null() || count == 0 {
-        return;
-    }
-    let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(outpoints, count));
 }
 
 // ---------------------------------------------------------------------------
