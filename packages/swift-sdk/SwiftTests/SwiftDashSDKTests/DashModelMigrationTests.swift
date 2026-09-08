@@ -1,10 +1,224 @@
+import CoreData
 import Foundation
 import SwiftData
 import XCTest
 
 @testable import SwiftDashSDK
 
+/// Migration coverage from two directions: source stores built in this
+/// process from each registered version, and stores that OLDER BUILDS
+/// actually wrote.
+///
+/// The fixture stores under `Fixtures/SchemaStores/` were written by a build
+/// of the persistence sources as of commit 5f58417079 — the last state
+/// before V4, the state the frozen copies under `FrozenSchemas/` are
+/// generated from — through that build's own `DashSchemaV1` /
+/// `DashSchemaV2` / `DashSchemaV3`. They pin the frozen copies as that
+/// pre-V4 build defined them, not what the original V1 release wrote (see
+/// the `DashSchemaV1` doc for why those stores are expected to fail open
+/// and be rebuilt). Each carries a wallet,
+/// an account, a core address, two transactions, a TXO linked to both, a
+/// pending input, an identity, a keyword, an asset lock and (from V2) a
+/// tracked masternode — enough to exercise every relationship in the wallet
+/// graph.
+///
+/// A source store written in this process by `Schema(versionedSchema:)`
+/// cannot replace them: SwiftData binds an entity name to the first Swift
+/// type that claims it, so such a store carries whatever shape the process
+/// had already bound, and a frozen version whose entities had silently
+/// rebound to the live shape would round-trip itself and pass vacuously.
+/// Only a store from a build that knew nothing of the live shape can tell.
 final class DashModelMigrationTests: XCTestCase {
+    /// SwiftData binds an entity name to the first Swift type that claims it
+    /// in the process, so whether the live schema is built before or after
+    /// a frozen version is decided once per process, not per test. Build it
+    /// first here, as `DashModelContainer.create` does, so every test below
+    /// runs in the order the app would.
+    override class func setUp() {
+        super.setUp()
+        _ = DashModelContainer.schema
+    }
+
+    private struct Fixture {
+        let name: String
+        let version: any VersionedSchema.Type
+        let hasTrackedMasternode: Bool
+        let assetLockRecipientIsExternal: Bool?
+    }
+
+    private static let fixtures: [Fixture] = [
+        Fixture(
+            name: "dash-v1", version: DashSchemaV1.self,
+            hasTrackedMasternode: false, assetLockRecipientIsExternal: nil),
+        Fixture(
+            name: "dash-v2", version: DashSchemaV2.self,
+            hasTrackedMasternode: true, assetLockRecipientIsExternal: nil),
+        Fixture(
+            name: "dash-v3", version: DashSchemaV3.self,
+            hasTrackedMasternode: true, assetLockRecipientIsExternal: true),
+    ]
+
+    private static let fixtureWalletId = Data(repeating: 0x31, count: 32)
+    private static let fixtureSpendTxid = Data(repeating: 0x32, count: 32)
+    private static let fixtureFundingTxid = Data(repeating: 0x34, count: 32)
+    private static let fixtureIdentityId = Data(repeating: 0x35, count: 32)
+
+    /// A private, writable copy of a fixture store.
+    private func copyFixture(_ fixture: Fixture) throws -> (URL, URL) {
+        let source = try XCTUnwrap(
+            Bundle.module.url(
+                forResource: fixture.name, withExtension: "store",
+                subdirectory: "Fixtures/SchemaStores"),
+            "missing fixture \(fixture.name).store")
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        let copy = directory.appendingPathComponent("\(fixture.name).store")
+        try FileManager.default.copyItem(at: source, to: copy)
+        return (directory, copy)
+    }
+
+    private static func storeHashes(at url: URL) throws -> (String, [String: Data]) {
+        let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+            type: .sqlite, at: url)
+        let checksum = try XCTUnwrap(
+            metadata["NSStoreModelVersionChecksumKey"] as? String,
+            "store has no model checksum")
+        let hashes = try XCTUnwrap(
+            metadata["NSStoreModelVersionHashes"] as? [String: Data],
+            "store has no entity hashes")
+        return (checksum, hashes)
+    }
+
+    /// Every fixture opens through `DashModelContainer.create`'s exact
+    /// order — live schema built first, then the migration plan — and its
+    /// rows come back through the live types with the relationships intact
+    /// and the new columns at their migration defaults.
+    @MainActor
+    func testStoresWrittenByOlderBuildsMigrateThroughTheContainerFactory() throws {
+        for fixture in Self.fixtures {
+            let (directory, url) = try copyFixture(fixture)
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            let container: ModelContainer
+            do {
+                container = try DashModelContainer.create(url: url)
+            } catch {
+                XCTFail("\(fixture.name): migration failed to open: \(error)")
+                continue
+            }
+            let context = container.mainContext
+
+            let wallets = try context.fetch(FetchDescriptor<PersistentWallet>())
+            XCTAssertEqual(wallets.map(\.walletId), [Self.fixtureWalletId], fixture.name)
+            let wallet = try XCTUnwrap(wallets.first)
+            XCTAssertEqual(wallet.name, "fixture wallet", fixture.name)
+            XCTAssertEqual(wallet.syncedHeight, 120, fixture.name)
+            XCTAssertNil(wallet.lastAppliedChainLockHeight, fixture.name)
+            XCTAssertEqual(wallet.accounts.count, 1, fixture.name)
+            XCTAssertEqual(
+                wallet.identities.map(\.identityId), [Self.fixtureIdentityId], fixture.name)
+
+            let accounts = try context.fetch(FetchDescriptor<PersistentAccount>())
+            let account = try XCTUnwrap(accounts.first, fixture.name)
+            XCTAssertEqual(accounts.count, 1, fixture.name)
+            XCTAssertEqual(account.wallet.walletId, Self.fixtureWalletId, fixture.name)
+            XCTAssertEqual(account.coreAddresses.map(\.address), ["yFixtureAddress"], fixture.name)
+            XCTAssertEqual(
+                Set(account.involvedTransactions.map(\.txid)),
+                [Self.fixtureSpendTxid, Self.fixtureFundingTxid], fixture.name)
+
+            let transactions = try context.fetch(FetchDescriptor<PersistentTransaction>())
+            XCTAssertEqual(transactions.count, 2, fixture.name)
+            let funding = try XCTUnwrap(
+                transactions.first { $0.txid == Self.fixtureFundingTxid }, fixture.name)
+            let spend = try XCTUnwrap(
+                transactions.first { $0.txid == Self.fixtureSpendTxid }, fixture.name)
+            XCTAssertEqual(funding.outputs.count, 1, fixture.name)
+            XCTAssertEqual(spend.inputs.count, 1, fixture.name)
+            XCTAssertEqual(spend.pendingInputs.count, 1, fixture.name)
+
+            let txos = try context.fetch(FetchDescriptor<PersistentTxo>())
+            XCTAssertEqual(txos.count, 1, fixture.name)
+            let txo = try XCTUnwrap(txos.first)
+            XCTAssertEqual(txo.amount, 1_000, fixture.name)
+            XCTAssertEqual(txo.transaction?.txid, Self.fixtureFundingTxid, fixture.name)
+            XCTAssertEqual(txo.spendingTransaction?.txid, Self.fixtureSpendTxid, fixture.name)
+            XCTAssertEqual(txo.coreAddress?.address, "yFixtureAddress", fixture.name)
+            XCTAssertEqual(txo.account?.accountIndex, 0, fixture.name)
+            XCTAssertNil(txo.supersededByTxid, fixture.name)
+
+            let pendingInputs = try context.fetch(FetchDescriptor<PersistentPendingInput>())
+            XCTAssertEqual(pendingInputs.count, 1, fixture.name)
+            let pending = try XCTUnwrap(pendingInputs.first)
+            XCTAssertEqual(pending.spendingTxid, Self.fixtureSpendTxid, fixture.name)
+            XCTAssertEqual(pending.spendingTransaction?.txid, Self.fixtureSpendTxid, fixture.name)
+            XCTAssertFalse(pending.isSweptTombstone, fixture.name)
+            XCTAssertNil(pending.winnerMinedHeight, fixture.name)
+
+            let identities = try context.fetch(FetchDescriptor<PersistentIdentity>())
+            XCTAssertEqual(identities.map(\.identityId), [Self.fixtureIdentityId], fixture.name)
+            XCTAssertEqual(identities.first?.balance, 5, fixture.name)
+            XCTAssertEqual(identities.first?.wallet?.walletId, Self.fixtureWalletId, fixture.name)
+
+            let keywords = try context.fetch(FetchDescriptor<PersistentKeyword>())
+            XCTAssertEqual(keywords.map(\.keyword), ["preserved"], fixture.name)
+
+            let locks = try context.fetch(FetchDescriptor<PersistentAssetLock>())
+            XCTAssertEqual(locks.count, 1, fixture.name)
+            XCTAssertEqual(locks.first?.amountDuffs, 100_000, fixture.name)
+            XCTAssertEqual(
+                locks.first?.recipientIsExternal, fixture.assetLockRecipientIsExternal,
+                fixture.name)
+
+            let tracked = try context.fetchCount(FetchDescriptor<PersistentTrackedMasternode>())
+            XCTAssertEqual(tracked, fixture.hasTrackedMasternode ? 1 : 0, fixture.name)
+
+            // The migrated store is writable through the new columns.
+            wallet.lastAppliedChainLockHeight = 130
+            txo.supersededByTxid = Data(repeating: 0x36, count: 32)
+            try context.save()
+            XCTAssertEqual(
+                try context.fetch(FetchDescriptor<PersistentWallet>()).first?
+                    .lastAppliedChainLockHeight,
+                130, fixture.name)
+        }
+    }
+
+    /// Each frozen version, built after the live schema (the order
+    /// `DashModelContainer.create` uses, established process-wide in
+    /// `setUp`), still hashes every entity exactly as the build that shipped
+    /// it did. A partial freeze cannot give this: a frozen wallet reached
+    /// from a live `PersistentAccount.wallet` is rebound to the live
+    /// wallet's shape the moment the live schema is built first, and the
+    /// released checksum moves with it.
+    func testFrozenVersionsBuiltAfterTheLiveSchemaHashLikeTheStoresTheyShipped() throws {
+        for fixture in Self.fixtures {
+            let (directory, url) = try copyFixture(fixture)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let (shippedChecksum, shippedHashes) = try Self.storeHashes(at: url)
+
+            let scratch = directory.appendingPathComponent("scratch.store")
+            let schema = Schema(versionedSchema: fixture.version)
+            let configuration = ModelConfiguration(
+                "DashSchemaScratch", schema: schema, url: scratch, allowsSave: true,
+                cloudKitDatabase: .none)
+            _ = try ModelContainer(for: schema, configurations: [configuration])
+            let (builtChecksum, builtHashes) = try Self.storeHashes(at: scratch)
+
+            let drifted = shippedHashes.keys.filter { shippedHashes[$0] != builtHashes[$0] }
+                .sorted()
+            XCTAssertEqual(
+                drifted, [],
+                "\(fixture.name): entities whose frozen shape no longer matches the shipped store")
+            XCTAssertEqual(
+                Set(builtHashes.keys), Set(shippedHashes.keys),
+                "\(fixture.name): entity membership differs from the shipped store")
+            XCTAssertEqual(builtChecksum, shippedChecksum, "\(fixture.name): checksum")
+        }
+    }
+
     @MainActor
     func testV1StoreMigratesToV2AndAcceptsTrackedMasternodes() throws {
         let directory = FileManager.default.temporaryDirectory
