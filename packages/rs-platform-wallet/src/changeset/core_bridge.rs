@@ -736,9 +736,12 @@ fn commit_wallet<P>(
                 // stays frozen until it ships one and relaunches. Freezing
                 // is the point — it is what keeps a height that outran an
                 // unapplied removal from becoming durable.
+                // The guard above stripped the height before the store saw
+                // it, so it is reported FROZEN — a `rejected` here would send
+                // the operator to a persister that returned `Ok`.
                 if fault_and_freeze(
                     diag,
-                    offered_height,
+                    WithheldHeight::Frozen(offered_height),
                     fault,
                     sync_fault,
                     wallet_id,
@@ -769,9 +772,17 @@ fn commit_wallet<P>(
                 // A rejected changeset means these rows are not on disk. Fault
                 // THIS wallet's watermark so it can't outrun them; the next
                 // scan re-emits and the idempotent upserts recover the state.
+                // Rejected — unless the sweep guard had already stripped the
+                // height, in which case the store never saw it and it stays
+                // a frozen one whatever the store then said.
+                let withheld = if sweep_removal_unsupported {
+                    WithheldHeight::Frozen(offered_height)
+                } else {
+                    WithheldHeight::Rejected(offered_height)
+                };
                 if fault_and_freeze(
                     diag,
-                    offered_height,
+                    withheld,
                     fault,
                     sync_fault,
                     wallet_id,
@@ -796,10 +807,26 @@ fn commit_wallet<P>(
     }
 }
 
+/// How a round's proposed `synced_height` was withheld, for
+/// [`BatchDiagnostics`]. The two are different answers to "where is the
+/// watermark?": a REJECTED height was offered to the store and the store
+/// said no, so the operator looks at the persister; a FROZEN height was
+/// stripped by the adapter before the store ever saw it — the sweep guard
+/// does this when the backend never attested `CORE_SWEEP_REMOVAL` — so the
+/// operator looks at the host's missing capability, not at a store that
+/// in fact returned `Ok`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WithheldHeight {
+    /// Stripped by the adapter; never offered to the store.
+    Frozen(Option<u32>),
+    /// Offered to the store, which returned an error.
+    Rejected(Option<u32>),
+}
+
 /// The bookkeeping shared by the two ways a round fails to be durably
 /// applied — a rejected `store()`, and a nominal success from a backend
 /// that cannot have applied the round's sweeps. Records the withheld
-/// advance, faults the wallet (counting it once per drain: a wallet that
+/// advance under the field that says which of the two it was, faults the wallet (counting it once per drain: a wallet that
 /// entered already faulted was counted at the top of the loop, and a
 /// repeat failure must not count it again), and returns whether this is
 /// the drain's first freeze — the caller owns the one-shot `log`-facade
@@ -807,15 +834,17 @@ fn commit_wallet<P>(
 /// to logcat; `tracing` may not).
 fn fault_and_freeze(
     diag: &mut BatchDiagnostics,
-    offered_height: Option<u32>,
+    withheld: WithheldHeight,
     fault: &mut AdapterFaultState,
     sync_fault: &AtomicBool,
     wallet_id: WalletId,
     entered_faulted: bool,
     freeze_logged: &AtomicBool,
 ) -> bool {
-    if let Some(h) = offered_height {
-        diag.record_rejected(h);
+    match withheld {
+        WithheldHeight::Frozen(Some(h)) => diag.record_frozen(h),
+        WithheldHeight::Rejected(Some(h)) => diag.record_rejected(h),
+        WithheldHeight::Frozen(None) | WithheldHeight::Rejected(None) => {}
     }
     fault.fault_wallet(wallet_id, sync_fault);
     if !entered_faulted {
@@ -4989,7 +5018,7 @@ mod tests {
     // including the fail-closed guard) so the assertions cover the shipped
     // code, not a restatement of it.
 
-    use super::{commit_batch, AssetLockChangeSet, BatchDiagnostics, WalletBatch};
+    use super::{commit_batch, AssetLockChangeSet, BatchDiagnostics, SweepBatch, WalletBatch};
 
     /// A changeset that both proposes a watermark and carries a record-bearing
     /// field, so it survives `is_empty_no_records()` and actually reaches
@@ -5015,6 +5044,62 @@ mod tests {
             },
         );
         batch
+    }
+
+    /// The sweep guard strips the height BEFORE the store sees it, so a
+    /// backend that never attested `CORE_SWEEP_REMOVAL` and returns `Ok`
+    /// must report the height as FROZEN, not rejected: `rejected` would
+    /// send an operator to a persister that in fact accepted the round,
+    /// when the missing piece is the host's sweep capability.
+    #[test]
+    fn undeclared_sweep_capability_reports_the_watermark_as_frozen_not_rejected() {
+        use dashcore::hashes::Hash as _;
+        let wallet_id = [9u8; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        // No capabilities declared, store() succeeds.
+        let persister = ProbePersister::new(obs_tx);
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        let freeze_logged = AtomicBool::new(false);
+
+        let mut core = watermark_with_rows(600, 600);
+        core.sweeps = vec![SweepBatch {
+            txids: vec![dashcore::Txid::from_byte_array([0x61; 32])],
+            superseded_by: dashcore::Txid::from_byte_array([0x62; 32]),
+            winner_mined_height: Some(590),
+            released_outpoints: vec![],
+        }];
+        let diag = commit_batch(
+            &persister,
+            one_wallet_batch(wallet_id, core),
+            1,
+            &mut fault,
+            &sync_fault,
+            &freeze_logged,
+            &mut Vec::new(),
+        );
+
+        let observed = obs_rx.try_recv().expect("the round still reaches store()");
+        assert!(!observed.rejected, "the probe's own store() succeeds");
+        assert_eq!(
+            observed.synced_height, None,
+            "the guard stripped the height before the store saw it"
+        );
+        assert_eq!(diag.persisted, None);
+        assert_eq!(
+            diag.frozen,
+            Some(600),
+            "a height the adapter withheld is reported under `frozen`"
+        );
+        assert_eq!(
+            diag.rejected, None,
+            "…and never as rejected: the store did not reject anything"
+        );
+        assert_eq!(diag.faulted, 1);
+        assert!(sync_fault.load(Ordering::Relaxed));
+        let line = diag.to_string();
+        assert!(line.contains("synced_height_frozen=Some(600)"), "{line}");
+        assert!(line.contains("synced_height_rejected=None"), "{line}");
     }
 
     /// Baseline: a height the store ACCEPTED is the one case that may be
