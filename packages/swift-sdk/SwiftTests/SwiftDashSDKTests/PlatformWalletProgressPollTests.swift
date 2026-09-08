@@ -146,7 +146,9 @@ final class PlatformWalletProgressPollTests: XCTestCase {
             DispatchQueue.main.async { continuation.resume() }
         }
         XCTAssertLessThan(ContinuousClock.now - started, .milliseconds(500))
-        XCTAssertFalse(manager.spvIsRunning, "nothing publishes before the tick completes")
+        XCTAssertTrue(
+            manager.spvIsRunning,
+            "the manager-level stage publishes while the per-wallet read is still parked")
         XCTAssertEqual(recorder.count(named: "spv_is_running"), 1, "a slow tick must not be overlapped")
         XCTAssertEqual(recorder.handles.first, 77)
         XCTAssertFalse(recorder.mainThreadFlags.contains(true), "native reads never run on the main thread")
@@ -190,7 +192,7 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         var read = PlatformWalletPollSnapshot()
         read.spvIsRunning = true
         read.platformAddressSyncIsSyncing = true
-        manager.applyPollSnapshot(read, baseline: fresh)
+        manager.applyManagerSnapshot(read, baseline: fresh)
         XCTAssertTrue(manager.spvIsRunning)
         XCTAssertTrue(manager.platformAddressSyncIsSyncing)
 
@@ -200,7 +202,7 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         var stale = PlatformWalletPollSnapshot()
         stale.spvIsRunning = false
         stale.platformAddressSyncIsSyncing = false
-        manager.applyPollSnapshot(stale, baseline: fresh)
+        manager.applyManagerSnapshot(stale, baseline: fresh)
         XCTAssertTrue(manager.spvIsRunning, "a value changed while the tick was parked is left alone")
         XCTAssertTrue(manager.platformAddressSyncIsSyncing)
 
@@ -209,7 +211,7 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         var matching = fresh
         matching.spvIsRunning = true
         matching.platformAddressSyncIsSyncing = true
-        manager.applyPollSnapshot(stale, baseline: matching)
+        manager.applyManagerSnapshot(stale, baseline: matching)
         XCTAssertFalse(manager.spvIsRunning)
         XCTAssertFalse(manager.platformAddressSyncIsSyncing)
     }
@@ -231,8 +233,8 @@ final class PlatformWalletProgressPollTests: XCTestCase {
             }
         )
 
-        let snapshot = PlatformWalletManager.performPoll(
-            5,
+        let snapshot = PlatformWalletManager.performManagerPoll(5, calls: calls)
+        let counts = PlatformWalletManager.performWalletPoll(
             wallets: [(walletId: walletA, handle: 10), (walletId: walletB, handle: 20)],
             calls: calls
         )
@@ -248,7 +250,69 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         XCTAssertTrue(
             snapshot.spvTipBlockTime == nil,
             "a failed tip read is nil at the outer level and keeps the published tip")
-        XCTAssertEqual(snapshot.pendingAccountBuilds, [walletA: 3])
+        XCTAssertEqual(counts.keys.sorted(by: { $0.lexicographicallyPrecedes($1) }), [walletA])
+        XCTAssertEqual(counts[walletA]?.count, 3)
+        XCTAssertEqual(counts[walletA]?.handle, 10)
+    }
+
+    /// A wallet deleted and re-created under the same (deterministic) id
+    /// while the per-wallet read was parked must not inherit the old
+    /// wallet's count: the publish compares handles, not just ids.
+    func testWalletCountsAreRejectedWhenTheWalletWasReplacedMidTick() async throws {
+        let recorder = PollRecorder()
+        let manager = PlatformWalletManager.makeForTesting(handle: 93, calls: Self.makeTeardownCalls())
+        manager.nativeCreateCalls = Self.makeCreateCalls()
+        manager.nativePollCalls = recorder.makeCalls()
+        let wallet = try await manager.createWallet(mnemonic: "m", network: .testnet)
+
+        let baseline = PlatformWalletPollBaseline(
+            spvProgress: .empty, spvIsRunning: false, spvPeers: [],
+            platformAddressSyncIsSyncing: false, shieldedSyncIsSyncing: false,
+            dashPaySyncIsSyncing: false, spvTipBlockTime: nil, pendingAccountBuilds: [:])
+
+        // Read through a handle that is not the live wallet's: the shape a
+        // delete + re-create from the same mnemonic leaves behind.
+        let stale = [wallet.walletId: PlatformWalletPendingBuildCount(handle: 4242, count: 7)]
+        manager.applyWalletCounts(stale, baseline: baseline)
+        XCTAssertNil(
+            manager.dashPayUnlockStatus[wallet.walletId]?.pendingAccountBuilds,
+            "a count read through a replaced wallet's handle must not publish")
+
+        let live = [wallet.walletId: PlatformWalletPendingBuildCount(handle: wallet.handle, count: 7)]
+        manager.applyWalletCounts(live, baseline: baseline)
+        XCTAssertEqual(manager.dashPayUnlockStatus[wallet.walletId]?.pendingAccountBuilds, 7)
+
+        await manager.shutdown()
+    }
+
+    /// `shutdown()` must not hold termination hostage for a tick parked
+    /// inside a native read, and must stop the poller from issuing more.
+    func testShutdownDoesNotWaitForAParkedTickAndStopsFurtherReads() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        let recorder = PollRecorder(firstPendingCountGate: gate)
+        let manager = PlatformWalletManager.makeForTesting(handle: 94, calls: Self.makeTeardownCalls())
+        manager.nativeCreateCalls = Self.makeCreateCalls()
+        manager.nativePollCalls = recorder.makeCalls()
+        manager.progressPollInterval = .milliseconds(10)
+        manager.pollDrainTimeout = .milliseconds(50)
+        _ = try await manager.createWallet(mnemonic: "m", network: .testnet)
+
+        manager.startProgressPolling()
+        try await waitUntil { recorder.count(named: "pending_account_build_count") == 1 }
+
+        let started = ContinuousClock.now
+        await manager.shutdown()
+        XCTAssertLessThan(
+            ContinuousClock.now - started, .seconds(2),
+            "shutdown must not wait out a parked poll read")
+        XCTAssertEqual(manager.handle, NULL_HANDLE)
+
+        gate.signal()
+        let afterShutdown = recorder.count
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(
+            recorder.count, afterShutdown,
+            "no native read may start once shutdown bumped the poll epoch")
     }
 
     /// The FFI's in-band "no tip" is a successful read that publishes `nil`;
@@ -263,19 +327,19 @@ final class PlatformWalletProgressPollTests: XCTestCase {
 
         var read = PlatformWalletPollSnapshot()
         read.spvTipBlockTime = .some(tip)
-        manager.applyPollSnapshot(read, baseline: baseline)
+        manager.applyManagerSnapshot(read, baseline: baseline)
         XCTAssertEqual(manager.spvTipBlockTime, tip)
 
         var failed = PlatformWalletPollSnapshot()
         failed.spvTipBlockTime = nil
         var withTip = baseline
         withTip.spvTipBlockTime = tip
-        manager.applyPollSnapshot(failed, baseline: withTip)
+        manager.applyManagerSnapshot(failed, baseline: withTip)
         XCTAssertEqual(manager.spvTipBlockTime, tip, "a failed read must not wipe the last known tip")
 
         var noTip = PlatformWalletPollSnapshot()
         noTip.spvTipBlockTime = .some(nil)
-        manager.applyPollSnapshot(noTip, baseline: withTip)
+        manager.applyManagerSnapshot(noTip, baseline: withTip)
         XCTAssertNil(manager.spvTipBlockTime, "the in-band no-tip sentinel publishes")
     }
 }
