@@ -30,7 +30,17 @@ pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
-    Default, Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq,
+    Default,
+    Debug,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformSignable,
+    Clone,
+    PartialEq,
+    Eq,
+    bincode::DecodeUntrusted,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKeyInCreationV0 {

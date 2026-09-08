@@ -19,7 +19,16 @@ use serde::{Deserialize, Serialize};
     derive(JsonConvertible)
 )]
 #[derive(
-    Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
+    Debug,
+    PartialEq,
+    PartialOrd,
+    Clone,
+    Eq,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

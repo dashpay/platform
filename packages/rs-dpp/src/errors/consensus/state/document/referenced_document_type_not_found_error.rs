@@ -7,7 +7,16 @@ use platform_value::Identifier;
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("referenced document type {document_type_name} not found in contract {contract_id} for path {path}")]
 #[platform_serialize(unversioned)]

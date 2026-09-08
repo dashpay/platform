@@ -17,6 +17,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("signature should be empty {message}")]
 #[platform_serialize(unversioned)]

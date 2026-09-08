@@ -17,6 +17,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("$action is not present")]
 #[platform_serialize(unversioned)]

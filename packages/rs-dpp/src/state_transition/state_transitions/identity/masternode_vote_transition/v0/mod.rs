@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
     PlatformDeserialize,
     PlatformSignable,
     PartialEq,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

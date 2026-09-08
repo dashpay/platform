@@ -22,6 +22,7 @@ use crate::ProtocolError;
     PartialEq,
     Eq,
     PartialOrd,
+    bincode::DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 // serde routes through `RewardDistributionMomentRepr` to get internal `type`

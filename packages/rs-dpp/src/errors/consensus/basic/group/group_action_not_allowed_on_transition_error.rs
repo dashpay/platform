@@ -6,7 +6,16 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Group action is not allowed during transition: {}", transition_type)]
 #[platform_serialize(unversioned)]

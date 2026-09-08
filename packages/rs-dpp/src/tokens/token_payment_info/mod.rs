@@ -74,6 +74,7 @@ pub mod v0;
     PartialEq,
     Display,
     From,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 
 /// Extended Epoch information
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Clone, Debug, PartialEq, Encode, Decode, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Encode, Decode, Serialize, Deserialize, bincode::DecodeUntrusted,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtendedEpochInfoV0 {
     /// The index of the epoch

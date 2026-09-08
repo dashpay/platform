@@ -9,7 +9,16 @@ use crate::identity::Purpose;
 use bincode::{Decode, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Key purpose {given_key_purpose} is not allowed for contract bounds. Allowed purposes: {allowed_key_purposes:?}")]
 #[platform_serialize(unversioned)]

@@ -23,7 +23,19 @@ pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
 /// Block information
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Default,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    Serialize,
+    Deserialize,
+    bincode::DecodeUntrusted,
+)]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[serde(rename_all = "camelCase")]
 pub struct BlockInfo {

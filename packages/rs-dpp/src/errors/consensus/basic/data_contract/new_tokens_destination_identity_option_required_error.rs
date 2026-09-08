@@ -8,7 +8,16 @@ use platform_value::Identifier;
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("token configuration requires a new tokens destination identity if choosing destination is not allowed for contract {contract_id} at position {token_position}")]
 #[platform_serialize(unversioned)]

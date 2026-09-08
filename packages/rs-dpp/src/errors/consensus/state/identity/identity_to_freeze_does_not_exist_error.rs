@@ -7,7 +7,16 @@ use platform_value::Identifier;
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Identity to freeze {} does not exist", identity_to_freeze_id)]
 #[platform_serialize(unversioned)]

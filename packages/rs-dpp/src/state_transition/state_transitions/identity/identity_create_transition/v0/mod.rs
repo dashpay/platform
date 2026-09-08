@@ -28,7 +28,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

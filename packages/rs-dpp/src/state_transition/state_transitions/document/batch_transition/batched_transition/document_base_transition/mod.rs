@@ -42,7 +42,7 @@ use std::collections::BTreeMap;
 // routes `$baseFormatVersion` + the known base struct fields to `base`
 // before letting the catchall claim what's left. See comments on
 // those impls for detail.
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

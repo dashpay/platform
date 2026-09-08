@@ -9,7 +9,16 @@ use crate::prelude::Identifier;
 use bincode::{Decode, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Did not find a specialized balance with id: {balance_id}")]
 #[platform_serialize(unversioned)]

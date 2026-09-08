@@ -16,7 +16,7 @@ pub use v0::TokenDirectPurchaseTransitionV0;
 ///
 /// This transition type is used when a user intends to directly purchase tokens
 /// by specifying the desired amount and the maximum total price they are willing to pay.
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

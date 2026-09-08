@@ -34,7 +34,7 @@ pub mod validate_asset_lock_transaction_structure;
 // unions exposed to JS (see `AddressWitness`, `AddressFundsFeeStrategyStep`).
 // Bincode `Encode`/`Decode` derives are independent of serde, so consensus
 // binary format is unaffected.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode, bincode::DecodeUntrusted)]
 #[serde(tag = "$type", rename_all = "camelCase")]
 #[allow(clippy::large_enum_variant)]
 pub enum AssetLockProof {

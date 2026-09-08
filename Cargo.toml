@@ -3,6 +3,7 @@
 resolver = "2"
 
 members = [
+    "packages/bincode-compat",
     "packages/dapi-grpc",
     "packages/rs-dash-platform-macros",
     "packages/rs-dpp",
@@ -53,6 +54,7 @@ members = [
 ]
 
 [workspace.dependencies]
+bincode = { package = "grovedb-bincode", git = "https://github.com/dashpay/grovedb", rev = "2b9c7ba9a794bfab1a03fa1d0b3f5496b63175ae" }
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
 dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
 dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
@@ -130,3 +132,7 @@ opt-level = 3
 
 version = "4.2.0-dev.8"
 rust-version = "1.92"
+
+# Keep upstream bincode users (including rust-dashcore) on the same traits.
+[patch.crates-io]
+bincode = { path = "packages/bincode-compat" }

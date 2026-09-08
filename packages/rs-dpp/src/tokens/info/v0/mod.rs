@@ -4,7 +4,7 @@ use bincode::{Decode, Encode};
 use derive_more::From;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, From, PartialEq)]
+#[derive(Debug, Clone, Encode, Decode, From, PartialEq, bincode::DecodeUntrusted)]
 #[cfg_attr(
     any(feature = "fixtures-and-mocks", feature = "serde-conversion"),
     derive(serde::Serialize, serde::Deserialize)

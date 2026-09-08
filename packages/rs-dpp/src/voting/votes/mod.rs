@@ -14,7 +14,17 @@ use platform_value::Identifier;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq, From)]
+#[derive(
+    Debug,
+    Clone,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    PartialEq,
+    From,
+    bincode::DecodeUntrusted,
+)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

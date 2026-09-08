@@ -47,7 +47,7 @@ pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
 /// The Identifier fields in [`DocumentCreateTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, bincode::DecodeUntrusted)]
 // `json_safe_fields`:
 // - Auto-injects `crate::serialization::serde_bytes` on `entropy: [u8; 32]`
 //   → base64 string in JSON HR, raw bytes in non-HR.

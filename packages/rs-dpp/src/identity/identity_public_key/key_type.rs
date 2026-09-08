@@ -42,6 +42,7 @@ use std::convert::TryFrom;
     Decode,
     Default,
     strum::EnumIter,
+    bincode::DecodeUntrusted,
 )]
 pub enum KeyType {
     #[default]

@@ -21,7 +21,19 @@ use std::fmt;
 /// In this case Malaka might have a bad connotation in Greek, hence some might votes to Lock
 /// the name.
 ///
-#[derive(Debug, Clone, Copy, Encode, Decode, Ord, Eq, PartialOrd, PartialEq, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Encode,
+    Decode,
+    Ord,
+    Eq,
+    PartialOrd,
+    PartialEq,
+    Default,
+    bincode::DecodeUntrusted,
+)]
 // Custom `Serialize` / `Deserialize` below — `derive(Serialize, Deserialize)`
 // can't produce the desired flat wire shape because the `TowardsIdentity`
 // variant wraps `Identifier` (a tuple struct that serializes as a base58

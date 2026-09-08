@@ -45,3 +45,15 @@ impl From<IdentityAssetLockTransactionOutPointAlreadyConsumedError> for Consensu
         Self::BasicError(BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(err))
     }
 }
+
+impl<C> bincode::DecodeUntrusted<C> for IdentityAssetLockTransactionOutPointAlreadyConsumedError {
+    fn decode_untrusted<D: bincode::de::UntrustedDecoder<Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Self {
+            transaction_id: crate::serialization::untrusted::decode_txid(decoder)?,
+            output_index: bincode::DecodeUntrusted::decode_untrusted(decoder)?,
+        })
+    }
+}
+bincode::impl_borrow_decode_untrusted!(IdentityAssetLockTransactionOutPointAlreadyConsumedError);

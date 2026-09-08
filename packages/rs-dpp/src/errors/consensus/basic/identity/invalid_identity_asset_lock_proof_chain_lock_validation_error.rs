@@ -32,3 +32,15 @@ impl InvalidIdentityAssetLockProofChainLockValidationError {
         self.height_reported_not_locked
     }
 }
+
+impl<C> bincode::DecodeUntrusted<C> for InvalidIdentityAssetLockProofChainLockValidationError {
+    fn decode_untrusted<D: bincode::de::UntrustedDecoder<Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Self {
+            transaction_id: crate::serialization::untrusted::decode_txid(decoder)?,
+            height_reported_not_locked: bincode::DecodeUntrusted::decode_untrusted(decoder)?,
+        })
+    }
+}
+bincode::impl_borrow_decode_untrusted!(InvalidIdentityAssetLockProofChainLockValidationError);

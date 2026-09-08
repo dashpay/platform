@@ -16,6 +16,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("$dataContractId is not present")]
 #[platform_serialize(unversioned)]

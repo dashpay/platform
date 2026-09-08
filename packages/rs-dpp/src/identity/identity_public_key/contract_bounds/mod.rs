@@ -21,7 +21,18 @@ pub type ContractBoundsType = u8;
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[repr(u8)]
 #[derive(
-    Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, Ord, PartialOrd, Hash,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    Ord,
+    PartialOrd,
+    Hash,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[serde(tag = "$type", rename_all = "camelCase")]

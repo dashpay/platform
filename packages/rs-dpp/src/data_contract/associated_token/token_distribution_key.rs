@@ -13,7 +13,18 @@ use crate::prelude::TimestampMillis;
 /// - `PreProgrammed`: A scheduled distribution with predefined rules.
 /// - `Perpetual`: A continuous or recurring distribution.
 #[derive(
-    Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default,
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Default,
+    bincode::DecodeUntrusted,
 )]
 pub enum TokenDistributionType {
     /// A pre-programmed distribution scheduled for a specific time.
@@ -28,7 +39,18 @@ pub enum TokenDistributionType {
 ///
 /// - `PreProgrammed(Identifier)`: A predefined recipient for a scheduled distribution.
 /// - `Perpetual(TokenDistributionResolvedRecipient)`: A resolved recipient for an ongoing distribution.
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    bincode::DecodeUntrusted,
+)]
 #[serde(
     into = "TokenDistributionTypeWithResolvedRecipientRepr",
     from = "TokenDistributionTypeWithResolvedRecipientRepr"
@@ -89,7 +111,18 @@ impl From<TokenDistributionTypeWithResolvedRecipientRepr>
 /// - `PreProgrammed(TimestampMillis, Identifier)`: A scheduled distribution with a timestamp and recipient.
 /// - `Perpetual(RewardDistributionMoment, RewardDistributionMoment, TokenDistributionResolvedRecipient)`:
 ///   A perpetual distribution with previous and next distribution moments, along with the resolved recipient.
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    bincode::DecodeUntrusted,
+)]
 #[serde(into = "TokenDistributionInfoRepr", from = "TokenDistributionInfoRepr")]
 pub enum TokenDistributionInfo {
     /// A pre-programmed token distribution set for a specific time.
@@ -197,6 +230,7 @@ impl fmt::Display for TokenDistributionType {
     Clone,
     PartialEq,
     Eq,
+    bincode::DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub struct TokenDistributionKey {

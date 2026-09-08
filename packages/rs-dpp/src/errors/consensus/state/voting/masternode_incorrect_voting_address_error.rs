@@ -7,7 +7,16 @@ use platform_value::{Bytes20, Identifier};
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Masternode {pro_tx_hash} voting address is incorrect, current is {current_voting_address}, given is {given_voting_address}")]
 #[platform_serialize(unversioned)]

@@ -28,7 +28,7 @@ pub enum CreatedDataContract {
     V0(CreatedDataContractV0),
 }
 
-#[derive(Clone, Debug, Encode, Decode, From)]
+#[derive(Clone, Debug, Encode, Decode, From, bincode::DecodeUntrusted)]
 pub enum CreatedDataContractInSerializationFormat {
     V0(CreatedDataContractInSerializationFormatV0),
 }
@@ -90,7 +90,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Cre
             .with_big_endian()
             .with_no_limit();
         let created_data_contract_in_serialization_format: CreatedDataContractInSerializationFormat =
-            bincode::borrow_decode_from_slice(data, config)
+            bincode::borrow_decode_from_slice_untrusted(data, config)
                 .map_err(|e| {
                     PlatformDeserializationError(format!(
                         "unable to deserialize DataContract: {}",
@@ -369,7 +369,7 @@ mod tests {
         let config = bincode::config::standard()
             .with_big_endian()
             .with_no_limit();
-        let (decoded, _consumed) = bincode::borrow_decode_from_slice::<
+        let (decoded, _consumed) = bincode::borrow_decode_from_slice_untrusted::<
             CreatedDataContractInSerializationFormat,
             _,
         >(&bytes, config)

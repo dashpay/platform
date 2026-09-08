@@ -10,7 +10,20 @@ use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy, Encode, Decode)]
+#[derive(
+    Default,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Copy,
+    Encode,
+    Decode,
+    bincode::DecodeUntrusted,
+)]
 pub struct Bytes32(pub [u8; 32]);
 
 impl AsRef<[u8]> for Bytes32 {

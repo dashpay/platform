@@ -16,6 +16,38 @@ use serde::Serialize;
 
 use crate::sqlite::error::WalletStorageError;
 
+/// Explicit opt-in for the persisted Serde graphs this codec accepts.
+/// Implementations must review custom visitors and nested binary decoders.
+/// The guarded adapter removes sequence/map allocation hints; the row budget
+/// and each graph's domain checks still apply.
+pub trait BlobDecode: DeserializeOwned {}
+
+macro_rules! impl_blob_decode {
+    ($($ty:ty),+ $(,)?) => { $(impl BlobDecode for $ty {})+ };
+}
+
+// These stored graphs use Serde's collection visitors and fixed-size Core key
+// visitors. AssetLockEntry's nested proof bytes use DPP's untrusted decoder.
+impl_blob_decode!(
+    dashcore::OutPoint,
+    key_wallet::managed_account::transaction_record::TransactionRecord,
+    platform_wallet::changeset::AccountRegistrationEntry,
+    platform_wallet::changeset::AssetLockEntry,
+    platform_wallet::changeset::IdentityEntry,
+    platform_wallet::changeset::PendingContactCrypto,
+    platform_wallet::wallet::identity::ContactRequest,
+    platform_wallet::wallet::identity::DashPayProfile,
+    platform_wallet::wallet::identity::PaymentEntry,
+    Vec<u8>,
+    Vec<u32>,
+);
+
+#[derive(serde::Deserialize)]
+#[serde(transparent)]
+struct UntrustedBlob<T>(T);
+
+impl<'de, T: BlobDecode> bincode::serde::DeserializeUntrusted<'de> for UntrustedBlob<T> {}
+
 /// Hard cap on bincode-serde decode allocations. 16 MiB is two orders
 /// of magnitude above any legitimate per-row payload we ship — a
 /// hostile or corrupted backup with an inflated length prefix is
@@ -41,23 +73,24 @@ pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, WalletStorageError> {
 /// loudly instead of decoding a stale prefix. Also caps in-decode
 /// allocations at [`BLOB_SIZE_LIMIT_BYTES`] so a crafted length prefix
 /// can't OOM the host.
-pub fn decode<T: DeserializeOwned>(blob: &[u8]) -> Result<T, WalletStorageError> {
+pub fn decode<T: BlobDecode>(blob: &[u8]) -> Result<T, WalletStorageError> {
     if blob.len() > BLOB_SIZE_LIMIT_BYTES {
         return Err(WalletStorageError::BlobTooLarge {
             len_bytes: blob.len(),
             limit_bytes: BLOB_SIZE_LIMIT_BYTES,
         });
     }
-    let (value, consumed) = match bincode::serde::decode_from_slice(blob, bounded_config()) {
-        Ok(v) => v,
-        Err(bincode::error::DecodeError::LimitExceeded) => {
-            return Err(WalletStorageError::BlobTooLarge {
-                len_bytes: blob.len(),
-                limit_bytes: BLOB_SIZE_LIMIT_BYTES,
-            });
-        }
-        Err(other) => return Err(WalletStorageError::from(other)),
-    };
+    let (UntrustedBlob(value), consumed) =
+        match bincode::serde::decode_from_slice_untrusted(blob, bounded_config()) {
+            Ok(v) => v,
+            Err(bincode::error::DecodeError::LimitExceeded) => {
+                return Err(WalletStorageError::BlobTooLarge {
+                    len_bytes: blob.len(),
+                    limit_bytes: BLOB_SIZE_LIMIT_BYTES,
+                });
+            }
+            Err(other) => return Err(WalletStorageError::from(other)),
+        };
     if consumed != blob.len() {
         return Err(WalletStorageError::blob_decode(
             "unexpected trailing bytes in blob payload",
@@ -90,6 +123,8 @@ mod tests {
         a: u32,
         b: String,
     }
+
+    impl BlobDecode for Dummy {}
 
     #[test]
     fn encode_decode_roundtrip() {

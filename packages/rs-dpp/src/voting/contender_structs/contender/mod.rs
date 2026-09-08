@@ -37,7 +37,16 @@ pub enum Contender {
     derive(JsonConvertible)
 )]
 #[derive(
-    Debug, PartialEq, Eq, Clone, From, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    From,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

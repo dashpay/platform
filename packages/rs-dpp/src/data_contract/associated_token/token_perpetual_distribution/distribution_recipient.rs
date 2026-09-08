@@ -9,7 +9,17 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(
-    Decode, Encode, PlatformSerialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default,
+    Decode,
+    Encode,
+    PlatformSerialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Default,
+    bincode::DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 // Custom `Serialize` / `Deserialize` below — `derive(Serialize, Deserialize)`
@@ -189,7 +199,17 @@ pub type TokenDistributionWeight = u64;
 //     pub total_blocks: u64,
 // }
 
-#[derive(Decode, Encode, PlatformSerialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Decode,
+    Encode,
+    PlatformSerialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    bincode::DecodeUntrusted,
+)]
 #[platform_serialize(unversioned)]
 // Custom `Serialize` / `Deserialize` below — every variant wraps `Identifier`
 // (a base58 string in JSON, not a map), so serde's internal tagging can't

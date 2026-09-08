@@ -13,7 +13,15 @@ use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("JsonSchemaError: {error_summary}, path: {instance_path}")]
 #[platform_serialize(unversioned)]

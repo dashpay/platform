@@ -6,7 +6,7 @@ use bincode::{Decode, Encode};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq, Hash, bincode::DecodeUntrusted)]
 pub enum AddressFundsFeeStrategyStep {
     /// Deduct fee from a specific input address by index.
     /// The input must have remaining balance after its contribution to outputs.

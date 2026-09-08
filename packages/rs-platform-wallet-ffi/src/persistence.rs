@@ -4727,13 +4727,17 @@ fn build_wallet_start_state(
         // and re-imported — an accepted, transient dev-only state.
         match account_type {
             AccountType::ProviderOperatorKeys => {
+                // Upstream BLS keys do not implement DecodeUntrusted yet. Their
+                // decoder reads a Vec<u8> before validating the public key, so
+                // bound its allocation; a complete BLS xpub is under 200 bytes.
                 let (bls_pubkey, _): (ExtendedBLSPubKey, usize) =
-                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                        PersistenceError::backend(format!(
-                            "failed to decode provider BLS xpub: {}",
-                            e
-                        ))
-                    })?;
+                    bincode::decode_from_slice(xpub_bytes, config::standard().with_limit::<1024>())
+                        .map_err(|e| {
+                            PersistenceError::backend(format!(
+                                "failed to decode provider BLS xpub: {}",
+                                e
+                            ))
+                        })?;
                 let bls_account = BLSAccount::new(
                     Some(entry.wallet_id.to_vec()),
                     account_type,
@@ -5375,26 +5379,25 @@ fn build_unused_asset_locks(
             })?;
 
         // Decode the optional bincode-encoded proof.
-        let proof: Option<dpp::prelude::AssetLockProof> = if spec.proof_bytes.is_null()
-            || spec.proof_bytes_len == 0
-        {
-            None
-        } else {
-            // SAFETY: Same lifetime contract as `transaction_bytes`.
-            let proof_bytes =
-                unsafe { slice::from_raw_parts(spec.proof_bytes, spec.proof_bytes_len) };
-            let (proof, _) = dpp::bincode::decode_from_slice::<dpp::prelude::AssetLockProof, _>(
-                proof_bytes,
-                config::standard(),
-            )
-            .map_err(|e| {
-                PersistenceError::backend(format!(
-                    "tracked asset lock: failed to decode proof: {}",
-                    e
-                ))
-            })?;
-            Some(proof)
-        };
+        let proof: Option<dpp::prelude::AssetLockProof> =
+            if spec.proof_bytes.is_null() || spec.proof_bytes_len == 0 {
+                None
+            } else {
+                // SAFETY: Same lifetime contract as `transaction_bytes`.
+                let proof_bytes =
+                    unsafe { slice::from_raw_parts(spec.proof_bytes, spec.proof_bytes_len) };
+                let (proof, _) = dpp::bincode::decode_from_slice_untrusted::<
+                    dpp::prelude::AssetLockProof,
+                    _,
+                >(proof_bytes, config::standard())
+                .map_err(|e| {
+                    PersistenceError::backend(format!(
+                        "tracked asset lock: failed to decode proof: {}",
+                        e
+                    ))
+                })?;
+                Some(proof)
+            };
 
         let funding_type = funding_type_from_u8(spec.funding_type)?;
         let status = status_from_u8(spec.status)?;

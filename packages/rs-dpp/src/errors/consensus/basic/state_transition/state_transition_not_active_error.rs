@@ -7,7 +7,16 @@ use platform_version::version::ProtocolVersion;
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error(
     "State transition type {state_transition_type} is not yet active. Current protocol version is {current_protocol_version}, required protocol version is {required_protocol_version}"

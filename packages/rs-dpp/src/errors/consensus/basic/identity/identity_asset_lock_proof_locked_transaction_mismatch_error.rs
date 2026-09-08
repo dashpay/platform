@@ -46,3 +46,15 @@ impl From<IdentityAssetLockProofLockedTransactionMismatchError> for ConsensusErr
         Self::BasicError(BasicError::IdentityAssetLockProofLockedTransactionMismatchError(err))
     }
 }
+
+impl<C> bincode::DecodeUntrusted<C> for IdentityAssetLockProofLockedTransactionMismatchError {
+    fn decode_untrusted<D: bincode::de::UntrustedDecoder<Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Self {
+            instant_lock_transaction_id: crate::serialization::untrusted::decode_txid(decoder)?,
+            asset_lock_transaction_id: crate::serialization::untrusted::decode_txid(decoder)?,
+        })
+    }
+}
+bincode::impl_borrow_decode_untrusted!(IdentityAssetLockProofLockedTransactionMismatchError);

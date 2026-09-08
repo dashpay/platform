@@ -27,7 +27,7 @@ use crate::version::PlatformVersion;
 ///DataContractCreateTransitionV0 has the same encoding structure
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

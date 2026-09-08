@@ -17,7 +17,7 @@ pub use v0::ContestedDocumentVotePollStoredInfoV0Getters;
 
 pub type LockedVotePollCounter = u16;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode, bincode::DecodeUntrusted)]
 pub enum ContestedDocumentVotePollStatus {
     #[default]
     NotStarted,
@@ -54,7 +54,16 @@ impl ContestedDocumentVotePollStatus {
 ///
 /// This struct holds the list of contenders, the abstaining vote tally.
 #[derive(
-    Debug, PartialEq, Eq, Clone, From, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    From,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub enum ContestedDocumentVotePollStoredInfo {

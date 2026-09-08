@@ -10,7 +10,16 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use bincode::{Decode, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Public key {public_key_id} doesn't exist")]
 #[platform_serialize(unversioned)]

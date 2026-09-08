@@ -11,7 +11,18 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    bincode::DecodeUntrusted,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangeControlRulesV0 {
     /// This is who is authorized to make such a change

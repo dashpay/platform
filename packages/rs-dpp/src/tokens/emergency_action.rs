@@ -5,7 +5,9 @@ use platform_version::version::PlatformVersion;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Default, Encode, Decode, PartialOrd, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, Default, Encode, Decode, PartialOrd, PartialEq, Eq, bincode::DecodeUntrusted,
+)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

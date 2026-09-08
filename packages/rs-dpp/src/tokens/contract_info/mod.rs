@@ -22,6 +22,7 @@ pub mod v0;
     PlatformVersioned,
     From,
     PartialEq,
+    bincode::DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[cfg_attr(

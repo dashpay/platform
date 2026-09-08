@@ -38,7 +38,13 @@ use std::collections::{BTreeMap, BTreeSet};
 )]
 #[cfg_attr(
     feature = "identity-serialization",
-    derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
+    derive(
+        Encode,
+        Decode,
+        bincode::DecodeUntrusted,
+        PlatformDeserialize,
+        PlatformSerialize
+    ),
     platform_serialize(limit = 15000, unversioned)
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]

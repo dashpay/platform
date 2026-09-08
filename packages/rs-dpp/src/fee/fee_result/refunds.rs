@@ -29,7 +29,18 @@ pub type CreditsPerEpochByIdentifier = BTreeMap<[u8; 32], CreditsPerEpoch>;
 pub type BytesPerEpochByIdentifier = BTreeMap<[u8; 32], BytesPerEpoch>;
 
 /// Fee refunds to identities based on removed data from specific epochs
-#[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Default,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    bincode::DecodeUntrusted,
+)]
 pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
 
 impl FeeRefunds {

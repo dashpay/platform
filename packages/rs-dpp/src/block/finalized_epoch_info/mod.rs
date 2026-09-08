@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
     PlatformSerialize,
     PlatformDeserialize,
     From,
+    bincode::DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[serde(tag = "$formatVersion")]

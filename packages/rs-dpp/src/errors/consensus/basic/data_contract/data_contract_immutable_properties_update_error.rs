@@ -8,7 +8,15 @@ use thiserror::Error;
 use bincode::{Decode, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("only $defs, version and documents fields are allowed to be updated. Forbidden operation '{operation}' on '{field_path}'")]
 #[platform_serialize(unversioned)]

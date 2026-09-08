@@ -12,7 +12,17 @@ use crate::serialization::ValueConvertible;
 
 #[repr(u8)]
 #[derive(
-    Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy, Debug, Encode, Decode, Default,
+    Serialize_repr,
+    Deserialize_repr,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Debug,
+    Encode,
+    Decode,
+    Default,
+    bincode::DecodeUntrusted,
 )]
 pub enum Pooling {
     #[default]

@@ -27,7 +27,7 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 // `Deserialize` is implemented manually below — same reason as
 // `DocumentCreateTransitionV0`: two `#[serde(flatten)]` fields, one of
 // which is a catchall map that would otherwise swallow the base's keys.
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize),

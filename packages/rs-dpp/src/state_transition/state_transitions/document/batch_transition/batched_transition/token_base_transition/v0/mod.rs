@@ -27,7 +27,7 @@ use crate::tokens::errors::TokenError;
 #[cfg(any(feature = "json-conversion", feature = "value-conversion"))]
 use crate::{data_contract::DataContract, errors::ProtocolError};
 
-#[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display)]
+#[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display, bincode::DecodeUntrusted)]
 // Auto-injects `json_safe_u64` on `identity_contract_nonce: IdentityNonce`
 // (= u64) so JSON HR stringifies large values (JS Number precision safety).
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]

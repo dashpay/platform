@@ -8,7 +8,16 @@ use platform_value::Identifier;
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Identity Public Key with id {new_key_id} for identity {identity_id:?} conflicts for purpose {purpose} with key {old_key_id} in the contract bounds of {contract_id:?}")]
 #[platform_serialize(unversioned)]

@@ -24,6 +24,7 @@ use crate::errors::consensus::basic::BasicError;
     PlatformDeserialize,
     Clone,
     PartialEq,
+    bincode::DecodeUntrusted,
 )]
 #[platform_serialize(limit = 2000)]
 #[error(transparent)]

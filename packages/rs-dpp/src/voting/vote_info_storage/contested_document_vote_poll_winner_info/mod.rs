@@ -7,7 +7,7 @@ use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode, bincode::DecodeUntrusted)]
 // Custom `Serialize` / `Deserialize` below — same pattern as
 // `ResourceVoteChoice`. The `WonByIdentity` variant wraps `Identifier`
 // (a tuple struct that serializes as a base58 string, not a map), so

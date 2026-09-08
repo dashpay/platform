@@ -12,7 +12,7 @@ use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

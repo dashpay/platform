@@ -8,7 +8,15 @@ use crate::data_contract::associated_token::token_configuration::TokenConfigurat
 use bincode::{Decode, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Forbidden operation '{operation}' on '{field_path}', old config is {old_config}, new config is {new_config}")]
 #[platform_serialize(unversioned)]

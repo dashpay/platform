@@ -8,7 +8,9 @@ use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Default, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(
+    Default, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Encode, Decode, bincode::DecodeUntrusted,
+)]
 pub struct BinaryData(pub Vec<u8>);
 
 impl fmt::Debug for BinaryData {

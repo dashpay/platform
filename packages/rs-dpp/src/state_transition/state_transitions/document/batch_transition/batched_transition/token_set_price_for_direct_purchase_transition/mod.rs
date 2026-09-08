@@ -21,7 +21,7 @@ pub use v0::TokenSetPriceForDirectPurchaseTransitionV0;
 ///
 /// Versioning enables forward compatibility by allowing future enhancements or changes
 /// without breaking existing clients.
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

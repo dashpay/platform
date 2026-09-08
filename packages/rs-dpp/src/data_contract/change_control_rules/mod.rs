@@ -19,7 +19,18 @@ use std::fmt;
 
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, From)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    From,
+    bincode::DecodeUntrusted,
+)]
 #[serde(tag = "$formatVersion")]
 pub enum ChangeControlRules {
     #[serde(rename = "0")]

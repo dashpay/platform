@@ -17,6 +17,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error(
     "Identity is trying to be created with more than one master key. Please only use one master key."

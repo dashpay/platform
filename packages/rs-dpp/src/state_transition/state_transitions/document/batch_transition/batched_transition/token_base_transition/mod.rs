@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
 // the flattened base) keeps the entire transition wire shape flat —
 // matching the convention every consumer reads (`tx["$id"]`,
 // `tx["$identity-contract-nonce"]`, etc.).
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

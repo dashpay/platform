@@ -11,7 +11,17 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(
-    Serialize, Deserialize, Decode, Encode, Default, Debug, Clone, PartialEq, Eq, PartialOrd,
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Default,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    bincode::DecodeUntrusted,
 )]
 pub enum TokenTradeMode {
     #[default]
@@ -28,7 +38,9 @@ impl crate::serialization::JsonConvertible for TokenTradeMode {}
 impl crate::serialization::ValueConvertible for TokenTradeMode {}
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
+#[derive(
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, bincode::DecodeUntrusted,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenMarketplaceRulesV0 {
     pub trade_mode: TokenTradeMode,

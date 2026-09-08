@@ -8,7 +8,10 @@ use std::fmt;
 
 /// A structure where the token supply and the aggregated token account balances should always be equal
 #[derive(Copy, Clone, Debug)]
-#[cfg_attr(feature = "fixtures-and-mocks", derive(Encode, Decode))]
+#[cfg_attr(
+    feature = "fixtures-and-mocks",
+    derive(Encode, Decode, bincode::DecodeUntrusted)
+)]
 pub struct TotalSingleTokenBalance {
     /// the token supply
     pub token_supply: SignedTokenAmount,

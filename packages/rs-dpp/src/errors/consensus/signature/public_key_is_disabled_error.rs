@@ -9,7 +9,16 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use bincode::{Decode, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Identity key {public_key_id} is disabled")]
 #[platform_serialize(unversioned)]

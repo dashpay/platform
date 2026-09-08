@@ -18,7 +18,7 @@ use crate::serialization::json_safe_fields;
 use crate::{identity::core_script::CoreScript, withdrawal::Pooling, ProtocolError};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
+#[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

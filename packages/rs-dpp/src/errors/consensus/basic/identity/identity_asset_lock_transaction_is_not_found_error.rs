@@ -9,7 +9,16 @@ use thiserror::Error;
 use crate::consensus::ConsensusError;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub struct IdentityAssetLockTransactionIsNotFoundError {

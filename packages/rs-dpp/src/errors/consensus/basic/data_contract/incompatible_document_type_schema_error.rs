@@ -8,7 +8,15 @@ use crate::consensus::ConsensusError;
 use bincode::{Decode, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Updated document type '{document_type_name}' schema is not backward compatible with previous version. Incompatible change '{operation}' of property '{property_path}'"
 )]

@@ -37,6 +37,7 @@ pub type GroupRequiredPower = u32;
     Clone,
     PartialEq,
     Eq,
+    bincode::DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 #[serde(tag = "$formatVersion")]

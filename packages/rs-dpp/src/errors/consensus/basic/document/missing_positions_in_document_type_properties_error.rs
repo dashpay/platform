@@ -18,6 +18,7 @@ use platform_value::Identifier;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error(
     "position field is not present for document type \"{}\"",

@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
-#[derive(Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default)]
+#[derive(
+    Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default, bincode::DecodeUntrusted,
+)]
 // Custom `Serialize` / `Deserialize` below — `derive(Serialize, Deserialize)`
 // can't produce the desired flat wire shape because the `Identity` variant
 // wraps `Identifier` (serializes as a base58 string, not a map) and `Group`

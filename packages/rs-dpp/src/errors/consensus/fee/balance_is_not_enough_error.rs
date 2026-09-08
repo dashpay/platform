@@ -9,7 +9,16 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use bincode::{Decode, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Current credits balance {balance} is not enough to pay {fee} fee")]
 #[platform_serialize(unversioned)]

@@ -42,6 +42,7 @@ pub type IdentityCreditTransferToAddressesTransitionLatest =
     PlatformVersioned,
     From,
     PartialEq,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

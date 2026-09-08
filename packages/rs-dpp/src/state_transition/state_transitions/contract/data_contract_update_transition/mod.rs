@@ -50,6 +50,7 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
     PlatformVersioned,
     From,
     PartialEq,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

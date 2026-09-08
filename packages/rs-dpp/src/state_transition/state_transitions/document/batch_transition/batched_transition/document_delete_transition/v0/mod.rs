@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

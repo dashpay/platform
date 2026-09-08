@@ -103,7 +103,9 @@ impl fmt::Display for DataContractMismatch {
     all(feature = "value-conversion", feature = "serde-conversion"),
     derive(ValueConvertible)
 )]
-#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From)]
+#[derive(
+    Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From, bincode::DecodeUntrusted,
+)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

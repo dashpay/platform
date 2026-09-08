@@ -16,7 +16,18 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    bincode::DecodeUntrusted,
+)]
 #[serde(rename_all = "camelCase", default)]
 pub struct DataContractConfigV1 {
     /// Can the contract ever be deleted. If the contract is deleted, so should be all

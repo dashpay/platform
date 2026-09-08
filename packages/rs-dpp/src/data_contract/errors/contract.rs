@@ -12,7 +12,15 @@ use crate::ProtocolError;
 
 // @append_only
 #[derive(
-    Error, Debug, PartialEq, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone,
+    Error,
+    Debug,
+    PartialEq,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Encode,
+    Decode,
+    Clone,
+    bincode::DecodeUntrusted,
 )]
 pub enum DataContractError {
     #[error(transparent)]

@@ -33,7 +33,9 @@ use std::fmt;
 /// This configuration is designed to be deterministic and versioned for compatibility
 /// across protocol upgrades and validation environments.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
+#[derive(
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, bincode::DecodeUntrusted,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationV0 {
     /// Metadata conventions, including decimals and localizations.
@@ -248,7 +250,19 @@ impl fmt::Display for TokenConfigurationV0 {
 ///
 /// These presets are intended to be used in conjunction with `TokenConfigurationPreset`
 /// to simplify token setup and enforce governance constraints consistently.
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    bincode::DecodeUntrusted,
+)]
 pub enum TokenConfigurationPresetFeatures {
     /// No actions are permitted after initialization. All governance and control
     /// settings are immutable.
@@ -292,7 +306,18 @@ pub enum TokenConfigurationPresetFeatures {
 ///
 /// This abstraction allows users to choose between common control configurations
 /// ranging from immutable tokens to fully administrator-controlled assets.
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    bincode::DecodeUntrusted,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationPreset {
     /// Defines the set of capabilities enabled in this preset (e.g., whether minting,

@@ -8,7 +8,16 @@ use crate::consensus::ConsensusError;
 use bincode::{Decode, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("'{property_name}' property of '{document_type}' document has an invalid type '{property_type}' and cannot be use as an index")]
 #[platform_serialize(unversioned)]

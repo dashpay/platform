@@ -37,6 +37,7 @@ use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCrea
     Ord,
     PartialOrd,
     Hash,
+    bincode::DecodeUntrusted,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKeyV0 {

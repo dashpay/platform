@@ -19,7 +19,7 @@ use platform_value::{Bytes32, Identifier};
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode, bincode::DecodeUntrusted)]
 pub enum DocumentFieldFillType {
     /// Do not fill a field if that field is not required
     DoNotFillIfNotRequired,
@@ -27,7 +27,7 @@ pub enum DocumentFieldFillType {
     FillIfNotRequired,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode, bincode::DecodeUntrusted)]
 pub enum DocumentFieldFillSize {
     /// Fill to the min size allowed by the contract
     MinDocumentFillSize,

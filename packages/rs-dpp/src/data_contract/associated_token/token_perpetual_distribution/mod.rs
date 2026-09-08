@@ -32,6 +32,7 @@ pub mod v0;
     Eq,
     PartialOrd,
     From,
+    bincode::DecodeUntrusted,
 )]
 #[serde(tag = "$formatVersion")]
 #[platform_serialize(unversioned)]

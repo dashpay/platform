@@ -18,7 +18,17 @@ pub mod contested_document_resource_vote_poll;
     all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
 )]
-#[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq, From)]
+#[derive(
+    Debug,
+    Clone,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    PartialEq,
+    From,
+    bincode::DecodeUntrusted,
+)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

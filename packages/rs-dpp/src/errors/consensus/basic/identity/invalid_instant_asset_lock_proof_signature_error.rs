@@ -17,6 +17,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Instant lock proof signature is invalid or wasn't created recently. Please try chain asset lock proof instead.")]
 #[platform_serialize(unversioned)]

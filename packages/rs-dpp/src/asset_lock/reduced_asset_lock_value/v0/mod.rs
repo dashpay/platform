@@ -8,7 +8,16 @@ use platform_value::Bytes32;
 // exceed JS's `MAX_SAFE_INTEGER`; `#[json_safe_fields]` serializes them as
 // strings in human-readable JSON to avoid precision loss when crossing to JS.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Encode,
+    Decode,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::DecodeUntrusted,
+)]
 pub struct AssetLockValueV0 {
     pub(super) initial_credit_value: Credits,
     pub(super) tx_out_script: Vec<u8>,

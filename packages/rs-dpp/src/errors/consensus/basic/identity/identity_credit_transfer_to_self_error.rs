@@ -16,6 +16,7 @@ use thiserror::Error;
     PlatformSerialize,
     PlatformDeserialize,
     Default,
+    bincode::DecodeUntrusted,
 )]
 #[error("Credits transfer recipient must be another identity")]
 #[platform_serialize(unversioned)]

@@ -14,7 +14,7 @@ mod property_names {
 /// The Identifier fields in [`TokenMintTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, bincode::DecodeUntrusted)]
 // Auto-injects `json_safe_u64` on `amount: u64`.
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(

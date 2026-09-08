@@ -9,7 +9,15 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Document Contest for vote_poll {vote_poll} is not joinable {stored_info}, it started {start_time} and it is now {current_time}, and you can only join for {joinable_time}")]
 #[platform_serialize(unversioned)]

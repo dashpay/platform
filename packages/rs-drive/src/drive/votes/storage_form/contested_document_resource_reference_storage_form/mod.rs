@@ -2,7 +2,7 @@ use bincode::{Decode, Encode};
 use grovedb::element::reference_path::ReferencePathType;
 
 /// Represents the storage form of a reference.
-#[derive(Debug, Clone, PartialEq, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode, bincode::DecodeUntrusted)]
 pub struct ContestedDocumentResourceVoteReferenceStorageForm {
     /// The reference
     pub reference_path_type: ReferencePathType,

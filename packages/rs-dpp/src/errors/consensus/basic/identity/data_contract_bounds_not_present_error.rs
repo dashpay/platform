@@ -5,7 +5,18 @@ use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    bincode::DecodeUntrusted,
+)]
 #[error("Data Contract {data_contract_id} expected bounds are not present")]
 pub struct DataContractBoundsNotPresentError {
     /*

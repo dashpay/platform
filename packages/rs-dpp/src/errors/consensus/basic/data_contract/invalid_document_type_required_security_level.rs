@@ -10,7 +10,16 @@ use bincode::{Decode, Encode};
 use platform_value::Identifier;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Invalid document type security level error security level: got {security_level:?} for {contract_id}::{document_type_name}")]
 #[platform_serialize(unversioned)]

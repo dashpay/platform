@@ -41,6 +41,10 @@ struct IdentityKeyWire {
     derivation_indices: Option<IdentityKeyDerivationIndices>,
 }
 
+// The wire graph uses Serde collections; the nested public key bytes are
+// decoded separately through DPP's untrusted native implementation.
+impl blob::BlobDecode for IdentityKeyWire {}
+
 impl IdentityKeyWire {
     fn from_entry(entry: &IdentityKeyEntry) -> Result<Self, WalletStorageError> {
         let pk = bincode::encode_to_vec(&entry.public_key, bincode::config::standard())?;
@@ -57,7 +61,10 @@ impl IdentityKeyWire {
     #[cfg(any(test, feature = "__test-helpers"))]
     fn into_entry(self) -> Result<IdentityKeyEntry, WalletStorageError> {
         let (public_key, consumed): (IdentityPublicKey, usize) =
-            bincode::decode_from_slice(&self.public_key_bincode, bincode::config::standard())?;
+            bincode::decode_from_slice_untrusted(
+                &self.public_key_bincode,
+                bincode::config::standard(),
+            )?;
         // Consistent with the outer blob::decode trailing-byte guard: a
         // valid-prefix + trailing-garbage payload that bincode's decoder
         // happily accepts (it stops after the typed length) is corruption

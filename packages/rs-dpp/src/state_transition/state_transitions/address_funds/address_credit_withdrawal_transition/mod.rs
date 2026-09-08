@@ -59,6 +59,7 @@ const _: () = assert!(
     PlatformVersioned,
     From,
     PartialEq,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

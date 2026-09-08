@@ -45,7 +45,7 @@ pub const TOKEN_HISTORY_ID_BYTES: [u8; 32] = [
     187, 110, 233, 128, 63, 48, 172, 29, 210, 108,
 ];
 
-#[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
+#[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

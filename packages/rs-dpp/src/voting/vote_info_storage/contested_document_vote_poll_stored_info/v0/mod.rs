@@ -12,7 +12,7 @@ use platform_value::Identifier;
 use std::fmt;
 
 // We can have multiple rounds of voting, after an unlock for example
-#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode, bincode::DecodeUntrusted)]
 pub struct ContestedDocumentVotePollStoredInfoVoteEventV0 {
     /// The list of contenders returned by the query.
     pub resource_vote_choices: Vec<FinalizedResourceVoteChoicesWithVoterInfo>,
@@ -42,7 +42,7 @@ impl fmt::Display for ContestedDocumentVotePollStoredInfoVoteEventV0 {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode, bincode::DecodeUntrusted)]
 pub struct ContestedDocumentVotePollStoredInfoV0 {
     /// The list of contenders returned by the query.
     pub finalized_events: Vec<ContestedDocumentVotePollStoredInfoVoteEventV0>,

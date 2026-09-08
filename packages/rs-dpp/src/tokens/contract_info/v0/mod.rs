@@ -3,7 +3,7 @@ use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_value::Identifier;
 
-#[derive(Debug, Clone, Encode, Decode, From, PartialEq)]
+#[derive(Debug, Clone, Encode, Decode, From, PartialEq, bincode::DecodeUntrusted)]
 #[cfg_attr(
     any(feature = "fixtures-and-mocks", feature = "serde-conversion"),
     derive(serde::Serialize, serde::Deserialize),

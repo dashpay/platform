@@ -13,7 +13,7 @@ pub mod action_taker;
 pub mod group_action;
 pub mod group_action_status;
 
-#[derive(Debug, Clone, Copy, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Copy, Encode, Decode, PartialEq, bincode::DecodeUntrusted)]
 pub enum GroupStateTransitionInfoStatus {
     GroupStateTransitionInfoProposer(GroupContractPosition),
     GroupStateTransitionInfoOtherSigner(GroupStateTransitionInfo),
@@ -35,7 +35,9 @@ impl From<GroupStateTransitionInfoStatus> for GroupStateTransitionInfo {
 }
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display)]
+#[derive(
+    Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display, bincode::DecodeUntrusted,
+)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

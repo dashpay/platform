@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::ProtocolError;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
+#[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

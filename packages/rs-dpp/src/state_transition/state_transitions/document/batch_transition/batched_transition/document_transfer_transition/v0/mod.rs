@@ -18,7 +18,7 @@ mod property_names {
     pub const RECIPIENT_OWNER_ID: &str = "recipientOwnerId";
 }
 
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, bincode::DecodeUntrusted)]
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
     feature = "serde-conversion",

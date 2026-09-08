@@ -17,6 +17,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("bls signing error {message}")]
 #[platform_serialize(unversioned)]

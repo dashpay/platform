@@ -34,7 +34,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 /// Vote Poll Drive Query struct
-#[derive(Debug, PartialEq, Clone, Encode, Decode)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode, bincode::DecodeUntrusted)]
 pub struct VotePollsByEndDateDriveQuery {
     /// What is the start time we are asking for
     pub start_time: Option<(TimestampMillis, TimestampIncluded)>,

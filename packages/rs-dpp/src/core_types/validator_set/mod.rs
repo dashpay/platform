@@ -28,7 +28,13 @@ pub mod v0;
 )]
 #[cfg_attr(
     feature = "core-types-serialization",
-    derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
+    derive(
+        Encode,
+        Decode,
+        bincode::DecodeUntrusted,
+        PlatformDeserialize,
+        PlatformSerialize
+    ),
     platform_serialize(limit = 15000, unversioned)
 )]
 pub enum ValidatorSet {

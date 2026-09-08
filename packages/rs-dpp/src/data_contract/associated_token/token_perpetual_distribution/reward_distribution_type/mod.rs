@@ -14,7 +14,18 @@ use crate::data_contract::associated_token::token_perpetual_distribution::reward
 use crate::ProtocolError;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    bincode::DecodeUntrusted,
+)]
 #[serde(tag = "$type", rename_all = "camelCase")]
 pub enum RewardDistributionType {
     /// An amount of tokens is emitted every n blocks.

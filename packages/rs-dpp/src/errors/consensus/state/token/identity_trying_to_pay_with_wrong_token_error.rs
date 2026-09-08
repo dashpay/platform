@@ -6,7 +6,17 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
+)]
 #[platform_serialize(unversioned)]
 pub struct IdentityTryingToPayWithWrongTokenError {
     expected_contract_id: Option<Identifier>,

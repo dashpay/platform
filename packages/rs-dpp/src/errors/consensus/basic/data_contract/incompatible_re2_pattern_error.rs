@@ -8,7 +8,16 @@ use crate::consensus::ConsensusError;
 use bincode::{Decode, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Pattern '{pattern}' at '{path}' is not not compatible with Re2: {message}")]
 #[platform_serialize(unversioned)]

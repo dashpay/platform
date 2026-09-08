@@ -8,7 +8,17 @@ use std::error::Error;
 use std::fmt;
 
 /// Error indicating that a group contains too few members to be valid.
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
+)]
 #[platform_serialize(unversioned)]
 pub struct GroupHasTooFewMembersError {
     group_id: Option<GroupContractPosition>,

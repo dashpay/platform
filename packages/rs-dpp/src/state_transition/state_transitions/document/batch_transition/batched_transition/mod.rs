@@ -47,7 +47,7 @@ pub use token_transition::TokenTransition;
 
 pub const PROPERTY_ACTION: &str = "$action";
 
-#[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
+#[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

@@ -432,6 +432,7 @@ macro_rules! call_errorable_method_identity_signed {
     PlatformSignable,
     From,
     PartialEq,
+    bincode::DecodeUntrusted,
 )]
 // `tag = "$type"` matches the system-field convention: every serde-injected
 // discriminator key in this crate carries a `$` prefix so it never collides

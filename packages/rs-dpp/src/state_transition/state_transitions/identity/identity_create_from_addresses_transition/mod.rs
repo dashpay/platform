@@ -40,6 +40,7 @@ pub type IdentityCreateFromAddressesTransitionLatest = IdentityCreateFromAddress
     PlatformVersioned,
     From,
     PartialEq,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

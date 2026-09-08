@@ -12,7 +12,7 @@ mod property_names {
 /// The Identifier fields in [`TokenBurnTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, bincode::DecodeUntrusted)]
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
     feature = "serde-conversion",

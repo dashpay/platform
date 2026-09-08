@@ -24,6 +24,7 @@ use std::fmt;
     PlatformDeserialize,
     PartialEq,
     Eq,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

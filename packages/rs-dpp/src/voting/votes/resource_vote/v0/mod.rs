@@ -10,7 +10,16 @@ use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PartialEq,
+    bincode::DecodeUntrusted,
+)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

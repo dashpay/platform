@@ -17,6 +17,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
     Encode,
     Decode,
     Default,
+    bincode::DecodeUntrusted,
 )]
 pub enum StateTransitionType {
     #[default]

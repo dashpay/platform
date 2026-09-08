@@ -44,6 +44,7 @@ pub type AddressFundingFromAssetLockTransitionLatest = AddressFundingFromAssetLo
     PlatformVersioned,
     From,
     PartialEq,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

@@ -22,6 +22,7 @@ pub use v0::{AssetLockValueGettersV0, AssetLockValueSettersV0};
     PartialEq,
     serde::Serialize,
     serde::Deserialize,
+    bincode::DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 #[serde(tag = "$formatVersion")]

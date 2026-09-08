@@ -50,6 +50,7 @@ pub type TimestampMillis = u64;
     Hash,
     Ord,
     PartialOrd,
+    bincode::DecodeUntrusted,
 )]
 #[platform_serialize(limit = 2000, unversioned)] //This is not platform versioned automatically
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]

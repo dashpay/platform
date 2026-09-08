@@ -69,6 +69,7 @@ pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTran
     PlatformVersioned,
     From,
     PartialEq,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

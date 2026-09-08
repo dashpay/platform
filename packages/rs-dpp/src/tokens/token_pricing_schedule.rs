@@ -24,6 +24,7 @@ use std::fmt::{self, Display, Formatter};
     PartialOrd,
     PlatformSerialize,
     PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

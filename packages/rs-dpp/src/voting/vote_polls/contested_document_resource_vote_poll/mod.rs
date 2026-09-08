@@ -19,7 +19,16 @@ use std::fmt;
     all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
 )]
-#[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    PartialEq,
+    bincode::DecodeUntrusted,
+)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

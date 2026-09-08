@@ -17,6 +17,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Failed to update the master public key: {description}. Ensure the operation is valid and permissible under current system rules.")]
 #[platform_serialize(unversioned)]

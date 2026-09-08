@@ -84,7 +84,16 @@ pub struct ByteArrayPropertySizes {
 // This enum is embedded in consensus errors, so it is consensus-serialized.
 // @append_only
 #[derive(
-    Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Serialize,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum DocumentPropertyReferenceTarget {

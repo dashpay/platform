@@ -9,7 +9,16 @@ use crate::prelude::{Identifier, Revision};
 use bincode::{Decode, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Identity {identity_id} has invalid revision. The current revision is {current_revision}")]
 #[platform_serialize(unversioned)]

@@ -11,7 +11,7 @@ pub struct CreatedDataContractV0 {
     pub identity_nonce: IdentityNonce,
 }
 
-#[derive(Clone, Debug, Encode, Decode)]
+#[derive(Clone, Debug, Encode, Decode, bincode::DecodeUntrusted)]
 pub struct CreatedDataContractInSerializationFormatV0 {
     pub data_contract: DataContractInSerializationFormat,
     pub identity_nonce: IdentityNonce,

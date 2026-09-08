@@ -22,7 +22,7 @@ use crate::state_transition::StateTransition;
 use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

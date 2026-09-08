@@ -18,7 +18,7 @@ use crate::state_transition::batch_transition::document_create_transition::v0::v
 use crate::state_transition::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 
-#[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
+#[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

@@ -12,7 +12,18 @@ use std::fmt;
 /// across different locales. This information is not used for validation or consensus
 /// but enhances UX by allowing consistent display in multilingual interfaces.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    bincode::DecodeUntrusted,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationLocalizationV0 {
     /// Indicates whether the token name should be capitalized when displayed.

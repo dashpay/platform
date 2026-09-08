@@ -20,7 +20,17 @@ pub const ENGLISH_ISO_639: &str = "en";
 /// and does not affect consensus-critical logic or supply calculations.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
-    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd, Default,
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Default,
+    bincode::DecodeUntrusted,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationConventionV0 {

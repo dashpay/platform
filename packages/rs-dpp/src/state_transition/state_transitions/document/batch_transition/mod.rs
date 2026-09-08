@@ -71,6 +71,7 @@ pub use v1::*;
     PlatformSignable,
     PlatformVersioned,
     From,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

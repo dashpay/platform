@@ -42,7 +42,9 @@ pub const MAX_CREDITS: Credits = 9223372036854775807 as Credits; //i64 Max
 pub const CREDITS_PER_DUFF: Credits = 1000;
 
 /// An enum for credit operations
-#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode, bincode::DecodeUntrusted,
+)]
 pub enum CreditOperation {
     /// We are setting credit amounts
     SetCredits(Credits),
@@ -51,7 +53,9 @@ pub enum CreditOperation {
 }
 
 /// An enum for credit operations in compacted address blobs
-#[derive(Debug, Clone, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, bincode::Encode, bincode::Decode, bincode::DecodeUntrusted,
+)]
 pub enum BlockAwareCreditOperation {
     /// We are setting credit amounts - the final value after all operations
     SetCredits(Credits),

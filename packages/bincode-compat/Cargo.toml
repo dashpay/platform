@@ -1,0 +1,17 @@
+[package]
+name = "bincode"
+version = "2.0.1"
+edition = "2021"
+license = "MIT"
+publish = false
+description = "Compatibility re-exports for upstream bincode dependencies"
+
+[features]
+default = ["std", "derive"]
+std = ["bincode-fork/std"]
+alloc = ["bincode-fork/alloc"]
+derive = ["bincode-fork/derive"]
+serde = ["bincode-fork/serde"]
+
+[dependencies]
+bincode-fork = { package = "grovedb-bincode", git = "https://github.com/dashpay/grovedb", rev = "2b9c7ba9a794bfab1a03fa1d0b3f5496b63175ae", default-features = false }

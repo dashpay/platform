@@ -9,7 +9,18 @@ use crate::data_contract::associated_token::token_perpetual_distribution::distri
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    bincode::DecodeUntrusted,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenPerpetualDistributionV0 {
     /// The distribution type that the token will use

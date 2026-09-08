@@ -30,6 +30,7 @@ use std::collections::BTreeMap;
     Clone,
     PartialEq,
     Eq,
+    bincode::DecodeUntrusted,
 )]
 #[serde(rename_all = "camelCase")]
 #[platform_serialize(unversioned)]

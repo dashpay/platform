@@ -6,7 +6,17 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
+)]
 #[platform_serialize(unversioned)]
 pub enum TokenConfigurationIdentityContext {
     ChangeControlRule(String),
@@ -16,7 +26,16 @@ pub enum TokenConfigurationIdentityContext {
 }
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Identity {identity_id} required in token position {token_position} of contract {contract_id} for {context:?} does not exist")]
 #[platform_serialize(unversioned)]

@@ -22,7 +22,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode, bincode::DecodeUntrusted,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractInSerializationFormatV1 {
     /// A unique identifier for the data contract.

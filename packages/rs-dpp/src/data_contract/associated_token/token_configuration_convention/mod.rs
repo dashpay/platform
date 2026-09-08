@@ -21,7 +21,19 @@ pub mod v0;
 /// This enum enables evolution of the convention schema over time without breaking
 /// compatibility with older tokens. Each variant defines a specific format version.
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
-#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, PartialOrd, From)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    From,
+    bincode::DecodeUntrusted,
+)]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[serde(tag = "$formatVersion")]
 pub enum TokenConfigurationConvention {

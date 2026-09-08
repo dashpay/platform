@@ -43,6 +43,7 @@ use serde::{Deserialize, Serialize};
     PlatformVersioned,
     From,
     PartialEq,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

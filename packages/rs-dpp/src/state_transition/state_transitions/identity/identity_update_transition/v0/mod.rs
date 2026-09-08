@@ -25,7 +25,7 @@ use crate::{
 };
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq)]
+#[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

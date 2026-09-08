@@ -11,7 +11,16 @@ use crate::identity::identity_nonce::MergeIdentityNonceResult;
 use bincode::{Decode, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub struct InvalidIdentityNonceError {

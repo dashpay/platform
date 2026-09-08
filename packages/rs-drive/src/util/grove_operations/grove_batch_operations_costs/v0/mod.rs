@@ -24,6 +24,7 @@ impl Drive {
             AverageCaseCostsType(estimated_layer_info),
             ops.operations,
             Some(BatchApplyOptions {
+                propagate_backward_references: false,
                 validate_insertion_does_not_override: validate,
                 validate_insertion_does_not_override_tree: validate,
                 disable_operation_consistency_check: false,

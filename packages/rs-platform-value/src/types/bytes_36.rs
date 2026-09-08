@@ -8,7 +8,19 @@ use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy, Encode, Decode)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Copy,
+    Encode,
+    Decode,
+    bincode::DecodeUntrusted,
+)]
 pub struct Bytes36(pub [u8; 36]);
 
 impl Bytes36 {

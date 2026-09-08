@@ -16,6 +16,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
+    bincode::DecodeUntrusted,
 )]
 #[error("Invalid State Transition signature")]
 #[platform_serialize(unversioned)]

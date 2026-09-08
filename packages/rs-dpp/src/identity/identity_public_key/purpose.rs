@@ -24,6 +24,7 @@ use std::convert::TryFrom;
     Decode,
     Default,
     strum::EnumIter,
+    bincode::DecodeUntrusted,
 )]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels

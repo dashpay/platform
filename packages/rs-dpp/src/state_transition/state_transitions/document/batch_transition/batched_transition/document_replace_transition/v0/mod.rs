@@ -25,7 +25,7 @@ mod property_names {
     pub const REVISION: &str = "$revision";
 }
 
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, bincode::DecodeUntrusted)]
 // Auto-injects `json_safe_u64` on `revision: Revision` (= u64).
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 // `Deserialize` is implemented manually below — see comments. Same

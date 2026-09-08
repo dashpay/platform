@@ -7,7 +7,9 @@ use derive_more::Display;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display)]
+#[derive(
+    Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display, bincode::DecodeUntrusted,
+)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum GasFeesPaidBy {
     /// The user pays the gas fees

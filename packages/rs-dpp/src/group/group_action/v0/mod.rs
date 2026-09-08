@@ -12,7 +12,16 @@ use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
-    Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
+    Debug,
+    PartialEq,
+    PartialOrd,
+    Clone,
+    Eq,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    bincode::DecodeUntrusted,
 )]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version

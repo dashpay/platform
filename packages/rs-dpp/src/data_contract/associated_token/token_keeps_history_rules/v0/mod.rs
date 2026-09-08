@@ -10,7 +10,18 @@ use std::fmt;
 /// Config update, Destroying Frozen Funds, Emergency Action,
 /// Pre Programmed Token Release always require an entry to the ledger
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    bincode::DecodeUntrusted,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenKeepsHistoryRulesV0 {
     /// Whether transfer history is recorded.

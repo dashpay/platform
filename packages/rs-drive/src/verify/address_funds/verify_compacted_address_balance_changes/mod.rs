@@ -23,7 +23,7 @@ pub type VerifiedCompactedAddressBalanceChanges = Vec<(
 /// The predecessor proof independently authenticates which range, if any,
 /// contains the requested height. The forward proof can then be verified
 /// against a query derived only from that authenticated result.
-#[derive(Debug, bincode::Encode, bincode::Decode)]
+#[derive(Debug, bincode::Encode, bincode::Decode, bincode::DecodeUntrusted)]
 pub(crate) struct CompactedAddressBalanceProof {
     pub(crate) predecessor_proof: Vec<u8>,
     pub(crate) forward_proof: Vec<u8>,

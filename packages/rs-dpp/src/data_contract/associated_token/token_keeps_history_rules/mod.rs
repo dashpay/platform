@@ -11,7 +11,19 @@ pub mod v0;
 
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
-#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq, From)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    From,
+    bincode::DecodeUntrusted,
+)]
 #[serde(tag = "$formatVersion")]
 pub enum TokenKeepsHistoryRules {
     #[serde(rename = "0")]

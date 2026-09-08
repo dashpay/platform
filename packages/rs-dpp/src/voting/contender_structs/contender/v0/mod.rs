@@ -29,7 +29,7 @@ pub struct ContenderV0 {
 /// This struct holds the identity ID of the contender, the serialized document,
 /// and the vote tally.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),

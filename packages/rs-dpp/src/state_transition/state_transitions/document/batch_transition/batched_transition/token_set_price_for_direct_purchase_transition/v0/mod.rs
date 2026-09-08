@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

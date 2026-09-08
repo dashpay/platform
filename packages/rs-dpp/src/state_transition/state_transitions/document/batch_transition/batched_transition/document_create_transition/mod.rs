@@ -17,7 +17,7 @@ use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 pub use v0::DocumentCreateTransitionV0;
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, bincode::DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

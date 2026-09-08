@@ -29,6 +29,7 @@ impl Drive {
         let mut current_batch_operations =
             LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
         let options = DeleteOptions {
+            propagate_backward_references: false,
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,

@@ -25,7 +25,9 @@ mod version;
     all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
 )]
-#[derive(Debug, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq, From)]
+#[derive(
+    Debug, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq, From, bincode::DecodeUntrusted,
+)]
 //here we want to indicate that IdentityPublicKeyInCreation can be transformed into IdentityPublicKeyInCreationSignable
 #[platform_signable(derive_into)]
 #[cfg_attr(

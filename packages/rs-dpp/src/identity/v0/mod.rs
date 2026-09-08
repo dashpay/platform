@@ -28,7 +28,10 @@ use bincode::{Decode, Encode};
 /// for user-facing functionality on the platform
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "identity-serialization", derive(Encode, Decode))]
+#[cfg_attr(
+    feature = "identity-serialization",
+    derive(Encode, Decode, bincode::DecodeUntrusted)
+)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),
