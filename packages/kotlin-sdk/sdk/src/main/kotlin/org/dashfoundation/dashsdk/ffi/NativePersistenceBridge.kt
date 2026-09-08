@@ -63,12 +63,10 @@ abstract class NativePersistenceBridge {
     companion object {
         /**
          * `PersistenceCapabilities::CORE_SWEEP_REMOVAL` (bit 11, `0x800`).
-         * Declared here — on the class whose
-         * [onWalletChangesetTransactionsSwept] default consults it — so the
-         * fail-closed guard and the declaration a subclass makes through
-         * [persistenceCapabilitiesBits] can never drift apart.
-         * `PlatformWalletPersistenceHandler`'s capability constants alias
-         * this value.
+         * The one Kotlin home of this bit: `PlatformWalletPersistenceHandler`
+         * declares it through [persistenceCapabilitiesBits] and the public
+         * diagnostic mirror (`PlatformWalletPersistenceCapabilities`) aliases
+         * it, so the declaration and the mirror can never drift apart.
          */
         const val CAPABILITY_CORE_SWEEP_REMOVAL: Long = 0x800
     }
@@ -308,34 +306,43 @@ abstract class NativePersistenceBridge {
     open fun onWalletChangesetAccountEnd(walletId: ByteArray, accountIndex: Int): Int = 0
 
     /**
-     * Transactions the wallet removed in one sweep batch, as raw 32-byte
-     * txids, each paired by index with the transaction that settled its
-     * inputs, plus the outpoints this batch actually freed. Invoked once
-     * PER BATCH, in the round's emission order, after the per-account
-     * decomposition and only when the round swept something. The order is
-     * load-bearing, not cosmetic: batches are non-commutative — each
-     * release is true only of the wallet its own sweep saw, and a later
-     * batch can keep spent a coin an earlier one freed — so an
-     * implementation must apply every call's holds before its releases and
-     * must never fold calls together or reorder them.
-     * Descriptor `([B[[B[[B[[BI)I`.
+     * Transactions the wallet removed in one sweep batch: [txidCount] raw
+     * 32-byte txids packed back to back in [txids], the single transaction
+     * [supersededBy] that settled their inputs, and the
+     * [releasedOutpointCount] 36-byte outpoint keys (raw txid followed by a
+     * little-endian vout, the same packing as `onWalletChangesetTransaction`'s
+     * `inputOutpoints`) packed in [releasedOutpoints] that this batch
+     * actually freed. Descriptor `([B[BI[B[BIZI)I`.
      *
-     * [winnerMinedHeight] is the winner's own mined block height for a
-     * block-context sweep, or -1 for an InstantSend-locked winner not yet
-     * mined (the sentinel is unambiguous — block heights are
-     * non-negative — and the handler maps it back to null). It keys the
+     * Order within a round, stated once here (`store()` in
+     * `rs-platform-wallet-ffi/src/persistence.rs`): native fires the
+     * changeset callback — the header, then every account slice
+     * (transactions, then `utxos_added`, then `utxos_spent` per account) —
+     * then the chainlock-height slot ([onWalletChangesetChainLockHeight])
+     * when the round carries a chainlock, then this slot once PER BATCH in
+     * the round's emission order, and only when the round swept
+     * something. Batches are non-commutative — each release is true only
+     * of the wallet its own sweep saw, and a later batch can keep spent a
+     * coin an earlier one freed — so an implementation must apply every
+     * call's holds before its releases and must apply the calls in order.
+     * It may buffer them until the round's end (the handler does, so the
+     * co-swept set spans the round), but it must never reorder them.
+     *
+     * [hasWinnerMinedHeight] says whether [winnerMinedHeight] is the
+     * winner's own mined block height (a block-context sweep) or
+     * meaningless (an InstantSend-locked winner not yet mined). It keys the
      * lifetime of the durable claim every non-released input retains: a
      * stamped hold is collectible once the chainlock finality boundary
-     * reaches the stamp, while the null case leaves the SAME hold
+     * reaches the stamp, while the unmined case leaves the SAME hold
      * UNSTAMPED — an IS-locked winner has no mining deadline, so no
      * boundary can prove the held input's funding delivered-or-never — and
      * no collector may ever remove an unstamped hold: it resolves only
      * through proof, when the funding TXO materializes it, a later
      * block-context sweep re-stamps it, or a release deletes it. An
      * implementation that drops the hold instead (either by skipping it
-     * for a -1 winner or by aging it out) deletes the only cross-restart
-     * carrier of a consumed coin's spend claim and later restores that
-     * coin as spendable.
+     * for an unmined winner or by aging it out) deletes the only
+     * cross-restart carrier of a consumed coin's spend claim and later
+     * restores that coin as spendable.
      *
      * Each removed transaction was a recorded spend that its winner beat to
      * one of its inputs, so it can never confirm. Every other slot on this
@@ -343,47 +350,42 @@ abstract class NativePersistenceBridge {
      * ignores it keeps dead rows that are handed back at the next load and
      * re-create a balance the wallet has already corrected.
      *
-     * [releasedOutpoints] holds 36-byte keys (raw txid followed by a
-     * little-endian vout) and is wallet-scoped, not attributed per removal:
-     * an implementation holds every input of every row it deletes, so it
-     * only needs to know which of them came free. Everything else it holds
-     * was taken by the transaction that won those inputs and must stay
-     * spent. The set cannot be inferred from [supersededBy] — that
-     * transaction may pay entirely to outside addresses and never be
-     * reported here at all.
+     * [releasedOutpoints] is wallet-scoped, not attributed per removal: an
+     * implementation holds every input of every row it deletes, so it only
+     * needs to know which of them came free. Everything else it holds was
+     * taken by the transaction that won those inputs and must stay spent.
+     * The set cannot be inferred from [supersededBy] — that transaction may
+     * pay entirely to outside addresses and never be reported here at all.
      *
      * Native delivers these through the persistence extension's
      * size-negotiated sweep callback (not the wallet-changeset struct, whose
-     * bare-pointer ABI cannot version itself), immediately after the
-     * changeset's own slots in the same round — and unconditionally: the
-     * trampoline is wired for every subclass, so "slot present" proves
-     * nothing about whether removals are actually applied. What Rust trusts
-     * is [persistenceCapabilitiesBits] carrying
-     * [CAPABILITY_CORE_SWEEP_REMOVAL]; a subclass overriding this must add
-     * that bit, and the default body below is what encodes the other half
-     * of that contract structurally. A subclass that declares the bit
-     * WITHOUT overriding has promised removals it silently swallows — and
-     * because the declaration also stops Rust stripping the watermark, the
-     * sync height would advance past a removal that never happened, the
-     * one permanent corruption the capability exists to prevent. The
-     * default therefore refuses the round in exactly that case (non-zero
-     * return, so `onChangesetEnd` rolls it back and the watermark cannot
-     * move). A subclass that declares nothing keeps the benign ignore:
-     * Rust already strips the watermark before its `store()`, so returning
-     * success costs nothing and preserves the round's additive slots.
+     * bare-pointer ABI cannot version itself). The JNI layer wires that
+     * slot only when the concrete bridge OVERRIDES this method
+     * (`rs-unified-sdk-jni/src/persistence.rs`, `bridge_overrides`), and
+     * Rust's own derivation — slot present AND
+     * [CAPABILITY_CORE_SWEEP_REMOVAL] declared through
+     * [persistenceCapabilitiesBits] — is the gate: a subclass that declares
+     * the bit without overriding never has the slot wired, so Rust strips
+     * the bit and the sync watermark with it rather than trusting a
+     * removal that would never be applied. This default is therefore the
+     * benign ignore, never reached in production for a wired slot.
      */
     open fun onWalletChangesetTransactionsSwept(
         walletId: ByteArray,
-        txids: Array<ByteArray>,
-        supersededBy: Array<ByteArray>,
-        releasedOutpoints: Array<ByteArray>,
+        txids: ByteArray,
+        txidCount: Int,
+        supersededBy: ByteArray,
+        releasedOutpoints: ByteArray,
+        releasedOutpointCount: Int,
+        hasWinnerMinedHeight: Boolean,
         winnerMinedHeight: Int,
-    ): Int =
-        if (persistenceCapabilitiesBits() and CAPABILITY_CORE_SWEEP_REMOVAL != 0L) 1 else 0
+    ): Int = 0
 
     /**
-     * The round's numeric chainlock height, fired on chainlock-advancing
-     * persistence rounds after the header slot. Descriptor `([BI)I`.
+     * The round's numeric chainlock height, fired on every round whose
+     * changeset carries a chainlock, after the changeset callback and
+     * before the sweep batches (see [onWalletChangesetTransactionsSwept]
+     * for the full order). Descriptor `([BI)I`.
      *
      * The bincode chainlock blob on the header call is opaque to Kotlin,
      * and this scalar is the half of the swept-tombstone collection

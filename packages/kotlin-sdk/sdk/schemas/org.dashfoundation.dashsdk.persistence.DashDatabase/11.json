@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 11,
-    "identityHash": "1cad63f34d38c2a9c8b5bb328235ac55",
+    "identityHash": "f124080579cecd914cdc8f96827ee79b",
     "entities": [
       {
         "tableName": "wallets",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`walletId` BLOB NOT NULL, `walletGroupId` BLOB NOT NULL, `networkRaw` INTEGER, `name` TEXT, `walletDescription` TEXT, `birthHeight` INTEGER NOT NULL, `syncedHeight` INTEGER NOT NULL, `lastSynced` INTEGER NOT NULL, `lastAppliedChainLockBytes` BLOB, `isImported` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`walletId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`walletId` BLOB NOT NULL, `walletGroupId` BLOB NOT NULL, `networkRaw` INTEGER, `name` TEXT, `walletDescription` TEXT, `birthHeight` INTEGER NOT NULL, `syncedHeight` INTEGER NOT NULL, `lastSynced` INTEGER NOT NULL, `lastAppliedChainLockBytes` BLOB, `lastAppliedChainLockHeight` INTEGER, `isImported` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`walletId`))",
         "fields": [
           {
             "fieldPath": "walletId",
@@ -57,6 +57,11 @@
             "fieldPath": "lastAppliedChainLockBytes",
             "columnName": "lastAppliedChainLockBytes",
             "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "lastAppliedChainLockHeight",
+            "columnName": "lastAppliedChainLockHeight",
+            "affinity": "INTEGER"
           },
           {
             "fieldPath": "isImported",
@@ -2792,7 +2797,7 @@
       },
       {
         "tableName": "pending_inputs",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `outpoint` BLOB NOT NULL, `inputIndex` INTEGER NOT NULL, `spendingTxid` BLOB NOT NULL, `spendingTransactionTxid` BLOB, `walletId` BLOB NOT NULL, `createdAt` INTEGER NOT NULL, `isSweptTombstone` INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(`spendingTransactionTxid`) REFERENCES `transactions`(`txid`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `outpoint` BLOB NOT NULL, `inputIndex` INTEGER NOT NULL, `spendingTxid` BLOB NOT NULL, `spendingTransactionTxid` BLOB, `walletId` BLOB NOT NULL, `createdAt` INTEGER NOT NULL, `isSweptTombstone` INTEGER NOT NULL DEFAULT 0, `winnerMinedHeight` INTEGER, FOREIGN KEY(`spendingTransactionTxid`) REFERENCES `transactions`(`txid`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -2841,6 +2846,11 @@
             "affinity": "INTEGER",
             "notNull": true,
             "defaultValue": "0"
+          },
+          {
+            "fieldPath": "winnerMinedHeight",
+            "columnName": "winnerMinedHeight",
+            "affinity": "INTEGER"
           }
         ],
         "primaryKey": {
@@ -2876,6 +2886,26 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_inputs_spendingTransactionTxid` ON `${TABLE_NAME}` (`spendingTransactionTxid`)"
+          },
+          {
+            "name": "index_pending_inputs_spendingTxid",
+            "unique": false,
+            "columnNames": [
+              "spendingTxid"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_inputs_spendingTxid` ON `${TABLE_NAME}` (`spendingTxid`)"
+          },
+          {
+            "name": "index_pending_inputs_walletId_isSweptTombstone_winnerMinedHeight",
+            "unique": false,
+            "columnNames": [
+              "walletId",
+              "isSweptTombstone",
+              "winnerMinedHeight"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_inputs_walletId_isSweptTombstone_winnerMinedHeight` ON `${TABLE_NAME}` (`walletId`, `isSweptTombstone`, `winnerMinedHeight`)"
           }
         ],
         "foreignKeys": [
@@ -4126,7 +4156,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1cad63f34d38c2a9c8b5bb328235ac55')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f124080579cecd914cdc8f96827ee79b')"
     ]
   }
 }

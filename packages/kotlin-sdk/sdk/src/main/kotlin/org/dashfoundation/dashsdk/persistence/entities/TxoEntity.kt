@@ -78,8 +78,13 @@ data class TxoEntity(
     val isInstantLocked: Boolean = false,
     val isLocked: Boolean = false,
     /**
-     * Denormalized `spendingTxid != null || supersededByTxid != null`; kept
-     * explicit (hot filter path).
+     * Whether this coin is out of the restore set; kept explicit (hot
+     * filter path). Monotonic on the record and `utxos_spent` channels
+     * (`isSpent = existing || spender in-block || stamped`), so it is
+     * true for a spender that reached a block, for every stamped hold
+     * ([supersededByTxid] set), and for a healed asset-lock spend — and
+     * false for a coin whose only claim is a mempool/IS-locked link. Only
+     * a sweep release or an unlinked re-delivery of the coin lowers it.
      */
     val isSpent: Boolean = false,
     val createdAt: Date = Date(),
@@ -106,24 +111,29 @@ data class TxoEntity(
     /**
      * Port of Swift `PersistentTxo.supersededByTxid` — the winner a sweep
      * attributed this coin's consumption to, mirroring the SQLite store's
-     * `spent_in_txid`. Two writers set it: `holdSpentWithoutSpender`, when
-     * a sweep holds an already-materialized input, and
-     * `onWalletChangesetUtxoAdded` resolving a `pending_inputs` row with
-     * `isSweptTombstone` — the funding output arrived only after the loser
-     * that spent it was swept and deleted. Deliberately NOT an FK: the
-     * winner named here need not have its own `transactions` row (it can be
+     * `spent_in_txid`. Two writers set it: the sweep pass
+     * (`PlatformWalletPersistenceHandler.applySweptTransaction`), for
+     * every held input of a swept loser that has a row, keyed by the
+     * loser's decoded input outpoints rather than by this row's link; and
+     * `onWalletChangesetUtxoAdded` draining a `pending_inputs` tombstone —
+     * the funding output arrived only after the loser that spent it was
+     * swept and deleted. Deliberately NOT an FK: the winner named here
+     * need not have its own `transactions` row (it can be
      * wallet-irrelevant), so this column has to hold a bare txid that
      * `transactions(txid)` may never contain.
      *
-     * The stamp is what makes a hold durable. The `isSpent` carry-over
-     * above and `onWalletChangesetUtxoAdded`'s recovery clear both key on
-     * it: a coin the wallet re-delivers as unspent only lifts `isSpent`
-     * when both `spendingTxid` and this are null — a rescan re-finds the
-     * funding output precisely because it is blind to an unconfirmed
-     * winner no block carries yet, so re-delivery cannot outrank the
-     * sweep's verdict. Cleared only by `releaseByOutpoint`, when a later
-     * sweep proves the coin came free after all; a pre-stamp row (written
-     * before holds named their winner) still frees on re-delivery.
+     * The hold is the stamp, not the link. A stamped row keeps
+     * `isSpent = true` whatever later happens to [spendingTxid] — a new
+     * spender may adopt the link (attribution for `walletFundedTransaction`)
+     * without lowering the flag — and a stamped row that is UNLINKED is
+     * what the sweep release pass frees. Cleared by exactly two events:
+     * a sweep release of this outpoint (a later sweep proved the coin came
+     * free after all, and no stored network-final spender vetoes it), and
+     * the wallet re-delivering the coin unspent while the row is unlinked
+     * (`onWalletChangesetUtxoAdded`: the wallet knows the coin, so any
+     * network-final spender of it is re-discovered by its own scan; holding
+     * the row would lock a real coin out forever after a reorg of the
+     * winner).
      */
     val supersededByTxid: ByteArray? = null,
 ) {

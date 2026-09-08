@@ -395,13 +395,20 @@ class DashDatabaseMigrationTest {
     }
 
     /**
-     * v10 → v11 adds `txos.supersededByTxid` (nullable) and
-     * `pending_inputs.isSweptTombstone` (defaulted `false`) — both
+     * v10 → v11 adds the four sweep-hold columns — `txos.supersededByTxid`
+     * (nullable), `pending_inputs.isSweptTombstone` (defaulted `false`),
+     * `pending_inputs.winnerMinedHeight` (nullable) and
+     * `wallets.lastAppliedChainLockHeight` (nullable) — plus the two
+     * `pending_inputs` indexes the sweep lookup and the collector use. All
      * additive. Pre-existing rows in each table must survive and read back
-     * with the new columns at their defaults.
+     * with the new columns at their defaults (an unstamped, non-tombstone
+     * row is never collected; a wallet with no chainlock height has no
+     * finality boundary), the nullable columns must accept an explicit
+     * value on write, and `runMigrationsAndValidate` pins the indexes
+     * against the exported 11.json.
      */
     @Test
-    fun migrate10To11AddsSweepClaimDurabilityColumns() {
+    fun migrate10To11AddsSweepHoldColumnsAndIndexes() {
         val legacy = helper.createDatabase(dbName, 10)
         legacy.execSQL(
             "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
@@ -432,94 +439,31 @@ class DashDatabaseMigrationTest {
             assertTrue(c.moveToFirst())
             assertTrue(c.isNull(0))
         }
-        db.query("SELECT isSweptTombstone FROM pending_inputs WHERE outpoint = x'0301'").use { c ->
+        db.query(
+            "SELECT isSweptTombstone, winnerMinedHeight FROM pending_inputs WHERE outpoint = x'0301'",
+        ).use { c ->
             assertTrue(c.moveToFirst())
             assertEquals(0, c.getInt(0))
+            assertTrue("pre-migration rows read back unstamped", c.isNull(1))
         }
-        db.close()
-    }
-
-    /**
-     * v10 → v11 adds `transactions.isGloballySwept` (defaulted `false`) —
-     * additive. Pre-existing rows must survive and read back not swept, and
-     * the flag must accept an explicit `true` on write, mirroring
-     * `migrate10To11AddsSweepClaimDurabilityColumns` above for the sibling
-     * v11 columns.
-     */
-    @Test
-    fun migrate11To12AddsGlobalSweptFlag() {
-        val legacy = helper.createDatabase(dbName, 11)
-        legacy.execSQL(
-            "INSERT INTO transactions (txid, transactionData, context, blockHeight, " +
-                "blockTimestamp, blockPosition, hasBlockPosition, direction, " +
-                "transactionType, transactionTypeKind, netAmount, label, firstSeen, " +
-                "createdAt, lastUpdated) " +
-                "VALUES (x'02', x'00', 0, 0, 0, 0, 0, 0, 'Standard', 0, 0, '', 0, 0, 0)",
-        )
-        legacy.close()
-
-        val db = helper.runMigrationsAndValidate(dbName, 12, true, DashDatabase.MIGRATION_11_12)
-        db.query("SELECT isGloballySwept FROM transactions WHERE txid = x'02'").use { c ->
-            assertTrue(c.moveToFirst())
-            assertEquals(0, c.getInt(0))
-        }
-        db.execSQL(
-            "INSERT INTO transactions (txid, transactionData, context, blockHeight, " +
-                "blockTimestamp, blockPosition, hasBlockPosition, direction, " +
-                "transactionType, transactionTypeKind, netAmount, label, firstSeen, " +
-                "createdAt, lastUpdated, isGloballySwept) " +
-                "VALUES (x'03', x'00', 0, 0, 0, 0, 0, 0, 'Standard', 0, 0, '', 0, 0, 0, 1)",
-        )
-        db.query("SELECT isGloballySwept FROM transactions WHERE txid = x'03'").use { c ->
-            assertTrue(c.moveToFirst())
-            assertEquals(1, c.getInt(0))
-        }
-        db.close()
-    }
-
-    /**
-     * v12 → v13 adds `pending_inputs.winnerMinedHeight` and
-     * `wallets.lastAppliedChainLockHeight` (both nullable, no default) —
-     * additive. Pre-existing rows must survive and read back NULL
-     * (an unstamped tombstone is never collected, and no chainlock height
-     * means no finality boundary), and both columns must accept an
-     * explicit value on write.
-     */
-    @Test
-    fun migrate12To13AddsWinnerHeightAndChainLockHeight() {
-        val legacy = helper.createDatabase(dbName, 12)
-        legacy.execSQL(
-            "INSERT INTO pending_inputs (outpoint, inputIndex, spendingTxid, " +
-                "walletId, createdAt, isSweptTombstone) " +
-                "VALUES (x'04', 0, x'05', x'06', 0, 1)",
-        )
-        legacy.execSQL(
-            "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
-                "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
-                "VALUES (x'06', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)",
-        )
-        legacy.close()
-
-        val db = helper.runMigrationsAndValidate(dbName, 13, true, DashDatabase.MIGRATION_12_13)
-        db.query("SELECT winnerMinedHeight FROM pending_inputs WHERE outpoint = x'04'").use { c ->
-            assertTrue(c.moveToFirst())
-            assertTrue("pre-migration tombstones read back unstamped", c.isNull(0))
-        }
-        db.query("SELECT lastAppliedChainLockHeight FROM wallets WHERE walletId = x'06'").use { c ->
+        db.query("SELECT lastAppliedChainLockHeight FROM wallets WHERE walletId = x'01'").use { c ->
             assertTrue(c.moveToFirst())
             assertTrue("pre-migration wallets have no chainlock height on record", c.isNull(0))
         }
         db.execSQL(
             "INSERT INTO pending_inputs (outpoint, inputIndex, spendingTxid, " +
                 "walletId, createdAt, isSweptTombstone, winnerMinedHeight) " +
-                "VALUES (x'07', 0, x'05', x'06', 0, 1, 1234)",
+                "VALUES (x'07', 0, x'05', x'01', 0, 1, 1234)",
         )
-        db.query("SELECT winnerMinedHeight FROM pending_inputs WHERE outpoint = x'07'").use { c ->
+        db.query(
+            "SELECT isSweptTombstone, winnerMinedHeight FROM pending_inputs WHERE outpoint = x'07'",
+        ).use { c ->
             assertTrue(c.moveToFirst())
-            assertEquals(1234, c.getInt(0))
+            assertEquals(1, c.getInt(0))
+            assertEquals(1234, c.getInt(1))
         }
-        db.execSQL("UPDATE wallets SET lastAppliedChainLockHeight = 4321 WHERE walletId = x'06'")
-        db.query("SELECT lastAppliedChainLockHeight FROM wallets WHERE walletId = x'06'").use { c ->
+        db.execSQL("UPDATE wallets SET lastAppliedChainLockHeight = 4321 WHERE walletId = x'01'")
+        db.query("SELECT lastAppliedChainLockHeight FROM wallets WHERE walletId = x'01'").use { c ->
             assertTrue(c.moveToFirst())
             assertEquals(4321, c.getInt(0))
         }
@@ -532,7 +476,7 @@ class DashDatabaseMigrationTest {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            13,
+            11,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -541,18 +485,16 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
             DashDatabase.MIGRATION_10_11,
-            DashDatabase.MIGRATION_11_12,
-            DashDatabase.MIGRATION_12_13,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v13 schema. */
+    /** The full chain from v1 must also land on a valid v11 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            13,
+            11,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -564,8 +506,6 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
             DashDatabase.MIGRATION_10_11,
-            DashDatabase.MIGRATION_11_12,
-            DashDatabase.MIGRATION_12_13,
         ).close()
     }
 }

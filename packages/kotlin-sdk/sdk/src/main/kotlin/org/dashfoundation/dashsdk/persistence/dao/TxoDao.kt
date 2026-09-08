@@ -69,126 +69,114 @@ interface TxoDao {
     )
     suspend fun markSpentByOutpoint(outpoint: ByteArray, now: Date): Int
     /**
-     * Hold every coin of [walletId]'s own that [spendingTxid] claimed out of
-     * the restore set, attributed to [supersededBy] rather than to a linked
-     * spender.
-     *
-     * Used when [spendingTxid] was swept: it can never confirm, so its claim
-     * is not a spend, but most of the coins it named really were taken — by
-     * the transaction that beat it. A swept transaction is always
-     * unconfirmed, so its inputs sit at `isSpent = 0`, and deleting it would
-     * otherwise return all of them, the consumed one included.
-     *
-     * `supersededByTxid` is what makes the hold durable — the same stamp the
-     * SQLite store writes as `spent_in_txid`, and the same one the pending-
-     * input drain writes when the claim had no TXO row yet. The winner need
-     * never be recorded here (it can pay only outside addresses), so the
-     * stamp cannot be a `spendingTxid` FK link; but leaving it off entirely
-     * would let the next re-delivery of the funding output — exactly what a
-     * restore-rescan does, blind to an unconfirmed winner it cannot see in
-     * any block — flip a provably-consumed coin back into the restore set.
-     * A stamped hold only ever comes free through an explicit release
-     * ([releaseByOutpoint], which clears the stamp with the hold).
-     *
-     * [spendingTxid] can be shared: the same `transactions` row spends coins
-     * from more than one wallet at once, and upstream computes a separate
-     * released set per wallet (`per_wallet_released_outpoints`). This
-     * wallet's set has no say over a coin a *different* wallet owns, so the
-     * `walletId` filter keeps this call from holding a coin some other
-     * wallet's own callback — already run, still to come, or never coming
-     * at all — is the only one entitled to decide.
-     *
-     * Run this *before* deleting the transaction, while the link that
-     * identifies those rows is still there — the foreign key nulls
-     * `spendingTxid` on delete, and afterwards nothing finds them. Then
-     * clear the genuinely free ones with [releaseByOutpoint].
+     * Rows keyed by outpoint — the sweep pass's bulk read of a loser's
+     * decoded inputs and of a batch's released outpoints. Callers chunk
+     * the list (`SWEEP_BIND_CHUNK`) so the statement arity stays under
+     * the 999-variable ceiling API 29's framework SQLite still carries.
      */
-    @Query(
-        "UPDATE txos SET isSpent = 1, spendingTxid = NULL, spendingInputIndex = NULL, " +
-            "supersededByTxid = :supersededBy " +
-            "WHERE spendingTxid = :spendingTxid AND walletId = :walletId",
-    )
-    suspend fun holdSpentWithoutSpender(
-        spendingTxid: ByteArray,
-        walletId: ByteArray,
-        supersededBy: ByteArray,
-    )
+    @Query("SELECT * FROM txos WHERE outpoint IN (:outpoints)")
+    suspend fun getByOutpoints(outpoints: List<ByteArray>): List<TxoEntity>
 
     /**
-     * Mark one outpoint of [walletId]'s own unspent again — a coin a sweep
-     * released, meaning no surviving transaction spent it *at the time the
-     * sweep was computed*.
+     * Every row still linked to one of [spendingTxids] — the sweep pass's
+     * link-keyed fallback for a loser whose stored bytes cannot name its
+     * inputs (record lost, or a stub row written by `utxos_added` before
+     * the record arrived). Chunked by the caller.
+     */
+    @Query("SELECT * FROM txos WHERE spendingTxid IN (:spendingTxids)")
+    suspend fun getBySpendingTxids(spendingTxids: List<ByteArray>): List<TxoEntity>
+
+    /**
+     * Hold the coins at [outpoints] out of the restore set, attributed to
+     * [supersededBy] — the same stamp the SQLite store writes as
+     * `spent_in_txid`, and the same one the pending-input drain writes when
+     * the claim had no TXO row yet. The hold is keyed by OUTPOINT, computed
+     * from the swept loser's own decoded inputs, never by this row's link:
+     * a link can move between the record and the sweep (a winner recorded
+     * in the same round takes it first), and a hold keyed by link would
+     * miss exactly the coin the winner consumed. The link is left alone
+     * here — [detachSpenders] drops only links that point at a swept loser;
+     * a link to the winner or to any other surviving record is kept, and
+     * the stamp holds the coin regardless.
      *
-     * Keyed by outpoint rather than by spender because that is how upstream
-     * reports it: the transaction that took the other inputs may never be
-     * recorded here at all, so the released set is the only authority on
-     * which coins came free.
+     * Global, not wallet-scoped: `supersededBy` is a txid fact, and the
+     * first callback that sees the sweep holds every wallet's rows for the
+     * loser's inputs; only the RELEASE is per wallet ([releaseByOutpoints]).
+     * A stamped hold only ever comes free through a release or through the
+     * wallet re-delivering the unlinked coin unspent. Chunked by the caller.
+     */
+    @Query(
+        "UPDATE txos SET isSpent = 1, supersededByTxid = :supersededBy " +
+            "WHERE outpoint IN (:outpoints)",
+    )
+    suspend fun holdByOutpoints(outpoints: List<ByteArray>, supersededBy: ByteArray)
+
+    /**
+     * Drop every link that points at one of [spendingTxids] — the swept
+     * losers of one batch. The foreign key would null these on the losers'
+     * delete anyway; doing it explicitly, before the delete, keeps the
+     * order the sweep pass documents (hold by outpoint, detach the dead
+     * link, delete the row) independent of FK enforcement. Chunked by the
+     * caller.
+     */
+    @Query(
+        "UPDATE txos SET spendingTxid = NULL, spendingInputIndex = NULL " +
+            "WHERE spendingTxid IN (:spendingTxids)",
+    )
+    suspend fun detachSpenders(spendingTxids: List<ByteArray>)
+
+    /**
+     * Mark [walletId]'s own coins at [outpoints] unspent again — coins a
+     * sweep released, meaning no surviving transaction spent them *at the
+     * time the sweep was computed*. Keyed by outpoint because that is how
+     * upstream reports it: the transaction that took the other inputs may
+     * never be recorded here at all, so the released set is the only
+     * authority on which coins came free.
      *
-     * `spendingTxid IS NULL` is what keeps that from overreaching. A round
-     * can carry both a release and a later transaction that legitimately
-     * spends the freed coin — merging folds several events together, and
-     * every record is written before sweeps are processed — so by the time
-     * this runs the coin may already be claimed again. Only rows
-     * [holdSpentWithoutSpender] just detached qualify; anything a live
-     * transaction still claims keeps that claim. The `walletId` filter is
-     * the same ownership guard as [holdSpentWithoutSpender]: a released set
-     * is only ever true of the wallet that computed it, so it should never
-     * be able to touch another wallet's row even if an outpoint were ever
-     * to collide.
+     * Per wallet, unlike [holdByOutpoints]: a released set is only ever
+     * true of the wallet that computed it, so it never touches another
+     * wallet's row. The caller has already excluded every vetoed outpoint
+     * (a row linked to, or stamped with, a stored network-final spender
+     * that this round did not sweep) and every outpoint whose funding
+     * transaction is itself swept this round (deleted instead). The link
+     * is not touched: a link to a swept loser was detached by
+     * [detachSpenders], and a link to a surviving mempool spender is kept
+     * as attribution at `isSpent = 0`, exactly what such a link means on
+     * the record channel.
      *
      * `supersededByTxid` clears in the same statement, the way the SQLite
-     * store's release UPDATE clears `spent_in_txid`. A chained sweep can
-     * free a coin whose claim already drained into that column (the funding
-     * TXO arrived between the sweep that held it and the one now freeing
-     * it), and this call is the only writer that ever clears it — a
-     * released coin keeping its dead winner's marker would turn the next
-     * hold on this outpoint permanent, because the redelivery carry-over in
-     * `onWalletChangesetUtxoAdded` reads a present marker as a durable
-     * claim and refuses to lift `isSpent` ever again.
+     * store's release UPDATE clears `spent_in_txid`: a released coin
+     * keeping its dead winner's marker would read as a durable claim to
+     * every later hold on this outpoint. Chunked by the caller.
      */
     @Query(
-        "UPDATE txos SET isSpent = 0, spendingInputIndex = NULL, supersededByTxid = NULL " +
-            "WHERE outpoint = :outpoint AND spendingTxid IS NULL AND walletId = :walletId",
+        "UPDATE txos SET isSpent = 0, supersededByTxid = NULL " +
+            "WHERE outpoint IN (:outpoints) AND walletId = :walletId",
     )
-    suspend fun releaseByOutpoint(outpoint: ByteArray, walletId: ByteArray)
+    suspend fun releaseByOutpoints(outpoints: List<ByteArray>, walletId: ByteArray)
 
     /**
-     * Whether some wallet other than [walletId] still has a TXO pointing at
-     * [spendingTxid] as its spender.
-     *
-     * `transactions` rows are shared across wallets — the same on-chain tx
-     * can spend coins from several of them — so [spendingTxid]'s row is a
-     * statement about the transaction as a whole and only one wallet's
-     * callback should ever delete it. This is the check that lets each
-     * callback decide whether it is that one: after [holdSpentWithoutSpender]
-     * and [releaseByOutpoint] have applied *this* wallet's own decisions
-     * (which always clear or detach its own rows), anything still pointing
-     * at [spendingTxid] belongs to a wallet that has not weighed in yet, and
-     * the delete has to wait for it.
+     * Delete every TXO created by one of [txids] — the swept losers' own
+     * outputs, dead coins for every wallet. The FK from `txos.txid` to
+     * `transactions.txid` (CASCADE) does this on the losers' delete too;
+     * the explicit form runs first so the sweep pass never depends on FK
+     * enforcement for the one removal that is a funds fact. Chunked by the
+     * caller.
      */
-    @Query("SELECT EXISTS(SELECT 1 FROM txos WHERE spendingTxid = :spendingTxid AND walletId != :walletId)")
-    suspend fun hasOtherWalletSpender(spendingTxid: ByteArray, walletId: ByteArray): Boolean
+    @Query("DELETE FROM txos WHERE txid IN (:txids)")
+    suspend fun deleteByTxids(txids: List<ByteArray>)
 
     /**
-     * Delete every TXO [txid] itself created — its own outputs — independent
-     * of whether the `transactions` row for [txid] is deleted in the same
-     * call.
-     *
-     * Ordinarily the FK from `txos.txid` to `transactions.txid` (CASCADE)
-     * would do this for free, but only once the parent row is deleted, and
-     * [TransactionDao.deleteByTxid] deliberately withholds that delete for
-     * as long as another wallet still has a claim on the row — which can be
-     * indefinite if that wallet's own callback is rejected or never arrives.
-     * These outputs are nobody's coin, ever, regardless: a transaction that
-     * can never confirm funded nothing, for every wallet, not just the one
-     * whose callback happens to run. [onWalletChangesetTransactionsSwept]
-     * calls this in EVERY wallet's callback that observes the sweep, so the
-     * deletion is durable from the first one rather than waiting on
-     * whichever happens to be last. Idempotent — a row with no outputs left
-     * is a no-op.
+     * Delete the rows at [outpoints] outright — outputs of a transaction
+     * swept in this round that some loser claimed or some release named.
+     * A coin created by a dead transaction cannot be unspent, only gone:
+     * a chainlocked reinstatement of the parent re-delivers it through the
+     * ordinary `utxos_added` upsert with nothing left standing in its way.
+     * Chunked by the caller.
      */
-    @Query("DELETE FROM txos WHERE txid = :txid")
-    suspend fun deleteOwnOutputs(txid: ByteArray)
+    @Query("DELETE FROM txos WHERE outpoint IN (:outpoints)")
+    suspend fun deleteByOutpoints(outpoints: List<ByteArray>)
+
     @Upsert
     suspend fun upsert(txo: TxoEntity)
 

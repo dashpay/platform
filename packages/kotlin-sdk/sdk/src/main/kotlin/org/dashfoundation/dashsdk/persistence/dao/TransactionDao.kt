@@ -69,11 +69,7 @@ interface TransactionDao {
     /**
      * Provider kinds 2…5 scoped through explicit account membership. The
      * ordering preserves Core's same-block transaction order when present.
-     *
-     * `isGloballySwept = 0` excludes a provider transaction that itself lost
-     * a double-spend on one of its own inputs — an edge case (most losers
-     * are ordinary spends), but a swept row is never restorable regardless
-     * of kind. See [TransactionEntity.isGloballySwept].
+
      */
     @Query(
         "SELECT DISTINCT transactions.* FROM transactions " +
@@ -83,7 +79,6 @@ interface TransactionDao {
             "WHERE accounts.walletId = :walletId " +
             "AND accounts.accountType BETWEEN 8 AND 11 " +
             "AND transactions.transactionTypeKind BETWEEN 2 AND 5 " +
-            "AND transactions.isGloballySwept = 0 " +
             "ORDER BY transactions.blockHeight ASC, " +
             "transactions.hasBlockPosition DESC, transactions.blockPosition ASC, " +
             "transactions.firstSeen ASC"
@@ -96,18 +91,25 @@ interface TransactionDao {
     @Delete
     suspend fun delete(transaction: TransactionEntity)
 
-    /**
-     * Durable global exclusion for a swept loser — set in EVERY wallet's
-     * `onWalletChangesetTransactionsSwept` callback that observes the sweep,
-     * not only the one whose [deleteByTxid] happens to remove the shared
-     * row. Idempotent: re-flagging an already-flagged row is a no-op. See
-     * [TransactionEntity.isGloballySwept].
-     */
-    @Query("UPDATE transactions SET isGloballySwept = 1 WHERE txid = :txid")
-    suspend fun markGloballySwept(txid: ByteArray)
-
     @Query("DELETE FROM transactions WHERE txid = :txid")
     suspend fun deleteByTxid(txid: ByteArray)
+
+    /**
+     * Point lookups for one sweep batch's losers in one statement; chunked
+     * by the caller (`SWEEP_BIND_CHUNK`) to stay under the 999-variable
+     * ceiling API 29's framework SQLite still carries.
+     */
+    @Query("SELECT * FROM transactions WHERE txid IN (:txids)")
+    suspend fun getByTxids(txids: List<ByteArray>): List<TransactionEntity>
+
+    /**
+     * Delete a sweep batch's losers in one statement, after every hold on
+     * their inputs is in place: the FK cascade takes any still-attached
+     * pending row and any remaining own output with it, and `SET NULL`
+     * clears any link still pointing at a loser. Chunked by the caller.
+     */
+    @Query("DELETE FROM transactions WHERE txid IN (:txids)")
+    suspend fun deleteByTxids(txids: List<ByteArray>)
 
     /**
      * Orphan sweep run after a wallet wipe (Swift `deleteWalletData`'s

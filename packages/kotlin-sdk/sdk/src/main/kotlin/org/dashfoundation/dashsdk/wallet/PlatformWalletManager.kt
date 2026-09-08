@@ -25,6 +25,7 @@ import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsMarketplaceNative
 import org.dashfoundation.dashsdk.ffi.FundingNative
+import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeWalletEventBridge
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
 import org.dashfoundation.dashsdk.funding.ShieldedProver
@@ -62,29 +63,20 @@ data class PlatformWalletPersistenceCapabilities(
         const val DPNS_NAME_STATES: Long = 1L shl 8
         const val TRACKED_ASSET_LOCKS: Long = 1L shl 9
         /**
-         * Tracked (wallet-independent) masternodes are persisted and
-         * restored across restarts. Mirrors
-         * `PersistenceCapabilities::TRACKED_MASTERNODES`. Android does not
-         * wire the trio and never attests this bit; the constant exists so
-         * the diagnostic mirror stays bit-for-bit with Rust.
-         */
-        const val TRACKED_MASTERNODES: Long = 1L shl 10
-        /**
          * A stored core changeset's non-empty sweeps are durably applied
-         * batch by batch and in order: each swept transaction and its
-         * outputs are excluded from every restore and enumeration path
-         * (physical deletion or a durable marker alike — an inert
-         * globally-swept row may remain until every wallet's scoped
-         * cleanup lands), each released outpoint is freed unless a later
-         * surviving claim supersedes that release, and each non-released
-         * input RETAINS a durable spend claim even when its funding TXO
-         * has not materialized yet — a detached claim must outlive its
-         * loser, or a post-restart funding delivery credits a coin the
-         * network already consumed. Physical row deletion is an
-         * implementation detail, not the contract. Mirrors
-         * `PersistenceCapabilities::CORE_SWEEP_REMOVAL`.
+         * in order: each swept transaction and its outputs are deleted,
+         * each released outpoint of the wallet's own is freed unless a
+         * stored network-final spender still claims it, and each
+         * non-released input RETAINS a durable spend claim — a stamp on
+         * the materialised coin, or a tombstone where the funding TXO has
+         * not materialised yet — that outlives the loser's deletion, or a
+         * post-restart funding delivery would credit a coin the network
+         * already consumed. Mirrors `PersistenceCapabilities::CORE_SWEEP_REMOVAL`;
+         * aliased to the bridge's declaration so the mirror cannot drift
+         * from the bit the handler attests (bit 10, `TRACKED_MASTERNODES`,
+         * is deliberately absent: Android never attests it).
          */
-        const val CORE_SWEEP_REMOVAL: Long = 1L shl 11
+        const val CORE_SWEEP_REMOVAL: Long = NativePersistenceBridge.CAPABILITY_CORE_SWEEP_REMOVAL
     }
 }
 
