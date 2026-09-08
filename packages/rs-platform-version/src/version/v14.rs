@@ -22,9 +22,7 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DR
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
-use crate::version::fee::v2::FEE_VERSION2;
-use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
-use crate::version::fee::FeeVersion;
+use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v3::SYSTEM_DATA_CONTRACT_VERSIONS_V3;
 use crate::version::system_limits::v4::SYSTEM_LIMITS_V4;
@@ -224,15 +222,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
-    // Contested contributions use the active protocol, not the historical
-    // storage-fee cache, so the storage fee version remains unchanged.
-    fee_version: FeeVersion {
-        vote_resolution_fund_fees: VoteResolutionFundFees {
-            contested_document_vote_resolution_fund_required_amount: 10_000_000_000, // 0.1 DASH
-            ..FEE_VERSION2.vote_resolution_fund_fees
-        },
-        ..FEE_VERSION2
-    },
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH
     system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,

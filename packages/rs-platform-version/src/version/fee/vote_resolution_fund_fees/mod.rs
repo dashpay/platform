@@ -1,6 +1,7 @@
 use bincode::{Decode, Encode};
 
 pub mod v1;
+pub mod v2;
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
 pub struct VoteResolutionFundFees {
     /// This is the amount that will be deducted from an identity and used to pay for voting
