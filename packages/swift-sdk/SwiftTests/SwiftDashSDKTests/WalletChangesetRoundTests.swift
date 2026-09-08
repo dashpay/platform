@@ -10,8 +10,8 @@ import SwiftData
 ///   TXO within one round resolves through the pending-input table);
 /// * inputs with unknown funding keep the unconditional pending row —
 ///   the out-of-order spend-repair mechanism the cache must not regress;
-/// * round cost scales near-linearly with record count (the quadratic
-///   pending-scan regression guard);
+/// * a round issues O(chunks) fetches, not O(rows) (the quadratic
+///   per-row-fetch regression guard);
 /// * a thrown single-row fallback fetch rejects the round instead of
 ///   reading as "row absent" and licensing a duplicate insert.
 @MainActor
@@ -252,29 +252,29 @@ final class WalletChangesetRoundTests: XCTestCase {
 
     // MARK: - Scaling
 
-    /// Round cost must scale near-linearly with record count. The
-    /// per-row-fetch implementation re-scanned every staged object on
-    /// each fetch, so a 4× larger round cost ~16×; the bulk-prefetch
-    /// cache holds it near 4×. The 10× threshold leaves headroom for
-    /// CI noise while still failing on a quadratic regression.
-    func testRoundCostScalesNearLinearly() throws {
-        func measureRound(count: Int) throws -> TimeInterval {
-            let (handler, _) = try makeHandler()
-            let start = Date()
-            XCTAssertTrue(runRound(handler: handler, txs: spendChain(count: count)))
-            return Date().timeIntervalSince(start)
+    /// A round must issue O(chunks) fetches, not O(rows): the per-row
+    /// implementation re-scanned every staged object on each fetch, so
+    /// round cost grew quadratically. Counting reads through the
+    /// `ModelFetching` seam pins that deterministically — a reintroduced
+    /// per-row fetch (through the seam) scales the count with the
+    /// record count. The fixture starts from an empty store so no key
+    /// misses the prefetch; a pre-seeded store could add legitimate
+    /// fallback reads (an existing TXO whose stored address differs
+    /// from the emitted one).
+    func testRoundFetchCountIsIndependentOfRecordCount() throws {
+        func fetchCount(records: Int) throws -> Int {
+            let injector = FetchFaultInjector()
+            let (handler, _) = try makeHandler(modelFetcher: injector)
+            XCTAssertTrue(runRound(handler: handler, txs: spendChain(count: records)))
+            return injector.observedReads.count
         }
+        // Per round: the wallet row, the account row, then one bulk
+        // fetch per entity (transactions, TXOs, pending inputs, core
+        // addresses) per 900-key chunk — `chunked(_:size:)`'s default.
+        // Every entity's key set in a spend chain has `records` members.
+        func expected(records: Int) -> Int { 2 + 4 * ((records + 899) / 900) }
 
-        // Warm-up so one-time SwiftData/SQLite setup cost doesn't
-        // pollute the small-round baseline.
-        _ = try measureRound(count: 50)
-
-        let small = try measureRound(count: 1_000)
-        let large = try measureRound(count: 4_000)
-        XCTAssertLessThan(
-            large,
-            max(small, 0.05) * 10,
-            "4× records cost \(large)s vs \(small)s — superlinear scaling regression"
-        )
+        XCTAssertEqual(try fetchCount(records: 100), expected(records: 100))
+        XCTAssertEqual(try fetchCount(records: 2_000), expected(records: 2_000))
     }
 }
