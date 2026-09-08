@@ -17,13 +17,13 @@ use tenderdash_abci::proto::abci::response_offer_snapshot;
 /// Accepting an offer wipes the local grovedb and opens a grovedb state sync session
 /// targeting the light-client-verified app hash. Any accepted-format offer replaces a
 /// session already in progress (also answered with Accept), whatever height it carries.
-pub fn offer_snapshot<'a, 'db: 'a, A, C: 'db>(
+pub fn offer_snapshot<'a, 'db: 'a, A, C>(
     app: &'a A,
     request: proto::RequestOfferSnapshot,
 ) -> Result<proto::ResponseOfferSnapshot, Error>
 where
     A: StateSyncApplication<'db, C> + 'db,
-    C: CoreRPCLike,
+    C: CoreRPCLike + 'db,
 {
     let request_app_hash: [u8; 32] = request.app_hash.try_into().map_err(|_| {
         AbciError::StateSyncBadRequest("offer_snapshot invalid app_hash length".to_string())

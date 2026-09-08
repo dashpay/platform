@@ -14,14 +14,9 @@
 //! the node is self-consistent again, plus a rejection path that wipes back to a clean
 //! slate instead of returning an error.
 //!
-//! # These tests do not need the patched grovedb
-//!
-//! Everything here holds at BOTH grovedb pins. Nothing asserts that a restore SUCCEEDS —
-//! the tests that do live in `state_sync_equivalence_tests` and need dashpay/grovedb#840,
-//! because Dash Platform state always contains sum trees. What is asserted here is that a
-//! restore which does not succeed leaves a recoverable node, and at the unpinned revision
-//! the sum-tree defect simply supplies the failure for free: the transfer commits, the
-//! post-restore verification fails, and the same rejection path runs.
+//! Nothing here asserts that a restore SUCCEEDS — the tests that do live in
+//! `state_sync_tests`. What is asserted is that a restore which does not succeed leaves
+//! a recoverable node.
 
 #[cfg(test)]
 mod tests {

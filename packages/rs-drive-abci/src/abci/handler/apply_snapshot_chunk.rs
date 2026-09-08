@@ -68,8 +68,9 @@ where
         // These are TRANSFER faults, not reasons to abort state sync: an application
         // error here would reach Tenderdash as an ABCI exception, killing the whole
         // restore and leaving the node on the wiped database the offer created (with the
-        // restore sentinel still set). Both caps are therefore answered with the same
-        // recoverable ladder the other malformed-chunk paths use.
+        // restore sentinel still set). Both caps are therefore answered with a
+        // recoverable response; they run before grovedb sees the chunk, so unlike a
+        // chunk grovedb rejects (below) they leave the session usable.
         if request.chunk.len() > MAX_STATE_SYNC_CHUNK_SIZE {
             // Oversized chunk DATA: the chunk id itself is still fine, so ban the sender
             // and have Tenderdash refetch exactly this chunk from someone else.

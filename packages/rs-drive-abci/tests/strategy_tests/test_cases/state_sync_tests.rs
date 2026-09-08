@@ -159,15 +159,6 @@ pub(crate) mod tests {
         );
     }
 
-    /// Drives the chunk transfer loop between a serving app and a restoring app,
-    /// modeled on grovedb's run_sync driver: start from the root chunk (id == app
-    /// hash) and keep requesting whatever the target asks for next.
-    ///
-    /// When `tamper_with_first_chunk` is set, the first served chunk is corrupted to
-    /// prove the target answers RETRY_SNAPSHOT (banning the sender) instead of killing
-    /// the session: grovedb invalidates its session on a failed chunk, so the driver
-    /// handles that the way Tenderdash would, by re-offering the same snapshot and
-    /// restarting the transfer.
     /// How a snapshot transfer ended.
     ///
     /// `Rejected` is not an error: the target restored the snapshot, found it unusable,
@@ -181,6 +172,15 @@ pub(crate) mod tests {
         Rejected,
     }
 
+    /// Drives the chunk transfer loop between a serving app and a restoring app,
+    /// modeled on grovedb's run_sync driver: start from the root chunk (id == app
+    /// hash) and keep requesting whatever the target asks for next.
+    ///
+    /// When `tamper_with_first_chunk` is set, the first served chunk is corrupted to
+    /// prove the target answers RETRY_SNAPSHOT (banning the sender) instead of killing
+    /// the session: grovedb invalidates its session on a failed chunk, so the driver
+    /// handles that the way Tenderdash would, by re-offering the same snapshot and
+    /// restarting the transfer.
     pub(crate) fn sync_snapshot(
         source_app: &FullAbciApplication<MockCoreRPCLike>,
         target_app: &FullAbciApplication<MockCoreRPCLike>,
