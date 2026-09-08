@@ -30,6 +30,9 @@ use std::fmt;
 pub(in crate::data_contract) mod v0;
 pub(in crate::data_contract) mod v1;
 
+#[cfg(feature = "serde-conversion")]
+pub(crate) use v1::{deserialize_u16_group_map, deserialize_u16_token_configuration_map};
+
 pub mod property_names {
     pub const ID: &str = "id";
     pub const OWNER_ID: &str = "ownerId";

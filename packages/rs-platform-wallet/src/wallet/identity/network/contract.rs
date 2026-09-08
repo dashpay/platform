@@ -36,7 +36,6 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::{DataContract, Identifier};
-use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::version::TryFromPlatformVersioned;
 use dpp::ProtocolError;
@@ -311,14 +310,15 @@ impl IdentityWallet {
     /// Mirrors `create_data_contract_with_signer` but targets an
     /// already-registered contract. Unlike create, the caller-supplied
     /// JSON sections are *merged onto the fetched on-chain contract*
-    /// rather than used to build the payload from scratch. A
-    /// `DataContractUpdateTransition` broadcasts a complete contract
-    /// definition (not a diff), so anything the caller omits would
-    /// otherwise be reset to serde defaults — wiping live keywords /
-    /// description / config and, worse, dropping document-type / token /
-    /// group entries (which DPP rejects as illegal removals). Seeding
-    /// from `existing` keeps every untouched section intact. The
-    /// function:
+    /// rather than used to build the payload from scratch: anything the
+    /// caller omits would otherwise be reset to serde defaults, wiping
+    /// live keywords / description / config and, worse, dropping
+    /// document-type / token / group entries (which DPP rejects as
+    /// illegal removals). Seeding from `existing` keeps every untouched
+    /// section intact. The transition itself is built from the pair
+    /// (`existing`, merged contract), so on protocol versions that
+    /// default to delta-based updates only the changed sections go on
+    /// the wire. The function:
     ///   1. Looks up `owner_identity_id` in the in-memory wallet
     ///      manager and picks the CRITICAL + AUTHENTICATION + ECDSA
     ///      key (same triple a contract-create signature requires).
@@ -343,8 +343,9 @@ impl IdentityWallet {
     ///      `DataContractInSerializationFormat` enum entry point and
     ///      validated through `try_from_platform_versioned`.
     ///   4. Fetches + bumps the identity-contract nonce, builds a
-    ///      `DataContractUpdateTransition`, signs it via the external
-    ///      signer, broadcasts, and waits for the confirmed contract.
+    ///      `DataContractUpdateTransition` from the (existing, updated)
+    ///      pair, signs it via the external signer, broadcasts, and waits
+    ///      for the confirmed contract.
     ///
     /// # JSON shapes
     ///
@@ -524,8 +525,9 @@ impl IdentityWallet {
             not_found_public_keys: Default::default(),
         };
 
-        let transition = DataContractUpdateTransition::new_from_data_contract(
-            updated_contract,
+        let transition = DataContractUpdateTransition::new_from_contract_update(
+            &existing,
+            &updated_contract,
             &partial_identity,
             key_id,
             new_identity_contract_nonce,

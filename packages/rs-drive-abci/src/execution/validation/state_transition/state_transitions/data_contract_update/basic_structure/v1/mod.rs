@@ -1,7 +1,7 @@
+use super::super::embedded_data_contract;
 use crate::error::Error;
 use dpp::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use dpp::dashcore::Network;
-use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::{FeatureVersion, PlatformVersion};
@@ -29,17 +29,22 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV1 for DataContrac
             return Ok(v0_result);
         }
 
+        let data_contract = match embedded_data_contract(self, platform_version) {
+            Ok(data_contract) => data_contract,
+            Err(error) => return Ok(SimpleConsensusValidationResult::new_with_error(error)),
+        };
+
         // Validate config version meets minimum requirement for the current protocol version.
         // Since protocol version 12, V0 config is no longer accepted because it lacks
         // sized_integer_types support.
         let config_min_version = platform_version.dpp.contract_versions.config.min_version;
-        if (self.data_contract().config().version() as FeatureVersion) < config_min_version {
+        if (data_contract.config().version() as FeatureVersion) < config_min_version {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 DataContractConfigUpdateError::new(
-                    self.data_contract().id(),
+                    data_contract.id(),
                     format!(
                         "config version {} is not supported, minimum version is {}",
-                        self.data_contract().config().version(),
+                        data_contract.config().version(),
                         config_min_version
                     ),
                 )

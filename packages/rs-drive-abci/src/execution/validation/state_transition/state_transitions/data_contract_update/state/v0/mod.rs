@@ -26,9 +26,9 @@ use dpp::data_contract::group::accessors::v0::GroupV0Getters;
 use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
 
 use crate::error::execution::ExecutionError;
+use crate::execution::validation::state_transition::state_transitions::data_contract_update::embedded_data_contract;
 use crate::execution::validation::state_transition::ValidationMode;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -170,9 +170,24 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         new_data_contract.set_created_at_block_height(old_data_contract.created_at_block_height());
         new_data_contract.set_created_at_epoch(old_data_contract.created_at_epoch());
 
+        let data_contract = match embedded_data_contract(self, platform_version) {
+            Ok(data_contract) => data_contract,
+            Err(error) => {
+                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                        self,
+                    ),
+                );
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    vec![error],
+                ));
+            }
+        };
+
         let mut validated_identities = BTreeSet::new();
 
-        for (position, group) in self.data_contract().groups() {
+        for (position, group) in data_contract.groups() {
             for member_identity_id in group.members().keys() {
                 if !validated_identities.contains(member_identity_id) {
                     let identity_exists = validate_non_masternode_identity_exists(
@@ -193,7 +208,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                             bump_action,
                             vec![StateError::IdentityMemberOfGroupNotFoundError(
                                 IdentityMemberOfGroupNotFoundError::new(
-                                    self.data_contract().id(),
+                                    data_contract.id(),
                                     *position,
                                     *member_identity_id,
                                 ),

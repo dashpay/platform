@@ -4,6 +4,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
+use crate::consensus::basic::data_contract::DataContractUpdateOverlappingEntriesError;
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
@@ -699,6 +700,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     DataContractInvalidRequiredFieldsUpdateError(DataContractInvalidRequiredFieldsUpdateError),
+
+    #[error(transparent)]
+    DataContractUpdateOverlappingEntriesError(DataContractUpdateOverlappingEntriesError),
 }
 
 impl From<BasicError> for ConsensusError {

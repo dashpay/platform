@@ -21,6 +21,7 @@ mod serialize;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod v0;
+mod v1;
 mod version;
 
 pub use fields::*;
@@ -32,8 +33,9 @@ use crate::data_contract::DataContract;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::prelude::IdentityNonce;
 pub use v0::*;
+pub use v1::*;
 
-pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
+pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV1;
 
 #[cfg_attr(
     all(feature = "json-conversion", feature = "serde-conversion"),
@@ -64,8 +66,13 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
 pub enum DataContractUpdateTransition {
     #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(DataContractUpdateTransitionV0),
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
+    V1(DataContractUpdateTransitionV1),
 }
 
+/// A lone contract can only become a full-contract (V0) update: the delta
+/// form needs the stored contract too, see
+/// [`DataContractUpdateTransition::from_contract_update`].
 impl TryFromPlatformVersioned<(DataContract, IdentityNonce)> for DataContractUpdateTransition {
     type Error = ProtocolError;
 
@@ -73,6 +80,22 @@ impl TryFromPlatformVersioned<(DataContract, IdentityNonce)> for DataContractUpd
         value: (DataContract, IdentityNonce),
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        let data_contract_update_transition: DataContractUpdateTransitionV0 =
+            value.try_into_platform_versioned(platform_version)?;
+        Ok(data_contract_update_transition.into())
+    }
+}
+
+impl DataContractUpdateTransition {
+    /// Builds the unsigned update that turns `old_contract` into
+    /// `new_contract`, in the form the platform version defaults to: a
+    /// full-contract V0 transition, or a delta-based V1 one.
+    pub fn from_contract_update(
+        old_contract: &DataContract,
+        new_contract: &DataContract,
+        identity_contract_nonce: IdentityNonce,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         match platform_version
             .dpp
             .state_transition_serialization_versions
@@ -81,13 +104,19 @@ impl TryFromPlatformVersioned<(DataContract, IdentityNonce)> for DataContractUpd
         {
             0 => {
                 let data_contract_update_transition: DataContractUpdateTransitionV0 =
-                    value.try_into_platform_versioned(platform_version)?;
+                    (new_contract.clone(), identity_contract_nonce)
+                        .try_into_platform_versioned(platform_version)?;
                 Ok(data_contract_update_transition.into())
             }
+            1 => Ok(DataContractUpdateTransitionV1::from_contract_update(
+                old_contract,
+                new_contract,
+                identity_contract_nonce,
+            )?
+            .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DataContractUpdateTransition::try_from_platform_versioned(DataContract)"
-                    .to_string(),
-                known_versions: vec![0],
+                method: "DataContractUpdateTransition::from_contract_update".to_string(),
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -121,7 +150,7 @@ mod test {
     use platform_version::version::PlatformVersion;
 
     use super::*;
-    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use crate::state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType};
 
     struct TestData {
@@ -148,13 +177,45 @@ mod test {
     fn should_return_protocol_version() {
         let data = get_test_data();
         assert_eq!(
-            LATEST_PLATFORM_VERSION
+            PlatformVersion::first()
                 .dpp
                 .state_transition_serialization_versions
                 .contract_update_state_transition
                 .default_current_version,
             data.state_transition.state_transition_protocol_version()
         )
+    }
+
+    #[test]
+    fn latest_platform_version_defaults_to_the_delta_form() {
+        let platform_version = PlatformVersion::latest();
+        let old_contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let mut new_contract = old_contract.clone();
+        new_contract.increment_version();
+
+        let state_transition = DataContractUpdateTransition::from_contract_update(
+            &old_contract,
+            &new_contract,
+            1,
+            platform_version,
+        )
+        .expect("expected a delta-based update transition");
+
+        assert_eq!(
+            LATEST_PLATFORM_VERSION
+                .dpp
+                .state_transition_serialization_versions
+                .contract_update_state_transition
+                .default_current_version,
+            state_transition.state_transition_protocol_version()
+        );
+        assert!(matches!(
+            state_transition,
+            DataContractUpdateTransition::V1(_)
+        ));
+        assert_eq!(state_transition.data_contract_id(), old_contract.id());
+        assert_eq!(state_transition.owner_id(), old_contract.owner_id());
     }
 
     #[test]
@@ -172,7 +233,10 @@ mod test {
         let data = get_test_data();
 
         assert_eq!(
-            data.state_transition.data_contract().clone(),
+            data.state_transition
+                .data_contract()
+                .expect("a V0 update embeds its contract")
+                .clone(),
             data.data_contract
                 .try_into_platform_versioned(PlatformVersion::first())
                 .unwrap()
@@ -265,7 +329,9 @@ pub(crate) mod json_convertible_tests {
     }
 
     fn assert_v0_fields(t: &DataContractUpdateTransition) {
-        let DataContractUpdateTransition::V0(rec) = t;
+        let DataContractUpdateTransition::V0(rec) = t else {
+            panic!("expected a V0 update transition");
+        };
         assert_eq!(rec.identity_contract_nonce, 8, "identity_contract_nonce");
         assert_eq!(rec.user_fee_increase, 5, "user_fee_increase");
         assert_eq!(rec.signature_public_key_id, 1, "signature_public_key_id");

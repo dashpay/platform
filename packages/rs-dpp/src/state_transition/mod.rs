@@ -92,7 +92,6 @@ use crate::state_transition::data_contract_create_transition::accessors::DataCon
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionSignable,
 };
-use crate::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionSignable,
 };
@@ -838,9 +837,13 @@ impl StateTransition {
                 }
             }
             StateTransition::DataContractUpdate(data_contract_update_transition) => {
-                match data_contract_update_transition.data_contract() {
-                    DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
-                    DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
+                match data_contract_update_transition {
+                    DataContractUpdateTransition::V0(v0) => match &v0.data_contract {
+                        DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
+                        DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
+                    },
+                    // Delta-based contract updates arrive with protocol version 15.
+                    DataContractUpdateTransition::V1(_) => 15..=LATEST_VERSION,
                 }
             }
             StateTransition::Batch(batch_transition) => match batch_transition {

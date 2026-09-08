@@ -7,6 +7,7 @@ use dpp::identity::identity_nonce::{
 };
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::StateTransitionOwned;
 
 use dpp::validation::SimpleConsensusValidationResult;
 
@@ -48,8 +49,8 @@ impl DataContractUpdateStateTransitionIdentityContractNonceV0 for DataContractUp
             ));
         }
 
-        let identity_id = self.data_contract().owner_id();
-        let contract_id = self.data_contract().id();
+        let identity_id = self.owner_id();
+        let contract_id = self.data_contract_id();
         let (existing_nonce, fee) = platform.drive.fetch_identity_contract_nonce_with_fees(
             identity_id.to_buffer(),
             contract_id.to_buffer(),

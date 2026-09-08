@@ -146,7 +146,8 @@ impl DataContractUpdateTransitionWasm {
                 &platform_version.into(),
             )?;
 
-        self.0.set_data_contract(data_contract_serialization_format);
+        self.0
+            .set_data_contract(data_contract_serialization_format)?;
 
         Ok(())
     }
@@ -164,7 +165,11 @@ impl DataContractUpdateTransitionWasm {
     ) -> WasmDppResult<DataContractWasm> {
         let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
-        let data_contract_serialization_format = self.0.data_contract();
+        let data_contract_serialization_format = self.0.data_contract().ok_or_else(|| {
+            WasmDppError::invalid_argument(
+                "a delta-based data contract update transition carries no full contract",
+            )
+        })?;
 
         let mut validation_operations: Vec<ProtocolValidationOperation> = Vec::new();
 

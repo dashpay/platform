@@ -2,17 +2,25 @@
 pub mod transformer;
 /// v0
 pub mod v0;
+/// v1
+pub mod v1;
 
 use crate::state_transition_action::contract::data_contract_update::v0::DataContractUpdateTransitionActionV0;
+use crate::state_transition_action::contract::data_contract_update::v1::DataContractUpdateTransitionActionV1;
 use derive_more::From;
 use dpp::data_contract::DataContract;
+use dpp::fee::Credits;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
+use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 
 /// data contract update transition action
 #[derive(Debug, Clone, From)]
 pub enum DataContractUpdateTransitionAction {
     /// v0
     V0(DataContractUpdateTransitionActionV0),
+    /// v1: from a delta-based transition, carries the delta's registration cost
+    V1(DataContractUpdateTransitionActionV1),
 }
 
 impl DataContractUpdateTransitionAction {
@@ -20,12 +28,14 @@ impl DataContractUpdateTransitionAction {
     pub fn data_contract(self) -> DataContract {
         match self {
             DataContractUpdateTransitionAction::V0(transition) => transition.data_contract,
+            DataContractUpdateTransitionAction::V1(transition) => transition.data_contract,
         }
     }
     /// data contract ref
     pub fn data_contract_ref(&self) -> &DataContract {
         match self {
             DataContractUpdateTransitionAction::V0(transition) => &transition.data_contract,
+            DataContractUpdateTransitionAction::V1(transition) => &transition.data_contract,
         }
     }
 
@@ -33,6 +43,7 @@ impl DataContractUpdateTransitionAction {
     pub fn data_contract_mut(&mut self) -> &mut DataContract {
         match self {
             DataContractUpdateTransitionAction::V0(transition) => &mut transition.data_contract,
+            DataContractUpdateTransitionAction::V1(transition) => &mut transition.data_contract,
         }
     }
 
@@ -42,6 +53,9 @@ impl DataContractUpdateTransitionAction {
             DataContractUpdateTransitionAction::V0(transition) => {
                 transition.identity_contract_nonce
             }
+            DataContractUpdateTransitionAction::V1(transition) => {
+                transition.identity_contract_nonce
+            }
         }
     }
 
@@ -49,6 +63,22 @@ impl DataContractUpdateTransitionAction {
     pub fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
             DataContractUpdateTransitionAction::V0(transition) => transition.user_fee_increase,
+            DataContractUpdateTransitionAction::V1(transition) => transition.user_fee_increase,
+        }
+    }
+
+    /// The fixed registration cost this update pays on top of its storage
+    /// and processing fees: the whole contract's registration cost for a
+    /// full-contract update, only the additions for a delta-based one.
+    pub fn registration_cost(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Credits, ProtocolError> {
+        match self {
+            DataContractUpdateTransitionAction::V0(transition) => {
+                transition.data_contract.registration_cost(platform_version)
+            }
+            DataContractUpdateTransitionAction::V1(transition) => Ok(transition.registration_cost),
         }
     }
 }

@@ -72,7 +72,30 @@ impl Drive {
                 }
             }
             StateTransition::DataContractUpdate(st) => {
-                if st.data_contract().config().keeps_history() {
+                let keeps_history = match st.data_contract() {
+                    Some(data_contract) => data_contract.config().keeps_history(),
+                    // A delta-based update carries no config; the stored
+                    // contract says whether it keeps history.
+                    None => {
+                        let contract_id = st.data_contract_id();
+                        let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
+                            contract_id.to_buffer(),
+                            false,
+                            transaction,
+                            platform_version,
+                        )?
+                        else {
+                            return Ok(ProofCreationResult::new_with_error(
+                                ProofError::UnknownContract(format!(
+                                    "unknown contract with id {} in contract update proving",
+                                    contract_id
+                                )),
+                            ));
+                        };
+                        contract_fetch_info.contract.config().keeps_history()
+                    }
+                };
+                if keeps_history {
                     contract_ids_to_historical_path_query(&st.modified_data_ids())
                 } else {
                     contract_ids_to_non_historical_path_query(&st.modified_data_ids())
