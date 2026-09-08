@@ -747,50 +747,6 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
     PlatformWalletFFIResult::ok()
 }
 
-#[cfg(test)]
-mod payload_decode_tests {
-    use super::*;
-    use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
-    use std::ffi::CStr;
-
-    #[test]
-    fn should_reject_unbounded_payload_collection_and_keep_builder_usable() {
-        let payload = TransactionPayload::AssetLockPayloadType(AssetLockPayload::new(vec![]));
-        let valid = bincode::encode_to_vec(payload, bincode::config::standard())
-            .expect("encode an asset lock payload");
-        let mut malformed = valid.clone();
-        // Replace the empty credit_outputs count with an oversized declaration,
-        // without supplying any output bytes.
-        assert_eq!(malformed.pop(), Some(0));
-        malformed.extend(
-            bincode::encode_to_vec(u64::MAX, bincode::config::standard())
-                .expect("encode a collection length"),
-        );
-
-        unsafe {
-            let builder = core_wallet_tx_builder_new(FFINetwork::Testnet);
-            let rejected = core_wallet_tx_builder_set_special_payload(
-                builder,
-                malformed.as_ptr(),
-                malformed.len(),
-            );
-            let accepted =
-                core_wallet_tx_builder_set_special_payload(builder, valid.as_ptr(), valid.len());
-            core_wallet_tx_builder_destroy(builder);
-
-            assert_eq!(
-                rejected.code,
-                PlatformWalletFFIResultCode::ErrorDeserialization
-            );
-            assert!(CStr::from_ptr(rejected.message)
-                .to_str()
-                .expect("UTF-8 error message")
-                .contains("LimitExceeded"));
-            assert_eq!(accepted.code, PlatformWalletFFIResultCode::Success);
-        }
-    }
-}
-
 /// Add a caller-chosen subset of the account's UTXOs as inputs. `outpoints`
 /// are selected from the account's own UTXO set (the same ones
 /// `platform_wallet_account_utxos` returns). An outpoint not owned by the
@@ -911,4 +867,48 @@ pub unsafe extern "C" fn core_wallet_transaction_free(tx: *mut FFICoreTransactio
 
     tx.tx_bytes = std::ptr::null_mut();
     tx.tx_len = 0;
+}
+
+#[cfg(test)]
+mod payload_decode_tests {
+    use super::*;
+    use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
+    use std::ffi::CStr;
+
+    #[test]
+    fn should_reject_unbounded_payload_collection_and_keep_builder_usable() {
+        let payload = TransactionPayload::AssetLockPayloadType(AssetLockPayload::new(vec![]));
+        let valid = bincode::encode_to_vec(payload, bincode::config::standard())
+            .expect("encode an asset lock payload");
+        let mut malformed = valid.clone();
+        // Replace the empty credit_outputs count with an oversized declaration,
+        // without supplying any output bytes.
+        assert_eq!(malformed.pop(), Some(0));
+        malformed.extend(
+            bincode::encode_to_vec(u64::MAX, bincode::config::standard())
+                .expect("encode a collection length"),
+        );
+
+        unsafe {
+            let builder = core_wallet_tx_builder_new(FFINetwork::Testnet);
+            let rejected = core_wallet_tx_builder_set_special_payload(
+                builder,
+                malformed.as_ptr(),
+                malformed.len(),
+            );
+            let accepted =
+                core_wallet_tx_builder_set_special_payload(builder, valid.as_ptr(), valid.len());
+            core_wallet_tx_builder_destroy(builder);
+
+            assert_eq!(
+                rejected.code,
+                PlatformWalletFFIResultCode::ErrorDeserialization
+            );
+            assert!(CStr::from_ptr(rejected.message)
+                .to_str()
+                .expect("UTF-8 error message")
+                .contains("LimitExceeded"));
+            assert_eq!(accepted.code, PlatformWalletFFIResultCode::Success);
+        }
+    }
 }
