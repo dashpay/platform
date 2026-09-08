@@ -59,8 +59,12 @@ describe('migrateConfigFileFactory', () => {
     );
 
     for (const [name, defaultConfig] of Object.entries(currentConfigFileData.configs)) {
-      // The Tor control password is generated per node, so it is the one
-      // value a migrated config is not expected to share with the default.
+      // Upgrades keep Tor disabled, while new configs default to enabled.
+      expect(migratedConfigFileData.configs[name].core.tor.enabled).to.equal(false);
+      expect(defaultConfig.core.tor.enabled).to.equal(true);
+      defaultConfig.core.tor.enabled = false;
+
+      // The Tor control password is generated per node.
       expect(migratedConfigFileData.configs[name].core.tor.control.password)
         .to.match(/^[A-Za-z0-9]{12}$/);
       migratedConfigFileData.configs[name].core.tor.control.password = defaultConfig
@@ -282,7 +286,7 @@ describe('migrateConfigFileFactory', () => {
     }
   });
 
-  it('should add and enable the Tor section on a 4.1.x config', async () => {
+  it('should add the Tor section disabled on a 4.1.x config', async () => {
     // Loading is what fails without it: the schema requires the section.
     const fromVersion = '4.1.1';
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
@@ -299,9 +303,8 @@ describe('migrateConfigFileFactory', () => {
 
     const passwords = new Set();
     for (const [name, options] of Object.entries(migrated.configs)) {
-      // Enabled for existing nodes too, with a password of their own rather
-      // than the placeholder the base config carries.
-      expect(options.core.tor.enabled, `Tor not enabled for ${name}`).to.equal(true);
+      // Existing nodes must opt in, with a password of their own ready to use.
+      expect(options.core.tor.enabled, `Tor silently enabled for ${name}`).to.equal(false);
       expect(options.core.tor.docker).to.deep.equal(baseConfig.get('core.tor.docker'));
       expect(options.core.tor.control.password).to.match(/^[A-Za-z0-9]{12}$/);
       expect(options.core.tor.control.password).to.not.equal(baseConfig.get('core.tor.control.password'));
@@ -309,6 +312,7 @@ describe('migrateConfigFileFactory', () => {
       expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
     }
     expect(passwords.size).to.equal(Object.keys(migrated.configs).length);
+    expect(baseConfig.get('core.tor.enabled')).to.equal(true);
   });
 
   it('should leave an existing Tor section alone when re-migrating', async () => {
@@ -321,6 +325,8 @@ describe('migrateConfigFileFactory', () => {
     configFileData.configFormatVersion = fromVersion;
     configFileData.configs.testnet.core.tor.enabled = false;
     configFileData.configs.testnet.core.tor.control.password = 'operator-chosen';
+    configFileData.configs.mainnet.core.tor.enabled = true;
+    configFileData.configs.mainnet.core.tor.control.password = 'operator-enabled';
 
     const migrated = migrateConfigFile(configFileData, fromVersion, version);
 
@@ -328,6 +334,11 @@ describe('migrateConfigFileFactory', () => {
       enabled: false,
       docker: baseConfig.get('core.tor.docker'),
       control: { password: 'operator-chosen' },
+    });
+    expect(migrated.configs.mainnet.core.tor).to.deep.equal({
+      enabled: true,
+      docker: baseConfig.get('core.tor.docker'),
+      control: { password: 'operator-enabled' },
     });
   });
 

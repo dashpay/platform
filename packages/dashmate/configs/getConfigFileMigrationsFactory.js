@@ -1718,12 +1718,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               );
             }
 
-            // The Tor sidecar is new and on by default, and an existing node
-            // gets it too: the next start pulls the image and Core registers
-            // its onion service. Each node gets its own control password, as
-            // setup would have given it.
+            // Backfill Tor without silently enabling it on existing nodes.
+            // Setup offers it separately; preserve any existing Tor settings.
             if (options.core && options.core.tor === undefined) {
               options.core.tor = base.getStored('core.tor');
+              options.core.tor.enabled = false;
               options.core.tor.control.password = generateRandomString(12);
             }
           });

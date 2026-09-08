@@ -108,7 +108,9 @@ What it does not do:
 - It does not route clearnet traffic through Tor. Masternode quorum traffic stays direct, so enabling Tor does not put the node at risk of PoSe penalties from Tor exit latency.
 - It does not change the address a masternode is registered with. Dash Core requires an IPv4 address in the masternode registration and checks it on startup, so `externalIp` still has to be a public IPv4 address. The onion service is an additional way to reach the node.
 
-Tor is on by default, for new nodes and for nodes upgraded from an earlier dashmate: the upgrade adds the section to every config, and the next `dashmate update` or `dashmate start` pulls the image and starts the sidecar. To run without it, `dashmate config set core.tor.enabled false` and then `dashmate restart`. On a node that was set up with `--no-enable-tor`, `dashmate config set core.tor.enabled true` followed by `dashmate restart` turns it on.
+New mainnet/testnet setups ask whether to enable Tor, with Yes selected by default. Use `dashmate setup --enable-tor` or `--no-enable-tor` to choose explicitly; local setups enable it unless `--no-enable-tor` is given.
+
+Upgrading an existing node adds the Tor section with `core.tor.enabled` set to `false`, so the upgrade does not join the Tor network. Existing Tor settings are preserved. To opt in after upgrading, run `dashmate config set core.tor.enabled true` followed by `dashmate restart`. To turn it off, set `core.tor.enabled` to `false` and restart.
 
 ## Sporks
 
