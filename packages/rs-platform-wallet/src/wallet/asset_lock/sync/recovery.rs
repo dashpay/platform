@@ -2020,6 +2020,69 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(5), queued_writer)
             .await
             .expect("the queued writer must acquire the lock once the guard drops");
+
+        // End to end through the call site the deadlock lived at: drive
+        // `resume_asset_lock` itself while a writer repeatedly contends for
+        // the wallet-manager lock. Step 4 holds a read guard across the
+        // re-derivation, so any `read().await` reintroduced inside that
+        // block parks behind a queued writer that in turn waits for the
+        // guard — the permanent freeze this fix removed. A settled
+        // chain-proof row is used so the resume reaches step 4 without a
+        // network wait.
+        {
+            let chain_proof = dpp::prelude::AssetLockProof::Chain(
+                dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof {
+                    core_chain_locked_height: 1_234,
+                    out_point,
+                },
+            );
+            {
+                let mut wm = restored_manager.wallet_manager.write().await;
+                let tracked = wm
+                    .get_wallet_info_mut(&wallet_id)
+                    .expect("wallet info")
+                    .tracked_asset_locks
+                    .get_mut(&out_point)
+                    .expect("tracked lock");
+                tracked.status = AssetLockStatus::ChainLocked;
+                tracked.proof = Some(chain_proof);
+            }
+
+            let contend = Arc::new(std::sync::atomic::AtomicBool::new(true));
+            let writer = {
+                let wallet_manager = Arc::clone(&restored_manager.wallet_manager);
+                let contend = Arc::clone(&contend);
+                tokio::spawn(async move {
+                    while contend.load(std::sync::atomic::Ordering::Relaxed) {
+                        {
+                            let _w = wallet_manager.write().await;
+                        }
+                        tokio::task::yield_now().await;
+                    }
+                })
+            };
+
+            let (_proof, resumed_path) = tokio::time::timeout(
+                Duration::from_secs(10),
+                restored_manager.resume_asset_lock(&out_point, Some(Duration::from_millis(10))),
+            )
+            .await
+            .expect(
+                "resume_asset_lock must complete while a writer contends for \
+                 the wallet-manager lock",
+            )
+            .expect("a chain-locked lock resumes from its own proof");
+            assert_eq!(
+                resumed_path, path,
+                "the resumed credit-output path must match the build-time path"
+            );
+
+            contend.store(false, std::sync::atomic::Ordering::Relaxed);
+            tokio::time::timeout(Duration::from_secs(5), writer)
+                .await
+                .expect("the contending writer must finish")
+                .expect("writer task");
+        }
     }
 
     // -----------------------------------------------------------------
