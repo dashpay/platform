@@ -95,13 +95,14 @@ The `core.tor` section runs a Tor daemon next to Core. Core then reaches onion p
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
 | `core.tor.enabled` | Run the Tor sidecar | `true` | `false` |
-| `core.tor.docker.image` | Docker image for the Tor daemon | `osminogin/tor-simple:0.4.9.11` | `osminogin/tor-simple:latest` |
+| `core.tor.docker.image` | Docker image for the Tor daemon | `osminogin/tor-simple:0.4.9.11@sha256:7aef2e…` | `osminogin/tor-simple:latest` |
 | `core.tor.control.password` | Password Core uses on the Tor control port | random on setup | `"s3cret"` |
 
 What it does:
 - Core dials `.onion` peers through the sidecar's SOCKS proxy and accepts inbound onion connections. The onion address shows up as `Onion service` in `dashmate status core` once Tor has published it, which takes a minute or two after start.
 - Core creates the onion service itself over the Tor control port and stores its key in the Core data directory, so the address is stable across restarts.
 - The sidecar shares Core's network namespace and listens on loopback only. Nothing Tor-related is exposed to the host.
+- The default image is pinned by digest, so a re-pushed tag cannot change what runs. Tor updates arrive through dashmate releases; set `core.tor.docker.image` to follow a tag instead.
 
 What it does not do:
 - It does not route clearnet traffic through Tor. Masternode quorum traffic stays direct, so enabling Tor does not put the node at risk of PoSe penalties from Tor exit latency.

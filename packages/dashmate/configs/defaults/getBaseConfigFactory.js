@@ -123,7 +123,9 @@ export default function getBaseConfigFactory() {
         tor: {
           enabled: true,
           docker: {
-            image: 'osminogin/tor-simple:0.4.9.11',
+            // Pinned to the multi-arch index digest: the tag is a third
+            // party's and can be re-pushed. Bumping Tor means updating both.
+            image: 'osminogin/tor-simple:0.4.9.11@sha256:7aef2e7d957e2236d5fac7fca8e67c15fe65e6349eb90099da1cdc26bc4caa69',
           },
           control: {
             password: 'torpassword',

@@ -30,4 +30,9 @@ describe('generateEnvsFactory', () => {
     expect(envs.COMPOSE_FILE.split(':')).to.include('docker-compose.tor.yml');
     expect(envs.CORE_TOR_DOCKER_IMAGE).to.equal(config.get('core.tor.docker.image'));
   });
+
+  it('should pin the default Tor image by digest', () => {
+    // The image is published by a third party under a mutable tag.
+    expect(config.get('core.tor.docker.image')).to.match(/^osminogin\/tor-simple:[0-9.]+@sha256:[0-9a-f]{64}$/);
+  });
 });
