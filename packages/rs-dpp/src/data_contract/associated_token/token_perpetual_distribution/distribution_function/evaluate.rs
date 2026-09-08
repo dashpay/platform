@@ -452,9 +452,7 @@ impl DistributionFunction {
 
                 // Ensure the computed value is finite and within the u64 range.
                 if !log_val.is_finite() || log_val > (u64::MAX as f64) {
-                    return Err(ProtocolError::Overflow(
-                        "InvertedLogarithmic: evaluation overflow",
-                    ));
+                    return Err(ProtocolError::Overflow("Logarithmic: evaluation overflow"));
                 }
 
                 let intermediate = if *a == 1 {
@@ -472,12 +470,12 @@ impl DistributionFunction {
                                 *max_value as i64
                             } else {
                                 return Err(ProtocolError::Overflow(
-                                    "InvertedLogarithmic: evaluation overflow intermediate bigger than i64::max",
+                                    "Logarithmic: evaluation overflow intermediate bigger than i64::max",
                                 ));
                             }
                         } else {
                             return Err(ProtocolError::Overflow(
-                                "InvertedLogarithmic: evaluation overflow intermediate bigger than i64::max",
+                                "Logarithmic: evaluation overflow intermediate bigger than i64::max",
                             ));
                         }
                     } else {
@@ -485,20 +483,20 @@ impl DistributionFunction {
                             .checked_add(*b as i64)
                             .or(max_value.map(|max| max as i64))
                             .ok_or(ProtocolError::Overflow(
-                                "InvertedLogarithmic: evaluation overflow when adding b",
+                                "Logarithmic: evaluation overflow when adding b",
                             ))?
                     }
                 } else {
                     if !intermediate.is_finite() || intermediate > (i64::MAX as f64) {
                         return Err(ProtocolError::Overflow(
-                            "InvertedLogarithmic: evaluation overflow intermediate bigger than i64::max",
+                            "Logarithmic: evaluation overflow intermediate bigger than i64::max",
                         ));
                     }
                     ((intermediate / (*d as f64)).floor() as i64)
                         .checked_add(*b as i64)
                         .or(max_value.map(|max| max as i64))
                         .ok_or(ProtocolError::Overflow(
-                            "InvertedLogarithmic: evaluation overflow when adding b",
+                            "Logarithmic: evaluation overflow when adding b",
                         ))?
                 };
 
