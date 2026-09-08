@@ -1,6 +1,8 @@
 import fs from 'fs';
 import { spawn } from 'child_process';
 import { expect } from 'chai';
+import tenderdashSeeds from '../../../../configs/defaults/tenderdashSeeds.js';
+import seedSetHash from '../../../../src/tenderdash/seedSetHash.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
@@ -57,6 +59,40 @@ describe('ConfigFileJsonRepository', () => {
 
       return configFile;
     };
+  });
+
+  ['mainnet', 'testnet'].forEach(network => {
+    it(`should refresh ${network} stock seeds under lock without a format bump and retry a failed render`, () => {
+      const originalDefaults = structuredClone(tenderdashSeeds[network]);
+      try {
+        const data = JSON.parse(seedConfigFile());
+        data.configs.base.network = network;
+        data.configs.base.platform.drive.tenderdash.p2p.seeds = originalDefaults.seeds;
+        const original = JSON.stringify(data);
+        fs.writeFileSync(configFilePath, original);
+        tenderdashSeeds[network].previousSeedSetHashes.push(seedSetHash(originalDefaults.seeds));
+        tenderdashSeeds[network].seeds = [{ id: 'f'.repeat(40), host: '8.8.4.4', port: 26656 }];
+        const repository = new ConfigFileJsonRepository(
+          identityMigration,
+          homeDir,
+          createDefaults,
+          CURRENT_FORMAT_VERSION,
+        );
+        expect(() => repository.readAndMigrate({}, ([config]) => {
+          expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.equal(true);
+          expect(config.get('platform.drive.tenderdash.p2p.seeds')).to.deep.equal(tenderdashSeeds[network].seeds);
+          throw new Error('render failed');
+        })).to.throw('render failed');
+        expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(original);
+        repository.readAndMigrate({}, configs => expect(configs).to.have.length(1));
+        const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+        expect(saved.configFormatVersion).to.equal(CURRENT_FORMAT_VERSION);
+        expect(saved.configs.base.platform.drive.tenderdash.p2p.seeds).to.deep.equal(tenderdashSeeds[network].seeds);
+        repository.readAndMigrate({}, () => { throw new Error('must not render twice'); });
+      } finally {
+        tenderdashSeeds[network] = originalDefaults;
+      }
+    });
   });
 
   afterEach(() => {

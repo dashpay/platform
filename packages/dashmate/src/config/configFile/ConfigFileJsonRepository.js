@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import lockfile from 'proper-lockfile';
 import semver from 'semver';
 import writeFileAtomic from 'write-file-atomic';
+import getDefaultSeedUpdates from '../../tenderdash/getDefaultSeedUpdates.js';
 import Config from '../Config.js';
 import { PACKAGE_ROOT_DIR } from '../../constants.js';
 import ConfigFileNotFoundError from '../errors/ConfigFileNotFoundError.js';
@@ -167,6 +168,11 @@ export default class ConfigFileJsonRepository {
       throw new InvalidConfigFileFormatError(this.configFilePath, error);
     }
 
+    const seedUpdates = getDefaultSeedUpdates(migratedConfigFileData.configs);
+    seedUpdates.forEach(([name, seeds]) => {
+      migratedConfigFileData.configs[name].platform.drive.tenderdash.p2p.seeds = seeds;
+    });
+
     let configs;
     try {
       configs = Object.entries(migratedConfigFileData.configs)
@@ -197,6 +203,11 @@ export default class ConfigFileJsonRepository {
     if (migratedConfigFileData.configFormatVersion !== originConfigVersion) {
       configFile.markAsChanged();
       configFile.getAllConfigs().forEach((config) => config.markAsChanged());
+    }
+
+    if (seedUpdates.length > 0) {
+      configFile.markAsChanged();
+      seedUpdates.forEach(([name]) => configFile.getConfig(name).markAsChanged());
     }
 
     return configFile;
@@ -269,7 +280,7 @@ export default class ConfigFileJsonRepository {
       return { configFile, migrated };
     };
 
-    // Decide whether a migration is due from the recorded version alone.
+    // Check the recorded version and obsolete stock seeds without running migrations.
     // Migrations are not all pure - some move service files on disk and delete
     // the originals - so running them to find out would do that work outside
     // the lock, and again inside it.
@@ -303,7 +314,7 @@ export default class ConfigFileJsonRepository {
   /**
    * Whether the file on disk records an older format than this build produces.
    *
-   * Reads the recorded version only. Running the migrations to find out would
+   * Checks recorded data only. Running the migrations to find out would
    * perform their side effects - the 0.25.7 migration moves TLS files and
    * deletes the originals - before this process holds the lock.
    *
@@ -321,9 +332,11 @@ export default class ConfigFileJsonRepository {
     let recordedVersion;
 
     try {
-      recordedVersion = JSON.parse(
-        fs.readFileSync(this.configFilePath, 'utf8'),
-      ).configFormatVersion;
+      const data = JSON.parse(fs.readFileSync(this.configFilePath, 'utf8'));
+      if (getDefaultSeedUpdates(data.configs).length > 0) {
+        return true;
+      }
+      recordedVersion = data.configFormatVersion;
     } catch {
       // An unreadable or malformed file is read()'s to report, with the error
       // that names the file and the reason.

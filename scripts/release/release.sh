@@ -74,12 +74,19 @@ if ! gh auth status&> /dev/null; then
   gh auth login
 fi
 
+# Require registry access before making release edits.
+: "${DASHMATE_MAINNET_CLI:?Set a JSON argv array for mainnet dash-cli; see packages/dashmate/docs/tenderdash-seeds.md}"
+: "${DASHMATE_TESTNET_CLI:?Set a JSON argv array for testnet dash-cli; see packages/dashmate/docs/tenderdash-seeds.md}"
+
 # bump version
 if [ -n "$TARGET_VERSION" ]; then
   yarn node $DIR/bump_version.js "$RELEASE_TYPE" --target-version="$TARGET_VERSION"
 else
   yarn node $DIR/bump_version.js "$RELEASE_TYPE"
 fi
+
+# Refresh bootstrap data for this version; failure aborts release preparation.
+node "$DIR/../../packages/dashmate/scripts/generate-tenderdash-seeds.js"
 
 cargo metadata --format-version 1 > /dev/null
 
