@@ -26,40 +26,7 @@ import DashSDKFFI
 // serves every other read live. That isolation is the point: a load-path
 // regression cannot pass because the wallet or unspent-TXO fetch failed
 // first, and the reconcile regression cannot pass because the whole store
-// was unreadable.
-
-/// Serves every read live except the one model type it is told to fault,
-/// and records the reads it saw so a test can prove which fetch failed.
-private final class FetchFaultInjector: ModelFetching, @unchecked Sendable {
-    struct ReadFault: Error {}
-
-    private let live = LiveModelFetcher()
-    private let faulted: ObjectIdentifier
-    private let lock = NSLock()
-    private var reads: [String] = []
-
-    init(faulting model: any PersistentModel.Type) {
-        faulted = ObjectIdentifier(model)
-    }
-
-    /// Model names in the order they were read, the faulted one included.
-    var observedReads: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return reads
-    }
-
-    func fetch<T: PersistentModel>(
-        _ descriptor: FetchDescriptor<T>,
-        in context: ModelContext
-    ) throws -> [T] {
-        lock.lock()
-        reads.append(String(describing: T.self))
-        lock.unlock()
-        guard ObjectIdentifier(T.self) != faulted else { throw ReadFault() }
-        return try live.fetch(descriptor, in: context)
-    }
-}
+// was unreadable. The seam double is the shared `FetchFaultInjector`.
 
 final class AssetLockSpendVisibilityTests: XCTestCase {
 
