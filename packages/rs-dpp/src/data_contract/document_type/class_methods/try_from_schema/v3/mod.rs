@@ -227,6 +227,9 @@ const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
 ///
 /// This parser is only reachable from protocol version 14+ (via
 /// CONTRACT_VERSIONS_V6).
+/// Full validation rejects keep-history document types that allow deletion.
+/// Stored contracts bypass this check so legacy contradictory schemas remain
+/// readable and can be repaired by setting `canBeDeleted: false` on update.
 #[allow(clippy::too_many_arguments)]
 fn try_from_schema_generation_3(
     data_contract_id: Identifier,
@@ -307,14 +310,26 @@ fn try_from_schema_generation_3(
     // indexOnly type does not have), so it has to see them already applied.
     common::apply_index_only(&mut v2, index_only, name)?;
 
+    // The flags are read from the parsed result (not the raw schema) so
+    // the check sees `canBeDeleted` resolved against the contract config
+    // default (`true` when the key is omitted).
+    if full_validation && v2.documents_keep_history() && v2.documents_can_be_deleted() {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{}\" sets both `documentsKeepHistory: true` and \
+                 `canBeDeleted: true`, but the storage layer unconditionally refuses to \
+                 delete a document whose type keeps history. Set `canBeDeleted` to false or \
+                 disable `documentsKeepHistory`.",
+                name,
+            )),
+        ));
+    }
+
     Ok(v2)
 }
 
 impl DocumentType {
-    /// Parses protocol 14 document types and validates the keep-history/delete flags.
-    /// Stored contracts bypass full validation so legacy contradictory schemas
-    /// remain readable. Owners can repair them by setting `canBeDeleted: false`
-    /// during a contract update without changing history or the storage layout.
+    /// Dispatches to this module's generation-3 parser and wraps the result.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::data_contract::document_type::class_methods) fn try_from_schema_v3(
         data_contract_id: Identifier,
@@ -329,7 +344,7 @@ impl DocumentType {
         validation_operations: &mut impl Extend<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let document_type = try_from_schema_generation_3(
+        try_from_schema_generation_3(
             data_contract_id,
             data_contract_system_version,
             contract_config_version,
@@ -342,27 +357,7 @@ impl DocumentType {
             validation_operations,
             platform_version,
         )
-        .map(DocumentType::V2)?;
-
-        // The flags are read from the parsed result (not the raw schema) so
-        // the check sees `canBeDeleted` resolved against the contract config
-        // default (`true` when the key is omitted).
-        if full_validation
-            && document_type.documents_keep_history()
-            && document_type.documents_can_be_deleted()
-        {
-            return Err(consensus_or_protocol_data_contract_error(
-                DataContractError::InvalidContractStructure(format!(
-                    "document type \"{}\" sets both `documentsKeepHistory: true` and \
-                     `canBeDeleted: true`, but the storage layer unconditionally refuses to \
-                     delete a document whose type keeps history. Set `canBeDeleted` to false or \
-                     disable `documentsKeepHistory`.",
-                    name,
-                )),
-            ));
-        }
-
-        Ok(document_type)
+        .map(DocumentType::V2)
     }
 }
 
