@@ -817,6 +817,92 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertNil(freed.supersededByTxid)
     }
 
+    /// The case `settledSpenderLinkIsKept` exists for, which the mempool
+    /// variant above does not reach: a plain in-block arrival (context 2)
+    /// against a spender that is only IS-locked (context 1, unmined). Under
+    /// DIP-10 the lock already settled the input, so an in-block
+    /// double-spend of it is the losing side of a conflict, not newer
+    /// evidence — the link stays with F. The one sanctioned takeover is
+    /// chainlock-over-IS-lock, pinned in the second half.
+    func testAnInBlockArrivalDoesNotTakeTheLinkFromAnInstantSendLockedSpender() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+
+        let finalizedTxid = Data(repeating: 0x46, count: 32)
+        let chainlockedTxid = Data(repeating: 0x48, count: 32)
+
+        let funding = PersistentTransaction(
+            txid: fundingTxid,
+            transactionData: Data(repeating: 0x04, count: 10),
+            context: 2,
+            blockHeight: 100,
+            netAmount: 200_000
+        )
+        let finalized = PersistentTransaction(
+            txid: finalizedTxid,
+            transactionData: serializedTransaction(inputs: [(txid: fundingTxid, vout: 0)]),
+            context: 1,
+            blockHeight: 0,
+            netAmount: -100_000
+        )
+        context.insert(funding)
+        context.insert(finalized)
+        let settledCoin = PersistentTxo(
+            transaction: funding,
+            vout: 0,
+            amount: 100_000,
+            address: "yFundAddr",
+            height: 100
+        )
+        settledCoin.walletId = walletId
+        settledCoin.isSpent = false
+        settledCoin.spendingTransaction = finalized
+        context.insert(settledCoin)
+        try context.save()
+
+        // L arrives IN A BLOCK, spending the coin F holds under its lock.
+        deliverRecord(
+            handler,
+            txid: sweptTxid,
+            context: 2,
+            inputOutpoints: [(txid: fundingTxid, vout: 0)]
+        )
+        let held = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertEqual(
+            held.spendingTransaction?.txid,
+            finalizedTxid,
+            "an in-block arrival does not take the link from an IS-locked spender"
+        )
+        XCTAssertTrue(held.isSpent, "but the coin is spent either way — the flag never lowers")
+
+        // L is swept (its block lost to the lock) with the coin in the
+        // release set upstream computed from live records that no longer
+        // include F: the surviving link vetoes the release.
+        sweep(handler, [Batch(
+            losers: [sweptTxid],
+            winner: winnerTxid,
+            winnerMinedHeight: 400,
+            released: [(txid: fundingTxid, vout: 0)]
+        )])
+        let afterSweep = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(afterSweep.isSpent, "the coin an IS-locked spender consumed stays spent")
+        XCTAssertEqual(afterSweep.spendingTransaction?.txid, finalizedTxid)
+
+        // A chainlocked arrival is the one thing that outranks the lock.
+        deliverRecord(
+            handler,
+            txid: chainlockedTxid,
+            context: 3,
+            inputOutpoints: [(txid: fundingTxid, vout: 0)]
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0)).spendingTransaction?.txid,
+            chainlockedTxid,
+            "chainlock-over-IS-lock is the sanctioned takeover"
+        )
+    }
+
     /// The backstop for rows written before holds named their winner: a
     /// coin held spent with neither a spender nor a `supersededByTxid`
     /// stamp has nothing durable behind it, so the wallet re-delivering it

@@ -101,6 +101,23 @@ final class DashModelMigrationTests: XCTestCase {
             spendingTxid: Data(repeating: 0x22, count: 32),
             spendingTransaction: nil,
             walletId: walletId))
+        // A transaction with one spent output: the two other widened
+        // models, so the migration is exercised on every column V4 adds.
+        let v3Funding = DashSchemaV1.PersistentTransaction(
+            txid: Data(repeating: 0x33, count: 32),
+            transactionData: Data([0x03, 0x00]),
+            context: 2,
+            blockHeight: 100)
+        v3Container?.mainContext.insert(v3Funding)
+        let v3Coin = DashSchemaV1.PersistentTxo(
+            transaction: v3Funding,
+            vout: 0,
+            amount: 1_000,
+            address: "yV3Coin",
+            height: 100)
+        v3Coin.walletId = walletId
+        v3Coin.isSpent = true
+        v3Container?.mainContext.insert(v3Coin)
         try v3Container?.mainContext.save()
         v3Container = nil
 
@@ -128,6 +145,97 @@ final class DashModelMigrationTests: XCTestCase {
         XCTAssertEqual(pending.count, 1, "the V3 pending row must survive the migration")
         XCTAssertEqual(pending.first?.isSweptTombstone, false, "backfilled as an ordinary claim")
         XCTAssertNil(pending.first?.winnerMinedHeight, "and unstamped")
+        let coins = try migrated.mainContext.fetch(FetchDescriptor<PersistentTxo>())
+        XCTAssertEqual(coins.count, 1, "the V3 TXO row must survive the migration")
+        XCTAssertEqual(coins.first?.isSpent, true, "its spent flag is carried as stored")
+        XCTAssertNil(
+            coins.first?.supersededByTxid,
+            "a coin migrated from V3 was never held by a sweep — the stamp backfills to nil, "
+                + "so the release and re-delivery rules see an ordinary spent coin")
+        let transactions = try migrated.mainContext.fetch(
+            FetchDescriptor<PersistentTransaction>())
+        XCTAssertEqual(transactions.map(\.context), [2], "the V3 transaction row survives unchanged")
+    }
+
+    /// The whole chain from the oldest registered version, on the models this
+    /// change actually widens: a V1 store carrying a wallet, a transaction
+    /// and a coin must arrive at V4 with every row intact and the V4 columns
+    /// at their backfill values. V1 and V2 register the frozen component,
+    /// so the rows go in as frozen types and come out live — the property
+    /// the freeze exists to guarantee, pinned here where it matters most.
+    @MainActor
+    func testV1StoreWithWalletTransactionAndCoinMigratesToV4() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("dash.store")
+
+        let walletId = Data(repeating: 0x1A, count: 32)
+        let txid = Data(repeating: 0x1B, count: 32)
+
+        let v1Schema = Schema(versionedSchema: DashSchemaV1.self)
+        let v1Configuration = ModelConfiguration(
+            "DashChainMigrationTest",
+            schema: v1Schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none)
+        var v1Container: ModelContainer? = try ModelContainer(
+            for: v1Schema,
+            configurations: [v1Configuration])
+        v1Container?.mainContext.insert(DashSchemaV1.PersistentWallet(
+            walletId: walletId,
+            network: .testnet))
+        let v1Funding = DashSchemaV1.PersistentTransaction(
+            txid: txid,
+            transactionData: Data([0x03, 0x00]),
+            context: 3,
+            blockHeight: 50,
+            netAmount: 2_000)
+        v1Container?.mainContext.insert(v1Funding)
+        let v1Coin = DashSchemaV1.PersistentTxo(
+            transaction: v1Funding,
+            vout: 1,
+            amount: 2_000,
+            address: "yV1Coin",
+            height: 50)
+        v1Coin.walletId = walletId
+        v1Container?.mainContext.insert(v1Coin)
+        try v1Container?.mainContext.save()
+        v1Container = nil
+
+        let v4Schema = Schema(versionedSchema: DashSchemaV4.self)
+        let v4Configuration = ModelConfiguration(
+            "DashChainMigrationTest",
+            schema: v4Schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none)
+        let migrated = try ModelContainer(
+            for: v4Schema,
+            migrationPlan: DashMigrationPlan.self,
+            configurations: [v4Configuration])
+
+        let wallets = try migrated.mainContext.fetch(FetchDescriptor<PersistentWallet>())
+        XCTAssertEqual(wallets.map(\.walletId), [walletId])
+        XCTAssertNil(wallets.first?.lastAppliedChainLockHeight)
+        let transactions = try migrated.mainContext.fetch(
+            FetchDescriptor<PersistentTransaction>())
+        XCTAssertEqual(transactions.map(\.txid), [txid])
+        XCTAssertEqual(transactions.first?.context, 3)
+        XCTAssertEqual(transactions.first?.netAmount, 2_000)
+        let coins = try migrated.mainContext.fetch(FetchDescriptor<PersistentTxo>())
+        XCTAssertEqual(coins.count, 1)
+        XCTAssertEqual(coins.first?.vout, 1)
+        XCTAssertEqual(coins.first?.amount, 2_000)
+        XCTAssertEqual(coins.first?.walletId, walletId)
+        XCTAssertEqual(coins.first?.isSpent, false)
+        XCTAssertNil(coins.first?.supersededByTxid)
+        XCTAssertEqual(
+            coins.first?.transaction?.txid, txid,
+            "the coin's relationship to its funding transaction survives three stages")
     }
 
     /// What makes the V3 -> V4 stage lightweight: the two versions name the
