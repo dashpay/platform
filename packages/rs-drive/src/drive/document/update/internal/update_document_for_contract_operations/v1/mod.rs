@@ -170,7 +170,7 @@ impl Drive {
             .is_document_size()
             || estimated_costs_only_with_layer_info.is_some()
         {
-            return self.add_document_for_contract_operations(
+            return self.add_document_for_contract_operations_without_ttl_drain(
                 document_and_contract_info,
                 true, // we say we should override as this skips an unnecessary check
                 block_info,
@@ -300,34 +300,6 @@ impl Drive {
         // beneath a `ProvableCount*` / `ProvableSum*` parent —
         // diverging from the insert path (consensus break).
         let index_structure = document_type.index_structure();
-
-        // TTL drainage rides every write into a TTL'd index — updates
-        // included, mirroring the v2 insert walker: a bounded number of
-        // deepest-first drop operations against the oldest expired bucket,
-        // resuming wherever the previous write's budget ran out. One sweep
-        // over the deduplicated levels, BEFORE the per-index loop queues
-        // any batch mutation: drainage applies directly to grovedb, so a
-        // per-index drain could both multiply the per-write budget (several
-        // indexes may share one grid level) and remove paths an earlier
-        // index's queued operations target. Running it first also keeps the
-        // loop coherent with the drained state: if the drain takes a bucket
-        // this document's old entries lived in, the old-entry removable
-        // checks skip it. This path is stateful-only (estimation redirected
-        // to the insert walker above), and drainage is unbilled — see the
-        // ttl module's Billing section.
-        {
-            let base_path: Vec<Vec<u8>> = contract_document_type_path
-                .iter()
-                .map(|&segment| Vec::from(segment))
-                .collect();
-            self.drain_expired_time_range_levels(
-                index_structure,
-                &base_path,
-                block_info.time_ms,
-                transaction,
-                platform_version,
-            )?;
-        }
 
         // fourth we need to store a reference to the document for each index
         for index in document_type.indexes().values() {

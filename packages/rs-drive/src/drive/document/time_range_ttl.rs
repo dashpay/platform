@@ -38,12 +38,18 @@
 //! TTL writers pre-pay it in aggregate.
 
 use crate::drive::document::index_level_tree_types::index_level_tree_types_with_continuation_demotion;
+use crate::drive::document::paths::contract_document_type_path_vec;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::push_drive_operation_result;
 use crate::util::grove_operations::DirectQueryType;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::document_type::{DocumentPropertyType, IndexLevel, TimeRangeTransform};
+use dpp::data_contract::DataContract;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg, TreeType};
@@ -78,7 +84,57 @@ pub(crate) fn live_time_range_entry_keys(
         .collect()
 }
 
+/// Bound the trees a single write can create under one grid. Count one
+/// value tree, its possible terminal tree, and each property-name branch
+/// plus that branch's value/terminal trees. The merged structure includes
+/// every index sharing the grid, including deeper and divergent suffixes.
+/// Multiply by overlap because a document is copied into every containing
+/// bucket. Twice that bound lets sustained writes retire old trees faster
+/// than they create new ones, with capacity to catch up after a burst.
+/// The versioned floor also lets sparse writers make useful progress.
+pub(crate) fn time_range_ttl_drop_budget(
+    bucket_level: &IndexLevel,
+    transform: &TimeRangeTransform,
+    min_operations: u16,
+) -> Result<u16, Error> {
+    fn trees_per_bucket(level: &IndexLevel) -> Option<u64> {
+        level.sub_levels().values().try_fold(
+            1 + u64::from(level.has_index_with_type().is_some()),
+            |total, child| total.checked_add(1)?.checked_add(trees_per_bucket(child)?),
+        )
+    }
+    trees_per_bucket(bucket_level)
+        .and_then(|trees| trees.checked_mul(transform.overlap_factor()))
+        .and_then(|trees| trees.checked_mul(2))
+        .and_then(|budget| u16::try_from(budget).ok())
+        .map(|budget| budget.max(min_operations))
+        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+            "validated time-range index exceeds the TTL drainage budget representation",
+        )))
+}
+
 impl Drive {
+    /// Prepare a document write before generating any mutations. Batch
+    /// callers must prepare ALL documents first, then use the operation
+    /// builders ending in `_without_ttl_drain`; cleanup mutates state
+    /// directly and must never invalidate an earlier document's queued ops.
+    pub(crate) fn prepare_document_time_range_ttl(
+        &self,
+        contract: &DataContract,
+        document_type: DocumentTypeRef,
+        block_time_ms: u64,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.drain_expired_time_range_levels(
+            document_type.index_structure(),
+            &contract_document_type_path_vec(contract.id_ref().as_bytes(), document_type.name()),
+            block_time_ms,
+            transaction,
+            platform_version,
+        )
+    }
+
     /// Whether a removal walker should process the time-range entry at
     /// `entry_key` under the grid level at `level_path`.
     ///
@@ -190,9 +246,9 @@ impl Drive {
     /// with user data (one per group, per level, per bucket), and that is
     /// exactly what `max_operations` bounds per write. A bucket drains
     /// across as many writes as it needs; between writes it stands
-    /// partially drained, which TTL semantics allow (entries live *at
-    /// most* `ttl`) and which the removal walkers handle at full-path
-    /// granularity.
+    /// partially drained. Expired buckets are not queryable; physical
+    /// reclamation depends on subsequent writes. Removal walkers handle
+    /// partial drainage at full-path granularity.
     ///
     /// The dropped paths embed their window start, so they are never
     /// re-created before their redo records drain (writes never target
@@ -218,9 +274,9 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let Some(max_operations) = platform_version
+        let Some(min_operations) = platform_version
             .system_limits
-            .max_time_range_ttl_drop_operations_per_write
+            .min_time_range_ttl_drop_operations_per_write
         else {
             return Ok(());
         };
@@ -234,7 +290,7 @@ impl Drive {
                         sub_level,
                         &level_path,
                         block_time_ms,
-                        max_operations,
+                        time_range_ttl_drop_budget(sub_level, transform, min_operations)?,
                         transaction,
                         platform_version,
                     )?;

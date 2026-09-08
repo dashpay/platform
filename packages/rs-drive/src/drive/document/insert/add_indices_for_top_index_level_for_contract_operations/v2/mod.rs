@@ -53,7 +53,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        block_time_ms: u64,
+        _block_time_ms: u64,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -266,33 +266,6 @@ impl Drive {
                     .max_time_range_overlap_factor
                     .unwrap_or(1),
             );
-
-            // TTL drainage rides every write into a TTL'd index: a bounded
-            // number of deepest-first drop operations against the oldest
-            // expired bucket, resuming wherever the previous write's budget
-            // ran out. When nothing is expired this is one bounded range
-            // read. Stateful only — the estimation dry run neither reads
-            // state nor prices drops (each is O(1); the count is capped).
-            if estimated_costs_only_with_layer_info.is_none() {
-                if let Some(transform) = sub_level.time_range() {
-                    if transform.ttl_seconds.is_some() {
-                        if let Some(max_operations) = platform_version
-                            .system_limits
-                            .max_time_range_ttl_drop_operations_per_write
-                        {
-                            self.drain_expired_time_range_buckets(
-                                transform,
-                                sub_level,
-                                &index_path,
-                                block_time_ms,
-                                max_operations,
-                                transaction,
-                                platform_version,
-                            )?;
-                        }
-                    }
-                }
-            }
 
             let bucket_count = index_keys.len();
             for (bucket, index_key) in index_keys.into_iter().enumerate() {

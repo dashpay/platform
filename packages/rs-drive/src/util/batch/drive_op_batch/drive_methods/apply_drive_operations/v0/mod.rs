@@ -8,8 +8,6 @@ use dpp::fee::fee_result::FeeResult;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
-use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
-
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 
@@ -49,6 +47,14 @@ impl Drive {
         if operations.is_empty() {
             return Ok(FeeResult::default());
         }
+        if apply {
+            self.prepare_drive_operations_time_range_ttl(
+                &operations,
+                block_info,
+                transaction,
+                platform_version,
+            )?;
+        }
         let mut low_level_operations = vec![];
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
@@ -63,13 +69,15 @@ impl Drive {
                 finalize_tasks.extend(tasks);
             }
 
-            low_level_operations.append(&mut drive_op.into_low_level_drive_operations(
-                self,
-                &mut estimated_costs_only_with_layer_info,
-                block_info,
-                transaction,
-                platform_version,
-            )?);
+            low_level_operations.append(
+                &mut drive_op.into_low_level_drive_operations_after_ttl_drain(
+                    self,
+                    &mut estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                )?,
+            );
         }
 
         let mut cost_operations = vec![];

@@ -9,7 +9,8 @@
 //!   a shorter index thereby doubles as a uniqueness constraint over its
 //!   value projection plus owner (for Yappr's likes the `[postId]` index
 //!   is the one-like-per-(post, owner) rule).
-//! * **delete**: probe every index entry, all must exist. Every index
+//! * **delete**: probe every surviving index entry. Only paths already
+//!   drained from expired buckets are exempt. Every index
 //!   embeds `$ownerId` (the parser enforces it), so each probe — computed
 //!   with owner = signer — proves ownership as well as existence, and
 //!   requiring all of them keeps the apply-side batch infallible even
@@ -19,6 +20,8 @@
 //! the same function the index walkers key trees with — the probe cannot
 //! drift from the write path.
 
+use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
+use crate::drive::document::time_range_ttl::entry_key_bucket_start;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -180,7 +183,7 @@ impl Drive {
         Ok((paths, member_key))
     }
 
-    /// Whether `document`'s entry under `index` exists AND carries
+    /// Whether every surviving entry under `index` carries
     /// `expected_commitment` — the row commitment `document`'s full tuple
     /// produces (compute it ONCE per document with
     /// [`index_only_row_commitment`](crate::drive::document::index_only_row_commitment)
@@ -197,6 +200,7 @@ impl Drive {
         index: &Index,
         document: &Document,
         expected_commitment: &[u8; 32],
+        block_time_ms: u64,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -208,13 +212,26 @@ impl Drive {
             document,
             platform_version,
         )?;
-        // ALL of the index's entries must carry the commitment — for a
-        // bucketed index that is every containing bucket's entry (the
-        // write path creates them atomically, so anything less means the
-        // values do not describe an existing row). Zero paths (a bucketed
-        // index over a pre-origin timestamp) is vacuously consistent: the
-        // write path wrote nothing there either.
+        // Every surviving entry must carry the commitment. An expired
+        // bucket can have lost any intermediate tree to lazy drainage;
+        // only that case is exempt. A missing live path, a missing member
+        // in a standing tree, or a different commitment still fails.
+        // If all paths have expired and drained, this index contributes
+        // no mutations to the delete and is vacuously consistent.
         for path in paths {
+            let bucket_depth = CONTRACT_DOCUMENTS_PATH_HEIGHT as usize + 1;
+            if index.time_range.as_ref().is_some_and(|transform| {
+                path.get(bucket_depth)
+                    .and_then(|key| entry_key_bucket_start(key))
+                    .is_some_and(|start| transform.bucket_expired(start, block_time_ms))
+            }) && !self.expired_entry_path_exists(
+                &path,
+                bucket_depth,
+                transaction,
+                platform_version,
+            )? {
+                continue;
+            }
             let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
             let element = self.grove_get_raw_optional(
                 path_refs.as_slice().into(),

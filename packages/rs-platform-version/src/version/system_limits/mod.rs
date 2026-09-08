@@ -112,18 +112,13 @@ pub struct SystemLimits {
     /// `None` preserves the behavior of protocol versions that predate the
     /// `ttl` key (nothing to bound: the key does not parse there).
     pub max_time_range_ttl_seconds: Option<u64>,
-    /// Maximum number of O(1) drop operations one write into a TTL'd
-    /// `timeRange` index may spend draining expired buckets.
-    ///
-    /// A bucket drains deepest-first through flat-subtree drops (one per
-    /// `[0]` reference tree, per emptied value tree, per property-name
-    /// tree, plus the bucket itself), so the operation count scales with
-    /// the window's distinct groups while each operation is O(1). Every
-    /// write continues wherever the previous budget ran out; write volume
-    /// scales with group volume, so drainage keeps pace roughly one window
-    /// behind. `None` for the protocol versions that predate the `ttl`
-    /// key.
-    pub max_time_range_ttl_drop_operations_per_write: Option<u16>,
+    /// Minimum per-write drainage budget for a TTL'd time-range grid.
+    /// Drive raises this floor to twice the maximum trees one document
+    /// can create in the grid's merged index structure, times its overlap
+    /// factor. This gives cleanup capacity above the tree creation rate,
+    /// including shared grids and deep suffixes. Each drop is O(1).
+    /// `None` disables cleanup on versions predating the `ttl` key.
+    pub min_time_range_ttl_drop_operations_per_write: Option<u16>,
 }
 
 #[cfg(test)]

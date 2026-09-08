@@ -404,7 +404,9 @@ impl LowLevelDriveOperation {
         let operations = insert_operations
             .iter()
             .filter_map(|op| match op {
-                GroveOperation(grovedb_op) => Some(grovedb_op.clone()),
+                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
+                    Some(grovedb_op.clone())
+                }
                 _ => None,
             })
             .collect();
@@ -418,7 +420,9 @@ impl LowLevelDriveOperation {
         let operations = insert_operations
             .into_iter()
             .filter_map(|op| match op {
-                GroveOperation(grovedb_op) => Some(grovedb_op),
+                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
+                    Some(grovedb_op)
+                }
                 _ => None,
             })
             .collect();
@@ -500,7 +504,9 @@ impl LowLevelDriveOperation {
         insert_operations
             .into_iter()
             .filter_map(|op| match op {
-                GroveOperation(grovedb_op) => Some(grovedb_op),
+                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
+                    Some(grovedb_op)
+                }
                 _ => None,
             })
             .collect()

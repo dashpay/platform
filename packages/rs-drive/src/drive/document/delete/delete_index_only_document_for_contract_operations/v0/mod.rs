@@ -153,6 +153,7 @@ impl Drive {
                     index,
                     &document,
                     &expected_commitment,
+                    block_time_ms,
                     transaction,
                     &mut check_operations,
                     platform_version,

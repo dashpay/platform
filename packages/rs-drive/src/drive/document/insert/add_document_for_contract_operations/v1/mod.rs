@@ -130,14 +130,15 @@ impl Drive {
             )?;
 
         if is_update {
-            let update_operations = self.update_document_for_contract_operations(
-                document_and_contract_info,
-                block_info,
-                previous_batch_operations,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                platform_version,
-            )?;
+            let update_operations = self
+                .update_document_for_contract_operations_without_ttl_drain(
+                    document_and_contract_info,
+                    block_info,
+                    previous_batch_operations,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
 
             batch_operations.extend(update_operations);
 

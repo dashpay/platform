@@ -11,10 +11,9 @@ use crate::version::system_limits::SystemLimits;
 ///   the ephemeral-bytes fee model safe — a flat processing rate is only an
 ///   honest price for transitional storage while the lifetime it covers is
 ///   bounded. See `book/src/drive/time-range-ttl.md`.
-/// * `max_time_range_ttl_drop_operations_per_write` is set to 32: each
-///   write into a TTL'd index spends at most this many O(1) flat-drop
-///   operations draining expired buckets, deepest-first, resuming across
-///   writes.
+/// * `min_time_range_ttl_drop_operations_per_write` is set to 32. Drive
+///   raises this floor according to the merged grid's tree structure and
+///   overlap, so cleanup can retire trees faster than writes create them.
 ///
 /// The withdrawal and overlap-factor changes:
 ///
@@ -56,5 +55,5 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_shielded_transition_actions: 16,
     max_time_range_overlap_factor: Some(24),
     max_time_range_ttl_seconds: Some(604_800), // one week
-    max_time_range_ttl_drop_operations_per_write: Some(32),
+    min_time_range_ttl_drop_operations_per_write: Some(32),
 };

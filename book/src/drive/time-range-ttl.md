@@ -31,8 +31,9 @@ A `timeRange` index may declare a **time to live**:
 "timeRange": { "on": "$createdAt", "range": 3600, "step": 3600, "ttl": 604800 }
 ```
 
-In one paragraph: entries under this index exist for at most `ttl`
-seconds past their bucket's start, plus a bounded drainage lag. Expired
+Entries under this index are queryable until `ttl` seconds past their
+bucket's start (the exact expiry boundary remains inclusive). Physical
+removal depends on subsequent writes and has no wall-clock deadline. Expired
 buckets are drained **lazily, on write**: every state transition that
 writes into the index continues draining the oldest expired bucket,
 deepest-first, under a per-write operation budget. A fully drained
@@ -47,13 +48,14 @@ bills as **processing, not storage** — including the transitional bytes
 
 ### Why the fee reclassification is honest, not a subsidy
 
-Storage fees prepay retention distributed across future epochs — decades
-of it. A byte that provably lives at most one week consumes on the order
-of **1/2,600th** of that retention. The real resource cost of a TTL'd
-write is compute and write amplification (already processing) plus a
-week of disk occupancy, which a flat per-byte processing surcharge covers
-safely *because `ttl` is capped*. Version 1 caps it at **one week**
-(`SystemLimits::max_time_range_ttl_seconds = 604 800`).
+Storage fees prepay retention distributed across future epochs. TTL
+indexes instead charge a flat per-byte processing surcharge for their
+transitional storage and write amplification. Version 1 caps the queryable
+lifetime at **one week** (`SystemLimits::max_time_range_ttl_seconds = 604 800`).
+Cleanup capacity exceeds the maximum rate at which continued writes can
+create trees. This is an amortized retention model, not a guarantee that
+physical bytes disappear within a week: bursts need subsequent writes to
+drain, and inactive indexes retain residue as described below.
 
 The load-bearing simplification: **TTL'd subtrees never create
 refundable storage.** No `StorageFlags`, no owner/epoch refund entries.
@@ -92,22 +94,30 @@ That single property pays off three times:
 
 **Trigger** — deterministic and write-amortized: **every write** into a
 TTL'd index continues drainage of the oldest expired bucket (start
-`< block_time − ttl`), deepest-first, spending at most
-`SystemLimits::max_time_range_ttl_drop_operations_per_write` O(1) drop
-operations and resuming exactly where the previous write's budget ran
-out. When nothing is expired, the check is a single bounded range read.
-The operation count of a full bucket scales with its distinct groups,
-and write volume scales with group volume, so drainage keeps pace
-roughly one window behind; after a quiet spell the backlog amortizes
-across subsequent writes instead of dumping a week of demolition on the
-first like after a lull.
+`< block_time − ttl`), deepest-first. Each grid's per-write drop budget is
+`max(SystemLimits::min_time_range_ttl_drop_operations_per_write, 2 × overlap × trees)`.
+The versioned floor is 32; `trees` bounds everything one document can
+create under one bucket: value trees, terminal `[0]` trees, and all
+property-name branches in the grid's merged index structure. Shared grids
+and deep suffixes are counted. Thus cleanup has capacity above the maximum
+tree creation rate, including at the supported overlap of 24. A fixed
+32-drop cap cannot keep up with that overlap.
 
-**Residue** — an index that never receives another write keeps its final
-`ttl` of buckets indefinitely. This is bounded garbage that owes nobody
-a refund. If it ever matters, the backstop is an epoch-transition sweep
-riding the existing scheduled-cleanup pattern
-(`check_for_ended_vote_polls` / `clean_up_after_vote_polls_end`);
-deliberately **out of scope for v1**.
+When nothing is expired, the check is a single bounded range read. Large
+expired buckets drain across writes. In a document batch, **all cleanup
+runs before any document mutations are generated**, including nested
+same-type document groups. Each document earns a budget; conversion then
+uses the prepared state without further direct drops. Estimation performs
+neither cleanup nor its bookkeeping reads. Drops share the caller's
+transaction, so rollback restores both the removed paths and their redo
+records.
+
+**Residue** — an index that stops receiving writes retains its remaining
+buckets, including any expired backlog, indefinitely. That state owes no
+refund, but its size depends on past write volume; the TTL cap alone does
+not bound it. An epoch-transition sweep could provide a backstop, following
+`check_for_ended_vote_polls` / `clean_up_after_vote_polls_end`; it remains
+**out of scope for v1**.
 
 **User deletes and updates of expired documents** — handled at
 **full-path granularity**, because a bucket drains piecewise: an entry
@@ -152,17 +162,16 @@ A time-range bucket is *not* flat, so the platform drains it
    prefixes when ranked);
 4. the emptied bucket is flat-dropped.
 
-Every step is O(1); the *number* of steps scales with the window's
-distinct groups, and that count is what
-`SystemLimits::max_time_range_ttl_drop_operations_per_write` bounds.
-**Every write** into a TTL'd index continues drainage where the previous
-budget stopped (when nothing is expired, the check is one bounded range
-read); write volume scales with group volume, so drainage keeps pace
-roughly one window behind. Between writes a bucket may stand partially
-drained — within TTL semantics (entries live *at most* `ttl`) — and the
-removal walkers handle those states at full-path granularity: a
-document whose group the drain already took deletes as a clean skip,
-one whose group still stands is removed normally.
+Every step is O(1); the number of steps scales with the window's distinct
+groups and is capped by the structure-derived per-write budget above.
+Between writes a bucket may stand partially drained. Removal walkers skip
+only paths already removed from expired buckets and delete standing
+entries normally. The indexOnly delete validation uses the same rule:
+every surviving entry must match the full row commitment, including entries
+in expired but standing trees. Missing live entries, missing terminal
+members in standing trees, and mismatched commitments fail. An
+indexOnly contract must retain a timestamp-independent proof index, which
+still has to prove the row's membership after all its TTL entries drain.
 
 The flat-drop path-reuse contract (never re-create a dropped path before
 its record drains) holds by construction: bucket paths embed their
