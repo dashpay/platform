@@ -406,6 +406,10 @@ extension PlatformWalletPersistenceHandler {
             let spent = walletTxos.filter(\.isSpent)
             let unspent = walletTxos.filter { !$0.isSpent }
             let locked = walletTxos.filter(\.isLocked)
+            // Every stage from here on is O(rows) or O(accounts × rows) on its
+            // own, so the drain's documented "at most one stage in flight" only
+            // holds if each is gated. The cost is one atomic read per stage.
+            if shutdownBegan(before: "wallet_fingerprint") { return nil }
             let txoFingerprint = diagnosticFingerprint(walletTxos.map {
                 diagnosticTxoFingerprint(
                     outpoint: $0.outpoint,
@@ -531,6 +535,7 @@ extension PlatformWalletPersistenceHandler {
                 tallies[id] = tally
             }
 
+            if shutdownBegan(before: "account_snapshots") { return nil }
             for account in sortedAccounts {
                 let key = Self.diagnosticAccountKey(account)!
                 let tally = tallies[ObjectIdentifier(account)] ?? AccountTally()
@@ -573,6 +578,10 @@ extension PlatformWalletPersistenceHandler {
                 )
             }
 
+            // Faults `transaction`, `account.wallet` and `spendingTransaction`
+            // for every row it inspects — the single most expensive stage after
+            // the audit itself.
+            if shutdownBegan(before: "txo_anomalies") { return nil }
             Self.logTxoAnomalies(
                 walletId: walletId,
                 checkpoint: checkpoint,
@@ -582,19 +591,25 @@ extension PlatformWalletPersistenceHandler {
             // be expensive. The exact #4438 audit is needed for the manually
             // exported artifact, not for restoring Rust, so keep startup's
             // persistence queue limited to lightweight summaries.
-            if let allTransactions, shutdownBegan(before: "owned_output_audit") {
-                SDKLogger.event(
-                    "core_owned_output_audit_summary",
-                    category: .persistence,
-                    severity: .warning,
-                    fields: [
-                        "audit_incomplete": .boolean(true),
-                        "checkpoint": .publicText(checkpoint.rawValue),
-                        "reason": .publicText("shutdown_requested"),
-                        "transaction_row_count": .integer(Int64(allTransactions.count)),
-                        "wallet_reference": .reference(walletId),
-                    ]
-                )
+            // Not nested inside `if let allTransactions`: the stages that
+            // follow run whether or not the audit was declined for table size,
+            // so gating the check on the audit's input skipped it exactly when
+            // the pass was already refusing to do the cheap thing.
+            if shutdownBegan(before: "owned_output_audit") {
+                if let allTransactions {
+                    SDKLogger.event(
+                        "core_owned_output_audit_summary",
+                        category: .persistence,
+                        severity: .warning,
+                        fields: [
+                            "audit_incomplete": .boolean(true),
+                            "checkpoint": .publicText(checkpoint.rawValue),
+                            "reason": .publicText("shutdown_requested"),
+                            "transaction_row_count": .integer(Int64(allTransactions.count)),
+                            "wallet_reference": .reference(walletId),
+                        ]
+                    )
+                }
                 return nil
             }
             if let allTransactions {
@@ -607,6 +622,7 @@ extension PlatformWalletPersistenceHandler {
                 )
             }
 
+            if shutdownBegan(before: "asset_lock_snapshot") { return nil }
             let assetLocks: [CoreWalletDatabaseDiagnosticSnapshot.AssetLock]
             let assetLocksAvailable: Bool
             do {
@@ -631,6 +647,7 @@ extension PlatformWalletPersistenceHandler {
                     ]
                 )
             }
+            if shutdownBegan(before: "shielded_snapshot") { return nil }
             do {
                 try Self.logShieldedStoreSnapshot(
                     context: context,
@@ -931,15 +948,29 @@ extension PlatformWalletPersistenceHandler {
         // the same address would otherwise make `expectedAccount` — and so
         // `wrong_account` — depend on which faulted first; the same ordering
         // the account snapshots use makes the winner the same on every run.
-        var bip44Addresses: [String: PersistentAccount] = [:]
+        //
+        // Both kinds of account we can own an output on. A mixed send consumes
+        // a CoinJoin output and typically pays CoinJoin change back to the
+        // wallet: that output has a persisted address row, so booking it as
+        // unattributed both overstated "paid to someone else" and hid the case
+        // where it is the CoinJoin-side output that went missing from
+        // `PersistentTxo` — a third route to the false all-clear.
+        //
+        // BIP44 first, so a shared address keeps the BIP44 attribution this
+        // audit has always given it.
+        var ownedAddresses: [String: PersistentAccount] = [:]
         let bip44Accounts = wallet.accounts
             .filter { $0.accountType == 0 && $0.standardTag == 0 }
             .sorted(by: Self.accountOrder)
-        for account in bip44Accounts {
-            for coreAddress in account.coreAddresses where bip44Addresses[coreAddress.address] == nil {
-                bip44Addresses[coreAddress.address] = account
+        let coinJoinAccounts = wallet.accounts
+            .filter { $0.accountType == 1 }
+            .sorted(by: Self.accountOrder)
+        for account in bip44Accounts + coinJoinAccounts {
+            for coreAddress in account.coreAddresses where ownedAddresses[coreAddress.address] == nil {
+                ownedAddresses[coreAddress.address] = account
             }
         }
+        let bip44AddressCount = bip44Accounts.reduce(0) { $0 + $1.coreAddresses.count }
         let txoByOutpoint = Dictionary(grouping: allTxos, by: \.outpoint)
 
         var candidateCount = 0
@@ -947,11 +978,13 @@ extension PlatformWalletPersistenceHandler {
         var transactionBytesMissingCount = 0
         var ownedOutputCount = 0
         var ownedOutputValue: UInt64 = 0
+        var ownedCoinJoinOutputCount = 0
+        var ownedCoinJoinOutputValue: UInt64 = 0
         var unattributedOutputCount = 0
         var undecodableAddressOutputCount = 0
         var validCount = 0
         var anomalies: [(tx: PersistentTransaction, vout: UInt32, amount: UInt64,
-                         outpoint: Data, reason: String)] = []
+                         outpoint: Data, reason: String, outputIsCoinJoin: Bool)] = []
 
         guard let network = wallet.network else {
             SDKLogger.event(
@@ -1008,22 +1041,29 @@ extension PlatformWalletPersistenceHandler {
                     undecodableAddressOutputCount += 1
                     continue
                 }
-                guard let expectedAccount = bip44Addresses[address] else {
+                guard let expectedAccount = ownedAddresses[address] else {
                     // Either a genuine payment to someone else or one of our
                     // own change addresses with no persisted row. The audit
                     // cannot tell them apart, so it counts rather than clears.
                     unattributedOutputCount += 1
                     continue
                 }
-                ownedOutputCount += 1
-                ownedOutputValue = diagnosticSaturatingAdd(ownedOutputValue, output.valueDuffs)
+                let outputIsCoinJoin = expectedAccount.accountType == 1
+                if outputIsCoinJoin {
+                    ownedCoinJoinOutputCount += 1
+                    ownedCoinJoinOutputValue = diagnosticSaturatingAdd(
+                        ownedCoinJoinOutputValue, output.valueDuffs)
+                } else {
+                    ownedOutputCount += 1
+                    ownedOutputValue = diagnosticSaturatingAdd(ownedOutputValue, output.valueDuffs)
+                }
                 let vout = UInt32(index)
                 let outpoint = PersistentTxo.makeOutpoint(txid: decoded.txid, vout: vout)
                 guard let row = representativeTxo(
                     rows: txoByOutpoint[outpoint],
                     walletId: walletId
                 ) else {
-                    anomalies.append((transaction, vout, output.valueDuffs, outpoint, "missing_txo"))
+                    anomalies.append((transaction, vout, output.valueDuffs, outpoint, "missing_txo", outputIsCoinJoin))
                     continue
                 }
                 // Same admission rule as `walletTxos` and the candidate set:
@@ -1034,7 +1074,7 @@ extension PlatformWalletPersistenceHandler {
                 let denormalizedNamesWallet = row.walletId == walletId
                 let relationshipNamesWallet = rowRelationshipWallet == walletId
                 guard denormalizedNamesWallet || relationshipNamesWallet else {
-                    anomalies.append((transaction, vout, output.valueDuffs, outpoint, "wrong_wallet"))
+                    anomalies.append((transaction, vout, output.valueDuffs, outpoint, "wrong_wallet", outputIsCoinJoin))
                     continue
                 }
                 guard relationshipNamesWallet else {
@@ -1043,22 +1083,25 @@ extension PlatformWalletPersistenceHandler {
                     // same two facts, so the analyst sees one story.
                     let reason = rowRelationshipWallet == nil
                         ? "relationship_missing" : "wallet_id_mismatch"
-                    anomalies.append((transaction, vout, output.valueDuffs, outpoint, reason))
+                    anomalies.append((transaction, vout, output.valueDuffs, outpoint, reason, outputIsCoinJoin))
                     continue
                 }
+                // Against the account the address pool named, not a hardcoded
+                // BIP44 shape: the same check now serves CoinJoin-owned
+                // outputs, whose account carries type 1.
                 guard row.account === expectedAccount,
-                      row.account?.accountType == 0,
-                      row.account?.standardTag == 0
+                      row.account?.accountType == expectedAccount.accountType,
+                      row.account?.standardTag == expectedAccount.standardTag
                 else {
-                    anomalies.append((transaction, vout, output.valueDuffs, outpoint, "wrong_account"))
+                    anomalies.append((transaction, vout, output.valueDuffs, outpoint, "wrong_account", outputIsCoinJoin))
                     continue
                 }
                 guard row.amount == output.valueDuffs else {
-                    anomalies.append((transaction, vout, output.valueDuffs, outpoint, "amount_mismatch"))
+                    anomalies.append((transaction, vout, output.valueDuffs, outpoint, "amount_mismatch", outputIsCoinJoin))
                     continue
                 }
                 guard row.scriptPubKey == output.scriptPubkey else {
-                    anomalies.append((transaction, vout, output.valueDuffs, outpoint, "script_mismatch"))
+                    anomalies.append((transaction, vout, output.valueDuffs, outpoint, "script_mismatch", outputIsCoinJoin))
                     continue
                 }
                 validCount += 1
@@ -1075,9 +1118,14 @@ extension PlatformWalletPersistenceHandler {
         let truncatedAnomalyCount = anomalyGroups.values.reduce(0) {
             $0 + max(0, $1.count - CoreDiagnosticConstants.detailLimit)
         }
-        let missingCount = anomalies.filter { $0.reason == "missing_txo" }.count
-        let missingValue = diagnosticSaturatingSum(anomalies.compactMap {
-            $0.reason == "missing_txo" ? $0.amount : nil
+        let missing = anomalies.filter { $0.reason == "missing_txo" }
+        let missingCount = missing.filter { !$0.outputIsCoinJoin }.count
+        let missingValue = diagnosticSaturatingSum(missing.compactMap {
+            $0.outputIsCoinJoin ? nil : $0.amount
+        })
+        let missingCoinJoinCount = missing.filter(\.outputIsCoinJoin).count
+        let missingCoinJoinValue = diagnosticSaturatingSum(missing.compactMap {
+            $0.outputIsCoinJoin ? $0.amount : nil
         })
         // With no persisted BIP44 addresses nothing can be attributed to this
         // wallet: every decoded output falls into `unattributedOutputCount`,
@@ -1089,9 +1137,12 @@ extension PlatformWalletPersistenceHandler {
         // `unattributedOutputCount > 0` is deliberately NOT part of this: a
         // CoinJoin-spending transaction pays its peers, and their outputs are
         // unattributable by construction, so every healthy audit has some.
+        // Since the pool now covers CoinJoin accounts too, that count is
+        // finally only peers and rows we genuinely lack — our own CoinJoin
+        // change no longer inflates it.
         // A partially lost pool is not distinguishable from a small one here;
         // `bip44_address_pool_size` sits beside this flag for that reading.
-        let addressPoolEmpty = bip44Addresses.isEmpty
+        let addressPoolEmpty = bip44AddressCount == 0
         let auditIncomplete = decodeFailureCount > 0
             || transactionBytesMissingCount > 0
             || addressPoolEmpty
@@ -1102,7 +1153,9 @@ extension PlatformWalletPersistenceHandler {
             fields: [
                 "audit_incomplete": .boolean(auditIncomplete),
                 "bip44_address_pool_empty": .boolean(addressPoolEmpty),
-                "bip44_address_pool_size": .integer(Int64(bip44Addresses.count)),
+                "bip44_address_pool_size": .integer(Int64(bip44AddressCount)),
+                "coinjoin_to_coinjoin_missing_count": .integer(Int64(missingCoinJoinCount)),
+                "coinjoin_to_coinjoin_missing_value_duffs": .unsignedInteger(missingCoinJoinValue),
                 "candidate_transaction_count": .integer(Int64(candidateCount)),
                 "checkpoint": .publicText(checkpoint.rawValue),
                 "coinjoin_to_bip44_missing_count": .integer(Int64(missingCount)),
@@ -1113,6 +1166,8 @@ extension PlatformWalletPersistenceHandler {
                 ),
                 "owned_bip44_output_count": .integer(Int64(ownedOutputCount)),
                 "owned_bip44_output_value_duffs": .unsignedInteger(ownedOutputValue),
+                "owned_coinjoin_output_count": .integer(Int64(ownedCoinJoinOutputCount)),
+                "owned_coinjoin_output_value_duffs": .unsignedInteger(ownedCoinJoinOutputValue),
                 "persisted_valid_count": .integer(Int64(validCount)),
                 "total_anomaly_count": .integer(Int64(anomalies.count)),
                 "transaction_bytes_missing_count": .integer(Int64(transactionBytesMissingCount)),
@@ -1133,7 +1188,9 @@ extension PlatformWalletPersistenceHandler {
                         "checkpoint": .publicText(checkpoint.rawValue),
                         "input_account_kind": .publicText("coinjoin"),
                         "outpoint_reference": .reference(anomaly.outpoint),
-                        "output_account_kind": .publicText("bip44"),
+                        "output_account_kind": .publicText(
+                            anomaly.outputIsCoinJoin ? "coinjoin" : "bip44"
+                        ),
                         "reason": .publicText(reason),
                         "transaction_context": .unsignedInteger(UInt64(anomaly.tx.context)),
                         "transaction_reference": .reference(anomaly.tx.txid),
@@ -1339,6 +1396,16 @@ extension PlatformWalletManager {
     /// Coordinates the queue-owned SwiftData snapshot with read-only Rust FFI
     /// queries. Admission happens after the database await, then keeps the
     /// native handle alive until the off-main worker finishes.
+    ///
+    /// No caller inside this repository, by design: the artifact this produces
+    /// is a support export, and the only screen that asks for one lives in the
+    /// host app (dashpay/dashwallet-ios#1105 wires Contact Support to it).
+    /// `SwiftExampleApp` deliberately does not — it has no support flow, and a
+    /// demo button would make a pass documented as holding the persistence
+    /// queue look like something to press casually. Everything under the
+    /// `preExport` checkpoint is therefore reachable only through a host; the
+    /// `restoreBuffer` summary and `core_store_open_result` are the parts that
+    /// run unprompted.
     public func emitCoreWalletDiagnostics(for walletId: Data) async {
         let checkpoint = CoreWalletDiagnosticCheckpoint.preExport
         guard walletId.count == 32, let handler = persistence else {
@@ -1362,6 +1429,11 @@ extension PlatformWalletManager {
         // cover costs the drain at most one stage. A manager with no handle
         // has nothing to drain; its database half still runs.
         let cancellation = coreDiagnosticsCancellation
+        // Counted for the whole pass, both halves, so a `shutdown()` that
+        // finds no handle can still tell a running database half to stop —
+        // and so one that finds neither leaves the latch down.
+        beginCoreDiagnosticsPass()
+        defer { endCoreDiagnosticsPass() }
         let admitted: Bool
         if isConfigured, handle != NULL_HANDLE {
             do {
@@ -1455,17 +1527,45 @@ extension PlatformWalletManager {
             return true
         }
 
+        // `compareDatabase` and `compareAssetLocks` both emit a
+        // `diff_incomplete=true` summary rather than nothing when their input
+        // is missing, because an absent summary is indistinguishable from a
+        // log that was cut off mid-export. Every early return out of this
+        // function owes the reader the same line — otherwise grepping
+        // `core_db_memory_diff_summary` on a failed balance read finds
+        // silence, which reads as truncation.
+        func emitAbandonedDiffSummary(reason: String) {
+            SDKLogger.event(
+                "core_db_memory_diff_summary",
+                category: .persistence,
+                severity: .warning,
+                fields: [
+                    "checkpoint": .publicText(checkpoint.rawValue),
+                    "database_snapshot_available": .boolean(database != nil),
+                    "diff_incomplete": .boolean(true),
+                    "reason": .publicText(reason),
+                    "wallet_reference": .reference(walletId),
+                ]
+            )
+        }
+
         // Keep the two Rust-memory sources independent: corrupt account state
         // must not suppress the AssetLock evidence that can explain a missing
         // balance (and vice versa).
-        if shutdownBegan(before: "asset_locks") { return }
+        if shutdownBegan(before: "asset_locks") {
+            emitAbandonedDiffSummary(reason: "shutdown_requested")
+            return
+        }
         compareAssetLocks(
             database,
             walletId: walletId,
             managedWallet: managedWallet,
             checkpoint: checkpoint
         )
-        if shutdownBegan(before: "account_balances") { return }
+        if shutdownBegan(before: "account_balances") {
+            emitAbandonedDiffSummary(reason: "shutdown_requested")
+            return
+        }
         let balanceQuery = readAccountBalances(
             handle: managerHandle,
             walletId: walletId
@@ -1481,6 +1581,7 @@ extension PlatformWalletManager {
                     "wallet_reference": .reference(walletId),
                 ]
             )
+            emitAbandonedDiffSummary(reason: "account_balance_query_failed")
             return
         }
 
@@ -1492,7 +1593,10 @@ extension PlatformWalletManager {
             )
         }
         for balance in sortedBalances {
-            if shutdownBegan(before: "account_utxos") { return }
+            if shutdownBegan(before: "account_utxos") {
+                emitAbandonedDiffSummary(reason: "shutdown_requested")
+                return
+            }
             // One pool per account, matching `emitCoreWalletDatabaseDiagnostics`.
             // libdispatch drains its own pool once per work item, and this
             // whole loop is one work item: without this, every account's

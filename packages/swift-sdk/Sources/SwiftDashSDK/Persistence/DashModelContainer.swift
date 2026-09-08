@@ -73,11 +73,13 @@ public enum DashModelContainer {
         /// lists (every v4.2.0-dev.1 store, until the remaining V1/V2 shapes
         /// are frozen). Inferred migration may open it.
         case driftedRegisteredVersion
-        /// Written by a build this SDK does not know — a version identifier
-        /// it never registered, or an entity its schema lacks. Inferred
-        /// migration would open it and silently drop what the newer build
-        /// wrote, so it must not run; the pre-fallback crash was the safe
-        /// outcome here.
+        /// Positively written by a NEWER build: the store carries an entity
+        /// this schema does not have, which nothing older could have created.
+        /// Inferred migration would open it and silently drop that entity's
+        /// table, so it must not run; the pre-fallback crash was the safe
+        /// outcome here. This is the only verdict the host may turn into
+        /// "update the app", because it is the only one whose evidence has a
+        /// direction — see `unplaceable` for why a hash disagreement does not.
         case newerThanRegistered(reason: String)
         /// The metadata reads but does not place the store against any
         /// registered version: no declared version identifier, or nothing to
@@ -170,12 +172,20 @@ public enum DashModelContainer {
     ) -> StoreSchemaVerdict {
         if matchesRegisteredVersion { return .matchesRegisteredVersion }
 
+        // Nothing to place the store against — every schema failed to build a
+        // model. Not a fact about the store at all.
+        guard !registered.isEmpty else {
+            return .unplaceable(reason: "no_registered_models")
+        }
+
         // SwiftData writes each `VersionedSchema.versionIdentifier` into the
-        // store; one this plan never registered was written by a newer build,
-        // and a store carrying none cannot be placed at all.
+        // store. One this plan does not register places it nowhere, but says
+        // nothing about which side is older: a pre-V1 store and a version
+        // since dropped from `DashMigrationPlan.schemas` look exactly like a
+        // future one from here.
         let registeredIdentifiers = Set(registered.map(\.identifier))
         if let unknown = storeVersionIdentifiers.first(where: { !registeredIdentifiers.contains($0) }) {
-            return .newerThanRegistered(reason: "unregistered_version_identifier=\(unknown)")
+            return .unplaceable(reason: "unregistered_version_identifier=\(unknown)")
         }
         // No identifier at all places the store nowhere. Older stores and
         // stores with truncated metadata land here too, so this is not a
@@ -193,7 +203,9 @@ public enum DashModelContainer {
         }
 
         // An entity the current schema does not have can only have been
-        // written by a newer build; inferred migration would drop its table.
+        // written by a newer build — this is the one asymmetric fact
+        // available here, so it is the one verdict allowed to say "newer".
+        // Inferred migration would drop its table.
         let unknownEntities = Set(storeEntityHashes.keys).subtracting(currentEntities).sorted()
         if !unknownEntities.isEmpty {
             return .newerThanRegistered(
@@ -229,7 +241,16 @@ public enum DashModelContainer {
         guard !unexpectedDrift.isEmpty else {
             return .unplaceable(reason: "no_entity_disagreement")
         }
-        return .newerThanRegistered(
+        // Deliberately NOT `newerThanRegistered`. A hash disagreement is
+        // symmetric: it says the store's shape of that entity is not the live
+        // model's, not which of the two came first. V1/V2/V3 are still
+        // unfrozen (only `PersistentAssetLock` is frozen), so adding one
+        // attribute to any live model makes every EXISTING store disagree on
+        // that entity — an older store, reported as a newer one, with a reset
+        // offered as the remedy. Direction needs evidence this comparison does
+        // not have; until the models are frozen, the honest verdict is that
+        // the store cannot be placed.
+        return .unplaceable(
             reason: "unexpected_entity_drift=\(unexpectedDrift.sorted().joined(separator: "|"))"
         )
     }

@@ -228,12 +228,17 @@ final class Dev1StoreUpgradeTests: XCTestCase {
             return XCTFail("a refused open must not rewrite the store")
         }
     }
-    /// The attribute-only downgrade: a store written by a build that added one
-    /// attribute to `PersistentWalletManagerMetadata` and kept V3's version
-    /// identifier. Its identifier is registered and every entity name is
-    /// known, so only the per-entity comparison can tell it from drift — and
-    /// must, because inferred migration would drop the attribute's values
-    /// without a word.
+    /// The attribute-only disagreement: a store whose
+    /// `PersistentWalletManagerMetadata` has one attribute the live model does
+    /// not, keeping V3's version identifier. Its identifier is registered and
+    /// every entity name is known, so only the per-entity comparison can tell
+    /// it from the pinned drift — and must, because inferred migration would
+    /// drop the attribute's values without a word.
+    ///
+    /// It is refused as `unplaceable`, NOT as a newer build: the same shape
+    /// arises the day an attribute is added to any unfrozen live model, where
+    /// every existing store is the OLDER one. So SwiftData's own error comes
+    /// through and the host never offers a reset off the back of it.
     func testStoreWithAnAttributeOnlyNewerEntityIsRefusedWithoutFallback() throws {
         let storeURL = directory.appendingPathComponent("DashModel.sqlite")
         try autoreleasepool {
@@ -255,19 +260,19 @@ final class Dev1StoreUpgradeTests: XCTestCase {
 
         XCTAssertEqual(
             DashModelContainer.classifyStore(at: storeURL),
-            .newerThanRegistered(reason: "unexpected_entity_drift=PersistentWalletManagerMetadata")
+            .unplaceable(reason: "unexpected_entity_drift=PersistentWalletManagerMetadata")
         )
         XCTAssertThrowsError(try DashModelContainer.open(configuration(at: storeURL))) { error in
-            XCTAssertEqual(
+            XCTAssertNil(
                 error as? DashModelContainerError,
-                .storeFromNewerBuild(reason: "unexpected_entity_drift=PersistentWalletManagerMetadata")
+                "a disagreement with no direction must not claim a newer build: \(error)"
             )
         }
         XCTAssertTrue(try logLines(event: "core_store_staged_migration_failed").isEmpty)
         let result = try XCTUnwrap(try logLines(event: "core_store_open_result").last)
         XCTAssertTrue(result.contains(#"result="failure""#), result)
         XCTAssertTrue(
-            result.contains("store_verdict=\"newer_than_registered:unexpected_entity_drift=PersistentWalletManagerMetadata\""),
+            result.contains("store_verdict=\"unplaceable:unexpected_entity_drift=PersistentWalletManagerMetadata\""),
             result
         )
     }
@@ -339,23 +344,35 @@ final class Dev1StoreUpgradeTests: XCTestCase {
         )
         XCTAssertEqual(
             verdict(["PersistentWallet": a, "PersistentDocumentType": b, "PersistentIndex": knownIndex]),
-            .newerThanRegistered(reason: "unexpected_entity_drift=PersistentDocumentType"),
-            "a known entity with an unknown shape is a newer build, not drift"
+            .unplaceable(reason: "unexpected_entity_drift=PersistentDocumentType"),
+            "a known entity with an unknown shape is not the pinned drift — and not evidence of direction"
         )
         // The attribute-only downgrade: same names, kept identifier, but the
         // disagreement is on an entity that is not known to have drifted.
         XCTAssertEqual(
             verdict(["PersistentWallet": b, "PersistentDocumentType": a, "PersistentIndex": a]),
-            .newerThanRegistered(reason: "unexpected_entity_drift=PersistentWallet")
+            .unplaceable(reason: "unexpected_entity_drift=PersistentWallet")
         )
         // Mixed: known drift plus one unexpected entity still refuses.
         XCTAssertEqual(
             verdict(["PersistentWallet": b, "PersistentDocumentType": knownDocumentType, "PersistentIndex": a]),
-            .newerThanRegistered(reason: "unexpected_entity_drift=PersistentWallet")
+            .unplaceable(reason: "unexpected_entity_drift=PersistentWallet")
+        )
+        XCTAssertEqual(
+            DashModelContainer.storeSchemaVerdict(
+                matchesRegisteredVersion: false,
+                storeEntityHashes: ["PersistentWallet": a],
+                storeVersionIdentifiers: ["1.0.0"],
+                registered: [],
+                currentEntities: current
+            ),
+            .unplaceable(reason: "no_registered_models"),
+            "no model built from any schema is a fact about this build, not the store"
         )
         XCTAssertEqual(
             verdict(["PersistentWallet": a], identifiers: ["9.0.0"]),
-            .newerThanRegistered(reason: "unregistered_version_identifier=9.0.0")
+            .unplaceable(reason: "unregistered_version_identifier=9.0.0"),
+            "an identifier we do not register may be pre-V1 or de-registered, not only future"
         )
         // Unplaceable, NOT a newer build: `open` must rethrow SwiftData's own
         // error for these rather than tell the user their wallet came from a

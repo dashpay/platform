@@ -473,11 +473,34 @@ public class PlatformWalletManager: ObservableObject {
     /// must not participate in `ensureSyncNativeOpAllowed`.
     private var activeCoreDiagnosticsNativeOpCount = 0
     /// Set by `shutdown()` before it drains `activeCoreDiagnosticsNativeOpCount`.
-    /// A diagnostic pass checks it before every FFI read, so the drain waits
-    /// for at most the one read already in flight — never for the rest of an
+    /// A diagnostic pass checks it before every stage, so the drain waits for
+    /// at most the one stage already in flight — never for the rest of an
     /// export — and a support export can never outlive the process it is
-    /// diagnosing. Never reset: a manager is shut down once.
+    /// diagnosing. Never reset: a manager is shut down once, and a pass that
+    /// has been told to stop must not be able to un-tell itself.
+    ///
+    /// Which is why `shutdown()` raises it only when there is a real teardown
+    /// or a pass to stop — see the call site. A never-configured manager takes
+    /// an UNCACHED no-op return from `shutdown()` precisely so it can still be
+    /// configured afterwards, and a one-way latch set on that path would
+    /// silence diagnostics for the rest of a perfectly live manager's life.
     let coreDiagnosticsCancellation = CoreDiagnosticsCancellation()
+
+    /// Diagnostic passes in flight, including the SwiftData half that runs
+    /// with no handle at all. `activeCoreDiagnosticsNativeOpCount` cannot
+    /// stand in for this: it counts only admitted FFI work, so it is zero in
+    /// exactly the unconfigured case whose database half still needs to be
+    /// told to stop.
+    private var activeCoreDiagnosticsPassCount = 0
+
+    func beginCoreDiagnosticsPass() {
+        activeCoreDiagnosticsPassCount += 1
+    }
+
+    func endCoreDiagnosticsPass() {
+        guard activeCoreDiagnosticsPassCount > 0 else { return }
+        activeCoreDiagnosticsPassCount -= 1
+    }
     private var nativeOpDrainContinuations: [CheckedContinuation<Void, Never>] = []
 
     /// Admission + bookkeeping shared by the async native entrypoints:
@@ -678,9 +701,18 @@ public class PlatformWalletManager: ObservableObject {
             // configured (`emitCoreWalletDiagnostics` runs its database half
             // with no handle), and the early return below would leave it with
             // no way to be told to stop — holding the queue, and every Rust
-            // persister callback entering through it, across teardown. The
-            // flag is one-way and costs nothing on the no-op path.
-            coreDiagnosticsCancellation.cancel()
+            // persister callback entering through it, across teardown.
+            //
+            // But only as conditionally as the shutdown state it accompanies:
+            // the guard's no-op return is deliberately UNCACHED so a manager
+            // built and shut down before `configure()` can still be configured
+            // later, and this latch is one-way, so raising it there would leave
+            // that live manager unable to produce a support export ever again.
+            // A real teardown, or a pass actually in flight, is the whole set
+            // of cases with something to cancel.
+            if handle != NULL_HANDLE || activeCoreDiagnosticsPassCount > 0 {
+                coreDiagnosticsCancellation.cancel()
+            }
             guard handle != NULL_HANDLE else {
                 // Never configured (or a test double without a handle):
                 // nothing to tear down. Do not cache this no-op: a manager
