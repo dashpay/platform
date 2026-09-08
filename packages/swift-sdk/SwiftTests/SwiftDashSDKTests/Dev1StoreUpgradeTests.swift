@@ -185,12 +185,17 @@ final class Dev1StoreUpgradeTests: XCTestCase {
         XCTAssertFalse(result.contains(storeURL.path), result)
     }
 
-    /// A store written by a newer build — here, one with an entity this SDK
-    /// does not have — fails the staged open like a drifted store does, but
-    /// must NOT be handed to inferred migration: that would open it and drop
-    /// the unknown entity's table without a word. The pre-fallback crash was
-    /// the safe outcome for a downgrade, and it must stay one.
-    func testStoreFromANewerSchemaIsRefusedWithoutFallback() throws {
+    /// A store carrying an entity this SDK does not have fails the staged open
+    /// like a drifted store does, but must NOT be handed to inferred
+    /// migration: that would open it and drop the entity's table without a
+    /// word. The pre-fallback crash was the safe outcome, and it stays one.
+    ///
+    /// It is refused as `unplaceable`, and the refusal carries no typed error:
+    /// an unknown entity name does not say which build is older. This SDK
+    /// renamed `PersistentUtxo` to `PersistentTxo`, so a store predating that
+    /// rename looks exactly like this one — and telling its owner to update
+    /// the app or reset the wallet would be wrong and destructive.
+    func testStoreWithAnUnknownEntityIsRefusedWithoutFallback() throws {
         let storeURL = directory.appendingPathComponent("DashModel.sqlite")
         try autoreleasepool {
             let newer = Schema(DashModelContainer.modelTypes + [FutureOnlyModel.self])
@@ -206,25 +211,25 @@ final class Dev1StoreUpgradeTests: XCTestCase {
             try context.save()
         }
 
-        guard case .newerThanRegistered(let reason) = DashModelContainer.classifyStore(at: storeURL)
+        guard case .unplaceable(let reason) = DashModelContainer.classifyStore(at: storeURL)
         else {
-            return XCTFail("a store with an unknown entity must classify as newer")
+            return XCTFail("a store with an unknown entity must classify as unplaceable")
         }
         XCTAssertTrue(reason.contains("FutureOnlyModel"), reason)
 
         XCTAssertThrowsError(try DashModelContainer.open(configuration(at: storeURL))) { error in
-            guard case DashModelContainerError.storeFromNewerBuild(let reason) = error else {
-                return XCTFail("a newer store must surface as the typed error, got \(error)")
-            }
-            XCTAssertTrue(reason.contains("FutureOnlyModel"), reason)
+            XCTAssertNil(
+                error as? DashModelContainerError,
+                "an unknown entity name carries no direction and must not claim one: \(error)"
+            )
         }
         XCTAssertTrue(try logLines(event: "core_store_staged_migration_failed").isEmpty)
         let result = try XCTUnwrap(try logLines(event: "core_store_open_result").last)
         XCTAssertTrue(result.contains(#"migration_path="staged""#), result)
         XCTAssertTrue(result.contains(#"result="failure""#), result)
-        XCTAssertTrue(result.contains("store_verdict=\"newer_than_registered:"), result)
-        // And the store is untouched: still newer, still refused.
-        guard case .newerThanRegistered = DashModelContainer.classifyStore(at: storeURL) else {
+        XCTAssertTrue(result.contains("store_verdict=\"unplaceable:unknown_entities="), result)
+        // And the store is untouched: still unplaceable, still refused.
+        guard case .unplaceable = DashModelContainer.classifyStore(at: storeURL) else {
             return XCTFail("a refused open must not rewrite the store")
         }
     }
@@ -405,7 +410,9 @@ final class Dev1StoreUpgradeTests: XCTestCase {
         )
         XCTAssertEqual(
             verdict(["PersistentWallet": a, "FutureOnlyModel": a]),
-            .newerThanRegistered(reason: "unknown_entities=FutureOnlyModel")
+            .unplaceable(reason: "unknown_entities=FutureOnlyModel"),
+            "an entity this schema lacks may be a newer build's addition or an "
+                + "older build's since-renamed model (PersistentUtxo -> PersistentTxo)"
         )
     }
 }

@@ -11,21 +11,11 @@ public enum DashModelContainerError: LocalizedError, Equatable {
     /// from the SDK's. `unexpected` names entities the SDK schema lacks;
     /// `missing` names SDK entities the configuration lacks.
     case schemaMismatch(unexpected: [String], missing: [String])
-    /// The store was written by a build with a newer schema than this SDK
-    /// registers (`reason` says how that was detected). Opening it with
-    /// inferred migration would silently drop what the newer build wrote,
-    /// so `open` refuses; the only safe ways forward are a newer build or a
-    /// wallet reset.
-    case storeFromNewerBuild(reason: String)
-
     public var errorDescription: String? {
         switch self {
         case .schemaMismatch(let unexpected, let missing):
             return "The store configuration's schema does not match the SDK schema"
                 + " (unexpected: \(unexpected.joined(separator: ", ")); missing: \(missing.joined(separator: ", ")))."
-        case .storeFromNewerBuild:
-            return "The wallet database on this device was written by a newer version of the app."
-                + " This version cannot open it without losing data; update the app, or reset the wallet."
         }
     }
 }
@@ -73,21 +63,25 @@ public enum DashModelContainer {
         /// lists (every v4.2.0-dev.1 store, until the remaining V1/V2 shapes
         /// are frozen). Inferred migration may open it.
         case driftedRegisteredVersion
-        /// Positively written by a NEWER build: the store carries an entity
-        /// this schema does not have, which nothing older could have created.
-        /// Inferred migration would open it and silently drop that entity's
-        /// table, so it must not run; the pre-fallback crash was the safe
-        /// outcome here. This is the only verdict the host may turn into
-        /// "update the app", because it is the only one whose evidence has a
-        /// direction — see `unplaceable` for why a hash disagreement does not.
-        case newerThanRegistered(reason: String)
         /// The metadata reads but does not place the store against any
-        /// registered version: no declared version identifier, or nothing to
-        /// compare it by. Inferred migration must not answer this either — an
-        /// unplaced store opened by inference is trimmed to the current schema
-        /// exactly like a downgrade — but it is NOT evidence of a newer build,
-        /// so the host must not be told to update or reset. SwiftData's own
-        /// error is passed through instead.
+        /// registered version. Inferred migration must not answer this — an
+        /// unplaced store opened by inference is trimmed to the current
+        /// schema, dropping whatever it cannot map — so `open` refuses and
+        /// rethrows SwiftData's own error.
+        ///
+        /// There is deliberately no "written by a newer build" verdict beside
+        /// this one. Nothing observable here carries a direction. A hash
+        /// disagreement says two shapes differ, not which came first. An
+        /// entity the current schema lacks looks identical whether a newer
+        /// build added it or an older build wrote one since renamed — and this
+        /// SDK has done exactly that rename (`PersistentUtxo` → `PersistentTxo`,
+        /// see the migration notes below), so the store that would have been
+        /// called "from the future" is one of the oldest that exists. An
+        /// unregistered version identifier is ambiguous for the same reason.
+        ///
+        /// So the classification says only that it cannot place the store,
+        /// never why, and the host has nothing to turn into a reset prompt.
+        /// `reason` still records which check refused, for the log.
         case unplaceable(reason: String)
 
         var logLabel: String {
@@ -95,7 +89,6 @@ public enum DashModelContainer {
             case .unreadable: return "unreadable"
             case .matchesRegisteredVersion: return "matches_registered_version"
             case .driftedRegisteredVersion: return "drifted_registered_version"
-            case .newerThanRegistered(let reason): return "newer_than_registered:\(reason)"
             case .unplaceable(let reason): return "unplaceable:\(reason)"
             }
         }
@@ -202,13 +195,14 @@ public enum DashModelContainer {
             return .unplaceable(reason: "no_entity_hashes")
         }
 
-        // An entity the current schema does not have can only have been
-        // written by a newer build — this is the one asymmetric fact
-        // available here, so it is the one verdict allowed to say "newer".
-        // Inferred migration would drop its table.
+        // An entity the current schema does not have. Inferred migration would
+        // drop its table, so the store is refused — but not as a newer build:
+        // a rename leaves an older store carrying a name this schema no longer
+        // has, and `PersistentUtxo` → `PersistentTxo` is one this SDK actually
+        // performed.
         let unknownEntities = Set(storeEntityHashes.keys).subtracting(currentEntities).sorted()
         if !unknownEntities.isEmpty {
-            return .newerThanRegistered(
+            return .unplaceable(
                 reason: "unknown_entities=\(unknownEntities.joined(separator: "|"))"
             )
         }
@@ -581,16 +575,12 @@ public enum DashModelContainer {
                 : .unreadable
             guard case .driftedRegisteredVersion = verdict else {
                 report(succeeded: false, migrationPath: .staged, error: error, storeVerdict: verdict)
-                // A newer build's store is the one refusal the host can act
-                // on, so it gets a typed error — and only it, because that
-                // error's text tells the user to update the app or reset the
-                // wallet, and resetting is destructive on a store that is
-                // merely unplaceable. `.unplaceable` and `.unreadable` are
-                // SwiftData's own failure, passed through untouched with the
-                // verdict in the log.
-                if case .newerThanRegistered(let reason) = verdict {
-                    throw DashModelContainerError.storeFromNewerBuild(reason: reason)
-                }
+                // No typed error for any of these. Every refusal here means
+                // "this store cannot be placed", never "this store is newer" —
+                // the evidence does not distinguish them — and only the second
+                // would justify telling a user to update or reset. SwiftData's
+                // own failure goes through untouched, with the verdict in the
+                // log for whoever reads the export.
                 throw error
             }
             SDKLogger.event(

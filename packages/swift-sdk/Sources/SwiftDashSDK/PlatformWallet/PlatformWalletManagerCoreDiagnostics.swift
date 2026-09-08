@@ -613,13 +613,20 @@ extension PlatformWalletPersistenceHandler {
                 return nil
             }
             if let allTransactions {
-                Self.auditCoinJoinOwnedBip44Outputs(
+                let gaveUp = Self.auditCoinJoinOwnedBip44Outputs(
                     wallet: wallet,
                     walletId: walletId,
                     checkpoint: checkpoint,
                     allTxos: allTxos,
-                    allTransactions: allTransactions
+                    allTransactions: allTransactions,
+                    isCancelled: { cancellation?.isCancelled == true }
                 )
+                // It stopped mid-loop rather than between stages, so the rest
+                // of the pass is abandoned the same way every other stage
+                // abandons it — the summary it did not emit is the signal.
+                if gaveUp, shutdownBegan(before: "owned_output_audit_interrupted") {
+                    return nil
+                }
             }
 
             if shutdownBegan(before: "asset_lock_snapshot") { return nil }
@@ -927,13 +934,19 @@ extension PlatformWalletPersistenceHandler {
     /// or one whose address row was never written, is attributable to nobody
     /// and lands in `unattributed_output_count` instead — which is why the
     /// summary reports that counter and the pool size next to the verdict.
+    /// - Parameter isCancelled: polled inside the long loops, not only around
+    ///   them. This is the most expensive stage in the pass — up to
+    ///   `exactAuditTransactionRows` decodes plus per-output relationship work
+    ///   — so a `shutdown()` that arrives mid-loop must not wait for the whole
+    ///   of it. Returns true if the audit gave up, and the caller says so.
     private static func auditCoinJoinOwnedBip44Outputs(
         wallet: PersistentWallet,
         walletId: Data,
         checkpoint: CoreWalletDiagnosticCheckpoint,
         allTxos: [PersistentTxo],
-        allTransactions: [PersistentTransaction]
-    ) {
+        allTransactions: [PersistentTransaction],
+        isCancelled: () -> Bool
+    ) -> Bool {
         // Match the wallet exactly as `walletTxos` does. Accepting only the
         // relationship would drop a CoinJoin row whose `account.wallet` link is
         // broken — the very corruption this audit exists to expose — and its
@@ -971,6 +984,7 @@ extension PlatformWalletPersistenceHandler {
             }
         }
         let bip44AddressCount = bip44Accounts.reduce(0) { $0 + $1.coreAddresses.count }
+        let coinJoinAddressCount = coinJoinAccounts.reduce(0) { $0 + $1.coreAddresses.count }
         let txoByOutpoint = Dictionary(grouping: allTxos, by: \.outpoint)
 
         var candidateCount = 0
@@ -997,10 +1011,11 @@ extension PlatformWalletPersistenceHandler {
                     "wallet_reference": .reference(walletId),
                 ]
             )
-            return
+            return false
         }
 
         for transaction in allTransactions {
+            if isCancelled() { return true }
             // A stub row with no consensus bytes is a real production state
             // (an orphaned upsert reads back as empty) — and the half-written
             // persistence #4438 is about. It cannot be decoded, so it cannot
@@ -1035,6 +1050,7 @@ extension PlatformWalletPersistenceHandler {
             candidateCount += 1
 
             for (index, output) in decoded.outputs.enumerated() {
+                if isCancelled() { return true }
                 guard let address = output.address else {
                     // Non-P2PKH/P2SH scriptPubKey: nothing to match against the
                     // address pool, so it is unclassified rather than foreign.
@@ -1142,7 +1158,15 @@ extension PlatformWalletPersistenceHandler {
         // change no longer inflates it.
         // A partially lost pool is not distinguishable from a small one here;
         // `bip44_address_pool_size` sits beside this flag for that reading.
+        // Both pools, now that both are audited. A wallet always has BIP44
+        // accounts, so an empty BIP44 pool is unconditionally wrong; CoinJoin
+        // accounts only exist on a mixed wallet, so an empty CoinJoin pool is
+        // only evidence when there are accounts that should have filled it.
+        // Without the second clause, widening `ownedAddresses` to CoinJoin
+        // would have added a fourth route to the false all-clear: a lost
+        // CoinJoin pool, on the mixed wallet this audit is written for.
         let addressPoolEmpty = bip44AddressCount == 0
+            || (!coinJoinAccounts.isEmpty && coinJoinAddressCount == 0)
         let auditIncomplete = decodeFailureCount > 0
             || transactionBytesMissingCount > 0
             || addressPoolEmpty
@@ -1154,6 +1178,7 @@ extension PlatformWalletPersistenceHandler {
                 "audit_incomplete": .boolean(auditIncomplete),
                 "bip44_address_pool_empty": .boolean(addressPoolEmpty),
                 "bip44_address_pool_size": .integer(Int64(bip44AddressCount)),
+                "coinjoin_address_pool_size": .integer(Int64(coinJoinAddressCount)),
                 "coinjoin_to_coinjoin_missing_count": .integer(Int64(missingCoinJoinCount)),
                 "coinjoin_to_coinjoin_missing_value_duffs": .unsignedInteger(missingCoinJoinValue),
                 "candidate_transaction_count": .integer(Int64(candidateCount)),
@@ -1200,6 +1225,7 @@ extension PlatformWalletPersistenceHandler {
                 )
             }
         }
+        return false
     }
 
     /// Picks the row that represents one outpoint when the table holds more
