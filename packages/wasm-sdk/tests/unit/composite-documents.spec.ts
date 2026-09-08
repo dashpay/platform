@@ -42,6 +42,15 @@ describe('composite document query input', () => {
       ['unknown sub-query fields', () => ({
         ...validQuery(), subQueries: [{ ...validQuery().subQueries[0], offset: 1 }],
       })],
+      ['limit on a counts sub-query', () => ({
+        ...validQuery(),
+        subQueries: [{
+          documentType: 'like',
+          kind: 'counts',
+          limit: 1,
+          bind: { sourceProperty: '$id', field: 'postId' },
+        }],
+      })],
       ['self binding', () => ({
         ...validQuery(),
         subQueries: [{

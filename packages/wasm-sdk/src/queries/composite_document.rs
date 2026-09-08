@@ -242,6 +242,11 @@ impl CompositeDocumentsQueryInput {
         }
         for (index, sub_query) in self.sub_queries.iter().enumerate() {
             if let Some(limit) = sub_query.limit {
+                if matches!(sub_query.kind, SubQueryKindInput::Counts) {
+                    return Err(WasmSdkError::invalid_argument(format!(
+                        "subQueries[{index}].limit is forbidden for counts sub-queries"
+                    )));
+                }
                 if limit == 0 || limit > u32::from(DEFAULT_QUERY_LIMIT) {
                     return Err(WasmSdkError::invalid_argument(format!(
                         "subQueries[{index}].limit must be between 1 and {DEFAULT_QUERY_LIMIT}"
@@ -510,6 +515,16 @@ mod tests {
             let mut sub = query_json();
             sub["subQueries"][0]["limit"] = json!(limit);
             assert_invalid_before_fetch(sub).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn should_reject_limits_on_count_sub_queries_before_fetching() {
+        for limit in [1, u32::from(DEFAULT_QUERY_LIMIT)] {
+            let mut value = query_json();
+            value["subQueries"][0]["kind"] = json!("counts");
+            value["subQueries"][0]["limit"] = json!(limit);
+            assert_invalid_before_fetch(value).await;
         }
     }
 

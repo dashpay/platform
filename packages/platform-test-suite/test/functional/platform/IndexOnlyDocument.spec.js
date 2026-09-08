@@ -344,6 +344,24 @@ describe('Platform', () => {
     });
 
     it('should fetch a feed page with its like counts and my likes through a composite query', async () => {
+      // The same owner also likes a post outside this page. Without the
+      // $id-to-postId binding, the owner filter would return both likes.
+      const otherPost = await client.platform.documents.create(
+        'yappr.post',
+        identity,
+        { hashtag: 'otherhashtag', message: 'a post outside the feed page' },
+      );
+      await client.platform.documents.broadcast({ create: [otherPost] }, identity);
+      await waitForSTPropagated();
+
+      const otherLike = await client.platform.documents.create(
+        'yappr.like',
+        identity,
+        { hashtag: 'otherhashtag', postId: otherPost.getId() },
+      );
+      await client.platform.documents.broadcast({ create: [otherLike] }, identity);
+      await waitForSTPropagated();
+
       // A page plus the sub-queries derived from it, ONE merged proof:
       // the dash posts, one like count per post (from the countable
       // [hashtag, postId] index with hashtag fixed), and which of them
@@ -352,7 +370,7 @@ describe('Platform', () => {
       // The WASM SDK bootstraps the page from the proof, re-derives
       // every sub-query, and verifies the composition against the
       // quorum-signed root.
-      const { sdk: evoSdk } = await createPlatformProofVerifier
+      const { evo, sdk: evoSdk } = await createPlatformProofVerifier
         .getEvoSdkForNetwork(process.env.NETWORK);
 
       const page = await evoSdk.documents.composite({
@@ -388,6 +406,8 @@ describe('Platform', () => {
       expect(myLikes.kind).to.equal('documents');
       expect(myLikes.documents).to.have.lengthOf(1);
       expect(myLikes.documents[0].ownerId.toBase58()).to.equal(identity.getId().toString());
+      expect(identifierLikeToBase58(evo, myLikes.documents[0].properties.postId))
+        .to.equal(pagePost.id.toBase58());
     });
 
     it('should fail to query a subset-index projection without proofs', async () => {
