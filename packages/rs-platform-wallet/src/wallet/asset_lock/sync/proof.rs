@@ -368,9 +368,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         loop {
             // Arm the `Notify` future BEFORE the state check, closing
-            // the missed-wakeup race in dashpay/platform#3641
-            // (Found-008): `notify_waiters()` only wakes already-
-            // registered waiters and does NOT store a permit, so a
+            // the missed-wakeup race: `notify_waiters()` only wakes
+            // already-registered waiters and does NOT store a permit, so a
             // CL/IS event arriving in the gap between "no proof yet"
             // and the `.await` below would be discarded and we'd
             // sleep until `FinalityTimeout`. Calling `enable()` on
@@ -473,9 +472,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         loop {
             iter += 1;
             // Arm the `Notify` future BEFORE the state check, closing
-            // the missed-wakeup race in dashpay/platform#3641
-            // (Found-008): `notify_waiters()` only wakes already-
-            // registered waiters and does NOT store a permit, so an
+            // the missed-wakeup race: `notify_waiters()` only wakes
+            // already-registered waiters and does NOT store a permit, so an
             // IS/CL event arriving in the gap between "no proof yet"
             // and the `.await` below would be discarded and we'd
             // sleep until `FinalityTimeout`. Calling `enable()` on

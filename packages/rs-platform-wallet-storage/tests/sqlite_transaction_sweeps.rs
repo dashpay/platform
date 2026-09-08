@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Coverage for `core_state::apply`'s handling of `CoreChangeSet::swept_transactions`
+//! Coverage for `core_state::apply`'s handling of `CoreChangeSet::sweeps`
 //! (the subtractive sweep-removal field — see `core_state.rs::apply_sweep`).
 //!
 //! Exercises the writer directly through `core_state::apply` on a hand-rolled
@@ -118,7 +118,7 @@ use rusqlite::OptionalExtension;
 /// `core_transactions` row and every `core_utxos` row it created go, even
 /// though `records` / `new_utxos` / everything else on the changeset is
 /// empty. This is the guard against the bug the review finding described —
-/// `apply` skipping `swept_transactions` entirely because every other
+/// `apply` skipping `sweeps` entirely because every other
 /// `if !cs.<field>.is_empty()` block was false.
 #[test]
 fn sweep_only_changeset_deletes_loser_row_and_its_outputs() {
@@ -3277,47 +3277,423 @@ fn an_unstamped_tombstone_restamped_by_a_block_context_sweep_becomes_collectible
     );
 }
 
-/// Legacy shape self-heal: a zero-value released placeholder written
-/// before the release path deleted them (`height` NULL, `spent = 0`) holds
-/// no claim and is swept up by the collector's first pass — chainlock or
-/// not — instead of reading as a phantom spendable coin forever.
+/// The valve is scoped to the held PLACEHOLDER shape. A materialised coin
+/// (`height` set) is the wallet's own: it knows the funding, and any
+/// network-final spender of a coin it knows is wallet-relevant (BIP158
+/// matches the input's prevout script), so its view of `spent` is
+/// authoritative. When it re-delivers such a coin unspent — the winner
+/// that held it was reorged out — the store must not keep the hold, or a
+/// real coin is locked out forever: nothing but a release clears a
+/// materialised row, and the reorged winner will never sweep again.
 #[test]
-fn a_legacy_released_placeholder_is_swept_up_by_the_collector() {
+fn a_materialised_coin_the_wallet_re_delivers_unspent_is_released_from_its_hold() {
     let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xF6);
+    let w: WalletId = wid(0xFA);
     ensure_wallet_meta(&persister, &w);
 
-    let p = OutPoint::new(Txid::from_byte_array([0x60; 32]), 0);
-    let mut conn = persister.lock_conn_for_test();
-    // Plant the pre-fix shape directly — the current release path can no
-    // longer produce it.
-    {
-        let bytes = blob::encode_outpoint(&p).unwrap();
-        conn.execute(
-            "INSERT INTO core_utxos \
-                (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
-             VALUES (?1, ?2, 0, X'', NULL, 0, 0, NULL)",
-            params![w.as_slice(), &bytes[..]],
-        )
-        .unwrap();
-    }
-    assert!(
-        unspent(&conn, &w).contains(&p),
-        "sanity: the legacy phantom"
-    );
+    let addr = p2pkh(0x0A);
+    let funding_txid = Txid::from_byte_array([0xA0; 32]);
+    let x = OutPoint::new(funding_txid, 0);
+    let loser = Txid::from_byte_array([0xA1; 32]);
+    let winner = Txid::from_byte_array([0xA2; 32]);
 
+    let mut conn = persister.lock_conn_for_test();
+    derive_address(&conn, &w, 0, &addr);
+    // The coin is known (materialised) and a loser spends it.
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            last_processed_height: Some(100),
-            synced_height: Some(100),
+            records: vec![tx_record(loser, vec![x], vec![])],
+            new_utxos: vec![make_utxo(&addr, funding_txid, 0, 1_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    // An in-block winner sweeps the loser and holds the coin.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser],
+                superseded_by: winner,
+                winner_mined_height: Some(WINNER_HEIGHT),
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(
+        utxo_row_state(&conn, &w, &x),
+        Some((true, Some(10), None)),
+        "sanity: the sweep holds the materialised coin, unstamped"
+    );
+
+    // The winner's block is reorged out; the wallet re-delivers the coin
+    // as unspent through the ordinary UTXO path.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, funding_txid, 0, 1_000)],
             ..Default::default()
         };
         core_state::apply(&tx, &w, &cs).unwrap();
         tx.commit().unwrap();
     }
     assert!(
-        !row_exists(&conn, &w, &p),
-        "the first height-carrying round deletes the claimless leftover"
+        unspent(&conn, &w).contains(&x),
+        "a materialised coin follows the wallet: the hold must not survive \
+         the wallet handing the coin back"
+    );
+    let link: Option<Vec<u8>> = {
+        let bytes = blob::encode_outpoint(&x).unwrap();
+        conn.query_row(
+            "SELECT spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            params![w.as_slice(), &bytes[..]],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(link, None, "and the stale claim is cleared with it");
+}
+
+/// The hold on a placeholder does not depend on `spent_in_txid`. The V001
+/// trigger `setnull_core_utxos_on_tx_delete` nulls that link whenever the
+/// named winner's own `core_transactions` row is deleted — and a winner
+/// can lose a later sweep on an input the placeholder is NOT one of, so
+/// the input loop never re-points it. The row must stay held through
+/// that, keep its stamp, refuse the funding upsert, and still be
+/// collected at its stamp.
+#[test]
+fn a_placeholder_stays_held_after_the_trigger_nulls_its_link() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xFB);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x0B);
+    let funding_txid = Txid::from_byte_array([0xB0; 32]);
+    let x = OutPoint::new(funding_txid, 0); // unfunded, held
+    let y = OutPoint::new(Txid::from_byte_array([0xB1; 32]), 0); // W and W2 conflict here
+    let loser = Txid::from_byte_array([0xB2; 32]); // L spends X
+    let winner = Txid::from_byte_array([0xB3; 32]); // W spends Y, sweeps L
+    let second_winner = Txid::from_byte_array([0xB4; 32]); // W2 spends Y, sweeps W
+
+    let mut conn = persister.lock_conn_for_test();
+    derive_address(&conn, &w, 0, &addr);
+    // L spends X (no funding row); W is on record spending Y only.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![
+                tx_record(loser, vec![x], vec![]),
+                tx_record(winner, vec![y], vec![]),
+            ],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    // W sweeps L; X is held under W (not released — upstream says a
+    // surviving record still claims it).
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser],
+                superseded_by: winner,
+                winner_mined_height: Some(WINNER_HEIGHT),
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(
+        utxo_row_state(&conn, &w, &x),
+        Some((true, None, Some(i64::from(WINNER_HEIGHT)))),
+        "sanity: X is a held, stamped placeholder"
+    );
+    // W2 sweeps W on Y. W's row goes, the trigger nulls X's link, and W's
+    // input loop touches only Y.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![winner],
+                superseded_by: second_winner,
+                winner_mined_height: Some(WINNER_HEIGHT + 5),
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    let link: Option<Vec<u8>> = {
+        let bytes = blob::encode_outpoint(&x).unwrap();
+        conn.query_row(
+            "SELECT spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            params![w.as_slice(), &bytes[..]],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(link, None, "sanity: the trigger nulled the link");
+    assert_eq!(
+        utxo_row_state(&conn, &w, &x),
+        Some((true, None, Some(i64::from(WINNER_HEIGHT)))),
+        "the hold and its stamp survive the link going"
+    );
+
+    // The funding output arrives: the link-less placeholder must still
+    // refuse to flip unspent.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, funding_txid, 0, 1_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert!(
+        !unspent(&conn, &w).contains(&x),
+        "a held placeholder keeps its hold through the funding upsert even \
+         with no spender linked — the shape is the claim, not the link"
+    );
+}
+
+/// The same row, collected instead of funded: with the link gone the
+/// stamp alone must still key the row's lifetime. (A pin rather than a
+/// regression test — the collector never read the link — so the shape
+/// the test above establishes cannot be quietly re-keyed on it.)
+#[test]
+fn a_placeholder_with_a_nulled_link_is_still_collected_at_its_stamp() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xFC);
+    ensure_wallet_meta(&persister, &w);
+
+    let x = OutPoint::new(Txid::from_byte_array([0xC0; 32]), 0);
+    let y = OutPoint::new(Txid::from_byte_array([0xC1; 32]), 0);
+    let loser = Txid::from_byte_array([0xC2; 32]);
+    let winner = Txid::from_byte_array([0xC3; 32]);
+    let second_winner = Txid::from_byte_array([0xC4; 32]);
+
+    let mut conn = persister.lock_conn_for_test();
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![
+                tx_record(loser, vec![x], vec![]),
+                tx_record(winner, vec![y], vec![]),
+            ],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    for (txids, superseded_by) in [(vec![loser], winner), (vec![winner], second_winner)] {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids,
+                superseded_by,
+                winner_mined_height: Some(WINNER_HEIGHT),
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    apply_heights(&mut conn, &w, WINNER_HEIGHT - 1);
+    assert!(row_exists(&conn, &w, &x), "below the stamp the hold stays");
+    apply_heights(&mut conn, &w, WINNER_HEIGHT);
+    assert!(
+        !row_exists(&conn, &w, &x),
+        "the boundary reaching the stamp collects the link-less hold"
+    );
+}
+
+/// A delivery through `spent_utxos` is still a delivery: the wallet knows
+/// the coin and knows it spent. Landing on a held placeholder it must
+/// materialise the row — real funding data, `height` set, stamp cleared —
+/// not just mark it, or the collector would later delete the only durable
+/// record of the spend and a rescan re-delivery would land the coin
+/// unspent.
+#[test]
+fn a_spent_delivery_materialises_a_held_placeholder_out_of_the_collectors_reach() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xFD);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x0D);
+    let funding_txid = Txid::from_byte_array([0xD0; 32]);
+    let x = OutPoint::new(funding_txid, 0);
+    let loser = Txid::from_byte_array([0xD1; 32]);
+    let winner = Txid::from_byte_array([0xD2; 32]);
+
+    let mut conn = persister.lock_conn_for_test();
+    derive_address(&conn, &w, 0, &addr);
+    seed_tombstone(&mut conn, &w, x, loser, winner, Some(WINNER_HEIGHT));
+    assert_eq!(
+        utxo_row_state(&conn, &w, &x),
+        Some((true, None, Some(i64::from(WINNER_HEIGHT)))),
+        "sanity: a stamped placeholder"
+    );
+
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            spent_utxos: vec![make_utxo(&addr, funding_txid, 0, 1_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(
+        utxo_row_state(&conn, &w, &x),
+        Some((true, Some(10), None)),
+        "the spent delivery materialises the row: funding height set, stamp cleared"
+    );
+
+    apply_heights(&mut conn, &w, WINNER_HEIGHT + 100);
+    assert!(
+        row_exists(&conn, &w, &x),
+        "a materialised spent row is permanently outside the collector's reach"
+    );
+    assert!(!unspent(&conn, &w).contains(&x), "and it stays spent");
+}
+
+/// The by-outpoint release pass must not resurrect an output of a
+/// transaction swept in the same round. With BOTH the parent's and the
+/// child's records lost — the record-loss case the pass exists for —
+/// nothing in the loser loop removes the parent's materialised output, and
+/// upstream (which saw no surviving claimant) names it released. Releasing
+/// it in place would hand back a spendable coin from a transaction that
+/// can never confirm; the pass deletes it instead, as the loop would have.
+#[test]
+fn a_release_naming_an_output_of_a_co_swept_parent_deletes_it_rather_than_freeing_it() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xFE);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x0E);
+    let parent_txid = Txid::from_byte_array([0xE0; 32]); // P — record lost
+    let child_txid = Txid::from_byte_array([0xE1; 32]); // C — record lost
+    let winner_txid = Txid::from_byte_array([0xE2; 32]);
+    let parent_output = OutPoint::new(parent_txid, 0);
+
+    let mut conn = persister.lock_conn_for_test();
+    derive_address(&conn, &w, 0, &addr);
+    // The parent's output materialised and was marked spent by the child
+    // before both records were lost.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, parent_txid, 0, 5_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            spent_utxos: vec![make_utxo(&addr, parent_txid, 0, 5_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(
+        utxo_row_state(&conn, &w, &parent_output),
+        Some((true, Some(10), None)),
+        "sanity: a materialised, spent parent output with no record behind it"
+    );
+
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![parent_txid, child_txid],
+                superseded_by: winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
+                released_outpoints: vec![parent_output],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert!(
+        !unspent(&conn, &w).contains(&parent_output),
+        "a dead parent's output must never come back as spendable through a release"
+    );
+    assert!(
+        !row_exists(&conn, &w, &parent_output),
+        "it is deleted, exactly as the loser loop deletes a co-swept parent's output"
+    );
+}
+
+/// Pin for the one same-round shape this store decides on its own: a
+/// changeset carrying both a record and a sweep of the same txid ends
+/// with the transaction gone. `CoreChangeSet::merge` coalesces records
+/// and appends sweeps, so the store cannot tell "arrived, then lost"
+/// from "lost, then reinstated" — it always runs sweeps last and lets
+/// the sweep win. That is correct for the first, common shape (a loser
+/// that arrived and lost inside one drain). The second shape never
+/// reaches the store: the producer's `merge` retracts a swept txid when
+/// a later record reinstates it (dashpay/platform#4560), so a folded
+/// reinstatement arrives as a record with no sweep beside it — the
+/// separate-rounds case `a_record_reinstating_a_swept_txid_in_a_later_round_…`
+/// already covers.
+#[test]
+fn a_record_and_its_sweep_in_one_round_end_with_the_transaction_gone() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xFF);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x0F);
+    let loser = Txid::from_byte_array([0xF0; 32]);
+    let winner = Txid::from_byte_array([0xF1; 32]);
+    let loser_output = OutPoint::new(loser, 0);
+
+    let mut conn = persister.lock_conn_for_test();
+    derive_address(&conn, &w, 0, &addr);
+    let tx = conn.transaction().unwrap();
+    let cs = CoreChangeSet {
+        records: vec![tx_record(
+            loser,
+            vec![],
+            vec![TxOut {
+                value: 1_000,
+                script_pubkey: addr.script_pubkey(),
+            }],
+        )],
+        new_utxos: vec![make_utxo(&addr, loser, 0, 1_000)],
+        sweeps: vec![SweepBatch {
+            txids: vec![loser],
+            superseded_by: winner,
+            winner_mined_height: Some(WINNER_HEIGHT),
+            released_outpoints: vec![],
+        }],
+        ..Default::default()
+    };
+    core_state::apply(&tx, &w, &cs).unwrap();
+    tx.commit().unwrap();
+
+    assert!(
+        core_state::get_tx_record(&conn, &w, &loser)
+            .unwrap()
+            .is_none(),
+        "the sweep runs last and removes the record written in the same round"
+    );
+    assert!(
+        !row_exists(&conn, &w, &loser_output),
+        "and the output the same round delivered goes with it"
     );
 }

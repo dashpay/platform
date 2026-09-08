@@ -384,12 +384,13 @@ impl IdentityWallet {
         // the verdict below. Every `?` in here is a LOCAL fault — a wallet that
         // left the manager, a persistence write that failed — not a probe that
         // went unanswered, and each of them abandons the scan part-way through
-        // the index space. Returning straight out left no verdict at all, and
-        // "unknown" is what keeps the warm-launch shortcut: the next launch saw
-        // the identities this scan had already folded in, took the shortcut,
-        // and never looked at the indices it never reached. That is #4365's
-        // shape on the local-fault path, so the error is carried out to the
-        // publish below rather than thrown from the middle of the walk.
+        // the index space. Returning straight out would leave no verdict at
+        // all, and "unknown" is what keeps the warm-launch shortcut: the next
+        // launch sees the identities this scan already folded in, takes the
+        // shortcut, and never looks at the indices it never reached. That is
+        // the missed-identity shape on the local-fault path, so the error is
+        // carried out to the publish below rather than thrown from the middle
+        // of the walk.
         let scan_outcome: Result<(), PlatformWalletError> = async {
             while tally.should_continue(gap_limit) {
                 // Derive the MASTER auth pubkey hash for this identity index
@@ -687,9 +688,9 @@ impl IdentityWallet {
 ///
 /// A scan answers "which identities does this seed own", and there are three
 /// endings, not two: it found some, it confirmed there are none, or it never
-/// got an answer. The third used to be reported as the second — a failed probe
-/// incremented the same miss counter as an empty index, so a scan that reached
-/// no one at all returned "this seed owns no identity". Callers cannot retry
+/// got an answer. The third must not be reported as the second: if a failed
+/// probe incremented the same miss counter as an empty index, a scan that
+/// reached no one at all would return "this seed owns no identity". Callers cannot retry
 /// what they were told is a definitive answer, so a few seconds of network
 /// trouble after restore-from-seed cost a whole session's DashPay state.
 ///
@@ -1139,10 +1140,10 @@ mod tests {
         assert!(!tally.is_trustworthy());
     }
 
-    /// The #4365 shape: an identity at index 0, no answer at index 1. The
-    /// scan is trustworthy — its findings are real — and it is NOT complete,
-    /// and those are different questions. Reporting only the first is what let
-    /// an identity at the unanswered index stay hidden for the life of an
+    /// The missed-identity shape: an identity at index 0, no answer at index
+    /// 1. The scan is trustworthy — its findings are real — and it is NOT
+    /// complete, and those are different questions. Reporting only the first
+    /// lets an identity at the unanswered index stay hidden for the life of an
     /// installation.
     #[test]
     fn a_scan_that_found_something_despite_a_failed_probe_is_trustworthy_but_incomplete() {
@@ -1348,11 +1349,11 @@ mod tests {
     /// probe hash from resident key material, and this wallet is
     /// external-signable (its seed lives outside the manager), so the derive
     /// fails on the first index. That is one of the `?` early returns above
-    /// `publish_scan_verdict`, and before this fix every one of them returned
-    /// without publishing anything at all: the previous verdict stood, and a
-    /// verdict that says "complete" is exactly what keeps the warm-launch
-    /// shortcut armed. The wallet would then trust an index space this scan
-    /// abandoned — #4365's shape reached from the local-fault side.
+    /// `publish_scan_verdict`; if any of them returned without publishing
+    /// anything at all, the previous verdict would stand, and a verdict that
+    /// says "complete" is exactly what keeps the warm-launch shortcut armed.
+    /// The wallet would then trust an index space this scan abandoned — the
+    /// missed-identity shape reached from the local-fault side.
     #[tokio::test]
     async fn a_local_fault_mid_scan_replaces_a_stale_complete_verdict() {
         use crate::changeset::IdentityScanStateEntry;

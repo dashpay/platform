@@ -1,9 +1,9 @@
 use crate::version::drive_versions::drive_verify_method_versions::{
     DriveVerifyAddressFundsMethodVersions, DriveVerifyChainedDocumentMethodVersions,
-    DriveVerifyContractMethodVersions, DriveVerifyDocumentCountMethodVersions,
-    DriveVerifyDocumentMethodVersions, DriveVerifyDocumentRankedMethodVersions,
-    DriveVerifyDocumentSumMethodVersions, DriveVerifyGroupMethodVersions,
-    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
+    DriveVerifyCompositeDocumentMethodVersions, DriveVerifyContractMethodVersions,
+    DriveVerifyDocumentCountMethodVersions, DriveVerifyDocumentMethodVersions,
+    DriveVerifyDocumentRankedMethodVersions, DriveVerifyDocumentSumMethodVersions,
+    DriveVerifyGroupMethodVersions, DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
     DriveVerifyShieldedMethodVersions, DriveVerifySingleDocumentMethodVersions,
     DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions,
     DriveVerifyTokenMethodVersions, DriveVerifyVoteMethodVersions,
@@ -23,6 +23,9 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
     },
     chained_document: DriveVerifyChainedDocumentMethodVersions {
         verify_chained_documents_proof: 0,
+    },
+    composite_document: DriveVerifyCompositeDocumentMethodVersions {
+        verify_composite_documents_proof: 0,
     },
     document_count: DriveVerifyDocumentCountMethodVersions {
         verify_aggregate_count_proof: 0,
