@@ -715,6 +715,15 @@ public class PlatformWalletManager: ObservableObject {
     deinit {
         progressPollTask?.cancel()
         walletPollTask?.cancel()
+        // Same staleness stop `shutdown()` makes: cancelling the tasks does
+        // not reach work already dispatched on the poll queues, and the
+        // teardown below runs concurrently with it now that the reads no
+        // longer hold the registry guard. Without this bump a tick in
+        // flight would issue its whole remaining set of reads against the
+        // handle being destroyed, safe only by virtue of handles never
+        // being reused — an allocator property, not a guarantee this code
+        // makes.
+        pollEpoch.bump()
         // Emergency fallback ONLY. The supported teardown path is an explicit
         // `await shutdown()` before dropping the last reference — it takes the
         // handle exactly once and runs the blocking native teardown off-main

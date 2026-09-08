@@ -346,6 +346,23 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         await manager.shutdown()
     }
 
+    /// Dropping a manager without an explicit `shutdown()` — the documented
+    /// emergency fallback — must stop poll work already dispatched from
+    /// issuing further reads, exactly as `shutdown()` does.
+    func testDeinitStopsFurtherPollReads() {
+        let epoch: SyncGenerationCounter
+        let before: UInt64
+        do {
+            let manager = PlatformWalletManager.makeForTesting(
+                handle: 96, calls: Self.makeTeardownCalls())
+            epoch = manager.pollEpoch
+            before = epoch.current()
+        }
+        XCTAssertGreaterThan(
+            epoch.current(), before,
+            "deinit must bump the poll epoch so an in-flight tick stops reading")
+    }
+
     /// The FFI's in-band "no tip" is a successful read that publishes `nil`;
     /// a thrown read keeps whatever tip was published before.
     func testFailedTipReadKeepsThePublishedTipButNoTipPublishesNil() {
