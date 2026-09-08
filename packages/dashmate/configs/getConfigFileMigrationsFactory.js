@@ -1717,16 +1717,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
               );
             }
-          });
 
-        return configFile;
-      },
-      '4.2.1': (configFile) => {
-        // Keyed above 4.2.0 rather than added to it: a config written by a
-        // development build of this cycle is already stamped 4.2.0 and would
-        // skip anything keyed there.
-        Object.entries(configFile.configs)
-          .forEach(([, options]) => {
             // The Tor sidecar is new and on by default, and an existing node
             // gets it too: the next start pulls the image and Core registers
             // its onion service. Each node gets its own control password, as

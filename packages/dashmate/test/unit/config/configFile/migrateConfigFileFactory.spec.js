@@ -282,11 +282,9 @@ describe('migrateConfigFileFactory', () => {
     }
   });
 
-  it('should add and enable the Tor section on a config a development build stamped 4.2.0', async () => {
-    // Development builds of the 4.2.0 cycle stamp configs at 4.2.0, the newest
-    // migration key at the time, so the section has to be added by a key above
-    // it. Loading is what fails without it: the schema requires the section.
-    const fromVersion = '4.2.0';
+  it('should add and enable the Tor section on a 4.1.x config', async () => {
+    // Loading is what fails without it: the schema requires the section.
+    const fromVersion = '4.1.1';
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
     const baseConfig = container.resolve('defaultConfigs').get('base');
@@ -314,7 +312,7 @@ describe('migrateConfigFileFactory', () => {
   });
 
   it('should leave an existing Tor section alone when re-migrating', async () => {
-    const fromVersion = '4.2.0';
+    const fromVersion = '4.1.1';
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
     const baseConfig = container.resolve('defaultConfigs').get('base');
