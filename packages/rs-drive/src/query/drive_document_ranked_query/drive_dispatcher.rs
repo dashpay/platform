@@ -131,7 +131,7 @@ impl Drive {
     /// Errors:
     /// - Request-shape failures (wrong `group_by` arity, an `order_by`
     ///   that does not name the `select`'s aggregate, a missing or
-    ///   out-of-range `limit`, a `where` clause, a `having`) come back
+    ///   out-of-range `limit`, a malformed `where` pin, a `having`) come back
     ///   as `Error::Query(QuerySyntaxError::*)` —
     ///   see [`super::mode_detection::detect_ranked_mode_v0`] for the
     ///   full grammar.

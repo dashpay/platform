@@ -69,6 +69,26 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// across restarts. Mirrors
     /// `PersistenceCapabilities::TRACKED_MASTERNODES`.
     public static let trackedMasternodes: UInt64 = 1 << 10
+    /// A round's sweep batches — delivered through the persistence
+    /// extension's size-negotiated sweep callback — are durably applied
+    /// batch by batch and in order: swept transactions and their outputs
+    /// are excluded from every restore and enumeration path (physical
+    /// deletion or a durable marker alike), released outpoints are freed
+    /// unless a surviving claim supersedes, and non-released spend claims
+    /// are retained durably. Mirrors
+    /// `PersistenceCapabilities::CORE_SWEEP_REMOVAL`; Rust only honours
+    /// the declaration when the extension actually carries the callback.
+    public static let coreSweepRemoval: UInt64 = 1 << 11
+    /// DashPay payment rows delivered on a store round
+    /// (`dashpay_payments_overlay`) are durably applied. This is what the
+    /// wallet-event adapter keys on before coupling a sweep's
+    /// `Pending → Failed` payment flip to the sweep's own atomic round —
+    /// a non-attesting host (Android keeps payment recording
+    /// in-memory-only) gets the in-memory flip with nothing
+    /// round-coupled. Mirrors `PersistenceCapabilities::DASHPAY_PAYMENTS`;
+    /// Rust only honours the declaration when the payments callback is
+    /// actually wired.
+    public static let dashpayPayments: UInt64 = 1 << 12
 
     public let version: UInt32
     public let bits: UInt64
@@ -2111,6 +2131,17 @@ public class PlatformWalletManager: ObservableObject {
     /// Called from `loadFromPersistor` after every wallet is
     /// inserted. App-foreground / network-reconnect callers can
     /// invoke this directly to retry whatever was still pending.
+    ///
+    /// Safe to call before SPV is up, and hosts must not add a
+    /// readiness gate of their own here. Load runs before
+    /// `platform_wallet_manager_start_spv`, so a lock still at
+    /// `Built` would otherwise take a never-sent rejection and — with
+    /// nothing rescheduling the catch-up — stay stranded for the
+    /// session. Rust's `resume_asset_lock` gives the SPV transport a
+    /// bounded chance to come up before it broadcasts. Gating here
+    /// would delay the locks that need no broadcast at all, and a gate
+    /// that waited on the same thread pool the host needs to *reach*
+    /// `startSpv` would delay the transport it is waiting for.
     public func catchUpStuckAssetLocks(wallets: [ManagedPlatformWallet]) {
         guard let persistenceHandler = persistenceHandler else { return }
         for wallet in wallets {
