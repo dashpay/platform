@@ -63,6 +63,9 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
+        #[cfg(debug_assertions)]
+        let mut laps = crate::perf::Laps::new();
+
         let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
 
         let block_state_info = block_execution_context.block_state_info();
@@ -93,6 +96,9 @@ where
             .map_err(AbciError::from)?
             .try_into()
             .expect("invalid sha256 length");
+
+        #[cfg(debug_assertions)]
+        laps.lap("fbp_msg_hash");
 
         //// Verification that commit is for our current executed block
         // When receiving the finalized block, we need to make sure info matches our current block
@@ -136,6 +142,9 @@ where
             return Ok(validation_result.into());
         }
 
+        #[cfg(debug_assertions)]
+        laps.lap("fbp_basic_checks");
+
         // Verify votes extensions
         // We don't need to verify votes extension signatures once again after tenderdash
         // here, because we will do it bellow broadcasting withdrawal transactions.
@@ -153,6 +162,9 @@ where
 
             return Ok(validation_result.into());
         };
+
+        #[cfg(debug_assertions)]
+        laps.lap("fbp_vote_ext");
 
         // Verify commit
 
@@ -188,6 +200,9 @@ where
             }
         }
 
+        #[cfg(debug_assertions)]
+        laps.lap("fbp_verify_commit");
+
         if height == self.config.abci.genesis_height {
             self.drive
                 .set_genesis_time(block_state_info.block_time_ms());
@@ -205,12 +220,19 @@ where
 
         to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
-        if !transaction_to_extension_matches.is_empty() {
+        #[cfg(debug_assertions)]
+        laps.lap("fbp_block_info");
+
+        let broadcast_withdrawals = !transaction_to_extension_matches.is_empty();
+        if broadcast_withdrawals {
             self.append_signatures_and_broadcast_withdrawal_transactions(
                 transaction_to_extension_matches,
                 platform_version,
             )?;
         }
+
+        #[cfg(debug_assertions)]
+        laps.lap_if(broadcast_withdrawals, "fbp_wd_broadcast");
 
         // Update platform (drive abci) state
 
@@ -225,11 +247,20 @@ where
         }
         .into();
 
+        #[cfg(debug_assertions)]
+        laps.lap("fbp_ext_block_info");
+
         self.update_drive_cache(&block_execution_context, platform_version)?;
+
+        #[cfg(debug_assertions)]
+        laps.lap("fbp_drive_cache");
 
         // Check if we should create a checkpoint (must be done before consuming block_execution_context)
         let checkpoint_needed =
             self.should_checkpoint(&block_execution_context, platform_version)?;
+
+        #[cfg(debug_assertions)]
+        laps.lap("fbp_should_checkpoint");
 
         let block_platform_state = block_execution_context.block_platform_state_owned();
 
@@ -239,6 +270,9 @@ where
             transaction,
             platform_version,
         )?;
+
+        #[cfg(debug_assertions)]
+        laps.lap("fbp_state_cache");
 
         // Gather some metrics
         crate::metrics::abci_last_block_time(block_header.time.seconds as u64);

@@ -70,6 +70,9 @@ where
         timer: Option<&HistogramTiming>,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
+        #[cfg(debug_assertions)]
+        let mut laps = crate::perf::Laps::new();
+
         tracing::trace!(
             method = "run_block_proposal_v0",
             ?block_proposal,
@@ -158,6 +161,9 @@ where
             platform_version,
         )?;
 
+        #[cfg(debug_assertions)]
+        laps.lap("upgrade");
+
         // If there is a core chain lock update, we should start by verifying it
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
             if !known_from_us {
@@ -242,6 +248,13 @@ where
             }
         }
 
+        // The verification only runs for a chain lock we did not propose ourselves.
+        #[cfg(debug_assertions)]
+        laps.lap_if(
+            core_chain_lock_update.is_some() && !known_from_us,
+            "chainlock",
+        );
+
         // Update the masternode list and create masternode identities and also update the active quorums
         self.update_core_info(
             Some(last_committed_platform_state),
@@ -252,6 +265,9 @@ where
             transaction,
             platform_version,
         )?;
+
+        #[cfg(debug_assertions)]
+        laps.lap("core_info");
 
         // Update the validator proposed app version
         // It should be called after protocol version upgrade
@@ -266,6 +282,9 @@ where
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
             })?; // This is a system error
 
+        #[cfg(debug_assertions)]
+        laps.lap("val_app_ver");
+
         // Rebroadcast expired withdrawals if they exist
         // We do that before we mark withdrawals as expired
         // to rebroadcast them on the next block but not the same
@@ -278,15 +297,23 @@ where
             platform_version,
         )?;
 
+        #[cfg(debug_assertions)]
+        laps.lap("wd_rebroadcast");
+
         // Mark all previously broadcasted and chainlocked withdrawals as complete
         // only when we are on a new core height
-        if block_state_info.core_chain_locked_height() != last_block_core_height {
+        let core_height_advanced =
+            block_state_info.core_chain_locked_height() != last_block_core_height;
+        if core_height_advanced {
             self.update_broadcasted_withdrawal_statuses(
                 &block_info,
                 transaction,
                 platform_version,
             )?;
         }
+
+        #[cfg(debug_assertions)]
+        laps.lap_if(core_height_advanced, "wd_status");
 
         // Preparing withdrawal transactions for signing and broadcasting
         // To process withdrawals we need to dequeue untiled transactions from the withdrawal transactions queue
@@ -304,6 +331,9 @@ where
                 platform_version,
             )?;
 
+        #[cfg(debug_assertions)]
+        laps.lap("wd_dequeue");
+
         // Run all dao platform events, such as vote tallying and distribution of contested documents
         // This must be done before state transition processing
         // Otherwise we would expect a proof after a successful vote that has since been cleaned up.
@@ -314,6 +344,9 @@ where
             Some(transaction),
             platform_version,
         )?;
+
+        #[cfg(debug_assertions)]
+        laps.lap("dao");
 
         // Process transactions
         let state_transitions_result = self.process_raw_state_transitions(
@@ -326,6 +359,9 @@ where
             timer,
         )?;
 
+        #[cfg(debug_assertions)]
+        laps.lap("state_transitions");
+
         // Store the address balances to recent block storage
         self.store_address_balances_to_recent_block_storage(
             &state_transitions_result.address_balances_updated,
@@ -334,12 +370,18 @@ where
             platform_version,
         )?;
 
+        #[cfg(debug_assertions)]
+        laps.lap("addr_store");
+
         // Clean up expired compacted address balance entries
         self.cleanup_recent_block_storage_address_balances(
             &block_info,
             transaction,
             platform_version,
         )?;
+
+        #[cfg(debug_assertions)]
+        laps.lap("addr_cleanup");
 
         // Record shielded pool anchor if the commitment tree changed this block.
         // This stores block_height → anchor_bytes so shielded transactions can
@@ -350,8 +392,14 @@ where
             platform_version,
         )?;
 
+        #[cfg(debug_assertions)]
+        laps.lap("shield_anchor");
+
         // Prune anchors older than the configured retention depth
         self.prune_shielded_pool_anchors(block_proposal.height, transaction, platform_version)?;
+
+        #[cfg(debug_assertions)]
+        laps.lap("shield_prune");
 
         // Pool withdrawals into transactions queue
 
@@ -364,6 +412,9 @@ where
             platform_version,
         )?;
 
+        #[cfg(debug_assertions)]
+        laps.lap("wd_pool");
+
         // Cleans up the expired locks for withdrawal amounts
         // to update daily withdrawal limit
         // This is for example when we make a withdrawal for 30 Dash
@@ -375,6 +426,9 @@ where
             transaction,
             platform_version,
         )?;
+
+        #[cfg(debug_assertions)]
+        laps.lap("wd_locks");
 
         // Create a new block execution context
 
@@ -389,6 +443,9 @@ where
             }
             .into();
 
+        #[cfg(debug_assertions)]
+        laps.lap("exec_ctx");
+
         // while we have the state transitions executed, we now need to process the block fees
         let block_fees_v0: BlockFeesV0 = state_transitions_result.aggregated_fees().clone().into();
 
@@ -401,6 +458,9 @@ where
         )?;
 
         tracing::debug!(block_fees = ?processed_block_fees, "block fees are processed");
+
+        #[cfg(debug_assertions)]
+        laps.lap("fees");
 
         // Record the credits this block minted into Platform (asset locks funding state
         // transitions, epoch Core rewards) as a credit inflow: the daily withdrawal limit adds
@@ -415,6 +475,9 @@ where
             platform_version,
         )?;
 
+        #[cfg(debug_assertions)]
+        laps.lap("credit_inflow");
+
         // Record the total credits in Platform if this block changed it: the daily withdrawal
         // limit is a share of the total credits Platform held a day ago, read from this history.
         // This runs after fees and epoch rewards, the last things in a block that can move the
@@ -424,6 +487,9 @@ where
             transaction,
             platform_version,
         )?;
+
+        #[cfg(debug_assertions)]
+        laps.lap("total_credits");
 
         let root_hash = self
             .drive
@@ -436,12 +502,18 @@ where
             .block_state_info_mut()
             .set_app_hash(Some(root_hash));
 
+        #[cfg(debug_assertions)]
+        laps.lap("root_hash");
+
         let validator_set_update = self.validator_set_update(
             block_proposal.proposer_pro_tx_hash,
             last_committed_platform_state,
             &mut block_execution_context,
             platform_version,
         )?;
+
+        #[cfg(debug_assertions)]
+        laps.lap("validator_set");
 
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(

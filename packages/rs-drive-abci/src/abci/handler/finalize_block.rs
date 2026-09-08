@@ -18,6 +18,8 @@ where
     C: CoreRPCLike,
 {
     let _timer = crate::metrics::abci_request_duration("finalize_block");
+    #[cfg(debug_assertions)]
+    let mut laps = crate::perf::Laps::new();
 
     let transaction_guard = app.transaction().read().unwrap();
     let transaction =
@@ -45,12 +47,18 @@ where
 
     let block_height = request_finalize_block.height;
 
+    #[cfg(debug_assertions)]
+    laps.lap("fb_setup");
+
     let block_finalization_outcome = app.platform().finalize_block_proposal(
         request_finalize_block,
         block_execution_context,
         transaction,
         platform_version,
     )?;
+
+    #[cfg(debug_assertions)]
+    laps.lap("fb_proposal");
 
     drop(transaction_guard);
 
@@ -68,6 +76,9 @@ where
     }
 
     let result = app.commit_transaction(platform_version);
+
+    #[cfg(debug_assertions)]
+    laps.lap("fb_commit");
 
     // We had a sequence of errors on the mainnet started since block 32326.
     // We got RocksDB's "transaction is busy" error because of a bug (https://github.com/dashpay/platform/pull/2309).
@@ -92,6 +103,9 @@ where
         result.expect("commit transaction");
     }
 
+    #[cfg(debug_assertions)]
+    laps.lap("fb_commit_check");
+
     app.platform()
         .committed_block_height_guard
         .store(block_height, Ordering::Relaxed);
@@ -100,6 +114,16 @@ where
     if block_finalization_outcome.checkpoint_needed {
         app.platform().create_grovedb_checkpoint(platform_version)?;
     }
+
+    #[cfg(debug_assertions)]
+    laps.lap_if(
+        block_finalization_outcome.checkpoint_needed,
+        "fb_checkpoint",
+    );
+    #[cfg(debug_assertions)]
+    drop(laps);
+    #[cfg(debug_assertions)]
+    crate::perf::end_block(block_height);
 
     Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
 }

@@ -69,6 +69,10 @@ pub mod core;
 /// Metrics subsystem
 pub mod metrics;
 
+/// Per-block phase timing for debug builds, enabled with DRIVE_BLOCK_PERF=1.
+#[cfg(debug_assertions)]
+pub mod perf;
+
 /// Test helpers and fixtures
 #[cfg(any(feature = "mocks", test))]
 pub mod test;
