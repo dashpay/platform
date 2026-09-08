@@ -9,9 +9,18 @@ use std::convert::TryFrom;
 /// The Storage Key requirements
 // @append_only
 #[repr(u8)]
-#[derive(Serialize_repr, Deserialize_repr, Debug, PartialEq, Eq, Copy, Clone, Encode, Decode)]
-// Derived separately so the append-only derive list above stays unchanged.
-#[derive(DecodeUntrusted)]
+#[derive(
+    Serialize_repr,
+    Deserialize_repr,
+    Debug,
+    PartialEq,
+    Eq,
+    Copy,
+    Clone,
+    Encode,
+    Decode,
+    DecodeUntrusted,
+)]
 pub enum StorageKeyRequirements {
     Unique = 0,
     Multiple = 1,

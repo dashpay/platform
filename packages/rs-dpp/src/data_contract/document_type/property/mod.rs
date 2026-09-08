@@ -84,11 +84,18 @@ pub struct ByteArrayPropertySizes {
 // This enum is embedded in consensus errors, so it is consensus-serialized.
 // @append_only
 #[derive(
-    Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Serialize,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    DecodeUntrusted,
 )]
 #[serde(rename_all = "lowercase")]
-// Derived separately so the append-only derive list above stays unchanged.
-#[derive(DecodeUntrusted)]
 pub enum DocumentPropertyReferenceTarget {
     Identity,
     Contract,

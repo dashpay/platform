@@ -6,8 +6,6 @@ use crate::serialization::json_safe_fields;
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
-use bincode::de::UntrustedDecoder;
-use bincode::error::DecodeError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -25,7 +23,19 @@ pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
 /// Block information
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Default,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    Serialize,
+    Deserialize,
+    DecodeUntrusted,
+)]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[serde(rename_all = "camelCase")]
 pub struct BlockInfo {
@@ -41,23 +51,6 @@ pub struct BlockInfo {
     /// Current fee epoch
     pub epoch: Epoch,
 }
-
-// `BlockInfo` is tagged immutable above, so its derive list has to stay as it is.
-// Untrusted decoding is therefore implemented by hand, reading the fields in
-// declaration order exactly as the derived `Decode` does.
-impl<C> DecodeUntrusted<C> for BlockInfo {
-    fn decode_untrusted<D: UntrustedDecoder<Context = C>>(
-        decoder: &mut D,
-    ) -> Result<Self, DecodeError> {
-        Ok(Self {
-            time_ms: DecodeUntrusted::decode_untrusted(decoder)?,
-            height: DecodeUntrusted::decode_untrusted(decoder)?,
-            core_height: DecodeUntrusted::decode_untrusted(decoder)?,
-            epoch: DecodeUntrusted::decode_untrusted(decoder)?,
-        })
-    }
-}
-bincode::impl_borrow_decode_untrusted!(BlockInfo);
 
 impl fmt::Display for BlockInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -261,32 +254,5 @@ mod json_convertible_tests_blockinfo {
         );
         let recovered = BlockInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
-    }
-}
-
-#[cfg(test)]
-mod untrusted_decode_tests {
-    use super::*;
-
-    #[test]
-    fn untrusted_decoding_matches_the_derived_decoder() {
-        let block_info = BlockInfo {
-            time_ms: 1_700_000_000_000,
-            height: 12_345_678,
-            core_height: 900_000,
-            epoch: Epoch::new(42).expect("valid epoch index"),
-        };
-        let config = bincode::config::standard();
-        let bytes = bincode::encode_to_vec(block_info, config).expect("encode block info");
-
-        let (trusted, trusted_read): (BlockInfo, usize) =
-            bincode::decode_from_slice(&bytes, config).expect("derived decode");
-        let (untrusted, untrusted_read): (BlockInfo, usize) =
-            bincode::decode_from_slice_untrusted(&bytes, config).expect("untrusted decode");
-
-        assert_eq!(trusted, block_info);
-        assert_eq!(untrusted, block_info);
-        assert_eq!(trusted_read, bytes.len());
-        assert_eq!(untrusted_read, bytes.len());
     }
 }

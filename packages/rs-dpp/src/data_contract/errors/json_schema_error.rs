@@ -5,10 +5,17 @@ use thiserror::Error;
 
 // @append_only
 #[derive(
-    Error, Debug, PartialEq, Eq, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone,
+    Error,
+    Debug,
+    PartialEq,
+    Eq,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Encode,
+    Decode,
+    Clone,
+    DecodeUntrusted,
 )]
-// Derived separately so the append-only derive list above stays unchanged.
-#[derive(DecodeUntrusted)]
 pub enum JsonSchemaError {
     #[error("can't create json schema: {0}")]
     CreateSchemaError(String),

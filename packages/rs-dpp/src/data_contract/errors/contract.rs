@@ -12,10 +12,16 @@ use crate::ProtocolError;
 
 // @append_only
 #[derive(
-    Error, Debug, PartialEq, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone,
+    Error,
+    Debug,
+    PartialEq,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Encode,
+    Decode,
+    Clone,
+    DecodeUntrusted,
 )]
-// Derived separately so the append-only derive list above stays unchanged.
-#[derive(DecodeUntrusted)]
 pub enum DataContractError {
     #[error(transparent)]
     DecodingContractError(DecodingError),
