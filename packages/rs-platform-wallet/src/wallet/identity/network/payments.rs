@@ -427,9 +427,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 continue;
             }
             let txid = entry.txid;
-            // TODO(host-transient-read-classification): every shipping host
-            // classifies all failures as Fatal, so the permanent arm below
-            // fires on an ordinary `SQLITE_BUSY`.
+            // TODO(host-transient-read-classification): preserve host record-read errors;
+            // FFI currently maps every nonzero callback status to Ok(None).
             match self
                 .persister
                 .get_core_tx_record_or_transient_miss(&txid, &mut transient_misses)
@@ -746,9 +745,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             };
             // A transient failure reads as a miss, so both are the same
             // "not final yet, look again next sweep" outcome.
-            // TODO(host-transient-read-classification): every shipping host
-            // classifies all failures as Fatal, so the permanent arm below
-            // fires on an ordinary `SQLITE_BUSY`.
+            // TODO(host-transient-read-classification): preserve host record-read errors;
+            // FFI currently maps every nonzero callback status to Ok(None).
             let record = match self
                 .persister
                 .get_core_tx_record_or_transient_miss(&txid, &mut transient_misses)

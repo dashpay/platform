@@ -126,7 +126,8 @@ reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
 unclaimed rather than back-filled, so no number is reused within a single
 review cycle. Rule 1's "do not reuse a gap unless this file marks it free"
 applies — this file does **not** mark any of them free, so the frontier is
-the only allocation source and a new code takes 49. (42 is a cautionary tale:
+the only allocation source; use the next allocatable integer stated above.
+(42 is a cautionary tale:
 merged #4451 minted it while active #4356 held the claim — merged ABI wins,
 the open PR renumbers. 46's near-miss went the other way: caught in review,
 renumbered before merge.)
