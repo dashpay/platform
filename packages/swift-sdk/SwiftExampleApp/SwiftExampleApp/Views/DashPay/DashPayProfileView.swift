@@ -23,6 +23,17 @@ struct DashPayProfileView: View {
     @State private var showSpendTips = false
     @Query private var shieldedNotes: [PersistentShieldedNote]
 
+    init(identity: PersistentIdentity, profile: DashPayProfile?, onEdit: @escaping () -> Void) {
+        self.identity = identity
+        self.profile = profile
+        self.onEdit = onEdit
+        if let walletId = identity.wallet?.walletId {
+            _shieldedNotes = Query(filter: PersistentShieldedNote.unspentPredicate(walletId: walletId))
+        } else {
+            _shieldedNotes = Query(filter: #Predicate<PersistentShieldedNote> { _ in false })
+        }
+    }
+
     private var tipBalance: UInt64 {
         guard let walletId = identity.wallet?.walletId,
               let account = try? PlatformWalletManager.shieldedTipAccountIndex(identityIndex: identity.identityIndex) else { return 0 }

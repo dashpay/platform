@@ -323,9 +323,13 @@ fun DashPayTabScreen(navController: NavHostController) {
 
                         val tipManager = manager
                         val tipWalletId = identity.walletId
-                        if (showTipSheet && managed != null && tipManager != null && tipWalletId != null) {
+                        val tipAccountResult = remember(tipManager, identity.identityIndex) {
+                            runCatching { requireNotNull(tipManager).shieldedTipAccountIndex(identity.identityIndex) }
+                        }
+                        val tipAccount = tipAccountResult.getOrNull()
+                        if (showTipSheet && managed != null && tipManager != null && tipWalletId != null && tipAccount != null) {
                             ModalBottomSheet(onDismissRequest = { showTipSheet = false }) {
-                                ShieldedTipSheet(tipManager, managed, tipWalletId, tipManager.shieldedTipAccountIndex(identity.identityIndex))
+                                ShieldedTipSheet(tipManager, managed, tipWalletId, tipAccount)
                             }
                         }
                         FormSection(title = "DashPay") {
@@ -333,7 +337,12 @@ fun DashPayTabScreen(navController: NavHostController) {
                                 EntityRow(
                                     icon = Icons.AutoMirrored.Filled.Send,
                                     title = "Send shielded tip",
-                                    onClick = { showTipSheet = true },
+                                    onClick = {
+                                        tipAccountResult.fold(
+                                            onSuccess = { showTipSheet = true },
+                                            onFailure = { unlockError = it.message ?: "Could not open shielded tips" },
+                                        )
+                                    },
                                     modifier = Modifier.testTag("dashpay.sendShieldedTip"),
                                 )
                             }

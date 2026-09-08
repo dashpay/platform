@@ -759,7 +759,7 @@ async fn should_restore_tip_account_from_identity_discovery_and_register_for_syn
     use dpp::identity::{Identity, IdentityV0};
     use dpp::prelude::Identifier;
     let phrase = crate::test_support::MESSAGE_SIGNING_TEST_MNEMONIC;
-    let seed = key_wallet::Mnemonic::from_phrase(phrase, key_wallet::Language::English)
+    let seed = key_wallet::Mnemonic::from_phrase(phrase)
         .unwrap()
         .to_seed("");
     let id = Identifier::from([0x33; 32]);
@@ -836,6 +836,20 @@ async fn should_restore_tip_account_from_identity_discovery_and_register_for_syn
             .bind_shielded_from_persisted(&[0], &coordinator)
             .await
             .unwrap());
+        // Upgrading an existing wallet can leave account zero persisted while
+        // identity discovery introduces a tip account without an FVK. Seedless
+        // success here would suppress the host's seed fallback and lose scans
+        // for that identity's tip history.
+        let ordinary = super::OrchardKeySet::from_seed(&seed, Network::Testnet, 0).unwrap();
+        persister.serve_viewing_keys(BTreeMap::from([(
+            SubwalletId::new(wallet.wallet_id(), 0),
+            ordinary.full_viewing_key.to_bytes().to_vec(),
+        )]));
+        assert!(!wallet
+            .bind_shielded_from_persisted(&[0], &coordinator)
+            .await
+            .unwrap());
+        assert!(!wallet.is_shielded_bound().await);
         assert!(wallet
             .prepare_shielded_tip_address(&[0x11; 64], &id, &coordinator)
             .await

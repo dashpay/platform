@@ -924,6 +924,9 @@ impl PlatformWallet {
             ))
         })?;
         let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
+        // Newly discovered identities require their tip accounts too. Missing
+        // FVKs must trigger seed-backed binding: skipping them would report a
+        // successful restart while silently omitting recoverable tip history.
         accounts.extend(self.discovered_tip_accounts().await?);
         accounts.extend(
             start

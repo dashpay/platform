@@ -363,17 +363,23 @@ struct SearchWalletsForIdentitiesView: View {
             )
             // Newly discovered identities introduce deterministic tip accounts.
             // Rebind before scanning so historical tips are included.
-            try walletManager.bindShielded(walletId: walletId, resolver: MnemonicResolver())
+            let bindError: String?
+            do {
+                try walletManager.bindShielded(walletId: walletId, resolver: MnemonicResolver())
+                bindError = nil
+            } catch {
+                bindError = "Identity discovery completed, but shielded wallet binding failed: "
+                    + error.localizedDescription
+            }
             result = WalletFinding(
                 walletId: walletId,
                 label: label,
                 foundCount: found.count,
-                error: nil
+                error: bindError
             )
 
-            // Zero hits → ask Rust for the preview keypairs the
-            // scan walked so the user can eyeball / copy them.
-            if found.isEmpty {
+            // Preserve preview access for empty results or binding failures.
+            if found.isEmpty || bindError != nil {
                 await loadPreviewKeys(on: managed)
             }
         } catch {

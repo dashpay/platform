@@ -1781,7 +1781,8 @@ class PlatformWalletManager(
         recipient: org.dashfoundation.dashsdk.tokens.ShieldedTipRecipient,
         amount: Long, account: Int = 0, memo: String? = null,
     ): Unit = teardownGate.op {
-        require(amount > 0 && account >= 0)
+        require(amount > 0) { "amount must be positive, got $amount" }
+        require(account >= 0) { "account must be non-negative, got $account" }
         mapNativeErrors {
             FundingNative.sendShieldedTip(managerHandle, walletId, mnemonicResolver.nativeHandle,
                 account, username, recipient.identityId, recipient.address, amount, memo)

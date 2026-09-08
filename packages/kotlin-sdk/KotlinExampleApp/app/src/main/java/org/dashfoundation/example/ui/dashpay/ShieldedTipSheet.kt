@@ -100,7 +100,7 @@ fun ShieldedTipSheet(manager: PlatformWalletManager, wallet: ManagedPlatformWall
                             recipient = resolved
                         }
                     } else {
-                        // No retry button after submission: ambiguous broadcast outcomes require sync.
+                        // Ambiguous or unclassified outcomes remain locked; definitive failures permit a fresh review.
                         history.confirm(manager.network, walletId, username, selected)
                         submitted = true
                         manager.sendShieldedTip(walletId, username.trim(), selected, requireNotNull(confirmedAmount), account = if (spendTips) tipAccount else 0)
@@ -108,6 +108,7 @@ fun ShieldedTipSheet(manager: PlatformWalletManager, wallet: ManagedPlatformWall
                     }
                 } catch (e: Exception) {
                     message = e.message ?: "Unable to send tip"
+                    if (canReviewShieldedTipAfterFailure(e)) submitted = false
                     recipient = null
                 } finally { busy = false }
             }

@@ -483,5 +483,6 @@ extension DashModelMigrationTests {
             core: nil, platform: nil, shielded: Data(repeating: 0x45, count: 43))
         try container.mainContext.save()
         XCTAssertEqual(profiles[0].identity.identityId, identityId)
+        XCTAssertEqual(profiles[0].shieldedAddress, Data(repeating: 0x45, count: 43))
     }
 }
