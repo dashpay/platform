@@ -15,6 +15,8 @@
 //! index-key length ceilings, and the constants they are derived from.
 
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 // Only the ranked key-length rule below names `Index`, and it is validation-only.
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::index::Index;
@@ -23,6 +25,7 @@ use crate::data_contract::document_type::index::IndexGrammarAdmissions;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
@@ -308,7 +311,10 @@ fn try_from_schema_generation_3(
 }
 
 impl DocumentType {
-    /// Dispatches to this module's generation-3 parser and wraps the result.
+    /// Parses protocol 14 document types and validates the keep-history/delete flags.
+    /// Stored contracts bypass full validation so legacy contradictory schemas
+    /// remain readable. Owners can repair them by setting `canBeDeleted: false`
+    /// during a contract update without changing history or the storage layout.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::data_contract::document_type::class_methods) fn try_from_schema_v3(
         data_contract_id: Identifier,
@@ -323,7 +329,7 @@ impl DocumentType {
         validation_operations: &mut impl Extend<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        try_from_schema_generation_3(
+        let document_type = try_from_schema_generation_3(
             data_contract_id,
             data_contract_system_version,
             contract_config_version,
@@ -336,12 +342,35 @@ impl DocumentType {
             validation_operations,
             platform_version,
         )
-        .map(DocumentType::V2)
+        .map(DocumentType::V2)?;
+
+        // The flags are read from the parsed result (not the raw schema) so
+        // the check sees `canBeDeleted` resolved against the contract config
+        // default (`true` when the key is omitted).
+        if full_validation
+            && document_type.documents_keep_history()
+            && document_type.documents_can_be_deleted()
+        {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{}\" sets both `documentsKeepHistory: true` and \
+                     `canBeDeleted: true`, but the storage layer unconditionally refuses to \
+                     delete a document whose type keeps history. Set `canBeDeleted` to false or \
+                     disable `documentsKeepHistory`.",
+                    name,
+                )),
+            ));
+        }
+
+        Ok(document_type)
     }
 }
 
 #[cfg(test)]
 mod index_only_tests;
+
+#[cfg(test)]
+mod keep_history_tests;
 
 #[cfg(test)]
 mod tests {

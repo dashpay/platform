@@ -37,7 +37,7 @@ fn should_activate_keep_history_validation_at_protocol_14() {
             .document_type_versions
             .class_method_versions
             .try_from_schema,
-        4
+        3
     );
     assert_eq!(
         version

@@ -11,14 +11,16 @@ use versioned_feature_core::FeatureVersionBounds;
 // pre-activation validation is unchanged — under v2 those keys still fail an
 // index entry's `additionalProperties: false`.
 //
-// `try_from_schema` moves to 4, wrapping generation 3 with the keep-history/delete
-// cross-flag check. Ranked grammar is still provided by the document-type parser
+// `try_from_schema` moves to 3, selecting a new document-type parser
 // generation (`try_from_schema/v3`). New-protocol-version grammar gets its own
 // generation module rather than a version gate inside a shipped one, so the
 // generation-0/1/2 parsers stay byte-identical to the code consensus already
 // ran and replaying a historical block cannot pick up grammar that post-dates
 // it. Generation 3 admits the ranked keywords unconditionally — it exists if
 // and only if the meta-schema is v3, so it needs no version read of its own.
+//
+// Generation 3 also rejects keep-history document types that allow deletion
+// during full validation. Earlier parser generations retain released behavior.
 //
 // `document_type_schema` moves to 3 in the same step: generation 3 and
 // meta-schema v3 are introduced together and pair by construction. Under v2 the
@@ -65,7 +67,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             index_levels_from_indices: 0,
         },
         class_method_versions: DocumentTypeClassMethodVersions {
-            try_from_schema: 4, // changed: generation 4 adds the keep-history/delete cross-flag check
+            try_from_schema: 3, // changed: parser generation 3 — generation 2 plus the ranked index keywords
             create_document_types_from_document_schemas: 1,
         },
         structure_version: 0,
