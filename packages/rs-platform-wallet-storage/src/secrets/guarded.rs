@@ -75,6 +75,11 @@ impl GuardedBuf {
     /// so this is handled the way the global allocator handles ordinary
     /// exhaustion.
     pub(super) fn new(cap: usize) -> Self {
+        Self::new_with_lock(cap, lock_payload)
+    }
+
+    /// Share the allocation path with deterministic lock-failure tests.
+    fn new_with_lock(cap: usize, lock: impl FnOnce(NonNull<u8>, usize) -> bool) -> Self {
         assert!(cap > 0, "a guarded buffer must hold at least one byte");
         // SAFETY: `malloc_sized` takes a plain byte count and returns a
         // pointer to that many writable bytes, or `None` on failure.
@@ -87,7 +92,7 @@ impl GuardedBuf {
         // `malloc_sized` locks the region but discards the result, so a
         // failed lock would otherwise be indistinguishable from a
         // successful one. Re-locking is a no-op when it already took.
-        if !lock_payload(buf.ptr, cap) {
+        if !lock(buf.ptr, cap) {
             tracing::warn!(
                 "secret pages could not be locked into RAM and may reach swap; \
                  raise RLIMIT_MEMLOCK for this process"
@@ -453,27 +458,19 @@ mod tests {
         let _ = buf.as_slice(17);
     }
 
-    /// mlock refusal is detectable, so [`GuardedBuf::new`]'s warning
-    /// branch is reachable — and a buffer whose lock failed is still
-    /// usable, because the design is fail-open.
-    ///
-    /// Driven by probing a region the kernel must reject rather than by
-    /// exhausting `RLIMIT_MEMLOCK`, which is process-wide and would race
-    /// every other test in this binary. The second page is page-aligned
-    /// and below the default `mmap_min_addr`, so nothing can ever be
-    /// mapped there and `mlock` cannot start succeeding on it.
+    /// Lock refusal warns without preventing zero-initialization or buffer use.
     #[test]
+    #[tracing_test::traced_test]
     fn mlock_refusal_is_detected_and_not_fatal() {
-        let page = region::page::size();
-        let unmapped = NonNull::new(std::ptr::without_provenance_mut::<u8>(page))
-            .expect("a non-zero address is non-null");
-        assert!(
-            !lock_payload(unmapped, page),
-            "test needs an address mlock refuses; {page:#x} was accepted"
-        );
-
-        // Fail-open: a real allocation still yields a working buffer.
-        let mut buf = GuardedBuf::new(64);
+        let mut lock_attempted = false;
+        let mut buf = GuardedBuf::new_with_lock(64, |_ptr, cap| {
+            assert_eq!(cap, 64);
+            lock_attempted = true;
+            false
+        });
+        assert!(lock_attempted);
+        assert!(logs_contain("secret pages could not be locked into RAM"));
+        assert_eq!(buf.as_slice(64), &[0; 64]);
         buf.as_mut_slice(64).copy_from_slice(&[0x3Cu8; 64]);
         assert_eq!(buf.as_slice(64), &[0x3Cu8; 64]);
     }
