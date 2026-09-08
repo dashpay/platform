@@ -27,12 +27,14 @@ downstream code may need to:
 Embedders that bring their own transport and trust context and only need the
 verification/query layer:
 
-- **Dash Core's platform GUI** — fetches over its own gRPC-Web transport,
-  serves quorum keys from its locally synced LLMQ state via a
-  [`ContextProvider`](../rs-context-provider), and verifies every response
-  proof with [`drive-proof-verifier`](../rs-drive-proof-verifier).
 - Block explorers, Electrum-style servers, hardware-wallet tooling — anything
   that talks to DAPI its own way but must not trust responses.
+
+Dash Core's platform GUI consumes the full `dash-sdk` instead, through
+[`dash-platform-cxx`](../rs-platform-cxx): it serves quorum keys from its
+locally synced LLMQ state via a [`ContextProvider`](../rs-context-provider)
+and signatures from its wallet, and lets the SDK own transport, retries and
+proof verification.
 
 If you want networking, retries, and a managed connection pool, use
 `dash-sdk` — it consumes this crate internally.

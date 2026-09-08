@@ -155,6 +155,18 @@ dash-platform-queries: &platform_queries
   - .github/workflows/tests*
   - packages/dash-platform-queries/**
 
+dash-platform-cxx:
+  - .github/workflows/tests*
+  - packages/rs-platform-cxx/**
+  - *platform_queries
+  - *context_provider
+  - *dpp
+  - *drive
+  - *dapi_grpc
+  - packages/rs-drive-proof-verifier/**
+  - packages/rs-sdk/**
+  - packages/rs-dapi-client/**
+
 dash-sdk: &sdk
   - .github/workflows/tests*
   - packages/rs-drive-proof-verifier/**

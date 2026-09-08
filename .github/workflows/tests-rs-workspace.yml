@@ -239,6 +239,13 @@ jobs:
             done
           done
 
+      # The C++ embedding surface must link and run from the staged headers
+      # and archive alone; the Rust tests cannot see a broken header layout.
+      # (dash-platform-cxx wraps the full dash-sdk, networking included, so it
+      # is deliberately absent from the transport-free cuts above.)
+      - name: Link the Platform CXX embedder from C++
+        run: packages/rs-platform-cxx/scripts/cxx-smoke.sh
+
       - name: Detect immutable structure changes
         if: github.event_name == 'pull_request'
         run: |
@@ -355,6 +362,7 @@ jobs:
             --package rs-sdk-ffi \
             --package platform-wallet-ffi \
             --package rs-dapi-client \
+            --package dash-platform-cxx \
             --package platform-serialization \
             --package dapi-grpc \
             --package json-schema-compatibility-validator \
