@@ -1,6 +1,6 @@
 //! Unified additive migration for `platform-wallet-storage` (#3968).
 //!
-//! Sequenced after the six migrations `v4.2-dev` already ships (V001-V006),
+//! Sequenced after the seven migrations `v4.2-dev` already ships (V001-V007),
 //! whose version numbers are owned by merged history and must never be
 //! reassigned — refinery keys `refinery_schema_history` by version and
 //! validates the applied checksum against the embedded migration of the same

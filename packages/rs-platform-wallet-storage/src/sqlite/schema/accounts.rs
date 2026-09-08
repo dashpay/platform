@@ -571,7 +571,7 @@ fn load_ecdsa_state(
 /// Collapse each pre-split `standard` row into the precise-labelled row that
 /// stands for the same account.
 ///
-/// `V007` admits the legacy label rather than guessing which standard variant
+/// `V008` admits the legacy label rather than guessing which standard variant
 /// such a row is, so one account can hold two rows: the writer's upsert keys
 /// on `account_type`, so a post-split save INSERTS a precisely-labelled
 /// sibling instead of updating the legacy row. Returning both would make this
@@ -625,7 +625,7 @@ fn reconcile_legacy_standard_rows(
 /// change breaks that migration's Refinery checksum on every database that
 /// already applied it. `account_type_labels_match_enum` pins this array to
 /// [`account_type_db_label`]; `account_type_labels_frozen_in_v007` pins it to
-/// the frozen list in `V007__rehydration_base_schema.rs`, which rebuilt
+/// the frozen list in `V008__rehydration_base_schema.rs`, which rebuilt
 /// `account_registrations` with the widened domain. V001 carries the narrower
 /// domain `v4.2-dev` shipped, in which both standard variants share the label
 /// `standard`. An upstream variant addition therefore fails a test with
@@ -1284,11 +1284,11 @@ mod tests {
     }
 
     /// Pins the live domain to the list frozen in the latest migration that
-    /// rebuilt `account_registrations` (`V007__rehydration_base_schema.rs`).
+    /// rebuilt `account_registrations` (`V008__rehydration_base_schema.rs`).
     /// That frozen list is this array plus [`LEGACY_STANDARD_LABEL`], which no
     /// writer emits but pre-split rows still carry.
     ///
-    /// IF THIS FAILS: do NOT edit V007's list to match. Refinery checksums a
+    /// IF THIS FAILS: do NOT edit V008's list to match. Refinery checksums a
     /// migration's rendered SQL, so changing an applied migration's body makes
     /// every database that already ran it fail to open, permanently. Append a
     /// migration rebuilding the table with the widened CHECK (the

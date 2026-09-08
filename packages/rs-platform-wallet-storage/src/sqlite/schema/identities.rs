@@ -990,7 +990,7 @@ mod tests {
     /// guard only rejected keys whose identity was wallet-OWNED, so one
     /// naming no identity at all slipped through — MATCH SIMPLE leaves both
     /// foreign keys dormant on a NULL-scoped row, making the trigger the
-    /// only guard there is. Closed by V014.
+    /// only guard there is. Closed by V015.
     #[test]
     fn null_scoped_key_is_rejected_for_a_missing_identity() {
         use platform_wallet::changeset::IdentityKeysChangeSet;

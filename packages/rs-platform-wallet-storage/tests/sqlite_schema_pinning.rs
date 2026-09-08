@@ -15,13 +15,13 @@ use platform_wallet_storage::sqlite::{migrations as mig, schema::versions::Domai
 /// Golden `(version, name)` fingerprint of the frozen migration set. Bump
 /// deliberately only when adding/removing/renaming a migration file.
 const EXPECTED_ID_FINGERPRINT: &str =
-    "0ef38f22126957b909c3672c29073447d92caa51044a3727834c4e6e41d30908";
+    "ee4e0c3efe48cab68bd25897267ae66892675fb4b2720cfc31abbbb6c8ca553f";
 
 /// Golden content-level fingerprint over every migration's rendered SQL.
 /// Bump it only when ADDING a migration file; a body change on an already
 /// applied migration is a defect, not a golden to refresh.
 const EXPECTED_SQL_FINGERPRINT: &str =
-    "c7ececb4b00b07f8ace0ed4685bb498425ff87d282f56939440bd233f53cdafe";
+    "8faa7353f98b378cd392505c0dcfbcf49a228299ba94acd1ddb0731fd5e6892f";
 
 /// The migrations merged `v4.2-dev` already ships. Refinery keys
 /// `refinery_schema_history` by version and validates an applied migration's
@@ -35,13 +35,14 @@ const MERGED_MIGRATION_VERSIONS: &[(i32, &str)] = &[
     (4, "asset_lock_recovered_status"),
     (5, "dpns_name_states"),
     (6, "tracked_masternodes"),
+    (7, "utxo_sweep_winner_height"),
 ];
 
-/// Table names retired by `V007__rehydration_base_schema`. They are part of
-/// the migration history up to and including V007 — V001-V006 are byte-frozen
+/// Table names retired by `V008__rehydration_base_schema`. They are part of
+/// the migration history up to and including V008 — V001-V007 are byte-frozen
 /// published migrations that legitimately name them — so the guards below
 /// scope to what comes AFTER the rename, plus all writer/reader SQL.
-const FIRST_VERSION_AFTER_RENAME: i32 = 8;
+const FIRST_VERSION_AFTER_RENAME: i32 = 9;
 
 /// Migration files whose SQL may legitimately name a retired table: the
 /// published base set and the migration that performs the rename.
@@ -52,7 +53,8 @@ const PRE_RENAME_MIGRATION_FILES: &[&str] = &[
     "V004__asset_lock_recovered_status.rs",
     "V005__dpns_name_states.rs",
     "V006__tracked_masternodes.rs",
-    "V007__rehydration_base_schema.rs",
+    "V007__utxo_sweep_winner_height.rs",
+    "V008__rehydration_base_schema.rs",
 ];
 
 const RETIRED_SQL_NAMES: &[&str] = &[

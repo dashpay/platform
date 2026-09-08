@@ -169,10 +169,21 @@ pub fn apply(
     if !cs.removed.is_empty() {
         // Same terminal rule as the upsert guard: a stored `consumed`
         // row is never deleted by a stale tombstone. Consumed rows are
-        // deliberately retained for historical lookup, and the only
-        // removal emitter (`untrack_asset_lock`) fires exclusively for
-        // Built rows whose broadcast was rejected — so a removal
-        // reaching a consumed row is by construction a stale write.
+        // deliberately retained for historical lookup, and neither
+        // removal producer can legitimately name one — a Built row
+        // rejected at broadcast (`untrack_asset_lock`) never got that
+        // far, and the sweep-driven removal that arrives with the
+        // producer only tombstones entries still tracked, which a
+        // consumed lock no longer is — so a removal reaching a consumed
+        // row is by construction a stale write.
+        //
+        // Ordering note, scoped honestly: this applies upserts before
+        // removals. On this branch that is layout rather than a
+        // guarantee — the fold-level cancellation that would make an
+        // upsert and a tombstone for one outpoint impossible lands with
+        // the producer, and even there it does not cover every status.
+        // The `status != 'consumed'` predicate is what this statement
+        // actually relies on, and it holds regardless of the fold.
         let mut stmt = tx.prepare_cached(
             "DELETE FROM asset_locks \
              WHERE wallet_id = ?1 AND outpoint = ?2 AND status != 'consumed'",
@@ -207,7 +218,7 @@ pub fn apply(
 ///   codomain ([`status_str`]);
 /// - `asset_lock_status_labels_frozen_in_latest_migration` — this array
 ///   ⇔ the latest migration's frozen list, so ADDING a variant fails
-///   with instructions to append a new table-rebuild migration (V017+)
+///   with instructions to append a new table-rebuild migration (V018+)
 ///   instead of editing a shipped one.
 #[cfg(test)]
 pub(crate) const ASSET_LOCK_STATUS_LABELS: &[&str] = &[
@@ -664,7 +675,7 @@ mod tests {
     /// asset-lock migration (`V004__asset_lock_recovered_status.rs`).
     /// Shipped migrations interpolate nothing — their generated SQL is
     /// checksummed by Refinery, so widening the domain means APPENDING
-    /// a new table-rebuild migration (V017+) with the new frozen list
+    /// a new table-rebuild migration (V018+) with the new frozen list
     /// and updating this pin, never editing V001/V004 in place.
     ///
     /// IF THIS FAILS: do NOT edit a shipped migration (its Refinery

@@ -153,10 +153,10 @@ fn assert_full_data_preserved(conn: &Connection) {
         1
     );
     let (height, record_blob) = transaction_height_and_blob(conn, &full);
-    assert_eq!(height, Some(200), "transaction height preserved by V009");
+    assert_eq!(height, Some(200), "transaction height preserved by V010");
     let record: key_wallet::managed_account::transaction_record::TransactionRecord =
         platform_wallet_storage::sqlite::schema::blob::decode(&record_blob)
-            .expect("transaction record blob preserved by V009");
+            .expect("transaction record blob preserved by V010");
     assert_eq!(
         record.height(),
         Some(200),
@@ -236,15 +236,15 @@ fn v4_2_dev_database_opens_and_migrates_forward() {
     );
 }
 
-/// V013 must preserve a legacy confirmed UTXO whose transaction record was
+/// V014 must preserve a legacy confirmed UTXO whose transaction record was
 /// never persisted and whose confirmation height therefore lives only on the
-/// pre-V013 `core_utxos` row.
+/// pre-V014 `core_utxos` row.
 #[test]
-fn v013_backfills_recordless_confirmed_utxo_height() {
+fn v014_backfills_recordless_confirmed_utxo_height() {
     use dashcore::hashes::Hash;
 
     let tmp = common::secure_tempdir().unwrap();
-    let path = tmp.path().join("recordless-v012.db");
+    let path = tmp.path().join("recordless-v013.db");
     let wallet_id = wid(0xC3);
     let txid = dashcore::Txid::from_byte_array([0x91; 32]);
     let outpoint = dashcore::OutPoint::new(txid, 7);
@@ -260,7 +260,7 @@ fn v013_backfills_recordless_confirmed_utxo_height() {
     {
         let mut conn = Connection::open(&path).unwrap();
         mig::runner()
-            .set_target(refinery::Target::Version(12))
+            .set_target(refinery::Target::Version(13))
             .run(&mut conn)
             .unwrap();
         conn.execute(
@@ -283,7 +283,7 @@ fn v013_backfills_recordless_confirmed_utxo_height() {
             rusqlite::params![wallet_id.as_slice(), encoded_legacy_unconfirmed_outpoint],
         )
         .unwrap();
-        assert_eq!(schema_version(&conn), 12);
+        assert_eq!(schema_version(&conn), 13);
     }
 
     let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
@@ -374,9 +374,9 @@ fn pre_migration_backup_created() {
     );
     assert!(
         !table_exists(&bconn, "core_address_pool"),
-        "backup must predate the V008 schema"
+        "backup must predate the V009 schema"
     );
-    // Still `wallet_metadata` in the backup: V007 is what renames it.
+    // Still `wallet_metadata` in the backup: V008 is what renames it.
     assert_eq!(
         bconn
             .query_row("SELECT COUNT(*) FROM wallet_metadata", [], |r| r
@@ -537,7 +537,7 @@ fn migration_snapshot(conn: &Connection) -> Vec<i64> {
     ]
 }
 
-/// Crash mid-migrate: an interrupted V007 (partial DDL, no commit)
+/// Crash mid-migrate: an interrupted V008 (partial DDL, no commit)
 /// leaves the store at the last committed version (V002) with no partial
 /// tables; re-opening resumes and converges byte-equal to a clean direct
 /// migration. Empirically demonstrates refinery's per-migration transaction
@@ -558,7 +558,7 @@ fn interrupted_migration_recovers_to_clean_state() {
         "clean migration reaches the newest embedded version"
     );
 
-    // Crash simulation: apply part of V007's DDL inside a transaction that is
+    // Crash simulation: apply part of V008's DDL inside a transaction that is
     // rolled back before commit — exactly what a crash before the migration's
     // single COMMIT leaves behind (SQLite DDL is transactional).
     let crash_dir = common::secure_tempdir().unwrap();

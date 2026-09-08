@@ -20,5 +20,5 @@
 //! balance state and stays whatever its script holds.
 
 pub fn migration() -> String {
-    "DELETE FROM core_utxos WHERE spent = 1 AND length(script) = 0;".to_string()
+    "DELETE FROM core_utxos WHERE spent = 1 AND length(script) = 0 AND is_sweep_placeholder = 0;".to_string()
 }

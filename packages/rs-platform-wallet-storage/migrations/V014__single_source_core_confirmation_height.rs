@@ -57,7 +57,17 @@ WHERE u.spent = 0 AND u.height IS NOT NULL AND u.height > 0
 ON CONFLICT(wallet_id, txid) DO UPDATE SET height = excluded.height
 WHERE core_transactions.record_blob IS NULL AND core_transactions.height IS NULL;
 
+DROP INDEX idx_core_utxos_unmaterialized;
+ALTER TABLE core_utxos ADD COLUMN is_sweep_placeholder INTEGER NOT NULL DEFAULT 0;
+UPDATE core_utxos SET is_sweep_placeholder = 1 WHERE height IS NULL;
 ALTER TABLE core_utxos DROP COLUMN height;
+CREATE INDEX idx_core_utxos_unmaterialized ON core_utxos(wallet_id, winner_mined_height)
+    WHERE is_sweep_placeholder = 1;
+CREATE TRIGGER setnull_core_utxos_on_tx_delete AFTER DELETE ON core_transactions
+BEGIN
+    UPDATE core_utxos SET spent_in_txid = NULL
+    WHERE wallet_id = OLD.wallet_id AND spent_in_txid = OLD.txid;
+END;
 "
     .to_string()
 }

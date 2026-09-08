@@ -47,7 +47,7 @@ const FIXTURE_IDENTITY: [u8; 32] = [0xC1; 32];
 /// V001-V006 and nothing later existed when the fixture was created.
 const V4_2_DEV_SCHEMA_VERSION: i64 = 6;
 
-/// `PRAGMA application_id` of a database created before `V007` stamped it:
+/// `PRAGMA application_id` of a database created before `V008` stamped it:
 /// SQLite's default for a file nobody stamped.
 const UNSTAMPED_APPLICATION_ID: i64 = 0;
 
@@ -163,7 +163,7 @@ fn seed_base_shaped_rows(conn: &rusqlite::Connection) {
     use rusqlite::params;
 
     let wallet = wid(FIXTURE_WALLET);
-    // The `account_type = 'standard'` row is load-bearing: V007 must rewrite
+    // The `account_type = 'standard'` row is load-bearing: V008 must rewrite
     // the label to `standard_bip44` and leave the xpub blob untouched.
     let registration = AccountRegistrationEntry {
         account_type: AccountType::Standard {
@@ -188,7 +188,7 @@ fn seed_base_shaped_rows(conn: &rusqlite::Connection) {
         params![wallet.as_slice(), registration_blob],
     )
     .expect("insert account_registrations");
-    // Both tables V007 drops, so the reshape must tolerate rows in them.
+    // Both tables V008 drops, so the reshape must tolerate rows in them.
     conn.execute(
         "INSERT INTO account_address_pools \
              (wallet_id, account_type, account_index, pool_type, snapshot_blob) \
@@ -211,7 +211,7 @@ fn seed_base_shaped_rows(conn: &rusqlite::Connection) {
     .expect("insert core_sync_state");
     // No `identity_keys` row here: a valid `public_key_blob` is an encoded
     // `IdentityKeyWire`, and a placeholder would fail the load path rather
-    // than the migration. V007's `identity_keys` rebuild and its wallet-scope
+    // than the migration. V008's `identity_keys` rebuild and its wallet-scope
     // backfill are covered directly by
     // `tc048_v007_backfills_identity_key_wallet_scope`.
     conn.execute(
@@ -369,7 +369,7 @@ fn v4_2_dev_fixture_is_present_and_shaped_like_base() {
         "fixture must be unstamped; a stamped file did not come from v4.2-dev"
     );
 
-    // The three tables V007 retires must still be present, or the fixture is
+    // The three tables V008 retires must still be present, or the fixture is
     // not exercising the reshape at all.
     for table in [
         "wallet_metadata",

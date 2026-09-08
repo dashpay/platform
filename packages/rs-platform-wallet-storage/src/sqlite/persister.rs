@@ -1320,7 +1320,9 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
-            .union(PersistenceCapabilities::TRACKED_MASTERNODES);
+            .union(PersistenceCapabilities::TRACKED_MASTERNODES)
+            .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
+            .union(PersistenceCapabilities::DASHPAY_PAYMENTS);
         #[cfg(feature = "shielded")]
         {
             capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)

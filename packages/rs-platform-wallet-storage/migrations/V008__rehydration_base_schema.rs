@@ -1,10 +1,10 @@
 //! Reshape the V001 base schema for the rehydration workstream (#3968).
 //!
 //! Everything here was originally written into `V001__initial.rs` in place.
-//! That is not available: `v4.2-dev` publishes V001-V006, and refinery
+//! That is not available: `v4.2-dev` publishes V001-V007, and refinery
 //! validates an applied migration's checksum against the embedded migration of
 //! the same version, so editing a published body stops every database that
-//! applied it from opening. The reshape therefore APPENDS, and V001-V006 stay
+//! applied it from opening. The reshape therefore APPENDS, and V001-V007 stay
 //! byte-identical to what `v4.2-dev` shipped.
 //!
 //! Seven changes, in dependency order:
@@ -20,7 +20,7 @@
 //!    accounts off one primary key, and its `account_type` domain widens to
 //!    the split standard labels while still admitting the pre-split one.
 //! 4. `account_address_pools` and `core_derived_addresses` are dropped;
-//!    `core_address_pool` (V008) replaces both.
+//!    `core_address_pool` (V009) replaces both.
 //! 5. `core_sync_state` gains the applied-ChainLock column.
 //! 6. `identities.wallet_index` -> `identity_index`, which is what the column
 //!    always meant.
@@ -34,9 +34,9 @@
 
 // The trigger pair created below is the PERMISSIVE original: it rejects a
 // NULL-scoped key whose identity is wallet-owned, but accepts one naming an
-// identity that does not exist at all. `V015` replaces it with the inverted
+// identity that does not exist at all. `V016` replaces it with the inverted
 // condition that closes both cases. Deliberately not written in its final form
-// here — V015 carries the fix and its own coverage, and collapsing the two
+// here — V016 carries the fix and its own coverage, and collapsing the two
 // would delete that coverage to save one migration.
 pub fn migration() -> String {
     // FROZEN, like V001's domains: never interpolate a live `*_LABELS` const
@@ -120,7 +120,7 @@ FROM account_registrations;
 DROP TABLE account_registrations;
 ALTER TABLE account_registrations_new RENAME TO account_registrations;
 
--- Superseded by `core_address_pool` (V008), which stores per-index rows
+-- Superseded by `core_address_pool` (V009), which stores per-index rows
 -- instead of an opaque pool snapshot and a separate derived-address table.
 DROP TABLE account_address_pools;
 DROP TABLE core_derived_addresses;

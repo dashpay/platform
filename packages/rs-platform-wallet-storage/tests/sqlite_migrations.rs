@@ -238,7 +238,10 @@ fn tc030_core_utxos_dead_metadata_columns_removed() {
         .unwrap();
 
     assert!(!columns.iter().any(|column| column == "account_index"));
-    assert!(!columns.iter().any(|column| column == "spent_in_txid"));
+    assert!(columns.iter().any(|column| column == "spent_in_txid"));
+    assert!(columns
+        .iter()
+        .any(|column| column == "is_sweep_placeholder"));
 }
 
 /// Confirmation height is single-sourced in nullable `core_transactions` rows.
@@ -301,7 +304,7 @@ fn tc045_v004_widens_asset_lock_status_on_existing_db() {
     to_v003.run(&mut conn).expect("migrate to V003");
 
     // 2. Populate it the way a live wallet would have. The table is still
-    //    `wallet_metadata` here — V007 is what renames it to `wallets`.
+    //    `wallet_metadata` here — V008 is what renames it to `wallets`.
     let wallet_id = [42u8; 32];
     conn.execute(
         "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -399,8 +402,8 @@ fn tc045_v004_widens_asset_lock_status_on_existing_db() {
     assert_eq!(remaining, 0, "ON DELETE CASCADE must survive the rebuild");
 }
 
-/// V013 → V014 upgrade path: a database created at the prior release
-/// schema (through V013) carrying a legacy empty-script spent row becomes
+/// V014 → V015 upgrade path: a database created at the prior release
+/// schema (through V014) carrying a legacy empty-script spent row becomes
 /// loadable again.
 ///
 /// The poisoned row is what the producer wrote before it reconstructed a
@@ -419,9 +422,9 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
     conn.pragma_update(None, "foreign_keys", true)
         .expect("enable foreign keys");
 
-    // 1. Stand the database up at the PRIOR release schema (V013).
-    let to_v013 = mig::runner().set_target(refinery::Target::Version(13));
-    to_v013.run(&mut conn).expect("migrate to V013");
+    // 1. Stand the database up at the PRIOR release schema (V014).
+    let to_v013 = mig::runner().set_target(refinery::Target::Version(14));
+    to_v013.run(&mut conn).expect("migrate to V014");
 
     // 2. Two wallets: the poisoned one, and one holding the unspent
     //    empty-script edge case the predicate must NOT reach.
@@ -465,7 +468,7 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
     )
     .expect("insert unspent empty-script row");
 
-    // 3. The damage V012 exists to repair: at V011 the single poisoned row
+    // 3. The damage V013 exists to repair: at V012 the single poisoned row
     //    rejects the used-set read for the whole wallet.
     let err = core_state::load_used_addresses_with_ctx(
         &conn,
@@ -473,13 +476,13 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
         dashcore::Network::Testnet,
         &platform_wallet_storage::LoadCtx::strict(),
     )
-    .expect_err("the poisoned row must reject the used-set read before V012");
+    .expect_err("the poisoned row must reject the used-set read before V013");
     assert!(
         matches!(err, WalletStorageError::AddressDecode { .. }),
         "expected AddressDecode from the empty script, got {err:?}"
     );
 
-    // 4. Upgrade to the latest schema (applies V012's purge).
+    // 4. Upgrade to the latest schema (applies V013's purge).
     mig::run(&mut conn).expect("migrate to latest");
 
     // 5. The poisoned row is gone...
@@ -492,7 +495,7 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
         .expect("count poisoned rows");
     assert_eq!(
         poisoned_rows, 0,
-        "V012 must purge legacy empty-script spent rows"
+        "V013 must purge legacy empty-script spent rows"
     );
 
     // 6. ...the legitimate spent row beside it survived byte-identical...
@@ -540,7 +543,7 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
     );
 }
 
-/// V013 rebuilds `core_transactions` into an FK-declaring twin and backfills
+/// V014 rebuilds `core_transactions` into an FK-declaring twin and backfills
 /// height-only rows from `core_utxos`. Both sources can hold rows whose wallet
 /// was deleted while FK enforcement happened to be off — third-party SQLite
 /// tooling defaults `foreign_keys` OFF, and this database sits on an end
@@ -558,9 +561,9 @@ fn tc047_v013_drops_orphans_instead_of_aborting_the_rebuild() {
     conn.pragma_update(None, "foreign_keys", true)
         .expect("enable foreign keys");
 
-    // 1. Stand the database up at the PRIOR release schema (V012).
-    let to_v012 = mig::runner().set_target(refinery::Target::Version(12));
-    to_v012.run(&mut conn).expect("migrate to V012");
+    // 1. Stand the database up at the PRIOR release schema (V013).
+    let to_v012 = mig::runner().set_target(refinery::Target::Version(13));
+    to_v012.run(&mut conn).expect("migrate to V013");
 
     // 2. A live wallet with one real transaction and one real UTXO.
     let wallet_id = [42u8; 32];
@@ -617,7 +620,7 @@ fn tc047_v013_drops_orphans_instead_of_aborting_the_rebuild() {
             |row| row.get(0),
         )
         .expect("count orphan rows");
-    assert_eq!(ghost_rows, 0, "V013 must drop orphans, not abort");
+    assert_eq!(ghost_rows, 0, "V014 must drop orphans, not abort");
 
     // 6. The live transaction survived the rebuild with its record intact.
     let (height, finalized, blob): (i64, i64, Vec<u8>) = conn
@@ -641,7 +644,7 @@ fn tc047_v013_drops_orphans_instead_of_aborting_the_rebuild() {
     assert_eq!(live_utxos, 1, "the live UTXO must survive the orphan sweep");
 }
 
-/// V007 rebuilds `identity_keys` with its own `wallet_id` scope, backfilled by
+/// V008 rebuilds `identity_keys` with its own `wallet_id` scope, backfilled by
 /// joining `identities`. A key whose identity is gone cannot be carried across
 /// — the re-declared FK would abort the migration — so it is swept, and a key
 /// belonging to a live identity must land under that identity's wallet.
@@ -721,7 +724,7 @@ fn tc048_v007_backfills_identity_key_wallet_scope() {
 /// under the default strict policy.
 ///
 /// `v4.2-dev` wrote `standard` for both standard variants, so which one a row
-/// is lives only in `account_xpub_bytes`. V007 therefore admits the legacy
+/// is lives only in `account_xpub_bytes`. V008 therefore admits the legacy
 /// label instead of rewriting it: a rewrite would have to guess, and guessing
 /// BIP44 for this row would make the reader's cross-check fail and take the
 /// whole wallet down under `LoadPolicy::Strict` -- a row that loads today

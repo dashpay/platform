@@ -327,7 +327,7 @@ fn forge_orphan_failed_index(persister: &SqlitePersister, wallet_id: &WalletId, 
 /// The upgrade path: a database standing at the previous release schema gains
 /// both tables, empty, and its existing wallet rows are left alone.
 #[test]
-fn should_create_the_scan_verdict_tables_when_upgrading_from_v014() {
+fn should_create_the_scan_verdict_tables_when_upgrading_from_v016() {
     use platform_wallet_storage::sqlite::migrations as mig;
     use rusqlite::params;
 
@@ -335,8 +335,8 @@ fn should_create_the_scan_verdict_tables_when_upgrading_from_v014() {
     conn.pragma_update(None, "foreign_keys", true)
         .expect("enable foreign keys");
 
-    let to_v015 = mig::runner().set_target(refinery::Target::Version(15));
-    to_v015.run(&mut conn).expect("migrate to V015");
+    let to_v016 = mig::runner().set_target(refinery::Target::Version(16));
+    to_v016.run(&mut conn).expect("migrate to V016");
 
     let w = [0x4Au8; 32];
     conn.execute(
@@ -348,20 +348,20 @@ fn should_create_the_scan_verdict_tables_when_upgrading_from_v014() {
     for table in ["identity_scan_states", "identity_scan_failed_indices"] {
         assert!(
             !table_exists(&conn, table),
-            "`{table}` must not exist before V015"
+            "`{table}` must not exist before V017"
         );
     }
 
-    mig::run(&mut conn).expect("apply V015");
+    mig::run(&mut conn).expect("apply V017");
 
     for table in ["identity_scan_states", "identity_scan_failed_indices"] {
-        assert!(table_exists(&conn, table), "V015 must create `{table}`");
+        assert!(table_exists(&conn, table), "V017 must create `{table}`");
         let n: i64 = conn
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
                 row.get(0)
             })
             .expect("count rows");
-        assert_eq!(n, 0, "`{table}` starts empty — V015 backfills nothing");
+        assert_eq!(n, 0, "`{table}` starts empty — V017 backfills nothing");
     }
 
     let birth_height: i64 = conn

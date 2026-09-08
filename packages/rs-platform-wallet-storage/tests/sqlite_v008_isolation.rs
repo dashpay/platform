@@ -1,9 +1,9 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Cross-wallet isolation + delete cascade for the new V008 tables
+//! Cross-wallet isolation + delete cascade for the new V009 tables
 //! (`core_address_pool`, `meta_data_versions`). Two wallets with
 //! fully-overlapping keys must not collide, must not leak across wallets, and
-//! deleting one must leave the other's V008 rows intact.
+//! deleting one must leave the other's V009 rows intact.
 
 mod common;
 
@@ -29,10 +29,10 @@ fn versions_count(conn: &rusqlite::Connection, w: &WalletId) -> i64 {
 }
 
 /// Overlapping keys across two wallets coexist without PK
-/// collision, and deleting wallet A cascades away only A's V008 rows while
+/// collision, and deleting wallet A cascades away only A's V009 rows while
 /// wallet B's survive intact.
 #[test]
-fn v008_tables_isolate_and_cascade_per_wallet() {
+fn v009_tables_isolate_and_cascade_per_wallet() {
     let (persister, _tmp, _path) = fresh_persister();
     let a: WalletId = wid(0x0A);
     let b: WalletId = wid(0x0B);
