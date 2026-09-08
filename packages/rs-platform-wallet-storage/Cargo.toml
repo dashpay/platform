@@ -49,9 +49,13 @@ rusqlite = { version = "0.38", features = [
     "limits",
     "trace",
 ], optional = true }
-refinery = { version = "0.9", default-features = false, features = [
+refinery = { version = "=0.9.2", default-features = false, features = [
     "rusqlite",
 ], optional = true }
+# The migration adapter uses refinery's supported synchronous driver traits.
+# Match refinery's driver traits and applied-history timestamp types.
+refinery-core = { version = "=0.9.2", default-features = false, optional = true }
+time = { version = "=0.3.49", features = ["parsing"], optional = true }
 # bincode 2 is required directly: we encode `dpp::IdentityPublicKey`
 # (which derives bincode 2 `Encode`/`Decode`) and decode
 # `dpp::AssetLockProof` from the asset-lock blob column. Exact-pinned to
@@ -203,6 +207,8 @@ sqlite = [
     "dep:dash-sdk",
     "dep:rusqlite",
     "dep:refinery",
+    "dep:refinery-core",
+    "dep:time",
     "dep:bincode",
     "dep:tempfile",
     "dep:chrono",

@@ -24,12 +24,8 @@ const EMPTY_WALLET: u8 = 0xB2;
 /// The reuse-guard used-set `load()` assembles from a migrated store: verbatim
 /// `core_address_pool` used=1 rows unioned with the `core_utxos`-derived (both
 /// spent and unspent) set, deduped by script — read from the two shipped reader
-/// fns the persister itself calls. Asserted at the reader layer (not the
-/// assembled `core_wallet_info`) because the fixture's UTXO sits on a
-/// seed-derived address unrelated to the registered account's xpub, so
-/// `load()`'s pool-marking never claims it; the used-set fact it pins is a
-/// reader-layer one (as in `sqlite_pool_reader.rs`). A migrated store carries no
-/// pool rows, so the set is UTXO-derived here.
+/// fns the persister itself calls. The fixture's pool and UTXO identify the
+/// same real address under the registered account's xpub.
 fn used_set(persister: &SqlitePersister, w: &WalletId) -> Vec<dashcore::Address> {
     let conn = persister.lock_conn_for_test();
     let pool = core_pool::load_used_addresses(&conn, w, dashcore::Network::Testnet)
@@ -178,8 +174,11 @@ fn assert_full_data_preserved(conn: &Connection) {
         ),
         1
     );
-    // New V002 tables exist with sane defaults.
+    // Legacy snapshots become populated per-address rows, including key and usage.
     assert!(table_exists(conn, "core_address_pool"));
+    assert_eq!(count(conn, "SELECT COUNT(*) FROM core_address_pool WHERE wallet_id = ?1 AND used = 1 AND length(public_key) = 33 AND key_type = 0", &full), 1);
+    assert!(!table_exists(conn, "account_address_pools"));
+    assert!(!table_exists(conn, "core_derived_addresses"));
     assert!(table_exists(conn, "meta_data_versions"));
     let gen_len: i64 = conn
         .query_row(
@@ -221,8 +220,7 @@ fn v4_2_dev_database_opens_and_migrates_forward() {
             "the rebuild must preserve the fixture transaction height and blob byte-for-byte"
         );
     }
-    // The full wallet reconstructs; the used-set falls back to the
-    // UTXO-derived address (no pool rows in a migrated store).
+    // The full wallet reconstructs; converted pool and UTXO usage agree.
     let state = p.load().unwrap();
     let full = wid(FULL_WALLET);
     assert!(
@@ -540,8 +538,10 @@ fn migration_snapshot(conn: &Connection) -> Vec<i64> {
 /// Crash mid-migrate: an interrupted V008 (partial DDL, no commit)
 /// leaves the store at the last committed version (V002) with no partial
 /// tables; re-opening resumes and converges byte-equal to a clean direct
-/// migration. Empirically demonstrates refinery's per-migration transaction
-/// guarantee (one tx per migration — no `set_grouped`/`no_transaction`).
+/// migration. This exercises SQLite's transactional DDL directly. The
+/// production runner groups all pending SQL and typed conversion in one
+/// transaction; its late-failure rollback is covered in
+/// `sqlite_legacy_state_migration`.
 #[test]
 fn interrupted_migration_recovers_to_clean_state() {
     // Reference: a fresh copy migrated straight through.

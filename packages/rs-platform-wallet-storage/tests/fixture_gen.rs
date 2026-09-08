@@ -28,7 +28,6 @@ use std::path::{Path, PathBuf};
 use common::wid;
 use dpp::prelude::Identifier;
 use key_wallet::account::{AccountType, StandardAccountType};
-use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -43,8 +42,8 @@ const EMPTY_WALLET: u8 = 0xB2;
 /// The identity the fixture carries, owned by that wallet.
 const FIXTURE_IDENTITY: [u8; 32] = [0xC1; 32];
 
-/// Schema version a `v4.2-dev` build migrates to -- the published set is
-/// V001-V006 and nothing later existed when the fixture was created.
+/// Historical base fixture version. It predates the subsequently published
+/// V007; both that migration and these V001-V006 bodies remain immutable.
 const V4_2_DEV_SCHEMA_VERSION: i64 = 6;
 
 /// `PRAGMA application_id` of a database created before `V008` stamped it:
@@ -58,17 +57,9 @@ fn fixture_path() -> PathBuf {
         .join("v4_2_dev_migrated.db")
 }
 
-/// A deterministic test xpub decoded from a fixed serialized form, so the
-///ized registration round-trips reproducibly.
-fn test_xpub() -> ExtendedPubKey {
-    ExtendedPubKey::decode(&hex::decode(
-        "0488B21E000000000000000000873DFF81C02F525623FD1FE5167EAC3A55A049DE3D314BB42EE227FFED37D5080339A36013301597DAEF41FBE593A02CC513D0B55527EC2DF1050E2E8FF49C85C2",
-    ).unwrap()).unwrap()
-}
-
 /// First external address of the Standard BIP44 account 0, derived from fixed
 /// bytes so the UTXO lands on a real, script-round-trippable address.
-fn first_external_address(byte: u8) -> dashcore::Address {
+fn first_external_info(byte: u8) -> key_wallet::AddressInfo {
     use key_wallet::managed_account::address_pool::AddressPoolType;
     let wallet = Wallet::from_seed_bytes(
         [byte; 64],
@@ -90,7 +81,7 @@ fn first_external_address(byte: u8) -> dashcore::Address {
             }
             let mut infos: Vec<_> = pool.addresses.values().cloned().collect();
             infos.sort_by_key(|a| a.index);
-            return infos.first().cloned().unwrap().address;
+            return infos.first().cloned().unwrap();
         }
     }
     panic!("wallet must expose a non-empty Standard BIP44 external pool");
@@ -163,14 +154,26 @@ fn seed_base_shaped_rows(conn: &rusqlite::Connection) {
     use rusqlite::params;
 
     let wallet = wid(FIXTURE_WALLET);
-    // The `account_type = 'standard'` row is load-bearing: V008 must rewrite
-    // the label to `standard_bip44` and leave the xpub blob untouched.
+    // The legacy label is retained; its blob identifies the exact variant.
+    let key_wallet = Wallet::from_seed_bytes(
+        [FIXTURE_WALLET; 64],
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
     let registration = AccountRegistrationEntry {
         account_type: AccountType::Standard {
             index: 0,
             standard_account_type: StandardAccountType::BIP44Account,
         },
-        account_xpub: test_xpub(),
+        account_xpub: key_wallet
+            .accounts
+            .account_of_type(AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            })
+            .unwrap()
+            .account_xpub,
     };
     let registration_blob = blob::encode(&registration).expect("encode registration");
     let identity_blob = blob::encode(&identity_entry()).expect("encode identity");
@@ -188,19 +191,27 @@ fn seed_base_shaped_rows(conn: &rusqlite::Connection) {
         params![wallet.as_slice(), registration_blob],
     )
     .expect("insert account_registrations");
-    // Both tables V008 drops, so the reshape must tolerate rows in them.
+    // Real public pool state from the published writer's bincode-serde codec.
+    let mut info = first_external_info(FIXTURE_WALLET);
+    info.state = key_wallet::managed_account::address_pool::AddressState::Used;
+    let snapshot = platform_wallet::changeset::AccountAddressPoolEntry {
+        account_type: registration.account_type,
+        pool_type: key_wallet::managed_account::address_pool::AddressPoolType::External,
+        addresses: vec![info.clone()],
+    };
+    let snapshot = bincode::serde::encode_to_vec(snapshot, bincode::config::standard()).unwrap();
     conn.execute(
         "INSERT INTO account_address_pools \
              (wallet_id, account_type, account_index, pool_type, snapshot_blob) \
-         VALUES (?1, 'standard', 0, 'external', X'00')",
-        params![wallet.as_slice()],
+         VALUES (?1, 'standard', 0, 'external', ?2)",
+        params![wallet.as_slice(), snapshot],
     )
     .expect("insert account_address_pools");
     conn.execute(
         "INSERT INTO core_derived_addresses \
              (wallet_id, account_type, account_index, address, derivation_path, used) \
-         VALUES (?1, 'standard', 0, 'yTestAddress', 'm/44h/1h/0h/0/0', 0)",
-        params![wallet.as_slice()],
+         VALUES (?1, 'standard', 0, ?2, 'external/0', 1)",
+        params![wallet.as_slice(), info.address.to_string()],
     )
     .expect("insert core_derived_addresses");
     conn.execute(
@@ -237,7 +248,7 @@ fn seed_base_shaped_rows(conn: &rusqlite::Connection) {
 
     // A confirmed transaction and the UTXO it paid, on a real derived address
     // so the migrated store's used-address set resolves a script to an address.
-    let address = first_external_address(FIXTURE_WALLET);
+    let address = first_external_info(FIXTURE_WALLET).address;
     let record = one_tx_record();
     let record_blob = blob::encode(&record).expect("encode transaction record");
     let txid = [0x7Eu8; 32];
