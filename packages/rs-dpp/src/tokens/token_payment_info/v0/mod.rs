@@ -5,7 +5,7 @@ use crate::data_contract::TokenContractPosition;
 use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use crate::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::Display;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Identifier, Value};
@@ -13,9 +13,7 @@ use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(
-    Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display, bincode::DecodeUntrusted,
-)]
+#[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display, DecodeUntrusted)]
 // `json_safe_fields` auto-injects `json_safe_option_u64` on
 // `Option<TokenAmount>` (= `Option<u64>`) fields so JSON encodes large
 // values as strings — same convention as the rest of the wire shape.

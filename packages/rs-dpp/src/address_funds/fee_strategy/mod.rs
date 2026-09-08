@@ -2,11 +2,11 @@ pub mod deduct_fee_from_inputs_and_outputs;
 
 pub use deduct_fee_from_inputs_and_outputs::FeeDeductionResult;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq, Hash, bincode::DecodeUntrusted)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq, Hash, DecodeUntrusted)]
 pub enum AddressFundsFeeStrategyStep {
     /// Deduct fee from a specific input address by index.
     /// The input must have remaining balance after its contribution to outputs.

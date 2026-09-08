@@ -2,7 +2,7 @@ pub mod daily_withdrawal_limit;
 #[cfg(all(feature = "withdrawals-contract", feature = "system_contracts"))]
 mod document_try_into_asset_unlock_base_transaction_info;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 #[cfg(feature = "json-conversion")]
@@ -22,7 +22,7 @@ use crate::serialization::ValueConvertible;
     Encode,
     Decode,
     Default,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 pub enum Pooling {
     #[default]

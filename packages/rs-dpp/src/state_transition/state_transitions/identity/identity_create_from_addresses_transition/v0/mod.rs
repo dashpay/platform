@@ -6,7 +6,7 @@ mod version;
 
 use std::collections::BTreeMap;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSignable;
 
 use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness, PlatformAddress};
@@ -21,7 +21,7 @@ use crate::ProtocolError;
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable, bincode::DecodeUntrusted)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

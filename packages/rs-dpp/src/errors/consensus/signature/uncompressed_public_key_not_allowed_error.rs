@@ -1,7 +1,7 @@
 use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -15,7 +15,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Uncompressed public keys are not allowed: expected 33 bytes (compressed), got {public_key_size} bytes")]
 #[platform_serialize(unversioned)]

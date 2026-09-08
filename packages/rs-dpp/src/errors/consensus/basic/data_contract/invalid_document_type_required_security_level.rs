@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::identity::SecurityLevel;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Identifier;
 
 #[derive(
@@ -19,7 +19,7 @@ use platform_value::Identifier;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Invalid document type security level error security level: got {security_level:?} for {contract_id}::{document_type_name}")]
 #[platform_serialize(unversioned)]

@@ -9,7 +9,7 @@ use crate::identity::KeyID;
 
 use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSignable;
 
 use crate::prelude::UserFeeIncrease;
@@ -20,7 +20,7 @@ use platform_value::{BinaryData, Identifier};
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable, bincode::DecodeUntrusted)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

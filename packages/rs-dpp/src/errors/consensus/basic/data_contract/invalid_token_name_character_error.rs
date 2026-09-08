@@ -1,7 +1,7 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -15,7 +15,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Data contract has a token name {token_name} in {form} with invalid characters. Token names must not contain whitespace or control characters.")]
 #[platform_serialize(unversioned)]

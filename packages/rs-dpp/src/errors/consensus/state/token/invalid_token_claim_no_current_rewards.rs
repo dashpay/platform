@@ -3,7 +3,7 @@ use crate::data_contract::associated_token::token_perpetual_distribution::reward
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, Encode, DecodeUntrusted};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -17,7 +17,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error(
     "No current rewards available for recipient '{}' on token ID '{}' at moment '{}'. Last claimed moment: '{}'",

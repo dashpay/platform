@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -17,7 +17,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error(
     "Invalid parameter tuple in token distribution function: `{}` must be {} `{}`",

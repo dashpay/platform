@@ -18,7 +18,7 @@ use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
 use crate::state_transition::StateTransition;
@@ -27,7 +27,7 @@ use crate::version::PlatformVersion;
 ///DataContractCreateTransitionV0 has the same encoding structure
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable, bincode::DecodeUntrusted)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

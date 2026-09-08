@@ -14,7 +14,7 @@ use crate::prelude::{
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
@@ -67,7 +67,7 @@ pub type FrozenIdentifier = Identifier;
     Decode,
     PlatformDeserialize,
     PlatformSerialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 // Custom `Serialize` / `Deserialize` below — `TokenEvent` is a flat enum
 // with all-tuple variants. Internal tagging requires struct variants or

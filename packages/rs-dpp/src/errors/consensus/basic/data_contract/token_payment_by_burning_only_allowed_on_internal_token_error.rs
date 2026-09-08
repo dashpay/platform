@@ -3,7 +3,7 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::TokenContractPosition;
 use crate::tokens::calculate_token_id;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use std::fmt;
@@ -19,7 +19,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub struct TokenPaymentByBurningOnlyAllowedOnInternalTokenError {

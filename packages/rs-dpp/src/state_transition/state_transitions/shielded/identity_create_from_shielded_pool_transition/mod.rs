@@ -21,7 +21,7 @@ use crate::serialization::ValueConvertible;
 use crate::shielded::SerializedAction;
 use crate::util::hash::hash_double;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::Identifier;
@@ -40,7 +40,7 @@ use serde::{Deserialize, Serialize};
     PlatformVersioned,
     From,
     PartialEq,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

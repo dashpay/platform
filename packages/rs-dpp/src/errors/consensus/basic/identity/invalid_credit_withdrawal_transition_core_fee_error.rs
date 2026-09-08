@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -17,7 +17,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Core fee per byte {core_fee_per_byte:?} must be part of fibonacci sequence and not less than {min_core_fee_per_byte:?}")]
 #[platform_serialize(unversioned)]

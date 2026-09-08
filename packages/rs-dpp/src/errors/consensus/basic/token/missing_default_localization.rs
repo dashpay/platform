@@ -1,7 +1,7 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 #[derive(
@@ -14,7 +14,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Missing english ('en') localization which is using by default")]
 #[platform_serialize(unversioned)]

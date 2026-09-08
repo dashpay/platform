@@ -5,7 +5,7 @@ use crate::data_contract::associated_token::token_perpetual_distribution::TokenP
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::GroupContractPosition;
 use crate::ProtocolError;
-use bincode::Encode;
+use bincode::{DecodeUntrusted, Encode};
 use platform_serialization::de::Decode;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
@@ -24,7 +24,7 @@ use std::fmt;
     PlatformDeserialize,
     PartialEq,
     Eq,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -17,7 +17,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Asset Lock proof core chain height {proof_core_chain_locked_height:?} is higher than the current consensus core height {current_core_chain_locked_height:?}.")]
 #[platform_serialize(unversioned)]

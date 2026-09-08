@@ -4,7 +4,7 @@ pub mod v0_methods;
 use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use std::collections::BTreeMap;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::Display;
 use platform_value::Value;
 
@@ -27,7 +27,7 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 // `Deserialize` is implemented manually below — same reason as
 // `DocumentCreateTransitionV0`: two `#[serde(flatten)]` fields, one of
 // which is a catchall map that would otherwise swallow the base's keys.
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, bincode::DecodeUntrusted)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize),

@@ -4,16 +4,14 @@ use crate::fee::Credits;
 use crate::prelude::{BlockHeight, BlockHeightInterval, CoreBlockHeight, TimestampMillis};
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Finalized Epoch information
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(
-    Clone, Debug, PartialEq, Encode, Decode, Serialize, Deserialize, bincode::DecodeUntrusted,
-)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode, Serialize, Deserialize, DecodeUntrusted)]
 #[serde(rename_all = "camelCase")]
 pub struct FinalizedEpochInfoV0 {
     /// First block time

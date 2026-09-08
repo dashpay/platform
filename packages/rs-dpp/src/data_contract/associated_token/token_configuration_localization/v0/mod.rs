@@ -2,7 +2,7 @@ mod accessors;
 
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -13,16 +13,7 @@ use std::fmt;
 /// but enhances UX by allowing consistent display in multilingual interfaces.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
-    Serialize,
-    Deserialize,
-    Decode,
-    Encode,
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    bincode::DecodeUntrusted,
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd, DecodeUntrusted,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationLocalizationV0 {

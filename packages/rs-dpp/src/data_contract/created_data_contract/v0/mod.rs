@@ -1,5 +1,5 @@
 use crate::data_contract::DataContract;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::prelude::IdentityNonce;
@@ -11,7 +11,7 @@ pub struct CreatedDataContractV0 {
     pub identity_nonce: IdentityNonce,
 }
 
-#[derive(Clone, Debug, Encode, Decode, bincode::DecodeUntrusted)]
+#[derive(Clone, Debug, Encode, Decode, DecodeUntrusted)]
 pub struct CreatedDataContractInSerializationFormatV0 {
     pub data_contract: DataContractInSerializationFormat,
     pub identity_nonce: IdentityNonce,

@@ -7,7 +7,7 @@ use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use crate::tokens::info::v0::IdentityTokenInfoV0;
 use crate::ProtocolError;
-use bincode::Encode;
+use bincode::{DecodeUntrusted, Encode};
 use derive_more::From;
 use platform_serialization::de::Decode;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -33,7 +33,7 @@ pub mod v0;
     PlatformVersioned,
     From,
     PartialEq,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[cfg_attr(

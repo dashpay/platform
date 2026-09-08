@@ -3,7 +3,7 @@ use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStatus;
 use crate::voting::vote_polls::VotePoll;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -16,7 +16,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("VotePoll {vote_poll} not available for voting: {status}")]
 #[platform_serialize(unversioned)]

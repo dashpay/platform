@@ -1,7 +1,7 @@
 mod accessors;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use bincode::Encode;
+use bincode::{DecodeUntrusted, Encode};
 use platform_serialization::de::Decode;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -11,16 +11,7 @@ use std::fmt;
 /// Pre Programmed Token Release always require an entry to the ledger
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
-    Serialize,
-    Deserialize,
-    Decode,
-    Encode,
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    bincode::DecodeUntrusted,
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, DecodeUntrusted,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct TokenKeepsHistoryRulesV0 {

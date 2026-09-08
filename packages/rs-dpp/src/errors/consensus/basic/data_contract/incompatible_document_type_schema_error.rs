@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -16,7 +16,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Updated document type '{document_type_name}' schema is not backward compatible with previous version. Incompatible change '{operation}' of property '{property_path}'"
 )]

@@ -1,7 +1,7 @@
 pub mod v0_methods;
 
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::string_encoding::Encoding;
 use platform_value::Identifier;
 #[cfg(feature = "serde-conversion")]
@@ -14,7 +14,7 @@ mod property_names {
 /// The Identifier fields in [`TokenMintTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, bincode::DecodeUntrusted)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, DecodeUntrusted)]
 // Auto-injects `json_safe_u64` on `amount: u64`.
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(

@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::prelude::Identifier;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -18,7 +18,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Data Contract {data_contract_id} doesn't define document with the type {document_type}")]
 #[platform_serialize(unversioned)]

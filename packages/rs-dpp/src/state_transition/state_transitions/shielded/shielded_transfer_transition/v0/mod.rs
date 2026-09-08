@@ -6,7 +6,7 @@ mod version;
 
 use crate::shielded::SerializedAction;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
     PlatformDeserialize,
     PlatformSignable,
     PartialEq,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

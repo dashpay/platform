@@ -7,12 +7,12 @@ use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use crate::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStatus;
 use crate::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Identifier;
 use std::fmt;
 
 // We can have multiple rounds of voting, after an unlock for example
-#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode, bincode::DecodeUntrusted)]
+#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode, DecodeUntrusted)]
 pub struct ContestedDocumentVotePollStoredInfoVoteEventV0 {
     /// The list of contenders returned by the query.
     pub resource_vote_choices: Vec<FinalizedResourceVoteChoicesWithVoterInfo>,
@@ -42,7 +42,7 @@ impl fmt::Display for ContestedDocumentVotePollStoredInfoVoteEventV0 {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode, bincode::DecodeUntrusted)]
+#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode, DecodeUntrusted)]
 pub struct ContestedDocumentVotePollStoredInfoV0 {
     /// The list of contenders returned by the query.
     pub finalized_events: Vec<ContestedDocumentVotePollStoredInfoVoteEventV0>,

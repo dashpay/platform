@@ -5,7 +5,7 @@ use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::Document;
 use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::fmt;
@@ -33,7 +33,7 @@ pub struct FinalizedContenderWithSerializedDocument {
 ///
 /// This struct holds the identity ID of the contender, the serialized document,
 /// and the vote tally.
-#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode, bincode::DecodeUntrusted)]
+#[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode, DecodeUntrusted)]
 pub struct FinalizedResourceVoteChoicesWithVoterInfo {
     /// The resource vote choice.
     pub resource_vote_choice: ResourceVoteChoice,

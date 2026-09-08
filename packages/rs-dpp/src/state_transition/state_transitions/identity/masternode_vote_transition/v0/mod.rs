@@ -12,7 +12,7 @@ use crate::prelude::{Identifier, IdentityNonce};
 
 use crate::protocol_error::ProtocolError;
 use crate::voting::votes::Vote;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::BinaryData;
 #[cfg(feature = "serde-conversion")]
@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
     PlatformDeserialize,
     PlatformSignable,
     PartialEq,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

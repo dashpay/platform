@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::prelude::Identifier;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -18,7 +18,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Insufficient identity {identity_id} balance {balance} required {required_balance}")]
 #[platform_serialize(unversioned)]

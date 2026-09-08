@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[derive(
     Error,
     Debug,
@@ -16,7 +16,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error(
     "Invalid token base supply. Given base supply: {}, Max allowed base supply: {}",

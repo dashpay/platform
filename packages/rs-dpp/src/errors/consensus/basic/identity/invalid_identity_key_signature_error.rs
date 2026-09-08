@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::identity::KeyID;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -18,7 +18,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Identity key {public_key_id} has invalid signature")]
 #[platform_serialize(unversioned)]

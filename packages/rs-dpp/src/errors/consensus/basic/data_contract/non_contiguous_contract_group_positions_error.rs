@@ -2,7 +2,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::GroupContractPosition;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -16,7 +16,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error(
     "Contract Group Positions are not contiguous. Missing position: {}, Followed position: {}",

@@ -2,7 +2,7 @@ use crate::data_contract::group::{Group, GroupMemberPower};
 use crate::data_contract::GroupContractPosition;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::Display;
 use platform_value::Identifier;
 #[cfg(feature = "serde-conversion")]
@@ -13,7 +13,7 @@ pub mod action_taker;
 pub mod group_action;
 pub mod group_action_status;
 
-#[derive(Debug, Clone, Copy, Encode, Decode, PartialEq, bincode::DecodeUntrusted)]
+#[derive(Debug, Clone, Copy, Encode, Decode, PartialEq, DecodeUntrusted)]
 pub enum GroupStateTransitionInfoStatus {
     GroupStateTransitionInfoProposer(GroupContractPosition),
     GroupStateTransitionInfoOtherSigner(GroupStateTransitionInfo),
@@ -35,9 +35,7 @@ impl From<GroupStateTransitionInfoStatus> for GroupStateTransitionInfo {
 }
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(
-    Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display, bincode::DecodeUntrusted,
-)]
+#[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

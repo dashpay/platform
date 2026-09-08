@@ -4,7 +4,7 @@ use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::fee::Credits;
 use crate::prelude::AddressNonce;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -19,7 +19,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Insufficient combined address balances: total available is less than required {required_balance}")]
 #[platform_serialize(unversioned)]

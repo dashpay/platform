@@ -7,7 +7,7 @@ use crate::consensus::ConsensusError;
 use crate::prelude::Identifier;
 
 use crate::data_contract::errors::DataContractError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -18,7 +18,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Data Contract {data_contract_id} must have at least one document type or token defined.")]
 #[platform_serialize(unversioned)]

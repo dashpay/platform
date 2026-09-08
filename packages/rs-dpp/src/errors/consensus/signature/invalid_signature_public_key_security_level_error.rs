@@ -8,7 +8,7 @@ use crate::identity::SecurityLevel;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -20,7 +20,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Invalid public key security level {public_key_security_level}. The state transition requires one of {}", allowed_key_security_levels.iter().map(|s| s.to_string()).join(" | "))]
 #[platform_serialize(unversioned)]

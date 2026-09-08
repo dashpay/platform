@@ -6,7 +6,7 @@ use crate::errors::ProtocolError;
 use crate::identity::KeyID;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -18,7 +18,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Identity key {public_key_id} is disabled")]
 #[platform_serialize(unversioned)]

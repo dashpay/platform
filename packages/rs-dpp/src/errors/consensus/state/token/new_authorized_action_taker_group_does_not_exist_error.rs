@@ -2,7 +2,7 @@ use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::GroupContractPosition;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -16,7 +16,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("The specified new authorized action taker group {group_contract_position} does not exist")]
 #[platform_serialize(unversioned)]

@@ -6,7 +6,7 @@ use thiserror::Error;
 use crate::consensus::ConsensusError;
 
 use crate::identity::Purpose;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -18,7 +18,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Key purpose {given_key_purpose} is not allowed for contract bounds. Allowed purposes: {allowed_key_purposes:?}")]
 #[platform_serialize(unversioned)]

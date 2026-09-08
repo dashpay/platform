@@ -10,7 +10,7 @@ use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_lef
 use crate::fee::epoch::{BytesPerEpoch, CreditsPerEpoch};
 use crate::fee::Credits;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
@@ -30,16 +30,7 @@ pub type BytesPerEpochByIdentifier = BTreeMap<[u8; 32], BytesPerEpoch>;
 
 /// Fee refunds to identities based on removed data from specific epochs
 #[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Default,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-    bincode::DecodeUntrusted,
+    Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize, Encode, Decode, DecodeUntrusted,
 )]
 pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
 

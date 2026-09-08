@@ -5,7 +5,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -16,7 +16,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Forbidden operation '{operation}' on '{field_path}', old config is {old_config}, new config is {new_config}")]
 #[platform_serialize(unversioned)]

@@ -1,7 +1,7 @@
 use crate::balances::credits::TokenAmount;
 use crate::errors::ProtocolError;
 use crate::fee::Credits;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ use std::fmt::{self, Display, Formatter};
     PartialOrd,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

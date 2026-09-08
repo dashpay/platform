@@ -31,7 +31,7 @@
 //!
 //!
 //!
-#[derive(Clone, Copy, Debug, PartialEq, Encode, Decode, bincode::DecodeUntrusted)]
+#[derive(Clone, Copy, Debug, PartialEq, Encode, Decode, DecodeUntrusted)]
 pub struct FieldTypeWeights {
     pub string_weight: u16,
     pub float_weight: u16,
@@ -41,7 +41,7 @@ pub struct FieldTypeWeights {
     pub byte_array_weight: u16,
 }
 
-#[derive(Clone, Debug, PartialEq, Encode, Decode, bincode::DecodeUntrusted)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode, DecodeUntrusted)]
 pub struct FieldMinMaxBounds {
     pub string_min_len: Range<u16>,
     pub string_has_min_len_chance: f64,
@@ -63,7 +63,7 @@ pub struct FieldMinMaxBounds {
     pub byte_array_has_max_len_chance: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Encode, Decode, bincode::DecodeUntrusted)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode, DecodeUntrusted)]
 pub struct RandomDocumentTypeParameters {
     pub new_fields_optional_count_range: Range<u16>,
     pub new_fields_required_count_range: Range<u16>,
@@ -112,7 +112,7 @@ use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use platform_value::{platform_value, Identifier};

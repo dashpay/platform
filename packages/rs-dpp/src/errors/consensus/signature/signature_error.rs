@@ -6,7 +6,7 @@ use crate::consensus::signature::{
     WrongPublicKeyPurposeError,
 };
 use crate::consensus::ConsensusError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use thiserror::Error;
 
 use crate::consensus::signature::invalid_signature_public_key_purpose_error::InvalidSignaturePublicKeyPurposeError;
@@ -22,7 +22,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
     PlatformSerialize,
     PlatformDeserialize,
     Clone,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 pub enum SignatureError {
     /*

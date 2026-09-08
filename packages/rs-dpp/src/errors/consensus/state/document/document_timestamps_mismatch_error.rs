@@ -1,7 +1,7 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use thiserror::Error;
@@ -16,7 +16,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Document {document_id} createdAt and updatedAt timestamps are not equal")]
 #[platform_serialize(unversioned)]

@@ -1,7 +1,7 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use thiserror::Error;
@@ -16,7 +16,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Document paid for by a token has a contractId {contract_id} set, which is redundant because it is targeting the current contract")]
 #[platform_serialize(unversioned)]

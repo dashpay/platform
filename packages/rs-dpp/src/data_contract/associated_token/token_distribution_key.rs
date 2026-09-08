@@ -1,6 +1,6 @@
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, Encode, DecodeUntrusted};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ use crate::prelude::TimestampMillis;
     Eq,
     PartialOrd,
     Default,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 pub enum TokenDistributionType {
     /// A pre-programmed distribution scheduled for a specific time.
@@ -40,16 +40,7 @@ pub enum TokenDistributionType {
 /// - `PreProgrammed(Identifier)`: A predefined recipient for a scheduled distribution.
 /// - `Perpetual(TokenDistributionResolvedRecipient)`: A resolved recipient for an ongoing distribution.
 #[derive(
-    Serialize,
-    Deserialize,
-    Decode,
-    Encode,
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    bincode::DecodeUntrusted,
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd, DecodeUntrusted,
 )]
 #[serde(
     into = "TokenDistributionTypeWithResolvedRecipientRepr",
@@ -112,16 +103,7 @@ impl From<TokenDistributionTypeWithResolvedRecipientRepr>
 /// - `Perpetual(RewardDistributionMoment, RewardDistributionMoment, TokenDistributionResolvedRecipient)`:
 ///   A perpetual distribution with previous and next distribution moments, along with the resolved recipient.
 #[derive(
-    Serialize,
-    Deserialize,
-    Decode,
-    Encode,
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    bincode::DecodeUntrusted,
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd, DecodeUntrusted,
 )]
 #[serde(into = "TokenDistributionInfoRepr", from = "TokenDistributionInfoRepr")]
 pub enum TokenDistributionInfo {
@@ -230,7 +212,7 @@ impl fmt::Display for TokenDistributionType {
     Clone,
     PartialEq,
     Eq,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub struct TokenDistributionKey {

@@ -11,14 +11,14 @@ use crate::shielded::SerializedAction;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_value::Identifier;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable, bincode::DecodeUntrusted)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

@@ -1,7 +1,7 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{Bytes20, Identifier};
 use thiserror::Error;
@@ -16,7 +16,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Masternode {pro_tx_hash} voting address is incorrect, current is {current_voting_address}, given is {given_voting_address}")]
 #[platform_serialize(unversioned)]

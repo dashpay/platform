@@ -2,7 +2,7 @@ use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::identity::KeyID;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use thiserror::Error;
@@ -17,7 +17,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("referenced public key {key_id} of identity {identity_id} is disabled for path {path}")]
 #[platform_serialize(unversioned)]

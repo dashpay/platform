@@ -7,7 +7,7 @@ use crate::prelude::Identifier;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -19,7 +19,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Identity {identity_id} not found")]
 #[platform_serialize(unversioned)]

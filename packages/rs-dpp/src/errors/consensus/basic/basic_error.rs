@@ -1,5 +1,5 @@
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -125,7 +125,7 @@ use crate::data_contract::errors::DataContractError;
     Decode,
     PartialEq,
     Clone,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 pub enum BasicError {
     /*

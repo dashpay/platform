@@ -2,7 +2,7 @@ use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::fee::Credits;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use thiserror::Error;
@@ -17,7 +17,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("{document_id} document can not be purchased for {trying_to_purchase_at_price}, it's sale price is {actual_price} (in credits)")]
 #[platform_serialize(unversioned)]

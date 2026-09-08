@@ -8,7 +8,7 @@ mod version;
 use crate::serialization::json_safe_fields;
 use std::convert::TryFrom;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSignable;
 
 use platform_value::BinaryData;
@@ -28,7 +28,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable, bincode::DecodeUntrusted)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

@@ -11,7 +11,7 @@ use crate::data_contract::GroupContractPosition;
 use crate::serialization::json_safe_fields;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
     Clone,
     PartialEq,
     Eq,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[serde(rename_all = "camelCase")]
 #[platform_serialize(unversioned)]

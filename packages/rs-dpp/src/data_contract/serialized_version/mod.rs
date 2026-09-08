@@ -17,7 +17,7 @@ use crate::serialization::ValueConvertible;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use platform_value::{Identifier, Value};
 use platform_version::{IntoPlatformVersioned, TryFromPlatformVersioned};
@@ -103,9 +103,7 @@ impl fmt::Display for DataContractMismatch {
     all(feature = "value-conversion", feature = "serde-conversion"),
     derive(ValueConvertible)
 )]
-#[derive(
-    Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From, bincode::DecodeUntrusted,
-)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

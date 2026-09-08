@@ -6,7 +6,7 @@ use thiserror::Error;
 use crate::consensus::ConsensusError;
 use crate::prelude::Identifier;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -17,7 +17,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Data Contract updated schema is not backward compatible with one defined in Data Contract with id {data_contract_id}. Field: '{field_path}', Operation: '{operation}'"
 )]

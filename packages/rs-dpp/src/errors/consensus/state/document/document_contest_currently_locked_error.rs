@@ -3,7 +3,7 @@ use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -16,7 +16,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Document Contest for vote_poll {vote_poll} is currently already locked {stored_info}, unlocking is possible by paying {unlock_cost} credits")]
 #[platform_serialize(unversioned)]

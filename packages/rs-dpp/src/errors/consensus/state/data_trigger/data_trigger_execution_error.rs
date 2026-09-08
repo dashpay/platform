@@ -6,7 +6,7 @@ use platform_value::Identifier;
 use thiserror::Error;
 
 use crate::consensus::state::data_trigger::DataTriggerError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -18,7 +18,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("{message}")]
 #[platform_serialize(unversioned)]

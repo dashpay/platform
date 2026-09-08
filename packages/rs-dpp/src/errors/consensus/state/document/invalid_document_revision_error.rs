@@ -2,7 +2,7 @@ use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::prelude::Revision;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use thiserror::Error;
@@ -17,7 +17,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error(
     "Document {document_id} has invalid revision {previous_revision:?}. The desired revision is {desired_revision}"

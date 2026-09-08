@@ -5,6 +5,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
+use bincode::{Decode, DecodeUntrusted, Encode};
 use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::BlockAwareCreditOperation;
 use dpp::version::PlatformVersion;
@@ -23,7 +24,7 @@ pub type VerifiedCompactedAddressBalanceChanges = Vec<(
 /// The predecessor proof independently authenticates which range, if any,
 /// contains the requested height. The forward proof can then be verified
 /// against a query derived only from that authenticated result.
-#[derive(Debug, bincode::Encode, bincode::Decode, bincode::DecodeUntrusted)]
+#[derive(Debug, Encode, Decode, DecodeUntrusted)]
 pub(crate) struct CompactedAddressBalanceProof {
     pub(crate) predecessor_proof: Vec<u8>,
     pub(crate) forward_proof: Vec<u8>,

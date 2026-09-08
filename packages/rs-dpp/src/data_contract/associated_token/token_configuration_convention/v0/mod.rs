@@ -5,7 +5,7 @@ use crate::data_contract::associated_token::token_configuration_localization::ac
 use crate::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use bincode::Encode;
+use bincode::{DecodeUntrusted, Encode};
 use platform_serialization::de::Decode;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -30,7 +30,7 @@ pub const ENGLISH_ISO_639: &str = "en";
     Eq,
     PartialOrd,
     Default,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationConventionV0 {

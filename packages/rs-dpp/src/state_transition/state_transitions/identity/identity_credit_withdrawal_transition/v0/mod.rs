@@ -5,7 +5,7 @@ mod version;
 
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_value::BinaryData;
 #[cfg(feature = "serde-conversion")]
@@ -20,7 +20,7 @@ use crate::{
 };
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq, bincode::DecodeUntrusted)]
+#[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -53,7 +53,7 @@ mod test {
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::identity_credit_withdrawal_transition::v0::Pooling;
     use crate::ProtocolError;
-    use bincode::{Decode, Encode};
+    use bincode::{Decode, DecodeUntrusted, Encode};
     use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
     use platform_value::{BinaryData, Identifier};
     use rand::Rng;
@@ -68,7 +68,7 @@ mod test {
         PlatformDeserialize,
         PlatformSerialize,
         PartialEq,
-        bincode::DecodeUntrusted,
+        DecodeUntrusted,
     )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV01 {
@@ -84,7 +84,7 @@ mod test {
         PlatformDeserialize,
         PlatformSerialize,
         PartialEq,
-        bincode::DecodeUntrusted,
+        DecodeUntrusted,
     )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV02 {
@@ -101,7 +101,7 @@ mod test {
         PlatformDeserialize,
         PlatformSerialize,
         PartialEq,
-        bincode::DecodeUntrusted,
+        DecodeUntrusted,
     )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV03 {
@@ -119,7 +119,7 @@ mod test {
         PlatformDeserialize,
         PlatformSerialize,
         PartialEq,
-        bincode::DecodeUntrusted,
+        DecodeUntrusted,
     )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV04 {
@@ -138,7 +138,7 @@ mod test {
         PlatformDeserialize,
         PlatformSerialize,
         PartialEq,
-        bincode::DecodeUntrusted,
+        DecodeUntrusted,
     )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV05 {
@@ -158,7 +158,7 @@ mod test {
         PlatformDeserialize,
         PlatformSerialize,
         PartialEq,
-        bincode::DecodeUntrusted,
+        DecodeUntrusted,
     )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV06 {
@@ -179,7 +179,7 @@ mod test {
         PlatformDeserialize,
         PlatformSerialize,
         PartialEq,
-        bincode::DecodeUntrusted,
+        DecodeUntrusted,
     )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV07 {
@@ -201,7 +201,7 @@ mod test {
         PlatformDeserialize,
         PlatformSerialize,
         PartialEq,
-        bincode::DecodeUntrusted,
+        DecodeUntrusted,
     )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV08 {
@@ -224,7 +224,7 @@ mod test {
         PlatformDeserialize,
         PlatformSerialize,
         PartialEq,
-        bincode::DecodeUntrusted,
+        DecodeUntrusted,
     )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV09 {

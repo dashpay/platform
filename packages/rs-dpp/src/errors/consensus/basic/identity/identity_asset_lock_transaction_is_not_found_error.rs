@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use std::fmt::{Display, Formatter};
 
 use crate::consensus::basic::BasicError;
@@ -18,7 +18,7 @@ use crate::consensus::ConsensusError;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub struct IdentityAssetLockTransactionIsNotFoundError {

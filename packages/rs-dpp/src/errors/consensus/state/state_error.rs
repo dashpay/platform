@@ -1,5 +1,5 @@
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -80,7 +80,7 @@ use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreE
     PlatformSerialize,
     PlatformDeserialize,
     Clone,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 pub enum StateError {
     /*

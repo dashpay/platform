@@ -8,7 +8,7 @@ use thiserror::Error;
 use crate::prelude::{Identifier, IdentityNonce};
 
 use crate::identity::identity_nonce::MergeIdentityNonceResult;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -20,7 +20,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub struct InvalidIdentityNonceError {

@@ -1,6 +1,6 @@
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use rand::distributions::Standard;
 use rand::prelude::Distribution;
 use rand::rngs::StdRng;
@@ -30,7 +30,7 @@ pub const IDENTIFIER_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
     Copy,
     Encode,
     Decode,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 pub struct IdentifierBytes32(pub [u8; 32]);
 
@@ -48,7 +48,7 @@ pub struct IdentifierBytes32(pub [u8; 32]);
     Deserialize,
     Encode,
     Decode,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 pub struct Identifier(pub IdentifierBytes32);
 

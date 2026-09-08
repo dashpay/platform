@@ -2,7 +2,7 @@ use crate::balances::credits::TokenAmount;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use thiserror::Error;
@@ -17,7 +17,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error(
     "Token {token_id} attempted to mint {amount}, which exceeds the max supply {max_supply}, current supply is {current_supply}"

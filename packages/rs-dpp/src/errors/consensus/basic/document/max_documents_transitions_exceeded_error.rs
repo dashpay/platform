@@ -1,6 +1,6 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -16,7 +16,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Amount of document transitions must be less or equal to {max_transitions}")]
 #[platform_serialize(unversioned)]

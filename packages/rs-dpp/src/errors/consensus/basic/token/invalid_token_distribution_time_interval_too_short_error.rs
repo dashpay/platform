@@ -2,7 +2,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::prelude::TimestampMillisInterval;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -16,7 +16,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("TimeBasedDistribution interval is too short: {interval}. Minimum allowed is 3,600,000 ms (1 hour).")]
 #[platform_serialize(unversioned)]

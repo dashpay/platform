@@ -1,7 +1,7 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::Txid;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -46,13 +46,13 @@ impl From<IdentityAssetLockTransactionOutPointAlreadyConsumedError> for Consensu
     }
 }
 
-impl<C> bincode::DecodeUntrusted<C> for IdentityAssetLockTransactionOutPointAlreadyConsumedError {
+impl<C> DecodeUntrusted<C> for IdentityAssetLockTransactionOutPointAlreadyConsumedError {
     fn decode_untrusted<D: bincode::de::UntrustedDecoder<Context = C>>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         Ok(Self {
             transaction_id: crate::serialization::untrusted::decode_txid(decoder)?,
-            output_index: bincode::DecodeUntrusted::decode_untrusted(decoder)?,
+            output_index: DecodeUntrusted::decode_untrusted(decoder)?,
         })
     }
 }

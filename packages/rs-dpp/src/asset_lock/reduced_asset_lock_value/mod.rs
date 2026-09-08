@@ -1,7 +1,7 @@
 use crate::asset_lock::reduced_asset_lock_value::v0::AssetLockValueV0;
 use crate::fee::Credits;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Bytes32;
@@ -22,7 +22,7 @@ pub use v0::{AssetLockValueGettersV0, AssetLockValueSettersV0};
     PartialEq,
     serde::Serialize,
     serde::Deserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 #[serde(tag = "$formatVersion")]

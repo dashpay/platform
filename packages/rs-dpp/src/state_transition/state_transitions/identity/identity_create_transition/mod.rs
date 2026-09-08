@@ -16,7 +16,7 @@ use crate::state_transition::identity_create_transition::v0::IdentityCreateTrans
 use crate::state_transition::StateTransitionFieldTypes;
 
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
@@ -42,7 +42,7 @@ pub type IdentityCreateTransitionLatest = IdentityCreateTransitionV0;
     PlatformVersioned,
     From,
     PartialEq,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

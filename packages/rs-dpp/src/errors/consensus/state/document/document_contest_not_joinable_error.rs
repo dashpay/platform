@@ -4,7 +4,7 @@ use crate::errors::ProtocolError;
 use crate::prelude::TimestampMillis;
 use crate::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -17,7 +17,7 @@ use thiserror::Error;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Document Contest for vote_poll {vote_poll} is not joinable {stored_info}, it started {start_time} and it is now {current_time}, and you can only join for {joinable_time}")]
 #[platform_serialize(unversioned)]

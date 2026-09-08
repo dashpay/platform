@@ -8,7 +8,7 @@ pub use crate::identity::KeyType;
 pub use crate::identity::Purpose;
 pub use crate::identity::SecurityLevel;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
@@ -37,7 +37,7 @@ use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCrea
     Ord,
     PartialOrd,
     Hash,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKeyV0 {

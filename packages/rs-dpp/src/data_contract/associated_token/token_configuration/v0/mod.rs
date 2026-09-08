@@ -19,7 +19,7 @@ use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::GroupContractPosition;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -33,9 +33,7 @@ use std::fmt;
 /// This configuration is designed to be deterministic and versioned for compatibility
 /// across protocol upgrades and validation environments.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(
-    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, bincode::DecodeUntrusted,
-)]
+#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, DecodeUntrusted)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationV0 {
     /// Metadata conventions, including decimals and localizations.
@@ -261,7 +259,7 @@ impl fmt::Display for TokenConfigurationV0 {
     PartialEq,
     Eq,
     PartialOrd,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 pub enum TokenConfigurationPresetFeatures {
     /// No actions are permitted after initialization. All governance and control
@@ -307,16 +305,7 @@ pub enum TokenConfigurationPresetFeatures {
 /// This abstraction allows users to choose between common control configurations
 /// ranging from immutable tokens to fully administrator-controlled assets.
 #[derive(
-    Serialize,
-    Deserialize,
-    Decode,
-    Encode,
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    bincode::DecodeUntrusted,
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd, DecodeUntrusted,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationPreset {

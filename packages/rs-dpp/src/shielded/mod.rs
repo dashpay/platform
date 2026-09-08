@@ -7,7 +7,7 @@ mod sighash;
 
 pub use memo::{ShieldedMemo, MEMO_PAYLOAD_SIZE, MEMO_SIZE};
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -116,7 +116,7 @@ pub struct OrchardBundleParams {
 /// Keeps the wire shape (Uint8Array in binary, base64 string in JSON) without
 /// per-field annotations.
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PartialEq, bincode::DecodeUntrusted)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

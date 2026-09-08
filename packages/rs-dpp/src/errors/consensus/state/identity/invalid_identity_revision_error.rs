@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::prelude::{Identifier, Revision};
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -18,7 +18,7 @@ use bincode::{Decode, Encode};
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Identity {identity_id} has invalid revision. The current revision is {current_revision}")]
 #[platform_serialize(unversioned)]

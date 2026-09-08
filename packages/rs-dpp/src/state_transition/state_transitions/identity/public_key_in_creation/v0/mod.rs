@@ -7,7 +7,7 @@ use crate::serialization::json_safe_fields;
 
 use std::convert::TryFrom;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use serde::{Deserialize, Serialize};
 
 use platform_value::{BinaryData, Value};
@@ -40,7 +40,7 @@ pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
     Clone,
     PartialEq,
     Eq,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKeyInCreationV0 {

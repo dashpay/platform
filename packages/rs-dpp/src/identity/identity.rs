@@ -17,7 +17,7 @@ use crate::version::PlatformVersion;
 
 use crate::ProtocolError;
 #[cfg(feature = "identity-serialization")]
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 #[cfg(feature = "identity-serialization")]
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -41,7 +41,7 @@ use std::collections::{BTreeMap, BTreeSet};
     derive(
         Encode,
         Decode,
-        bincode::DecodeUntrusted,
+        DecodeUntrusted,
         PlatformDeserialize,
         PlatformSerialize
     ),

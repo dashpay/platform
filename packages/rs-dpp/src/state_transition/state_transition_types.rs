@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -17,7 +17,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
     Encode,
     Decode,
     Default,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 pub enum StateTransitionType {
     #[default]

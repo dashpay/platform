@@ -2,7 +2,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::GroupContractPosition;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use std::error::Error;
 use std::fmt;
@@ -17,7 +17,7 @@ use std::fmt;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub struct GroupHasTooFewMembersError {

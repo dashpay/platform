@@ -7,7 +7,7 @@ use crate::data_contract::created_data_contract::v0::{
 use crate::prelude::{DataContract, IdentityNonce};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -28,7 +28,7 @@ pub enum CreatedDataContract {
     V0(CreatedDataContractV0),
 }
 
-#[derive(Clone, Debug, Encode, Decode, From, bincode::DecodeUntrusted)]
+#[derive(Clone, Debug, Encode, Decode, From, DecodeUntrusted)]
 pub enum CreatedDataContractInSerializationFormat {
     V0(CreatedDataContractInSerializationFormatV0),
 }

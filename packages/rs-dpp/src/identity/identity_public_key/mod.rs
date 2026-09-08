@@ -6,7 +6,7 @@ use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 
@@ -50,7 +50,7 @@ pub type TimestampMillis = u64;
     Hash,
     Ord,
     PartialOrd,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[platform_serialize(limit = 2000, unversioned)] //This is not platform versioned automatically
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]

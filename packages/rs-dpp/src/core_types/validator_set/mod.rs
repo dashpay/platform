@@ -6,7 +6,7 @@ use crate::core_types::validator_set::v0::{
 #[cfg(feature = "core-types-serialization")]
 use crate::ProtocolError;
 #[cfg(feature = "core-types-serialization")]
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::{ProTxHash, QuorumHash};
 #[cfg(feature = "core-types-serialization")]
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -31,7 +31,7 @@ pub mod v0;
     derive(
         Encode,
         Decode,
-        bincode::DecodeUntrusted,
+        DecodeUntrusted,
         PlatformDeserialize,
         PlatformSerialize
     ),

@@ -4,7 +4,7 @@ use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
     Error,
@@ -15,7 +15,7 @@ use bincode::{Decode, Encode};
     PlatformSerialize,
     PlatformDeserialize,
     PartialEq,
-    bincode::DecodeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Asset lock transaction has too many inputs: {actual_inputs} (max {max_inputs}). Consolidate UTXOs before creating the asset lock.")]
 #[platform_serialize(unversioned)]
