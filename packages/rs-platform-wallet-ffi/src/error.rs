@@ -537,13 +537,13 @@ pub enum PlatformWalletFFIResultCode {
     /// [`Transient`](platform_wallet::changeset::PersistenceErrorKind::Transient):
     /// a busy or momentarily unavailable store rejected the write.
     ///
-    /// **Nothing was committed**: the wallet only reports this when the
-    /// persister guarantees the failed round was rolled back whole, so
-    /// re-issuing cannot double-apply part of it.
+    /// **Nothing was applied or retained**: the persister must attest that the
+    /// failed store is safe to reissue, including that it buffered nothing.
     ///
-    /// Host action: retry later. This is the code a wallet registration
-    /// against a locked database produces (`dashpay/platform#4365`) — the
-    /// retry decision is the host's, not the wallet's.
+    /// Host action: retry later. A busy database produces this code only when
+    /// its backend provides that attestation. The buffered `SqlitePersister`
+    /// does not: its transient store failures map to `ErrorPersisterStoreFatal`
+    /// and require backend-aware recovery through `flush`, not another `store`.
     ErrorPersisterStoreTransient = 51,
 
     /// Maps `PlatformWalletError::PersisterStore` classified `Fatal`, and a

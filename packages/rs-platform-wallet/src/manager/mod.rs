@@ -1061,16 +1061,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 /// Stops the wallet-event adapter task, which a dirty drop would otherwise
 /// leave running against a torn-down manager.
 ///
-/// The persister is released here with the manager's own `Arc<P>` — the adapter
-/// holds only a `Weak<P>` — so a reconstruct on the same path cannot hit a
-/// spurious `WalletStorageError::AlreadyOpen` (issue #4133). Release is
-/// synchronous whenever the adapter is idle; a drain already under way holds
-/// its claim until the backlog it is committing is on disk.
+/// Dropping the manager releases its own persister references. The idle adapter
+/// holds only a `Weak<P>`, but a drain, wallet handle, worker or in-flight read
+/// can retain a strong reference. Reopening the same storage path must wait
+/// until all such references are released; this drop does not guarantee it.
 ///
 /// **Buffered events are best-effort on this path.** Cancelling is all a `Drop`
-/// can do: the fields release the last `Arc<P>` as this returns, typically
-/// before the adapter task is scheduled at all, and an adapter that has not
-/// claimed the persister by then exits with the backlog uncommitted. Nothing
+/// can do: if dropping the fields releases the last `Arc<P>` before the adapter
+/// claims it, the adapter exits with the backlog uncommitted. Nothing
 /// durable breaks — a wallet's sync watermark rides the same `store()` as the
 /// rows it implies, so the next SPV pass re-derives both. Use
 /// [`shutdown`](PlatformWalletManager::shutdown) for a lossless drain: it holds

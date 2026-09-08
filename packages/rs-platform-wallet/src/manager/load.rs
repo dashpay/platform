@@ -45,10 +45,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// Any `Err` rolls back partial inserts and leaves the manager usable: fix
     /// the store and call again, or reconstruct. Reconstructing over the same
-    /// path needs the persister released first, which happens when the last
-    /// strong reference to the manager goes: [`shutdown`](Self::shutdown)
-    /// takes `&self` and stops the background workers, but cannot release the
-    /// manager's own `Arc<P>` — only dropping the manager does.
+    /// path needs every strong persister reference released first. Dropping
+    /// the manager releases its own references; wallet handles, workers and
+    /// in-flight operations can retain others. [`shutdown`](Self::shutdown)
+    /// takes `&self`, so it cannot release the manager's own `Arc<P>`.
     ///
     /// [`WalletManager`]: key_wallet_manager::WalletManager
     pub async fn load_from_persistor(&self) -> Result<(), PlatformWalletError> {
