@@ -1649,8 +1649,11 @@ impl DistributionFunction {
         let mut current_point = first_step;
 
         while current_point <= last_step {
-            let base_amount =
-                self.evaluate(distribution_start_step.to_u64(), current_point.to_u64(), platform_version)?;
+            let base_amount = self.evaluate(
+                distribution_start_step.to_u64(),
+                current_point.to_u64(),
+                platform_version,
+            )?;
 
             let amount = if let (
                 RewardDistributionMoment::EpochBasedMoment(epoch_index),
@@ -1707,6 +1710,7 @@ impl DistributionFunction {
     /// - `Ok(IntervalEvaluationExplanation)` containing the result and detailed explanation.
     /// - `Err(ProtocolError)` on mismatched types, zero steps, or overflow.
     #[cfg(feature = "token-reward-explanations")]
+    #[allow(clippy::too_many_arguments)]
     pub fn evaluate_interval_with_explanation<F>(
         &self,
         distribution_start: RewardDistributionMoment,
@@ -1839,8 +1843,11 @@ impl DistributionFunction {
         let mut collected_ratios = Vec::new();
 
         while current_point <= last_step {
-            let base_amount =
-                self.evaluate(distribution_start_step.to_u64(), current_point.to_u64(), platform_version)?;
+            let base_amount = self.evaluate(
+                distribution_start_step.to_u64(),
+                current_point.to_u64(),
+                platform_version,
+            )?;
 
             let (amount, reward_ratio) = if let (
                 RewardDistributionMoment::EpochBasedMoment(epoch_index),
