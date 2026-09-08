@@ -48,7 +48,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::support::{guard, net_from_ord, JVM};
-use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString, JValue};
+use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JObjectArray, JString, JValue};
 use jni::sys::jstring;
 use jni::JNIEnv;
 use platform_wallet_ffi::{
@@ -56,11 +56,11 @@ use platform_wallet_ffi::{
     AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
     ContactRequestRemovalFFI, CoreAddressEntryFFI, DpnsNameStateFFI, IdentityEntryFFI,
     IdentityKeyEntryFFI, IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
-    InvitationEntryFFI, PaymentRestoreEntryFFI, PersistenceCallbacks,
+    InvitationEntryFFI, OutPointFFI, PaymentRestoreEntryFFI, PersistenceCallbacks,
     PersistenceCallbacksExtension, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI,
-    SpentOutPointFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
-    UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
-    WalletRestoreEntryFFI,
+    SpentOutPointFFI, SweepBatchFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI,
+    TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI,
+    WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -195,10 +195,79 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
 /// Assemble the additive, size/version-tagged persistence callbacks. It shares
 /// the legacy vtable's context and release hook; this value is copied by the
 /// native manager during creation and owns nothing itself.
-pub(crate) fn build_extension() -> PersistenceCallbacksExtension {
+///
+/// The sweep slot is wired only when the concrete `bridge` OVERRIDES
+/// `onWalletChangesetTransactionsSwept` (see [`bridge_overrides`]). Rust
+/// derives the effective `CORE_SWEEP_REMOVAL` capability from "slot present
+/// AND bit declared", so a subclass that declares the bit without
+/// overriding the method — a promise of removals its inherited no-op body
+/// would silently swallow — never gets the slot, Rust strips the bit and the
+/// sync watermark with it, and the round is refused one layer up instead of
+/// advancing past a removal that never happened. Wiring the slot for every
+/// subclass would make "slot present" prove nothing.
+pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> PersistenceCallbacksExtension {
+    let sweeps_overridden = bridge_overrides(env, bridge, "onWalletChangesetTransactionsSwept");
     PersistenceCallbacksExtension {
         on_persist_dpns_name_states_fn: Some(tramp_persist_dpns_name_states),
+        on_persist_wallet_changeset_sweeps_fn: if sweeps_overridden {
+            Some(tramp_persist_wallet_changeset_sweeps)
+        } else {
+            None
+        },
+        on_persist_wallet_changeset_chain_lock_height_fn: Some(
+            tramp_persist_wallet_changeset_chain_lock_height,
+        ),
         ..Default::default()
+    }
+}
+
+/// Whether `bridge`'s concrete class — or any superclass strictly below
+/// `NativePersistenceBridge` — declares a method named `name`. A Kotlin
+/// `override fun` is a declared method of the overriding class, so walking
+/// `getDeclaredMethods()` up the hierarchy until the abstract bridge answers
+/// "did a subclass supply its own body". Any JNI failure counts as "not
+/// overridden" (the pending exception is cleared): the consequence is a
+/// slot left unwired, which Rust turns into a stripped capability — the
+/// safe direction, never a silently swallowed removal.
+fn bridge_overrides(env: &mut JNIEnv, bridge: &JObject, name: &str) -> bool {
+    fn probe(env: &mut JNIEnv, bridge: &JObject, name: &str) -> Result<bool, jni::errors::Error> {
+        let base = env.find_class("org/dashfoundation/dashsdk/ffi/NativePersistenceBridge")?;
+        let mut class = env.get_object_class(bridge)?;
+        loop {
+            if env.is_same_object(&class, &base)? {
+                return Ok(false);
+            }
+            let methods: JObjectArray = env
+                .call_method(&class, "getDeclaredMethods", "()[Ljava/lang/reflect/Method;", &[])?
+                .l()?
+                .into();
+            let count = env.get_array_length(&methods)?;
+            for i in 0..count {
+                let method = env.get_object_array_element(&methods, i)?;
+                let method_name: JString = env
+                    .call_method(&method, "getName", "()Ljava/lang/String;", &[])?
+                    .l()?
+                    .into();
+                let matches = env.get_string(&method_name)?.to_str().map(|s| s == name).unwrap_or(false);
+                if matches {
+                    return Ok(true);
+                }
+            }
+            let superclass = env
+                .call_method(&class, "getSuperclass", "()Ljava/lang/Class;", &[])?
+                .l()?;
+            if superclass.is_null() {
+                return Ok(false);
+            }
+            class = superclass.into();
+        }
+    }
+    match probe(env, bridge, name) {
+        Ok(overridden) => overridden,
+        Err(_) => {
+            let _ = env.exception_clear();
+            false
+        }
     }
 }
 
@@ -616,7 +685,7 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
                 &[
                     (&wid).into(),
                     JValue::Bool(has_synced as u8),
-                    JValue::Int(synced_height as i32),
+                    JValue::Int(if has_synced { jint_height(synced_height)? } else { 0 }),
                     JValue::Bool(cs.has_balance as u8),
                     JValue::Long(cs.balance.confirmed_delta),
                     JValue::Long(cs.balance.unconfirmed_delta),
@@ -637,7 +706,134 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
                 return Ok(code);
             }
         }
+
         Ok(0)
+    })
+}
+
+/// Extension-callback trampoline for the round's sweep batches. These used
+/// to ride at the tail of [`WalletChangeSetFFI`]; they now arrive through
+/// `PersistenceCallbacksExtension`'s size-negotiated sweep slot (the bare
+/// changeset pointer cannot prove to a consumer that its producer allocated
+/// a tail field — see the layout note on that struct). Round order, as
+/// `store()` in `rs-platform-wallet-ffi` fires it: the changeset callback
+/// (`tramp_persist_wallet_changeset`: header, then every account slice),
+/// then the chainlock-height slot, then this one — so the Kotlin bridge sees
+/// records, then the finality boundary, then removals.
+///
+/// One bridge call per batch, in order: a later sweep can keep a coin spent
+/// that an earlier one freed, and only replaying them in sequence preserves
+/// that. The Kotlin handler buffers the calls and applies them in the same
+/// order at the round's end, so the ordering holds there too. The batch
+/// count is not bounded by this ABI, so — as with the account loop in the
+/// changeset trampoline — each batch's marshalling and call runs inside its
+/// own local frame; without it the per-batch arrays would pile up in the
+/// trampoline's own frame across every batch, and a large enough round can
+/// exhaust ART's local-reference table before the callback ever returns.
+unsafe extern "C" fn tramp_persist_wallet_changeset_sweeps(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    sweeps: *const SweepBatchFFI,
+    sweeps_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        for batch in slice_or_empty(sweeps, sweeps_count) {
+            let code = env.with_local_frame(8, |env| {
+                persist_changeset_sweep_batch(env, bridge, &wid, batch)
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        Ok(0)
+    })
+}
+
+/// Descriptor of `NativePersistenceBridge.onWalletChangesetTransactionsSwept`:
+/// `(walletId, txids, txidCount, supersededBy, releasedOutpoints,
+/// releasedOutpointCount, hasWinnerMinedHeight, winnerMinedHeight)`. Txids
+/// and released outpoints are shipped as ONE flat `byte[]` each (32·N and
+/// 36·N bytes) plus a count — the same packing `persist_changeset_transaction`
+/// uses for `inputOutpoints`, sliced with `copyOfRange` on the Kotlin side
+/// — rather than a `byte[][]` with one JVM allocation per element; the
+/// loser count is network-influenced and this projection runs synchronously
+/// inside the atomic persistence callback. The single winner rides as one
+/// 32-byte array, and the winner's mined height as a `(Z, I)` pair like the
+/// header's `(hasSyncedHeight, syncedHeight)`, not a sentinel.
+const WALLET_CHANGESET_SWEEPS_DESCRIPTOR: &str = "([B[BI[B[BIZI)I";
+
+unsafe fn persist_changeset_sweep_batch(
+    env: &mut JNIEnv,
+    bridge: &JObject,
+    wid: &JByteArray,
+    batch: &SweepBatchFFI,
+) -> Result<i32, jni::errors::Error> {
+    let txids = slice_or_empty(batch.txids, batch.txids_count);
+    let mut packed_txids = Vec::with_capacity(txids.len() * 32);
+    for txid in txids {
+        packed_txids.extend_from_slice(txid);
+    }
+    let txids_arr = env.byte_array_from_slice(&packed_txids)?;
+    let winner = env.byte_array_from_slice(&batch.superseded_by)?;
+    // Released outpoints ride as 36-byte keys (raw txid + a little-endian
+    // vout, `pack_outpoint_key`), the shape the handler stores them in.
+    let released = slice_or_empty(batch.released_outpoints, batch.released_outpoints_count);
+    let mut packed_released = Vec::with_capacity(released.len() * 36);
+    for outpoint in released {
+        packed_released.extend_from_slice(&pack_outpoint_key(outpoint));
+    }
+    let released_arr = env.byte_array_from_slice(&packed_released)?;
+    // The winner's finality context: its mined height for a block-context
+    // sweep, absent for an InstantSend-locked winner still waiting to be
+    // mined. The handler keys a pending-input tombstone's LIFETIME on it,
+    // never its existence: every non-released input keeps a durable claim
+    // in either context, stamped and collectible at the chainlock finality
+    // boundary when the winner mined, unstamped and held until resolved by
+    // proof (funding arrival, a later block-context re-stamp, or a release)
+    // when it did not.
+    env.call_method(
+        bridge,
+        "onWalletChangesetTransactionsSwept",
+        WALLET_CHANGESET_SWEEPS_DESCRIPTOR,
+        &[
+            wid.into(),
+            (&txids_arr).into(),
+            JValue::Int(txids.len() as i32),
+            (&winner).into(),
+            (&released_arr).into(),
+            JValue::Int(released.len() as i32),
+            JValue::Bool(batch.has_winner_mined_height as u8),
+            JValue::Int(if batch.has_winner_mined_height {
+                jint_height(batch.winner_mined_height)?
+            } else {
+                0
+            }),
+        ],
+    )?
+    .i()
+}
+
+/// Deliver the round's numeric chainlock height (see
+/// `PersistWalletChangesetChainLockHeightFn`), between the changeset callback
+/// and the sweep batches. One scalar, one call — the bincode chainlock blob
+/// on the header call is opaque to Kotlin, and this is the half of the
+/// tombstone-collection boundary `min(chainlockHeight, syncedHeight)` the
+/// handler cannot otherwise know.
+unsafe extern "C" fn tramp_persist_wallet_changeset_chain_lock_height(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    chain_lock_height: u32,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        env.call_method(
+            bridge,
+            "onWalletChangesetChainLockHeight",
+            "([BI)I",
+            &[(&wid).into(), JValue::Int(jint_height(chain_lock_height)?)],
+        )?
+        .i()
     })
 }
 
@@ -674,6 +870,20 @@ unsafe fn persist_changeset_account(
         return Ok(code);
     }
 
+    // Transactions before their UTXOs — matches the Swift bridge's
+    // `applyAccountChangeset` order (transactions, then utxos_added, then
+    // utxos_spent). Parity, not a guard: the handler tolerates either order
+    // (`onWalletChangesetUtxoAdded` writes a stub parent row when no record
+    // exists yet, and the record's later upsert overwrites it), so nothing
+    // on the Kotlin side depends on this sequence.
+    for t in slice_or_empty(acc.transactions, acc.transactions_count) {
+        let code = env.with_local_frame(40, |env| {
+            persist_changeset_transaction(env, bridge, wid, acc, t)
+        })?;
+        if code != 0 {
+            return Ok(code);
+        }
+    }
     for u in slice_or_empty(acc.utxos_added, acc.utxos_added_count) {
         let code =
             env.with_local_frame(24, |env| persist_changeset_utxo_added(env, bridge, wid, u))?;
@@ -684,14 +894,6 @@ unsafe fn persist_changeset_account(
     for s in slice_or_empty(acc.utxos_spent, acc.utxos_spent_count) {
         let code =
             env.with_local_frame(16, |env| persist_changeset_utxo_spent(env, bridge, wid, s))?;
-        if code != 0 {
-            return Ok(code);
-        }
-    }
-    for t in slice_or_empty(acc.transactions, acc.transactions_count) {
-        let code = env.with_local_frame(40, |env| {
-            persist_changeset_transaction(env, bridge, wid, acc, t)
-        })?;
         if code != 0 {
             return Ok(code);
         }
@@ -774,15 +976,14 @@ unsafe fn persist_changeset_transaction(
     let tx_type = cstr(env, t.transaction_type)?;
     let label = cstr(env, t.label)?;
     // Input outpoints (one per tx input, in vin order; empty for coinbase).
-    // Flatten to txid[32] || vout(u32 LE) = 36 bytes each — byte-identical to
-    // Kotlin/Swift makeOutpoint, so the pending-input join key matches with no
-    // per-element conversion on the Kotlin side. Dropping these is what left a
-    // spend-before-funding output restorable as spendable (CORE-06).
+    // Flattened 36-byte keys (see `pack_outpoint_key`), so the pending-input
+    // join key matches with no per-element conversion on the Kotlin side.
+    // Dropping these is what left a spend-before-funding output restorable
+    // as spendable (CORE-06).
     let ops = slice_or_empty(t.input_outpoints, t.input_outpoints_count);
     let mut packed = Vec::with_capacity(ops.len() * 36);
     for op in ops {
-        packed.extend_from_slice(&op.txid);
-        packed.extend_from_slice(&op.vout.to_le_bytes());
+        packed.extend_from_slice(&pack_outpoint_key(op));
     }
     let input_outpoints = env.byte_array_from_slice(&packed)?;
     let input_outpoint_count = ops.len() as i32;
@@ -3951,6 +4152,29 @@ unsafe fn slice_or_empty<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
     }
 }
 
+/// Pack an [`OutPointFFI`] into the 36-byte key (raw txid ‖ little-endian
+/// vout) the Kotlin handler stores outpoints under — byte-identical to
+/// Kotlin's `makeOutpoint` (and Swift's). This is the join key sweep
+/// releases use to find additive-path rows, so every packing site routes
+/// through here rather than re-inlining the layout.
+/// A block height for a JNI `I` slot. Heights are `u32` on the Rust side
+/// and `Int` on the Kotlin side; a value past `i32::MAX` would wrap
+/// negative and be read as "absent" (or as a bogus boundary) by a handler
+/// that has no way to tell. Unreachable for any real chain height, so it
+/// is refused rather than reinterpreted: the round fails closed
+/// (`with_bridge` maps the error to `ERR_JNI`).
+fn jint_height(height: u32) -> Result<i32, jni::errors::Error> {
+    i32::try_from(height)
+        .map_err(|_| jni::errors::Error::JniCall(jni::errors::JniError::InvalidArguments))
+}
+
+fn pack_outpoint_key(outpoint: &OutPointFFI) -> [u8; 36] {
+    let mut key = [0u8; 36];
+    key[..32].copy_from_slice(&outpoint.txid);
+    key[32..].copy_from_slice(&outpoint.vout.to_le_bytes());
+    key
+}
+
 /// `Vec<T>` → `(*const T, len)`; empty vec yields `(null, 0)`. A non-null
 /// pointer is a leaked `Box<[T]>` the matching load-free trampoline
 /// reconstructs and drops — mint it only once the whole load succeeded.
@@ -4270,6 +4494,21 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         "onWalletChangesetTransaction",
         WALLET_CHANGESET_TRANSACTION_DESCRIPTOR,
     ),
+    // Missing from this table let a sweep-round-only descriptor drift pass
+    // the smoke check and surface only when a live sweep first called it —
+    // right where a failed round freezes the wallet's watermark. The same
+    // constant is bound at the `call_method` site in
+    // `persist_changeset_sweep_batch`, so the two cannot drift.
+    (
+        "onWalletChangesetTransactionsSwept",
+        WALLET_CHANGESET_SWEEPS_DESCRIPTOR,
+    ),
+    // Same drift risk as the sweeps descriptor above: this slot fires on
+    // chainlock-advancing rounds only, so a stale descriptor would surface
+    // exactly when the first real chainlock crossed. Must track the
+    // literal at the `call_method` site in
+    // `tramp_persist_wallet_changeset_chain_lock_height`.
+    ("onWalletChangesetChainLockHeight", "([BI)I"),
     (
         "onPersistIdentityUpsert",
         "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
@@ -4439,6 +4678,25 @@ mod tests {
             WALLET_CHANGESET_TRANSACTION_DESCRIPTOR,
             "([B[B[BII[BIILjava/lang/String;IJJZLjava/lang/String;J[BIBBIII[B[BIZ)I"
         );
+    }
+
+    /// A height past `i32::MAX` must refuse the call, never wrap into a
+    /// negative `Int` the handler would read as absent or as a bogus
+    /// collection boundary.
+    #[test]
+    fn a_height_past_i32_max_is_refused_rather_than_wrapped() {
+        assert_eq!(jint_height(0).unwrap(), 0);
+        assert_eq!(jint_height(i32::MAX as u32).unwrap(), i32::MAX);
+        assert!(jint_height(i32::MAX as u32 + 1).is_err());
+        assert!(jint_height(u32::MAX).is_err());
+    }
+
+    #[test]
+    fn sweeps_callback_descriptor_ships_flat_arrays_and_an_explicit_height_pair() {
+        // walletId, packed txids + count, winner, packed released outpoints
+        // + count, (hasWinnerMinedHeight, winnerMinedHeight) — must match
+        // `NativePersistenceBridge.onWalletChangesetTransactionsSwept`.
+        assert_eq!(WALLET_CHANGESET_SWEEPS_DESCRIPTOR, "([B[BI[B[BIZI)I");
     }
 
     #[test]
