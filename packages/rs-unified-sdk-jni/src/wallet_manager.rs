@@ -155,7 +155,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         let persistence_ctx =
             Box::into_raw(Box::new(KotlinPersistenceCtx::new(persistence_global)));
         let persistence: PersistenceCallbacks = build_vtable(persistence_ctx as *mut c_void);
-        let persistence_extension = build_extension();
+        let persistence_extension = build_extension(env, &persistence_bridge);
         let persistence_capabilities = PersistenceCapabilitiesFFI {
             version: declared_capabilities_version,
             reserved: 0,
