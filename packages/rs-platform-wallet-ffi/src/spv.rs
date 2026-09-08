@@ -150,7 +150,7 @@ pub unsafe extern "C" fn platform_wallet_manager_sync_progress(
     // through parking_lot's writer preference, every other registry reader.
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
     let spv = unwrap_option_or_return!(option);
-    let progress = runtime().block_on(spv.sync_progress());
+    let progress = block_on_worker(async move { spv.sync_progress().await });
     *out_progress = match progress {
         Some(p) => progress_to_ffi(&p),
         None => FFISpvSyncProgress::default(),
@@ -302,7 +302,7 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_connected_peers(
     // Waited on outside the registry guard — see `platform_wallet_manager_sync_progress`.
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
     let spv = unwrap_option_or_return!(option);
-    let peers = runtime().block_on(spv.connected_peers());
+    let peers = block_on_worker(async move { spv.connected_peers().await });
     if peers.is_empty() {
         return PlatformWalletFFIResult::ok();
     }
@@ -377,7 +377,7 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_tip_unix_seconds(
     // Waited on outside the registry guard — see `platform_wallet_manager_sync_progress`.
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
     let spv = unwrap_option_or_return!(option);
-    let tip = runtime().block_on(spv.tip_block_time());
+    let tip = block_on_worker(async move { spv.tip_block_time().await });
     *out_unix_seconds = tip.map(|t| t as u64).unwrap_or(0);
     PlatformWalletFFIResult::ok()
 }
@@ -550,21 +550,29 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
             config.devnet = Some(devnet);
         }
 
-        (manager.spv_arc(), config)
+        // Deliberately UNDER the registry guard, unlike the read-only
+        // exports: this one mutates the manager's runtime. Dropping the
+        // guard would let `platform_wallet_manager_destroy` remove the
+        // handle, join the workers and fire the host's `release_fn` while
+        // the start is in flight — and the run loop below would then
+        // deliver block events into released host contexts. Holding the
+        // guard makes the destroy wait, which is the whole point of the
+        // registry.
+        let spv = manager.spv_arc();
+        let start_result = {
+            let spv = spv.clone();
+            block_on_worker(async move { spv.start(config).await })
+        };
+
+        if start_result.is_ok() {
+            let _guard = runtime().enter();
+            spv.spawn_run_loop();
+        }
+
+        start_result
     });
 
-    // Started outside the registry guard: `start` connects and syncs before
-    // it returns, and a guard held across it blocks every other registry
-    // user (including `platform_wallet_manager_destroy`) for that long.
-    let (spv, config) = unwrap_option_or_return!(option);
-    let start_result = {
-        let spv = spv.clone();
-        block_on_worker(async move { spv.start(config).await })
-    };
-    if start_result.is_ok() {
-        let _guard = runtime().enter();
-        spv.spawn_run_loop();
-    }
+    let start_result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(start_result);
 
     PlatformWalletFFIResult::ok()
@@ -575,14 +583,15 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
 pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
-    // Stopped outside the registry guard — see
-    // `platform_wallet_manager_spv_start`; the stop joins the client's
-    // tasks and can take seconds.
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
-    let spv = unwrap_option_or_return!(option);
-    runtime().block_on(async {
-        let _ = spv.stop().await;
+    // Under the registry guard on purpose — it mutates the manager's
+    // runtime; see `platform_wallet_manager_spv_start`.
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        let spv = manager.spv_arc();
+        block_on_worker(async move {
+            let _ = spv.stop().await;
+        });
     });
+    unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
 }
 
@@ -642,11 +651,13 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_rescan_filters(
 pub unsafe extern "C" fn platform_wallet_manager_spv_clear_storage(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
-    // Cleared outside the registry guard — see
-    // `platform_wallet_manager_spv_start`.
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
-    let spv = unwrap_option_or_return!(option);
-    let result = runtime().block_on(spv.clear_storage());
+    // Under the registry guard on purpose — it mutates the manager's
+    // storage; see `platform_wallet_manager_spv_start`.
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        let spv = manager.spv_arc();
+        block_on_worker(async move { spv.clear_storage().await })
+    });
+    let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
     PlatformWalletFFIResult::ok()
 }
