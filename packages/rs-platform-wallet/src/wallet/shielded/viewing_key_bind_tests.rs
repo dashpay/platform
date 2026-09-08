@@ -33,6 +33,8 @@ use crate::wallet::shielded::{FileBackedShieldedStore, NetworkShieldedCoordinato
 #[derive(Default)]
 struct CapturingPersistence {
     stored: Mutex<Vec<PlatformWalletChangeSet>>,
+    durability_events: Mutex<Vec<&'static str>>,
+    fail_flush: std::sync::atomic::AtomicBool,
     serve: Mutex<BTreeMap<SubwalletId, Vec<u8>>>,
     serve_subwallets: Mutex<BTreeMap<SubwalletId, ShieldedSubwalletStartState>>,
     load_calls: Mutex<usize>,
@@ -106,11 +108,18 @@ impl PlatformWalletPersistence for CapturingPersistence {
         _wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
+        self.durability_events.lock().unwrap().push("store");
         self.stored.lock().expect("stored lock").push(changeset);
         Ok(())
     }
 
     fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+        self.durability_events.lock().unwrap().push("flush");
+        if self.fail_flush.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(PersistenceError::backend(std::io::Error::other(
+                "injected flush failure",
+            )));
+        }
         Ok(())
     }
 
@@ -854,6 +863,13 @@ async fn should_restore_tip_account_from_identity_discovery_and_register_for_syn
             .prepare_shielded_tip_address(&[0x11; 64], &id, &coordinator)
             .await
             .is_err());
+        assert!(matches!(
+            wallet
+                .prepare_shielded_tip_address(&seed, &id, &coordinator)
+                .await,
+            Err(crate::PlatformWalletError::ShieldedNotBound)
+        ));
+        assert!(!wallet.is_shielded_bound().await);
         assert!(persister.captured_viewing_keys().is_empty());
         assert!(coordinator.registered_subwallets().await.is_empty());
         wallet
@@ -868,6 +884,27 @@ async fn should_restore_tip_account_from_identity_discovery_and_register_for_syn
             .prepare_shielded_tip_address(&[0x11; 64], &id, &coordinator)
             .await
             .is_err());
+        // A queued FVK is insufficient: no publishable address may escape a
+        // failed durability barrier, even though bind installed keys in memory.
+        persister.durability_events.lock().unwrap().clear();
+        persister
+            .fail_flush
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(matches!(
+            wallet
+                .prepare_shielded_tip_address(&seed, &id, &coordinator)
+                .await,
+            Err(crate::PlatformWalletError::Persistence(_))
+        ));
+        assert_eq!(
+            *persister.durability_events.lock().unwrap(),
+            ["store", "flush"]
+        );
+        assert!(wallet.shielded_default_address(account).await.is_some());
+        persister
+            .fail_flush
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        persister.durability_events.lock().unwrap().clear();
         let address = wallet
             .prepare_shielded_tip_address(&seed, &id, &coordinator)
             .await
@@ -876,6 +913,10 @@ async fn should_restore_tip_account_from_identity_discovery_and_register_for_syn
             .prepare_shielded_tip_address(&seed, &Identifier::from([0x44; 32]), &coordinator)
             .await
             .is_err());
+        assert_eq!(
+            *persister.durability_events.lock().unwrap(),
+            ["store", "flush"]
+        );
         assert_ne!(wallet.shielded_default_address(0).await.unwrap(), address);
         assert_eq!(
             wallet

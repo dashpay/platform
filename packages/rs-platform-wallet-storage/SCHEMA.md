@@ -148,6 +148,7 @@ erDiagram
         BLOB wallet_id FK "NULL = orphan identity (no parent wallet yet)"
         INTEGER wallet_index "BIP-32 index; NULL for out-of-wallet identities"
         BLOB entry_blob "bincode-encoded IdentityEntry"
+        INTEGER entry_format "0 = legacy profile shape; 1 = payment addresses"
         INTEGER tombstoned "0 | 1 (logical delete)"
     }
 
@@ -168,6 +169,7 @@ erDiagram
     DASHPAY_PROFILES {
         BLOB identity_id PK "one row per identity"
         BLOB profile_blob "bincode-encoded DashPayProfile"
+        INTEGER profile_format "0 = legacy profile shape; 1 = payment addresses"
     }
 
     DASHPAY_PAYMENTS_OVERLAY {

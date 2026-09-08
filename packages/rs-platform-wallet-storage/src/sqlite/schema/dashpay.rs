@@ -23,6 +23,8 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
+pub use super::identity_profile_encoding::decode_profile;
+
 /// Both dashpay tables are keyed by identity only; their FK targets
 /// `identities(identity_id)` so cascade flows through the
 /// `wallet_metadata → identities` chain.

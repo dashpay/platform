@@ -1091,7 +1091,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let updates = payment_address_updates(input);
         if updates
             .iter()
-            .all(|(_, patch)| matches!(patch, PaymentAddressUpdate::Keep))
+            .all(|(_, patch)| !matches!(patch, PaymentAddressUpdate::Set(_)))
         {
             return Ok(());
         }
@@ -1125,7 +1125,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .document_type_for_name("profile")
             .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
         for (field, patch) in updates {
-            if !matches!(patch, PaymentAddressUpdate::Keep)
+            if matches!(patch, PaymentAddressUpdate::Set(_))
                 && !profile.properties().contains_key(field)
             {
                 return Err(PlatformWalletError::InvalidIdentityData(format!(
@@ -1141,6 +1141,73 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 mod address_patch_tests {
     use super::*;
     use crate::{PaymentAddressUpdate, ProfileUpdate};
+
+    #[tokio::test]
+    async fn should_allow_removal_without_contract_activation_but_reject_unsupported_set() {
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::version::PlatformVersion;
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+        let contract = load_system_data_contract(
+            SystemDataContract::Dashpay,
+            PlatformVersion::get(13).unwrap(),
+        )
+        .unwrap();
+        sdk.mock()
+            .expect_fetch(SystemDataContract::Dashpay.id(), Some(contract))
+            .await
+            .unwrap();
+        let (wm, wallet_id, generation, _) = crate::test_support::funded_wallet_manager(
+            key_wallet::account::StandardAccountType::BIP44Account,
+        )
+        .await;
+        let spv = Arc::new(crate::spv::SpvRuntime::new(
+            wm.clone(),
+            Arc::new(crate::events::PlatformEventManager::new(vec![])),
+        ));
+        let wallet = crate::PlatformWallet::new(
+            Arc::new(sdk),
+            wallet_id,
+            wm,
+            generation,
+            Arc::new(tokio::sync::Notify::new()),
+            Arc::new(crate::wallet::persister::NoPlatformPersistence),
+            Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+        );
+        let remove = ProfileUpdate {
+            display_name: Some("Alice II".into()),
+            core_payment_address: PaymentAddressUpdate::Remove,
+            platform_payment_address: PaymentAddressUpdate::Remove,
+            shielded_address: PaymentAddressUpdate::Remove,
+            ..Default::default()
+        };
+        wallet
+            .identity()
+            .dashpay()
+            .validate_payment_address_update(&remove)
+            .await
+            .unwrap();
+        let updated = merge_profile_properties(Default::default(), &remove, None, None);
+        assert_eq!(updated.len(), 1);
+        assert_eq!(
+            updated.get("displayName"),
+            Some(&Value::Text("Alice II".into()))
+        );
+        // Removal must not bypass activation checks on a simultaneously set field.
+        let mixed = ProfileUpdate {
+            core_payment_address: PaymentAddressUpdate::Set(vec![0; 21]),
+            shielded_address: PaymentAddressUpdate::Remove,
+            ..Default::default()
+        };
+        let error = wallet
+            .identity()
+            .dashpay()
+            .validate_payment_address_update(&mixed)
+            .await
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("does not support corePaymentAddress"));
+    }
 
     #[test]
     fn should_preserve_replace_and_remove_payment_addresses_independently() {

@@ -1051,13 +1051,8 @@ struct SendShieldedTipSheet: View {
     @State private var showRecipientChanged = false
 
 
-    private var credits: UInt64? {
-        guard let value = Decimal(string: amount, locale: Locale(identifier: "en_US_POSIX")), value > 0 else { return nil }
-        let scaled = value * 100_000_000_000
-        let number = NSDecimalNumber(decimal: scaled)
-        guard scaled <= Decimal(UInt64.max), Decimal(number.uint64Value) == scaled else { return nil }
-        return number.uint64Value
-    }
+    private var tipAmount: ShieldedTipAmount? { ShieldedTipAmount(amount) }
+    private var credits: UInt64? { tipAmount?.credits }
 
     var body: some View {
         NavigationStack {
@@ -1074,7 +1069,7 @@ struct SendShieldedTipSheet: View {
                         Text(recipient.identityId.toBase58String()).font(.caption).textSelection(.enabled)
                         Text(DashAddress.encodeOrchard(rawBytes: recipient.address, network: appState.currentNetwork) ?? "")
                             .font(.caption2).textSelection(.enabled)
-                        Text("Send \(amount) DASH from your \(sourceLabel).")
+                        Text("Send \(tipAmount?.dashString ?? "—") DASH from your \(sourceLabel).")
                     }
                 }
                 if let error { Text(error).foregroundStyle(.red) }

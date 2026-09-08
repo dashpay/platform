@@ -38,12 +38,18 @@ does not publish the address; publication remains an explicit profile operation.
 Repeated preparation derives the same account and address. An identity without a
 wallet derivation index can publish an external address instead.
 
-Tip accounts have distinct viewing keys and are excluded from ordinary receive
-and automatic spending choices. Spending a tip balance is an explicit action.
+Tip accounts have distinct viewing keys. Hosts must exclude them from ordinary
+receive, balance, and automatic spending choices, as the example apps do.
+`shielded_balances()` returns all bound accounts separately, including tip
+accounts; it does not apply this policy. Spending a tip balance is an explicit
+host action.
 The generic shielded transfer API still accepts an explicitly selected account.
 A published address is publicly associated with the profile; account separation
 does not eliminate correlations introduced by later transfers or provide a
 blanket guarantee against future cryptographic attacks.
+
+Address preparation requires an existing shielded bind. Bind the host's ordinary
+accounts first; preparation preserves them while adding the dedicated account.
 
 ## Restoration and address changes
 

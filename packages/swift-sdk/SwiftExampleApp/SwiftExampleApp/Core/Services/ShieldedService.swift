@@ -186,6 +186,32 @@ class ShieldedService: ObservableObject {
 
     // MARK: - Lifecycle
 
+    /// Re-register newly discovered identity accounts while retaining the engine's
+    /// existing ordinary accounts. Binding remains independent of discovery success.
+    @discardableResult
+    func rebindAfterIdentityDiscovery(
+        walletManager: PlatformWalletManager,
+        walletId: Data,
+        network: Network,
+        resolver: MnemonicResolver
+    ) -> Bool {
+        let existing: [UInt32]
+        do {
+            existing = try walletManager.shieldedAccountIndices(walletId: walletId)
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+        let accounts = existing.isEmpty ? [0] : existing
+        if boundWalletId == walletId || boundWalletId == nil {
+            bind(walletManager: walletManager, walletId: walletId, network: network,
+                 resolver: resolver, accounts: accounts)
+            return isBound
+        }
+        return bindEngine(walletManager: walletManager, walletId: walletId, network: network,
+                          resolver: resolver, accounts: accounts)
+    }
+
     /// Bind the service to a wallet. Drives `bindShielded` on the
     /// Rust side first (resolver-driven mnemonic lookup, ZIP-32
     /// derivation per `accounts`, per-network commitment tree
@@ -275,15 +301,15 @@ class ShieldedService: ObservableObject {
                 resolver: resolver,
                 accounts: sortedAccounts
             )
+            boundAccounts = try walletManager.shieldedAccountIndices(walletId: walletId)
             isBound = true
             lastError = nil
-            boundAccounts = sortedAccounts
 
             // Populate per-account default addresses. Best-effort —
             // a failure on any one account leaves that entry
             // missing from `addressesByAccount` (the row in the UI
             // shows blank) but doesn't unbind the wallet.
-            for account in sortedAccounts {
+            for account in boundAccounts {
                 if let raw = try? walletManager.shieldedDefaultAddress(
                     walletId: walletId,
                     account: account
@@ -298,7 +324,7 @@ class ShieldedService: ObservableObject {
             // the existing Receive sheet which only renders one
             // address. Use account 0 if bound, else the lowest
             // bound account.
-            let primary = sortedAccounts.contains(0) ? 0 : (sortedAccounts.first ?? 0)
+            let primary = boundAccounts.contains(0) ? 0 : (boundAccounts.first ?? 0)
             orchardDisplayAddress = addressesByAccount[primary]
 
             SDKLogger.event(

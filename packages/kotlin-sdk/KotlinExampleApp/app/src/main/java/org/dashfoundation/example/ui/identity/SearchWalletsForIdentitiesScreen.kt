@@ -141,7 +141,13 @@ fun SearchWalletsForIdentitiesScreen(navController: NavHostController) {
                             mnemonicResolverHandle = mgr.mnemonicResolverHandle,
                         )
                         if (container.shieldedService.isAvailable && found.isNotEmpty()) {
-                            mgr.bindShielded(wallet.walletId)
+                            try {
+                                mgr.bindShielded(wallet.walletId)
+                            } catch (error: kotlinx.coroutines.CancellationException) {
+                                throw error
+                            } catch (error: Exception) {
+                                android.util.Log.w("IdentityDiscovery", "Identities found; shielded bind failed", error)
+                            }
                         }
                         summary = "Found ${found.size} identity(ies)."
                         if (found.isEmpty()) {

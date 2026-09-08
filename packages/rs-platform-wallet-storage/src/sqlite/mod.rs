@@ -36,3 +36,6 @@ pub use config::{
 pub use error::{AutoBackupOperation, WalletStorageError};
 pub use persister::{PruneReport, RetentionPolicy, SqlitePersister};
 pub use reports::{CommitReport, DeleteWalletReport};
+
+// Versioned blob readers are useful to hosts inspecting pre-migration backups.
+pub use schema::{dashpay::decode_profile, identities::decode_identity};

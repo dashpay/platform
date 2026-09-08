@@ -33,7 +33,7 @@ import org.dashfoundation.example.util.DashAddress
 
 /** Username tipping uses the same verified recipient and confirmation boundary as Swift. */
 @Composable
-fun ShieldedTipSheet(manager: PlatformWalletManager, wallet: ManagedPlatformWallet, walletId: ByteArray, tipAccount: Int) {
+fun ShieldedTipSheet(manager: PlatformWalletManager, wallet: ManagedPlatformWallet, walletId: ByteArray, tipAccount: Int, submission: ShieldedTipSubmission) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val history = remember(context) {
@@ -44,8 +44,9 @@ fun ShieldedTipSheet(manager: PlatformWalletManager, wallet: ManagedPlatformWall
     var amount by remember { mutableStateOf("") }
     var recipient by remember { mutableStateOf<ShieldedTipRecipient?>(null) }
     var confirmedAmount by remember { mutableStateOf<Long?>(null) }
-    var busy by remember { mutableStateOf(false) }
-    var submitted by remember { mutableStateOf(false) }
+    var resolving by remember { mutableStateOf(false) }
+    val busy = resolving || submission.busy
+    val submitted = submission.submitted
     var spendTips by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -79,17 +80,29 @@ fun ShieldedTipSheet(manager: PlatformWalletManager, wallet: ManagedPlatformWall
             }
             Text("Send $amount DASH from your ${if (spendTips) "tip" else "main shielded"} account to $username?")
         }
-        message?.let { Text(it) }
+        (message ?: submission.message)?.let { Text(it) }
+        if (submission.status == ShieldedTipSubmission.Status.Sent) {
+            TextButton(onClick = { submission.startNewTip() }) { Text("Start a new tip") }
+        }
         SubmitButton(
             text = if (recipient == null) "Review tip" else "Confirm and send",
             isLoading = busy, enabled = !busy && !submitted && changedRecipient == null, modifier = Modifier.fillMaxWidth(),
         ) {
-            busy = true
-            message = null
-            scope.launch {
-                try {
-                    val selected = recipient
-                    if (selected == null) {
+            val selected = recipient
+            if (selected != null) {
+                val sendUsername = username.trim()
+                val sendAmount = requireNotNull(confirmedAmount)
+                val sendAccount = if (spendTips) tipAccount else 0
+                recipient = null
+                submission.submit {
+                    history.confirm(manager.network, walletId, sendUsername, selected)
+                    manager.sendShieldedTip(walletId, sendUsername, selected, sendAmount, account = sendAccount)
+                }
+            } else {
+                resolving = true
+                message = null
+                scope.launch {
+                    try {
                         val credits = BigDecimal(amount.trim()).movePointRight(11).longValueExact()
                         require(credits > 0) { "Enter a positive amount" }
                         confirmedAmount = credits
@@ -99,18 +112,11 @@ fun ShieldedTipSheet(manager: PlatformWalletManager, wallet: ManagedPlatformWall
                         } else {
                             recipient = resolved
                         }
-                    } else {
-                        // Ambiguous or unclassified outcomes remain locked; definitive failures permit a fresh review.
-                        history.confirm(manager.network, walletId, username, selected)
-                        submitted = true
-                        manager.sendShieldedTip(walletId, username.trim(), selected, requireNotNull(confirmedAmount), account = if (spendTips) tipAccount else 0)
-                        message = "Shielded tip sent."
-                    }
-                } catch (e: Exception) {
-                    message = e.message ?: "Unable to send tip"
-                    if (canReviewShieldedTipAfterFailure(e)) submitted = false
-                    recipient = null
-                } finally { busy = false }
+                    } catch (e: Exception) {
+                        message = e.message ?: "Unable to review tip"
+                        recipient = null
+                    } finally { resolving = false }
+                }
             }
         }
     }

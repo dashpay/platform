@@ -12,6 +12,8 @@ use {platform_wallet::changeset::IdentityEntry, rusqlite::Connection};
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
+pub use super::identity_profile_encoding::decode_identity;
+
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -128,10 +130,9 @@ pub fn fetch(
         .optional()?;
     match row {
         None => Ok(None),
-        Some((payload, tombstoned, format)) => Ok(Some((
-            super::identity_profile_encoding::decode_identity(&payload, format)?,
-            tombstoned != 0,
-        ))),
+        Some((payload, tombstoned, format)) => {
+            Ok(Some((decode_identity(&payload, format)?, tombstoned != 0)))
+        }
     }
 }
 

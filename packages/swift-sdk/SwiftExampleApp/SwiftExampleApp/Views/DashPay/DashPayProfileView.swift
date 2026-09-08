@@ -34,9 +34,19 @@ struct DashPayProfileView: View {
         }
     }
 
+    /// The persisted row uses zero as a historical placeholder. Only Rust's
+    /// optional derivation metadata can distinguish that from a real index zero.
+    private var tipAccount: UInt32? {
+        guard let walletId = identity.wallet?.walletId,
+              let wallet = walletManager.wallet(for: walletId),
+              let managed = try? wallet.managedIdentity(identityId: identity.identityId),
+              let index = try? managed.getIdentityIndex() else { return nil }
+        return try? PlatformWalletManager.shieldedTipAccountIndex(identityIndex: index)
+    }
+
     private var tipBalance: UInt64 {
         guard let walletId = identity.wallet?.walletId,
-              let account = try? PlatformWalletManager.shieldedTipAccountIndex(identityIndex: identity.identityIndex) else { return 0 }
+              let account = tipAccount else { return 0 }
         return shieldedNotes.filter { $0.walletId == walletId && $0.accountIndex == account && !$0.isSpent }
             .reduce(UInt64(0)) { $0 &+ $1.value }
     }
@@ -161,7 +171,7 @@ struct DashPayProfileView: View {
             }
             .sheet(isPresented: $showSpendTips) {
                 if let walletId = identity.wallet?.walletId,
-                   let account = try? PlatformWalletManager.shieldedTipAccountIndex(identityIndex: identity.identityIndex) {
+                   let account = tipAccount {
                     SendShieldedTipSheet(walletId: walletId, account: account, sourceLabel: "dedicated tip account")
                 }
             }

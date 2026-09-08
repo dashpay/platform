@@ -97,5 +97,4 @@ pub(crate) fn assert_identities_belong_to_wallet(
     Ok(())
 }
 
-#[cfg(any(test, feature = "__test-helpers"))]
 mod identity_profile_encoding;

@@ -38,6 +38,8 @@ pub struct DashPayProfile {
     /// Public message broadcast to contacts.
     pub public_message: Option<String>,
     /// Core P2PKH/P2SH storage address (type byte plus HASH160, 21 bytes).
+    /// The address defaults support map formats such as JSON. Positional
+    /// bincode records require the storage layer's versioned legacy decoder.
     #[cfg_attr(feature = "serde", serde(default))]
     pub core_payment_address: Option<Vec<u8>>,
     /// Platform P2PKH/P2SH storage address (21 bytes).

@@ -29,13 +29,12 @@ import SwiftData
 //
 // - `PersistentAssetLock`, frozen at its V2 shape (everything the live
 //   model has EXCEPT `recipientIsExternal`, which V3 added). Referenced by
-//   `DashSchemaV1.models` and `DashSchemaV2.models`; V3 and V4 reference
-//   the live type.
+//   `DashSchemaV1.models` and `DashSchemaV2.models`; V3 references the live type. V4 uses its own frozen copy.
 // - The 24 models of the relationship component that contains
 //   `PersistentTransaction`, `PersistentTxo`, `PersistentPendingInput` and
 //   `PersistentWallet`, frozen at their V3 shape (everything the live
 //   models had before V4's sweep columns). Referenced by V1, V2 and V3;
-//   V4 references the live types. The component travels as a whole
+//   V4 has its own copies in `DashSchemaV4FrozenModels.swift`. The component travels as a whole
 //   because a frozen model must declare its relationships against frozen
 //   counterparts (an `inverse:` key path is typed on the destination
 //   model), and following those relationships in both directions closes
@@ -45,7 +44,7 @@ import SwiftData
 // The ten models outside the component (shielded storage, invitations,
 // masternodes, the tracked-masternode registry, wallet-manager metadata,
 // the platform-addresses sync state) are still referenced live by every
-// version and still carry the latent defect described above. When the
+// V1–V3 version and still carry the latent defect described above. When the
 // next change touches one of them, freeze it here too — and if it sits in
 // a relationship component, freeze that component with it — then add a
 // version and a stage.

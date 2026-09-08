@@ -2256,6 +2256,23 @@ mod tests {
         );
     }
 
+    #[test]
+    fn should_contain_tip_worker_panic_as_uncertain_spend() {
+        let result = catch_spend_panic("shielded tip", || {
+            let result = block_on_worker(async {
+                panic!("tip worker failed after possible broadcast");
+                #[allow(unreachable_code)]
+                Ok(())
+            });
+            map_spend_result(result, "shielded tip")
+        });
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
+        );
+        assert!(message_of(&result).contains("do NOT retry"));
+    }
+
     /// A panic inside the CoinJoin-drain funding export must NOT unwind into the `extern "C"`
     /// frame (that aborts the Android process before the JNI layer's own guard can translate it
     /// into a Java exception). It becomes `ErrorTransactionBroadcastUnconfirmed` — the
@@ -2744,28 +2761,30 @@ pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
         Ok(value) => value,
         Err(e) => return e,
     };
-    let result = block_on_worker(async move {
-        let recipient = platform_wallet::ShieldedTipRecipient {
-            identity_id,
-            address,
-        };
-        let prover = CachedOrchardProver::new();
-        let result = wallet
-            .send_shielded_tip(
-                &coordinator,
-                seed.as_ref(),
-                account,
-                &username,
-                &recipient,
-                amount,
-                memo,
-                &prover,
-            )
-            .await;
-        poke_sync_on_unconfirmed(&result, handle);
-        result
-    });
-    map_spend_result(result, "shielded tip")
+    catch_spend_panic("shielded tip", || {
+        let result = block_on_worker(async move {
+            let recipient = platform_wallet::ShieldedTipRecipient {
+                identity_id,
+                address,
+            };
+            let prover = CachedOrchardProver::new();
+            let result = wallet
+                .send_shielded_tip(
+                    &coordinator,
+                    seed.as_ref(),
+                    account,
+                    &username,
+                    &recipient,
+                    amount,
+                    memo,
+                    &prover,
+                )
+                .await;
+            poke_sync_on_unconfirmed(&result, handle);
+            result
+        });
+        map_spend_result(result, "shielded tip")
+    })
 }
 
 /// Return the dedicated ZIP-32 tip account for a wallet identity derivation index.

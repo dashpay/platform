@@ -568,3 +568,86 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_wallet(
         ),
     }
 }
+
+/// Snapshot the effective bound accounts, including discovered and restored tip
+/// accounts. An unbound wallet returns an empty array. The caller must release
+/// a nonempty result with `platform_wallet_manager_free_shielded_account_indices`.
+///
+/// # Safety
+/// `wallet_id_bytes` must point to 32 readable bytes; both output pointers must
+/// be writable. Returned indices are valid until freed by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_account_indices(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    out_indices: *mut *mut u32,
+    out_count: *mut usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_indices);
+    check_ptr!(out_count);
+    *out_indices = std::ptr::null_mut();
+    *out_count = 0;
+    check_ptr!(wallet_id_bytes);
+    let mut wallet_id = [0; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(async {
+            match manager.get_wallet(&wallet_id).await {
+                Some(wallet) => Some(wallet.shielded_account_indices().await),
+                None => None,
+            }
+        })
+    });
+    let Some(indices) = unwrap_option_or_return!(option) else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "wallet not found",
+        );
+    };
+    if !indices.is_empty() {
+        *out_count = indices.len();
+        *out_indices = Box::into_raw(indices.into_boxed_slice()) as *mut u32;
+    }
+    PlatformWalletFFIResult::ok()
+}
+
+/// Release an account snapshot returned by the matching getter. Null is a no-op.
+///
+/// # Safety
+/// A nonnull pointer and count must be an unfreed pair from
+/// `platform_wallet_manager_shielded_account_indices`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_free_shielded_account_indices(
+    indices: *mut u32,
+    count: usize,
+) {
+    if !indices.is_null() {
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            indices, count,
+        )));
+    }
+}
+
+#[cfg(test)]
+mod account_indices_tests {
+    use super::*;
+
+    #[test]
+    fn invalid_handle_clears_account_snapshot_outputs() {
+        let mut indices = std::ptr::NonNull::<u32>::dangling().as_ptr();
+        let mut count = 99;
+        let wallet_id = [0; 32];
+        unsafe {
+            let result = platform_wallet_manager_shielded_account_indices(
+                0,
+                wallet_id.as_ptr(),
+                &mut indices,
+                &mut count,
+            );
+            assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+            assert!(indices.is_null());
+            assert_eq!(count, 0);
+            platform_wallet_manager_free_shielded_account_indices(indices, count);
+        }
+    }
+}

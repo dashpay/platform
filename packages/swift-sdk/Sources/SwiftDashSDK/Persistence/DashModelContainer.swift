@@ -123,9 +123,45 @@ public enum DashModelContainer {
             + [PersistentTrackedMasternode.self]
     }
 
-    /// The V4 model set includes the sweep columns, before payment metadata.
+    /// Historical V4 shape, independent of every live model definition.
     fileprivate static var v4ModelTypes: [any PersistentModel.Type] {
-        allModelTypes(assetLock: PersistentAssetLock.self) + [PersistentTrackedMasternode.self]
+        [
+            DashSchemaV4.PersistentIdentity.self,
+            DashSchemaV4.PersistentDPNSName.self,
+            DashSchemaV4.PersistentDashpayProfile.self,
+            DashSchemaV4.PersistentDashpayContactProfile.self,
+            DashSchemaV4.PersistentDashpayContactRequest.self,
+            DashSchemaV4.PersistentDashpayPayment.self,
+            DashSchemaV4.PersistentDashpayIgnoredSender.self,
+            DashSchemaV4.PersistentDocument.self,
+            DashSchemaV4.PersistentDataContract.self,
+            DashSchemaV4.PersistentPublicKey.self,
+            DashSchemaV4.PersistentTokenBalance.self,
+            DashSchemaV4.PersistentKeyword.self,
+            DashSchemaV4.PersistentToken.self,
+            DashSchemaV4.PersistentDocumentType.self,
+            DashSchemaV4.PersistentIndex.self,
+            DashSchemaV4.PersistentProperty.self,
+            DashSchemaV4.PersistentTokenHistoryEvent.self,
+            DashSchemaV4.PersistentPlatformAddress.self,
+            DashSchemaV4.PersistentPlatformAddressesSyncState.self,
+            DashSchemaV4.PersistentWallet.self,
+            DashSchemaV4.PersistentAccount.self,
+            DashSchemaV4.PersistentCoreAddress.self,
+            DashSchemaV4.PersistentTransaction.self,
+            DashSchemaV4.PersistentTxo.self,
+            DashSchemaV4.PersistentPendingInput.self,
+            DashSchemaV4.PersistentWalletManagerMetadata.self,
+            DashSchemaV4.PersistentShieldedNote.self,
+            DashSchemaV4.PersistentShieldedOutgoingNote.self,
+            DashSchemaV4.PersistentShieldedSyncState.self,
+            DashSchemaV4.PersistentShieldedActivity.self,
+            DashSchemaV4.PersistentShieldedViewingKey.self,
+            DashSchemaV4.PersistentAssetLock.self,
+            DashSchemaV4.PersistentInvitation.self,
+            DashSchemaV4.PersistentMasternode.self,
+            DashSchemaV4.PersistentTrackedMasternode.self
+        ]
     }
 
     /// All persistent model types in the current Dash SDK schema (V5).
@@ -133,7 +169,8 @@ public enum DashModelContainer {
     /// whenever a model gains a property — which is exactly why the
     /// released versions must not.
     public static var modelTypes: [any PersistentModel.Type] {
-        v4ModelTypes + [PersistentDashpayPaymentAddresses.self]
+        allModelTypes(assetLock: PersistentAssetLock.self)
+            + [PersistentTrackedMasternode.self, PersistentDashpayPaymentAddresses.self]
     }
 
     /// Create the schema for all Dash Platform models

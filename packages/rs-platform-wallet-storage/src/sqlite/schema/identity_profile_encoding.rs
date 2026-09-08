@@ -54,10 +54,22 @@ struct LegacyIdentityEntry {
     pub ignored_senders: BTreeSet<Identifier>,
 }
 
-pub(super) fn decode_identity(
-    payload: &[u8],
-    format: i64,
-) -> Result<IdentityEntry, WalletStorageError> {
+/// Decode a `dashpay_profiles.profile_blob` using its V008 `profile_format`
+/// stamp: zero is the pre-address shape, one includes payment addresses. Never
+/// fall back to the legacy shape after a current-format decoding error.
+pub fn decode_profile(payload: &[u8], format: i64) -> Result<DashPayProfile, WalletStorageError> {
+    match format {
+        0 => blob::decode::<LegacyProfile>(payload).map(Into::into),
+        1 => blob::decode(payload),
+        _ => Err(WalletStorageError::blob_decode(
+            "unsupported profile encoding",
+        )),
+    }
+}
+
+/// Decode an `identities.entry_blob` using its `entry_format` stamp, preserving
+/// the pre-address owned and contact profile shapes for format zero.
+pub fn decode_identity(payload: &[u8], format: i64) -> Result<IdentityEntry, WalletStorageError> {
     match format {
         1 => blob::decode(payload),
         0 => {
@@ -111,6 +123,27 @@ mod tests {
         }
     }
     #[test]
+    fn should_decode_standalone_profiles_by_format_without_fallback() {
+        let legacy = blob::encode(&old_profile()).unwrap();
+        let mut profile = super::super::dashpay::decode_profile(&legacy, 0).unwrap();
+        assert_eq!(profile.display_name.as_deref(), Some("Alice"));
+        assert_eq!(profile.public_message.as_deref(), Some("hello"));
+        assert!(profile.core_payment_address.is_none());
+        assert!(profile.platform_payment_address.is_none());
+        assert!(profile.shielded_address.is_none());
+        assert!(super::super::dashpay::decode_profile(&legacy, 1).is_err());
+        profile.shielded_address = Some(vec![9; 43]);
+        let current = blob::encode(&profile).unwrap();
+        assert_eq!(
+            super::super::dashpay::decode_profile(&current, 1).unwrap(),
+            profile
+        );
+        assert!(super::super::dashpay::decode_profile(&current, 0).is_err());
+        assert!(super::super::dashpay::decode_profile(&current, 2).is_err());
+        assert!(super::super::dashpay::decode_profile(&current[..current.len() - 1], 1).is_err());
+    }
+
+    #[test]
     fn should_read_old_owned_and_contact_profiles_without_losing_following_fields() {
         let id = Identifier::from([1; 32]);
         let old = LegacyIdentityEntry {
@@ -145,7 +178,24 @@ mod tests {
             .unwrap();
         conn.execute("INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)", rusqlite::params![[2u8; 32].as_slice()]).unwrap();
         conn.execute("INSERT INTO identities (identity_id, wallet_id, entry_blob, tombstoned) VALUES (?1, ?2, ?3, 0)", rusqlite::params![id.as_slice(), [2u8; 32].as_slice(), &encoded]).unwrap();
+        conn.execute(
+            "INSERT INTO dashpay_profiles (identity_id, profile_blob) VALUES (?1, ?2)",
+            rusqlite::params![id.as_slice(), blob::encode(&old_profile()).unwrap()],
+        )
+        .unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
+        let (profile_blob, profile_format): (Vec<u8>, i64) = conn
+            .query_row(
+                "SELECT profile_blob, profile_format FROM dashpay_profiles",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(profile_format, 0);
+        assert_eq!(
+            super::super::dashpay::decode_profile(&profile_blob, profile_format).unwrap(),
+            DashPayProfile::from(old_profile()),
+        );
         let (restored, tombstoned) =
             super::super::identities::fetch(&conn, &[2; 32], &id.to_buffer())
                 .unwrap()
@@ -185,7 +235,26 @@ mod tests {
             ..Default::default()
         };
         super::super::identities::apply(&tx, &[2; 32], &changes).unwrap();
+        super::super::dashpay::apply(
+            &tx,
+            &[2; 32],
+            Some(&BTreeMap::from([(id, current.dashpay_profile.clone())])),
+            None,
+        )
+        .unwrap();
         tx.commit().unwrap();
+        let (profile_blob, profile_format): (Vec<u8>, i64) = conn
+            .query_row(
+                "SELECT profile_blob, profile_format FROM dashpay_profiles",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(profile_format, 1);
+        assert_eq!(
+            super::super::dashpay::decode_profile(&profile_blob, profile_format).unwrap(),
+            current.dashpay_profile.clone().unwrap(),
+        );
         assert_eq!(
             conn.query_row("SELECT entry_format FROM identities", [], |row| row
                 .get::<_, i64>(0))

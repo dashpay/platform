@@ -52,7 +52,7 @@ fi
 # Check each model type is referenced in the explorer top-level view.
 echo "=== Checking StorageExplorerView.swift ==="
 for model in $model_types; do
-    if ! grep -q "$model" "$EXPLORER"; then
+    if ! grep -qw "$model" "$EXPLORER"; then
         echo "  MISSING: $model not referenced in StorageExplorerView.swift"
         errors=$((errors + 1))
     else
@@ -65,7 +65,7 @@ echo ""
 # containing @Query of the model type).
 echo "=== Checking StorageModelListViews.swift ==="
 for model in $model_types; do
-    if ! grep -q "$model" "$LIST_VIEWS"; then
+    if ! grep -qw "$model" "$LIST_VIEWS"; then
         echo "  MISSING: $model has no list view in StorageModelListViews.swift"
         errors=$((errors + 1))
     else
@@ -77,7 +77,7 @@ echo ""
 # Check each model type has a detail view.
 echo "=== Checking StorageRecordDetailViews.swift ==="
 for model in $model_types; do
-    if ! grep -q "$model" "$DETAIL_VIEWS"; then
+    if ! grep -qw "$model" "$DETAIL_VIEWS"; then
         echo "  MISSING: $model has no detail view in StorageRecordDetailViews.swift"
         errors=$((errors + 1))
     else

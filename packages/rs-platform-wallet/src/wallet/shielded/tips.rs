@@ -49,6 +49,8 @@ impl PlatformWallet {
     /// Prepare a dedicated receiving account without publishing anything. Full
     /// bind persists its viewing key and registers it with the coordinator before
     /// callers can publish the returned address. Repeated calls are idempotent.
+    /// Requires an existing shielded bind so preparing a tip account cannot
+    /// silently replace the host's ordinary account configuration.
     pub async fn prepare_shielded_tip_address(
         &self,
         seed: &[u8],
@@ -93,6 +95,9 @@ impl PlatformWallet {
             })?)?
         };
         let mut accounts = self.shielded_account_indices().await;
+        if accounts.is_empty() {
+            return Err(PlatformWalletError::ShieldedNotBound);
+        }
         accounts.push(account);
         self.bind_shielded(seed, &accounts, coordinator).await?;
         self.persister()

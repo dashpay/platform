@@ -154,6 +154,23 @@ extension PlatformWalletManager {
         currentShieldedTreeTotal = total
     }
 
+    /// Effective engine account set, including automatically discovered tip accounts.
+    public func shieldedAccountIndices(walletId: Data) throws -> [UInt32] {
+        guard isConfigured, handle != NULL_HANDLE, walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("Configured manager and 32-byte walletId required")
+        }
+        var indices: UnsafeMutablePointer<UInt32>?
+        var count: UInt = 0
+        try walletId.withUnsafeBytes { bytes in
+            try platform_wallet_manager_shielded_account_indices(
+                handle, bytes.bindMemory(to: UInt8.self).baseAddress!, &indices, &count
+            ).check()
+        }
+        defer { platform_wallet_manager_free_shielded_account_indices(indices, count) }
+        guard let indices else { return [] }
+        return Array(UnsafeBufferPointer(start: indices, count: Int(count)))
+    }
+
     /// Bind `walletId`'s multi-account shielded sub-wallet to the
     /// `PlatformWallet` — from viewing keys the persister already
     /// holds when possible, deriving from the mnemonic only when it

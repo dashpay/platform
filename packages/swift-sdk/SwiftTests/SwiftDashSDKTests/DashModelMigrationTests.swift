@@ -5,6 +5,38 @@ import XCTest
 @testable import SwiftDashSDK
 
 final class DashModelMigrationTests: XCTestCase {
+    /// The PR only adds a new entity to the live models. Removing that entity
+    /// reconstructs the exact pre-freeze V4 definition, independently of the
+    /// new frozen classes. A store written with it must match frozen V4.
+    @MainActor
+    func testPreFreezeV4StoreMigratesUsingFrozenV4() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("historical-v4.store")
+        let historicalModels = DashModelContainer.modelTypes.filter {
+            $0 != PersistentDashpayPaymentAddresses.self
+        }
+        let historical = Schema(historicalModels, version: .init(4, 0, 0))
+        let oldConfiguration = ModelConfiguration(schema: historical, url: url, cloudKitDatabase: .none)
+        var oldContainer: ModelContainer? = try ModelContainer(for: historical, configurations: [oldConfiguration])
+        let identityId = Data(repeating: 0x62, count: 32)
+        do {
+            let identity = PersistentIdentity(identityId: identityId, network: .testnet)
+            oldContainer!.mainContext.insert(identity)
+            oldContainer!.mainContext.insert(PersistentDashpayProfile(identity: identity, displayName: "Historical V4"))
+            try oldContainer!.mainContext.save()
+        }
+        oldContainer = nil
+        let current = DashModelContainer.schema
+        let configuration = ModelConfiguration(schema: current, url: url, cloudKitDatabase: .none)
+        let migrated = try ModelContainer(for: current, migrationPlan: DashMigrationPlan.self,
+                                          configurations: [configuration])
+        let profile = try XCTUnwrap(migrated.mainContext.fetch(FetchDescriptor<PersistentDashpayProfile>()).first)
+        XCTAssertEqual(profile.identity.identityId, identityId)
+        XCTAssertEqual(profile.displayName, "Historical V4")
+    }
+
     @MainActor
     func testV1StoreMigratesToV2AndAcceptsTrackedMasternodes() throws {
         let directory = FileManager.default.temporaryDirectory
@@ -134,18 +166,18 @@ final class DashModelMigrationTests: XCTestCase {
             configurations: [v4Configuration])
 
         let wallets = try migrated.mainContext.fetch(
-            FetchDescriptor<PersistentWallet>())
+            FetchDescriptor<DashSchemaV4.PersistentWallet>())
         XCTAssertEqual(wallets.count, 1, "the V3 row must survive the migration")
         XCTAssertNil(
             wallets.first?.lastAppliedChainLockHeight,
             "a wallet migrated from V3 has no chainlock boundary yet, so no "
                 + "tombstone it later takes can be collected on a fabricated one")
         let pending = try migrated.mainContext.fetch(
-            FetchDescriptor<PersistentPendingInput>())
+            FetchDescriptor<DashSchemaV4.PersistentPendingInput>())
         XCTAssertEqual(pending.count, 1, "the V3 pending row must survive the migration")
         XCTAssertEqual(pending.first?.isSweptTombstone, false, "backfilled as an ordinary claim")
         XCTAssertNil(pending.first?.winnerMinedHeight, "and unstamped")
-        let coins = try migrated.mainContext.fetch(FetchDescriptor<PersistentTxo>())
+        let coins = try migrated.mainContext.fetch(FetchDescriptor<DashSchemaV4.PersistentTxo>())
         XCTAssertEqual(coins.count, 1, "the V3 TXO row must survive the migration")
         XCTAssertEqual(coins.first?.isSpent, true, "its spent flag is carried as stored")
         XCTAssertNil(
@@ -153,7 +185,7 @@ final class DashModelMigrationTests: XCTestCase {
             "a coin migrated from V3 was never held by a sweep — the stamp backfills to nil, "
                 + "so the release and re-delivery rules see an ordinary spent coin")
         let transactions = try migrated.mainContext.fetch(
-            FetchDescriptor<PersistentTransaction>())
+            FetchDescriptor<DashSchemaV4.PersistentTransaction>())
         XCTAssertEqual(transactions.map(\.context), [2], "the V3 transaction row survives unchanged")
     }
 
@@ -218,15 +250,15 @@ final class DashModelMigrationTests: XCTestCase {
             migrationPlan: DashMigrationPlan.self,
             configurations: [v4Configuration])
 
-        let wallets = try migrated.mainContext.fetch(FetchDescriptor<PersistentWallet>())
+        let wallets = try migrated.mainContext.fetch(FetchDescriptor<DashSchemaV4.PersistentWallet>())
         XCTAssertEqual(wallets.map(\.walletId), [walletId])
         XCTAssertNil(wallets.first?.lastAppliedChainLockHeight)
         let transactions = try migrated.mainContext.fetch(
-            FetchDescriptor<PersistentTransaction>())
+            FetchDescriptor<DashSchemaV4.PersistentTransaction>())
         XCTAssertEqual(transactions.map(\.txid), [txid])
         XCTAssertEqual(transactions.first?.context, 3)
         XCTAssertEqual(transactions.first?.netAmount, 2_000)
-        let coins = try migrated.mainContext.fetch(FetchDescriptor<PersistentTxo>())
+        let coins = try migrated.mainContext.fetch(FetchDescriptor<DashSchemaV4.PersistentTxo>())
         XCTAssertEqual(coins.count, 1)
         XCTAssertEqual(coins.first?.vout, 1)
         XCTAssertEqual(coins.first?.amount, 2_000)
@@ -240,7 +272,7 @@ final class DashModelMigrationTests: XCTestCase {
 
     /// What makes the V3 -> V4 stage lightweight: the two versions name the
     /// same entity set, and V4 only widens three of them. Also pins that
-    /// `PersistentTransaction` is NOT one of the three — a swept row is
+    /// `DashSchemaV4.PersistentTransaction` is NOT one of the three — a swept row is
     /// deleted outright, so the transaction entity carries no sweep marker,
     /// and one that came back would silently change V4's checksum.
     func testV3AndV4NameTheSameEntitySet() throws {
@@ -398,22 +430,22 @@ extension DashModelMigrationTests {
         let winnerTxid = Data(repeating: 0x41, count: 32)
         do {
             let context = oldContainer!.mainContext
-            let identity = PersistentIdentity(identityId: identityId, isLocal: true, network: .testnet)
+            let identity = DashSchemaV4.PersistentIdentity(identityId: identityId, isLocal: true, network: .testnet)
             context.insert(identity)
-            context.insert(PersistentDashpayProfile(identity: identity, displayName: "Preserved profile"))
-            let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+            context.insert(DashSchemaV4.PersistentDashpayProfile(identity: identity, displayName: "Preserved profile"))
+            let wallet = DashSchemaV4.PersistentWallet(walletId: walletId, network: .testnet)
             wallet.lastAppliedChainLockHeight = 4321
             context.insert(wallet)
-            let pending = PersistentPendingInput(
+            let pending = DashSchemaV4.PersistentPendingInput(
                 outpoint: Data(repeating: 0x11, count: 36), inputIndex: 0,
                 spendingTxid: winnerTxid, spendingTransaction: nil, walletId: walletId)
             pending.isSweptTombstone = true
             pending.winnerMinedHeight = 1234
             context.insert(pending)
-            let funding = PersistentTransaction(txid: Data(repeating: 0x51, count: 32),
+            let funding = DashSchemaV4.PersistentTransaction(txid: Data(repeating: 0x51, count: 32),
                 transactionData: Data([0x03, 0x00]), context: 2, blockHeight: 100)
             context.insert(funding)
-            let coin = PersistentTxo(transaction: funding, vout: 0, amount: 1000, address: "yV4Coin", height: 100)
+            let coin = DashSchemaV4.PersistentTxo(transaction: funding, vout: 0, amount: 1000, address: "yV4Coin", height: 100)
             coin.walletId = walletId
             coin.isSpent = true
             coin.supersededByTxid = winnerTxid
