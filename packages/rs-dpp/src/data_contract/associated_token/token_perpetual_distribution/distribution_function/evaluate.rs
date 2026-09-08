@@ -19,29 +19,43 @@ struct FloatOps {
 /// `distribution_function_evaluate_version` values `evaluate()` knows how to run.
 const KNOWN_EVALUATE_VERSIONS: [FeatureVersion; 2] = [0, 1];
 
+/// Rejects a `distribution_function_evaluate_version` that `evaluate()` cannot run.
+///
+/// Called at the entry of every evaluation path, including the interval methods
+/// whose fast paths (`FixedAmount`, empty intervals) never reach `evaluate()`, so an
+/// unknown version fails the same way regardless of distribution type or bounds.
+pub(super) fn check_evaluate_version(
+    platform_version: &PlatformVersion,
+) -> Result<FeatureVersion, ProtocolError> {
+    let version = platform_version
+        .dpp
+        .token_versions
+        .distribution_function_evaluate_version;
+    if KNOWN_EVALUATE_VERSIONS.contains(&version) {
+        Ok(version)
+    } else {
+        Err(ProtocolError::UnknownVersionMismatch {
+            method: "DistributionFunction::evaluate".to_string(),
+            known_versions: KNOWN_EVALUATE_VERSIONS.to_vec(),
+            received: version,
+        })
+    }
+}
+
 impl FloatOps {
     /// v0: std `f64` methods (platform-dependent results).
     /// v1: `libm` (bit-identical results on every platform).
     fn for_version(platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
-        match platform_version
-            .dpp
-            .token_versions
-            .distribution_function_evaluate_version
-        {
+        match check_evaluate_version(platform_version)? {
             0 => Ok(FloatOps {
                 pow: f64::powf,
                 exp: f64::exp,
                 ln: f64::ln,
             }),
-            1 => Ok(FloatOps {
+            _ => Ok(FloatOps {
                 pow: libm::pow,
                 exp: libm::exp,
                 ln: libm::log,
-            }),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DistributionFunction::evaluate".to_string(),
-                known_versions: KNOWN_EVALUATE_VERSIONS.to_vec(),
-                received: version,
             }),
         }
     }

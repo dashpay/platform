@@ -3,6 +3,7 @@ use platform_version::version::PlatformVersion;
 use crate::balances::credits::TokenAmount;
 use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::evaluate::check_evaluate_version;
 #[cfg(feature = "token-reward-explanations")]
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_CYCLES_PARAM;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::reward_ratio::RewardRatio;
@@ -1575,6 +1576,10 @@ impl DistributionFunction {
     where
         F: Fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>,
     {
+        // Before any fast path: the FixedAmount and empty-interval returns below never
+        // reach evaluate(), and an unknown version must fail the same way for all of them.
+        check_evaluate_version(platform_version)?;
+
         // Ensure moments are the same type.
         if !(interval_start_excluded.same_type(&step)
             && interval_start_excluded.same_type(&interval_end_included))
@@ -1724,6 +1729,9 @@ impl DistributionFunction {
     where
         F: Fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>,
     {
+        // Before any fast path, for the same reason as in evaluate_interval.
+        check_evaluate_version(platform_version)?;
+
         let mut explanation = IntervalEvaluationExplanation {
             distribution_function: self.clone(),
             interval_start_excluded,
@@ -1903,6 +1911,69 @@ impl DistributionFunction {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Both interval entry points must reject an unknown evaluation version before the
+    /// FixedAmount and empty-interval fast paths, which never reach `evaluate()`.
+    #[test]
+    fn unknown_evaluate_version_is_rejected_before_interval_fast_paths() {
+        let mut unknown = PlatformVersion::latest().clone();
+        unknown
+            .dpp
+            .token_versions
+            .distribution_function_evaluate_version = 2;
+        let no_ratio = None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>;
+        let start = RewardDistributionMoment::BlockBasedMoment(0);
+        let step = RewardDistributionMoment::BlockBasedMoment(1);
+        let block = RewardDistributionMoment::BlockBasedMoment;
+
+        // (distribution, interval_start_excluded, interval_end_included)
+        let cases = [
+            // FixedAmount fast path, non-empty interval
+            (
+                DistributionFunction::FixedAmount { amount: 10 },
+                block(0),
+                block(5),
+            ),
+            // Empty interval fast path on a variant that would otherwise reach evaluate()
+            (
+                DistributionFunction::Linear {
+                    a: 1,
+                    d: 1,
+                    start_step: None,
+                    starting_amount: 1,
+                    min_value: None,
+                    max_value: None,
+                },
+                block(5),
+                block(5),
+            ),
+        ];
+
+        for (distribution, from, to) in cases {
+            let result = distribution.evaluate_interval(start, from, to, step, no_ratio, &unknown);
+            assert!(
+                matches!(
+                    result,
+                    Err(ProtocolError::UnknownVersionMismatch { received: 2, .. })
+                ),
+                "evaluate_interval({distribution:?}, {from:?}..={to:?}) returned {result:?}"
+            );
+
+            #[cfg(feature = "token-reward-explanations")]
+            {
+                let result = distribution.evaluate_interval_with_explanation(
+                    start, from, to, step, no_ratio, true, &unknown,
+                );
+                assert!(
+                    matches!(
+                        result,
+                        Err(ProtocolError::UnknownVersionMismatch { received: 2, .. })
+                    ),
+                    "evaluate_interval_with_explanation({distribution:?}, {from:?}..={to:?}) returned {result:?}"
+                );
+            }
+        }
+    }
 
     mod epoch_tests {
         use super::*;
