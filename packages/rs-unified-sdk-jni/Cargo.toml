@@ -17,6 +17,10 @@ rs-sdk-ffi = { path = "../rs-sdk-ffi" }
 platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
 key-wallet-ffi = { workspace = true }
 dash-network = { workspace = true, features = ["ffi"] }
+# Address encoding for the reconcile sweep's engine-UTXO export
+# (walletManagerUtxosPageJson) — already in the graph via
+# platform-wallet-ffi, so this adds no new build cost.
+dashcore = { workspace = true }
 log = "0.4"
 zeroize = "1"
 
@@ -24,7 +28,6 @@ zeroize = "1"
 android_logger = "0.14"
 
 [dev-dependencies]
-dashcore = { workspace = true }
 # Anchors the cross-language golden-fixture test to the canonical DashPay
 # contract id, so the mirrored Kotlin constant can't drift undetected.
 dashpay-contract = { path = "../dashpay-contract" }
