@@ -1421,51 +1421,45 @@ extension PlatformWalletManager {
             )
             return
         }
-        // Admit BEFORE the database half, not after it: `shutdown()`'s drain
-        // must cover the whole export, or a teardown that begins during the
-        // cross-wallet scan proceeds while that scan still holds the
-        // persistence queue every persister callback enters through. The
-        // queue-confined pass polls `cancellation` between stages, so the
-        // cover costs the drain at most one stage. A manager with no handle
-        // has nothing to drain; its database half still runs.
         let cancellation = coreDiagnosticsCancellation
         // Counted for the whole pass, both halves, so a `shutdown()` that
         // finds no handle can still tell a running database half to stop —
         // and so one that finds neither leaves the latch down.
         beginCoreDiagnosticsPass()
         defer { endCoreDiagnosticsPass() }
-        let admitted: Bool
-        if isConfigured, handle != NULL_HANDLE {
-            do {
-                try admitCoreDiagnosticsNativeOp()
-                admitted = true
-            } catch {
-                SDKLogger.event(
-                    "core_memory_snapshot_unavailable",
-                    category: .persistence,
-                    severity: .warning,
-                    fields: [
-                        "checkpoint": .publicText(checkpoint.rawValue),
-                        "reason": .publicText("manager_shutdown_in_progress"),
-                        "wallet_reference": .reference(walletId),
-                    ]
-                )
-                return
-            }
-        } else {
-            admitted = false
-        }
-        defer { if admitted { finishCoreDiagnosticsNativeOp() } }
 
         // The database half may come back empty — wallet row missing, fetch
         // failed — and those are exactly the "coins gone from the database"
         // reports this exists for. The Rust half needs only the wallet id, so
         // it runs regardless and marks its diffs as one-sided.
+        //
+        // Deliberately OUTSIDE the native-op admission. That admission exists
+        // for one thing: keeping `handle` alive while an FFI read is in
+        // flight. This half makes no FFI call at all — it reads SwiftData on
+        // the persistence serial queue — so covering it buys the handle
+        // nothing and costs `shutdown()`'s drain everything: the drain would
+        // then wait on a block whose progress depends on that queue, and a
+        // wedged persister round (the failure this export exists to
+        // investigate) is exactly when the queue does not advance. There is
+        // no deadline on the drain, so that wait would be unbounded.
+        //
+        // Ordering is still safe without the drain, because it does not come
+        // from the drain: native teardown runs on `destroyQueue`, and the Rust
+        // destroy's persister callbacks enter through `serialQueue.sync`, so
+        // they queue BEHIND this block rather than racing it — off the main
+        // thread, and bounded by the cancellation flag this block polls
+        // between stages. ARC covers the rest: the block holds the handler and
+        // its container, so neither can be deallocated under the read.
         let database = await handler.emitCoreWalletDatabaseDiagnostics(
             walletId: walletId,
             cancellation: cancellation
         )
-        guard admitted else {
+
+        // Admission covers the FFI half only, which runs on
+        // `coreDiagnosticsQueue` and polls cancellation between reads — so the
+        // drain's "at most one stage in flight" is bounded by a stage this
+        // manager owns, not by whatever is holding the persistence queue.
+        guard isConfigured, handle != NULL_HANDLE else {
             SDKLogger.event(
                 "core_memory_snapshot_unavailable",
                 category: .persistence,
@@ -1478,6 +1472,22 @@ extension PlatformWalletManager {
             )
             return
         }
+        do {
+            try admitCoreDiagnosticsNativeOp()
+        } catch {
+            SDKLogger.event(
+                "core_memory_snapshot_unavailable",
+                category: .persistence,
+                severity: .warning,
+                fields: [
+                    "checkpoint": .publicText(checkpoint.rawValue),
+                    "reason": .publicText("manager_shutdown_in_progress"),
+                    "wallet_reference": .reference(walletId),
+                ]
+            )
+            return
+        }
+        defer { finishCoreDiagnosticsNativeOp() }
 
         let managerHandle = handle
         let managedWallet = wallets[walletId]
