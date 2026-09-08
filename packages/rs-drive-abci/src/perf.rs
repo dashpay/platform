@@ -1,7 +1,12 @@
-//! Lightweight per-block phase timing.
+//! Lightweight per-block phase timing for debug builds.
 //!
-//! Enabled only when `DRIVE_BLOCK_PERF=1` is set in the environment. Phases are
-//! accumulated in memory and reported as means every `DRIVE_BLOCK_PERF_EVERY`
+//! This module and all timing call sites are compiled only with debug assertions
+//! enabled. Standard release builds exclude the instrumentation entirely, even
+//! when `DRIVE_BLOCK_PERF=1` is set.
+//!
+//! In debug builds, enabled only when `DRIVE_BLOCK_PERF=1` is set in the
+//! environment. Phases are accumulated in memory and reported as means every
+//! `DRIVE_BLOCK_PERF_EVERY`
 //! blocks (default 500), so the measurement does not pay for a log line inside
 //! the very spans it is measuring.
 //!

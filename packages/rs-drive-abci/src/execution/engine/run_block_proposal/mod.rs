@@ -53,6 +53,7 @@ where
         timer: Option<&HistogramTiming>,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
+        #[cfg(debug_assertions)]
         let mut laps = crate::perf::Laps::new();
 
         // Epoch information is always calculated with the last committed platform version
@@ -68,6 +69,7 @@ where
             last_committed_platform_version,
         )?;
 
+        #[cfg(debug_assertions)]
         laps.lap("epoch_info");
 
         // Cleanup block cache before we execute a new proposal.
@@ -78,11 +80,13 @@ where
         // them, leaving those reads to fall back to pre-change global cache entries.
         self.clear_drive_block_cache(last_committed_platform_version)?;
 
+        #[cfg(debug_assertions)]
         laps.lap("clear_block_cache");
 
         // Create a bock state from previous committed state
         let mut block_platform_state = platform_state.clone();
 
+        #[cfg(debug_assertions)]
         laps.lap("state_clone");
 
         // Determine a platform version for this block
