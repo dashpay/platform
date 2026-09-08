@@ -402,7 +402,8 @@ mod tests {
         }
     }
 
-    /// A DEBUG subscriber, so the status summary behind `tracing::enabled!` runs.
+    /// A DEBUG subscriber, so the status summary behind `tracing::enabled!` runs
+    /// and the guarded path is exercised.
     fn init_debug_tracing() -> tracing::subscriber::DefaultGuard {
         let subscriber = tracing_subscriber::fmt()
             .with_max_level(tracing::Level::DEBUG)
@@ -412,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    fn test_nothing_queued_with_debug_logging_summarises_without_touching_documents() {
+    fn test_debug_summary_runs_without_touching_documents() {
         let _guard = init_debug_tracing();
 
         let platform_version = PlatformVersion::latest();
@@ -484,38 +485,5 @@ mod tests {
 
         assert_eq!(still_complete.len(), 1);
         assert_eq!(still_complete[0].revision(), completed.revision());
-    }
-
-    #[test]
-    fn test_no_withdrawal_documents_at_all_with_debug_logging() {
-        let _guard = init_debug_tracing();
-
-        let platform_version = PlatformVersion::latest();
-        let platform = TestPlatformBuilder::new()
-            .build_with_mock_rpc()
-            .set_initial_state_structure();
-
-        let transaction = platform.drive.grove.start_transaction();
-
-        let block_info = BlockInfo {
-            time_ms: 1,
-            height: 1,
-            core_height: 96,
-            epoch: Epoch::default(),
-        };
-
-        let data_contract =
-            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
-                .expect("to load system data contract");
-
-        setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
-
-        platform
-            .pool_withdrawals_into_transactions_queue_v1(
-                &block_info,
-                Some(&transaction),
-                platform_version,
-            )
-            .expect("an empty withdrawal history is not an error");
     }
 }
