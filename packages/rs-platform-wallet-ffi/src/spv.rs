@@ -148,7 +148,7 @@ pub unsafe extern "C" fn platform_wallet_manager_sync_progress(
     // stop and block processing), and a registry read guard held across it
     // would stall `platform_wallet_manager_destroy` (a registry write) and,
     // through parking_lot's writer preference, every other registry reader.
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_shared());
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
     let spv = unwrap_option_or_return!(option);
     let progress = runtime().block_on(spv.sync_progress());
     *out_progress = match progress {
@@ -300,7 +300,7 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_connected_peers(
     *out_count = 0;
 
     // Waited on outside the registry guard — see `platform_wallet_manager_sync_progress`.
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_shared());
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
     let spv = unwrap_option_or_return!(option);
     let peers = runtime().block_on(spv.connected_peers());
     if peers.is_empty() {
@@ -375,7 +375,7 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_tip_unix_seconds(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_unix_seconds);
     // Waited on outside the registry guard — see `platform_wallet_manager_sync_progress`.
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_shared());
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
     let spv = unwrap_option_or_return!(option);
     let tip = runtime().block_on(spv.tip_block_time());
     *out_unix_seconds = tip.map(|t| t as u64).unwrap_or(0);

@@ -622,7 +622,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         // Registration deliberately runs no identity discovery. The wallet
         // was downgraded to external-signable above, so the resident-key
-        // scan (`identity().sync()`) cannot derive its first auth key and
+        // scan (`identity().discover(..)`) cannot derive its first auth key and
         // fails before ever reaching Platform — all it did here was wait on
         // the wallet-manager lock twice, spend one host persistence round
         // and leave a spurious "scan incomplete at index 0" verdict behind

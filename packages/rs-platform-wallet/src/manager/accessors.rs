@@ -298,15 +298,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self.spv_manager
     }
 
-    /// The SPV runtime as a shared handle, for callers that must drive one
-    /// of its futures to completion OUTSIDE a guard they were holding when
-    /// they looked the manager up (the FFI's handle registry): a blocking
-    /// wait under such a guard would stall every other holder for the
-    /// wait's duration.
-    pub fn spv_shared(&self) -> std::sync::Arc<SpvRuntime> {
-        std::sync::Arc::clone(&self.spv_manager)
-    }
-
     /// Clone the `Arc<SpvRuntime>` so callers (e.g. FFI) can invoke
     /// [`SpvRuntime::spawn_run_loop`] which takes `&Arc<Self>`.
     /// Shared handle to the Platform SDK, for work that outlives a borrow
