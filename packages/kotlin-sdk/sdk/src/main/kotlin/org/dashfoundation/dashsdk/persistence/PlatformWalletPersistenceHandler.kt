@@ -131,6 +131,15 @@ class PlatformWalletPersistenceHandler(
      * Null = unscoped (unit tests exercising raw persistence only).
      */
     private val network: org.dashfoundation.dashsdk.Network? = null,
+    /**
+     * Where the sweep pass gets a stored loser's input outpoints (the
+     * outpoint-keyed hold, see `applySweptTransactions`). The production
+     * default decodes the stored consensus bytes through key-wallet-ffi's
+     * `transaction_decode`; tests inject a fake keyed by txid, since the
+     * native library is not loadable under Robolectric.
+     */
+    private val storedTransactionInputs: StoredTransactionInputs =
+        NativeStoredTransactionInputs(network),
 ) : NativePersistenceBridge(), AutoCloseable {
 
     override fun persistenceCapabilitiesVersion(): Int = PERSISTENCE_CAPABILITIES_VERSION
@@ -144,7 +153,8 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_UNSIGNED_TOKEN_STORAGE or
             CAPABILITY_WALLET_RESTORE or
             CAPABILITY_DPNS_NAME_STATES or
-            CAPABILITY_TRACKED_ASSET_LOCKS
+            CAPABILITY_TRACKED_ASSET_LOCKS or
+            CAPABILITY_CORE_SWEEP_REMOVAL
 
     /**
      * The single-thread executor created when no [dispatcher] is injected.
@@ -204,6 +214,22 @@ class PlatformWalletPersistenceHandler(
         val pendingKeyDeltas:
             MutableList<(Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey>> =
                 mutableListOf()
+
+        /**
+         * The round's sweep batches, in emission order. Buffered rather
+         * than staged as ops so [onChangesetEnd] can apply them as one
+         * pass after every account slice — the co-swept predicate must see
+         * the union of every batch's txids — and before the collector.
+         */
+        val sweepBatches: MutableList<SweepBatch> = mutableListOf()
+
+        /**
+         * Set when the round advanced the synced height (header slot) or
+         * the chainlock height (chainlock-height slot): the tombstone
+         * collection boundary may have moved, so [onChangesetEnd] runs
+         * [collectFinalizedSweptTombstones] once, last.
+         */
+        var finalityAdvanced: Boolean = false
     }
 
     /** Open rounds keyed by walletId hex (a round is per-walletId). */
@@ -384,8 +410,7 @@ class PlatformWalletPersistenceHandler(
      * in its own transaction (the standalone-callback path).
      */
     private fun stage(walletId: ByteArray, op: suspend (DashDatabase) -> Unit) {
-        val key = walletId.toHex()
-        val buffer = buffers[key]
+        val buffer = openRound(walletId)
         if (buffer != null) {
             buffer.ops.add(op)
         } else {
@@ -394,6 +419,9 @@ class PlatformWalletPersistenceHandler(
             }
         }
     }
+
+    /** The open round for [walletId], or null on the standalone-callback path. */
+    private fun openRound(walletId: ByteArray): ChangesetBuffer? = buffers[walletId.toHex()]
 
     // ── Bracketing ────────────────────────────────────────────────────
 
@@ -429,6 +457,17 @@ class PlatformWalletPersistenceHandler(
                 database.withTransaction {
                     for (op in buffer.ops) {
                         op(database)
+                    }
+                    // Sweeps run after every account slice, so a winner
+                    // arriving in this very round has its own rows written
+                    // before the removal touches the coins it took; the
+                    // collector runs last, after the sweeps, on the wallet
+                    // row as this round left it.
+                    if (buffer.sweepBatches.isNotEmpty()) {
+                        applySweepRound(database, walletId, buffer.sweepBatches)
+                    }
+                    if (buffer.finalityAdvanced) {
+                        collectFinalizedSweptTombstones(database, walletId)
                     }
                 }
             }
@@ -702,6 +741,13 @@ class PlatformWalletPersistenceHandler(
         lockedDelta: Long,
         lastAppliedChainLockBytes: ByteArray,
     ): Int = guarded {
+        // The synced-height half of the tombstone collection boundary
+        // moved: flag the round so `onChangesetEnd` runs the collector once,
+        // after every slice and every sweep (see
+        // [collectFinalizedSweptTombstones]). Outside a round the write and
+        // the collection run together in the standalone transaction.
+        val round = openRound(walletId)
+        if (hasSyncedHeight) round?.finalityAdvanced = true
         stage(walletId) { db ->
             // Drop stale post-deletion callbacks (can't resurrect a wallet).
             val wallet = db.walletDao().getByWalletId(walletId) ?: return@stage
@@ -713,8 +759,67 @@ class PlatformWalletPersistenceHandler(
                     lastUpdated = now(),
                 ),
             )
+            if (hasSyncedHeight && round == null) collectFinalizedSweptTombstones(db, walletId)
         }
         0
+    }
+
+    /**
+     * Port of `PlatformWalletPersistenceHandler.swift`'s
+     * `persistWalletChangesetChainLockHeight`: record the round's numeric
+     * chainlock height on the wallet row — monotonic max, through the
+     * narrow [org.dashfoundation.dashsdk.persistence.dao.WalletDao.advanceChainLockHeight]
+     * UPDATE so it cannot clobber what the header slot wrote moments
+     * earlier in the same round — and flag the round for the end-of-round
+     * collector. This slot is what turns the boundary on at all (no numeric
+     * height, no collection), so a chainlock-advancing round collects too,
+     * not only a header round.
+     */
+    override fun onWalletChangesetChainLockHeight(walletId: ByteArray, height: Int): Int = guarded {
+        val round = openRound(walletId)
+        round?.finalityAdvanced = true
+        stage(walletId) { db ->
+            // Drop stale post-deletion callbacks (can't resurrect a wallet).
+            val updated = db.walletDao().advanceChainLockHeight(
+                walletId, height, System.currentTimeMillis(),
+            )
+            if (updated == 0) return@stage
+            if (round == null) collectFinalizedSweptTombstones(db, walletId)
+        }
+        0
+    }
+
+    /**
+     * Port of `PlatformWalletPersistenceHandler.swift`'s
+     * `collectFinalizedSweptTombstones`, the Room mirror of the SQLite
+     * store's `collect_finalized_tombstones`. Delete this wallet's swept
+     * tombstones whose winner's mined height the chainlock finality
+     * boundary `min(chainlockHeight, syncedHeight)` has reached —
+     * key-wallet's `prune_finalized_observed_spends` condition verbatim.
+     * Both halves must be on record: without a numeric chainlock height
+     * nothing is provably final, and without filter coverage up to the
+     * winner's height the funding output could still be delivered by the
+     * unscanned range.
+     *
+     * Runs ONCE per round, at the end — from [onChangesetEnd], after every
+     * account slice and after every sweep batch, gated by
+     * [ChangesetBuffer.finalityAdvanced] — and reads both halves back from
+     * the wallet row as this round left it, so no caller assembles a
+     * fresh/stored pair. Running earlier (from the header, as it once did)
+     * was unsound: a round can fold a backward rescan that delivers a
+     * tombstone's funding output through `utxos_added` together with the
+     * synced height that finalizes it, and a header-time collection would
+     * delete the tombstone before the drain could move its hold onto the
+     * TXO, landing a provably consumed coin unspent.
+     */
+    private suspend fun collectFinalizedSweptTombstones(db: DashDatabase, walletId: ByteArray) {
+        val wallet = db.walletDao().getByWalletId(walletId) ?: return
+        val chainLockHeight = wallet.lastAppliedChainLockHeight ?: return
+        if (wallet.syncedHeight <= 0) return
+        db.documentDao().collectFinalizedSweptTombstones(
+            walletId,
+            boundary = minOf(chainLockHeight, wallet.syncedHeight),
+        )
     }
 
     override fun onWalletChangesetAccountBegin(
@@ -793,6 +898,14 @@ class PlatformWalletPersistenceHandler(
     ): Int = guarded {
         stage(walletId) { db ->
             val existing = db.transactionDao().getByTxid(txid)
+            // A record for a txid an earlier round swept is upstream's newer
+            // word — the wallet's sweep state is not monotonic (a chainlocked
+            // return beats the IS-locked conflict that swept it), and the
+            // sweep deleted the row outright, so this upsert simply
+            // re-creates it. Its outputs come back only if this round also
+            // carries a fresh `onWalletChangesetUtxoAdded` for them, the same
+            // way any transaction's outputs ordinarily arrive alongside its
+            // record; nothing here can reconstruct them.
             // firstSeen: adopt non-zero from FFI; else keep existing;
             // else stamp now (never leave a placeholder zero).
             val resolvedFirstSeen = when {
@@ -845,9 +958,9 @@ class PlatformWalletPersistenceHandler(
                     TransactionAccountInvolvementEntity(txid, account.id),
                 )
             }
-            // Reconcile every spent input outpoint against our TXOs — a 1:1
-            // port of Swift resolveInputOutpoint
-            // (PlatformWalletPersistenceHandler.swift:688-785). `inputOutpoints`
+            // Reconcile every spent input outpoint against our TXOs — a port
+            // of Swift `resolveInputOutpoint`
+            // (PlatformWalletPersistenceHandler.swift). `inputOutpoints`
             // carries EVERY input of this spending tx (even ones whose funding
             // TXO isn't known yet — Rust builds it from tx.input directly, not
             // the classified utxos_spent slice), so a spend observed before its
@@ -855,31 +968,47 @@ class PlatformWalletPersistenceHandler(
             // link the spend now; otherwise we stage a pending row that the
             // funding TXO's later upsert drains. Without this the UTXO-restore
             // path (CORE-06) would hand a consumed output back to Rust as
-            // spendable after relaunch. Replaces the old getUnspentBySpendingTxid
-            // flip pass, which had no Swift analog and could not see
-            // out-of-order / unclassified inputs.
+            // spendable after relaunch.
             for (i in 0 until inputOutpointCount) {
                 val outpoint = inputOutpoints.copyOfRange(i * 36, i * 36 + 36)
                 val txo = db.txoDao().getByOutpoint(outpoint)
                 if (txo != null) {
-                    // Found: link the spend. Monotonic — only a confirmed
-                    // (in-block) context flips isSpent; a mempool re-emit never
-                    // downgrades a flag that is already true (mirrors spendIsInBlock).
-                    db.txoDao().upsert(
-                        txo.copy(
-                            isSpent = txo.isSpent || context >= CONTEXT_IN_BLOCK,
-                            spendingTxid = txid,
-                            spendingInputIndex = i,
-                            lastUpdated = now(),
-                        ),
-                    )
-                    for (p in db.documentDao().getPendingInputsByOutpoint(outpoint)) {
-                        db.documentDao().deletePendingInput(p)
+                    // Found: link the spend through the one link writer
+                    // ([linkSpender]) shared with the `utxos_spent` channel
+                    // and the pending drain. The LINK is guarded, not
+                    // last-writer-wins: a network-final spender keeps it
+                    // against any lower-context arrival
+                    // ([keepSettledSpenderLink]), because the sweep release
+                    // pass reads the link as a veto and upstream cannot
+                    // re-supply a claim it has pruned or lost across a
+                    // restart. A stamped, unlinked row ADOPTS this spender's
+                    // link — attribution matters for `walletFundedTransaction`
+                    // — but keeps `isSpent` and its stamp: the hold is the
+                    // stamp, not the link.
+                    val keepExistingLink = keepSettledSpenderLink(db, txo, txid, context)
+                    db.txoDao().upsert(linkSpender(txo, txid, i, context, keepExistingLink))
+                    // Pending rows on an outpoint whose TXO exists are stale.
+                    // When this record's claim was refused, only its OWN rows
+                    // are stale; another wallet's claim or tombstone on the
+                    // outpoint is not this record's to erase. Otherwise this
+                    // wallet's ordinary rows are stale (their spend is now
+                    // linked or displaced); tombstones stay — they carry a
+                    // hold the collector or a release owns.
+                    val stale = db.documentDao().getPendingInputsByOutpoint(outpoint).filter { p ->
+                        if (keepExistingLink) {
+                            p.spendingTransactionTxid?.contentEquals(txid) == true
+                        } else {
+                            p.walletId.contentEquals(walletId) && !p.isSweptTombstone
+                        }
                     }
-                } else if (db.documentDao().getPendingInput(outpoint, txid) == null) {
+                    for (p in stale) db.documentDao().deletePendingInput(p)
+                } else if (db.documentDao().getPendingInput(outpoint, txid, walletId) == null) {
                     // Funding TXO unknown — defer via a pending row (dedup-guarded
-                    // on outpoint+spendingTxid). FK parent = the tx row upserted
-                    // just above, so the CASCADE relationship holds.
+                    // on outpoint + spendingTxid + walletId: a second wallet
+                    // recording the same transaction gets its own row, because
+                    // sweep holds and releases are decided per wallet). FK
+                    // parent = the tx row upserted just above, so the CASCADE
+                    // relationship holds.
                     db.documentDao().upsertPendingInput(
                         PendingInputEntity(
                             outpoint = outpoint,
@@ -919,6 +1048,22 @@ class PlatformWalletPersistenceHandler(
             }
             val existing = db.txoDao().getByOutpoint(outpoint)
             val coreAddressId = if (address.isNotEmpty()) address else null
+            // A materialised coin the wallet re-delivers unspent follows the
+            // wallet — the mirror of the SQLite store's upsert valve, which
+            // holds only never-materialised placeholders. The wallet knows
+            // this coin, and any network-final spender of a coin it knows is
+            // wallet-relevant by BIP158 prevout matching, so its own scan
+            // re-discovers the spend; refusing the re-delivery would lock a
+            // real coin out forever after a reorg of the winner, and on this
+            // side of the FFI a row at `isSpent = true` is never restored to
+            // Rust again. So an UNLINKED row — a sweep hold with its stamp, or
+            // a legacy flag with nothing behind it — is cleared, stamp
+            // included. A LINKED row keeps its flag and stamp: the link is
+            // this store's recorded spend attribution, the pending drain
+            // below and the sweep pass own that transition, and a spender
+            // that reached a block is confirmed evidence a re-delivery never
+            // displaces.
+            val linked = existing?.spendingTxid != null
             val row = TxoEntity(
                 outpoint = outpoint,
                 vout = vout,
@@ -930,7 +1075,7 @@ class PlatformWalletPersistenceHandler(
                 isConfirmed = isConfirmed,
                 isInstantLocked = isInstantLocked,
                 isLocked = isLocked,
-                isSpent = existing?.isSpent ?: false,
+                isSpent = linked && existing!!.isSpent,
                 walletId = walletId,
                 txid = txid,
                 spendingTxid = existing?.spendingTxid,
@@ -939,29 +1084,61 @@ class PlatformWalletPersistenceHandler(
                 coreAddressId = existing?.coreAddressId ?: coreAddressIdIfPresent(db, coreAddressId),
                 createdAt = existing?.createdAt ?: java.util.Date(),
                 lastUpdated = now(),
+                supersededByTxid = if (linked) existing!!.supersededByTxid else null,
             )
             db.txoDao().upsert(row)
             // Drain any pending-input rows staged before this funding TXO
-            // existed — a 1:1 port of the Swift upsertUtxo drain
-            // (PlatformWalletPersistenceHandler.swift:895-953). A spend that
-            // arrived first was deferred (see onWalletChangesetTransaction);
-            // now that the funding output is here, link the newest pending
-            // spend (reorg/double-spend: newest wins) and clear the rows so
-            // the UTXO-restore path won't hand this consumed output back to
+            // existed — a port of the Swift `upsertUtxo` drain
+            // (PlatformWalletPersistenceHandler.swift). A spend that arrived
+            // first was deferred (see onWalletChangesetTransaction); now that
+            // the funding output is here, resolve the claim and clear the rows
+            // so the UTXO-restore path won't hand this consumed output back to
             // Rust as spendable.
             val pending = db.documentDao().getPendingInputsByOutpoint(outpoint)
             if (pending.isNotEmpty()) {
-                val chosen = pending.maxByOrNull { it.createdAt }!!
-                val spending = db.transactionDao().getByTxid(chosen.spendingTxid)
-                val spentInBlock = spending != null && spending.context >= CONTEXT_IN_BLOCK
-                db.txoDao().upsert(
-                    row.copy(
-                        isSpent = row.isSpent || spentInBlock,
-                        spendingTxid = chosen.spendingTxid,
-                        spendingInputIndex = chosen.inputIndex,
-                        lastUpdated = now(),
-                    ),
-                )
+                // A tombstone outranks every ordinary row regardless of age:
+                // ordinary rows are competing *observations*, a tombstone is
+                // the sweep's settled verdict that its winner consumed this
+                // coin. Prefer the tombstone tagged with the delivering
+                // wallet; failing that any tombstone on the outpoint still
+                // holds — the stamp is a txid fact, not a per-wallet one.
+                val tombstones = pending.filter { it.isSweptTombstone }
+                val tombstone = tombstones.filter { it.walletId.contentEquals(walletId) }
+                    .maxByOrNull { it.createdAt }
+                    ?: tombstones.maxByOrNull { it.createdAt }
+                if (tombstone != null) {
+                    // A drained tombstone STAMPS, it never mints a spender
+                    // link: the winner need not have its own `transactions`
+                    // row, and a link would make the coin non-releasable
+                    // (the release pass frees stamped, unlinked rows) when a
+                    // later sweep proves the winner never took it. The
+                    // existing link, if any, is carried as it was.
+                    db.txoDao().upsert(
+                        row.copy(
+                            isSpent = true,
+                            supersededByTxid = tombstone.spendingTxid,
+                            lastUpdated = now(),
+                        ),
+                    )
+                } else {
+                    // Competing ordinary observations: a network-final spender
+                    // outranks a newer mempool one (its row is the settled
+                    // claim the link guard protects); among equals the newest
+                    // wins, as before (reorg / double-spend: newest wins).
+                    val ranked = pending.map { p -> p to db.transactionDao().getByTxid(p.spendingTxid) }
+                    val (chosen, spending) = ranked.maxWithOrNull(
+                        compareBy<Pair<PendingInputEntity, TransactionEntity?>>(
+                            { it.second?.context ?: 0 },
+                            { it.first.createdAt },
+                        ),
+                    )!!
+                    val spendingContext = spending?.context ?: 0
+                    val keepExistingLink =
+                        keepSettledSpenderLink(db, row, chosen.spendingTxid, spendingContext)
+                    db.txoDao().upsert(
+                        linkSpender(row, chosen.spendingTxid, chosen.inputIndex, spendingContext, keepExistingLink),
+                    )
+                }
                 for (p in pending) db.documentDao().deletePendingInput(p)
             }
         }
@@ -977,15 +1154,32 @@ class PlatformWalletPersistenceHandler(
         stage(walletId) { db ->
             val outpoint = makeOutpoint(txid, vout)
             val txo = db.txoDao().getByOutpoint(outpoint) ?: return@stage
-            // Only mark spent when the spending tx exists in-block (never
-            // flap false on an unresolved spend), mirroring markUtxoSpent.
+            // Port of Swift `markUtxoSpent`
+            // (PlatformWalletPersistenceHandler.swift), through the same link
+            // writer as `onWalletChangesetTransaction` ([linkSpender]): the
+            // link is guarded by [keepSettledSpenderLink] and `isSpent` is
+            // monotonic — an
+            // arrival that is not in-block never lowers a flag a block, a
+            // sweep stamp, or a healed asset-lock spend already set. This
+            // channel IS reachable with a conflicting spender:
+            // `buildUtxoRestoreData` deliberately restores rows whose
+            // spender is IS-locked (context 1), so a later conflicting
+            // `utxos_spent` for that outpoint arrives here, and the guard is
+            // the only thing stopping an in-block usurper from stealing the
+            // settled link. A spender with no row yet cannot be linked (the
+            // FK forbids it) — the record channel links it when its record
+            // lands.
             val spending = db.transactionDao().getByTxid(spendingTxid)
-            val spentInBlock = spending != null && spending.context >= CONTEXT_IN_BLOCK
+            val keepExistingLink =
+                spending == null || keepSettledSpenderLink(db, txo, spendingTxid, spending.context)
             db.txoDao().upsert(
-                txo.copy(
-                    spendingTxid = if (spending != null) spendingTxid else txo.spendingTxid,
-                    isSpent = if (spending != null) spentInBlock else txo.isSpent,
-                    lastUpdated = now(),
+                linkSpender(
+                    txo,
+                    spendingTxid,
+                    // This channel carries no vin index; a link it moves starts unindexed.
+                    inputIndex = null,
+                    spenderContext = spending?.context ?: 0,
+                    keepExistingLink = keepExistingLink,
                 ),
             )
         }
@@ -993,6 +1187,430 @@ class PlatformWalletPersistenceHandler(
     }
 
     override fun onWalletChangesetAccountEnd(walletId: ByteArray, accountIndex: Int): Int = 0
+
+    /**
+     * The one place a spender link and `isSpent` are decided, shared by the
+     * record channel, the `utxos_spent` channel and the ordinary pending
+     * drain. `isSpent` is monotonic on every channel:
+     * `existing || spender in-block || stamped` — a block flips it, a sweep
+     * stamp keeps it, and no lower-context arrival lowers it. In-block
+     * evidence counts even when the link is refused ([keepExistingLink]):
+     * the coin is provably consumed whichever spender is attributed. The
+     * link itself moves to [spender] unless the existing one is kept; a
+     * stamped, unlinked row adopts the new link and keeps its stamp.
+     */
+    private fun linkSpender(
+        txo: TxoEntity,
+        spender: ByteArray,
+        inputIndex: Int?,
+        spenderContext: Int,
+        keepExistingLink: Boolean,
+    ): TxoEntity =
+        txo.copy(
+            isSpent = txo.isSpent || spenderContext >= CONTEXT_IN_BLOCK || txo.supersededByTxid != null,
+            spendingTxid = if (keepExistingLink) txo.spendingTxid else spender,
+            spendingInputIndex = if (keepExistingLink) txo.spendingInputIndex else inputIndex,
+            lastUpdated = now(),
+        )
+
+    /**
+     * Port of `PlatformWalletPersistenceHandler.swift`'s
+     * `settledSpenderLinkIsKept`: whether [txo]'s existing `spendingTxid`
+     * link must survive an arriving spender ([newSpendingTxid], at
+     * [newContext]) that also claims the outpoint. A network-final spender's
+     * link is load-bearing — the sweep release pass reads it as a veto, and
+     * upstream cannot re-supply it for a spender it has pruned or lost
+     * across a restart.
+     *
+     * Kept when the existing spender's row still exists and is
+     * network-final: IS-locked, in-block, or chainlocked
+     * (context >= [CONTEXT_INSTANT_SEND]). Two mempool spenders keep
+     * last-writer-wins — neither claim outranks the other and a final
+     * winner sorts them out. The single sanctioned takeover mirrors DIP-10
+     * precedence: a chainlocked arrival (context == [CONTEXT_CHAIN_LOCKED])
+     * may take the coin from a spender that was only IS-locked — a plain
+     * in-block arrival may not, exactly as upstream's sweep gate refuses a
+     * plain block against a signed lock. A re-emit of the same spender is
+     * never a takeover. An unlinked row (stamped or not) keeps nothing —
+     * the stamp is not a link, and adoption is what attributes the coin.
+     */
+    private suspend fun keepSettledSpenderLink(
+        db: DashDatabase,
+        txo: TxoEntity,
+        newSpendingTxid: ByteArray,
+        newContext: Int,
+    ): Boolean {
+        val existingTxid = txo.spendingTxid ?: return false
+        if (existingTxid.contentEquals(newSpendingTxid)) return false
+        val existing = db.transactionDao().getByTxid(existingTxid) ?: return false
+        if (existing.context < CONTEXT_INSTANT_SEND) return false
+        val chainlockOverIsLock =
+            newContext >= CONTEXT_CHAIN_LOCKED && existing.context == CONTEXT_INSTANT_SEND
+        return !chainlockOverIsLock
+    }
+
+    // ── Sweeps ────────────────────────────────────────────────────────
+
+    /** One sweep batch, unpacked from the JNI trampoline's flat arrays at the callback. */
+    private class SweepBatch(
+        val txids: List<ByteArray>,
+        val supersededBy: ByteArray,
+        val releasedOutpoints: List<ByteArray>,
+        /** The winner's own mined height for a block-context sweep; null for an IS-locked, unmined winner. */
+        val winnerMinedHeight: Int?,
+    )
+
+    /**
+     * One input a swept loser claimed: the outpoint and, when the loser's
+     * bytes named it, its vin index (informational on a minted tombstone).
+     */
+    private class LoserInput(val outpoint: ByteArray, val inputIndex: Int?)
+
+    /**
+     * Port of `PlatformWalletPersistenceHandler.swift`'s
+     * `persistWalletChangesetSweeps`: buffer one sweep batch into the open
+     * round. Batches are applied in order by [applySweepRound] from
+     * [onChangesetEnd] — after every account slice, before the collector —
+     * so the co-swept predicate sees the union of every batch's txids in
+     * the round, exactly as the SQLite store's `swept_txids` spans
+     * `cs.sweeps`. Outside a round (no `onChangesetBegin`) the batch is a
+     * round of its own, applied in its own transaction.
+     */
+    override fun onWalletChangesetTransactionsSwept(
+        walletId: ByteArray,
+        txids: ByteArray,
+        txidCount: Int,
+        supersededBy: ByteArray,
+        releasedOutpoints: ByteArray,
+        releasedOutpointCount: Int,
+        hasWinnerMinedHeight: Boolean,
+        winnerMinedHeight: Int,
+    ): Int = guarded {
+        require(supersededBy.size == 32) { "sweep winner must be a 32-byte txid" }
+        val batch = SweepBatch(
+            txids = unpackFixed(txids, txidCount, 32, "sweep txids"),
+            supersededBy = supersededBy.copyOf(),
+            releasedOutpoints = unpackFixed(releasedOutpoints, releasedOutpointCount, 36, "released outpoints"),
+            winnerMinedHeight = winnerMinedHeight.takeIf { hasWinnerMinedHeight },
+        )
+        val round = openRound(walletId)
+        if (round != null) {
+            round.sweepBatches += batch
+        } else {
+            runBlockingCatching {
+                database.withTransaction { applySweepRound(database, walletId, listOf(batch)) }
+            }
+        }
+        0
+    }
+
+    /**
+     * Apply a round's sweep batches, in order. The co-swept set — an input
+     * whose funding txid is itself swept this round is a dead parent's
+     * output, deleted rather than held — spans every batch of the round;
+     * everything else is per batch, because each release is true only of
+     * the wallet its own sweep saw and a later batch has to be able to keep
+     * spent a coin an earlier one freed.
+     */
+    private suspend fun applySweepRound(db: DashDatabase, walletId: ByteArray, batches: List<SweepBatch>) {
+        // Drop stale post-deletion callbacks (can't resurrect a wallet).
+        if (db.walletDao().getByWalletId(walletId) == null) return
+        val sweptTxidKeys = batches.flatMapTo(HashSet()) { batch -> batch.txids.map { it.toHex() } }
+        for (batch in batches) applySweptTransactions(db, walletId, batch, sweptTxidKeys)
+    }
+
+    /**
+     * Port of `PlatformWalletPersistenceHandler.swift`'s
+     * `applySweptTransaction`, for one batch of losers at once — the Room
+     * mirror of the SQLite store's `apply_sweep` plus its by-outpoint
+     * release pass.
+     *
+     * Each loser was a recorded spend that its winner beat to one of its
+     * inputs, so it can never confirm and Rust has already dropped it.
+     * Keeping the row would hand it back at the next load and re-create a
+     * balance the wallet has already corrected; its own outputs are dead
+     * coins for every wallet.
+     *
+     * THE HOLD IS KEYED BY OUTPOINT, NOT BY LINK. A loser's inputs are
+     * decoded from its stored bytes ([storedTransactionInputs]); a link can
+     * move between the record and the sweep — a winner recorded in the
+     * same round takes it first, at `isSpent = 0` while it is only
+     * IS-locked — and a hold keyed by `spendingTxid = loser` would miss
+     * exactly the coin the winner consumed. For every input NOT in this
+     * wallet's released set: a `txos` row is stamped
+     * (`isSpent = 1`, `supersededByTxid = winner`) whatever it is linked to
+     * — only a link that points at a swept loser is detached; a link to the
+     * winner or to any other surviving record is kept; every wallet's
+     * pending row claimed by the loser becomes a tombstone; and where
+     * nothing carries the claim for this wallet a tombstone is minted, so
+     * the funding output's later arrival drains into a stamp instead of
+     * landing the coin unspent. The loser's rows are the record-lost
+     * fallback: rows still linked to it and pending rows still claimed by
+     * it are unioned into the input set, so a loser whose bytes are gone
+     * (or a stub row `utxos_added` wrote) still holds by link.
+     *
+     * THE HOLD IS GLOBAL, THE RELEASE IS PER WALLET. `supersededBy` is a
+     * txid fact, so the first callback that sees the sweep holds every
+     * wallet's rows for the loser's inputs and then deletes the loser's row
+     * unconditionally (hold before delete, so the FK `SET NULL` / cascade
+     * only clears links, never the hold). Each wallet's own callback
+     * applies ITS released set to ITS rows: its pending rows on a released
+     * input are deleted outright (never a freed tombstone), and its `txos`
+     * row is freed by [applyReleases] — by outpoint, after the losers, so a
+     * later callback for the same loser from another wallet, finding no
+     * row, still applies its releases. A callback that never arrives
+     * leaves a coin conservatively held, not restorable.
+     *
+     * A released input is REFUSED when a stored network-final spender
+     * still claims it ([releaseVetoed]) — the mirror of the SQLite store's
+     * `surviving_stored_input_claims` — and a released outpoint whose
+     * funding transaction is itself swept this round is deleted, not freed.
+     *
+     * Every statement is a chunked bulk form (`IN (:chunk)`,
+     * [SWEEP_BIND_CHUNK]) so the arity never crosses API 29's 999-variable
+     * ceiling; the pending-row writes are rowid-keyed.
+     */
+    private suspend fun applySweptTransactions(
+        db: DashDatabase,
+        walletId: ByteArray,
+        batch: SweepBatch,
+        sweptTxidKeys: Set<String>,
+    ) {
+        val losers = batch.txids
+        val releasedKeys = batch.releasedOutpoints.mapTo(HashSet()) { it.toHex() }
+        val loserRows = chunkedFlatMap(losers) { db.transactionDao().getByTxids(it) }
+            .associateBy { it.txid.toHex() }
+        // Dead coins first: the losers' own outputs, for every wallet.
+        chunked(losers) { db.txoDao().deleteByTxids(it) }
+
+        // The losers' inputs, by outpoint: decoded bytes first, then the
+        // link-keyed and claim-keyed fallbacks.
+        val linkedRows = chunkedFlatMap(losers) { db.txoDao().getBySpendingTxids(it) }
+        val claimedRows = chunkedFlatMap(losers) { db.documentDao().getPendingInputsBySpendingTxids(it) }
+        val inputs = LinkedHashMap<String, LoserInput>()
+        for (loser in losers) {
+            val row = loserRows[loser.toHex()] ?: continue
+            if (row.transactionData.isEmpty()) continue
+            storedTransactionInputs.inputOutpoints(loser, row.transactionData).forEachIndexed { i, outpoint ->
+                inputs.putIfAbsent(outpoint.toHex(), LoserInput(outpoint, i))
+            }
+        }
+        for (txo in linkedRows) {
+            inputs.putIfAbsent(txo.outpoint.toHex(), LoserInput(txo.outpoint, txo.spendingInputIndex))
+        }
+        for (claim in claimedRows) {
+            inputs.putIfAbsent(claim.outpoint.toHex(), LoserInput(claim.outpoint, claim.inputIndex))
+        }
+        val claimsByOutpoint = claimedRows.groupBy { it.outpoint.toHex() }
+
+        val coSwept = ArrayList<ByteArray>()
+        val held = ArrayList<LoserInput>()
+        val released = ArrayList<ByteArray>()
+        for ((key, input) in inputs) {
+            when {
+                sweptTxidKeys.contains(outpointTxid(input.outpoint).toHex()) -> coSwept += input.outpoint
+                releasedKeys.contains(key) -> released += input.outpoint
+                else -> held += input
+            }
+        }
+
+        // Co-swept: a dead parent's output — nobody's coin, not something
+        // the winner took. Upstream's descendant closure always sweeps
+        // parent and child together and excludes exactly these outpoints
+        // from the released set, so the claim is neither released nor
+        // legitimate to hold; holding it would wedge the parent's
+        // chainlocked reinstatement (the re-delivered output would drain
+        // into the tombstone). Deleted outright, every wallet's claim.
+        chunked(coSwept) { db.txoDao().deleteByOutpoints(it) }
+        chunked(coSwept.flatMap { claimsByOutpoint[it.toHex()].orEmpty() }.map { it.id }) {
+            db.documentDao().deletePendingInputsByIds(it)
+        }
+
+        // Held, globally: stamp the rows that exist, tombstone every
+        // wallet's claim, mint this wallet's tombstone where nothing
+        // carries the claim. A block-context winner stamps its mined
+        // height; an IS-locked, unmined winner leaves a new tombstone
+        // unstamped and an existing stamp untouched.
+        val heldOutpoints = held.map { it.outpoint }
+        val heldTxoKeys = chunkedFlatMap(heldOutpoints) { db.txoDao().getByOutpoints(it) }
+            .mapTo(HashSet()) { it.outpoint.toHex() }
+        chunked(heldOutpoints) { db.txoDao().holdByOutpoints(it, batch.supersededBy) }
+        val heldClaimIds = held.flatMap { claimsByOutpoint[it.outpoint.toHex()].orEmpty() }.map { it.id }
+        chunked(heldClaimIds) { ids ->
+            db.documentDao().tombstonePendingInputs(
+                ids, batch.supersededBy,
+                hasWinnerMinedHeight = batch.winnerMinedHeight != null,
+                winnerMinedHeight = batch.winnerMinedHeight ?: 0,
+            )
+        }
+        val minted = held.filter { input ->
+            val key = input.outpoint.toHex()
+            !heldTxoKeys.contains(key) &&
+                claimsByOutpoint[key].orEmpty().none { it.walletId.contentEquals(walletId) }
+        }.map { input ->
+            PendingInputEntity(
+                outpoint = input.outpoint,
+                inputIndex = input.inputIndex ?: 0,
+                spendingTxid = batch.supersededBy,
+                spendingTransactionTxid = null,
+                walletId = walletId,
+                isSweptTombstone = true,
+                winnerMinedHeight = batch.winnerMinedHeight,
+            )
+        }
+        if (minted.isNotEmpty()) db.documentDao().insertPendingInputs(minted)
+
+        // Released, per wallet: this wallet's claims on a released input are
+        // deleted outright; another wallet's claims are held — its own
+        // callback carries its own verdict. The `txos` rows are decided by
+        // the by-outpoint pass below.
+        val (ownReleasedClaims, foreignReleasedClaims) =
+            released.flatMap { claimsByOutpoint[it.toHex()].orEmpty() }
+                .partition { it.walletId.contentEquals(walletId) }
+        chunked(ownReleasedClaims.map { it.id }) { db.documentDao().deletePendingInputsByIds(it) }
+        chunked(foreignReleasedClaims.map { it.id }) { ids ->
+            db.documentDao().tombstonePendingInputs(
+                ids, batch.supersededBy,
+                hasWinnerMinedHeight = batch.winnerMinedHeight != null,
+                winnerMinedHeight = batch.winnerMinedHeight ?: 0,
+            )
+        }
+
+        // Only now the dead links and the rows themselves: every hold above
+        // is already in place, so the cascade can only take claims that were
+        // released or attached to nothing.
+        chunked(losers) { db.txoDao().detachSpenders(it) }
+        chunked(losers) { db.transactionDao().deleteByTxids(it) }
+
+        applyReleases(db, walletId, batch, sweptTxidKeys)
+    }
+
+    /**
+     * The by-outpoint release pass for one batch, this wallet's rows only.
+     * Releases are outpoint-keyed facts applied after the losers rather
+     * than only through each loser's decoded inputs: the loser freeing a
+     * coin need not have a row here any more (another wallet's callback
+     * deleted it, or a fatal flush wiped the round that carried it), and
+     * dropping the release with it would leave the hold in place forever.
+     *
+     * A released outpoint whose funding transaction is swept in this round
+     * is deleted whatever its shape — a coin created by a dead transaction
+     * cannot be unspent, only gone — together with every wallet's tombstone
+     * on it. Every other released row of this wallet is freed unless a
+     * stored network-final spender vetoes it ([releaseVetoed]); this
+     * wallet's tombstones on released outpoints are deleted (a released
+     * placeholder is never left as a freed tombstone). Another wallet's row
+     * on an outpoint this wallet released is not this wallet's to decide.
+     */
+    private suspend fun applyReleases(
+        db: DashDatabase,
+        walletId: ByteArray,
+        batch: SweepBatch,
+        sweptTxidKeys: Set<String>,
+    ) {
+        if (batch.releasedOutpoints.isEmpty()) return
+        val (deadOutputs, candidates) = batch.releasedOutpoints.partition {
+            sweptTxidKeys.contains(outpointTxid(it).toHex())
+        }
+        chunked(deadOutputs) {
+            db.txoDao().deleteByOutpoints(it)
+            db.documentDao().deleteSweptTombstonesByOutpoints(it)
+        }
+        val finalClaims = HashMap<String, FinalClaim?>()
+        val freed = ArrayList<ByteArray>()
+        for (row in chunkedFlatMap(candidates) { db.txoDao().getByOutpoints(it) }) {
+            if (!row.walletId.contentEquals(walletId)) continue
+            if (releaseVetoed(db, row, sweptTxidKeys, finalClaims)) continue
+            freed += row.outpoint
+        }
+        chunked(freed) { db.txoDao().releaseByOutpoints(it, walletId) }
+        chunked(candidates) { db.documentDao().deleteWalletSweptTombstonesByOutpoints(walletId, it) }
+    }
+
+    /**
+     * A stored network-final claimant of a released coin, memoised per
+     * txid within one release pass. [inputs] is the set of outpoint keys
+     * its stored bytes spend; null when those bytes could not be decoded,
+     * in which case the claim vetoes every outpoint it is asked about —
+     * failing CLOSED, as the SQLite store's claim scan does, rather than
+     * silently dropping a veto.
+     */
+    private class FinalClaim(val inputs: Set<String>?)
+
+    /**
+     * The release veto — the mirror of the SQLite store's
+     * `surviving_stored_input_claims`: a release of [row]'s outpoint is
+     * refused when the row is linked to a stored transaction with context
+     * >= InstantSend-locked that is not swept in this round, or when its
+     * stamp names such a transaction AND that transaction's stored bytes
+     * actually spend the outpoint (a hold stamps the winner on every
+     * non-released input of a loser, including one a different surviving
+     * record claimed, so the stamp alone is not proof the winner took the
+     * coin — the reference vetoes by the claimant's inputs, and so does
+     * this). A stamp whose transaction has no stored row (a chained sweep
+     * already deleted it, or it never paid this wallet) does not veto.
+     * Bare mempool claimants never veto: a mempool row is the one context
+     * that can go stale forever, and letting it veto an authoritative
+     * release would strand the coin.
+     */
+    private suspend fun releaseVetoed(
+        db: DashDatabase,
+        row: TxoEntity,
+        sweptTxidKeys: Set<String>,
+        finalClaims: HashMap<String, FinalClaim?>,
+    ): Boolean {
+        val link = row.spendingTxid
+        if (link != null && !sweptTxidKeys.contains(link.toHex())) {
+            val spender = db.transactionDao().getByTxid(link)
+            if (spender != null && spender.context >= CONTEXT_INSTANT_SEND) return true
+        }
+        val stamp = row.supersededByTxid ?: return false
+        val stampKey = stamp.toHex()
+        if (sweptTxidKeys.contains(stampKey)) return false
+        val claim = finalClaims.getOrPut(stampKey) {
+            val winner = db.transactionDao().getByTxid(stamp)
+            if (winner == null || winner.context < CONTEXT_INSTANT_SEND || winner.transactionData.isEmpty()) {
+                null
+            } else {
+                val inputs = try {
+                    storedTransactionInputs.inputOutpoints(stamp, winner.transactionData)
+                        .mapTo(HashSet()) { it.toHex() }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "sweep release: stored winner bytes undecodable; vetoing its stamped coins", t)
+                    null
+                }
+                FinalClaim(inputs)
+            }
+        } ?: return false
+        val inputs = claim.inputs ?: return true
+        return inputs.contains(row.outpoint.toHex())
+    }
+
+    /** Run [op] over [items] in [SWEEP_BIND_CHUNK]-sized slices (no-op on an empty list). */
+    private suspend fun <T> chunked(items: List<T>, op: suspend (List<T>) -> Unit) {
+        for (slice in items.chunked(SWEEP_BIND_CHUNK)) op(slice)
+    }
+
+    /** [chunked] for reads: the concatenation of every slice's rows. */
+    private suspend fun <T, R> chunkedFlatMap(items: List<T>, op: suspend (List<T>) -> List<R>): List<R> {
+        if (items.isEmpty()) return emptyList()
+        val out = ArrayList<R>()
+        for (slice in items.chunked(SWEEP_BIND_CHUNK)) out += op(slice)
+        return out
+    }
+
+    /**
+     * Split a flat `count × width` byte array (the JNI trampoline's packing
+     * for txids and outpoints) into its elements, refusing a length that
+     * disagrees with the count — a descriptor or packing drift must fail
+     * the round, not silently truncate a sweep.
+     */
+    private fun unpackFixed(packed: ByteArray, count: Int, width: Int, what: String): List<ByteArray> {
+        require(count >= 0 && packed.size == count * width) {
+            "$what: expected $count × $width bytes, got ${packed.size}"
+        }
+        return List(count) { i -> packed.copyOfRange(i * width, (i + 1) * width) }
+    }
 
     // ── Identities ────────────────────────────────────────────────────
 
@@ -1688,7 +2306,7 @@ class PlatformWalletPersistenceHandler(
             // flip the linked TXOs here. Monotonic, and keyed strictly to
             // TXOs already linked to THIS lock's funding txid.
             if (incomingStatus >= ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED) {
-                val fundingTxid = outPoint.copyOfRange(0, 32)
+                val fundingTxid = outpointTxid(outPoint)
                 db.txoDao().markSpentBySpendingTxid(fundingTxid, now())
             }
         }
@@ -1697,18 +2315,13 @@ class PlatformWalletPersistenceHandler(
 
     override fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = guarded {
         stage(walletId) { db ->
-            val outPointHex = encodeOutPointHex(outPoint)
-            // Same terminal rule as the upsert guard above: a Consumed (4)
-            // row is deliberately retained for historical lookup and the
-            // only removal emitter (`untrack_asset_lock`) targets rejected
-            // Built rows — a removal reaching a consumed row is by
-            // construction a stale write. Mirrors Swift `persistAssetLocks`
-            // (PlatformWalletPersistenceHandler.swift:310).
-            val existing = db.assetLockDao().getByOutPointHex(outPointHex)
-            if (existing != null && existing.statusRaw == ASSET_LOCK_STATUS_CONSUMED) {
-                return@stage
-            }
-            db.assetLockDao().deleteByOutPointHex(outPointHex)
+            // The terminal rule — a Consumed row is retained for historical
+            // lookup, so a removal reaching one is a stale write — lives in
+            // the DAO's `statusRaw != 4` clause (see
+            // `AssetLockDao.deleteByOutPointHex`), the same predicate the
+            // SQLite store's DELETE carries; mirrors Swift `persistAssetLocks`
+            // (PlatformWalletPersistenceHandler.swift).
+            db.assetLockDao().deleteByOutPointHex(encodeOutPointHex(outPoint))
         }
         0
     }
@@ -2729,7 +3342,7 @@ class PlatformWalletPersistenceHandler(
         val out = ArrayList<UnresolvedAssetLockTxRecordData>(locks.size)
         for (lock in locks) {
             val outPoint = decodeOutPointHex(lock.outPointHex) ?: continue
-            val txid = outPoint.copyOfRange(0, 32)
+            val txid = outpointTxid(outPoint)
             val tx = database.transactionDao().getByTxid(txid) ?: continue
             if (tx.transactionData.isEmpty()) continue
             out.add(
@@ -3377,8 +3990,20 @@ class PlatformWalletPersistenceHandler(
         internal const val CAPABILITY_WALLET_RESTORE: Long = 0x80
         internal const val CAPABILITY_DPNS_NAME_STATES: Long = 0x100
         internal const val CAPABILITY_TRACKED_ASSET_LOCKS: Long = 0x200
+        internal const val CAPABILITY_CORE_SWEEP_REMOVAL: Long =
+            NativePersistenceBridge.CAPABILITY_CORE_SWEEP_REMOVAL
 
         private const val TAG = "DashPersistence"
+
+        /**
+         * Slice size for the sweep pass's `IN (:chunk)` statements: well
+         * under the 999-variable ceiling API 29's framework SQLite still
+         * carries, with room for the statement's fixed binds.
+         */
+        private const val SWEEP_BIND_CHUNK = 500
+
+        /** `TransactionContext::InstantSend` — network-final under DIP-10. */
+        private const val CONTEXT_INSTANT_SEND = 1
 
         /** `TransactionContext::InBlock` — spends only count once in-block. */
         private const val CONTEXT_IN_BLOCK = 2
@@ -3394,6 +4019,8 @@ class PlatformWalletPersistenceHandler(
          */
         private const val ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED = 2
 
+        /** `TransactionContext::InChainLockedBlock` — outranks an IS lock. */
+        private const val CONTEXT_CHAIN_LOCKED = 3
         /** `Network.testnet` rawValue — the Swift fallback network. */
         private const val NETWORK_TESTNET = 1
 
@@ -3490,6 +4117,49 @@ interface PrivateKeyDeriver {
  *   already-valid scalar (rollback must leave it alone).
  */
 data class DerivedKeyStoreResult(val identifier: String, val wasNewlyCreated: Boolean)
+
+/**
+ * Names a stored transaction's input outpoints for the sweep pass, which
+ * keys its hold by OUTPOINT: a swept loser's inputs are read from its own
+ * stored bytes, never inferred from which rows happen to link to it. The
+ * txid is passed alongside the bytes so an implementation can refuse a
+ * key/record disagreement — the typed key is what named the row a swept
+ * loser, and processing some other record's inputs under it would hold or
+ * free the wrong coins.
+ *
+ * Must throw on bytes it cannot decode: the round then fails and rolls
+ * back (fail closed, as the SQLite store's `apply_sweep` does on a bad
+ * blob) rather than sweeping a loser whose inputs are unknown.
+ */
+fun interface StoredTransactionInputs {
+    /** 36-byte outpoints ([makeOutpoint] layout) of every input of [txid], in vin order. */
+    fun inputOutpoints(txid: ByteArray, txData: ByteArray): List<ByteArray>
+}
+
+/**
+ * Production [StoredTransactionInputs]: key-wallet-ffi's
+ * `transaction_decode` through [org.dashfoundation.dashsdk.keywallet.TransactionDecoder].
+ * The decoder is a stateless marshaler — it takes no wallet-manager lock —
+ * so calling it from inside a persistence callback (which runs while Rust
+ * holds that lock) cannot deadlock; the "no native calls under
+ * `callbackExclusion`" rule guards the manager lock, not this. [network]
+ * only shapes the decoder's address rendering, which this caller discards,
+ * so an unscoped handler decodes on the default network.
+ */
+class NativeStoredTransactionInputs(
+    private val network: org.dashfoundation.dashsdk.Network?,
+) : StoredTransactionInputs {
+    override fun inputOutpoints(txid: ByteArray, txData: ByteArray): List<ByteArray> {
+        val decoded = org.dashfoundation.dashsdk.keywallet.TransactionDecoder.decode(
+            txData,
+            network ?: org.dashfoundation.dashsdk.Network.DEFAULT,
+        )
+        check(decoded.txid.contentEquals(txid)) {
+            "stored transaction bytes disagree with their txid key"
+        }
+        return decoded.inputs.map { makeOutpoint(it.prevTxid, it.prevVout) }
+    }
+}
 
 // ── Free functions (unit-testable, no `this`) ─────────────────────────
 
@@ -3594,7 +4264,7 @@ internal fun base58Encode(input: ByteArray): String {
  */
 internal fun encodeOutPointHex(outPoint: ByteArray): String {
     require(outPoint.size == 36) { "outpoint must be 36 bytes, got ${outPoint.size}" }
-    val txidWire = outPoint.copyOfRange(0, 32)
+    val txidWire = outpointTxid(outPoint)
     val displayTxid = txidWire.reversedArray()
     val vout = (outPoint[32].toInt() and 0xFF) or
         ((outPoint[33].toInt() and 0xFF) shl 8) or
@@ -3637,6 +4307,9 @@ internal fun decodeOutPointHex(hex: String): ByteArray? {
     out[35] = ((vout ushr 24) and 0xFF).toByte()
     return out
 }
+
+/** The 32-byte wire-order txid half of a 36-byte outpoint built by [makeOutpoint]. */
+internal fun outpointTxid(outpoint: ByteArray): ByteArray = outpoint.copyOfRange(0, 32)
 
 /** Build a 36-byte outpoint from a wire-order txid + vout (matches `makeOutpoint`). */
 internal fun makeOutpoint(txid: ByteArray, vout: Int): ByteArray {

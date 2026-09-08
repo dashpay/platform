@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use dash_spv::chain::CheckpointManager;
-use key_wallet::mnemonic::{Language, Mnemonic};
+use key_wallet::mnemonic::Mnemonic;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -33,33 +33,15 @@ fn already_registered(wallet_id: WalletId) -> PlatformWalletError {
     )
 }
 
-/// Parse a BIP-39 mnemonic against every supported wordlist in turn,
-/// returning the first language that yields a valid mnemonic.
+/// Parse a BIP-39 mnemonic in any supported language.
 ///
-/// `key_wallet::Mnemonic` only exposes language-tagged constructors,
-/// so callers that take a user-supplied mnemonic must walk the
-/// language list themselves to avoid rejecting non-English phrases as
-/// "invalid English". BIP-39 wordlists are mutually exclusive per
-/// phrase, so the first match is unambiguous.
+/// Since rust-dashcore#981 `Mnemonic::from_phrase` IS the auto-detecting
+/// parse — one path, with English diagnostics kept when nothing matches —
+/// so there is no language list left for a caller to walk. What remains is
+/// the error narrowing: callers report a `&'static str`, and this is where
+/// upstream's richer error is reduced to one.
 fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
-    const LANGUAGES: [Language; 10] = [
-        Language::English,
-        Language::Spanish,
-        Language::French,
-        Language::Italian,
-        Language::Japanese,
-        Language::Korean,
-        Language::ChineseSimplified,
-        Language::ChineseTraditional,
-        Language::Czech,
-        Language::Portuguese,
-    ];
-    for lang in LANGUAGES {
-        if let Ok(m) = Mnemonic::from_phrase(phrase, lang) {
-            return Ok(m);
-        }
-    }
-    Err("phrase does not match any supported BIP-39 wordlist")
+    Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
 }
 
 /// Test-only rendezvous fired inside [`PlatformWalletManager::remove_wallet_with_teardown`],
@@ -975,7 +957,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
 #[cfg(test)]
 mod scoped_wallet_id_tests {
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
@@ -986,8 +968,7 @@ mod scoped_wallet_id_tests {
          abandon abandon abandon abandon abandon about";
 
     fn wallet_id_for(network: Network) -> [u8; 32] {
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
         let wallet =
             Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
                 .expect("wallet construction");
@@ -1002,8 +983,7 @@ mod scoped_wallet_id_tests {
     /// "Networks" section can group a seed's sibling-network wallets.
     /// Mirrors the `register_wallet` derivation exactly.
     fn wallet_group_id_for(network: Network) -> [u8; 32] {
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
         let wallet =
             Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
                 .expect("wallet construction");
@@ -1086,7 +1066,7 @@ mod scoped_wallet_id_tests {
 mod register_wallet_duplicate_tests {
     use std::sync::Arc;
 
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
 
@@ -1152,8 +1132,7 @@ mod register_wallet_duplicate_tests {
         let manager = make_manager();
 
         let network = Network::Testnet;
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
         let seed_bytes = mnemonic.to_seed("");
 
         // First registration succeeds. `Some(0)` skips the SPV-tip
@@ -1213,7 +1192,7 @@ mod register_wallet_duplicate_tests {
 
         let manager = make_manager();
         let network = Network::Testnet;
-        let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid test mnemonic")
             .to_seed("");
 
@@ -1291,7 +1270,7 @@ mod register_wallet_duplicate_tests {
         use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, Txid, Witness};
 
         let manager = make_manager();
-        let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid test mnemonic")
             .to_seed("");
 
@@ -1355,7 +1334,7 @@ mod persist_retry_tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
     use tracing::Level;
@@ -1486,7 +1465,7 @@ mod persist_retry_tests {
     }
 
     fn seed_bytes() -> [u8; 64] {
-        Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid test mnemonic")
             .to_seed("")
     }
@@ -1786,7 +1765,7 @@ mod persist_retry_tests {
             .wallet_manager
             .set(Arc::downgrade(&manager.wallet_manager));
 
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid test mnemonic")
             .to_seed("");
         let err = manager
@@ -2056,7 +2035,7 @@ mod remove_versus_recreate_tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
 
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
 
@@ -2175,8 +2154,8 @@ mod remove_versus_recreate_tests {
                     if already_fired {
                         return;
                     }
-                    let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
-                        .expect("valid test mnemonic");
+                    let mnemonic =
+                        Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
                     let seed_bytes = mnemonic.to_seed("");
                     // The real registration path: inner `WalletManager` first,
                     // then `self.wallets`. `Some(0)` skips the SPV-tip lookup.

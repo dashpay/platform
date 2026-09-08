@@ -1295,7 +1295,7 @@ mod tests {
     /// itself holds open can keep the drain's target alive for it.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_joined_shutdown_commits_the_watermarks_a_live_manager_buffered() {
-        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet_manager::WalletInterface;
 
@@ -1317,7 +1317,7 @@ mod tests {
 
         // `Some(0)` skips the SPV-tip birth-height lookup, so nothing here
         // touches the network.
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid test mnemonic")
             .to_seed("");
         let wallet_id = manager

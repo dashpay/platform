@@ -73,10 +73,21 @@ pub fn apply(
     if !cs.removed.is_empty() {
         // Same terminal rule as the upsert guard: a stored `consumed`
         // row is never deleted by a stale tombstone. Consumed rows are
-        // deliberately retained for historical lookup, and the only
-        // removal emitter (`untrack_asset_lock`) fires exclusively for
-        // Built rows whose broadcast was rejected — so a removal
-        // reaching a consumed row is by construction a stale write.
+        // deliberately retained for historical lookup, and neither
+        // removal producer can legitimately name one — a Built row
+        // rejected at broadcast (`untrack_asset_lock`) never got that
+        // far, and the sweep-driven removal that arrives with the
+        // producer only tombstones entries still tracked, which a
+        // consumed lock no longer is — so a removal reaching a consumed
+        // row is by construction a stale write.
+        //
+        // Ordering note, scoped honestly: this applies upserts before
+        // removals. On this branch that is layout rather than a
+        // guarantee — the fold-level cancellation that would make an
+        // upsert and a tombstone for one outpoint impossible lands with
+        // the producer, and even there it does not cover every status.
+        // The `status != 'consumed'` predicate is what this statement
+        // actually relies on, and it holds regardless of the fold.
         let mut stmt = tx.prepare_cached(
             "DELETE FROM asset_locks \
              WHERE wallet_id = ?1 AND outpoint = ?2 AND status != 'consumed'",
