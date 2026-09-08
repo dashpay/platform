@@ -8,6 +8,7 @@ members = [
     "packages/rs-dpp",
     "packages/rs-drive",
     "packages/rs-platform-query-wire",
+    "packages/rs-platform-cxx",
     "packages/rs-platform-value",
     "packages/rs-platform-serialization",
     "packages/rs-platform-serialization-derive",

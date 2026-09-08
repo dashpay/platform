@@ -204,13 +204,14 @@ jobs:
           cargo check -p drive-proof-verifier --locked
           cargo check -p dash-platform-queries --locked
           cargo check -p platform-query-wire --locked
+          cargo check -p dash-platform-cxx --locked
           # Native graphs: assert the networking transport stack stays out.
           # `tonic` itself is present (dapi-grpc's generated client types) but
           # without its transport feature — which is exactly what the absence
           # of hyper/rustls/tower proves. tokio is deliberately NOT asserted
           # absent: dash-context-provider depends on dash-async, which uses it
           # on native targets, and that edge predates the queries-crate split.
-          for native_package in platform-query-wire drive-proof-verifier dash-platform-queries; do
+          for native_package in platform-query-wire drive-proof-verifier dash-platform-queries dash-platform-cxx; do
             for banned in hyper rustls tower; do
               if cargo tree -p "$native_package" -e normal -i "$banned" 2>/dev/null | grep -q .; then
                 echo "::error::$banned leaked into $native_package's dependency tree"
@@ -226,6 +227,11 @@ jobs:
               fi
             done
           done
+
+      # The C++ embedding surface must link and run from the staged headers
+      # and archive alone; the Rust tests cannot see a broken header layout.
+      - name: Link the Platform CXX embedder from C++
+        run: packages/rs-platform-cxx/scripts/cxx-smoke.sh
 
       - name: Detect immutable structure changes
         if: github.event_name == 'pull_request'
@@ -346,6 +352,7 @@ jobs:
             --package platform-serialization \
             --package dapi-grpc \
             --package platform-query-wire \
+            --package dash-platform-cxx \
             --package json-schema-compatibility-validator \
             --package dashpay-contract \
             --package dpns-contract \
