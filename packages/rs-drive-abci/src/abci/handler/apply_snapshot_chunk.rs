@@ -13,11 +13,12 @@ use tenderdash_abci::proto::abci::response_apply_snapshot_chunk;
 
 /// Applies one chunk of a state sync snapshot to the grovedb sync session.
 ///
-/// A chunk grovedb rejects does not kill the whole transfer: Tenderdash is asked to
-/// refetch that chunk (from a different peer, if it identified the sender). When the
-/// last chunk lands, the session is committed, grovedb is verified against the target
-/// app hash, and the platform state is reconstructed from the reduced platform state
-/// contained in the restored snapshot.
+/// A chunk grovedb rejects does not kill the whole transfer: the sender is banned and
+/// Tenderdash is asked to restart the snapshot (grovedb invalidates the session on a
+/// failed chunk, so the restore starts over from a fresh session on the re-offer). When
+/// the last chunk lands, the session is committed, grovedb is verified against the
+/// target app hash, and the platform state is reconstructed from the reduced platform
+/// state contained in the restored snapshot.
 pub fn apply_snapshot_chunk<'a, 'db: 'a, A, C>(
     app: &'a A,
     request: proto::RequestApplySnapshotChunk,
@@ -112,42 +113,23 @@ where
         ) {
             Ok(next_chunk_ids) => next_chunk_ids,
             Err(e) => {
-                // grovedb removes a chunk id from its pending set before processing it,
-                // so a chunk it has already seen (e.g. the refetch of one it rejected)
-                // cannot be re-applied within this session: ask Tenderdash to restart
-                // the snapshot instead (a same-height re-offer, which we accept).
-                // The string match is brittle by necessity (grovedb only exposes
-                // InternalError(String) here); if the wording ever changes, the fallback
-                // below is still safe — Tenderdash retries the chunk until it gives up
-                // and restarts the snapshot itself.
-                if matches!(&e, drive::grovedb::Error::InternalError(message) if message.contains("not expected"))
-                {
-                    tracing::warn!(
-                        chunk_id = hex::encode(&request.chunk_id),
-                        sender = request.sender,
-                        error = ?e,
-                        "[state_sync] apply_snapshot_chunk cannot re-apply a chunk in this session, requesting snapshot restart",
-                    );
-                    return Ok(proto::ResponseApplySnapshotChunk {
-                        result: response_apply_snapshot_chunk::Result::RetrySnapshot.into(),
-                        refetch_chunks: vec![],
-                        reject_senders,
-                        next_chunks: vec![],
-                    });
-                }
-
-                // A chunk grovedb cannot apply (corrupted or tampered data) is
-                // recoverable: keep the session and ask Tenderdash to refetch the chunk,
-                // banning the peer that sent it so the refetch goes elsewhere.
+                // A chunk grovedb cannot apply (corrupted or tampered data) permanently
+                // invalidates the grovedb session: every later `apply_chunk` and the
+                // final commit refuse, and grovedb does not expose whether a given error
+                // poisoned the session or was caught before any write. The transfer is
+                // still recoverable — ban the sender and ask Tenderdash to restart the
+                // snapshot (a re-offer, which `offer_snapshot` answers by wiping and
+                // opening a fresh session) rather than refetch a chunk this session can
+                // no longer accept.
                 tracing::warn!(
                     chunk_id = hex::encode(&request.chunk_id),
                     sender = request.sender,
                     error = ?e,
-                    "[state_sync] apply_snapshot_chunk rejected a chunk, requesting refetch",
+                    "[state_sync] apply_snapshot_chunk rejected a chunk, requesting snapshot restart",
                 );
                 return Ok(proto::ResponseApplySnapshotChunk {
-                    result: response_apply_snapshot_chunk::Result::Retry.into(),
-                    refetch_chunks: vec![request.chunk_id],
+                    result: response_apply_snapshot_chunk::Result::RetrySnapshot.into(),
+                    refetch_chunks: vec![],
                     reject_senders,
                     next_chunks: vec![],
                 });
@@ -370,6 +352,7 @@ mod tests {
     use crate::platform_types::snapshot::encode_snapshot_metadata;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::version::v15::PROTOCOL_VERSION_15;
+    use tenderdash_abci::proto::abci::response_offer_snapshot;
 
     #[test]
     fn apply_snapshot_chunk_without_session_is_rejected() {
@@ -458,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_snapshot_chunk_asks_for_refetch_of_a_bad_chunk() {
+    fn apply_snapshot_chunk_asks_for_a_snapshot_restart_on_a_bad_chunk() {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_genesis_state();
@@ -466,8 +449,9 @@ mod tests {
 
         let target_app_hash = offer_a_snapshot(&app);
 
-        // Garbage bytes for the root chunk: grovedb rejects them, and the session must
-        // survive with a Retry + refetch of exactly that chunk, banning the sender.
+        // Garbage bytes for the root chunk: grovedb rejects them and invalidates its
+        // session, so the answer is a snapshot restart that bans the sender — not an
+        // ABCI exception, and not a refetch this session could no longer apply.
         let response = apply_snapshot_chunk(
             &app,
             proto::RequestApplySnapshotChunk {
@@ -480,13 +464,32 @@ mod tests {
 
         assert_eq!(
             response.result,
-            i32::from(response_apply_snapshot_chunk::Result::Retry)
+            i32::from(response_apply_snapshot_chunk::Result::RetrySnapshot)
         );
-        assert_eq!(response.refetch_chunks, vec![target_app_hash]);
+        assert!(response.refetch_chunks.is_empty());
         assert_eq!(response.reject_senders, vec!["peer-1".to_string()]);
         assert!(
             app.snapshot_fetching_session.read().unwrap().is_some(),
-            "the session must survive a bad chunk"
+            "the session stays in place until the re-offer replaces it"
+        );
+
+        // The re-offer Tenderdash answers with must be accepted and start over
+        let response = offer_snapshot(
+            &app,
+            proto::RequestOfferSnapshot {
+                snapshot: Some(proto::Snapshot {
+                    height: 100,
+                    version: 1,
+                    hash: target_app_hash.clone(),
+                    metadata: encode_snapshot_metadata(PROTOCOL_VERSION_15),
+                }),
+                app_hash: target_app_hash,
+            },
+        )
+        .expect("re-offer after a bad chunk must not error");
+        assert_eq!(
+            response.result,
+            i32::from(response_offer_snapshot::Result::Accept)
         );
     }
 }
