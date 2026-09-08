@@ -21,6 +21,11 @@ import DashSDKFFI
 /// flipped `isSpent` on either coin, so both are one deleted row away from
 /// re-entering the restore set, and only the released set upstream carries
 /// says which of them belongs there.
+///
+/// Loser rows carry REAL consensus bytes (`serializedTransaction`): the
+/// sweep keys its hold on the loser's decoded inputs, not on the links
+/// the row happens to hold, so a fixture with undecodable bytes would only
+/// exercise the link-keyed fallback.
 @MainActor
 final class SweptTransactionPersistTests: XCTestCase {
 
@@ -50,6 +55,49 @@ final class SweptTransactionPersistTests: XCTestCase {
         return (handler, container)
     }
 
+    /// Serialize a plain version-2 transaction spending `inputs` (empty
+    /// scriptSigs) with `outputs` empty-script outputs, in the form
+    /// `TransactionDecoder` parses — which is what `applySweptTransaction`
+    /// decodes a loser's inputs from. The txid of these bytes is NOT the
+    /// fixture's row key; nothing in the store compares the two.
+    private func serializedTransaction(
+        inputs: [(txid: Data, vout: UInt32)],
+        outputs: Int = 1
+    ) -> Data {
+        var bytes = Data()
+        bytes.append(contentsOf: withUnsafeBytes(of: UInt32(2).littleEndian) { Data($0) })
+        bytes.append(UInt8(inputs.count))
+        for input in inputs {
+            bytes.append(input.txid)
+            bytes.append(contentsOf: withUnsafeBytes(of: input.vout.littleEndian) { Data($0) })
+            bytes.append(0x00) // empty scriptSig
+            bytes.append(contentsOf: [0xff, 0xff, 0xff, 0xff]) // sequence
+        }
+        bytes.append(UInt8(outputs))
+        for _ in 0..<outputs {
+            bytes.append(contentsOf: withUnsafeBytes(of: UInt64(1_000).littleEndian) { Data($0) })
+            bytes.append(0x00) // empty scriptPubKey
+        }
+        bytes.append(contentsOf: [0x00, 0x00, 0x00, 0x00]) // locktime
+        return bytes
+    }
+
+    /// A mempool-context loser row spending `inputs`, the only kind of
+    /// record upstream sweeps, with decodable bytes.
+    private func loserRow(
+        txid: Data,
+        spending inputs: [(txid: Data, vout: UInt32)],
+        netAmount: Int64 = -100_000
+    ) -> PersistentTransaction {
+        PersistentTransaction(
+            txid: txid,
+            transactionData: serializedTransaction(inputs: inputs),
+            context: 0,
+            blockHeight: 0,
+            netAmount: netAmount
+        )
+    }
+
     /// Seed the shape a confirmed spend leaves behind: a funding transaction
     /// with two outputs, a spending transaction that claimed both (linked
     /// and flagged spent), and the change that spend created.
@@ -69,11 +117,9 @@ final class SweptTransactionPersistTests: XCTestCase {
             netAmount: 140_000
         )
         // Mempool context: the only kind of record upstream sweeps.
-        let swept = PersistentTransaction(
+        let swept = loserRow(
             txid: sweptTxid,
-            transactionData: Data(repeating: 0x05, count: 10),
-            context: 0,
-            blockHeight: 0,
+            spending: [(txid: fundingTxid, vout: 0), (txid: fundingTxid, vout: 1)],
             netAmount: -140_000
         )
         context.insert(funding)
@@ -83,7 +129,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         if winnerTakesA {
             let row = PersistentTransaction(
                 txid: winnerTxid,
-                transactionData: Data(repeating: 0x06, count: 10),
+                transactionData: serializedTransaction(inputs: [(txid: fundingTxid, vout: 0)]),
                 context: 2,
                 blockHeight: 102,
                 netAmount: -100_000
@@ -179,6 +225,38 @@ final class SweptTransactionPersistTests: XCTestCase {
         _ batches: [Batch],
         walletId: Data
     ) -> Bool {
+        var applied = false
+        round(handler, walletId: walletId) {
+            applied = stageSweeps(handler, batches, walletId: walletId)
+            return applied
+        }
+        return applied
+    }
+
+    /// One begin/end bracket, the way every Rust `store()` round is
+    /// delivered. `body` returns the round's success, which `endChangeset`
+    /// commits or rolls back on.
+    private func round(
+        _ handler: PlatformWalletPersistenceHandler,
+        walletId: Data? = nil,
+        _ body: () -> Bool
+    ) {
+        let walletId = walletId ?? self.walletId
+        handler.beginChangeset(walletId: walletId)
+        let success = body()
+        _ = handler.endChangeset(walletId: walletId, success: success)
+    }
+
+    /// The sweeps callback alone, inside whatever bracket the caller
+    /// opened — so a test can stage a record and a sweep between ONE
+    /// `beginChangeset`/`endChangeset` pair, the shape Rust produces when
+    /// it folds a winner's detection and the loser's sweep into one round.
+    @discardableResult
+    private func stageSweeps(
+        _ handler: PlatformWalletPersistenceHandler,
+        _ batches: [Batch],
+        walletId: Data
+    ) -> Bool {
         typealias RawTxid = (
             UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
             UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -258,14 +336,11 @@ final class SweptTransactionPersistTests: XCTestCase {
         // `on_persist_wallet_changeset_sweeps_fn` in the same round as the
         // changeset callback, and this drives the Swift side of exactly
         // that call.
-        handler.beginChangeset(walletId: walletId)
-        let applied = handler.persistWalletChangesetSweeps(
+        return handler.persistWalletChangesetSweeps(
             walletId: walletId,
             sweeps: UnsafePointer(sweeps),
             count: UInt(ffiBatches.count)
         )
-        _ = handler.endChangeset(walletId: walletId, success: applied)
-        return applied
     }
 
     private func transaction(_ container: ModelContainer, txid: Data) -> PersistentTransaction? {
@@ -357,25 +432,64 @@ final class SweptTransactionPersistTests: XCTestCase {
         )
     }
 
-    /// A re-delivery of the funding output — what a restore-rescan does,
-    /// blind to the unconfirmed winner no block carries yet — must NOT
-    /// outrank the sweep's verdict: the coin was provably consumed, and
-    /// handing it back would resurrect it into the restore set on every
-    /// restore-from-seed until the winner confirms. Only an explicit
-    /// release frees a stamped hold — the same answer the SQLite store's
-    /// upsert valve gives to the identical event stream.
-    func testWalletReDeliveringAStampedHeldCoinKeepsItSpent() throws {
+    /// A MATERIALISED coin the wallet hands back as unspent follows the
+    /// wallet, stamped hold or not. This test used to pin the opposite —
+    /// "the recovery clear refuses stamped rows" — on the reasoning that a
+    /// restore-rescan re-finds the funding output blind to an unconfirmed
+    /// winner. That reasoning only holds for a coin the wallet has never
+    /// materialised (the tombstone's job, see the drain tests below): a
+    /// coin the wallet knows is one whose every network-final spender is
+    /// wallet-relevant by BIP158 prevout matching, so the wallet's own scan
+    /// re-discovers the spend and its view is authoritative — and refusing
+    /// the re-delivery locks a real coin out forever after a reorg of the
+    /// winner, since a row with `isSpent == true` is never restored to Rust
+    /// again. The reference store's upsert valve was narrowed to
+    /// never-materialised placeholders for exactly this reason; this is the
+    /// same rule.
+    func testWalletReDeliveringAMaterialisedHeldCoinFreesIt() throws {
         let (handler, container) = try makeHandler()
         try seedSpend(in: container, winnerTakesA: false)
         sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400)])
-        XCTAssertTrue(txo(container, txid: fundingTxid, vout: 1)!.isSpent)
+        let held = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertTrue(held.isSpent, "sanity: the sweep held the coin")
+        XCTAssertEqual(held.supersededByTxid, winnerTxid)
 
         redeliverCoinB(handler)
 
-        let held = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
-        XCTAssertTrue(held.isSpent, "the stamped hold survives re-delivery")
-        XCTAssertEqual(held.supersededByTxid, winnerTxid)
-        XCTAssertNil(held.spendingTransaction)
+        let freed = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertFalse(freed.isSpent, "the wallet re-delivering a coin it knows frees it")
+        XCTAssertNil(freed.supersededByTxid, "the stamp clears with the hold")
+        XCTAssertNil(freed.spendingTransaction)
+    }
+
+    /// The one shape the re-delivery does not free: a coin linked to a
+    /// spender with context at or above InstantSend-locked. Confirmed
+    /// evidence on record is never displaced by a re-delivery — the spend
+    /// emit and the record pass own that link.
+    func testWalletReDeliveringACoinLinkedToASettledSpenderKeepsItSpent() throws {
+        let (handler, container) = try makeHandler()
+        try seedSpend(in: container, winnerTakesA: true)
+        let context = ModelContext(container)
+        let coinB = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 1)
+        let row = try XCTUnwrap(
+            try context.fetch(FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate { $0.outpoint == coinB }
+            )).first
+        )
+        let winnerTxid = self.winnerTxid
+        row.isSpent = true
+        row.spendingTransaction = try XCTUnwrap(
+            try context.fetch(FetchDescriptor<PersistentTransaction>(
+                predicate: #Predicate { $0.txid == winnerTxid }
+            )).first
+        )
+        try context.save()
+
+        redeliverCoinB(handler)
+
+        let kept = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertTrue(kept.isSpent, "a coin an in-block spender holds stays spent")
+        XCTAssertEqual(kept.spendingTransaction?.txid, winnerTxid)
     }
 
     /// The winner's own record can reach this store only after the sweep
@@ -392,13 +506,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         let context = ModelContext(container)
         context.insert(PersistentWallet(walletId: walletId, network: .testnet))
 
-        let l = PersistentTransaction(
-            txid: sweptTxid,
-            transactionData: Data(repeating: 0x05, count: 10),
-            context: 0,
-            blockHeight: 0,
-            netAmount: -100_000
-        )
+        let l = loserRow(txid: sweptTxid, spending: [(txid: fundingTxid, vout: 0)])
         context.insert(l)
         context.insert(PersistentPendingInput(
             outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
@@ -450,13 +558,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         let context = ModelContext(container)
         context.insert(PersistentWallet(walletId: walletId, network: .testnet))
 
-        let l = PersistentTransaction(
-            txid: sweptTxid,
-            transactionData: Data(repeating: 0x05, count: 10),
-            context: 0,
-            blockHeight: 0,
-            netAmount: -100_000
-        )
+        let l = loserRow(txid: sweptTxid, spending: [(txid: fundingTxid, vout: 0)])
         context.insert(l)
         context.insert(PersistentPendingInput(
             outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
@@ -555,10 +657,12 @@ final class SweptTransactionPersistTests: XCTestCase {
     /// way).
     private func deliverRecord(
         _ handler: PlatformWalletPersistenceHandler,
+        walletId: Data? = nil,
         txid: Data,
         context: UInt32,
         inputOutpoints: [(txid: Data, vout: UInt32)]
     ) {
+        let walletId = walletId ?? self.walletId
         let name = strdup("Standard { index: 0 }")
         defer { free(name) }
 
@@ -600,16 +704,22 @@ final class SweptTransactionPersistTests: XCTestCase {
         _ = handler.endChangeset(walletId: walletId, success: true)
     }
 
-    /// The pruned-finalized-release defect, on this store's terms: a
-    /// chainlocked spender F is pruned upstream to a bare txid, so a later
-    /// loser L that pays this wallet while reusing F's input (plus an
-    /// attacker-owned one) sweeps with F's coin wrongly named in the
-    /// released set. F's row and its `spendingTransaction` link survive
-    /// HERE, and `settledSpenderLinkIsKept` keeps L's record pass from
-    /// stealing the attribution — so the loser walk never detaches F's coin
-    /// and the by-outpoint release refuses it (`spendingTransaction == nil`
-    /// gate), while the coin only L claimed still comes free in the same
-    /// batch.
+    /// The pruned-finalized-release defect, on this store's terms: an
+    /// InstantSend-locked spender F — settled under DIP-10, and one upstream
+    /// no longer sees after a restart — is linked to a coin a later loser L
+    /// reuses (alongside an attacker-owned input) while paying this wallet,
+    /// so L's sweep names F's coin wrongly in the released set. F's row and
+    /// its `spendingTransaction` link survive HERE: the settled-link guard
+    /// keeps L's record pass from stealing the attribution, and the release
+    /// veto (`releaseIsVetoed`) refuses the release the link contradicts,
+    /// while the coin only L claimed still comes free in the same batch.
+    ///
+    /// F is seeded IS-locked (context 1) with `isSpent == false` — an
+    /// unmined spender leaves the flag down — so the first assertion is
+    /// carried by the guard alone: a mempool arrival against a linked
+    /// spender that is merely flagged spent was already refused by the
+    /// pre-existing `isSpent` branch, which this fixture deliberately does
+    /// not exercise.
     func testAReleaseNamingACoinASettledSpenderStillClaimsIsRefused() throws {
         let (handler, container) = try makeHandler()
         let context = ModelContext(container)
@@ -625,13 +735,14 @@ final class SweptTransactionPersistTests: XCTestCase {
             blockHeight: 100,
             netAmount: 200_000
         )
-        // F: the chainlocked spender of the settled coin — upstream keeps
-        // only its txid from here on; this store keeps the row and the link.
+        // F: the IS-locked spender of the settled coin — upstream holds no
+        // history for it after a restart; this store keeps the row and the
+        // link.
         let finalized = PersistentTransaction(
             txid: finalizedTxid,
-            transactionData: Data(repeating: 0x05, count: 10),
-            context: 3,
-            blockHeight: 120,
+            transactionData: serializedTransaction(inputs: [(txid: fundingTxid, vout: 0)]),
+            context: 1,
+            blockHeight: 0,
             netAmount: -100_000
         )
         context.insert(funding)
@@ -645,7 +756,7 @@ final class SweptTransactionPersistTests: XCTestCase {
             height: 100
         )
         settledCoin.walletId = walletId
-        settledCoin.isSpent = true
+        settledCoin.isSpent = false
         settledCoin.spendingTransaction = finalized
         context.insert(settledCoin)
 
@@ -697,7 +808,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         let settled = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
         XCTAssertTrue(
             settled.isSpent,
-            "a released coin a settled stored spender still claims must stay spent"
+            "a released coin a settled stored spender still claims is held spent"
         )
         XCTAssertEqual(settled.spendingTransaction?.txid, finalizedTxid)
         let freed = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
@@ -795,11 +906,9 @@ final class SweptTransactionPersistTests: XCTestCase {
         // A second transaction takes coin B after the first sweep freed it.
         let secondLoser = Data(repeating: 0x55, count: 32)
         let context = ModelContext(container)
-        let reclaimer = PersistentTransaction(
+        let reclaimer = loserRow(
             txid: secondLoser,
-            transactionData: Data(repeating: 0x07, count: 10),
-            context: 0,
-            blockHeight: 0,
+            spending: [(txid: fundingTxid, vout: 1)],
             netAmount: -40_000
         )
         context.insert(reclaimer)
@@ -852,11 +961,9 @@ final class SweptTransactionPersistTests: XCTestCase {
         )
         context.insert(funding)
 
-        let loser = PersistentTransaction(
+        let loser = loserRow(
             txid: loserTxid,
-            transactionData: Data(repeating: 0x05, count: 10),
-            context: 0,
-            blockHeight: 0,
+            spending: [(txid: fundingTxid, vout: 0), (txid: fundingTxid, vout: 1)],
             netAmount: -140_000
         )
         context.insert(loser)
@@ -887,8 +994,8 @@ final class SweptTransactionPersistTests: XCTestCase {
     /// account under `walletA` from back when it was still a live candidate
     /// (the ordinary `upsertTransaction` path does this before a later round
     /// ever learns the tx lost a double-spend). That link is what makes this
-    /// fixture actually exercise the fix: without the `isGloballySwept`
-    /// guard, `walletOwnsTransaction` finds `walletA` through
+    /// fixture actually exercise the fix: were the row to survive,
+    /// `walletOwnsTransaction` would find `walletA` through
     /// `involvedAccounts` alone, regardless of what happens to P.
     private func seedSharedLoserWithOutputAndInvolvedAccount(
         in container: ModelContainer,
@@ -925,11 +1032,14 @@ final class SweptTransactionPersistTests: XCTestCase {
         try context.save()
     }
 
-    /// The review finding, order 1: wallet B's callback — the one that
-    /// releases nothing — runs first. Before the fix this alone deleted the
-    /// shared loser row (nothing in the old code held it back), so wallet
-    /// A's later release of P landed on the missing-row no-op and P stayed
-    /// wrongly spent forever.
+    /// The hold is global, the release is per wallet — order 1: wallet B's
+    /// callback, the one that releases nothing, runs first. It is the first
+    /// callback to see the sweep, so it holds EVERY wallet's coins the
+    /// loser claimed (P is wallet A's, and is held all the same: a released
+    /// set is only ever true of the wallet that computed it, and B's says
+    /// nothing about P) and deletes the shared row outright. Wallet A's
+    /// later callback finds no row and still applies its release by
+    /// outpoint, freeing P; B's hold on Q is untouched by it.
     func testSharedLoserAppliesBothWalletsReleaseSetsRegardlessOfOrder_BThenA() throws {
         let (handler, container) = try makeHandler()
         let loserTxid = Data(repeating: 0x81, count: 32)
@@ -939,40 +1049,39 @@ final class SweptTransactionPersistTests: XCTestCase {
             in: container, walletA: walletId, walletB: walletB, loserTxid: loserTxid
         )
 
-        // Wallet B first: its own released set names nothing, so its coin
-        // (Q) is held rather than freed.
+        // Wallet B first: its own released set names nothing.
         sweep(handler, [Batch(losers: [loserTxid], winner: winner, winnerMinedHeight: 400)], walletId: walletB)
 
-        XCTAssertNotNil(
+        XCTAssertNil(
             transaction(container, txid: loserTxid),
-            "wallet B alone must not delete a row wallet A still has a claim on"
+            "the first callback to see the sweep deletes the row — hold before delete"
         )
-        let untouchedP = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
-        XCTAssertFalse(untouchedP.isSpent, "wallet B's callback must not touch wallet A's coin")
-        XCTAssertNotNil(untouchedP.spendingTransaction, "P is still linked to the loser, untouched")
+        let heldP = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(heldP.isSpent, "wallet A's coin is held by wallet B's callback — the hold is global")
+        XCTAssertEqual(heldP.supersededByTxid, winner)
+        XCTAssertNil(heldP.spendingTransaction, "the link to the dead loser is gone")
 
         // Wallet A second: its own released set names P.
         sweep(handler, [
             Batch(losers: [loserTxid], winner: winner, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 0)])
         ], walletId: walletId)
 
-        XCTAssertNil(
-            transaction(container, txid: loserTxid),
-            "the last wallet to run performs the delete"
-        )
-
         let p = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
-        XCTAssertFalse(p.isSpent, "wallet A's own release must free its own coin")
+        XCTAssertFalse(p.isSpent, "wallet A's own release frees its own coin, row or no row")
+        XCTAssertNil(p.supersededByTxid)
         XCTAssertNil(p.spendingTransaction)
 
         let q = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
-        XCTAssertTrue(q.isSpent, "wallet B's earlier decision to hold Q must survive wallet A's callback")
+        XCTAssertTrue(q.isSpent, "wallet B's hold on Q must survive wallet A's callback")
+        XCTAssertEqual(q.supersededByTxid, winner)
         XCTAssertNil(q.spendingTransaction)
     }
 
-    /// The review finding, order 2: wallet A — the one that releases P —
-    /// runs first. The fix is meant to be order-independent, so this must
-    /// land on the exact same end state as the B-then-A ordering above.
+    /// Order 2: wallet A — the one that releases P — runs first. It frees
+    /// its own P, holds wallet B's Q (global hold) and deletes the row;
+    /// wallet B's callback then finds no row and, releasing nothing, leaves
+    /// its hold on Q as it is. Order-independent: the exact same end state
+    /// as the B-then-A ordering above.
     func testSharedLoserAppliesBothWalletsReleaseSetsRegardlessOfOrder_AThenB() throws {
         let (handler, container) = try makeHandler()
         let loserTxid = Data(repeating: 0x91, count: 32)
@@ -987,28 +1096,26 @@ final class SweptTransactionPersistTests: XCTestCase {
             Batch(losers: [loserTxid], winner: winner, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 0)])
         ], walletId: walletId)
 
-        XCTAssertNotNil(
+        XCTAssertNil(
             transaction(container, txid: loserTxid),
-            "wallet A alone must not delete a row wallet B still has a claim on"
+            "the first callback to see the sweep deletes the row — hold before delete"
         )
-        let untouchedQ = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
-        XCTAssertFalse(untouchedQ.isSpent, "wallet A's callback must not touch wallet B's coin")
-        XCTAssertNotNil(untouchedQ.spendingTransaction, "Q is still linked to the loser, untouched")
+        let heldQ = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertTrue(heldQ.isSpent, "wallet B's coin is held by wallet A's callback — the hold is global")
+        XCTAssertEqual(heldQ.supersededByTxid, winner)
+        XCTAssertNil(heldQ.spendingTransaction)
 
         // Wallet B second: releases nothing.
         sweep(handler, [Batch(losers: [loserTxid], winner: winner, winnerMinedHeight: 400)], walletId: walletB)
 
-        XCTAssertNil(
-            transaction(container, txid: loserTxid),
-            "the last wallet to run performs the delete"
-        )
-
         let p = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
         XCTAssertFalse(p.isSpent, "wallet A's earlier release must survive wallet B's callback")
+        XCTAssertNil(p.supersededByTxid)
         XCTAssertNil(p.spendingTransaction)
 
         let q = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
-        XCTAssertTrue(q.isSpent, "wallet B's own decision to hold its coin must stick")
+        XCTAssertTrue(q.isSpent, "wallet B's coin stays held — its own callback released nothing")
+        XCTAssertEqual(q.supersededByTxid, winner)
         XCTAssertNil(q.spendingTransaction)
     }
 
@@ -1018,19 +1125,18 @@ final class SweptTransactionPersistTests: XCTestCase {
     /// never arrives at all — a crash, a rejection, or simply never coming.
     ///
     /// `commit_batch` calls `store()` once per wallet and each commits
-    /// independently, so before the fix wallet B alone could not delete a
-    /// row wallet A still had an outstanding claim on (see the
-    /// `_BThenA`/`_AThenB` tests above) — and the OUTPUT went with the row,
-    /// because deletion was the only thing that excluded either. If wallet
-    /// A's own callback then never runs, that hold is permanent: the row,
-    /// its phantom output, and its `involvedAccounts` link to wallet A all
-    /// stay fully live forever, so `walletCoreTxids` hands the dead
+    /// independently. A row held back for another wallet's still-pending
+    /// callback is a row that survives forever when that callback never
+    /// comes — with its phantom output and its `involvedAccounts` link to
+    /// wallet A fully live, so `walletCoreTxids` would hand the dead
     /// transaction back to wallet A as its own after every future restart.
+    /// So the first callback to see the sweep deletes the row and its
+    /// outputs for every wallet, after holding every wallet's inputs; a
+    /// surviving swept row is a shape that no longer exists, and no reader
+    /// needs a guard against it.
     ///
     /// Only wallet B's callback ever runs here, and it releases nothing —
-    /// the worst case, since it gives the row no reason to be physically
-    /// deleted at all. The fix's global half must still make the output and
-    /// the enumeration exclusion durable from that single callback alone.
+    /// the worst case for the old deferred delete.
     func testSharedLoserOutputAndEnumerationAreExcludedAfterOnlyOneWalletsCallbackCommits() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("swept-shared-durability-\(UUID().uuidString).store")
@@ -1050,20 +1156,18 @@ final class SweptTransactionPersistTests: XCTestCase {
             // in this test at all.
             sweep(handler, [Batch(losers: [loserTxid], winner: winner, winnerMinedHeight: 400)], walletId: walletB)
 
-            XCTAssertNotNil(
+            XCTAssertNil(
                 transaction(container, txid: loserTxid),
-                "wallet A's own claim on P is still outstanding, so the row itself survives"
+                "the row is deleted by whichever wallet's callback sees the sweep first"
             )
             XCTAssertNil(
                 txo(container, txid: loserTxid, vout: 2),
                 "the loser's own output must not survive even a single committed callback, "
                     + "regardless of which wallet's callback that was"
             )
-            let row = try XCTUnwrap(transaction(container, txid: loserTxid))
-            XCTAssertTrue(
-                row.isGloballySwept,
-                "any callback that reaches the sweep must flag the row, not just wallet A's own"
-            )
+            let p = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+            XCTAssertTrue(p.isSpent, "wallet A's coin is held for the winner until A's own release")
+            XCTAssertEqual(p.supersededByTxid, winner)
         }
 
         // Restart: a fresh handler/container over the same file. Wallet A's
@@ -1076,30 +1180,30 @@ final class SweptTransactionPersistTests: XCTestCase {
             txo(container, txid: loserTxid, vout: 2),
             "the phantom output must not resurrect across a restart"
         )
+        XCTAssertNil(transaction(container, txid: loserTxid), "nor the row")
         let (txidsA, erroredA) = handler.walletCoreTxids(walletId: walletId)
         XCTAssertFalse(erroredA)
         XCTAssertFalse(
             txidsA.contains { $0.txid == loserTxid },
             "wallet A must not be able to enumerate the swept loser as its own transaction "
-                + "after a restart, even though it is still linked via involvedAccounts and "
-                + "its own callback never ran"
+                + "after a restart, even though its own callback never ran"
         )
+        let p = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(p.isSpent, "and the hold on its coin is durable")
+        XCTAssertEqual(p.supersededByTxid, winner)
     }
 
-    /// Cross-round reinstatement — the BLOCKING finding this round fixes.
-    /// The sweep and its reinstating record land in two SEPARATE
-    /// `persistWalletChangeset` rounds, with wallet B's still-outstanding
-    /// claim keeping the shared row physically present in between, exactly
-    /// as `testSharedLoserOutputAndEnumerationAreExcludedAfterOnlyOneWalletsCallbackCommits`
-    /// establishes on its own. Before the fix, `upsertTransaction` bailed
-    /// unconditionally on `isGloballySwept == true`, so round 2's record —
-    /// upstream's newer word, per `CoreChangeSet::merge`'s documented
+    /// Cross-round reinstatement. The sweep and its reinstating record land
+    /// in two SEPARATE `persistWalletChangeset` rounds: round 1 deletes the
+    /// shared row and holds wallet A's coin for the winner; round 2's record
+    /// — upstream's newer word, per `CoreChangeSet::merge`'s documented
     /// IS-lock-precedence sequence (swept by an IS-locked conflict, then
-    /// returns chainlocked and sweeps that conflict in turn) — would be
-    /// silently discarded forever, and `upsertUtxo` would keep rejecting
-    /// its output on the strength of a tombstone nothing could ever clear.
-    /// Verified across a restart: the reinstatement has to be durable, not
-    /// merely visible in the context that just applied it.
+    /// returns chainlocked and sweeps that conflict in turn) — arrives like
+    /// any freshly detected transaction, inserts a fresh row, re-adopts the
+    /// held coin's link and brings its output back through the
+    /// `utxos_added` riding alongside. Verified across a restart: the
+    /// reinstatement has to be durable, not merely visible in the context
+    /// that just applied it.
     func testAReinstatingRecordInALaterRoundRevivesASweptTransactionAndItsOutputs() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("swept-reinstatement-\(UUID().uuidString).store")
@@ -1115,18 +1219,16 @@ final class SweptTransactionPersistTests: XCTestCase {
             )
 
             // Round 1: only wallet B's own sweep callback runs, releasing
-            // nothing. Wallet A's own claim on P (its funding coin) is still
-            // outstanding, so the shared row survives physically even
-            // though the global half of the sweep already tombstoned it and
-            // deleted its phantom output.
+            // nothing. The row and its phantom output go, and wallet A's
+            // coin P is held for the winner.
             sweep(handler, [Batch(losers: [loserTxid], winner: winner, winnerMinedHeight: 400)], walletId: walletB)
 
-            let tombstoned = try XCTUnwrap(transaction(container, txid: loserTxid))
-            XCTAssertTrue(tombstoned.isGloballySwept, "sanity: the row is tombstoned after round 1")
+            XCTAssertNil(transaction(container, txid: loserTxid), "sanity: the row is gone after round 1")
             XCTAssertNil(
                 txo(container, txid: loserTxid, vout: 2),
                 "sanity: the loser's own output is gone after round 1"
             )
+            XCTAssertTrue(try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0)).isSpent)
 
             // Round 2, a SEPARATE callback (not coalesced with round 1's
             // sweep — the cross-round shape the merge-level fix in
@@ -1151,10 +1253,6 @@ final class SweptTransactionPersistTests: XCTestCase {
             let reinstated = try XCTUnwrap(
                 transaction(container, txid: loserTxid),
                 "the reinstating record must not be discarded"
-            )
-            XCTAssertFalse(
-                reinstated.isGloballySwept,
-                "a later record naming a tombstoned txid must clear the tombstone"
             )
             XCTAssertEqual(reinstated.blockHeight, 200)
 
@@ -1181,8 +1279,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         // that applied it.
         let (handler, container) = try makeHandler(url: storeURL)
 
-        let survived = try XCTUnwrap(transaction(container, txid: loserTxid))
-        XCTAssertFalse(survived.isGloballySwept, "the reinstatement must survive a restart")
+        XCTAssertNotNil(transaction(container, txid: loserTxid), "the reinstatement must survive a restart")
         XCTAssertNotNil(
             txo(container, txid: loserTxid, vout: 2),
             "the revived output must survive a restart"
@@ -1269,17 +1366,17 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertFalse(applied, "a genuinely failed wallet lookup must fail the round")
     }
 
-    /// Two wallets, each holding an unresolved *released* input on the same
-    /// shared loser — the case where the row would otherwise never be
-    /// reclaimed.
-    ///
-    /// Left attached, a released pending input reads as its wallet's claim
-    /// in the ownership check, so A declines the delete because B's row is
-    /// there and B declines because A's is: a stalemate no replay breaks.
-    /// The dead transaction contributes no funds either way thanks to the
-    /// global marker, so this is storage rather than balance — but the row
-    /// and both pending entries would be kept forever.
-    func testTwoWalletsReleasedPendingInputsDoNotDeadlockTheRowDelete() throws {
+    /// Two wallets, each holding an unresolved pending input on the same
+    /// shared loser, and a winner that took neither — so upstream names
+    /// both coins released in BOTH wallets' views (a released set is
+    /// computed from the loser's and the winner's inputs, the same for
+    /// every wallet). A release only ever touches the releasing wallet's
+    /// own rows: the first callback (A's) deletes its own released row,
+    /// holds B's — A's released set is not the authority on B's claim —
+    /// and deletes the loser; B's callback then applies its own release by
+    /// outpoint against the tombstone. Nothing is left behind: no row, no
+    /// pending entry of either wallet's.
+    func testEachWalletsReleaseReachesItsOwnPendingRowOnASharedLoser() throws {
         let (handler, container) = try makeHandler()
         let walletB = Data(repeating: 0x02, count: 32)
         try seedSharedLoserAcrossTwoWallets(
@@ -1287,7 +1384,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         )
 
         // Each wallet has one pending input on the loser, and each will be
-        // released by its own wallet's sweep.
+        // released by its own wallet's sweep. The loser's bytes name both.
         let context = ModelContext(container)
         let loserTxid = sweptTxid
         var descriptor = FetchDescriptor<PersistentTransaction>(
@@ -1295,6 +1392,10 @@ final class SweptTransactionPersistTests: XCTestCase {
         )
         descriptor.fetchLimit = 1
         let loser = try XCTUnwrap(try context.fetch(descriptor).first)
+        loser.transactionData = serializedTransaction(inputs: [
+            (txid: fundingTxid, vout: 0), (txid: fundingTxid, vout: 1),
+            (txid: fundingTxid, vout: 8), (txid: fundingTxid, vout: 9),
+        ])
         let pendingA = PersistentPendingInput(
             outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 8),
             inputIndex: 0,
@@ -1313,18 +1414,31 @@ final class SweptTransactionPersistTests: XCTestCase {
         context.insert(pendingB)
         try context.save()
 
+        let releasedInBothViews = [(txid: fundingTxid, vout: UInt32(8)), (txid: fundingTxid, vout: UInt32(9))]
         sweep(handler, [
-            Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 8)])
+            Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400, released: releasedInBothViews)
         ])
+        XCTAssertNil(transaction(container, txid: sweptTxid), "the first callback deletes the row")
+        XCTAssertTrue(
+            try pendingRows(container, spentTxid: fundingTxid, vout: 8).isEmpty,
+            "wallet A's released row is deleted outright — never a released tombstone"
+        )
+        let heldB = try XCTUnwrap(
+            try pendingRows(container, spentTxid: fundingTxid, vout: 9).first,
+            "wallet B's row is held for the winner by wallet A's callback"
+        )
+        XCTAssertTrue(heldB.isSweptTombstone)
+        XCTAssertEqual(heldB.spendingTxid, winnerTxid)
+        XCTAssertEqual(heldB.walletId, walletB)
+
         sweep(
             handler,
-            [Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 9)])],
+            [Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400, released: releasedInBothViews)],
             walletId: walletB
         )
-
-        XCTAssertNil(
-            transaction(container, txid: sweptTxid),
-            "a released pending input is not a claim once its own wallet has resolved it"
+        XCTAssertTrue(
+            try pendingRows(container, spentTxid: fundingTxid, vout: 9).isEmpty,
+            "wallet B's own release reaches its tombstone with the row already gone"
         )
     }
 
@@ -1363,13 +1477,7 @@ final class SweptTransactionPersistTests: XCTestCase {
             let (handler, container) = try makeHandler(url: storeURL)
             let context = ModelContext(container)
             context.insert(PersistentWallet(walletId: walletId, network: .testnet))
-            let swept = PersistentTransaction(
-                txid: sweptTxid,
-                transactionData: Data(repeating: 0x05, count: 10),
-                context: 0,
-                blockHeight: 0,
-                netAmount: -100_000
-            )
+            let swept = loserRow(txid: sweptTxid, spending: [(txid: fundingTxid, vout: 0)])
             context.insert(swept)
             // What `resolveInputOutpoint` would have written: the funding
             // TXO for (fundingTxid, 0) has never been seen here.
@@ -1411,12 +1519,14 @@ final class SweptTransactionPersistTests: XCTestCase {
     /// whose own funding side is ALSO unobserved stages an ordinary pending
     /// row for the same outpoint moments before the sweep repoints the
     /// loser's row into a tombstone — and the tombstone keeps the loser's
-    /// original, older `createdAt`. The drain's newest-wins pick then
+    /// original, older `createdAt`. A newest-wins pick over all rows once
     /// selected the winner's ordinary row, took the gated branch (`isSpent`
     /// stays false until the winner confirms — never, for an IS-locked
     /// unconfirmed winner), skipped the `supersededByTxid` stamp, and
     /// deleted every pending row including the tombstone: the durable hold
-    /// evaporated and the consumed coin re-entered the restore set.
+    /// evaporated and the consumed coin re-entered the restore set. The
+    /// tombstone supplies the stamp regardless of age; the winner's own row
+    /// supplies the link beside it.
     func testAWinnersOwnPendingRowDoesNotEvaporateTheSweepTombstone() throws {
         let (handler, container) = try makeHandler()
         let context = ModelContext(container)
@@ -1428,13 +1538,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         // pending row, exactly what `resolveInputOutpoint` writes. Backdated
         // so the winner's row below is strictly newer, as it always is in
         // reality (the loser's record preceded the winner's by definition).
-        let loser = PersistentTransaction(
-            txid: sweptTxid,
-            transactionData: Data(repeating: 0x05, count: 10),
-            context: 0,
-            blockHeight: 0,
-            netAmount: -100_000
-        )
+        let loser = loserRow(txid: sweptTxid, spending: [(txid: fundingTxid, vout: 0)])
         context.insert(loser)
         let losersClaim = PersistentPendingInput(
             outpoint: outpoint,
@@ -1451,7 +1555,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         // ordinary pending row for the same still-unfunded outpoint.
         let winner = PersistentTransaction(
             txid: winnerTxid,
-            transactionData: Data(repeating: 0x06, count: 10),
+            transactionData: serializedTransaction(inputs: [(txid: fundingTxid, vout: 0)]),
             context: 1,
             blockHeight: 0,
             netAmount: -100_000
@@ -1485,6 +1589,10 @@ final class SweptTransactionPersistTests: XCTestCase {
             "the sweep's hold must survive the winner's own coexisting pending row"
         )
         XCTAssertEqual(coin.supersededByTxid, winnerTxid)
+        XCTAssertEqual(
+            coin.spendingTransaction?.txid, winnerTxid,
+            "and the winner's own row supplies the attribution the tombstone cannot"
+        )
     }
 
     /// Chained-sweep continuation of `testSpendBeforeFundingSweptThenRestartedThenFundedStaysSpent`
@@ -1507,13 +1615,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         let secondLoser = Data(repeating: 0x62, count: 32) // W
         let finalWinner = Data(repeating: 0x63, count: 32) // X
 
-        let l = PersistentTransaction(
-            txid: firstLoser,
-            transactionData: Data(repeating: 0x05, count: 10),
-            context: 0,
-            blockHeight: 0,
-            netAmount: -100_000
-        )
+        let l = loserRow(txid: firstLoser, spending: [(txid: fundingTxid, vout: 0)])
         context.insert(l)
         // P (fundingTxid:0) has never been observed as a TXO — parked as a
         // pending input, the same as `testSpendBeforeFundingSweptThenRestartedThenFundedStaysSpent`.
@@ -1541,11 +1643,9 @@ final class SweptTransactionPersistTests: XCTestCase {
         // W's own row, plus a materialized claim on Q, needed for the
         // second sweep to find W at all — the same requirement any sweep of
         // a wallet-relevant loser has.
-        let w = PersistentTransaction(
+        let w = loserRow(
             txid: secondLoser,
-            transactionData: Data(repeating: 0x06, count: 10),
-            context: 0,
-            blockHeight: 0,
+            spending: [(txid: fundingTxid, vout: 0), (txid: Data(repeating: 0x65, count: 32), vout: 0)],
             netAmount: -90_000
         )
         context.insert(w)
@@ -1607,13 +1707,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         let secondLoser = Data(repeating: 0x72, count: 32) // W
         let finalWinner = Data(repeating: 0x73, count: 32) // X
 
-        let l = PersistentTransaction(
-            txid: firstLoser,
-            transactionData: Data(repeating: 0x05, count: 10),
-            context: 0,
-            blockHeight: 0,
-            netAmount: -100_000
-        )
+        let l = loserRow(txid: firstLoser, spending: [(txid: fundingTxid, vout: 0)])
         context.insert(l)
         context.insert(PersistentPendingInput(
             outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
@@ -1629,13 +1723,7 @@ final class SweptTransactionPersistTests: XCTestCase {
 
         // W's own row — this time claiming ONLY P, so the second sweep has
         // no other input to reason about.
-        let w = PersistentTransaction(
-            txid: secondLoser,
-            transactionData: Data(repeating: 0x06, count: 10),
-            context: 0,
-            blockHeight: 0,
-            netAmount: -100_000
-        )
+        let w = loserRow(txid: secondLoser, spending: [(txid: fundingTxid, vout: 0)])
         context.insert(w)
         try context.save()
 
@@ -1688,13 +1776,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         let winner = Data(repeating: 0xB6, count: 32) // W
         let pOutpoint = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0)
 
-        let c = PersistentTransaction(
-            txid: childTxid,
-            transactionData: Data(repeating: 0x05, count: 10),
-            context: 0,
-            blockHeight: 0,
-            netAmount: -50_000
-        )
+        let c = loserRow(txid: childTxid, spending: [(txid: fundingTxid, vout: 0)], netAmount: -50_000)
         context.insert(c)
         context.insert(PersistentPendingInput(
             outpoint: pOutpoint,
@@ -1732,10 +1814,11 @@ final class SweptTransactionPersistTests: XCTestCase {
     /// The whole chain inside ONE round: a single sweeps callback can carry
     /// two batches where the second sweeps the first's winner, so the
     /// tombstone the first batch just wrote — staged, unsaved, retargeted by
-    /// nothing but in-memory mutation — must be visible to the second
-    /// batch's scalar reconciliation. Pins the per-batch tombstone scan
-    /// reading the mutable columns off live objects; a store-side predicate
-    /// would test the stale saved values and miss the row entirely.
+    /// nothing but in-memory mutation — must reach the second batch. Pins
+    /// the once-per-round tombstone map being re-keyed in memory as batches
+    /// run: a second store fetch would not see the re-point, and a
+    /// store-side predicate on the mutable column would test the stale
+    /// saved value and miss the row entirely.
     func testChainedSweepAcrossTwoBatchesInOneRoundReleasesTheFreshTombstone() throws {
         let (handler, container) = try makeHandler()
         let context = ModelContext(container)
@@ -1745,13 +1828,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         let secondLoser = Data(repeating: 0xA2, count: 32) // W — batch 1's winner
         let finalWinner = Data(repeating: 0xA3, count: 32) // X
 
-        let l = PersistentTransaction(
-            txid: firstLoser,
-            transactionData: Data(repeating: 0x05, count: 10),
-            context: 0,
-            blockHeight: 0,
-            netAmount: -50_000
-        )
+        let l = loserRow(txid: firstLoser, spending: [(txid: fundingTxid, vout: 0)], netAmount: -50_000)
         context.insert(l)
         context.insert(PersistentPendingInput(
             outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
@@ -1794,11 +1871,10 @@ final class SweptTransactionPersistTests: XCTestCase {
     /// sweep that frees it, so the tombstone drains into
     /// `PersistentTxo.supersededByTxid` and the pending row is gone by the
     /// time the release runs. With the intermediate winner's own record on
-    /// hand the drain links `spendingTransaction` too, so the release DOES
-    /// reach the row through `row.inputs` — but nothing cleared the marker,
-    /// and a released coin keeping its dead winner's marker turns the next
-    /// hold on this outpoint permanent (`upsertUtxo`'s recovery clear reads
-    /// a present marker as a durable claim).
+    /// hand the drain links `spendingTransaction` too, so the release
+    /// reaches the row through the winner's decoded inputs — and must clear
+    /// the marker with the hold: a released coin keeping its dead winner's
+    /// marker would read as a durable claim on every later channel.
     func testAReleasedCoinDropsItsDeadWinnersMarker() throws {
         let (handler, container) = try makeHandler()
         let context = ModelContext(container)
@@ -1808,13 +1884,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         let secondLoser = Data(repeating: 0x92, count: 32) // W
         let finalWinner = Data(repeating: 0x93, count: 32) // X
 
-        let l = PersistentTransaction(
-            txid: firstLoser,
-            transactionData: Data(repeating: 0x05, count: 10),
-            context: 0,
-            blockHeight: 0,
-            netAmount: -50_000
-        )
+        let l = loserRow(txid: firstLoser, spending: [(txid: fundingTxid, vout: 0)], netAmount: -50_000)
         context.insert(l)
         context.insert(PersistentPendingInput(
             outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
@@ -1828,23 +1898,18 @@ final class SweptTransactionPersistTests: XCTestCase {
         // First sweep: W beats L, holding the still-unfunded coin.
         sweep(handler, [Batch(losers: [firstLoser], winner: secondLoser, winnerMinedHeight: 400)])
 
-        // W's own record lands before the funding TXO does, so the drain
-        // below links `spendingTransaction` as well as stamping the marker.
-        let w = PersistentTransaction(
-            txid: secondLoser,
-            transactionData: Data(repeating: 0x06, count: 10),
-            context: 0,
-            blockHeight: 0,
-            netAmount: -50_000
-        )
-        context.insert(w)
-        try context.save()
+        // W's own record lands before the funding TXO does — through the
+        // record pass, which stages W's own ordinary claim row beside the
+        // tombstone — so the drain below links `spendingTransaction` as
+        // well as stamping the marker.
+        deliverRecord(handler, txid: secondLoser, context: 0, inputOutpoints: [(txid: fundingTxid, vout: 0)])
 
         deliverFundingUtxo(handler, vout: 0, amount: 50_000)
 
         let stamped = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
         XCTAssertTrue(stamped.isSpent, "sanity: the drained claim holds the coin")
         XCTAssertEqual(stamped.supersededByTxid, secondLoser)
+        XCTAssertEqual(stamped.spendingTransaction?.txid, secondLoser, "sanity: linked through W's own row")
 
         // Second sweep: X beats W, and this time upstream frees the coin.
         sweep(handler, [
@@ -1878,13 +1943,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         let unrecordedWinner = Data(repeating: 0x95, count: 32) // W — never a row here
         let finalWinner = Data(repeating: 0x96, count: 32) // X
 
-        let l = PersistentTransaction(
-            txid: firstLoser,
-            transactionData: Data(repeating: 0x05, count: 10),
-            context: 0,
-            blockHeight: 0,
-            netAmount: -50_000
-        )
+        let l = loserRow(txid: firstLoser, spending: [(txid: fundingTxid, vout: 0)], netAmount: -50_000)
         context.insert(l)
         context.insert(PersistentPendingInput(
             outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
@@ -1925,19 +1984,19 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertNil(freed.supersededByTxid)
     }
 
-    /// The multi-wallet continuation of the chained scenarios above — the
-    /// review finding on the missing-row early return. A shared loser L
-    /// spends one still-unfunded coin of wallet A's and two of wallet B's,
-    /// so the first sweep leaves each wallet's claims as detached tombstones
-    /// pointing at winner W. When W's own record then arrives,
-    /// `resolveInputOutpoint`'s duplicate guard sees each `(outpoint, W)`
-    /// tombstone and attaches nothing to W's row — so when W is swept in
-    /// turn, wallet A's callback finds no other wallet's claim on the row
-    /// and deletes it. Wallet B's independently committed callback then runs
-    /// against a row that no longer exists, and before the fix returned
-    /// without ever applying B's release decision: B's released coin would
-    /// later come back spent by the obsolete W, and B's held coin stayed
-    /// attributed to W, unable to follow any further sweep.
+    /// The multi-wallet continuation of the chained scenarios above. A
+    /// shared loser L spends one still-unfunded coin of wallet A's and two
+    /// of wallet B's, so the first sweep leaves each wallet's claims as
+    /// detached tombstones pointing at winner W. W's own record then
+    /// arrives through wallet A, staging A's own ordinary claim rows beside
+    /// B's tombstones (rows are per wallet). When X — spending only B's
+    /// second coin — sweeps W, both wallets release the other two coins;
+    /// wallet A's callback runs first, frees its own coin, holds both of
+    /// B's for X and deletes W's row. Wallet B's independently committed
+    /// callback then runs against a row that no longer exists and must
+    /// still apply its own release by outpoint: without it B's released
+    /// coin would later come back spent under X, and B's held coin's
+    /// tombstone could not follow any further sweep.
     func testSharedWinnerDeletedByAnotherWalletsCallbackStillReconcilesThisWalletsTombstones() throws {
         let (handler, container) = try makeHandler()
         let context = ModelContext(container)
@@ -1949,11 +2008,9 @@ final class SweptTransactionPersistTests: XCTestCase {
         let sharedWinner = Data(repeating: 0xC2, count: 32) // W
         let finalWinner = Data(repeating: 0xC3, count: 32) // X
 
-        let l = PersistentTransaction(
+        let l = loserRow(
             txid: sharedLoser,
-            transactionData: Data(repeating: 0x05, count: 10),
-            context: 0,
-            blockHeight: 0,
+            spending: [(txid: fundingTxid, vout: 0), (txid: fundingTxid, vout: 1), (txid: fundingTxid, vout: 2)],
             netAmount: -140_000
         )
         context.insert(l)
@@ -1977,10 +2034,10 @@ final class SweptTransactionPersistTests: XCTestCase {
         sweep(handler, [Batch(losers: [sharedLoser], winner: sharedWinner, winnerMinedHeight: 400)], walletId: walletB)
         XCTAssertNil(transaction(container, txid: sharedLoser), "L is gone once both wallets ran")
 
-        // W's own record arrives, claiming all three outpoints. The
-        // `(outpoint, W)` tombstones occupy the duplicate-guard key, so no
-        // new pending relationship attaches to W's row — the premise that
-        // lets wallet A's callback below delete it.
+        // W's own record arrives through wallet A, claiming all three
+        // outpoints: wallet A's ordinary claim rows are staged beside B's
+        // tombstones (the tombstone does not occupy A's key on vout 0, and
+        // B's tombstones are not A's rows on vouts 1 and 2).
         deliverReinstatingRecord(
             handler,
             walletId: walletId,
@@ -1997,11 +2054,17 @@ final class SweptTransactionPersistTests: XCTestCase {
             outputAddress: "yWinnerChange"
         )
 
-        // Second sweep: X beats W. Wallet A's callback runs first, releases
-        // its own coin, and — finding no attached claim of any other
-        // wallet's — deletes the shared row.
+        // Second sweep: X beats W on vout 1 alone, so upstream releases
+        // vouts 0 and 2 in both wallets' views. Wallet A's callback runs
+        // first, frees its own coin, holds B's for X and deletes the shared
+        // row.
         sweep(handler, [
-            Batch(losers: [sharedWinner], winner: finalWinner, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 0)])
+            Batch(
+                losers: [sharedWinner],
+                winner: finalWinner,
+                winnerMinedHeight: 400,
+                released: [(txid: fundingTxid, vout: 0), (txid: fundingTxid, vout: 2)]
+            )
         ], walletId: walletId)
         XCTAssertNil(
             transaction(container, txid: sharedWinner),
@@ -2012,7 +2075,12 @@ final class SweptTransactionPersistTests: XCTestCase {
         // Wallet B's callback arrives after the row is gone, releasing one
         // of its two coins and holding the other.
         sweep(handler, [
-            Batch(losers: [sharedWinner], winner: finalWinner, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 2)])
+            Batch(
+                losers: [sharedWinner],
+                winner: finalWinner,
+                winnerMinedHeight: 400,
+                released: [(txid: fundingTxid, vout: 0), (txid: fundingTxid, vout: 2)]
+            )
         ], walletId: walletB)
 
         let heldOutpoint = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 1)
@@ -2020,7 +2088,7 @@ final class SweptTransactionPersistTests: XCTestCase {
             predicate: #Predicate { $0.outpoint == heldOutpoint }
         )
         let heldTombstone = try XCTUnwrap(
-            try context.fetch(heldDescriptor).first,
+            try context.fetch(heldDescriptor).first { $0.walletId == walletB },
             "wallet B's held tombstone must survive the row's absence"
         )
         XCTAssertEqual(
@@ -2261,13 +2329,7 @@ final class SweptTransactionPersistTests: XCTestCase {
     ) throws {
         let loser = loser ?? sweptTxid
         let context = ModelContext(container)
-        let swept = PersistentTransaction(
-            txid: loser,
-            transactionData: Data(repeating: 0x05, count: 10),
-            context: 0,
-            blockHeight: 0,
-            netAmount: -100_000
-        )
+        let swept = loserRow(txid: loser, spending: [(txid: spentTxid ?? fundingTxid, vout: 0)])
         context.insert(swept)
         context.insert(PersistentPendingInput(
             outpoint: PersistentTxo.makeOutpoint(txid: spentTxid ?? fundingTxid, vout: 0),
@@ -2286,9 +2348,10 @@ final class SweptTransactionPersistTests: XCTestCase {
 
     private func pendingRows(
         _ container: ModelContainer,
-        spentTxid: Data? = nil
+        spentTxid: Data? = nil,
+        vout: UInt32 = 0
     ) throws -> [PersistentPendingInput] {
-        let outpoint = PersistentTxo.makeOutpoint(txid: spentTxid ?? fundingTxid, vout: 0)
+        let outpoint = PersistentTxo.makeOutpoint(txid: spentTxid ?? fundingTxid, vout: vout)
         let descriptor = FetchDescriptor<PersistentPendingInput>(
             predicate: #Predicate { $0.outpoint == outpoint }
         )
@@ -2567,15 +2630,24 @@ final class SweptTransactionPersistTests: XCTestCase {
         try seedSpend(in: container, winnerTakesA: false)
 
         // The same loser also claims an input whose funding side was never
-        // observed — the shape that would have become a tombstone.
+        // observed — the shape that would have become a tombstone. Its
+        // bytes name that input too, the way a real record's would.
         let unfundedTxid = Data(repeating: 0x77, count: 32)
         let context = ModelContext(container)
-        let loserRow = try XCTUnwrap(transaction(container, txid: sweptTxid))
+        let loserTxid = sweptTxid
+        let loser = try XCTUnwrap(
+            try context.fetch(FetchDescriptor<PersistentTransaction>(
+                predicate: #Predicate { $0.txid == loserTxid }
+            )).first
+        )
+        loser.transactionData = serializedTransaction(inputs: [
+            (txid: fundingTxid, vout: 0), (txid: fundingTxid, vout: 1), (txid: unfundedTxid, vout: 0),
+        ])
         context.insert(PersistentPendingInput(
             outpoint: PersistentTxo.makeOutpoint(txid: unfundedTxid, vout: 0),
             inputIndex: 2,
             spendingTxid: sweptTxid,
-            spendingTransaction: loserRow,
+            spendingTransaction: loser,
             walletId: walletId
         ))
         try context.save()
@@ -2810,6 +2882,450 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertEqual(
             try XCTUnwrap(try walletRow(container)).lastAppliedChainLockHeight, 700,
             "a higher height advances it"
+        )
+    }
+
+    // MARK: - Review round: hold by outpoint, per-wallet rows, one-round shapes
+
+    /// The hold is keyed by the loser's decoded inputs, not by the links
+    /// its row happens to hold. Coin A's link already moved to a surviving
+    /// mempool spender M when L is swept: A is not released, so it is held
+    /// for the winner, and M's link — not the loser's — is kept; coin B,
+    /// linked to the loser, is detached. A link-keyed walk never saw A.
+    func testASweepHoldsEveryDecodedInputAndDetachesOnlyTheLosersOwnLinks() throws {
+        let (handler, container) = try makeHandler()
+        try seedSpend(in: container, winnerTakesA: false)
+
+        let survivorTxid = Data(repeating: 0x4A, count: 32)
+        let context = ModelContext(container)
+        let survivor = loserRow(txid: survivorTxid, spending: [(txid: fundingTxid, vout: 0)])
+        context.insert(survivor)
+        let coinA = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0)
+        let a = try XCTUnwrap(
+            try context.fetch(FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate { $0.outpoint == coinA }
+            )).first
+        )
+        a.spendingTransaction = survivor
+        try context.save()
+
+        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400)])
+
+        let held = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(held.isSpent, "an input the loser's bytes name is held even with its link elsewhere")
+        XCTAssertEqual(held.supersededByTxid, winnerTxid)
+        XCTAssertEqual(held.spendingTransaction?.txid, survivorTxid, "a link that is not the loser's is kept")
+
+        let detached = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertTrue(detached.isSpent)
+        XCTAssertNil(detached.spendingTransaction, "the loser's own link is detached")
+    }
+
+    /// A held input with no `PersistentTxo` and no pending row of this
+    /// wallet's gets its tombstone created: the loser's stored bytes name
+    /// the coin, and the claim must not depend on a row `resolveInputOutpoint`
+    /// happened to leave behind.
+    func testASweepCreatesTheTombstoneForAHeldInputWithNoClaimRow() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        context.insert(loserRow(txid: sweptTxid, spending: [(txid: fundingTxid, vout: 0)]))
+        try context.save()
+        XCTAssertTrue(try pendingRows(container).isEmpty, "sanity: no claim row at all")
+
+        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400)])
+
+        let tombstone = try XCTUnwrap(try pendingRows(container).first, "the hold is created from the bytes")
+        XCTAssertTrue(tombstone.isSweptTombstone)
+        XCTAssertEqual(tombstone.spendingTxid, winnerTxid)
+        XCTAssertEqual(tombstone.walletId, walletId)
+        XCTAssertEqual(tombstone.winnerMinedHeight, 400)
+
+        deliverFundingUtxo(handler, vout: 0, amount: 100_000)
+        let coin = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(coin.isSpent)
+        XCTAssertEqual(coin.supersededByTxid, winnerTxid)
+    }
+
+    /// Pending rows are per (outpoint, spending txid, wallet): a second
+    /// wallet recording the same transaction gets its own claim row. Every
+    /// sweep decision on a pending row is scoped by that tag, so a claim
+    /// tagged with the first recorder alone would let one wallet's released
+    /// set decide the other wallet's coin.
+    func testASecondWalletRecordingTheSameSpendGetsItsOwnPendingRow() throws {
+        let (handler, container) = try makeHandler()
+        let walletB = Data(repeating: 0x02, count: 32)
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        context.insert(PersistentWallet(walletId: walletB, network: .testnet))
+        try context.save()
+
+        deliverRecord(handler, walletId: walletId, txid: sweptTxid, context: 0, inputOutpoints: [(txid: fundingTxid, vout: 0)])
+        deliverRecord(handler, walletId: walletB, txid: sweptTxid, context: 0, inputOutpoints: [(txid: fundingTxid, vout: 0)])
+
+        let rows = try pendingRows(container)
+        XCTAssertEqual(Set(rows.map(\.walletId)), [walletId, walletB], "one claim row per recording wallet")
+        XCTAssertEqual(rows.count, 2)
+
+        // And a re-upsert by the same wallet still does not duplicate.
+        deliverRecord(handler, walletId: walletB, txid: sweptTxid, context: 0, inputOutpoints: [(txid: fundingTxid, vout: 0)])
+        XCTAssertEqual(try pendingRows(container).count, 2)
+    }
+
+    /// At drain time the tombstone tagged with the delivering wallet wins
+    /// over another wallet's, whatever their ages: the stamp is that
+    /// wallet's own sweep verdict on its own coin.
+    func testTheDrainPrefersTheTombstoneTaggedWithTheDeliveringWallet() throws {
+        let (handler, container) = try makeHandler()
+        let walletB = Data(repeating: 0x02, count: 32)
+        let winnerForA = Data(repeating: 0x5A, count: 32)
+        let winnerForB = Data(repeating: 0x5B, count: 32)
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        context.insert(PersistentWallet(walletId: walletB, network: .testnet))
+        let outpoint = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0)
+        // B's tombstone is the OLDER one, so a newest-wins pick would take A's.
+        let forB = PersistentPendingInput(
+            outpoint: outpoint, inputIndex: 0, spendingTxid: winnerForB, spendingTransaction: nil, walletId: walletB
+        )
+        forB.isSweptTombstone = true
+        forB.createdAt = Date(timeIntervalSinceNow: -10)
+        let forA = PersistentPendingInput(
+            outpoint: outpoint, inputIndex: 0, spendingTxid: winnerForA, spendingTransaction: nil, walletId: walletId
+        )
+        forA.isSweptTombstone = true
+        context.insert(forB)
+        context.insert(forA)
+        try context.save()
+
+        deliverFundingUtxo(handler, walletId: walletB, vout: 0, amount: 100_000)
+
+        let coin = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(coin.isSpent)
+        XCTAssertEqual(coin.supersededByTxid, winnerForB, "the delivering wallet's own tombstone supplies the stamp")
+        XCTAssertTrue(try pendingRows(container).isEmpty, "every pending row on the outpoint is consumed by the drain")
+    }
+
+    /// A drained tombstone stamps and nothing more. Its `inputIndex` is the
+    /// LOSER'S vin (L spent F at vin 0), and the winner it names spends F —
+    /// if at all — somewhere else; copying the index onto the winner's link
+    /// mislabelled the winner's own inputs, and minting the link from a
+    /// tombstone attributed a coin to a transaction that need not spend it.
+    /// W's row exists here precisely so an old drain WOULD have linked it.
+    func testADrainedTombstoneStampsWithoutMintingALinkOrAVinIndex() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        context.insert(loserRow(txid: winnerTxid, spending: [(txid: Data(repeating: 0x58, count: 32), vout: 0)]))
+        let tombstone = PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
+            inputIndex: 0,
+            spendingTxid: winnerTxid,
+            spendingTransaction: nil,
+            walletId: walletId
+        )
+        tombstone.isSweptTombstone = true
+        tombstone.winnerMinedHeight = 400
+        context.insert(tombstone)
+        try context.save()
+
+        deliverFundingUtxo(handler, vout: 0, amount: 100_000)
+
+        let coin = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(coin.isSpent, "the stamp holds the coin")
+        XCTAssertEqual(coin.supersededByTxid, winnerTxid)
+        XCTAssertNil(coin.spendingTransaction, "no link is minted from a tombstone")
+        XCTAssertNil(coin.spendingInputIndex, "and no vin index — the tombstone's is the loser's")
+    }
+
+    /// The winner's own ordinary claim row beside the tombstone is what
+    /// carries the link and the RIGHT vin index: W spends X at vin 0 and F
+    /// at vin 1, while the loser had spent F at vin 0.
+    func testTheWinnersOwnPendingRowSuppliesTheLinkAndVinIndexBesideATombstone() throws {
+        let (handler, container) = try makeHandler()
+        let otherCoinTxid = Data(repeating: 0x58, count: 32)
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        let winner = loserRow(
+            txid: winnerTxid,
+            spending: [(txid: otherCoinTxid, vout: 0), (txid: fundingTxid, vout: 0)]
+        )
+        context.insert(winner)
+        let outpoint = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0)
+        let tombstone = PersistentPendingInput(
+            outpoint: outpoint, inputIndex: 0, spendingTxid: winnerTxid, spendingTransaction: nil, walletId: walletId
+        )
+        tombstone.isSweptTombstone = true
+        tombstone.createdAt = Date(timeIntervalSinceNow: -10)
+        context.insert(tombstone)
+        context.insert(PersistentPendingInput(
+            outpoint: outpoint, inputIndex: 1, spendingTxid: winnerTxid, spendingTransaction: winner, walletId: walletId
+        ))
+        try context.save()
+
+        deliverFundingUtxo(handler, vout: 0, amount: 100_000)
+
+        let coin = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(coin.isSpent)
+        XCTAssertEqual(coin.supersededByTxid, winnerTxid, "the tombstone supplies the stamp")
+        XCTAssertEqual(coin.spendingTransaction?.txid, winnerTxid, "the ordinary row supplies the link")
+        XCTAssertEqual(coin.spendingInputIndex, 1, "and the winner's own vin index, not the loser's")
+    }
+
+    /// One bracket carrying the winner's record and the loser's sweep — the
+    /// shape Rust produces when it folds `TransactionDetected(W)` and
+    /// `TransactionsSwept{[L]}` into one `store()`. The record pass moves
+    /// coin A's link from L to W; the sweep must then find L through the
+    /// round index rather than a store-only fetch, because a store-only
+    /// refetch of L resets its `inputs` inverse to the saved `[A, B]` and
+    /// with it A's freshly written link. After the commit W must still own
+    /// A: `walletFundedTransaction(W)` reads exactly that link, and a
+    /// chainlock promotion never re-emits the record.
+    func testAWinnerRecordedAndItsLoserSweptInOneRoundKeepsTheWinnersInputLink() throws {
+        let (handler, container) = try makeHandler()
+        try seedSpend(in: container, winnerTakesA: false)
+
+        round(handler) {
+            stageRecord(handler, txid: winnerTxid, context: 1, inputOutpoints: [(txid: fundingTxid, vout: 0)])
+            return stageSweeps(handler, [
+                Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: nil, released: [(txid: fundingTxid, vout: 1)])
+            ], walletId: walletId)
+        }
+
+        XCTAssertNil(transaction(container, txid: sweptTxid), "the loser is gone")
+        let taken = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertEqual(taken.spendingTransaction?.txid, winnerTxid, "the winner keeps the link it recorded this round")
+        XCTAssertTrue(taken.isSpent)
+        let winner = try XCTUnwrap(transaction(container, txid: winnerTxid))
+        XCTAssertEqual(winner.inputs.map(\.outpoint), [PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0)])
+        XCTAssertTrue(
+            PlatformWalletPersistenceHandler.walletFundedTransaction(walletId: walletId, transaction: winner),
+            "the winner reads as wallet-funded after the commit"
+        )
+        let freed = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertFalse(freed.isSpent)
+    }
+
+    /// Stage a transaction record inside whatever bracket the caller
+    /// opened — the record half of `deliverRecord`, without the round.
+    private func stageRecord(
+        _ handler: PlatformWalletPersistenceHandler,
+        txid: Data,
+        context: UInt32,
+        inputOutpoints: [(txid: Data, vout: UInt32)]
+    ) {
+        let name = strdup("Standard { index: 0 }")
+        defer { free(name) }
+        var inputs: [OutPointFFI] = inputOutpoints.map { outpoint in
+            var input = OutPointFFI()
+            Swift.withUnsafeMutableBytes(of: &input.txid) { dst in
+                outpoint.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+            }
+            input.vout = outpoint.vout
+            return input
+        }
+        var record = TransactionRecordFFI()
+        Swift.withUnsafeMutableBytes(of: &record.txid) { dst in
+            txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+        }
+        record.context = context
+        record.block_height = 0
+        inputs.withUnsafeMutableBufferPointer { inputsPtr in
+            record.input_outpoints = inputsPtr.baseAddress
+            record.input_outpoints_count = UInt(inputsPtr.count)
+            withUnsafeMutablePointer(to: &record) { recordPtr in
+                var account = AccountChangeSetFFI()
+                account.account_type_name = name
+                account.transactions = recordPtr
+                account.transactions_count = 1
+                withUnsafeMutablePointer(to: &account) { accountPtr in
+                    var cs = WalletChangeSetFFI()
+                    cs.accounts = accountPtr
+                    cs.accounts_count = 1
+                    withUnsafePointer(to: &cs) { csPtr in
+                        handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The collector runs once per round, at the END — after the round's
+    /// own `utxos_added`. Rust folds `BlockProcessed` and
+    /// `SyncHeightAdvanced` into one `store()`, so the round that advances
+    /// `syncedHeight` to the winner's height can be the very round that
+    /// delivers the funding output the tombstone guards. Collecting first
+    /// deleted the tombstone, and the funding output then landed unspent —
+    /// a coin the chainlocked winner consumed, handed back as spendable.
+    func testAFundingOutputDeliveredInTheRoundThatCompletesTheBoundaryStillDrainsItsTombstone() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        try context.save()
+        try seedSweptTombstone(handler, container, winnerMinedHeight: Self.winnerHeight)
+        // The chainlock half is already past the stamp; the synced half is
+        // one block short.
+        heightsRound(handler, synced: Self.winnerHeight - 1, chainLockHeight: Self.winnerHeight + 100)
+        XCTAssertEqual(try pendingRows(container).count, 1, "sanity: boundary not reached yet")
+
+        // ONE round: the synced height reaches the stamp AND the funding
+        // output arrives.
+        round(handler) {
+            let name = strdup("Standard { index: 0 }")
+            let address = strdup("yFundAddr")
+            defer {
+                free(name)
+                free(address)
+            }
+            var utxo = UtxoEntryFFI()
+            Swift.withUnsafeMutableBytes(of: &utxo.outpoint.txid) { dst in
+                fundingTxid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+            }
+            utxo.outpoint.vout = 0
+            utxo.amount = 100_000
+            utxo.address = address
+            utxo.height = Self.winnerHeight - 5
+            utxo.is_confirmed = true
+            var applied = false
+            withUnsafeMutablePointer(to: &utxo) { utxoPtr in
+                var account = AccountChangeSetFFI()
+                account.account_type_name = name
+                account.utxos_added = utxoPtr
+                account.utxos_added_count = 1
+                withUnsafeMutablePointer(to: &account) { accountPtr in
+                    var cs = WalletChangeSetFFI()
+                    cs.has_chain = true
+                    cs.chain.has_synced_height = true
+                    cs.chain.synced_height = Self.winnerHeight
+                    cs.accounts = accountPtr
+                    cs.accounts_count = 1
+                    withUnsafePointer(to: &cs) { csPtr in
+                        applied = handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
+                    }
+                }
+            }
+            return applied
+        }
+
+        let coin = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(coin.isSpent, "the funding output drained the tombstone before anything could collect it")
+        XCTAssertEqual(coin.supersededByTxid, winnerTxid)
+        XCTAssertTrue(try pendingRows(container).isEmpty, "the drain consumed the tombstone")
+    }
+
+    /// The release veto's stamp half: a coin held by a stamp naming a
+    /// stored, network-final winner F whose bytes DO spend it stays spent
+    /// when a later sweep of an unrelated loser names it released —
+    /// upstream reporting its own amnesia about F.
+    func testAReleaseNamingACoinAStoredFinalWinnerStampedIsRefused() throws {
+        let (handler, container) = try makeHandler()
+        let finalWinner = Data(repeating: 0x46, count: 32)
+        let unrelatedLoser = Data(repeating: 0x48, count: 32)
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        let funding = PersistentTransaction(
+            txid: fundingTxid, transactionData: Data(repeating: 0x04, count: 10),
+            context: 2, blockHeight: 100, netAmount: 100_000
+        )
+        context.insert(funding)
+        context.insert(PersistentTransaction(
+            txid: finalWinner,
+            transactionData: serializedTransaction(inputs: [(txid: fundingTxid, vout: 0)]),
+            context: 3, blockHeight: 120, netAmount: -100_000
+        ))
+        let coin = PersistentTxo(transaction: funding, vout: 0, amount: 100_000, address: "yFundAddr", height: 100)
+        coin.walletId = walletId
+        coin.isSpent = true
+        coin.supersededByTxid = finalWinner
+        context.insert(coin)
+        context.insert(loserRow(txid: unrelatedLoser, spending: [(txid: fundingTxid, vout: 0)]))
+        try context.save()
+
+        sweep(handler, [Batch(
+            losers: [unrelatedLoser], winner: winnerTxid, winnerMinedHeight: 400,
+            released: [(txid: fundingTxid, vout: 0)]
+        )])
+
+        let held = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(held.isSpent, "a stored chainlocked spender of the coin refuses the release")
+        XCTAssertEqual(held.supersededByTxid, finalWinner, "and keeps its attribution")
+    }
+
+    /// The veto's other half: a stamp naming a stored, network-final
+    /// transaction whose bytes do NOT spend the coin does not refuse the
+    /// release — the stamp was a global hold written by another loser's
+    /// sweep, not a claim of that transaction's.
+    func testAReleaseNamingACoinStampedWithAFinalTransactionThatDoesNotSpendItIsHonoured() throws {
+        let (handler, container) = try makeHandler()
+        let stampedWinner = Data(repeating: 0x46, count: 32)
+        let unrelatedLoser = Data(repeating: 0x48, count: 32)
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        let funding = PersistentTransaction(
+            txid: fundingTxid, transactionData: Data(repeating: 0x04, count: 10),
+            context: 2, blockHeight: 100, netAmount: 100_000
+        )
+        context.insert(funding)
+        context.insert(PersistentTransaction(
+            txid: stampedWinner,
+            transactionData: serializedTransaction(inputs: [(txid: Data(repeating: 0x49, count: 32), vout: 0)]),
+            context: 3, blockHeight: 120, netAmount: -100_000
+        ))
+        let coin = PersistentTxo(transaction: funding, vout: 0, amount: 100_000, address: "yFundAddr", height: 100)
+        coin.walletId = walletId
+        coin.isSpent = true
+        coin.supersededByTxid = stampedWinner
+        context.insert(coin)
+        context.insert(loserRow(txid: unrelatedLoser, spending: [(txid: fundingTxid, vout: 0)]))
+        try context.save()
+
+        sweep(handler, [Batch(
+            losers: [unrelatedLoser], winner: winnerTxid, winnerMinedHeight: 400,
+            released: [(txid: fundingTxid, vout: 0)]
+        )])
+
+        let freed = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertFalse(freed.isSpent, "a stamp whose transaction does not spend the coin is no claim")
+        XCTAssertNil(freed.supersededByTxid)
+    }
+
+    /// A released outpoint whose funding transaction is swept in the same
+    /// round is deleted, never freed. Here the parent's record was lost
+    /// (a `PersistentTxo` cannot outlive its transaction row, so the only
+    /// claim left on the dead output is a pending row of this wallet's),
+    /// and the release names that output: the claim is deleted with the
+    /// batch rather than left behind as a claim on a coin that can never
+    /// exist.
+    func testAReleaseNamingAnOutputOfACoSweptParentDeletesItsClaimRatherThanFreeingIt() throws {
+        let (handler, container) = try makeHandler()
+        let parentTxid = Data(repeating: 0xD1, count: 32)
+        let childTxid = Data(repeating: 0xD2, count: 32)
+        let claimantTxid = Data(repeating: 0xD3, count: 32)
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        // The child's own claim on the parent's output, and a third
+        // transaction's claim on the same dead output; the parent has no
+        // row at all.
+        let child = loserRow(txid: childTxid, spending: [(txid: parentTxid, vout: 0)], netAmount: -50_000)
+        context.insert(child)
+        let pOutpoint = PersistentTxo.makeOutpoint(txid: parentTxid, vout: 0)
+        context.insert(PersistentPendingInput(
+            outpoint: pOutpoint, inputIndex: 0, spendingTxid: childTxid, spendingTransaction: child, walletId: walletId
+        ))
+        context.insert(PersistentPendingInput(
+            outpoint: pOutpoint, inputIndex: 0, spendingTxid: claimantTxid, spendingTransaction: nil, walletId: walletId
+        ))
+        try context.save()
+
+        sweep(handler, [Batch(
+            losers: [parentTxid, childTxid], winner: winnerTxid, winnerMinedHeight: 400,
+            released: [(txid: parentTxid, vout: 0)]
+        )])
+
+        XCTAssertNil(transaction(container, txid: childTxid))
+        XCTAssertTrue(
+            try pendingRows(container, spentTxid: parentTxid).isEmpty,
+            "no claim on a dead parent's output survives the batch, released or not"
         )
     }
 }

@@ -25,21 +25,38 @@ import SwiftData
 //
 // ## Scope of the freeze
 //
-// Only `PersistentAssetLock` is frozen today, because it is the only model
-// this file's callers have changed since V2 shipped. Every other model in
-// `DashSchemaV1` / `DashSchemaV2` is still referenced live and therefore
-// still carries the same latent defect. Freezing them is a mechanical but
-// wide change (34 models) and is deliberately left out of the change that
-// introduced this file; when the next model gains a property, freeze that
-// one here too and add the matching stage.
+// Twenty-five of the 35 models are frozen here, in two groups:
+//
+// - `PersistentAssetLock`, frozen at its V2 shape (everything the live
+//   model has EXCEPT `recipientIsExternal`, which V3 added). Referenced by
+//   `DashSchemaV1.models` and `DashSchemaV2.models`; V3 and V4 reference
+//   the live type.
+// - The 24 models of the relationship component that contains
+//   `PersistentTransaction`, `PersistentTxo`, `PersistentPendingInput` and
+//   `PersistentWallet`, frozen at their V3 shape (everything the live
+//   models had before V4's sweep columns). Referenced by V1, V2 and V3;
+//   V4 references the live types. The component travels as a whole
+//   because a frozen model must declare its relationships against frozen
+//   counterparts (an `inverse:` key path is typed on the destination
+//   model), and following those relationships in both directions closes
+//   over all 24 — while registering a frozen copy beside a live one for
+//   the SAME entity name is what a schema cannot express.
+//
+// The ten models outside the component (shielded storage, invitations,
+// masternodes, the tracked-masternode registry, wallet-manager metadata,
+// the platform-addresses sync state) are still referenced live by every
+// version and still carry the latent defect described above. When the
+// next change touches one of them, freeze it here too — and if it sits in
+// a relationship component, freeze that component with it — then add a
+// version and a stage.
 //
 // V1's own checksum has already drifted from what actually shipped as V1
 // (see the `DashSchemaV1` doc comment: several models were changed in place
 // while V1 was the only registered version, and dev stores at V1 are
-// knowingly expected to fail open and be rebuilt). The frozen copy below is
-// therefore the shape as of the V2 release, shared by V1 and V2 — which is
-// what makes V1 -> V2 continue to be "add `PersistentTrackedMasternode`"
-// and nothing else, exactly as before.
+// knowingly expected to fail open and be rebuilt). The asset-lock copy
+// below is therefore the shape as of the V2 release, shared by V1 and V2 —
+// which is what makes V1 -> V2 continue to be "add
+// `PersistentTrackedMasternode`" and nothing else, exactly as before.
 
 extension DashSchemaV1 {
     /// `PersistentAssetLock` frozen at the shape it had when schema V2
@@ -103,23 +120,16 @@ extension DashSchemaV1 {
 
 // MARK: - The rest of the relationship component, frozen at the V3 shape
 //
-// The four models the sweep persistence changes — `PersistentTransaction`,
-// `PersistentTxo`, `PersistentPendingInput` and `PersistentWallet` — each
-// gain a property, so each needs a frozen copy for the same reason
-// `PersistentAssetLock` did. Freezing them alone is not possible: a frozen
-// model must declare its relationships against frozen counterparts (an
-// `inverse:` key path is typed on the destination model), and following
-// those relationships in both directions closes over 24 of the 35 models.
-// Registering a frozen copy beside a live one for the SAME entity name is
-// what the schema cannot express, so the whole component travels together.
+// The three models the sweep persistence changes — `PersistentTxo`,
+// `PersistentPendingInput` and `PersistentWallet` — each gain a property
+// (and `PersistentPendingInput` an index), so each needs a frozen copy for
+// the same reason `PersistentAssetLock` did; `PersistentTransaction` is
+// unchanged but sits in the same component. See the scope note at the top
+// of this file for why the whole component travels together.
 //
 // These copies are the shape as of V3 — i.e. everything the live models had
 // before the sweep columns — and are shared by V1, V2 and V3, none of which
-// changed any model in this component. The eleven models outside the
-// component (shielded storage, invitations, masternodes, the asset-lock
-// pair above, wallet-manager metadata) are still referenced live and still
-// carry the latent defect this file exists to fix; freezing them is the
-// same mechanical exercise, for whichever change next touches one.
+// changed any model in this component.
 //
 // Do not edit these copies to match the live models. Every attribute, its
 // optionality, its default, each `@Attribute` marker, each `#Index` and

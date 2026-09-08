@@ -68,7 +68,9 @@ final class DashModelMigrationTests: XCTestCase {
     /// back with the sweep columns backfilled to their "nothing swept yet"
     /// values. V3 registers the frozen component, so the row goes in as the
     /// frozen type and comes out as the live one — which is the whole point
-    /// of the freeze: the same entity, one property wider.
+    /// of the freeze: the same entity, one property wider. A pending-input
+    /// row rides along so the tombstone index V4 adds is exercised by the
+    /// migration too.
     @MainActor
     func testV3StoreMigratesToV4AndBackfillsTheSweepColumns() throws {
         let directory = FileManager.default.temporaryDirectory
@@ -93,6 +95,12 @@ final class DashModelMigrationTests: XCTestCase {
         v3Container?.mainContext.insert(DashSchemaV1.PersistentWallet(
             walletId: walletId,
             network: .testnet))
+        v3Container?.mainContext.insert(DashSchemaV1.PersistentPendingInput(
+            outpoint: Data(repeating: 0x11, count: 36),
+            inputIndex: 0,
+            spendingTxid: Data(repeating: 0x22, count: 32),
+            spendingTransaction: nil,
+            walletId: walletId))
         try v3Container?.mainContext.save()
         v3Container = nil
 
@@ -115,6 +123,42 @@ final class DashModelMigrationTests: XCTestCase {
             wallets.first?.lastAppliedChainLockHeight,
             "a wallet migrated from V3 has no chainlock boundary yet, so no "
                 + "tombstone it later takes can be collected on a fabricated one")
+        let pending = try migrated.mainContext.fetch(
+            FetchDescriptor<PersistentPendingInput>())
+        XCTAssertEqual(pending.count, 1, "the V3 pending row must survive the migration")
+        XCTAssertEqual(pending.first?.isSweptTombstone, false, "backfilled as an ordinary claim")
+        XCTAssertNil(pending.first?.winnerMinedHeight, "and unstamped")
+    }
+
+    /// What makes the V3 -> V4 stage lightweight: the two versions name the
+    /// same entity set, and V4 only widens three of them. Also pins that
+    /// `PersistentTransaction` is NOT one of the three — a swept row is
+    /// deleted outright, so the transaction entity carries no sweep marker,
+    /// and one that came back would silently change V4's checksum.
+    func testV3AndV4NameTheSameEntitySet() throws {
+        let v3 = Schema(versionedSchema: DashSchemaV3.self)
+        let v4 = Schema(versionedSchema: DashSchemaV4.self)
+        XCTAssertEqual(
+            v3.entities.map(\.name).sorted(),
+            v4.entities.map(\.name).sorted())
+
+        let transaction = try XCTUnwrap(v4.entities.first { $0.name == "PersistentTransaction" })
+        let frozenTransaction = try XCTUnwrap(v3.entities.first { $0.name == "PersistentTransaction" })
+        XCTAssertEqual(
+            transaction.attributesByName.keys.sorted(),
+            frozenTransaction.attributesByName.keys.sorted(),
+            "V4 adds no column to PersistentTransaction")
+        let txo = try XCTUnwrap(v4.entities.first { $0.name == "PersistentTxo" })
+        XCTAssertNotNil(txo.attributesByName["supersededByTxid"])
+        let pendingInput = try XCTUnwrap(v4.entities.first { $0.name == "PersistentPendingInput" })
+        XCTAssertNotNil(pendingInput.attributesByName["isSweptTombstone"])
+        XCTAssertNotNil(pendingInput.attributesByName["winnerMinedHeight"])
+        let wallet = try XCTUnwrap(v4.entities.first { $0.name == "PersistentWallet" })
+        XCTAssertNotNil(wallet.attributesByName["lastAppliedChainLockHeight"])
+
+        // And V3's frozen copies do not carry them.
+        let frozenTxo = try XCTUnwrap(v3.entities.first { $0.name == "PersistentTxo" })
+        XCTAssertNil(frozenTxo.attributesByName["supersededByTxid"])
     }
 
     /// Guards the freeze itself: `DashSchemaV1.PersistentAssetLock` only
@@ -128,7 +172,8 @@ final class DashModelMigrationTests: XCTestCase {
         for schema in [
             Schema(versionedSchema: DashSchemaV1.self),
             Schema(versionedSchema: DashSchemaV2.self),
-            Schema(versionedSchema: DashSchemaV3.self)
+            Schema(versionedSchema: DashSchemaV3.self),
+            Schema(versionedSchema: DashSchemaV4.self)
         ] {
             let names = schema.entities.map(\.name)
             XCTAssertTrue(
