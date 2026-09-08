@@ -240,10 +240,17 @@ enum CoreWalletDiagnosticAnalyzer {
     /// the launch restore path while the persistence queue is held, so a large
     /// CoinJoin wallet must not pay for a dozen full-length `filter`/`map`
     /// allocations, and nothing here retains a per-row array.
+    /// - Parameter candidateCountOverride: reported instead of the number of
+    ///   candidates walked. For the errored path, where classifying each row
+    ///   would fault a relationship per row to describe a load that is being
+    ///   discarded: the caller passes the row count it already has and an
+    ///   empty sequence, so `candidate_count` stays truthful and every other
+    ///   counter is honestly zero.
     static func summarizeRestoreBuffer<S: Sequence>(
         candidates: S,
         emittedCount: Int,
-        errored: Bool
+        errored: Bool,
+        candidateCountOverride: Int? = nil
     ) -> RestoreBufferSummary where S.Element == RestoreCandidate {
         // Rust is handed the first `emittedCount` rows that passed validation,
         // in order; an errored build deallocated the whole buffer, so none of
@@ -318,7 +325,7 @@ enum CoreWalletDiagnosticAnalyzer {
         }
 
         return RestoreBufferSummary(
-            candidateCount: candidateCount,
+            candidateCount: candidateCountOverride ?? candidateCount,
             candidateValueDuffs: candidateValue,
             candidateBip44Count: candidateBip44Count,
             candidateBip44ValueDuffs: candidateBip44Value,

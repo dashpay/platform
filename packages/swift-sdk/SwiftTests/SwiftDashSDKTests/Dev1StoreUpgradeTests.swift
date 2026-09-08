@@ -357,9 +357,23 @@ final class Dev1StoreUpgradeTests: XCTestCase {
             verdict(["PersistentWallet": a], identifiers: ["9.0.0"]),
             .newerThanRegistered(reason: "unregistered_version_identifier=9.0.0")
         )
+        // Unplaceable, NOT a newer build: `open` must rethrow SwiftData's own
+        // error for these rather than tell the user their wallet came from a
+        // newer app and offer a reset.
         XCTAssertEqual(
             verdict(["PersistentWallet": a], identifiers: []),
-            .newerThanRegistered(reason: "no_version_identifier")
+            .unplaceable(reason: "no_version_identifier")
+        )
+        XCTAssertEqual(
+            verdict([:]),
+            .unplaceable(reason: "no_entity_hashes"),
+            "no hashes means nothing was compared; drift may not be claimed"
+        )
+        XCTAssertEqual(
+            verdict(["PersistentWallet": a]),
+            .unplaceable(reason: "no_entity_disagreement"),
+            "every hash the store carries agrees and it still is not compatible — "
+                + "it differs by something these hashes do not describe, not by the pinned drift"
         )
         XCTAssertEqual(
             verdict(["PersistentWallet": a, "FutureOnlyModel": a]),

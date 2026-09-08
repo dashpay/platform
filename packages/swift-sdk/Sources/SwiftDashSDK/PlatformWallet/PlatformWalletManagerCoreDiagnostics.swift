@@ -720,19 +720,41 @@ extension PlatformWalletPersistenceHandler {
                 rejectionReason: rejection
             )
         }
-        // Lazily, and with the built rows first: the summary's emission window
-        // is positional, so the rejected rows must not shift it. Nothing here
-        // materializes a per-row array — this runs while the launch restore
-        // holds the persistence queue.
-        let candidates = [rows, accountLessRows].lazy.flatMap { $0 }.map(candidate)
         // A validation error deallocates the compact buffer and aborts the
         // whole callback, so zero rows were actually handed to Rust even if
         // some valid rows preceded the corrupt one.
-        let summary = CoreWalletDiagnosticAnalyzer.summarizeRestoreBuffer(
-            candidates: candidates,
-            emittedCount: emittedCount,
-            errored: errored
-        )
+        //
+        // It also means classifying the rows would cost more than it is worth:
+        // `buildUtxoRestoreBuffer` can bail at row 0 having faulted nothing,
+        // and `candidate` touches `account` and `txid` — to-one relationships
+        // — on every row, so the walk would issue a fault per row, at launch,
+        // with the persistence queue held, to describe a load that is about to
+        // be discarded. The row that failed is already named with its reason
+        // by `persistence_wallet_load_validation_failed`; here the count is
+        // what is left to say, and the positional emission window the walk
+        // exists for is moot at zero emitted.
+        let summary: CoreWalletDiagnosticAnalyzer.RestoreBufferSummary
+        if errored {
+            summary = CoreWalletDiagnosticAnalyzer.summarizeRestoreBuffer(
+                candidates: EmptyCollection<
+                    CoreWalletDiagnosticAnalyzer.RestoreCandidate
+                >(),
+                emittedCount: 0,
+                errored: true,
+                candidateCountOverride: rows.count + accountLessRows.count
+            )
+        } else {
+            // Lazily, and with the built rows first: the summary's emission
+            // window is positional, so the rejected rows must not shift it.
+            // Nothing here materializes a per-row array — this runs while the
+            // launch restore holds the persistence queue, and every row it
+            // touches was already faulted by the build it is reconciling.
+            summary = CoreWalletDiagnosticAnalyzer.summarizeRestoreBuffer(
+                candidates: [rows, accountLessRows].lazy.flatMap { $0 }.map(candidate),
+                emittedCount: emittedCount,
+                errored: false
+            )
+        }
         let hasRejectedRows = summary.missingAccountCount > 0
             || summary.invalidTxidCount > 0
             || summary.invalidAccountTypeCount > 0
@@ -1057,15 +1079,29 @@ extension PlatformWalletPersistenceHandler {
         let missingValue = diagnosticSaturatingSum(anomalies.compactMap {
             $0.reason == "missing_txo" ? $0.amount : nil
         })
+        // With no persisted BIP44 addresses nothing can be attributed to this
+        // wallet: every decoded output falls into `unattributedOutputCount`,
+        // no output reaches the `missing_txo` check, and the summary would
+        // otherwise read as a clean, complete audit — on a wallet whose
+        // address rows are exactly what went missing. The pool being empty is
+        // an incompleteness of the same kind as an undecodable transaction.
+        //
+        // `unattributedOutputCount > 0` is deliberately NOT part of this: a
+        // CoinJoin-spending transaction pays its peers, and their outputs are
+        // unattributable by construction, so every healthy audit has some.
+        // A partially lost pool is not distinguishable from a small one here;
+        // `bip44_address_pool_size` sits beside this flag for that reading.
+        let addressPoolEmpty = bip44Addresses.isEmpty
+        let auditIncomplete = decodeFailureCount > 0
+            || transactionBytesMissingCount > 0
+            || addressPoolEmpty
         SDKLogger.event(
             "core_owned_output_audit_summary",
             category: .persistence,
-            severity: anomalies.isEmpty && decodeFailureCount == 0
-                && transactionBytesMissingCount == 0 ? .info : .warning,
+            severity: anomalies.isEmpty && !auditIncomplete ? .info : .warning,
             fields: [
-                "audit_incomplete": .boolean(
-                    decodeFailureCount > 0 || transactionBytesMissingCount > 0
-                ),
+                "audit_incomplete": .boolean(auditIncomplete),
+                "bip44_address_pool_empty": .boolean(addressPoolEmpty),
                 "bip44_address_pool_size": .integer(Int64(bip44Addresses.count)),
                 "candidate_transaction_count": .integer(Int64(candidateCount)),
                 "checkpoint": .publicText(checkpoint.rawValue),
@@ -1456,62 +1492,73 @@ extension PlatformWalletManager {
             )
         }
         for balance in sortedBalances {
-            let key = Self.diagnosticAccountKey(balance)
             if shutdownBegan(before: "account_utxos") { return }
-            let query = diagnosticAccountUtxos(
-                managerHandle: managerHandle,
-                walletId: walletId,
-                balance: balance
-            )
-            guard case .success(let utxos) = query else {
-                unavailableAccounts.insert(key)
+            // One pool per account, matching `emitCoreWalletDatabaseDiagnostics`.
+            // libdispatch drains its own pool once per work item, and this
+            // whole loop is one work item: without this, every account's
+            // per-UTXO txid and scriptPubKey copies, its fingerprint material
+            // and the formatter each log event allocates all stay resident
+            // until the export ends, so the peak is the sum of every account
+            // rather than the largest one. `memoryTxos` is returned out of the
+            // pool on purpose — `compareDatabase` needs the whole set.
+            let accountTxos: [CoreWalletDatabaseDiagnosticSnapshot.Txo]? = autoreleasepool {
+                let key = Self.diagnosticAccountKey(balance)
+                let query = diagnosticAccountUtxos(
+                    managerHandle: managerHandle,
+                    walletId: walletId,
+                    balance: balance
+                )
+                guard case .success(let utxos) = query else {
+                    unavailableAccounts.insert(key)
+                    SDKLogger.event(
+                        "core_memory_account_snapshot",
+                        category: .persistence,
+                        severity: .warning,
+                        fields: [
+                            "account_reference": .reference(key.referenceMaterial),
+                            "account_type": .unsignedInteger(UInt64(key.typeTag)),
+                            "checkpoint": .publicText(checkpoint.rawValue),
+                            "query_available": .boolean(false),
+                            "wallet_reference": .reference(walletId),
+                        ]
+                    )
+                    return nil
+                }
+                let materials = utxos.map {
+                    diagnosticTxoFingerprint(
+                        outpoint: $0.outpoint,
+                        amount: $0.amount,
+                        height: $0.height,
+                        scriptPubKey: $0.scriptPubKey,
+                        isLocked: $0.isLocked,
+                        account: key
+                    )
+                }
                 SDKLogger.event(
                     "core_memory_account_snapshot",
                     category: .persistence,
-                    severity: .warning,
                     fields: [
+                        "account_index": .unsignedInteger(UInt64(balance.index)),
                         "account_reference": .reference(key.referenceMaterial),
-                        "account_type": .unsignedInteger(UInt64(key.typeTag)),
+                        "account_type": .unsignedInteger(UInt64(balance.typeTag)),
                         "checkpoint": .publicText(checkpoint.rawValue),
-                        "query_available": .boolean(false),
+                        "confirmed_duffs": .unsignedInteger(balance.confirmed),
+                        "immature_duffs": .unsignedInteger(balance.immature),
+                        "locked_duffs": .unsignedInteger(balance.locked),
+                        "query_available": .boolean(true),
+                        "standard_tag": .unsignedInteger(UInt64(balance.standardTag)),
+                        "unconfirmed_duffs": .unsignedInteger(balance.unconfirmed),
+                        "utxo_count": .integer(Int64(utxos.count)),
+                        "utxo_fingerprint": .reference(diagnosticFingerprint(materials)),
+                        "utxo_value_duffs": .unsignedInteger(
+                            diagnosticSaturatingSum(utxos.map(\.amount))
+                        ),
                         "wallet_reference": .reference(walletId),
                     ]
                 )
-                continue
+                return utxos
             }
-            let materials = utxos.map {
-                diagnosticTxoFingerprint(
-                    outpoint: $0.outpoint,
-                    amount: $0.amount,
-                    height: $0.height,
-                    scriptPubKey: $0.scriptPubKey,
-                    isLocked: $0.isLocked,
-                    account: key
-                )
-            }
-            SDKLogger.event(
-                "core_memory_account_snapshot",
-                category: .persistence,
-                fields: [
-                    "account_index": .unsignedInteger(UInt64(balance.index)),
-                    "account_reference": .reference(key.referenceMaterial),
-                    "account_type": .unsignedInteger(UInt64(balance.typeTag)),
-                    "checkpoint": .publicText(checkpoint.rawValue),
-                    "confirmed_duffs": .unsignedInteger(balance.confirmed),
-                    "immature_duffs": .unsignedInteger(balance.immature),
-                    "locked_duffs": .unsignedInteger(balance.locked),
-                    "query_available": .boolean(true),
-                    "standard_tag": .unsignedInteger(UInt64(balance.standardTag)),
-                    "unconfirmed_duffs": .unsignedInteger(balance.unconfirmed),
-                    "utxo_count": .integer(Int64(utxos.count)),
-                    "utxo_fingerprint": .reference(diagnosticFingerprint(materials)),
-                    "utxo_value_duffs": .unsignedInteger(
-                        diagnosticSaturatingSum(utxos.map(\.amount))
-                    ),
-                    "wallet_reference": .reference(walletId),
-                ]
-            )
-            memoryTxos.append(contentsOf: utxos)
+            if let accountTxos { memoryTxos.append(contentsOf: accountTxos) }
         }
         compareDatabase(
             database,

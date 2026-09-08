@@ -79,6 +79,14 @@ public enum DashModelContainer {
         /// wrote, so it must not run; the pre-fallback crash was the safe
         /// outcome here.
         case newerThanRegistered(reason: String)
+        /// The metadata reads but does not place the store against any
+        /// registered version: no declared version identifier, or nothing to
+        /// compare it by. Inferred migration must not answer this either — an
+        /// unplaced store opened by inference is trimmed to the current schema
+        /// exactly like a downgrade — but it is NOT evidence of a newer build,
+        /// so the host must not be told to update or reset. SwiftData's own
+        /// error is passed through instead.
+        case unplaceable(reason: String)
 
         var logLabel: String {
             switch self {
@@ -86,6 +94,7 @@ public enum DashModelContainer {
             case .matchesRegisteredVersion: return "matches_registered_version"
             case .driftedRegisteredVersion: return "drifted_registered_version"
             case .newerThanRegistered(let reason): return "newer_than_registered:\(reason)"
+            case .unplaceable(let reason): return "unplaceable:\(reason)"
             }
         }
     }
@@ -168,8 +177,19 @@ public enum DashModelContainer {
         if let unknown = storeVersionIdentifiers.first(where: { !registeredIdentifiers.contains($0) }) {
             return .newerThanRegistered(reason: "unregistered_version_identifier=\(unknown)")
         }
+        // No identifier at all places the store nowhere. Older stores and
+        // stores with truncated metadata land here too, so this is not a
+        // newer build and must not be reported to the user as one.
         guard !storeVersionIdentifiers.isEmpty else {
-            return .newerThanRegistered(reason: "no_version_identifier")
+            return .unplaceable(reason: "no_version_identifier")
+        }
+        // Drift is a statement about hashes that disagree. With no hashes to
+        // read there is nothing to disagree, and every check below would pass
+        // vacuously — `disagreeing` empty, so `unknownShapes` empty, so
+        // `driftedRegisteredVersion` from a comparison that never happened,
+        // authorizing inferred migration over a store nothing is known about.
+        guard !storeEntityHashes.isEmpty else {
+            return .unplaceable(reason: "no_entity_hashes")
         }
 
         // An entity the current schema does not have can only have been
@@ -195,10 +215,19 @@ public enum DashModelContainer {
             let unknownShapes = Set(disagreeing.compactMap { name, hash in
                 knownDriftedEntityHashes[name] == hash ? nil : name
             })
-            if unknownShapes.isEmpty {
+            // `!disagreeing.isEmpty` is the load-bearing half: drift is what
+            // the fallback answers, and a store that agrees on every hash it
+            // carries and still is not compatible differs by something these
+            // hashes do not describe — an entity the store lacks entirely,
+            // say. Whatever that is, it is not the drift the pinned hashes
+            // authorize, so it does not get inferred migration.
+            if !disagreeing.isEmpty, unknownShapes.isEmpty {
                 return .driftedRegisteredVersion
             }
             unexpectedDrift.formUnion(unknownShapes)
+        }
+        guard !unexpectedDrift.isEmpty else {
+            return .unplaceable(reason: "no_entity_disagreement")
         }
         return .newerThanRegistered(
             reason: "unexpected_entity_drift=\(unexpectedDrift.sorted().joined(separator: "|"))"
@@ -475,9 +504,12 @@ public enum DashModelContainer {
             guard case .driftedRegisteredVersion = verdict else {
                 report(succeeded: false, migrationPath: .staged, error: error, storeVerdict: verdict)
                 // A newer build's store is the one refusal the host can act
-                // on (tell the user to update or reset), so it gets a typed
-                // error; everything else is SwiftData's own failure, passed
-                // through untouched.
+                // on, so it gets a typed error — and only it, because that
+                // error's text tells the user to update the app or reset the
+                // wallet, and resetting is destructive on a store that is
+                // merely unplaceable. `.unplaceable` and `.unreadable` are
+                // SwiftData's own failure, passed through untouched with the
+                // verdict in the log.
                 if case .newerThanRegistered(let reason) = verdict {
                     throw DashModelContainerError.storeFromNewerBuild(reason: reason)
                 }

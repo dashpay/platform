@@ -673,6 +673,14 @@ public class PlatformWalletManager: ObservableObject {
             if let task = shutdownTask {
                 return await task.value
             }
+            // Before the handle guard, not after it: a diagnostic pass can be
+            // running on the persistence queue for a manager that was never
+            // configured (`emitCoreWalletDiagnostics` runs its database half
+            // with no handle), and the early return below would leave it with
+            // no way to be told to stop — holding the queue, and every Rust
+            // persister callback entering through it, across teardown. The
+            // flag is one-way and costs nothing on the no-op path.
+            coreDiagnosticsCancellation.cancel()
             guard handle != NULL_HANDLE else {
                 // Never configured (or a test double without a handle):
                 // nothing to tear down. Do not cache this no-op: a manager
