@@ -165,7 +165,11 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         XCTAssertFalse(recorder.mainThreadFlags.contains(true))
 
         await manager.shutdown()
-        manager.pollQueue.sync {}  // drain a tick that was already in flight
+        // Drain a tick that was already in flight, without a wait that can
+        // hang the run: an unbounded `sync {}` would.
+        let drained = DispatchGroup()
+        manager.pollQueue.async(group: drained) {}
+        XCTAssertEqual(drained.wait(timeout: .now() + 5), .success, "the poll queue must drain")
         let countAfterShutdown = recorder.count
         try await Task.sleep(for: .milliseconds(100))  // ≈10 poll intervals
         XCTAssertEqual(
@@ -217,7 +221,7 @@ final class PlatformWalletProgressPollTests: XCTestCase {
             syncProgress: { _ in throw PlatformWalletError.invalidHandle("no spv") },
             isSpvRunning: { _ in true },
             connectedSpvPeers: { _ in [] },
-            spvTipBlockTime: { _ in nil },
+            spvTipBlockTime: { _ in throw PlatformWalletError.invalidHandle("no tip read") },
             isPlatformAddressSyncing: { _ in false },
             isShieldedSyncing: { _ in true },
             isDashPaySyncing: { _ in throw PlatformWalletError.invalidHandle("no dashpay") },
@@ -239,7 +243,39 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         XCTAssertEqual(snapshot.shieldedSyncIsSyncing, true)
         XCTAssertEqual(snapshot.platformAddressSyncIsSyncing, false)
         XCTAssertEqual(snapshot.spvPeers, [])
-        XCTAssertNil(snapshot.spvTipBlockTime)
+        // `Date??`: compare the outer level explicitly — `XCTAssertNil` would
+        // coerce the nested optional through `Any?` and see a value.
+        XCTAssertTrue(
+            snapshot.spvTipBlockTime == nil,
+            "a failed tip read is nil at the outer level and keeps the published tip")
         XCTAssertEqual(snapshot.pendingAccountBuilds, [walletA: 3])
+    }
+
+    /// The FFI's in-band "no tip" is a successful read that publishes `nil`;
+    /// a thrown read keeps whatever tip was published before.
+    func testFailedTipReadKeepsThePublishedTipButNoTipPublishesNil() {
+        let manager = PlatformWalletManager.makeForTesting(handle: 92, calls: Self.makeTeardownCalls())
+        let tip = Date(timeIntervalSince1970: 1_700_000_000)
+        let baseline = PlatformWalletPollBaseline(
+            spvProgress: .empty, spvIsRunning: false, spvPeers: [],
+            platformAddressSyncIsSyncing: false, shieldedSyncIsSyncing: false,
+            dashPaySyncIsSyncing: false, spvTipBlockTime: nil, pendingAccountBuilds: [:])
+
+        var read = PlatformWalletPollSnapshot()
+        read.spvTipBlockTime = .some(tip)
+        manager.applyPollSnapshot(read, baseline: baseline)
+        XCTAssertEqual(manager.spvTipBlockTime, tip)
+
+        var failed = PlatformWalletPollSnapshot()
+        failed.spvTipBlockTime = nil
+        var withTip = baseline
+        withTip.spvTipBlockTime = tip
+        manager.applyPollSnapshot(failed, baseline: withTip)
+        XCTAssertEqual(manager.spvTipBlockTime, tip, "a failed read must not wipe the last known tip")
+
+        var noTip = PlatformWalletPollSnapshot()
+        noTip.spvTipBlockTime = .some(nil)
+        manager.applyPollSnapshot(noTip, baseline: withTip)
+        XCTAssertNil(manager.spvTipBlockTime, "the in-band no-tip sentinel publishes")
     }
 }

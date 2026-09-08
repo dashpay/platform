@@ -249,11 +249,12 @@ struct PlatformWalletNativeLoadCalls: @unchecked Sendable {
 }
 
 /// One progress-poll tick's native reads, captured on the poll queue and
-/// applied on the main actor. Manager-level fields are optional because
+/// applied on the main actor. Every manager-level field is optional because
 /// each read fails independently and a failure keeps the previously
 /// published value (what the inline `try?` did before the reads moved off
-/// the main thread). `spvTipBlockTime` is a plain optional: a failed tip
-/// read has always published "no tip".
+/// the main thread). `spvTipBlockTime` is doubly optional for the same
+/// reason: the outer `nil` is a failed read (keep the published tip), the
+/// inner one the FFI's in-band "no tip" (`0` seconds), which does publish.
 struct PlatformWalletPollSnapshot: Sendable {
     var spvProgress: PlatformSpvSyncProgress?
     var spvIsRunning: Bool?
@@ -261,7 +262,7 @@ struct PlatformWalletPollSnapshot: Sendable {
     var platformAddressSyncIsSyncing: Bool?
     var shieldedSyncIsSyncing: Bool?
     var dashPaySyncIsSyncing: Bool?
-    var spvTipBlockTime: Date?
+    var spvTipBlockTime: Date??
     /// Keyed by wallet id; only wallets whose read succeeded are present.
     var pendingAccountBuilds: [Data: UInt32] = [:]
 }
@@ -595,19 +596,21 @@ public class PlatformWalletManager: ObservableObject {
     /// Dedicated serial queue for the poller's native reads. They park the
     /// calling thread the way teardown and create do — `sync_progress`,
     /// `spv_connected_peers`, `spv_tip_unix_seconds` and the per-wallet
-    /// `pending_contact_crypto_count` all `block_on` inside the Rust
-    /// registry read guard, and the last one waits on
-    /// `wallet_manager.read()`, which sits behind any writer (measured at
-    /// 89–126 s on the main thread while a writer waited on a slow
-    /// persister commit) — so never the main thread and never a Swift
+    /// `pending_contact_crypto_count` all `block_on` in Rust, and the last
+    /// one waits on `wallet_manager.read()`, which sits behind any writer
+    /// (measured at 89–126 s on the main thread while a writer waited on a
+    /// slow persister commit) — so never the main thread and never a Swift
     /// Concurrency cooperative-pool thread. Deliberately NOT
     /// [`destroyQueue`]: a tick parked for minutes must not sit ahead of an
     /// admitted create or the teardown in that queue's FIFO. Per instance,
     /// not static: hosts run two managers during a wallet switch, and one
     /// manager's parked tick must not delay the other's status.
+    /// `.userInitiated`, like [`destroyQueue`]: these reads feed the
+    /// foreground sync indicator, and `.utility` is the tier iOS throttles
+    /// first under Low Power Mode and thermal pressure.
     nonisolated let pollQueue = DispatchQueue(
         label: "org.dash.platform-wallet.poll",
-        qos: .utility
+        qos: .userInitiated
     )
 
     /// Dedicated serial queue for the blocking native teardown AND the
@@ -2716,7 +2719,7 @@ public class PlatformWalletManager: ObservableObject {
         wallets: [(walletId: Data, handle: Handle)],
         calls: PlatformWalletNativePollCalls = .live
     ) -> PlatformWalletPollSnapshot {
-        let start = CFAbsoluteTimeGetCurrent()
+        let start = ContinuousClock.now
         var snapshot = PlatformWalletPollSnapshot()
         snapshot.spvProgress = try? calls.syncProgress(handle)
         snapshot.spvIsRunning = try? calls.isSpvRunning(handle)
@@ -2724,17 +2727,24 @@ public class PlatformWalletManager: ObservableObject {
         snapshot.platformAddressSyncIsSyncing = try? calls.isPlatformAddressSyncing(handle)
         snapshot.shieldedSyncIsSyncing = try? calls.isShieldedSyncing(handle)
         snapshot.dashPaySyncIsSyncing = try? calls.isDashPaySyncing(handle)
-        snapshot.spvTipBlockTime = (try? calls.spvTipBlockTime(handle)) ?? nil
+        // Not `try?`: it flattens the closure's `Date?` and would turn a
+        // thrown read into the same `nil` as the in-band no-tip.
+        do {
+            snapshot.spvTipBlockTime = .some(try calls.spvTipBlockTime(handle))
+        } catch {
+            snapshot.spvTipBlockTime = nil
+        }
         for wallet in wallets {
             if let count = try? calls.pendingAccountBuildCount(wallet.handle) {
                 snapshot.pendingAccountBuilds[wallet.walletId] = count
             }
         }
-        // A tick that parked for a second or more is the exact stall the
-        // main thread used to absorb; log it so the field telemetry shows
-        // where the wait went.
-        let ms = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
-        if ms >= 1000 {
+        // A tick that parked well past the routine range (0.7–2.6 s during
+        // an initial sync) is the stall the main thread used to absorb; log
+        // it so the field telemetry shows where the wait went, without a
+        // warning per tick for the whole sync.
+        let ms = Int((ContinuousClock.now - start) / .milliseconds(1))
+        if ms >= 5000 {
             SDKLogger.event(
                 "progress_poll_slow_tick",
                 category: .lifecycle,
@@ -2786,9 +2796,9 @@ public class PlatformWalletManager: ObservableObject {
            value != dashPaySyncIsSyncing {
             dashPaySyncIsSyncing = value
         }
-        if spvTipBlockTime == baseline.spvTipBlockTime,
-           snapshot.spvTipBlockTime != spvTipBlockTime {
-            spvTipBlockTime = snapshot.spvTipBlockTime
+        if let value = snapshot.spvTipBlockTime,
+           spvTipBlockTime == baseline.spvTipBlockTime, value != spvTipBlockTime {
+            spvTipBlockTime = value
         }
         // Per-wallet needs-unlock count (account-build ops), same gating per
         // key. A wallet that left `wallets` mid-tick is skipped (its key is
