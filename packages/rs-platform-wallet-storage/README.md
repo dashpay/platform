@@ -151,18 +151,23 @@ auto-backup dir at `<db_dir>/backups/auto/`.
 
 Schema migrations are versioned Rust files under `migrations/`, applied via
 [`refinery`](https://github.com/rust-db/refinery) on every `open`. The current
-migration set is still unreleased, so a migration may be edited in place until
-the crate's first release. Once the schema ships, migrations become
-append-only.
-
-Two exceptions already bind, ahead of that release, and they apply to
-V001-V006 — the set a base branch has already published. Those bodies are
-frozen byte-for-byte and their versions are never reassigned to different DDL.
-And a `CHECK` domain inside any migration is a frozen literal, never
+migrations V001-V007 have already been published on `v4.2-dev`: their bodies
+are frozen byte-for-byte and their versions are never reassigned to different
+DDL. Later migrations are append-only once published. A `CHECK` domain inside
+any migration is a frozen literal, never
 interpolated from a live Rust const, so adding an enum variant cannot rewrite
 an applied migration's SQL. Both rules exist because refinery validates an
 applied migration's checksum against the embedded migration of the same
 version, and a mismatch means the database never opens again.
+
+An upgrade applies its pending SQL, typed legacy-state conversion, and schema
+history in one transaction. The V008-V011 conversion recovers registration
+discriminators from their blobs and preserves legacy pool ownership, used and
+reserved states, public keys, and separately recorded derived addresses.
+Malformed state belonging to an existing wallet fails the upgrade and leaves
+the original schema, data, history, and pre-migration backup intact. Legacy
+pool tables remain available when stopping at V008-V010 and are retired only
+after their conversion succeeds.
 
 #### Flush semantics (store / flush)
 

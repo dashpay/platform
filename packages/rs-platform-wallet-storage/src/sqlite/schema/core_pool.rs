@@ -202,7 +202,7 @@ pub fn apply_pools(
 }
 
 // TODO(#4188): `reserved_at` is persisted but deliberately not consumed here;
-// restoring it requires widening `insert_platform_node_pool_entry` in rs-platform-wallet.
+// restoring it requires widening `provider_accounts::insert_platform_node_pool_entry`.
 /// One restored typed-pool row: `(address_index, script_bytes, public_key, used)`.
 pub type TypedPoolEntry = (u32, Vec<u8>, PublicKeyType, bool);
 

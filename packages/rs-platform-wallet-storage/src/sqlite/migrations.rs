@@ -7,6 +7,9 @@
 use rusqlite::OptionalExtension;
 
 use crate::sqlite::error::WalletStorageError;
+use refinery_core::error::WrapMigrationError;
+
+mod legacy_v008;
 
 // Generates a `migrations` module with `runner()`; path is relative to
 // the crate root.
@@ -14,8 +17,104 @@ refinery::embed_migrations!("./migrations");
 
 /// Apply every pending migration to `conn`.
 pub fn run(conn: &mut rusqlite::Connection) -> Result<refinery::Report, refinery::Error> {
-    migrations::runner().run(conn)
+    run_with_runner(conn, migrations::runner())
 }
+
+/// Keep refinery's history validation, target selection and SQL/history writes
+/// inside the same writer exclusion as the typed legacy conversion. Its native
+/// rusqlite driver starts its own transactions, so this adapter implements the
+/// supported driver traits over our outer transaction instead.
+fn run_with_runner(
+    conn: &mut rusqlite::Connection,
+    runner: refinery::Runner,
+) -> Result<refinery::Report, refinery::Error> {
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .migration_err("begin wallet schema migration", None)?;
+    let embedded = migrations::runner();
+    let hook_sql = |version| {
+        embedded
+            .get_migrations()
+            .iter()
+            .find(|m| m.version() == version)
+            .and_then(|m| m.sql())
+            .expect("embedded typed migration must exist")
+            .to_owned()
+    };
+    let mut driver = MigrationTransaction {
+        tx,
+        registration_sql: hook_sql(8),
+        pool_sql: hook_sql(11),
+    };
+    // Grouped reports never claim that rolled-back migrations were applied.
+    let report = runner.set_grouped(true).run(&mut driver)?;
+    driver
+        .tx
+        .commit()
+        .migration_err("commit wallet schema migration", None)?;
+    Ok(report)
+}
+
+struct MigrationTransaction<'conn> {
+    tx: rusqlite::Transaction<'conn>,
+    registration_sql: String,
+    pool_sql: String,
+}
+
+impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
+    type Error = WalletStorageError;
+
+    fn execute<'a, T: Iterator<Item = &'a str>>(
+        &mut self,
+        queries: T,
+    ) -> Result<usize, Self::Error> {
+        let mut count = 0;
+        for query in queries {
+            self.tx.execute_batch(query)?;
+            if query == self.registration_sql {
+                legacy_v008::backfill_registrations(&self.tx)?;
+            } else if query == self.pool_sql {
+                legacy_v008::convert_pools(&self.tx)?;
+            }
+            count += 1;
+        }
+        Ok(count)
+    }
+}
+
+impl refinery_core::traits::sync::Query<Vec<refinery::Migration>> for MigrationTransaction<'_> {
+    fn query(&mut self, query: &str) -> Result<Vec<refinery::Migration>, Self::Error> {
+        let mut stmt = self.tx.prepare(query)?;
+        let mut rows = stmt.query([])?;
+        let mut applied = Vec::new();
+        while let Some(row) = rows.next()? {
+            let timestamp: String = row.get(2)?;
+            let applied_on = time::OffsetDateTime::parse(
+                &timestamp,
+                &time::format_description::well_known::Rfc3339,
+            )
+            .map_err(|_| WalletStorageError::SchemaHistoryMalformed {
+                reason: "applied_on is not a valid RFC3339 timestamp",
+            })?;
+            let checksum: String = row.get(3)?;
+            let checksum =
+                checksum
+                    .parse()
+                    .map_err(|_| WalletStorageError::SchemaHistoryMalformed {
+                        reason: "checksum is not a valid u64",
+                    })?;
+            applied.push(refinery::Migration::applied(
+                row.get(0)?,
+                row.get(1)?,
+                applied_on,
+                checksum,
+            ));
+        }
+        Ok(applied)
+    }
+}
+
+impl refinery_core::traits::sync::Migrate for MigrationTransaction<'_> {}
 
 /// Apply migrations on behalf of [`crate::sqlite::persister::SqlitePersister::open`].
 ///
@@ -27,12 +126,28 @@ pub(crate) fn run_for_open(
     run(conn).map_err(WalletStorageError::Migration)
 }
 
-/// Return a fresh refinery [`Runner`](refinery::Runner) seeded with the
-/// embedded migration list. Used by tests that need to apply a subset
-/// of migrations via [`refinery::Runner::set_target`].
+/// Return a fresh atomic migration runner seeded with the embedded list.
+/// Tests can apply a subset via [`MigrationRunner::set_target`].
 #[cfg(any(test, feature = "__test-helpers"))]
-pub fn runner() -> refinery::Runner {
-    migrations::runner()
+pub fn runner() -> MigrationRunner {
+    MigrationRunner(migrations::runner())
+}
+
+/// Test runner using the same atomic conversion path as production open.
+#[cfg(any(test, feature = "__test-helpers"))]
+pub struct MigrationRunner(refinery::Runner);
+
+#[cfg(any(test, feature = "__test-helpers"))]
+impl MigrationRunner {
+    /// Stop after the selected migration, retaining staged legacy rows.
+    pub fn set_target(self, target: refinery::Target) -> Self {
+        Self(self.0.set_target(target))
+    }
+
+    /// Apply the selected migration set and typed conversions atomically.
+    pub fn run(self, conn: &mut rusqlite::Connection) -> Result<refinery::Report, refinery::Error> {
+        run_with_runner(conn, self.0)
+    }
 }
 
 /// Highest migration version this binary knows how to apply. Used by
@@ -377,11 +492,8 @@ mod tests {
 
     /// The initial schema (V001) creates the DashPay sync-correctness
     /// objects directly — the `contacts.payment_channel_broken` column and
-    /// the `ignored_senders` table. The storage crate is pre-release with no
-    /// product consumers yet (nothing instantiates `SqlitePersister` or runs
-    /// these migrations), so every migration remains editable in place until
-    /// the crate's first release. This test pins that the objects exist after
-    /// the full migration set runs.
+    /// the `ignored_senders` table. V001-V007 are published and immutable;
+    /// this test pins that these objects survive the full migration set.
     #[test]
     fn v001_creates_dashpay_sync_schema() {
         let mut conn = Connection::open_in_memory().unwrap();

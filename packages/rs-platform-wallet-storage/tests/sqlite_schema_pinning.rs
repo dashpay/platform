@@ -21,7 +21,7 @@ const EXPECTED_ID_FINGERPRINT: &str =
 /// Bump it only when ADDING a migration file; a body change on an already
 /// applied migration is a defect, not a golden to refresh.
 const EXPECTED_SQL_FINGERPRINT: &str =
-    "8faa7353f98b378cd392505c0dcfbcf49a228299ba94acd1ddb0731fd5e6892f";
+    "7f74dadd8095b794d5ba5eb8aa74204666f028a4fea912c99e3f57f50b9d4bc8";
 
 /// The migrations merged `v4.2-dev` already ships. Refinery keys
 /// `refinery_schema_history` by version and validates an applied migration's
@@ -38,10 +38,10 @@ const MERGED_MIGRATION_VERSIONS: &[(i32, &str)] = &[
     (7, "utxo_sweep_winner_height"),
 ];
 
-/// Table names retired by `V008__rehydration_base_schema`. They are part of
-/// the migration history up to and including V008 — V001-V007 are byte-frozen
-/// published migrations that legitimately name them — so the guards below
-/// scope to what comes AFTER the rename, plus all writer/reader SQL.
+/// Historical table names: V008 renames wallet metadata, and its typed
+/// conversion retains the pool tables through V010 before retiring them.
+/// Only the SQL history through V008 and the versioned conversion module
+/// may name these tables; live writers and readers use their replacements.
 const FIRST_VERSION_AFTER_RENAME: i32 = 9;
 
 /// Migration files whose SQL may legitimately name a retired table: the
@@ -151,9 +151,14 @@ fn no_retired_table_name_in_sql_strings() {
     let sql_keywords = ["FROM", "INTO", "UPDATE", "TABLE", "JOIN", "ON"];
 
     let mut offenders = Vec::new();
-    for dir in [src, migrations_dir] {
+    for dir in [src.clone(), migrations_dir] {
         visit(&dir, &mut |path, line_no, line| {
             let file = path.file_name().unwrap_or_default().to_string_lossy();
+            // Versioned typed conversion is the sole live-code exception:
+            // it reads published state and retires it atomically after V011.
+            if path == src.join("sqlite/migrations/legacy_v008.rs") {
+                return;
+            }
             if PRE_RENAME_MIGRATION_FILES.contains(&file.as_ref()) {
                 return;
             }

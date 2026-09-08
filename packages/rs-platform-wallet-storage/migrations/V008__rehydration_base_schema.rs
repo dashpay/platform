@@ -19,8 +19,8 @@
 //! 3. `account_registrations` gains the discriminators that keep distinct
 //!    accounts off one primary key, and its `account_type` domain widens to
 //!    the split standard labels while still admitting the pre-split one.
-//! 4. `account_address_pools` and `core_derived_addresses` are dropped;
-//!    `core_address_pool` (V009) replaces both.
+//! 4. Retain legacy pools and derived addresses until the typed conversion
+//!    after V011 can preserve their ownership, usage and public key material.
 //! 5. `core_sync_state` gains the applied-ChainLock column.
 //! 6. `identities.wallet_index` -> `identity_index`, which is what the column
 //!    always meant.
@@ -120,10 +120,8 @@ FROM account_registrations;
 DROP TABLE account_registrations;
 ALTER TABLE account_registrations_new RENAME TO account_registrations;
 
--- Superseded by `core_address_pool` (V009), which stores per-index rows
--- instead of an opaque pool snapshot and a separate derived-address table.
-DROP TABLE account_address_pools;
-DROP TABLE core_derived_addresses;
+-- Keep both legacy tables until the Rust conversion after V011. This also
+-- permits stopping at V008-V010 and resuming after closing the connection.
 
 -- Bincode-encoded `dashcore::ephemerealdata::chain_lock::ChainLock`.
 -- NULL until the first ChainLock has been applied and flushed.
