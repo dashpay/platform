@@ -26,9 +26,11 @@ use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::documents::composite_document_query::{
-    CompositeBindingSource, CompositeDocumentQuery, CompositeSubQuery,
+    CompositeBindingSource, CompositeSubQuery,
 };
-use dash_sdk::platform::{CompositeDocuments, CompositeSubQueryResult, Fetch};
+use dash_sdk::platform::{CompositeDocuments, CompositeSubQueryResult, DocumentQuery, Fetch};
+use drive::config::DEFAULT_QUERY_LIMIT;
+use drive::query::MAX_SUB_QUERIES;
 use js_sys::{Array, Map, Object, Reflect};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -111,7 +113,7 @@ export interface CompositeDocumentsQuery {
   orderBy?: any[];
   /** REQUIRED page size — it bounds every derived clause, so there is no server-default fallback. */
   limit: number;
-  /** At most 10. */
+  /** Between 1 and 10. */
   subQueries: CompositeSubQuery[];
 }
 
@@ -209,16 +211,77 @@ struct CompositeDocumentsQueryInput {
     sub_queries: Vec<CompositeSubQueryInput>,
 }
 
+impl CompositeBindInput {
+    fn source(&self, index: usize) -> Result<CompositeBindingSource, WasmSdkError> {
+        match &self.source {
+            None => Ok(CompositeBindingSource::Page),
+            Some(BindSourceInput::Named(name)) if name == "page" => {
+                Ok(CompositeBindingSource::Page)
+            }
+            Some(BindSourceInput::Index(source_index)) if *source_index < index => {
+                Ok(CompositeBindingSource::SubQuery(*source_index))
+            }
+            _ => Err(WasmSdkError::invalid_argument(format!(
+                "subQueries[{index}].bind.source must be 'page' or the index of an earlier documents sub-query"
+            ))),
+        }
+    }
+}
+
+impl CompositeDocumentsQueryInput {
+    fn validate(&self) -> Result<(), WasmSdkError> {
+        if self.sub_queries.is_empty() || self.sub_queries.len() > MAX_SUB_QUERIES {
+            return Err(WasmSdkError::invalid_argument(format!(
+                "a composite document query requires between 1 and {MAX_SUB_QUERIES} sub-queries"
+            )));
+        }
+        if self.limit == 0 || self.limit > u32::from(DEFAULT_QUERY_LIMIT) {
+            return Err(WasmSdkError::invalid_argument(format!(
+                "a composite document query requires a page limit between 1 and {DEFAULT_QUERY_LIMIT}"
+            )));
+        }
+        for (index, sub_query) in self.sub_queries.iter().enumerate() {
+            if let Some(limit) = sub_query.limit {
+                if limit == 0 || limit > u32::from(DEFAULT_QUERY_LIMIT) {
+                    return Err(WasmSdkError::invalid_argument(format!(
+                        "subQueries[{index}].limit must be between 1 and {DEFAULT_QUERY_LIMIT}"
+                    )));
+                }
+            }
+            if let Some(bind) = &sub_query.bind {
+                if let CompositeBindingSource::SubQuery(source) = bind.source(index)? {
+                    if !matches!(self.sub_queries[source].kind, SubQueryKindInput::Documents) {
+                        return Err(WasmSdkError::invalid_argument(format!(
+                            "subQueries[{index}].bind.source must name an earlier documents sub-query"
+                        )));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 async fn parse_composite_documents_query(
     sdk: &WasmSdk,
     query: CompositeDocumentsQueryJs,
-) -> Result<CompositeDocumentQuery, WasmSdkError> {
+) -> Result<DocumentQuery, WasmSdkError> {
     let input: CompositeDocumentsQueryInput = deserialize_required_query(
         query,
         "Query object is required",
         "composite documents query",
     )?;
 
+    build_composite_documents_query(sdk, input).await
+}
+
+async fn build_composite_documents_query(
+    sdk: &WasmSdk,
+    input: CompositeDocumentsQueryInput,
+) -> Result<DocumentQuery, WasmSdkError> {
+    // Validate before fetching even the page contract. In particular, an empty
+    // list must not fall through to an ordinary page-only DocumentQuery.
+    input.validate()?;
     let page_limit = input.limit;
     let page = build_documents_query(
         sdk,
@@ -237,11 +300,11 @@ async fn parse_composite_documents_query(
     .await?
     .with_limit(page_limit);
 
-    let mut composite = CompositeDocumentQuery::new(page);
+    let mut composite = page;
     for (index, sub_input) in input.sub_queries.into_iter().enumerate() {
         let contract = match sub_input.data_contract_id {
             Some(id) => std::sync::Arc::new(sdk.get_or_fetch_contract(id.into()).await?),
-            None => composite.page.data_contract.clone(),
+            None => composite.data_contract.clone(),
         };
         let mut sub_query = match sub_input.kind {
             SubQueryKindInput::Documents => {
@@ -265,27 +328,7 @@ async fn parse_composite_documents_query(
             sub_query = sub_query.with_limit(limit);
         }
         if let Some(bind) = sub_input.bind {
-            let source = match bind.source {
-                None => CompositeBindingSource::Page,
-                Some(BindSourceInput::Named(name)) if name == "page" => {
-                    CompositeBindingSource::Page
-                }
-                Some(BindSourceInput::Named(name)) => {
-                    return Err(WasmSdkError::invalid_argument(format!(
-                        "subQueries[{index}].bind.source must be 'page' or the index of an \
-                         earlier documents sub-query, got '{name}'"
-                    )));
-                }
-                Some(BindSourceInput::Index(source_index)) => {
-                    if source_index >= index {
-                        return Err(WasmSdkError::invalid_argument(format!(
-                            "subQueries[{index}].bind.source must name an EARLIER sub-query, \
-                             got {source_index}"
-                        )));
-                    }
-                    CompositeBindingSource::SubQuery(source_index)
-                }
-            };
+            let source = bind.source(index)?;
             sub_query = sub_query.bound_to(source, bind.source_property, bind.field);
         }
         composite = composite.with_sub_query(sub_query);
@@ -312,7 +355,7 @@ fn set_field(target: &Object, key: &str, value: &JsValue) -> Result<(), WasmSdkE
 
 fn composite_result_to_js(
     composite: &CompositeDocuments,
-    query: &CompositeDocumentQuery,
+    query: &DocumentQuery,
 ) -> Result<Object, WasmSdkError> {
     let to_array =
         |documents: &[dash_sdk::platform::Document], contract_id: Identifier, type_name: &str| {
@@ -327,8 +370,8 @@ fn composite_result_to_js(
 
     let page_documents = to_array(
         &composite.page_documents,
-        query.page.data_contract.id(),
-        &query.page.document_type_name,
+        query.data_contract.id(),
+        &query.document_type_name,
     );
 
     let sub_results = Array::new();
@@ -411,5 +454,190 @@ impl WasmSdk {
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             result, metadata, proof,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context_provider::WasmTrustedContext;
+    use crate::error::WasmSdkErrorKind;
+    use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dash_sdk::platform::documents::composite_document_query::CompositeSubQueryKind;
+    use dash_sdk::Sdk;
+    use serde_json::json;
+
+    fn query_json() -> JsonValue {
+        json!({
+            "dataContractId": Identifier::new([42; 32]).to_string(Encoding::Base58),
+            "documentType": "domain",
+            "limit": 10,
+            "subQueries": [{
+                "documentType": "domain",
+                "bind": {"sourceProperty": "$ownerId", "field": "$ownerId"},
+                "limit": 10
+            }]
+        })
+    }
+
+    // No mock fetch is registered: reaching contract fetching produces a mock
+    // error instead of InvalidArgument, so this also pins validation ordering.
+    async fn assert_invalid_before_fetch(value: JsonValue) {
+        let input = serde_json::from_value(value).expect("input deserializes");
+        let sdk = WasmSdk::new_for_testing(Sdk::new_mock(), None);
+        let error = build_composite_documents_query(&sdk, input)
+            .await
+            .expect_err("invalid composition must fail before fetching contracts");
+        assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn should_reject_empty_and_oversized_compositions_before_fetching() {
+        for count in [0, MAX_SUB_QUERIES + 1] {
+            let mut value = query_json();
+            value["subQueries"] = json!(vec![value["subQueries"][0].clone(); count]);
+            assert_invalid_before_fetch(value).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn should_reject_invalid_page_and_sub_query_limits_before_fetching() {
+        for limit in [0, u32::from(DEFAULT_QUERY_LIMIT) + 1, u32::MAX] {
+            let mut page = query_json();
+            page["limit"] = json!(limit);
+            assert_invalid_before_fetch(page).await;
+            let mut sub = query_json();
+            sub["subQueries"][0]["limit"] = json!(limit);
+            assert_invalid_before_fetch(sub).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn should_reject_invalid_binding_sources_before_fetching() {
+        for source in [json!("first"), json!(0), json!(1), json!(u32::MAX)] {
+            let mut value = query_json();
+            value["subQueries"][0]["bind"]["source"] = source;
+            assert_invalid_before_fetch(value).await;
+        }
+        let mut value = query_json();
+        let mut second = value["subQueries"][0].clone();
+        second["bind"]["source"] = json!(0);
+        value["subQueries"][0]["kind"] = json!("counts");
+        value["subQueries"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("limit");
+        value["subQueries"].as_array_mut().unwrap().push(second);
+        assert_invalid_before_fetch(value).await;
+    }
+
+    #[test]
+    fn should_reject_unsupported_fields_and_non_integer_limits_or_sources() {
+        for field in [
+            "startAt",
+            "startAfter",
+            "offset",
+            "select",
+            "groupBy",
+            "having",
+            "timeRange",
+        ] {
+            let mut value = query_json();
+            value[field] = json!(null);
+            assert!(serde_json::from_value::<CompositeDocumentsQueryInput>(value).is_err());
+        }
+        for invalid in [json!(-1), json!(0.5), json!("10")] {
+            let mut value = query_json();
+            value["limit"] = invalid;
+            assert!(serde_json::from_value::<CompositeDocumentsQueryInput>(value).is_err());
+        }
+        for invalid in [json!(-1), json!(0.5)] {
+            let mut value = query_json();
+            value["subQueries"][0]["bind"]["source"] = invalid;
+            assert!(serde_json::from_value::<CompositeDocumentsQueryInput>(value).is_err());
+        }
+    }
+
+    #[test]
+    fn should_accept_maximum_size_and_both_page_binding_spellings() {
+        let mut value = query_json();
+        value["limit"] = json!(DEFAULT_QUERY_LIMIT);
+        value["subQueries"][0]["limit"] = json!(DEFAULT_QUERY_LIMIT);
+        value["subQueries"] = json!(vec![value["subQueries"][0].clone(); MAX_SUB_QUERIES]);
+        value["subQueries"][1]["bind"]["source"] = json!("page");
+        value["subQueries"][2]["bind"]["source"] = json!(1);
+        serde_json::from_value::<CompositeDocumentsQueryInput>(value)
+            .unwrap()
+            .validate()
+            .expect("valid maximum shape");
+    }
+
+    #[tokio::test]
+    async fn should_build_one_document_query_preserving_contracts_clauses_and_bindings() {
+        let mut inner_sdk = Sdk::new_mock();
+        let mut page_contract =
+            load_system_data_contract(SystemDataContract::DPNS, inner_sdk.version()).unwrap();
+        page_contract.set_id(Identifier::new([42; 32]));
+        let mut other_contract = page_contract.clone();
+        other_contract.set_id(Identifier::new([43; 32]));
+        for contract in [&page_contract, &other_contract] {
+            inner_sdk
+                .mock()
+                .expect_fetch(contract.id(), Some(contract.clone()))
+                .await
+                .unwrap();
+        }
+        let sdk =
+            WasmSdk::new_for_testing(inner_sdk, Some(WasmTrustedContext::for_testing(vec![])));
+        let mut value = query_json();
+        value["where"] = json!([["normalizedParentDomainName", "==", "dash"]]);
+        value["orderBy"] = json!([["normalizedLabel", "asc"]]);
+        value["subQueries"][0]["where"] = value["where"].clone();
+        value["subQueries"][0]["orderBy"] = value["orderBy"].clone();
+        value["subQueries"].as_array_mut().unwrap().extend([
+            json!({
+                "dataContractId": other_contract.id().to_string(Encoding::Base58),
+                "documentType": "domain", "kind": "counts",
+                "bind": {"source": 0, "sourceProperty": "$ownerId", "field": "$ownerId"}
+            }),
+            json!({
+                "dataContractId": other_contract.id().to_string(Encoding::Base58),
+                "documentType": "domain", "limit": 5
+            }),
+        ]);
+        let query = build_composite_documents_query(&sdk, serde_json::from_value(value).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(*query.data_contract, page_contract);
+        assert_eq!(query.document_type_name, "domain");
+        assert_eq!(query.limit, 10);
+        assert_eq!(query.sub_queries.len(), 3);
+        let lookup = &query.sub_queries[0];
+        assert!(std::sync::Arc::ptr_eq(
+            &query.data_contract,
+            &lookup.data_contract
+        ));
+        assert_eq!(lookup.where_clauses, query.where_clauses);
+        assert_eq!(lookup.order_by_clauses, query.order_by_clauses);
+        assert_eq!(lookup.limit, Some(10));
+        assert_eq!(lookup.kind, CompositeSubQueryKind::Documents);
+        assert_eq!(
+            lookup.binding.as_ref().unwrap().source,
+            CompositeBindingSource::Page
+        );
+        let count = &query.sub_queries[1];
+        assert_eq!(count.data_contract.id(), other_contract.id());
+        assert_eq!(count.kind, CompositeSubQueryKind::Count);
+        assert_eq!(count.limit, None);
+        let bind = count.binding.as_ref().unwrap();
+        assert_eq!(bind.source, CompositeBindingSource::SubQuery(0));
+        assert_eq!(bind.source_property, "$ownerId");
+        assert_eq!(bind.field, "$ownerId");
+        let sibling = &query.sub_queries[2];
+        assert_eq!(sibling.data_contract, count.data_contract);
+        assert_eq!(sibling.limit, Some(5));
+        assert_eq!(sibling.binding, None);
+        assert!(sdk.get_cached_contract(&other_contract.id()).is_some());
     }
 }
