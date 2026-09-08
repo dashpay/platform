@@ -54,14 +54,14 @@ members = [
 
 [workspace.dependencies]
 bincode = { package = "grovedb-bincode", version = "=2.1.0" }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "5983e62fa5f6625908564a5f60da97094ecc9355" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "5983e62fa5f6625908564a5f60da97094ecc9355" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "5983e62fa5f6625908564a5f60da97094ecc9355" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "5983e62fa5f6625908564a5f60da97094ecc9355" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "5983e62fa5f6625908564a5f60da97094ecc9355" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "5983e62fa5f6625908564a5f60da97094ecc9355" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "5983e62fa5f6625908564a5f60da97094ecc9355" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "5983e62fa5f6625908564a5f60da97094ecc9355" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "057e79cd3e1eeb29676288e9aab76b867d8e707f" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "057e79cd3e1eeb29676288e9aab76b867d8e707f" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "057e79cd3e1eeb29676288e9aab76b867d8e707f" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "057e79cd3e1eeb29676288e9aab76b867d8e707f" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "057e79cd3e1eeb29676288e9aab76b867d8e707f" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "057e79cd3e1eeb29676288e9aab76b867d8e707f" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "057e79cd3e1eeb29676288e9aab76b867d8e707f" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "057e79cd3e1eeb29676288e9aab76b867d8e707f" }
 tokio-metrics = "0.5"
 
 # Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which
