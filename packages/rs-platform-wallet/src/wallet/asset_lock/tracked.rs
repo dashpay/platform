@@ -55,6 +55,57 @@ pub enum AssetLockStatus {
     /// (amount, identity index, funding tx) but is excluded from any
     /// "still actionable" predicate.
     Consumed,
+    /// Core finality is authenticated, but Platform-side consumption is
+    /// unknown. Most entries reach this state after reconstruction from a
+    /// **chain-locked** on-chain record rather than live tracking through the
+    /// build → broadcast → proof pipeline. It is also the safe state after an
+    /// explicit retry receives an unauthenticated "already consumed" report:
+    /// the wallet first obtains a ChainLock proof, retains it, and records no
+    /// claim that Platform actually consumed the output.
+    ///
+    /// The restore-scan path (`wallet::asset_lock::sync::reconstruction`)
+    /// emits this for finalized asset-lock transactions whose credit outputs
+    /// pay this wallet's funding accounts. Non-final detections (mempool /
+    /// unconfirmed-block sightings) enter as
+    /// [`Broadcast`](Self::Broadcast) /
+    /// [`InstantSendLocked`](Self::InstantSendLocked) like any other
+    /// pre-finality lock, and are upgraded to this status when a later
+    /// record — or the chainlock promotion that buries their block —
+    /// proves finality while nothing live is completing them
+    /// (`enrich_from_record`).
+    ///
+    /// # Lifecycle vs live flows
+    ///
+    /// "Nothing live is completing them" is enforced structurally, not
+    /// by a provenance flag: enrichment only touches proof-less
+    /// entries, and a lock a live flow drives leaves the proof-less
+    /// window as soon as its proof resolves (`wait_for_proof` →
+    /// `advance_asset_lock_status`, which overwrites status + proof
+    /// unconditionally, and `resume_asset_lock`, which advances from
+    /// its step-1 status snapshot). In the one race where a chainlock
+    /// promotion reaches a still-waiting live lock first, the live
+    /// pipeline's own write lands moments later and wins — the
+    /// transient recovery classification never sticks (regression:
+    /// `live_flow_advance_overwrites_chain_lock_recovery_classification`).
+    /// The only transition OUT of this status is therefore a live
+    /// writer: an explicit resume completing the spend (`Consumed` via
+    /// `consume_asset_lock`) or re-driving the proof pipeline; a
+    /// resume that proves nothing new keeps this status
+    /// (`resume_asset_lock` preserves it rather than re-entering the
+    /// pending window).
+    ///
+    /// Core-side finality is therefore guaranteed (a
+    /// `ChainAssetLockProof` from the record's height is attached at
+    /// creation), but **Platform-side consumption is unknown**: the
+    /// lock may have long since funded an identity / address top-up,
+    /// or it may be genuinely unspent stranded value. Neither
+    /// `ChainLocked` (which UIs read as "in flight") nor `Consumed`
+    /// (which claims success) would be truthful, so this is its own
+    /// state, excluded from both the pending and the consumed
+    /// predicates. An explicit `resume_asset_lock` may consume it —
+    /// Platform is the arbiter and rejects an already-spent outpoint
+    /// with a typed error.
+    RecoveredFromChain,
 }
 
 /// A tracked asset lock. Private keys are NOT stored here — they're
@@ -64,7 +115,12 @@ pub struct TrackedAssetLock {
     /// The outpoint identifying this credit output (txid + vout).
     pub out_point: OutPoint,
     pub transaction: Transaction,
-    /// BIP44 account index that funded this asset lock (UTXO source).
+    /// Index the funding sources were resolved at — the standard
+    /// (BIP44/BIP32) family index handed to the build. NOT a record of
+    /// which accounts ended up supplying inputs: funding is pooled, so a
+    /// lock can be funded wholly out of a DashPay contact account, which
+    /// carries an index of its own. Consumers that need the funding
+    /// transaction search every family (see `funding_tx_record`).
     pub account_index: u32,
     pub funding_type: AssetLockFundingType,
     pub identity_index: u32,

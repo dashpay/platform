@@ -54,6 +54,30 @@ class WalletEventFanOutTest {
             sink.tryEmit(WalletSyncEvent.PlatformAddressPassCompleted(syncUnixSeconds, walletCount))
         }
 
+        override fun onDpnsMarketplaceSyncCompleted(
+            walletId: ByteArray,
+            success: Boolean,
+            namesTracked: Int,
+            namesAdded: Int,
+            namesDeparted: Int,
+            pricesChanged: Int,
+            errorMessage: String?,
+        ) {
+            sink.tryEmit(
+                WalletSyncEvent.DpnsMarketplaceResult(
+                    walletId, success, namesTracked, namesAdded,
+                    namesDeparted, pricesChanged, errorMessage,
+                ),
+            )
+        }
+
+        override fun onDpnsMarketplaceSyncPassCompleted(
+            syncUnixSeconds: Long,
+            walletCount: Int,
+        ) {
+            sink.tryEmit(WalletSyncEvent.DpnsMarketplacePassCompleted(syncUnixSeconds, walletCount))
+        }
+
         override fun onShieldedSyncCompleted(
             walletId: ByteArray,
             success: Boolean,
@@ -104,6 +128,8 @@ class WalletEventFanOutTest {
         bridge.onError("err")
         bridge.onPlatformAddressSyncCompleted(walletId, true, 1, 2, 3, 4, 5, 6, null)
         bridge.onPlatformAddressSyncPassCompleted(1_000, 1)
+        bridge.onDpnsMarketplaceSyncCompleted(walletId, true, 7, 8, 9, 10, null)
+        bridge.onDpnsMarketplaceSyncPassCompleted(1_500, 1)
         bridge.onShieldedSyncCompleted(walletId, true, false, false, 7, 8, 9, 10, null)
         bridge.onShieldedSyncPassCompleted(2_000, 1)
         bridge.onShieldedSyncProgress(11, 12)
@@ -113,7 +139,7 @@ class WalletEventFanOutTest {
         kotlinx.coroutines.yield()
         collector.cancel()
 
-        assertEquals(8, received.size)
+        assertEquals(10, received.size)
         assertTrue(received[0] is WalletSyncEvent.Generic)
         assertEquals("evt", (received[0] as WalletSyncEvent.Generic).debug)
         assertTrue(received[1] is WalletSyncEvent.Error)
@@ -126,15 +152,20 @@ class WalletEventFanOutTest {
 
         assertTrue(received[3] is WalletSyncEvent.PlatformAddressPassCompleted)
 
-        val sr = received[4] as WalletSyncEvent.ShieldedResult
+        val dpns = received[4] as WalletSyncEvent.DpnsMarketplaceResult
+        assertEquals(7, dpns.namesTracked)
+        assertEquals(9, dpns.namesDeparted)
+        assertTrue(received[5] is WalletSyncEvent.DpnsMarketplacePassCompleted)
+
+        val sr = received[6] as WalletSyncEvent.ShieldedResult
         assertEquals(7, sr.newNotes)
         assertEquals(8L, sr.totalScanned)
         assertEquals(10L, sr.balance)
 
-        assertTrue(received[5] is WalletSyncEvent.ShieldedPassCompleted)
-        val sp = received[6] as WalletSyncEvent.ShieldedProgress
+        assertTrue(received[7] is WalletSyncEvent.ShieldedPassCompleted)
+        val sp = received[8] as WalletSyncEvent.ShieldedProgress
         assertEquals(11L, sp.cumulativeScanned)
-        val tp = received[7] as WalletSyncEvent.ShieldedTreeProgress
+        val tp = received[9] as WalletSyncEvent.ShieldedTreeProgress
         assertEquals(13L, tp.leavesCommitted)
     }
 }

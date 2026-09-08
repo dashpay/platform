@@ -124,8 +124,13 @@ pub enum DataContract {
 //   * `DataContractValueConversionMethodsV0::from_value(value, full_validation, pv)` —
 //     same shape for `platform_value::Value`.
 //
-// For non-validating *serialization*, just use `serde_json::to_value(&dc)?` /
-// `platform_value::to_value(&dc)?` — the manual Serialize impl handles versioning.
+// For non-validating *serialization* to `platform_value::Value`, prefer
+// `DataContractValueConversionMethodsV0::to_value(&dc, pv)` whenever a `PlatformVersion` is
+// in hand — it selects the serialization format from the passed version. The serde-based
+// alternatives (`serde_json::to_value(&dc)?` / `platform_value::to_value(&dc)?`) select the
+// format from the *process-global* current platform version, which other threads may mutate
+// concurrently (e.g. parallel tests building platforms at older protocol versions) — only
+// use them where no explicit version is available.
 // `DataContractInSerializationFormat` (the underlying serialization shape) DOES implement the
 // canonical traits — see `data_contract/serialized_version/mod.rs`.
 

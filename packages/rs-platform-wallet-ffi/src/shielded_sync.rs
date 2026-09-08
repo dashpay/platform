@@ -78,14 +78,32 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_start(
 /// load-bearing part; hosts that must ignore a trailing UI event should
 /// gate their handler on their own post-stop/post-clear state (the
 /// example app drops events while unbound).
+///
+/// **Bounded**: the drain waits at most the coordinator quiesce budget.
+/// If the in-flight pass is wedged past that deadline this returns
+/// `ErrorShutdownIncomplete` instead of a false success — the pass may
+/// still fire persistence/completion callbacks, so the host must keep
+/// its callback context alive and must not treat sync as stopped.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.shielded_sync().quiesce());
+        runtime().block_on(manager.shielded_sync().quiesce())
     });
-    unwrap_option_or_return!(option);
+    let drained = unwrap_option_or_return!(option);
+    if !drained {
+        // The in-flight pass did not drain within the quiesce budget —
+        // it may still fire persistence / completion callbacks. Surface
+        // that instead of a silent success so the host keeps its callback
+        // context alive and does not treat sync as stopped.
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
+            "shielded sync pass did not drain within the quiesce budget; \
+             a pass may still be running"
+                .to_string(),
+        );
+    }
     PlatformWalletFFIResult::ok()
 }
 
@@ -418,6 +436,18 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
     });
     let result = unwrap_option_or_return!(option);
     if let Err(e) = result {
+        // A drain that did not complete is NOT an ordinary store failure:
+        // it means callback-capable work may still be running, which the
+        // host must be able to tell apart (it keeps its callback context
+        // alive rather than just retrying the wipe). Route that one case
+        // through the typed conversion and keep the generic mapping for
+        // every other failure.
+        if matches!(
+            e,
+            platform_wallet::PlatformWalletError::ShutdownIncomplete(_)
+        ) {
+            return PlatformWalletFFIResult::from(e);
+        }
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("clear_shielded failed: {e}"),

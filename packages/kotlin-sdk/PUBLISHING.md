@@ -8,7 +8,81 @@ Maven-coordinates decision only — the Kotlin source packages remain
 release versions go to Maven Central via the Central Portal; `-SNAPSHOT`
 versions go to the Sonatype snapshots repository.
 
-## Prerequisites
+## CI release path (preferred): the platform release
+
+The Kotlin SDK releases **with the platform version** — there is no separate
+tag namespace. Publishing the platform GitHub release for `vX.Y.Z[-pre.N]`
+runs `.github/workflows/release.yml`, which calls
+`.github/workflows/release-kotlin-sdk.yml` with that tag. It has two jobs:
+
+1. **`build-and-release`** builds the native library and the release AAR from
+   the tag's commit and attaches `dash-sdk-android-X.Y.Z[-pre.N].aar` to the
+   platform GitHub release. The Maven version is derived from the tag and
+   ONLY from the tag (`v4.1.0-rc.1` → `4.1.0-rc.1`), so the GitHub asset and
+   the Maven Central artifact can never drift. An already-attached AAR is
+   never overwritten.
+2. **`maven-central-deploy`** stages the signed Maven artifacts and runs
+   `jreleaserDeploy` under the tag-derived version, re-using the native
+   libraries job 1 built. It declares `environment: maven-central`, which is
+   the ONLY place the publishing secrets exist.
+
+Every published platform release (prereleases included) publishes the SDK.
+Tags that would derive a `-SNAPSHOT` version are rejected — snapshots are
+never released from tags.
+
+To re-run just the SDK release for an existing platform release (without
+rebuilding the Docker images / npm packages), dispatch the workflow **at the
+tag ref**:
+
+```bash
+gh workflow run release-kotlin-sdk.yml --ref vX.Y.Z -f tag=vX.Y.Z
+```
+
+Dispatching at the tag ref matters: the `maven-central` environment's tag
+policy matches the *run's ref*, so a branch-ref dispatch cannot reach the
+publishing secrets. The dispatch input must be the plain tag name (no
+`refs/tags/` prefix — aliases are rejected so concurrency locks and asset
+guards key on one spelling) for an existing tag that already has a published
+GitHub release; the workflow refuses branches and never creates a release.
+**Confirm with the release owner before dispatching** — the re-run can attach
+public release assets and publish an irrevocable Maven Central version.
+
+Note: a dispatch loads the workflow file *from the selected ref*, so this
+re-run path only works for tags created after the consolidation landed. For
+an older tag, dispatch at the dev branch (`--ref vX-dev -f tag=vX.Y.Z`):
+build and asset attach still run against the tag's commit, while the Maven
+deploy job skips on the branch ref — publish those to Maven with the manual
+runbook below instead.
+
+### The `maven-central` environment (where the secrets live)
+
+The five publishing secrets exist **only as environment secrets on the
+`maven-central` environment** — never repository- or organization-scoped:
+`JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME`,
+`JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD`, `JRELEASER_GPG_SECRET_KEY`,
+`JRELEASER_GPG_PUBLIC_KEY`, `JRELEASER_GPG_PASSPHRASE`. Environment scoping
+means only the `maven-central-deploy` job (which declares the environment)
+can read them; the unprotected build job — and any other workflow — cannot.
+The environment carries a deployment tag policy of `v*`, restricting it to
+platform release tags. No required reviewers are configured: the deploy runs
+automatically once the platform release is published. (Reviewers can be added
+later in Settings → Environments → maven-central for a human approval gate —
+Maven Central publishes are irrevocable.)
+
+While the secrets are missing entirely the deploy job **skips with a
+notice** (the AAR still attaches to the release, and the Maven release can be
+done manually with the runbook below — from the tag's commit with the tag's
+version). A *partially* configured secret set fails the run rather than
+guessing. Both publish guards (`verifyJniLibsForRemotePublish`,
+`verifyStagedAarForRemotePublish`) run in the CI path via the same task
+dependencies as locally.
+
+## Prerequisites (manual fallback path)
+
+The runbook below is the fallback if CI is unavailable. When releasing a
+tagged version manually, check out the `vX.Y.Z` tag and pass exactly its
+`X.Y.Z` as `-PsdkVersion`, so the manual Maven deploy cannot drift from the
+GitHub-release AAR.
 
 - **Sonatype Central Portal token** for the `org.dashj` namespace (held by
   HashEngineering — the same account that publishes `dashj-core`).

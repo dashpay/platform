@@ -47,18 +47,20 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{net_from_ord, JVM};
-use jni::objects::{GlobalRef, JByteArray, JObject, JString, JValue};
+use crate::support::{guard, net_from_ord, JVM};
+use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JObjectArray, JString, JValue};
+use jni::sys::jstring;
 use jni::JNIEnv;
 use platform_wallet_ffi::{
     AccountAddressPoolFFI, AccountChangeSetFFI, AccountSpecFFI, AddressBalanceEntryFFI,
     AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
-    ContactRequestRemovalFFI, CoreAddressEntryFFI, IdentityEntryFFI, IdentityKeyEntryFFI,
-    IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, PaymentRestoreEntryFFI,
-    PersistenceCallbacks, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI,
-    TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
-    UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
-    WalletRestoreEntryFFI,
+    ContactRequestRemovalFFI, CoreAddressEntryFFI, DpnsNameStateFFI, IdentityEntryFFI,
+    IdentityKeyEntryFFI, IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
+    InvitationEntryFFI, OutPointFFI, PaymentRestoreEntryFFI, PersistenceCallbacks,
+    PersistenceCallbacksExtension, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI,
+    SpentOutPointFFI, SweepBatchFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI,
+    TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI,
+    WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -77,7 +79,11 @@ use platform_wallet_ffi::shielded_persistence::{
 
 /// Boxed context handed to every trampoline via `callbacks.context`.
 /// Holds the Kotlin bridge as a `GlobalRef` so it survives across the
-/// vtable's lifetime and across threads.
+/// vtable's lifetime and across threads. Ownership transfers to the
+/// native manager at create (the vtable's `release_fn` is
+/// [`release_persistence_ctx`]): Rust frees the box — and with it the
+/// `GlobalRef` — exactly once, when the manager and every worker that
+/// cloned its persister have dropped their references.
 pub struct KotlinPersistenceCtx {
     pub(crate) bridge: GlobalRef,
 }
@@ -111,8 +117,9 @@ unsafe impl Sync for KotlinPersistenceCtx {}
 //   ShieldedActivityData      org/dashfoundation/dashsdk/ffi/ShieldedActivityData
 //   CoreTxRecordData          org/dashfoundation/dashsdk/ffi/CoreTxRecordData
 
-/// Assemble the full 32-slot vtable. `context` is the boxed
-/// [`KotlinPersistenceCtx`] pointer.
+/// Assemble the full persistence vtable (every slot named, wired or an
+/// explicit `None`). `context` is the boxed [`KotlinPersistenceCtx`]
+/// pointer.
 pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
     PersistenceCallbacks {
         context,
@@ -167,11 +174,125 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
         on_get_core_tx_record_fn: Some(tramp_get_core_tx_record),
         on_get_core_tx_record_free_fn: Some(tramp_get_core_tx_record_free),
         on_persist_asset_locks_fn: Some(tramp_persist_asset_locks),
-        // Android hasn't wired DIP-13 invitation persistence yet. Leaving this
-        // `None` keeps `FFIPersister::persists_durably()` fail-closed, so the
-        // invitation flow refuses to run on Android rather than create a
-        // non-durable voucher whose one-time key could be reused on restart.
-        on_persist_invitations_fn: None,
+        on_persist_invitations_fn: Some(tramp_persist_invitations),
+        // Android hasn't wired transaction enumeration yet. `None` makes
+        // `list_wallet_core_txids` return an empty list, so the sent-payment
+        // reconstruction sweep finds nothing to match and records nothing —
+        // Android keeps today's behaviour (a restored wallet shows no
+        // pre-restore contact payments) rather than misreporting.
+        on_list_wallet_core_txids_fn: None,
+        on_list_wallet_core_txids_free_fn: None,
+        // Android derives contact attribution from transaction history on
+        // reads and doesn't consume `PaymentEntry` rows, so there is
+        // nothing to land these in. `None` keeps the Rust-side payment
+        // recording in-memory-only on Android — same behaviour as before
+        // the slot existed.
+        on_persist_dashpay_payments_fn: None,
+        release_fn: Some(release_persistence_ctx),
+    }
+}
+
+/// Assemble the additive, size/version-tagged persistence callbacks. It shares
+/// the legacy vtable's context and release hook; this value is copied by the
+/// native manager during creation and owns nothing itself.
+///
+/// The sweep slot is wired only when the concrete `bridge` OVERRIDES
+/// `onWalletChangesetTransactionsSwept` (see [`bridge_overrides`]). Rust
+/// derives the effective `CORE_SWEEP_REMOVAL` capability from "slot present
+/// AND bit declared", so a subclass that declares the bit without
+/// overriding the method — a promise of removals its inherited no-op body
+/// would silently swallow — never gets the slot, Rust strips the bit and the
+/// sync watermark with it, and the round is refused one layer up instead of
+/// advancing past a removal that never happened. Wiring the slot for every
+/// subclass would make "slot present" prove nothing.
+pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> PersistenceCallbacksExtension {
+    let sweeps_overridden = bridge_overrides(env, bridge, "onWalletChangesetTransactionsSwept");
+    PersistenceCallbacksExtension {
+        on_persist_dpns_name_states_fn: Some(tramp_persist_dpns_name_states),
+        on_persist_wallet_changeset_sweeps_fn: if sweeps_overridden {
+            Some(tramp_persist_wallet_changeset_sweeps)
+        } else {
+            None
+        },
+        on_persist_wallet_changeset_chain_lock_height_fn: Some(
+            tramp_persist_wallet_changeset_chain_lock_height,
+        ),
+        ..Default::default()
+    }
+}
+
+/// Whether `bridge`'s concrete class — or any superclass strictly below
+/// `NativePersistenceBridge` — declares a method named `name`. A Kotlin
+/// `override fun` is a declared method of the overriding class, so walking
+/// `getDeclaredMethods()` up the hierarchy until the abstract bridge answers
+/// "did a subclass supply its own body". Any JNI failure counts as "not
+/// overridden" (the pending exception is cleared): the consequence is a
+/// slot left unwired, which Rust turns into a stripped capability — the
+/// safe direction, never a silently swallowed removal.
+fn bridge_overrides(env: &mut JNIEnv, bridge: &JObject, name: &str) -> bool {
+    fn probe(env: &mut JNIEnv, bridge: &JObject, name: &str) -> Result<bool, jni::errors::Error> {
+        let base = env.find_class("org/dashfoundation/dashsdk/ffi/NativePersistenceBridge")?;
+        let mut class = env.get_object_class(bridge)?;
+        loop {
+            if env.is_same_object(&class, &base)? {
+                return Ok(false);
+            }
+            let methods: JObjectArray = env
+                .call_method(
+                    &class,
+                    "getDeclaredMethods",
+                    "()[Ljava/lang/reflect/Method;",
+                    &[],
+                )?
+                .l()?
+                .into();
+            let count = env.get_array_length(&methods)?;
+            for i in 0..count {
+                let method = env.get_object_array_element(&methods, i)?;
+                let method_name: JString = env
+                    .call_method(&method, "getName", "()Ljava/lang/String;", &[])?
+                    .l()?
+                    .into();
+                let matches = env
+                    .get_string(&method_name)?
+                    .to_str()
+                    .map(|s| s == name)
+                    .unwrap_or(false);
+                if matches {
+                    return Ok(true);
+                }
+            }
+            let superclass = env
+                .call_method(&class, "getSuperclass", "()Ljava/lang/Class;", &[])?
+                .l()?;
+            if superclass.is_null() {
+                return Ok(false);
+            }
+            class = superclass.into();
+        }
+    }
+    match probe(env, bridge, name) {
+        Ok(overridden) => overridden,
+        Err(_) => {
+            let _ = env.exception_clear();
+            false
+        }
+    }
+}
+
+/// `release_fn` for the persistence vtable: frees the boxed
+/// [`KotlinPersistenceCtx`] when the native manager's last persister
+/// reference drops. The FFI guarantees exactly one call, which may land
+/// on any Rust thread — `GlobalRef`'s own `Drop` attaches that thread to
+/// the JVM before deleting the reference, so no manual attach is needed
+/// here.
+///
+/// # Safety
+/// `context` must be the live boxed [`KotlinPersistenceCtx`] this vtable
+/// was built around, never freed elsewhere.
+unsafe extern "C" fn release_persistence_ctx(context: *mut c_void) {
+    if !context.is_null() {
+        drop(Box::from_raw(context as *mut KotlinPersistenceCtx));
     }
 }
 
@@ -573,7 +694,11 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
                 &[
                     (&wid).into(),
                     JValue::Bool(has_synced as u8),
-                    JValue::Int(synced_height as i32),
+                    JValue::Int(if has_synced {
+                        jint_height(synced_height)?
+                    } else {
+                        0
+                    }),
                     JValue::Bool(cs.has_balance as u8),
                     JValue::Long(cs.balance.confirmed_delta),
                     JValue::Long(cs.balance.unconfirmed_delta),
@@ -594,7 +719,134 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
                 return Ok(code);
             }
         }
+
         Ok(0)
+    })
+}
+
+/// Extension-callback trampoline for the round's sweep batches. These used
+/// to ride at the tail of [`WalletChangeSetFFI`]; they now arrive through
+/// `PersistenceCallbacksExtension`'s size-negotiated sweep slot (the bare
+/// changeset pointer cannot prove to a consumer that its producer allocated
+/// a tail field — see the layout note on that struct). Round order, as
+/// `store()` in `rs-platform-wallet-ffi` fires it: the changeset callback
+/// (`tramp_persist_wallet_changeset`: header, then every account slice),
+/// then the chainlock-height slot, then this one — so the Kotlin bridge sees
+/// records, then the finality boundary, then removals.
+///
+/// One bridge call per batch, in order: a later sweep can keep a coin spent
+/// that an earlier one freed, and only replaying them in sequence preserves
+/// that. The Kotlin handler buffers the calls and applies them in the same
+/// order at the round's end, so the ordering holds there too. The batch
+/// count is not bounded by this ABI, so — as with the account loop in the
+/// changeset trampoline — each batch's marshalling and call runs inside its
+/// own local frame; without it the per-batch arrays would pile up in the
+/// trampoline's own frame across every batch, and a large enough round can
+/// exhaust ART's local-reference table before the callback ever returns.
+unsafe extern "C" fn tramp_persist_wallet_changeset_sweeps(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    sweeps: *const SweepBatchFFI,
+    sweeps_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        for batch in slice_or_empty(sweeps, sweeps_count) {
+            let code = env.with_local_frame(8, |env| {
+                persist_changeset_sweep_batch(env, bridge, &wid, batch)
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        Ok(0)
+    })
+}
+
+/// Descriptor of `NativePersistenceBridge.onWalletChangesetTransactionsSwept`:
+/// `(walletId, txids, txidCount, supersededBy, releasedOutpoints,
+/// releasedOutpointCount, hasWinnerMinedHeight, winnerMinedHeight)`. Txids
+/// and released outpoints are shipped as ONE flat `byte[]` each (32·N and
+/// 36·N bytes) plus a count — the same packing `persist_changeset_transaction`
+/// uses for `inputOutpoints`, sliced with `copyOfRange` on the Kotlin side
+/// — rather than a `byte[][]` with one JVM allocation per element; the
+/// loser count is network-influenced and this projection runs synchronously
+/// inside the atomic persistence callback. The single winner rides as one
+/// 32-byte array, and the winner's mined height as a `(Z, I)` pair like the
+/// header's `(hasSyncedHeight, syncedHeight)`, not a sentinel.
+const WALLET_CHANGESET_SWEEPS_DESCRIPTOR: &str = "([B[BI[B[BIZI)I";
+
+unsafe fn persist_changeset_sweep_batch(
+    env: &mut JNIEnv,
+    bridge: &JObject,
+    wid: &JByteArray,
+    batch: &SweepBatchFFI,
+) -> Result<i32, jni::errors::Error> {
+    let txids = slice_or_empty(batch.txids, batch.txids_count);
+    let mut packed_txids = Vec::with_capacity(txids.len() * 32);
+    for txid in txids {
+        packed_txids.extend_from_slice(txid);
+    }
+    let txids_arr = env.byte_array_from_slice(&packed_txids)?;
+    let winner = env.byte_array_from_slice(&batch.superseded_by)?;
+    // Released outpoints ride as 36-byte keys (raw txid + a little-endian
+    // vout, `pack_outpoint_key`), the shape the handler stores them in.
+    let released = slice_or_empty(batch.released_outpoints, batch.released_outpoints_count);
+    let mut packed_released = Vec::with_capacity(released.len() * 36);
+    for outpoint in released {
+        packed_released.extend_from_slice(&pack_outpoint_key(outpoint));
+    }
+    let released_arr = env.byte_array_from_slice(&packed_released)?;
+    // The winner's finality context: its mined height for a block-context
+    // sweep, absent for an InstantSend-locked winner still waiting to be
+    // mined. The handler keys a pending-input tombstone's LIFETIME on it,
+    // never its existence: every non-released input keeps a durable claim
+    // in either context, stamped and collectible at the chainlock finality
+    // boundary when the winner mined, unstamped and held until resolved by
+    // proof (funding arrival, a later block-context re-stamp, or a release)
+    // when it did not.
+    env.call_method(
+        bridge,
+        "onWalletChangesetTransactionsSwept",
+        WALLET_CHANGESET_SWEEPS_DESCRIPTOR,
+        &[
+            wid.into(),
+            (&txids_arr).into(),
+            JValue::Int(txids.len() as i32),
+            (&winner).into(),
+            (&released_arr).into(),
+            JValue::Int(released.len() as i32),
+            JValue::Bool(batch.has_winner_mined_height as u8),
+            JValue::Int(if batch.has_winner_mined_height {
+                jint_height(batch.winner_mined_height)?
+            } else {
+                0
+            }),
+        ],
+    )?
+    .i()
+}
+
+/// Deliver the round's numeric chainlock height (see
+/// `PersistWalletChangesetChainLockHeightFn`), between the changeset callback
+/// and the sweep batches. One scalar, one call — the bincode chainlock blob
+/// on the header call is opaque to Kotlin, and this is the half of the
+/// tombstone-collection boundary `min(chainlockHeight, syncedHeight)` the
+/// handler cannot otherwise know.
+unsafe extern "C" fn tramp_persist_wallet_changeset_chain_lock_height(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    chain_lock_height: u32,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        env.call_method(
+            bridge,
+            "onWalletChangesetChainLockHeight",
+            "([BI)I",
+            &[(&wid).into(), JValue::Int(jint_height(chain_lock_height)?)],
+        )?
+        .i()
     })
 }
 
@@ -631,6 +883,20 @@ unsafe fn persist_changeset_account(
         return Ok(code);
     }
 
+    // Transactions before their UTXOs — matches the Swift bridge's
+    // `applyAccountChangeset` order (transactions, then utxos_added, then
+    // utxos_spent). Parity, not a guard: the handler tolerates either order
+    // (`onWalletChangesetUtxoAdded` writes a stub parent row when no record
+    // exists yet, and the record's later upsert overwrites it), so nothing
+    // on the Kotlin side depends on this sequence.
+    for t in slice_or_empty(acc.transactions, acc.transactions_count) {
+        let code = env.with_local_frame(40, |env| {
+            persist_changeset_transaction(env, bridge, wid, acc, t)
+        })?;
+        if code != 0 {
+            return Ok(code);
+        }
+    }
     for u in slice_or_empty(acc.utxos_added, acc.utxos_added_count) {
         let code =
             env.with_local_frame(24, |env| persist_changeset_utxo_added(env, bridge, wid, u))?;
@@ -641,14 +907,6 @@ unsafe fn persist_changeset_account(
     for s in slice_or_empty(acc.utxos_spent, acc.utxos_spent_count) {
         let code =
             env.with_local_frame(16, |env| persist_changeset_utxo_spent(env, bridge, wid, s))?;
-        if code != 0 {
-            return Ok(code);
-        }
-    }
-    for t in slice_or_empty(acc.transactions, acc.transactions_count) {
-        let code = env.with_local_frame(40, |env| {
-            persist_changeset_transaction(env, bridge, wid, acc, t)
-        })?;
         if code != 0 {
             return Ok(code);
         }
@@ -731,15 +989,14 @@ unsafe fn persist_changeset_transaction(
     let tx_type = cstr(env, t.transaction_type)?;
     let label = cstr(env, t.label)?;
     // Input outpoints (one per tx input, in vin order; empty for coinbase).
-    // Flatten to txid[32] || vout(u32 LE) = 36 bytes each — byte-identical to
-    // Kotlin/Swift makeOutpoint, so the pending-input join key matches with no
-    // per-element conversion on the Kotlin side. Dropping these is what left a
-    // spend-before-funding output restorable as spendable (CORE-06).
+    // Flattened 36-byte keys (see `pack_outpoint_key`), so the pending-input
+    // join key matches with no per-element conversion on the Kotlin side.
+    // Dropping these is what left a spend-before-funding output restorable
+    // as spendable (CORE-06).
     let ops = slice_or_empty(t.input_outpoints, t.input_outpoints_count);
     let mut packed = Vec::with_capacity(ops.len() * 36);
     for op in ops {
-        packed.extend_from_slice(&op.txid);
-        packed.extend_from_slice(&op.vout.to_le_bytes());
+        packed.extend_from_slice(&pack_outpoint_key(op));
     }
     let input_outpoints = env.byte_array_from_slice(&packed)?;
     let input_outpoint_count = ops.len() as i32;
@@ -808,6 +1065,73 @@ unsafe extern "C" fn tramp_persist_identities(
                     "onPersistIdentityRemoval",
                     "([B[B)I",
                     &[(&wid).into(), (&idb).into()],
+                )?
+                .i()
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        Ok(0)
+    })
+}
+
+// ── DPNS marketplace name state ──────────────────────────────────────
+
+unsafe extern "C" fn tramp_persist_dpns_name_states(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    rows_ptr: *const DpnsNameStateFFI,
+    rows_count: usize,
+    removed_ptr: *const [u8; 32],
+    removed_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        for row in slice_or_empty(rows_ptr, rows_count) {
+            let code = env.with_local_frame(32, |env| {
+                let document_id = env.byte_array_from_slice(&row.document_id)?;
+                let identity_id = env.byte_array_from_slice(&row.wallet_identity_id)?;
+                let counterparty_id = env.byte_array_from_slice(&row.counterparty_id)?;
+                let label = cstr(env, row.label)?;
+                let normalized_label = cstr(env, row.normalized_label)?;
+                let parent = cstr(env, row.normalized_parent_domain_name)?;
+                env.call_method(
+                    bridge,
+                    "onPersistDpnsNameState",
+                    "([B[B[BZ[BLjava/lang/String;Ljava/lang/String;Ljava/lang/String;ZJBJJJJ)I",
+                    &[
+                        (&wid).into(),
+                        (&document_id).into(),
+                        (&identity_id).into(),
+                        JValue::Bool(row.has_counterparty as u8),
+                        (&counterparty_id).into(),
+                        (&label).into(),
+                        (&normalized_label).into(),
+                        (&parent).into(),
+                        JValue::Bool(row.has_price as u8),
+                        JValue::Long(row.price as i64),
+                        JValue::Byte(row.status as i8),
+                        JValue::Long(row.created_at_ms as i64),
+                        JValue::Long(row.updated_at_ms as i64),
+                        JValue::Long(row.transferred_at_ms as i64),
+                        JValue::Long(row.last_synced_at_ms as i64),
+                    ],
+                )?
+                .i()
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        for document_id in slice_or_empty(removed_ptr, removed_count) {
+            let code = env.with_local_frame(8, |env| {
+                let document_id = env.byte_array_from_slice(document_id)?;
+                env.call_method(
+                    bridge,
+                    "onRemoveDpnsNameState",
+                    "([B[B)I",
+                    &[(&wid).into(), (&document_id).into()],
                 )?
                 .i()
             })?;
@@ -1273,6 +1597,67 @@ unsafe extern "C" fn tramp_persist_asset_locks(
                 env.call_method(
                     bridge,
                     "onPersistAssetLockRemoval",
+                    "([B[B)I",
+                    &[(&wid).into(), (&opb).into()],
+                )?
+                .i()
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        Ok(0)
+    })
+}
+
+// ── Invitations (DIP-13) ──────────────────────────────────────────────
+
+/// One bridge call per `InvitationEntryFFI` upsert / per removed outpoint,
+/// mirroring [`tramp_persist_asset_locks`]. Every field is POD, so there are
+/// no owned buffers to marshal. A non-zero Kotlin return fails the round —
+/// `create_invitation` treats an unrecorded invitation row as a hard error
+/// (a funded voucher without a durable record is invisible and
+/// unreclaimable), so failures must propagate, never be swallowed.
+unsafe extern "C" fn tramp_persist_invitations(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    upserts_ptr: *const InvitationEntryFFI,
+    upserts_count: usize,
+    removed_ptr: *const [u8; 36],
+    removed_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        for e in slice_or_empty(upserts_ptr, upserts_count) {
+            let code = env.with_local_frame(16, |env| {
+                let outpoint = env.byte_array_from_slice(&e.out_point)?;
+                env.call_method(
+                    bridge,
+                    "onPersistInvitationUpsert",
+                    "([B[BIJIIZI)I",
+                    &[
+                        (&wid).into(),
+                        (&outpoint).into(),
+                        JValue::Int(e.funding_index as i32),
+                        JValue::Long(e.amount_duffs as i64),
+                        JValue::Int(e.expiry_unix as i32),
+                        JValue::Int(e.created_at_secs as i32),
+                        JValue::Bool(u8::from(e.has_inviter != 0)),
+                        JValue::Int(i32::from(e.status)),
+                    ],
+                )?
+                .i()
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        for op in slice_or_empty(removed_ptr, removed_count) {
+            let code = env.with_local_frame(16, |env| {
+                let opb = env.byte_array_from_slice(op)?;
+                env.call_method(
+                    bridge,
+                    "onPersistInvitationRemoval",
                     "([B[B)I",
                     &[(&wid).into(), (&opb).into()],
                 )?
@@ -3612,6 +3997,14 @@ unsafe extern "C" fn tramp_load_shielded_activity(
                             block_height,
                             has_block_height,
                             created_at_ms,
+                            // TODO(kotlin-shielded-chain-order): the Kotlin
+                            // store doesn't persist the scan deriver's
+                            // chain-order key yet (the persist bridge doesn't
+                            // carry it either), so "absent" is the honest
+                            // restore value — the Rust sort falls back to the
+                            // deterministic id order for these rows.
+                            min_note_position: 0,
+                            has_min_note_position: 0,
                             identity_id,
                             has_identity_id,
                             counterparty_ptr: ptr::null(),
@@ -3770,6 +4163,29 @@ unsafe fn slice_or_empty<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
     } else {
         std::slice::from_raw_parts(ptr, count)
     }
+}
+
+/// Pack an [`OutPointFFI`] into the 36-byte key (raw txid ‖ little-endian
+/// vout) the Kotlin handler stores outpoints under — byte-identical to
+/// Kotlin's `makeOutpoint` (and Swift's). This is the join key sweep
+/// releases use to find additive-path rows, so every packing site routes
+/// through here rather than re-inlining the layout.
+/// A block height for a JNI `I` slot. Heights are `u32` on the Rust side
+/// and `Int` on the Kotlin side; a value past `i32::MAX` would wrap
+/// negative and be read as "absent" (or as a bogus boundary) by a handler
+/// that has no way to tell. Unreachable for any real chain height, so it
+/// is refused rather than reinterpreted: the round fails closed
+/// (`with_bridge` maps the error to `ERR_JNI`).
+fn jint_height(height: u32) -> Result<i32, jni::errors::Error> {
+    i32::try_from(height)
+        .map_err(|_| jni::errors::Error::JniCall(jni::errors::JniError::InvalidArguments))
+}
+
+fn pack_outpoint_key(outpoint: &OutPointFFI) -> [u8; 36] {
+    let mut key = [0u8; 36];
+    key[..32].copy_from_slice(&outpoint.txid);
+    key[32..].copy_from_slice(&outpoint.vout.to_le_bytes());
+    key
 }
 
 /// `Vec<T>` → `(*const T, len)`; empty vec yields `(null, 0)`. A non-null
@@ -4055,6 +4471,168 @@ fn read_bytes_field_vec(
     Ok(buf.into_iter().map(|b| b as u8).collect())
 }
 
+// ── Bridge-descriptor verification ────────────────────────────────────
+
+/// Every `(name, JNI descriptor)` pair the trampolines above resolve
+/// against [`NativePersistenceBridge`] via virtual dispatch. `call_method`
+/// resolves each pair only when its slot first *fires*, so a drifted
+/// descriptor is a runtime failure at that moment — for the invitation
+/// upsert that would be mid-way through a live, funded `create_invitation`.
+/// [`nativeVerifyPersistenceBridgeDescriptors`] resolves the whole table up
+/// front instead; keep this table in sync with the `call_method` sites.
+const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
+    ("persistenceCapabilitiesVersion", "()I"),
+    ("persistenceCapabilitiesBits", "()J"),
+    ("onChangesetBegin", "([B)I"),
+    ("onChangesetEnd", "([BZ)I"),
+    ("onStore", "([B)I"),
+    ("onFlush", "([B)I"),
+    ("onPersistAddressBalance", "([BB[BJIIIJ)I"),
+    ("onPersistSyncState", "([BJJJ)I"),
+    ("onPersistWalletMetadata", "([BI[BI)I"),
+    ("onPersistAccountRegistration", "([BBBIII[B[B[B)I"),
+    (
+        "onPersistAccountAddressPoolEntry",
+        "([BBBIII[B[BB[BZBIZJLjava/lang/String;Ljava/lang/String;)I",
+    ),
+    ("onWalletChangesetHeader", "([BZIZJJJJ[B)I"),
+    ("onWalletChangesetAccountBegin", "([BIBBII[B[BIZIZ)I"),
+    ("onWalletChangesetAccountEnd", "([BI)I"),
+    (
+        "onWalletChangesetUtxoAdded",
+        "([B[BIJLjava/lang/String;[BIZZZZ)I",
+    ),
+    ("onWalletChangesetUtxoSpent", "([B[BI[B)I"),
+    (
+        "onWalletChangesetTransaction",
+        WALLET_CHANGESET_TRANSACTION_DESCRIPTOR,
+    ),
+    // Missing from this table let a sweep-round-only descriptor drift pass
+    // the smoke check and surface only when a live sweep first called it —
+    // right where a failed round freezes the wallet's watermark. The same
+    // constant is bound at the `call_method` site in
+    // `persist_changeset_sweep_batch`, so the two cannot drift.
+    (
+        "onWalletChangesetTransactionsSwept",
+        WALLET_CHANGESET_SWEEPS_DESCRIPTOR,
+    ),
+    // Same drift risk as the sweeps descriptor above: this slot fires on
+    // chainlock-advancing rounds only, so a stale descriptor would surface
+    // exactly when the first real chainlock crossed. Must track the
+    // literal at the `call_method` site in
+    // `tramp_persist_wallet_changeset_chain_lock_height`.
+    ("onWalletChangesetChainLockHeight", "([BI)I"),
+    (
+        "onPersistIdentityUpsert",
+        "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
+         Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
+    ),
+    ("onPersistIdentityRemoval", "([B[B)I"),
+    (
+        "onPersistContactProfileDelta",
+        "([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;\
+         [BZ[BZLjava/lang/String;J)I",
+    ),
+    (
+        "onPersistIdentityKeyUpsert",
+        "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;)I",
+    ),
+    ("onPersistIdentityKeyRemoval", "([B[BI)I"),
+    ("onPersistTokenBalanceUpsert", "([B[B[BJ)I"),
+    ("onPersistTokenBalanceRemoval", "([B[B[B)I"),
+    ("onPersistContactIgnored", "([B[B[BZ)I"),
+    (
+        "onPersistContactUpsert",
+        "([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[I)I",
+    ),
+    ("onPersistContactRemovalSent", "([B[B[B)I"),
+    ("onPersistContactRemovalIncoming", "([B[B[B)I"),
+    ("onPersistAssetLockUpsert", "([B[B[BIBIJB[B)I"),
+    ("onPersistAssetLockRemoval", "([B[B)I"),
+    ("onPersistInvitationUpsert", "([B[BIJIIZI)I"),
+    ("onPersistInvitationRemoval", "([B[B)I"),
+    #[cfg(feature = "shielded")]
+    ("onPersistShieldedNote", "([B[BIJ[B[BJBJ[B)I"),
+    #[cfg(feature = "shielded")]
+    ("onPersistShieldedNullifierSpent", "([B[BI[B)I"),
+    #[cfg(feature = "shielded")]
+    ("onPersistShieldedOutgoingNote", "([B[BI[B[BJJ[B)I"),
+    #[cfg(feature = "shielded")]
+    ("onPersistShieldedSyncedIndex", "([B[BIJ)I"),
+    #[cfg(feature = "shielded")]
+    (
+        "onPersistShieldedActivity",
+        "([B[BI[BBBBJJZJZJ[BZ[B[B[B[B)I",
+    ),
+    #[cfg(feature = "shielded")]
+    ("onPersistShieldedViewingKey", "([B[BI[B)I"),
+    (
+        "onLoadWalletList",
+        "()[Lorg/dashfoundation/dashsdk/ffi/WalletRestoreData;",
+    ),
+    #[cfg(feature = "shielded")]
+    (
+        "onLoadShieldedViewingKeys",
+        "()[Lorg/dashfoundation/dashsdk/ffi/ShieldedViewingKeyData;",
+    ),
+    #[cfg(feature = "shielded")]
+    (
+        "onLoadShieldedNotes",
+        "()[Lorg/dashfoundation/dashsdk/ffi/ShieldedNoteData;",
+    ),
+    #[cfg(feature = "shielded")]
+    (
+        "onLoadShieldedOutgoingNotes",
+        "()[Lorg/dashfoundation/dashsdk/ffi/ShieldedOutgoingNoteData;",
+    ),
+    #[cfg(feature = "shielded")]
+    (
+        "onLoadShieldedSyncStates",
+        "()[Lorg/dashfoundation/dashsdk/ffi/ShieldedSyncStateData;",
+    ),
+    #[cfg(feature = "shielded")]
+    (
+        "onLoadShieldedActivity",
+        "()[Lorg/dashfoundation/dashsdk/ffi/ShieldedActivityData;",
+    ),
+    (
+        "onGetCoreTxRecord",
+        "([B[B)Lorg/dashfoundation/dashsdk/ffi/CoreTxRecordData;",
+    ),
+];
+
+/// Resolve every [`BRIDGE_METHOD_TABLE`] pair against the concrete class of
+/// `bridge`. Returns `null` when every slot resolves; otherwise a
+/// `"name descriptor"` string naming the first unresolvable slot. Exists so
+/// the instrumented test suite can pin the Rust↔Kotlin descriptor lockstep
+/// up front instead of discovering a drift when a slot first fires at
+/// runtime.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_nativeVerifyPersistenceBridgeDescriptors(
+    mut env: JNIEnv,
+    _class: JClass,
+    bridge: JObject,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Ok(class) = env.get_object_class(&bridge) else {
+            return env
+                .new_string("<unresolvable bridge class>")
+                .map(|s| s.into_raw())
+                .unwrap_or(ptr::null_mut());
+        };
+        for (name, descriptor) in BRIDGE_METHOD_TABLE {
+            if env.get_method_id(&class, *name, *descriptor).is_err() {
+                let _ = env.exception_clear();
+                return env
+                    .new_string(format!("{name} {descriptor}"))
+                    .map(|s| s.into_raw())
+                    .unwrap_or(ptr::null_mut());
+            }
+        }
+        ptr::null_mut()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use dashcore::blockdata::transaction::special_transaction::provider_update_service::ProviderUpdateServicePayload;
@@ -4115,12 +4693,31 @@ mod tests {
         );
     }
 
+    /// A height past `i32::MAX` must refuse the call, never wrap into a
+    /// negative `Int` the handler would read as absent or as a bogus
+    /// collection boundary.
+    #[test]
+    fn a_height_past_i32_max_is_refused_rather_than_wrapped() {
+        assert_eq!(jint_height(0).unwrap(), 0);
+        assert_eq!(jint_height(i32::MAX as u32).unwrap(), i32::MAX);
+        assert!(jint_height(i32::MAX as u32 + 1).is_err());
+        assert!(jint_height(u32::MAX).is_err());
+    }
+
+    #[test]
+    fn sweeps_callback_descriptor_ships_flat_arrays_and_an_explicit_height_pair() {
+        // walletId, packed txids + count, winner, packed released outpoints
+        // + count, (hasWinnerMinedHeight, winnerMinedHeight) — must match
+        // `NativePersistenceBridge.onWalletChangesetTransactionsSwept`.
+        assert_eq!(WALLET_CHANGESET_SWEEPS_DESCRIPTOR, "([B[BI[B[BIZI)I");
+    }
+
     #[test]
     fn vtable_layout_remains_independent_of_capability_declaration() {
         let callbacks = build_vtable(ptr::null_mut());
         assert!(callbacks.on_changeset_begin_fn.is_some());
         assert!(callbacks.on_changeset_end_fn.is_some());
-        assert!(callbacks.on_persist_invitations_fn.is_none());
+        assert!(callbacks.on_persist_invitations_fn.is_some());
     }
 
     #[cfg(feature = "shielded")]

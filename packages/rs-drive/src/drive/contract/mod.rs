@@ -22,6 +22,8 @@ pub mod paths;
 pub(crate) mod prove;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) mod queries;
+#[cfg(feature = "server")]
+mod refresh_cache;
 #[cfg(feature = "fixtures-and-mocks")]
 /// Test helpers and utility methods
 pub mod test_helpers;
@@ -2337,7 +2339,7 @@ mod tests {
 
         // Now try to update with the same document type but documentsKeepHistory=true.
         // `canBeDeleted: false` is required alongside `documentsKeepHistory: true` —
-        // the schema parser (try_from_schema v3, protocol version 13+) rejects the
+        // the schema parser (try_from_schema v4, protocol version 14+) rejects the
         // keep-history + canBeDeleted combination (canBeDeleted's config default is
         // true), so the schema must opt out of delete to reach the intended
         // `ChangingDocumentTypeKeepsHistory` assertion at `update_contract`.

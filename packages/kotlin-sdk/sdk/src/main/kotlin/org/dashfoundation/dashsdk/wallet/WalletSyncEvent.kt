@@ -62,6 +62,41 @@ sealed interface WalletSyncEvent {
         val walletCount: Int,
     ) : WalletSyncEvent
 
+    /** One wallet's bounded DPNS marketplace reconciliation result. */
+    data class DpnsMarketplaceResult(
+        val walletId: ByteArray,
+        val success: Boolean,
+        val namesTracked: Int,
+        val namesAdded: Int,
+        val namesDeparted: Int,
+        val pricesChanged: Int,
+        val errorMessage: String?,
+    ) : WalletSyncEvent {
+        override fun equals(other: Any?): Boolean =
+            other is DpnsMarketplaceResult &&
+                walletId.contentEquals(other.walletId) &&
+                success == other.success &&
+                namesTracked == other.namesTracked &&
+                namesAdded == other.namesAdded &&
+                namesDeparted == other.namesDeparted &&
+                pricesChanged == other.pricesChanged &&
+                errorMessage == other.errorMessage
+
+        override fun hashCode(): Int {
+            var result = walletId.contentHashCode()
+            result = 31 * result + success.hashCode()
+            result = 31 * result + namesDeparted
+            result = 31 * result + pricesChanged
+            return result
+        }
+    }
+
+    /** DPNS marketplace pass boundary (all wallets done). */
+    data class DpnsMarketplacePassCompleted(
+        val syncUnixSeconds: Long,
+        val walletCount: Int,
+    ) : WalletSyncEvent
+
     /**
      * One wallet's shielded sync result (`on_shielded_sync_completed_fn`,
      * per entry).

@@ -53,6 +53,13 @@ pub const PROTOCOL_VERSION_13: ProtocolVersion = 13;
 ///   operation conversions to v1, which rewrite a transferred or purchased
 ///   domain's `records.identity` to the new owner so the username resolves
 ///   to the buyer.
+/// * `DRIVE_VERSION_V8` also switches the compacted address-balance-changes
+///   proof to the two-proof `CompactedAddressBalanceProof` bincode envelope
+///   (`prove_compacted_address_balance_changes` 1 via
+///   `DRIVE_VERIFY_METHOD_VERSIONS_V2`'s matching decoder bump): the
+///   independently verified predecessor proof binds the forward-query start
+///   key. Nodes and clients on v12 and below keep the legacy single GroveDB
+///   proof, so mixed-version networks interoperate until v13 activates.
 pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_13,
     drive: DRIVE_VERSION_V8,

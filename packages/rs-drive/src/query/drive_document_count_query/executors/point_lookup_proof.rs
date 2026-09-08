@@ -9,6 +9,7 @@ use super::super::DriveDocumentCountQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::ResolvedTimeRange;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
@@ -32,12 +33,14 @@ impl Drive {
     /// fast path doesn't apply), rejects with
     /// `WhereClauseOnNonIndexedProperty`. Same contract on both
     /// prove and no-proof paths — no silent fallback.
+    #[allow(clippy::too_many_arguments)]
     pub fn execute_document_count_point_lookup_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_ranges: &[ResolvedTimeRange],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -69,11 +72,13 @@ impl Drive {
         let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
             document_type.indexes(),
             &where_clauses,
+            resolved_time_ranges,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                 "prove count requires a `countable: true` index whose properties \
-                 exactly match the where clause fields, or `documentsCountable: \
+                 exactly match the where clause fields, a `rangeCountable: true` \
+                 index they cover up to its last property, or `documentsCountable: \
                  true` on the document type for unfiltered total counts — same \
                  requirement as the no-proof path"
                     .to_string(),

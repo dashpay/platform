@@ -4,8 +4,10 @@
 //! waiting for proofs, and tracking lifecycle status. Shared across sub-wallets
 //! via `Arc<AssetLockManager>`.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use dashcore::OutPoint;
 use tokio::sync::{Notify, RwLock};
 
 use crate::broadcaster::TransactionBroadcaster;
@@ -52,11 +54,9 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// queue their own `AssetLockChangeSet`s into the changeset flush
     /// boundary without round-tripping through the parent wallet.
     ///
-    /// Item 8 sub-step 1a: previously mutations returned
-    /// `AssetLockChangeSet` and callers (including
-    /// `create_funded_asset_lock_proof` itself) dropped them with
-    /// `let _cs = ...`. Every emitted changeset now flows straight
-    /// into `queue_persist` here.
+    /// Invariant: no mutation drops its `AssetLockChangeSet` — every
+    /// emitted changeset goes straight to `queue_asset_lock_changeset`,
+    /// which stores it through this handle.
     pub(super) persister: WalletPersister,
     /// Serializes the funding-index-critical section of
     /// [`broadcast_funded_asset_lock`](Self::broadcast_funded_asset_lock) —
@@ -72,7 +72,62 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// `wallet_manager.write()` guard would cause across the build→persist
     /// span. Deliberately NOT held across the broadcast/proof-wait — only the
     /// snapshot ordering needs serialization.
-    pub(super) build_persist_serial: tokio::sync::Mutex<()>,
+    ///
+    /// Shared (`Arc`) so a [`shared_handle`](Self::shared_handle) sees the
+    /// same gate.
+    pub(super) build_persist_serial: Arc<tokio::sync::Mutex<()>>,
+    /// Outpoints whose `Built` row is excluded from rejected-build cleanup,
+    /// counted so concurrent resumes of the same lock each hold their own
+    /// claim. A live resume releases its claim on pre-dispatch exit. Once a
+    /// send may have had side effects or local finality has been observed,
+    /// cancellation leaves the claim sticky until the row advances beyond
+    /// `Built`.
+    ///
+    /// The claim is what keeps a parked resume from broadcasting a
+    /// transaction whose inputs the rejection cleanup has already released.
+    /// A resume snapshots the row, then waits for the broadcast transport,
+    /// sends, and only then records the send by advancing the row —
+    /// suspension points the whole way. The claim remains after an ambiguous
+    /// cancellation in that interval. The initial build's definite
+    /// pre-send rejection removes the still-`Built` row and releases both
+    /// the funding reservation and the in-broadcast fence, and its
+    /// removal-guard (row still `Built`) cannot see a resume that has not
+    /// reached its status advance yet. So without a claim the release can
+    /// land inside the resume's dispatch window, and the resume then puts
+    /// the original transaction on the wire from inputs a rebuild is free
+    /// to reselect. [`untrack_asset_lock`](Self::untrack_asset_lock)
+    /// therefore refuses the removal while a claim stands, which leaves the
+    /// reservation and fence held and downgrades the build's verdict to the
+    /// unknown outcome — exactly what it already reports when its guard
+    /// fires on an advanced row.
+    ///
+    /// Atomicity comes from the wallet lock, not from this mutex: the claim
+    /// is taken while the resume still holds the read guard it snapshotted
+    /// the row under, and read while the cleanup holds the write guard it
+    /// removes the row under. The two guards exclude each other, so either
+    /// the cleanup sees the claim and keeps the row, or it removed the row
+    /// before the resume could snapshot it and the resume finds nothing to
+    /// resume. This mutex is only ever held for map arithmetic — never
+    /// across an await.
+    ///
+    /// Per-manager rather than per-wallet state because a registered wallet
+    /// has exactly one `AssetLockManager`, shared as `Arc<AssetLockManager>`
+    /// across every sub-wallet, so a build and a resume of the same lock
+    /// always meet here — the same reasoning that puts
+    /// `build_persist_serial` above on the manager. A manager handle that
+    /// outlives its registration keeps its own map, which claims nothing
+    /// about outpoints: a re-registration allocates a fresh funding index
+    /// and therefore a different funding transaction, so no build and resume
+    /// of ONE outpoint can end up on two maps.
+    pub(super) resume_dispatch_claims: Arc<std::sync::Mutex<BTreeMap<OutPoint, usize>>>,
+    /// Outpoints whose resume gave up on the broadcast transport and now has
+    /// a readiness-deferred retry in flight — see
+    /// [`resume_when_transport_ready`](Self::resume_when_transport_ready).
+    /// Membership is what keeps a lock the host resumes repeatedly (launch,
+    /// foreground, reconnect) from stacking up one retry per attempt: a
+    /// second deferral while the first is still waiting is a no-op. Held
+    /// only for set arithmetic, never across an await.
+    pub(super) deferred_resumes: Arc<std::sync::Mutex<BTreeSet<OutPoint>>>,
     /// Test-only gauge of builds currently at or past the
     /// `build_persist_serial` gate within `broadcast_funded_asset_lock`
     /// (incremented before the `lock().await`, RAII-decremented on every
@@ -82,7 +137,7 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// build holds the lock, a gauge of 2 proves the second build cannot
     /// yet have collected its pool snapshot.
     #[cfg(test)]
-    pub(super) build_serial_gate: std::sync::atomic::AtomicUsize,
+    pub(super) build_serial_gate: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -102,9 +157,36 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             lock_notify,
             broadcaster,
             persister,
-            build_persist_serial: tokio::sync::Mutex::new(()),
+            build_persist_serial: Arc::new(tokio::sync::Mutex::new(())),
+            resume_dispatch_claims: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            deferred_resumes: Arc::new(std::sync::Mutex::new(BTreeSet::new())),
             #[cfg(test)]
-            build_serial_gate: std::sync::atomic::AtomicUsize::new(0),
+            build_serial_gate: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }
+    }
+
+    /// A second handle onto the SAME manager: every field is shared, so a
+    /// build, a resume or a claim made through either is visible through
+    /// the other. This is what a background task spawned from a `&self`
+    /// method holds, since such a method has no `Arc<Self>` to clone.
+    ///
+    /// Deliberately not `impl Clone`: a `Clone` bound invites treating the
+    /// value as copyable state, and the whole point of the manager's
+    /// per-wallet mutexes and claim maps is that there is exactly one of
+    /// each per registered wallet.
+    pub(super) fn shared_handle(&self) -> Self {
+        Self {
+            sdk: Arc::clone(&self.sdk),
+            wallet_manager: Arc::clone(&self.wallet_manager),
+            wallet_id: self.wallet_id,
+            lock_notify: Arc::clone(&self.lock_notify),
+            broadcaster: Arc::clone(&self.broadcaster),
+            persister: self.persister.clone(),
+            build_persist_serial: Arc::clone(&self.build_persist_serial),
+            resume_dispatch_claims: Arc::clone(&self.resume_dispatch_claims),
+            deferred_resumes: Arc::clone(&self.deferred_resumes),
+            #[cfg(test)]
+            build_serial_gate: Arc::clone(&self.build_serial_gate),
         }
     }
 

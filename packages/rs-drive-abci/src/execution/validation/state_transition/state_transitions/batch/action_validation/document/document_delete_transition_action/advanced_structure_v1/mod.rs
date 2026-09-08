@@ -1,3 +1,4 @@
+use super::advanced_structure_v0::DocumentDeleteTransitionActionStructureValidationV0;
 use dpp::consensus::basic::document::{InvalidDocumentTransitionActionError, InvalidDocumentTypeError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -13,8 +14,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
 }
 
 impl DocumentDeleteTransitionActionStructureValidationV1 for DocumentDeleteTransitionAction {
-    /// V1 adds the `documents_keep_history()` guard alongside the V0
-    /// `documents_can_be_deleted()` guard.
+    /// V1 runs all V0 checks, including the indexOnly transition-kind check,
+    /// then rejects deletes against legacy keep-history document types.
     ///
     /// Pre-V1, a delete against a keep-history doctype passed structure
     /// validation, reached `force_delete_document_for_contract_operations_v0`,
@@ -25,10 +26,15 @@ impl DocumentDeleteTransitionActionStructureValidationV1 for DocumentDeleteTrans
     ///
     /// Rejecting at the structure layer turns the contradiction into a normal
     /// invalid (paid) consensus error. Gated behind a new validation version
-    /// (rather than mutating V0) so PROTOCOL_VERSION_12 and earlier chains —
+    /// (rather than mutating V0) so PROTOCOL_VERSION_13 and earlier chains —
     /// which historically classified these deletes as InternalError — replay
     /// bit-for-bit. See issue #3927.
     fn validate_structure_v1(&self) -> Result<SimpleConsensusValidationResult, Error> {
+        let result = self.validate_structure_v0()?;
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         let contract_fetch_info = self.base().data_contract_fetch_info();
         let data_contract = &contract_fetch_info.contract;
         let document_type_name = self.base().document_type_name();
@@ -40,16 +46,6 @@ impl DocumentDeleteTransitionActionStructureValidationV1 for DocumentDeleteTrans
                     .into(),
             ));
         };
-
-        if !document_type.documents_can_be_deleted() {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                InvalidDocumentTransitionActionError::new(format!(
-                    "documents of type {} can not be deleted",
-                    document_type_name
-                ))
-                .into(),
-            ));
-        }
 
         if document_type.documents_keep_history() {
             return Ok(SimpleConsensusValidationResult::new_with_error(

@@ -2,7 +2,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
-use dpp::prelude::AddressNonce;
+use dpp::prelude::{AddressNonce, CoreBlockHeight};
 use key_wallet::account::StandardAccountType;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
@@ -49,6 +49,34 @@ pub enum PlatformWalletError {
     IdentityIndexNotSet(Identifier),
 
     #[error(
+        "Identity discovery incomplete: {failed_probes} of {probed} index probe(s) from {start_index} \
+         could not reach Platform and no identity was found; last error: {source}"
+    )]
+    /// A gap-limit scan ended empty with at least one index left unanswered.
+    /// Distinct from an empty success: it means "we do not know", so the
+    /// caller must retry rather than record that the seed owns no identity.
+    /// Collapsing both outcomes into `Ok(vec![])` would let a transient
+    /// DAPI failure right after restore-from-seed become a whole session
+    /// without an identity.
+    ///
+    /// "Retry" is the contract, not a promise that the cause is transient — a
+    /// probe can also fail on configuration, protocol or proof errors. The
+    /// underlying failure is kept typed in `source` so a Rust caller can
+    /// classify it instead of parsing the rendered message.
+    IdentityDiscoveryIncomplete {
+        /// First index the scan probed.
+        start_index: u32,
+        /// How many indices were probed before the gap limit stopped the scan.
+        probed: u32,
+        /// How many of those probes failed to reach Platform.
+        failed_probes: u32,
+        /// The last probe failure. Boxed to keep this variant from widening
+        /// the enum past the existing `Sdk` variant.
+        #[source]
+        source: Box<dash_sdk::Error>,
+    },
+
+    #[error(
         "DashPay receiving account already exists for identity {identity} with contact {contact} on network {network:?} (account index {account_index})"
     )]
     DashpayReceivingAccountAlreadyExists {
@@ -77,21 +105,225 @@ pub enum PlatformWalletError {
     /// A core transaction broadcast failed with an **ambiguous** outcome — the
     /// transaction may already have reached the network (transport timeout
     /// after delivery, partial peer send, or an internal multi-node retry
-    /// whose earlier attempt may have succeeded). The spent inputs'
-    /// reservation is intentionally kept, so an immediate retry fails at
-    /// input selection instead of double-spending; the reservation-TTL
-    /// backstop (or a sync observing the transaction) reconciles the outcome.
+    /// whose earlier attempt may have succeeded). The spent inputs are
+    /// intentionally kept out of the selectable set, so an immediate retry
+    /// fails at input selection instead of double-spending.
+    ///
+    /// # What actually reconciles this, and what does not
+    ///
+    /// The inputs are held by TWO independent things, and only one of them
+    /// expires. Key-wallet's `ReservationSet` entry is swept by its own TTL —
+    /// 24 blocks (`RESERVATION_TTL_BLOCKS`) on the wallet's
+    /// `last_processed_height` clock, measured from the height the reservation
+    /// was stamped at. That TTL is NOT the 20-block bound this crate refuses a
+    /// held finalized transaction / registry token at
+    /// ([`Self::StaleReservation`]); the refusal bound is deliberately the
+    /// lower of the two so a broadcast is turned away while its reservation is
+    /// still provably unswept. The generation's pending-spend fence
+    /// ([`WalletGeneration`](crate::wallet::core::WalletGeneration)) is NOT
+    /// swept with either: it has no bound of its own and is released by the
+    /// wallet OBSERVING the outpoint spent, and by nothing else.
+    ///
+    /// The reservation TTL does NOT reconcile an ambiguous outcome: elapsed
+    /// time is not evidence about the transaction, which stays valid and
+    /// relayable no matter how long the wait. The build refusal that follows
+    /// a `MaybeSent` is [`Self::InputMidBroadcast`], and it stands until a
+    /// spend is observed — this wallet's own transaction landing, or a
+    /// conflicting one taking the outpoint.
+    ///
+    /// Removing the wallet and re-creating it under the same id does NOT end
+    /// the refusal: the fence map is keyed by wallet id and handed to the
+    /// replacement generation, so a recreation inherits the pending spends
+    /// rather than restoring the outpoints unprotected. Only a fresh manager —
+    /// in practice a process restart — currently loses the fence, because the
+    /// map is not persisted; see
+    /// [`WalletGeneration`](crate::wallet::core::WalletGeneration) for what
+    /// closing that gap requires.
     ///
     /// The shielded sibling is [`Self::ShieldedSpendUnconfirmed`].
     #[error(
         "Transaction broadcast outcome unknown — it may already be on the \
-         network; its inputs stay reserved until a sync or the reservation \
-         TTL reconciles the outcome: {0}"
+         network; its inputs stay unspendable until this wallet observes them \
+         spent: {0}"
     )]
     TransactionBroadcastUnconfirmed(String),
 
+    /// A finalized transaction handle
+    /// (`core_wallet_tx_builder_finalize` → `broadcast_finalized_transaction`)
+    /// was held long enough that its funding reservation may already have been
+    /// swept and re-selected by key-wallet's TTL: the wallet's
+    /// `last_processed_height` advanced at least
+    /// `RESERVATION_MAX_AGE_BLOCKS`
+    /// blocks past the height the reservation was stamped at
+    /// ([`SignedCoreTransaction::reservation_height`](crate::SignedCoreTransaction::reservation_height)).
+    /// Broadcasting it could spend against a newer, unrelated reservation, so it
+    /// is refused **before** touching the network — NOT retryable in place, the
+    /// caller must rebuild the payment. The refusal reconciles the reservation
+    /// on the way out: a funded finalize always stamps an owner token, so the
+    /// release is owner-guarded (`release_reservation_if_owner`, safe at any
+    /// age — it no-ops once ownership transferred) and the still-owned inputs
+    /// are freed for the instructed rebuild. Abandoning/freeing the handle
+    /// likewise releases owner-guarded at any age; only a token-less build
+    /// skips its unguarded by-outpoint release past the bound and leaves the
+    /// aged outpoint for key-wallet's TTL to reclaim.
+    ///
+    /// This is the handle-path sibling of the deferred registry-token
+    /// [`SignedPaymentError::StaleReservationToken`](crate::SignedPaymentError::StaleReservationToken);
+    /// both share the same age bound and the FFI `ErrorStaleReservationToken`
+    /// code. Carries no token — the handle path is keyed by an opaque handle,
+    /// not a numeric reservation token.
+    #[error("finalized transaction reservation has outlived its lifetime; rebuild the payment")]
+    StaleReservation,
+
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
+
+    /// Coin selection picked an outpoint that a broadcast dispatch is still
+    /// holding — the transaction spending it is in flight, or has reached the
+    /// network and has not yet been observed spent by this wallet
+    /// ([`WalletGeneration::in_broadcast_conflict`](crate::wallet::core::WalletGeneration::in_broadcast_conflict)).
+    /// Completing the build would race that transaction on the wire, so it is
+    /// refused: the attempted selection is DISCARDED, its fresh reservation
+    /// released, and nothing was broadcast.
+    ///
+    /// Signing, however, MAY already have happened by the time the conflict
+    /// is caught. The finalized-transaction build runs its check on the
+    /// unsigned selection, but the contact-payment build calls `build_signed`
+    /// before its conflict check, and the asset-lock build's key-wallet
+    /// builder signs as it builds — on those two paths a fully signed
+    /// transaction exists at the moment of refusal. It is discarded without
+    /// ever reaching a broadcaster, and its inputs go back to the selectable
+    /// pool with the reservation release; "nothing was broadcast" is part of
+    /// this contract, "nothing was signed" is NOT.
+    ///
+    /// A TRANSIENT, EXPECTED condition, and the reason it is a variant of its
+    /// own rather than a [`Self::TransactionBuild`] /
+    /// [`Self::AssetLockTransaction`] string: the refusal says nothing wrong
+    /// about the request itself — the same intent can be re-attempted once
+    /// the conflict resolves (see below for what "resolves" requires) — and
+    /// telling it apart from a genuine build failure must not require
+    /// substring-matching prose (`message.contains("mid-broadcast")`).
+    /// All three selection choke points — the
+    /// finalized-transaction build, the contact-payment build and the
+    /// asset-lock build — return this one variant.
+    ///
+    /// # Retrying the INTENT requires reconciling the fenced transaction first
+    ///
+    /// "Retry once the dispatch settles" must not be read as "retry
+    /// unconditionally once this error stops". The fence behind this refusal
+    /// outlives the broadcaster's return on every non-rejected dispatch and
+    /// clears only when this wallet OBSERVES the outpoint spent — and the
+    /// overwhelmingly common observation is the fenced dispatch's OWN payment
+    /// landing. At that moment the intent this build was carrying may already
+    /// be fulfilled: re-issuing it blindly then produces a second, duplicate
+    /// logical payment rather than completing the first. So a caller must
+    /// reconcile the transaction the fence was protecting — did that payment
+    /// land? — before deciding whether the retried intent is still owed.
+    /// Only when the fenced dispatch is definitively rejected (its fence
+    /// released together with its reservation) is an immediate, unchanged
+    /// retry unconditionally correct.
+    ///
+    /// `outpoint` is the first conflicting input, carried structurally so
+    /// callers and diagnostics need not parse it back out of a message.
+    ///
+    /// Reaching a caller at all is the uncommon path: a fenced input is
+    /// normally still reserved and never offered to selection. This fires only
+    /// in the window after key-wallet's reservation TTL swept that dispatch's
+    /// reservation, which is exactly what the fence exists to cover.
+    #[error(
+        "selected input {outpoint} is mid-broadcast by an in-flight dispatch; \
+         retry after it completes"
+    )]
+    InputMidBroadcast { outpoint: dashcore::OutPoint },
+
+    /// The address handed to [`CoreWallet::sign_message`] cannot be a signing
+    /// target at all: unparseable, encoded for a different network than the
+    /// wallet's, or not P2PKH. A caller-input error — the classic Dash
+    /// signed-message format recovers a public key and compares its
+    /// `PubkeyHash` payload, so P2SH / SegWit payloads have no defined
+    /// verification and are refused rather than signed into something no
+    /// verifier accepts. `reason` names which of the three it was.
+    ///
+    /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
+    #[error("message-signing address {address:?} is unusable: {reason}")]
+    MessageSigningAddressInvalid { address: String, reason: String },
+
+    /// The bytes handed to `core_wallet_sign_message` as the message are not
+    /// valid UTF-8, so there is no string to sign. Caller input, exactly like
+    /// [`Self::MessageSigningAddressInvalid`] — and given its own variant for
+    /// the same reason the address case has one: these errors exist to name
+    /// *which argument* the caller must fix, and reusing the address variant
+    /// for a message problem would render "address … is unusable" over a
+    /// perfectly good address.
+    ///
+    /// Only reachable across the FFI, where the message arrives as raw bytes; a
+    /// Rust or Kotlin caller cannot construct an ill-formed `&str`/`String`.
+    /// `address` is the (already validated as UTF-8) signing target, carried
+    /// for log correlation like every sibling — the *message* is what failed.
+    #[error("the message to sign for address {address} is not valid UTF-8: {reason}")]
+    MessageSigningMessageInvalid { address: String, reason: String },
+
+    /// [`CoreWallet::sign_message`] holds no usable signing key for a
+    /// well-formed P2PKH address on the right network. Two producers:
+    ///
+    /// * **Address resolution** — the address belongs to no *signable* funds
+    ///   account (BIP44 / BIP32 / CoinJoin / DashPay-receiving), or it belongs
+    ///   to a watch-only DashPay **external** account (a contact's receiving
+    ///   address, whose keys we never had). No signer is invoked.
+    /// * **The signer itself** — the backend reported its key missing, stamped
+    ///   as the reserved [`SIGNER_KEY_UNAVAILABLE_PREFIX`] at position 0 of its
+    ///   error rendering (`MnemonicResolverCoreSigner::NotFound` in
+    ///   production: the keychain holds no mnemonic for the wallet).
+    ///   `sign_message` checks that marker BEFORE prepending any context, so
+    ///   the condition stays typed across the FFI.
+    ///
+    /// Either way the conclusion is the same — no key can sign for this
+    /// address as things stand — so hosts route both to key repair / address
+    /// correction (FFI code 31). Carries no retry value as-is.
+    ///
+    /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
+    #[error(
+        "no signing key for message-signing address {address}: it belongs to no \
+         signable funds account of this wallet"
+    )]
+    MessageSigningKeyUnavailable { address: String },
+
+    /// [`CoreWallet::sign_message`] resolved a derivation path for the address
+    /// but could not produce a signature over it. Four causes, all carried in
+    /// `reason`: the signer backend does not advertise
+    /// [`SignerMethod::Digest`], so it cannot sign a host-computed digest at
+    /// all and is refused before it is ever invoked; the [`Signer`] itself
+    /// failed (Keystore/Keychain round-trip); the public key it returned does
+    /// not hash to the target address (a path-resolution bug — the guard exists
+    /// so a wrong-key signature can never be handed out as if it were the
+    /// address owner's); or no recovery id in `0..=3` recovers that public key.
+    ///
+    /// The capability refusal shares this variant rather than taking a
+    /// dedicated one because this is the crate's "a path resolved but no
+    /// signature came back" bucket, and because key-wallet folds the very same
+    /// refusal into its ordinary `BuilderError::SigningFailed`. It is
+    /// unreachable with any signer that ships today — the production mnemonic
+    /// resolver advertises `Digest` — so it does not warrant a new FFI code and
+    /// the host mirror-enum churn that follows one.
+    ///
+    /// Deliberately NOT given a dedicated FFI code: [`Signer::Error`] is
+    /// generic and bounded only by `Display`, so what lands here cannot be
+    /// classified structurally and falls through to `ErrorUnknown`. The one
+    /// signer failure with a typed meaning — a key-unavailable rendering with
+    /// [`SIGNER_KEY_UNAVAILABLE_PREFIX`] at position 0 — never reaches this
+    /// variant: `sign_message` promotes it to
+    /// [`MessageSigningKeyUnavailable`] (FFI code 31) before any context
+    /// string is composed. See the `MessageSigningFailed` arm's NOTE in
+    /// `platform-wallet-ffi`'s error conversion.
+    ///
+    /// [`MessageSigningKeyUnavailable`]: Self::MessageSigningKeyUnavailable
+    /// [`Signer::Error`]: key_wallet::signer::Signer::Error
+    ///
+    /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
+    /// [`Signer`]: key_wallet::signer::Signer
+    /// [`SignerMethod::Digest`]: key_wallet::signer::SignerMethod::Digest
+    #[error("message signing failed for address {address}: {reason}")]
+    MessageSigningFailed { address: String, reason: String },
 
     /// Atomic Core finalization could not select enough unreserved funds.
     #[error(
@@ -101,6 +333,27 @@ pub enum PlatformWalletError {
     CoreInsufficientFunds {
         account_type: AccountTypePreference,
         account_index: u32,
+        available: Option<u64>,
+        required: Option<u64>,
+    },
+
+    /// Atomic Core finalization could not select enough unreserved funds for a
+    /// POOLED build (more than one funding source offered).
+    ///
+    /// Separate from [`CoreInsufficientFunds`] because `available`/`required`
+    /// describe the UNION of every offered source: attributing them to one
+    /// account would misreport the figures and could name a source that
+    /// contributed nothing — or that the wallet does not even have. FFI maps
+    /// both variants to the same host-facing insufficient-funds code, so hosts
+    /// classify a shortfall identically either way.
+    ///
+    /// [`CoreInsufficientFunds`]: Self::CoreInsufficientFunds
+    #[error(
+        "insufficient unreserved Core funds across the pooled funding sources \
+         {sources:?}: available {available:?}, required {required:?}"
+    )]
+    CorePooledInsufficientFunds {
+        sources: Vec<AccountTypePreference>,
         available: Option<u64>,
         required: Option<u64>,
     },
@@ -121,9 +374,11 @@ pub enum PlatformWalletError {
     #[error("Asset lock {0} is not tracked by this wallet")]
     AssetLockNotTracked(dashcore::OutPoint),
 
-    /// A one-shot asset lock has already funded a successful Platform
-    /// transition and cannot be resumed again.
-    #[error("Asset lock {0} has already been consumed")]
+    /// A one-shot asset lock outpoint cannot be reused. This can come from a
+    /// local `Consumed` tombstone or an unauthenticated Platform consumption
+    /// report; callers must not infer completion of the requested operation
+    /// from this signal alone.
+    #[error("Asset lock {0} cannot be reused; Platform completion is unconfirmed")]
     AssetLockAlreadyConsumed(dashcore::OutPoint),
 
     /// A tracked outpoint belongs to another funding family or identity
@@ -142,8 +397,209 @@ pub enum PlatformWalletError {
         actual_identity_index: u32,
     },
 
+    /// **RESERVED — the wallet never constructs this variant today.**
+    ///
+    /// It describes a tracked asset-lock transaction that spends an
+    /// outpoint a **different, already-confirmed** transaction of this
+    /// same wallet spent first, where that spender's block is proven to
+    /// be on the FINALIZED chain. Such a lock is permanently dead: every
+    /// peer rejects it as a double spend at the mempool boundary and
+    /// therefore relays nothing, so no IS-lock and no ChainLock can ever
+    /// be produced for it, and the only recovery is to discard the lock
+    /// and build a new one from currently-unspent inputs.
+    ///
+    /// The missing piece is the finalized-ancestry proof. The wallet layer
+    /// can see that a spender is confirmed, and it can see chainlock
+    /// contexts and the applied chainlock height, but both of those are
+    /// artifacts of a height-based promotion rather than evidence that the
+    /// spender's block belongs to the branch the chainlock covers (the SPV
+    /// chainlock manager counts a missing header as a passing block-hash
+    /// check, so a chainlock landing on a replacement branch ahead of its
+    /// headers promotes losing-branch records). Until the SPV layer
+    /// exposes an ancestry predicate, no code path may raise this variant:
+    /// the double-spend screen reports [`Self::AssetLockInputContested`]
+    /// for every hit, chainlocked-looking spenders included.
+    ///
+    /// Kept in the enum — with its fields and its FFI code — so the
+    /// reserved code stays stable for hosts across the change and for the
+    /// future emitter. Hosts must read nothing into its absence: it is not
+    /// a liveness signal, not a "not yet final" signal, and not a
+    /// statement about any particular lock.
+    ///
+    /// `height` is the block height of the confirmed spender when the
+    /// record carries block info. The variant carries no finality flag on
+    /// purpose: finality IS the variant — a constructor cannot produce a
+    /// terminal error that renders anything but chainlocked finality.
+    #[error(
+        "Asset lock {out_point} can never confirm: it spends {input}, which was \
+         already spent by confirmed transaction {spent_by} (block height \
+         {height:?}, chainlocked: true) — the lock is a double spend and no \
+         peer will relay it"
+    )]
+    AssetLockInputConflict {
+        out_point: dashcore::OutPoint,
+        input: dashcore::OutPoint,
+        spent_by: dashcore::Txid,
+        height: Option<CoreBlockHeight>,
+    },
+
+    /// The tracked asset-lock transaction spends an outpoint a
+    /// **different, already-confirmed** transaction of this same wallet
+    /// spent first. This is the verdict the double-spend screen always
+    /// emits on a hit — [`Self::AssetLockInputConflict`] has no emitter.
+    ///
+    /// The typical origin is a restored wallet: a rescan repopulates the
+    /// UTXO set from chain data, an asset-lock build selects an input the
+    /// restored view still believes is unspent, and the transaction that
+    /// actually spent it — often one of the wallet's own earlier asset
+    /// locks — has been confirmed for a long time.
+    ///
+    /// While the sibling stands, peers reject the lock as a double spend
+    /// and an unbounded proof wait would hang (Core stopped sending BIP61
+    /// `reject` by default in 0.17, so the drop is silent and looks
+    /// exactly like a slow network). The sighting therefore bounds the
+    /// wait rather than replacing it: the resume still (re-)broadcasts and
+    /// still waits, and this is what the bounded wait expired with — a
+    /// `Broadcast`-status lock was also already sent on an earlier call.
+    ///
+    /// The verdict is PROVISIONAL and carries NO licence to discard the
+    /// tracked lock. Keep the lock and retry later. Note what a retry can
+    /// and cannot do: a chainlock arriving over the sibling does NOT
+    /// upgrade this to the terminal variant today, because the wallet
+    /// cannot prove the sibling's block is on the finalized branch (see
+    /// [`Self::AssetLockInputConflict`]). What a retry resolves is the
+    /// other direction — a reorg drops the sibling and the resume proceeds
+    /// normally.
+    ///
+    /// A conflict that persists across sessions still proves nothing about
+    /// finalized ancestry: persistence is not finality, and the sighting
+    /// can be a block record the load path restored from a previous
+    /// session whose block was reorganized out while the wallet was
+    /// offline. So repetition never licenses a discard either — only
+    /// [`Self::AssetLockInputConflict`], or an independent
+    /// finalized-ancestry proof, authorises dropping the tracked state.
+    /// Discarding a lock whose sibling turns out to sit on a losing branch
+    /// strands the credits of a lock a peer can still replay. No funds move
+    /// while the lock is kept: both signed transactions are this wallet's
+    /// own, so the value behind `input` lives on in `spent_by`.
+    ///
+    /// Raising this error is a definite verdict about the CONFLICT; NOT
+    /// raising it proves nothing — see the detection helper in
+    /// `wallet::asset_lock::sync::recovery` for why the scan is
+    /// best-effort.
+    #[error(
+        "Asset lock {out_point} cannot currently confirm: it spends {input}, \
+         which confirmed transaction {spent_by} (block height {height:?}) has \
+         taken — the verdict is provisional (the wallet cannot prove the \
+         spender's finality); keep the lock and retry later"
+    )]
+    AssetLockInputContested {
+        out_point: dashcore::OutPoint,
+        input: dashcore::OutPoint,
+        spent_by: dashcore::Txid,
+        height: Option<CoreBlockHeight>,
+    },
+
+    /// Asset-lock coin selection came up short, so a host (and ultimately the
+    /// wallet UI) can render a precise shortfall instead of a stringly-typed
+    /// "Insufficient funds" message.
+    ///
+    /// What `available` covers depends on the build's funding form. An
+    /// exact-amount build funds from a POOLED source list — the default
+    /// [`ASSET_LOCK_FUNDING_SOURCES`](crate::ASSET_LOCK_FUNDING_SOURCES)
+    /// unions the BIP44 and BIP32 accounts with every DashPay
+    /// contact-receiving account — so its shortfall describes that whole
+    /// permitted union, not any single account (an explicit single-element
+    /// source list narrows it back to one account). Only a *drain* build
+    /// (whole-account funding) selects exactly one account, so only there
+    /// does the figure name a single account's shortfall. CoinJoin funds
+    /// exclusively through the drain form — it is never pooled (spending
+    /// mixed outputs alongside transparent ones would link them), so the
+    /// CoinJoin → shielded migration's shortfall is always the mixed
+    /// account's own.
+    ///
+    /// Distinct from [`CoreInsufficientFunds`] / [`CorePooledInsufficientFunds`],
+    /// which belong to the atomic Core-send selector rather than the asset-lock
+    /// builder, and which carry `Option` amounts because a pooled send may not
+    /// know them. The asset-lock builder always has concrete figures: the
+    /// key-wallet shortfall errors carry their own, and the empty-candidate-set
+    /// case is reported as `available: 0` against the requested target.
+    ///
+    /// On a *drain* build (whole-account funding, e.g. the CoinJoin → shielded
+    /// migration) the requested target is the zero credit-output placeholder
+    /// that key-wallet rewrites to `Σ inputs − fee`, so `required` reports the
+    /// caller's drain floor instead: an empty account surfaces as
+    /// `available: 0, required: <minimum_lock_duffs>` (the shielded flow
+    /// installs the positive Type 18 pool-fee floor before building), and only
+    /// a floor-less drain reports `required: 0`. The floor is additionally
+    /// enforced downstream against the built payload once the lock value is
+    /// known.
+    ///
+    /// [`CoreInsufficientFunds`]: Self::CoreInsufficientFunds
+    /// [`CorePooledInsufficientFunds`]: Self::CorePooledInsufficientFunds
+    #[error(
+        "asset lock coin selection is short: available {available} duffs, \
+         required {required} duffs"
+    )]
+    AssetLockInsufficientFunds { available: u64, required: u64 },
+
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
+
+    /// No DPNS `domain` document exists for the requested name (exact
+    /// normalized-label lookup came back empty). Distinct from
+    /// [`Self::InvalidParameter`]: the input was well-formed, the name
+    /// just isn't registered (or is hidden inside an unresolved contest —
+    /// see [`Self::ContestedNameNotTradable`] for the pre-checked case).
+    #[error("DPNS name not found: {name:?}")]
+    DpnsNameNotFound { name: String },
+
+    /// The DPNS domain document carries no `$price` — it is not listed
+    /// for sale. Raised by the wallet's pre-flight check and by the
+    /// consensus downcast of `DocumentNotForSaleError` (DPP code 40108).
+    #[error("document {document_id} is not for sale")]
+    DocumentNotForSale { document_id: Identifier },
+
+    /// The listed price no longer equals the price the user confirmed.
+    /// Raised pre-flight (fresh read ≠ confirmed price) and by the
+    /// consensus downcast of `DocumentIncorrectPurchasePriceError` (DPP
+    /// code 40109) when the listing changed between the pre-flight read
+    /// and broadcast — the purchase did NOT execute in either case.
+    #[error(
+        "document {document_id} price changed: purchase was confirmed at \
+         {expected} credits but the listing is now {actual} credits"
+    )]
+    DocumentPriceChanged {
+        document_id: Identifier,
+        expected: Credits,
+        actual: Credits,
+    },
+
+    /// The identity's credit balance cannot cover the operation
+    /// (principal + fee margin for pre-flight checks; Platform's own
+    /// arithmetic for the consensus downcast of
+    /// `IdentityInsufficientBalanceError`).
+    #[error(
+        "identity {identity_id} has insufficient credits: {required} required, \
+         {available} available"
+    )]
+    InsufficientIdentityCredits {
+        identity_id: Identifier,
+        required: Credits,
+        available: Credits,
+    },
+
+    /// The name is inside an active contested-name vote, so its domain
+    /// document is not yet in the documents tree and cannot be listed,
+    /// transferred, or purchased. Without this guard the network returns
+    /// a bare `DocumentNotFoundError` (40101), which reads as "no such
+    /// name" — this typed error says what is actually going on.
+    /// `ends_at_ms == 0` means the vote's end time was unavailable.
+    #[error(
+        "DPNS name {label:?} is in an active contested-name vote \
+         (ends at {ends_at_ms} ms) and cannot be traded until the contest resolves"
+    )]
+    ContestedNameNotTradable { label: String, ends_at_ms: u64 },
 
     /// Platform rejected an address-funds transition because a spent address's
     /// provided nonce did not equal its expected next value (DPP consensus code
@@ -166,6 +622,23 @@ pub enum PlatformWalletError {
 
     #[error("Address operation failed: {0}")]
     AddressOperation(String),
+
+    /// A caller passed an argument this API cannot act on — as opposed to a
+    /// lookup that found nothing. Kept distinct from [`WalletNotFound`] so a
+    /// host is told to fix its input rather than that the wallet is missing;
+    /// FFI maps it to the existing invalid-parameter code, which is what the
+    /// FFI boundary already returns for the same class of rejection.
+    ///
+    /// [`WalletNotFound`]: Self::WalletNotFound
+    #[error("Invalid parameter: {0}")]
+    InvalidParameter(String),
+
+    /// The SPV masternode list has not been synced yet, so a
+    /// masternode-list-dependent action (locating an entry, re-asserting its
+    /// service values) cannot proceed. FFI maps it to the same
+    /// masternode-list-unavailable code the locator already returns.
+    #[error("the masternode list is not available yet")]
+    MasternodeListUnavailable,
 
     #[error(
         "no selectable inputs: only funded addresses appear as destinations \
@@ -248,6 +721,41 @@ pub enum PlatformWalletError {
         wallet_id: String,
     },
 
+    #[error(
+        "Seed-binding check for wallet {wallet_id} did not answer within the \
+         caller's deadline (refusing to derive through a provider that was \
+         never checked)"
+    )]
+    /// The contact-crypto provider did not return the BIP44 account-0 xpub
+    /// before the deadline the caller supplied — a stalled host Keychain /
+    /// Keystore, or a budget already spent by the time the gated pass was
+    /// reached. Distinct from [`Self::SeedMismatch`], which is a *proven*
+    /// wrong seed: this one proves nothing either way, which is why it is
+    /// refused just as firmly. The check derives nothing and commits nothing,
+    /// so the queue survives for the next signer-present pass.
+    SeedBindingUnanswered {
+        /// Hex of the wallet id whose binding could not be established.
+        wallet_id: String,
+    },
+
+    #[error(
+        "Contact-request sync reached none of the wallet's {identities} identities \
+         (Platform unreachable) — the pass did not complete"
+    )]
+    /// A contact-request pass had identities to fetch for and could not read a
+    /// single one of them. Distinct from an empty success, which means
+    /// "Platform answered, and there is nothing new": this one means we do not
+    /// know, so the caller must not record the pass as completed.
+    ///
+    /// The sweep's per-identity log-and-continue collapsed the two, so a DAPI
+    /// outage returned `Ok(vec![])` and a startup sequence recorded a
+    /// successful contact sync — then reported `Ready`, promising that every
+    /// contact's DIP-15 addresses existed before Core SPV started.
+    ContactSyncUnreachable {
+        /// Identities the pass tried, and failed, to fetch for.
+        identities: usize,
+    },
+
     #[error("SPV is already running — stop it before starting again")]
     SpvAlreadyRunning,
 
@@ -281,6 +789,13 @@ pub enum PlatformWalletError {
 
     #[error("Insufficient shielded balance: available {available}, required {required}")]
     ShieldedInsufficientBalance { available: u64, required: u64 },
+
+    /// A Platform Payment-account shield cannot be represented from the
+    /// wallet's deterministic address-input set at the requested amount.
+    /// Distinct from [`ShieldedInsufficientBalance`](Self::ShieldedInsufficientBalance),
+    /// which refers exclusively to private note selection.
+    #[error("Platform shield capacity exceeded: available {available}, required {required}")]
+    PlatformShieldCapacityExceeded { available: u64, required: u64 },
 
     #[error("Shielded build error: {0}")]
     ShieldedBuildError(String),
@@ -327,8 +842,41 @@ pub enum PlatformWalletError {
         reason: String,
     },
 
+    /// A masternode (evonode) identity credit withdrawal was **broadcast and
+    /// accepted**, but its execution result could not be confirmed (the
+    /// result-proof fetch/verify failed — transient DAPI/proof error or
+    /// timeout, not a Platform rejection). The claim may already have
+    /// executed, and the SDK's identity-nonce cache was bumped for it, so
+    /// re-submitting could execute a SECOND withdrawal with the next nonce.
+    /// Callers must NOT retry until they have re-read the identity's
+    /// claimable balance (and the payout) and reconciled the outcome.
+    /// `reason` carries the underlying SDK error for diagnostics.
+    ///
+    /// Shielded sibling: [`Self::ShieldedSpendUnconfirmed`]; core sibling:
+    /// [`Self::TransactionBroadcastUnconfirmed`].
+    #[error(
+        "Masternode withdrawal of {amount_credits} credits from identity {identity_id} was \
+         broadcast but its result could not be confirmed; it may already have executed — do \
+         not re-submit until the claimable balance has been re-read: {reason}"
+    )]
+    MasternodeWithdrawalUnconfirmed {
+        identity_id: Identifier,
+        amount_credits: u64,
+        reason: String,
+    },
+
     #[error("Shielded sync failed: {0}")]
     ShieldedSyncFailed(String),
+
+    /// A background sync pass did not drain within its quiesce budget, so
+    /// the operation that required a "no more persister stores" barrier
+    /// (manager shutdown, `clear_shielded`, a sync-state reset) aborted
+    /// fail-closed. The wedged pass may still fire persistence / event
+    /// callbacks; the host must keep its callback context alive and must
+    /// not commit any wipe it was about to pair with this call.
+    /// FFI mirror: `PlatformWalletFFIResultCode::ErrorShutdownIncomplete`.
+    #[error("Background sync did not quiesce: {0}")]
+    ShutdownIncomplete(String),
 
     #[error("Shielded commitment tree update failed: {0}")]
     ShieldedTreeUpdateFailed(String),
@@ -511,6 +1059,218 @@ pub fn promote_address_nonce_error_or_sdk(error: dash_sdk::Error) -> PlatformWal
     promote_address_nonce_error(&error).unwrap_or(PlatformWalletError::Sdk(error))
 }
 
+/// Extract the consensus verdict from the `dash_sdk::Error` shapes that can
+/// carry one — `StateTransitionBroadcastError` (wait-stream),
+/// `Protocol(ConsensusError)` (CheckTx), and the dapi-client's
+/// exhausted-retry envelope it recurses into. Shared by the typed-promotion
+/// matchers below; the same coverage caveat as
+/// [`as_asset_lock_proof_cl_height_too_low`] applies (re-audit when
+/// `dash_sdk::Error` gains consensus-carrying variants).
+fn consensus_error_of(error: &dash_sdk::Error) -> Option<&dpp::consensus::ConsensusError> {
+    match error {
+        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
+            broadcast_err.cause.as_ref()
+        }
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
+        dash_sdk::Error::NoAvailableAddressesToRetry(inner) => consensus_error_of(inner),
+        _ => None,
+    }
+}
+
+/// Whether Platform rejected a transition because the exact asset-lock
+/// outpoint it submitted has already been consumed.
+///
+/// Matches the structured consensus error carried by both CheckTx
+/// (`Protocol(ConsensusError)`) and wait-stream
+/// (`StateTransitionBroadcastError`) failures. The outpoint comparison is
+/// deliberate: callers may only recognize a report for the tracked lock they
+/// actually submitted, never an unrelated outpoint mentioned by a malformed
+/// error. This signal alone does not authenticate terminal consumption.
+pub fn is_asset_lock_already_consumed(
+    error: &dash_sdk::Error,
+    out_point: &dashcore::OutPoint,
+) -> bool {
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
+
+    matches!(
+        consensus_error_of(error),
+        Some(ConsensusError::BasicError(
+            BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(e),
+        )) if e.transaction_id() == out_point.txid
+            && e.output_index() == out_point.vout as usize
+    )
+}
+
+/// Promote a document-trade consensus rejection to its typed
+/// [`PlatformWalletError`] so callers get structured data instead of a
+/// stringified verdict:
+///
+/// - `DocumentNotForSaleError` (40108) → [`PlatformWalletError::DocumentNotForSale`]
+/// - `DocumentIncorrectPurchasePriceError` (40109) →
+///   [`PlatformWalletError::DocumentPriceChanged`] (carries both prices —
+///   the race-lost purchase case; the transition did NOT execute)
+/// - `IdentityInsufficientBalanceError` →
+///   [`PlatformWalletError::InsufficientIdentityCredits`]
+///
+/// Returns `None` for anything else, leaving the caller's fallback mapping
+/// in charge.
+pub fn promote_document_trade_error(error: &dash_sdk::Error) -> Option<PlatformWalletError> {
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+
+    match consensus_error_of(error)? {
+        ConsensusError::StateError(StateError::DocumentNotForSaleError(e)) => {
+            Some(PlatformWalletError::DocumentNotForSale {
+                document_id: *e.document_id(),
+            })
+        }
+        ConsensusError::StateError(StateError::DocumentIncorrectPurchasePriceError(e)) => {
+            Some(PlatformWalletError::DocumentPriceChanged {
+                document_id: *e.document_id(),
+                expected: e.trying_to_purchase_at_price(),
+                actual: e.actual_price(),
+            })
+        }
+        ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(e)) => {
+            Some(PlatformWalletError::InsufficientIdentityCredits {
+                identity_id: *e.identity_id(),
+                required: e.required_balance(),
+                available: e.balance(),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Map a document-trade transition's SDK error to a [`PlatformWalletError`]:
+/// typed trade rejections first ([`promote_document_trade_error`]), then the
+/// structured signer-key-unavailable preservation, then the caller's `wrap`
+/// fallback. Owned-error `.map_err(...)?` analogue for the set-price /
+/// purchase / transfer call sites.
+pub fn promote_document_trade_error_or(
+    error: dash_sdk::Error,
+    wrap: impl FnOnce(dash_sdk::Error) -> PlatformWalletError,
+) -> PlatformWalletError {
+    if let Some(promoted) = promote_document_trade_error(&error) {
+        return promoted;
+    }
+    preserve_signer_key_unavailable_or(error, wrap)
+}
+
+/// The reserved machine prefix that a typed `SigningKeyUnavailable` signer
+/// completion stamps at the **start** of its `ProtocolError::Generic` payload.
+/// Also stamped at position 0 of `MnemonicResolverCoreSigner::NotFound`'s
+/// `Display`, which is how a missing key stays recognizable across key-wallet's
+/// `Signer` surface (whose error type is only `Display`) — `sign_message`
+/// checks this prefix on the signer's rendering before adding any context and
+/// promotes the failure to the typed
+/// [`PlatformWalletError::MessageSigningKeyUnavailable`].
+///
+/// Canonically owned by the signer-completion boundary as
+/// [`rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX`]. It is mirrored
+/// here — rather than imported — because this pure-logic crate must recognize
+/// the marker *before* an operation wrapper stringifies the underlying SDK
+/// error, yet is deliberately kept free of any dependency on the FFI crate.
+/// The two definitions are pinned byte-identical by a compile-time assertion in
+/// `platform-wallet-ffi` (`src/error.rs`), so any drift is a build failure
+/// rather than a silent code-31 regression.
+pub const SIGNER_KEY_UNAVAILABLE_PREFIX: &str = "signer_error:key_unavailable: ";
+
+/// Preserve a structured `SigningKeyUnavailable` signer failure through an
+/// operation wrapper that would otherwise flatten it to a string and discard
+/// the typed discriminator the FFI boundary restores to code 31
+/// (`ErrorSigningKeyUnavailable`).
+///
+/// Several public signing paths (token transfer, DPNS registration, document
+/// replace, …) wrap every SDK failure in an operation-specific string variant
+/// (`TokenError`, `InvalidIdentityData`, …). A genuine key-unavailable
+/// completion still leaves the reserved prefix inside those strings, but the
+/// resulting variant reaches the FFI's `_` arm and flattens to
+/// `ErrorUnknown`, losing the host's key-repair routing. This helper keeps the
+/// failure verbatim under [`PlatformWalletError::Sdk`] — the one shape
+/// `From<PlatformWalletError> for PlatformWalletFFIResult` maps to code 31 —
+/// and hands every other error to `wrap`, the caller's stringifying wrapper,
+/// unchanged.
+///
+/// The check is **structural and position-0 only** (the marker must start the
+/// nested `ProtocolError::Generic` payload); it is never a substring sniff of
+/// the rendered error, so a foreign signer that merely mentions the token is
+/// not misrouted into key repair. This mirrors
+/// the guarded restore already performed by the FFI conversion.
+pub fn preserve_signer_key_unavailable_or(
+    error: dash_sdk::Error,
+    wrap: impl FnOnce(dash_sdk::Error) -> PlatformWalletError,
+) -> PlatformWalletError {
+    if matches!(
+        &error,
+        dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))
+            if s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
+    ) {
+        PlatformWalletError::Sdk(error)
+    } else {
+        wrap(error)
+    }
+}
+
+#[cfg(test)]
+mod signer_key_unavailable_tests {
+    use super::*;
+
+    /// A structured key-unavailable signer completion (the reserved marker at
+    /// the start of a `ProtocolError::Generic` payload) is preserved verbatim
+    /// under `Sdk` so the FFI boundary can restore code 31 — the operation
+    /// wrapper is NOT applied.
+    #[test]
+    fn preserves_structured_key_unavailable_error() {
+        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+            "{SIGNER_KEY_UNAVAILABLE_PREFIX}no private key stored for 02abcd"
+        )));
+        let mapped = preserve_signer_key_unavailable_or(error, |e| {
+            PlatformWalletError::TokenError(format!("Token transfer failed: {e}"))
+        });
+        match mapped {
+            PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))) => {
+                assert!(s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX));
+            }
+            other => panic!("expected preserved Sdk(Protocol(Generic)), got {other:?}"),
+        }
+    }
+
+    /// An unrelated SDK error is handed to the caller's wrapper unchanged.
+    #[test]
+    fn wraps_unrelated_error() {
+        let error = dash_sdk::Error::Generic("boom".to_string());
+        let mapped = preserve_signer_key_unavailable_or(error, |e| {
+            PlatformWalletError::TokenError(format!("Token transfer failed: {e}"))
+        });
+        match mapped {
+            PlatformWalletError::TokenError(msg) => {
+                assert!(msg.contains("Token transfer failed"));
+                assert!(msg.contains("boom"));
+            }
+            other => panic!("expected wrapped TokenError, got {other:?}"),
+        }
+    }
+
+    /// The marker only counts at position 0: a generic error that merely
+    /// mentions it mid-message is wrapped, never preserved as the typed
+    /// key-unavailable shape.
+    #[test]
+    fn substring_marker_is_not_preserved() {
+        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+            "remote signer reported: {SIGNER_KEY_UNAVAILABLE_PREFIX}oops"
+        )));
+        let mapped = preserve_signer_key_unavailable_or(error, |e| {
+            PlatformWalletError::InvalidIdentityData(format!("Failed to replace document: {e}"))
+        });
+        assert!(
+            matches!(mapped, PlatformWalletError::InvalidIdentityData(_)),
+            "a mid-message marker must be wrapped, not preserved"
+        );
+    }
+}
+
 #[cfg(test)]
 mod address_nonce_tests {
     use super::*;
@@ -662,5 +1422,89 @@ mod address_nonce_tests {
         let got = as_address_invalid_nonce(&wrapped).expect("must unwrap the retry envelope");
         assert_eq!(got.provided_nonce(), 9);
         assert_eq!(got.expected_nonce(), 10);
+    }
+}
+
+#[cfg(test)]
+mod asset_lock_already_consumed_tests {
+    use super::*;
+    use dash_sdk::error::StateTransitionBroadcastError;
+    use dashcore::hashes::Hash;
+    use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
+    use dpp::consensus::basic::UnsupportedProtocolVersionError;
+
+    fn out_point() -> dashcore::OutPoint {
+        dashcore::OutPoint::new(dashcore::Txid::all_zeros(), 7)
+    }
+
+    fn consensus_error() -> dpp::consensus::ConsensusError {
+        let out_point = out_point();
+        IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
+            out_point.txid,
+            out_point.vout as usize,
+        )
+        .into()
+    }
+
+    fn unrelated_consensus_error() -> dpp::consensus::ConsensusError {
+        UnsupportedProtocolVersionError::new(2, 1).into()
+    }
+
+    #[test]
+    fn recognizes_protocol_consensus_error_for_exact_outpoint() {
+        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            consensus_error(),
+        )));
+
+        assert!(is_asset_lock_already_consumed(&error, &out_point()));
+    }
+
+    #[test]
+    fn recognizes_broadcast_consensus_error_for_exact_outpoint() {
+        let error = dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+            code: 10504,
+            message: "asset lock already consumed".to_string(),
+            cause: Some(consensus_error()),
+        });
+
+        assert!(is_asset_lock_already_consumed(&error, &out_point()));
+    }
+
+    #[test]
+    fn ignores_unrelated_errors_and_different_outpoints() {
+        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            consensus_error(),
+        )));
+        let different_out_point = dashcore::OutPoint::new(dashcore::Txid::all_zeros(), 8);
+
+        assert!(!is_asset_lock_already_consumed(
+            &error,
+            &different_out_point
+        ));
+        assert!(!is_asset_lock_already_consumed(
+            &dash_sdk::Error::Generic("boom".to_string()),
+            &out_point()
+        ));
+
+        let unrelated_protocol = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(
+            Box::new(unrelated_consensus_error()),
+        ));
+        assert!(!is_asset_lock_already_consumed(
+            &unrelated_protocol,
+            &out_point()
+        ));
+
+        let unrelated_broadcast =
+            dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+                code: 10504,
+                // Deliberately resembles the target message: matching must
+                // depend on the structured cause, never this display text.
+                message: "asset lock output already completely used".to_string(),
+                cause: Some(unrelated_consensus_error()),
+            });
+        assert!(!is_asset_lock_already_consumed(
+            &unrelated_broadcast,
+            &out_point()
+        ));
     }
 }

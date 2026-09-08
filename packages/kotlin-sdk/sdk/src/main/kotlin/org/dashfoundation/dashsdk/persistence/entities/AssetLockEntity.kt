@@ -40,7 +40,15 @@ data class AssetLockEntity(
     val amountDuffs: Long,
     /**
      * `AssetLockStatus` discriminant: 0 Built, 1 Broadcast,
-     * 2 InstantSendLocked, 3 ChainLocked, 4 Consumed.
+     * 2 InstantSendLocked, 3 ChainLocked, 4 Consumed,
+     * 5 RecoveredFromChain.
+     *
+     * `4` is terminal; `5` is NOT, its higher discriminant
+     * notwithstanding. `5` means Core finality is proven while
+     * Platform-side consumption is unknown — what the restore scan and the
+     * chainlock-promotion path write — so it belongs in every "still
+     * recoverable" predicate alongside `1..3`, and a contiguous `1..3`
+     * range silently drops it.
      */
     val statusRaw: Int,
     /**

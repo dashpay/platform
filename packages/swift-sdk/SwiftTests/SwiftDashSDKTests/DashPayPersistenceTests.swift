@@ -850,6 +850,228 @@ final class DashPayPaymentPersistenceTests: XCTestCase {
         )
         XCTAssertEqual(try fetchPaymentRows().count, 0)
     }
+
+    // MARK: Changeset persister-callback path (event-driven durability)
+
+    /// The event-driven write half of the payment durability loop: a
+    /// batch delivered by the `on_persist_dashpay_payments_fn` round —
+    /// no UI refresh ever running — must commit with the round and
+    /// round-trip through the cold-start restore buffer with the Sent
+    /// entry's memo intact. Against the getter-only era this exact
+    /// flow lost the row on relaunch unless `ContactDetailView`
+    /// happened to appear first.
+    func testChangesetRoundPersistsSentEntryAndRestoreBufferRoundTripsIt() throws {
+        // Restorable-wallet scaffolding for the load half (mirrors
+        // testRestoreRebuildsAcceptedAccounts): loadWalletList only
+        // walks identities linked to a wallet with a restorable
+        // account.
+        let walletId = Data(repeating: 0xAA, count: 32)
+        let context = ModelContext(container)
+        let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+        context.insert(wallet)
+        let account = PersistentAccount(
+            wallet: wallet,
+            accountType: 0,
+            accountIndex: 0,
+            accountTypeName: "standard"
+        )
+        account.accountExtendedPubKeyBytes = Data(repeating: 0xEE, count: 78)
+        context.insert(account)
+        let target = ownerId
+        let ownerDescriptor = FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == target }
+        )
+        let owner = try XCTUnwrap(try context.fetch(ownerDescriptor).first)
+        owner.wallet = wallet
+        try context.save()
+
+        // The persister round: begin → payments batch → end.
+        handler.beginChangeset(walletId: walletId)
+        handler.persistDashpayPayments(
+            walletId: walletId,
+            entriesByOwner: [ownerId: [makePayment(status: .pending, memo: "rent + utilities")]]
+        )
+        // Mid-round: staged, not committed.
+        XCTAssertEqual(
+            try fetchPaymentRows().count, 0,
+            "the callback must ride the round's atomic commit, not flush early"
+        )
+        handler.endChangeset(walletId: walletId, success: true)
+
+        let rows = try fetchPaymentRows()
+        XCTAssertEqual(rows.count, 1)
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertEqual(row.memo, "rent + utilities")
+        XCTAssertEqual(row.status, .pending)
+        XCTAssertEqual(row.direction, .sent)
+        XCTAssertEqual(row.ownerIdentityId, ownerId)
+        XCTAssertEqual(row.txid, txid)
+
+        // Cold-start restore: the row must ride the identity restore
+        // buffer's payments array back into Rust.
+        let (entries, count, errored) = handler.loadWalletList()
+        XCTAssertFalse(errored)
+        XCTAssertEqual(count, 1)
+        let entriesPtr = try XCTUnwrap(entries)
+        defer { handler.loadWalletListFree(entries: UnsafeRawPointer(entriesPtr)) }
+
+        var restored: [(txid: String, memo: String?)] = []
+        let walletEntry = entriesPtr[0]
+        for iIdx in 0..<Int(walletEntry.identities_count) {
+            let identity = walletEntry.identities![iIdx]
+            guard let paymentsPtr = identity.payments, identity.payments_count > 0 else {
+                continue
+            }
+            for pIdx in 0..<Int(identity.payments_count) {
+                let p = paymentsPtr[pIdx]
+                restored.append((
+                    txid: p.txid.map { String(cString: $0) } ?? "",
+                    memo: p.memo.map { String(cString: $0) }
+                ))
+            }
+        }
+        XCTAssertEqual(restored.count, 1, "the persisted payment must rehydrate at load")
+        XCTAssertEqual(restored.first?.txid, txid)
+        XCTAssertEqual(restored.first?.memo, "rent + utilities")
+    }
+
+    /// The confirm sweep re-records the same `(owner, txid)` with
+    /// status Confirmed and the next round re-emits the row — the flip
+    /// must persist in place through the callback path, never
+    /// duplicate.
+    func testChangesetRoundStatusFlipRepersistsTheSameRow() throws {
+        let walletId = Data(repeating: 0xAA, count: 32)
+        handler.beginChangeset(walletId: walletId)
+        handler.persistDashpayPayments(
+            walletId: walletId,
+            entriesByOwner: [ownerId: [makePayment(status: .pending)]]
+        )
+        handler.endChangeset(walletId: walletId, success: true)
+        XCTAssertEqual(try fetchPaymentRows().first?.status, .pending)
+
+        handler.beginChangeset(walletId: walletId)
+        handler.persistDashpayPayments(
+            walletId: walletId,
+            entriesByOwner: [ownerId: [makePayment(status: .confirmed)]]
+        )
+        handler.endChangeset(walletId: walletId, success: true)
+
+        let rows = try fetchPaymentRows()
+        XCTAssertEqual(rows.count, 1, "a status flip must upsert in place, not duplicate")
+        XCTAssertEqual(rows.first?.status, .confirmed)
+    }
+
+    /// A payments batch whose owner identity is staged LATER in the
+    /// same round parks mid-round and is staged again by `endChangeset`
+    /// BEFORE the round's single save — so the payment rows commit in
+    /// the same atomic transaction as the owner identity, never in a
+    /// second post-commit save a process kill could separate from the
+    /// round.
+    func testRowsForAnOwnerStagedLaterInTheRoundCommitAtomically() throws {
+        let walletId = Data(repeating: 0xAA, count: 32)
+        let lateOwner = Data(repeating: 0x33, count: 32)
+        // Wallet row so `persistIdentities` can resolve the network
+        // for the brand-new identity.
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        try context.save()
+
+        handler.beginChangeset(walletId: walletId)
+        // Payments land before the owner's identity row this round.
+        handler.persistDashpayPayments(
+            walletId: walletId,
+            entriesByOwner: [lateOwner: [makePayment(memo: "parked")]]
+        )
+        handler.persistIdentities(
+            walletId: walletId,
+            upserts: [
+                PlatformWalletPersistenceHandler.IdentityEntrySnapshot(
+                    identityId: lateOwner,
+                    balance: 0,
+                    revision: 0,
+                    identityIndex: nil,
+                    label: nil,
+                    status: 0,
+                    walletId: walletId,
+                    dpnsNames: [],
+                    dashpayProfile: nil,
+                    contactProfiles: []
+                )
+            ],
+            removed: []
+        )
+        let committed = handler.endChangeset(walletId: walletId, success: true)
+        XCTAssertTrue(committed, "a resolvable parked owner must not fail the round")
+
+        let rows = try fetchPaymentRows()
+        XCTAssertEqual(
+            rows.count, 1,
+            "parked rows must commit with the round's single save"
+        )
+        XCTAssertEqual(rows.first?.ownerIdentityId, lateOwner)
+        XCTAssertEqual(rows.first?.memo, "parked")
+    }
+
+    /// A payments batch whose owner identity never appears — neither
+    /// pre-existing nor staged by the round — must FAIL the round:
+    /// `endChangeset` rolls back and reports failure to Rust (which
+    /// then rolls its in-memory entry back), instead of committing the
+    /// rest of the round while silently dropping payment rows.
+    func testUnresolvableOwnerFailsTheRoundInsteadOfDroppingRows() throws {
+        let walletId = Data(repeating: 0xAA, count: 32)
+        let ghostOwner = Data(repeating: 0x55, count: 32)
+
+        handler.beginChangeset(walletId: walletId)
+        handler.persistDashpayPayments(
+            walletId: walletId,
+            entriesByOwner: [
+                ownerId: [makePayment()],
+                ghostOwner: [makePayment(memo: "orphaned")],
+            ]
+        )
+        let committed = handler.endChangeset(walletId: walletId, success: true)
+
+        XCTAssertFalse(
+            committed,
+            "an unresolvable payment owner must fail the round, not drop the rows"
+        )
+        XCTAssertEqual(
+            try fetchPaymentRows().count, 0,
+            "the failed round must roll back everything it staged"
+        )
+    }
+
+    /// A failed round discards BOTH staged and parked payment rows —
+    /// the Rust side rolled the entries back out of its in-memory map,
+    /// so persisting them later would fabricate history.
+    func testFailedRoundRollsBackStagedAndParkedPaymentRows() throws {
+        let walletId = Data(repeating: 0xAA, count: 32)
+        let unknownOwner = Data(repeating: 0x44, count: 32)
+        handler.beginChangeset(walletId: walletId)
+        handler.persistDashpayPayments(
+            walletId: walletId,
+            entriesByOwner: [
+                ownerId: [makePayment()],
+                unknownOwner: [makePayment(memo: "will park")],
+            ]
+        )
+        handler.endChangeset(walletId: walletId, success: false)
+        XCTAssertEqual(try fetchPaymentRows().count, 0)
+
+        // Make the parked group's owner appear and run a healthy round:
+        // the failed round's parked rows must NOT resurrect.
+        let context = ModelContext(container)
+        context.insert(
+            PersistentIdentity(identityId: unknownOwner, isLocal: false, network: .testnet)
+        )
+        try context.save()
+        handler.beginChangeset(walletId: walletId)
+        handler.endChangeset(walletId: walletId, success: true)
+        XCTAssertEqual(
+            try fetchPaymentRows().count, 0,
+            "rolled-back parked rows must be discarded, not replayed"
+        )
+    }
 }
 
 // MARK: - DashPayPayment FFI value-struct marshalling

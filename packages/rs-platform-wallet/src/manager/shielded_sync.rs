@@ -34,8 +34,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::RwLock;
 
+use dash_async::ThreadRegistry;
+
 use crate::events::PlatformEventManager;
-use crate::manager::loop_cancel::LoopCancelGuard;
+use crate::manager::{
+    coordinator_worker_config, drain_pass, QuiesceGate, QuiesceGuard, SyncSlotGuard, WalletWorker,
+    COORDINATOR_DRAIN_BUDGET,
+};
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedSyncSummary};
 
@@ -139,18 +144,22 @@ pub struct ShieldedSyncManager {
     /// run first, so an empty slot guarantees no shielded state
     /// exists).
     coordinator_slot: Arc<RwLock<Option<Arc<NetworkShieldedCoordinator>>>>,
-    /// Generation-guarded cancel-token slot for the background loop —
-    /// see [`LoopCancelGuard`] for the stale-loop shutdown invariant.
-    cancel_guard: LoopCancelGuard,
+    /// Shared registry that owns this loop's lifecycle: it spawns the
+    /// OS thread, owns its cancellation token, and joins it at shutdown.
+    /// A generation-guarded slot handles a `stop()` + quick `start()`
+    /// without a stale loop clobbering the new one, and its per-key
+    /// clearing latch bars a (re)start mid `clear_shielded`.
+    registry: Arc<ThreadRegistry<WalletWorker>>,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
-    /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
-    /// drains an in-flight one. `sync_now` / `sync_wallet` bail (after
-    /// taking the `is_syncing` slot) when this is set, so once `quiesce`
-    /// observes `is_syncing == false` no further pass can start — giving
-    /// Clear / stop a real "no more host-visible mutations" barrier that
-    /// cancel-only [`stop`](Self::stop) does not provide.
-    quiescing: AtomicBool,
+    /// Gates new passes while a [`quiesce`](Self::quiesce) drains an
+    /// in-flight one, while a [`QuiesceGuard`] holder mutates state, and
+    /// terminally once shutdown seals it. `sync_now` / `sync_wallet` bail
+    /// (after taking the `is_syncing` slot) when it is closed, so once a
+    /// drain observes `is_syncing == false` no further pass can start —
+    /// giving Clear / stop a real "no more host-visible mutations"
+    /// barrier that cancel-only [`stop`](Self::stop) does not provide.
+    quiescing: QuiesceGate,
     /// Unix seconds of the last completed pass. `0` = never.
     last_sync_unix: AtomicU64,
 }
@@ -159,14 +168,15 @@ impl ShieldedSyncManager {
     pub fn new(
         event_manager: Arc<PlatformEventManager>,
         coordinator_slot: Arc<RwLock<Option<Arc<NetworkShieldedCoordinator>>>>,
+        registry: Arc<ThreadRegistry<WalletWorker>>,
     ) -> Self {
         Self {
             event_manager,
             coordinator_slot,
-            cancel_guard: LoopCancelGuard::new(),
+            registry,
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
-            quiescing: AtomicBool::new(false),
+            quiescing: QuiesceGate::default(),
             last_sync_unix: AtomicU64::new(0),
         }
     }
@@ -186,7 +196,7 @@ impl ShieldedSyncManager {
 
     /// Whether the background loop is currently running.
     pub fn is_running(&self) -> bool {
-        self.cancel_guard.is_running()
+        self.registry.is_running(WalletWorker::ShieldedSync)
     }
 
     /// Whether a sync pass is in flight right now.
@@ -210,16 +220,25 @@ impl ShieldedSyncManager {
     /// the underlying `dash-sdk` shielded-sync future is `!Send` (the
     /// GRPC client state isn't `Send + Sync`). Same trade-off as
     /// [`PlatformAddressSyncManager::start`](super::platform_address_sync::PlatformAddressSyncManager::start).
+    ///
+    /// **Blocks briefly on restart**: the shared registry synchronously
+    /// reaps a still-draining prior-generation thread, spinning up to the
+    /// registry reap backstop (default 1 s) before returning. Call it from
+    /// the FFI host thread, not an async task.
     pub fn start(self: Arc<Self>) {
-        let Some((cancel, my_generation)) = self.cancel_guard.install() else {
-            return;
-        };
-
         let handle = tokio::runtime::Handle::current();
+        let registry = Arc::clone(&self.registry);
         let this = self;
-        std::thread::Builder::new()
-            .name("shielded-sync".into())
-            .spawn(move || {
+        // The registry owns the whole lifecycle under one slot lock: it
+        // refuses the start if teardown has latched `closing` OR a
+        // `clear_shielded` holds this key's clearing latch (so no fresh pass
+        // can re-persist notes into the store the clear is about to wipe),
+        // installs the cancellation token, spawns the thread, and reaps any
+        // prior generation. No check-then-spawn gap to race.
+        registry.start_thread(
+            WalletWorker::ShieldedSync,
+            coordinator_worker_config(),
+            move |cancel| {
                 handle.block_on(async move {
                     loop {
                         if cancel.is_cancelled() {
@@ -241,11 +260,9 @@ impl ShieldedSyncManager {
                             _ = cancel.cancelled() => break,
                         }
                     }
-
-                    this.cancel_guard.clear_if_current(my_generation);
                 });
-            })
-            .expect("failed to spawn shielded-sync thread");
+            },
+        );
     }
 
     /// Stop the background sync loop. No-op if not running.
@@ -257,9 +274,7 @@ impl ShieldedSyncManager {
     /// nothing more will be persisted" barrier — required by Clear,
     /// unregister, and rebind — use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
-        if let Some(token) = self.cancel_guard.take() {
-            token.cancel();
-        }
+        self.registry.cancel(WalletWorker::ShieldedSync);
     }
 
     /// Cancel the background loop **and wait for any in-flight sync pass
@@ -273,19 +288,76 @@ impl ShieldedSyncManager {
     /// cannot be raced by a pass that re-persists notes after the caller
     /// believed sync had stopped.
     ///
-    /// Mechanism: set the `quiescing` gate so any pass that hasn't yet
+    /// Mechanism: close the `quiescing` gate so any pass that hasn't yet
     /// taken the `is_syncing` slot bails, cancel the loop, then wait for
     /// `is_syncing` to clear. `is_syncing` is held for the whole pass
     /// including the persister fan-out, so its falling edge (with the
-    /// gate up) is a sound "fully drained" signal. The gate is reopened
-    /// before returning so a later start/sync works normally.
-    pub async fn quiesce(&self) {
-        self.quiescing.store(true, Ordering::Release);
-        self.stop();
-        while self.is_syncing.load(Ordering::Acquire) {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        self.quiescing.store(false, Ordering::Release);
+    /// gate closed) is a sound "fully drained" signal. The gate is
+    /// reopened before returning so a later start/sync works normally —
+    /// a caller that must keep admission shut across a follow-up state
+    /// mutation uses [`quiesce_held`](Self::quiesce_held) instead.
+    ///
+    /// **Bounded** by `COORDINATOR_DRAIN_BUDGET`: returns `false` if
+    /// the in-flight pass did not drain in time — see
+    /// `quiesce_within` for the timeout contract.
+    #[must_use = "a false return means the pass did NOT drain; the caller must fail closed"]
+    pub async fn quiesce(&self) -> bool {
+        self.quiesce_within(COORDINATOR_DRAIN_BUDGET).await
+    }
+
+    /// [`quiesce`](Self::quiesce) with an explicit drain budget.
+    ///
+    /// Returns `true` when the drain completed. Returns `false` when
+    /// `is_syncing` was still held at the deadline — a wedged pass. On
+    /// that path the `quiescing` gate is deliberately **left closed** so
+    /// the wedged pass cannot be followed by a fresh one; the caller must
+    /// treat the coordinator as non-clean (Clear aborts fail-closed, the
+    /// FFI stop surfaces `ErrorShutdownIncomplete`). A later successful
+    /// `quiesce` reopens the gate.
+    pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
+        // The guard drops here, reopening the gate — this is the
+        // "drain only" flavor.
+        self.quiesce_held_within(budget).await.is_some()
+    }
+
+    /// [`quiesce`](Self::quiesce) that **keeps sync admission shut** until
+    /// the returned guard drops.
+    ///
+    /// Required by `clear_shielded`: `quiesce()` alone reopens the gate the
+    /// instant it returns, so the wipe that follows runs with admission
+    /// already re-opened and a direct `sync_now` / `sync_wallet` on a host
+    /// thread can snapshot the old account set and refill the commitment
+    /// tree right after `coord.clear()` reset it. Holding the guard across
+    /// the whole quiesce → mutate section closes that window.
+    ///
+    /// `None` means the in-flight pass did not drain within
+    /// `COORDINATOR_DRAIN_BUDGET`; the caller must fail closed.
+    #[must_use = "None means the pass did NOT drain; the caller must fail closed"]
+    pub(crate) async fn quiesce_held(&self) -> Option<QuiesceGuard<'_>> {
+        self.quiesce_held_within(COORDINATOR_DRAIN_BUDGET).await
+    }
+
+    /// [`quiesce_held`](Self::quiesce_held) with an explicit drain budget.
+    pub(crate) async fn quiesce_held_within(&self, budget: Duration) -> Option<QuiesceGuard<'_>> {
+        drain_pass(&self.quiescing, &self.is_syncing, || self.stop(), budget).await
+    }
+
+    /// [`quiesce_within`](Self::quiesce_within) that **seals** the gate:
+    /// admission never reopens on this coordinator instance.
+    ///
+    /// Used by manager shutdown. Reopening there would let a direct
+    /// `sync_now` that was already dispatched on a host thread — the FFI
+    /// resolves the manager under a shared read guard, so it can be
+    /// mid-flight while `destroy` runs — start a fresh pass *after* the
+    /// drain concluded and fire persister / completion callbacks through
+    /// a context the host has since freed.
+    pub(crate) async fn quiesce_sealed_within(&self, budget: Duration) -> bool {
+        let guard = self.quiesce_held_within(budget).await;
+        let drained = guard.is_some();
+        // Seal before the guard drops so its Drop cannot reopen.
+        self.quiescing.seal();
+        drop(guard);
+        drained
     }
 
     /// Run one sync pass across every registered wallet.
@@ -307,12 +379,14 @@ impl ShieldedSyncManager {
         {
             return ShieldedSyncPassSummary::default();
         }
+        // Clears `is_syncing` on every exit path — including panic unwind —
+        // so a failed pass can never wedge `quiesce()`'s drain.
+        let _slot = SyncSlotGuard(&self.is_syncing);
 
         // A `quiesce()` may have raised the gate between our CAS and
         // here; if so, release the slot and bail without running a pass
         // so the drain can complete and Clear/stop get a true barrier.
-        if self.quiescing.load(Ordering::Acquire) {
-            self.is_syncing.store(false, Ordering::Release);
+        if self.quiescing.is_closed() {
             return ShieldedSyncPassSummary::default();
         }
 
@@ -355,10 +429,9 @@ impl ShieldedSyncManager {
         // while this completion event (FFI callback → Swift
         // `handleShieldedSyncCompleted`) is still pending — surfacing a
         // stale post-stop/post-clear event. Holding the flag across the
-        // dispatch makes quiesce's barrier cover the event too.
+        // dispatch makes quiesce's barrier cover the event too (`_slot`
+        // drops — and clears the flag — only after this dispatch returns).
         self.event_manager.on_shielded_sync_completed(&summary);
-
-        self.is_syncing.store(false, Ordering::Release);
 
         summary
     }
@@ -402,16 +475,17 @@ impl ShieldedSyncManager {
         {
             return Ok(None);
         }
+        // Clears `is_syncing` on every exit path — including panic unwind —
+        // so a failed pass can never wedge `quiesce()`'s drain.
+        let _slot = SyncSlotGuard(&self.is_syncing);
 
         // Bail if a `quiesce()` raised the gate after our CAS (see
         // `sync_now`) so the drain barrier holds.
-        if self.quiescing.load(Ordering::Acquire) {
-            self.is_syncing.store(false, Ordering::Release);
+        if self.quiescing.is_closed() {
             return Ok(None);
         }
 
         let pass = coordinator.sync(force).await;
-        self.is_syncing.store(false, Ordering::Release);
 
         // Extract this wallet's slice from the network-wide pass
         // summary. If the wallet is registered, we'll get back an

@@ -4,6 +4,8 @@ use std::convert::TryInto;
 use std::io::{BufReader, Cursor, Read};
 
 use crate::data_contract::errors::DataContractError;
+use bincode::{Decode, Encode};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 use crate::consensus::basic::decode::DecodingError;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
@@ -37,6 +39,34 @@ pub struct DocumentProperty {
     pub property_type: DocumentPropertyType,
     pub required: bool,
     pub transient: bool,
+    /// The contract version this property is required from (`requiredSince`).
+    /// `None` for plain-required properties (required at every version) and
+    /// for optional properties. Only ever `Some` when `required` is true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required_since: Option<u32>,
+}
+
+impl DocumentProperty {
+    /// Whether this property is required for a document whose bytes conform to
+    /// `contract_version` (the document's stamp). `None` means the document
+    /// was serialized before format 3, which predates every `requiredSince`
+    /// annotation, so only unconditionally required properties count.
+    pub fn required_at(&self, contract_version: Option<u32>) -> bool {
+        self.required
+            && match self.required_since {
+                None => true,
+                Some(since) => contract_version.is_some_and(|version| version >= since),
+            }
+    }
+
+    /// Whether this property is required regardless of any document's
+    /// contract-version stamp: `required` without a `requiredSince` gate.
+    /// This is the requiredness the pre-stamp serialization formats (0–2)
+    /// encode, and it equals `required_at(None)` — an unstamped document
+    /// predates every `requiredSince` annotation.
+    pub fn always_required(&self) -> bool {
+        self.required && self.required_since.is_none()
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize)]
@@ -49,6 +79,79 @@ pub struct StringPropertySizes {
 pub struct ByteArrayPropertySizes {
     pub min_size: Option<u16>,
     pub max_size: Option<u16>,
+}
+
+// This enum is embedded in consensus errors, so it is consensus-serialized.
+// @append_only
+#[derive(
+    Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum DocumentPropertyReferenceTarget {
+    Identity,
+    Contract,
+    Token,
+    /// A document of a document type whose documents can never be deleted
+    /// (`canBeDeleted: false`). Only such document types may be referenced:
+    /// together with document types being non-removable and the
+    /// `canBeDeleted` flag being immutable on contract updates, this
+    /// guarantees a validated reference can never dangle.
+    #[serde(rename = "permanentDocument")]
+    PermanentDocument {
+        /// The contract the referenced document type lives in; `None` means
+        /// the declaring contract itself
+        contract_id: Option<Identifier>,
+        document_type_name: String,
+        /// Property agreement: each `{referring property: referenced
+        /// property}` pair must hold as an EQUALITY between the referring
+        /// document's value and the referenced document's value, checked by
+        /// consensus at document write time (the referenced document is
+        /// already fetched for existence validation, so agreement adds no
+        /// reads). Declarations are validated at contract registration:
+        /// both properties must exist and share one property type.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        property_agreement: BTreeMap<String, String>,
+    },
+    /// A specific public key of an identity: the property value holds the
+    /// identity id and the named sibling property of the same document type
+    /// holds the key id. Identity keys can be disabled but never removed, so
+    /// an existing reference can never dangle; at write time the key must
+    /// exist and must not be disabled.
+    #[serde(rename = "identityPublicKey")]
+    IdentityPublicKey {
+        /// The property of the same document type whose value carries the
+        /// referenced key id
+        key_id_property: String,
+    },
+}
+
+impl std::fmt::Display for DocumentPropertyReferenceTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DocumentPropertyReferenceTarget::Identity => write!(f, "identity"),
+            DocumentPropertyReferenceTarget::Contract => write!(f, "contract"),
+            DocumentPropertyReferenceTarget::Token => write!(f, "token"),
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: Some(contract_id),
+                document_type_name,
+                ..
+            } => write!(
+                f,
+                "permanent document (contract {contract_id}, document type {document_type_name})"
+            ),
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: None,
+                document_type_name,
+                ..
+            } => write!(
+                f,
+                "permanent document (own contract, document type {document_type_name})"
+            ),
+            DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
+                write!(f, "identity public key (key id property {key_id_property})")
+            }
+        }
+    }
 }
 
 // @append_only
@@ -73,6 +176,7 @@ pub enum DocumentPropertyType {
     Object(IndexMap<String, DocumentProperty>),
     Array(ArrayItemType),
     VariableTypeArray(Vec<ArrayItemType>),
+    IdentifierWithReference(DocumentPropertyReferenceTarget),
 }
 
 impl DocumentPropertyType {
@@ -128,7 +232,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::F64 => "f64".to_string(),
             DocumentPropertyType::String(_) => "string".to_string(),
             DocumentPropertyType::ByteArray(_) => "byteArray".to_string(),
-            DocumentPropertyType::Identifier => "identifier".to_string(),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                "identifier".to_string()
+            }
             DocumentPropertyType::Boolean => "boolean".to_string(),
             DocumentPropertyType::Date => "date".to_string(),
             DocumentPropertyType::Object(_) => "object".to_string(),
@@ -166,7 +272,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => None,
             DocumentPropertyType::VariableTypeArray(_) => None,
-            DocumentPropertyType::Identifier => Some(32),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Some(32)
+            }
         }
     }
 
@@ -211,7 +319,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => Ok(None),
             DocumentPropertyType::VariableTypeArray(_) => Ok(None),
-            DocumentPropertyType::Identifier => Ok(Some(32)),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Ok(Some(32))
+            }
         }
     }
 
@@ -256,7 +366,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => Ok(None),
             DocumentPropertyType::VariableTypeArray(_) => Ok(None),
-            DocumentPropertyType::Identifier => Ok(Some(32)),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Ok(Some(32))
+            }
         }
     }
 
@@ -289,7 +401,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => None,
             DocumentPropertyType::VariableTypeArray(_) => None,
-            DocumentPropertyType::Identifier => Some(32),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Some(32)
+            }
         }
     }
 
@@ -423,7 +537,9 @@ impl DocumentPropertyType {
             }
             DocumentPropertyType::Array(_) => Value::Null,
             DocumentPropertyType::VariableTypeArray(_) => Value::Null,
-            DocumentPropertyType::Identifier => Value::Identifier(rng.gen()),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Value::Identifier(rng.gen())
+            }
         }
     }
 
@@ -472,7 +588,9 @@ impl DocumentPropertyType {
             }
             DocumentPropertyType::Array(_) => Value::Null,
             DocumentPropertyType::VariableTypeArray(_) => Value::Null,
-            DocumentPropertyType::Identifier => Value::Identifier(rng.gen()),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Value::Identifier(rng.gen())
+            }
         }
     }
 
@@ -521,8 +639,38 @@ impl DocumentPropertyType {
             }
             DocumentPropertyType::Array(_) => Value::Null,
             DocumentPropertyType::VariableTypeArray(_) => Value::Null,
-            DocumentPropertyType::Identifier => Value::Identifier(rng.gen()),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Value::Identifier(rng.gen())
+            }
         }
+    }
+
+    /// Reads exactly `len` bytes. The length comes from the (possibly
+    /// untrusted) serialized document itself, so it must never size an
+    /// allocation: the buffer grows only as bytes actually arrive, and a
+    /// prefix that claims more than the document holds is rejected once the
+    /// input runs out.
+    fn read_exact_bounded(
+        buf: &mut BufReader<&[u8]>,
+        len: usize,
+        what: &str,
+    ) -> Result<Vec<u8>, DataContractError> {
+        let mut value = Vec::new();
+        buf.by_ref()
+            .take(len as u64)
+            .read_to_end(&mut value)
+            .map_err(|_| {
+                DataContractError::CorruptedSerialization(format!(
+                    "error reading {what} of length {len} from serialized document"
+                ))
+            })?;
+        if value.len() != len {
+            return Err(DataContractError::CorruptedSerialization(format!(
+                "{what} declares {len} bytes but only {} remain in the serialized document",
+                value.len()
+            )));
+        }
+        Ok(value)
     }
 
     fn read_varint_value(buf: &mut BufReader<&[u8]>) -> Result<Vec<u8>, DataContractError> {
@@ -531,18 +679,7 @@ impl DocumentPropertyType {
                 "error reading varint length from serialized document".to_string(),
             )
         })?;
-        if bytes == 0 {
-            Ok(vec![])
-        } else {
-            let mut value: Vec<u8> = vec![0u8; bytes];
-            buf.read_exact(&mut value).map_err(|_| {
-                DataContractError::CorruptedSerialization(format!(
-                    "error reading varint of length {} from serialized document",
-                    bytes
-                ))
-            })?;
-            Ok(value)
-        }
+        Self::read_exact_bounded(buf, bytes, "varint value")
     }
 
     /// Reads an optional value from the buffer
@@ -674,13 +811,18 @@ impl DocumentPropertyType {
                     (Some(min), Some(max)) if min == max => {
                         // if min == max, then we don't need a varint for the length
                         let len = min as usize;
-                        let mut bytes = vec![0; len];
-                        buf.read_exact(&mut bytes).map_err(|_| {
-                            DataContractError::DecodingContractError(DecodingError::new(format!(
-                                "expected to read {} bytes (min size for byte array)",
-                                len
-                            )))
-                        })?;
+                        // Schema-bounded (u16), so never an allocation hazard; routed
+                        // through the bounded reader for uniformity while keeping the
+                        // error variant this arm has always produced.
+                        let bytes = Self::read_exact_bounded(buf, len, "fixed-size byte array")
+                            .map_err(|_| {
+                                DataContractError::DecodingContractError(DecodingError::new(
+                                    format!(
+                                        "expected to read {} bytes (min size for byte array)",
+                                        len
+                                    ),
+                                ))
+                            })?;
                         // To save space we use predefined types for most popular blob sizes
                         // so we don't need to store the size of the blob
                         match bytes.len() {
@@ -697,7 +839,7 @@ impl DocumentPropertyType {
                     }
                 }
             }
-            DocumentPropertyType::Identifier => {
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 let mut id = [0; 32];
                 buf.read_exact(&mut id).map_err(|_| {
                     DataContractError::DecodingContractError(DecodingError::new(
@@ -714,12 +856,7 @@ impl DocumentPropertyType {
                         "error reading varint of object length".to_string(),
                     )
                 })?;
-                let mut object_bytes = vec![0u8; object_byte_len];
-                buf.read_exact(&mut object_bytes).map_err(|_| {
-                    DataContractError::CorruptedSerialization(
-                        "error reading object bytes".to_string(),
-                    )
-                })?;
+                let object_bytes = Self::read_exact_bounded(buf, object_byte_len, "object")?;
                 // Wrap the bytes in a BufReader
                 let mut object_buf_reader = BufReader::new(&object_bytes[..]);
                 let mut finished_buffer = false;
@@ -916,7 +1053,7 @@ impl DocumentPropertyType {
                 r_vec.append(&mut bytes);
                 Ok(r_vec)
             }
-            DocumentPropertyType::Identifier => {
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 let mut bytes = value.into_identifier_bytes()?;
 
                 let mut r_vec = bytes.len().encode_var_vec();
@@ -1074,7 +1211,9 @@ impl DocumentPropertyType {
                     Ok(r_vec)
                 }
             },
-            DocumentPropertyType::Identifier => Ok(value.to_identifier_bytes()?),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Ok(value.to_identifier_bytes()?)
+            }
             DocumentPropertyType::Boolean => {
                 let value_as_boolean = value
                     .as_bool()
@@ -1209,9 +1348,11 @@ impl DocumentPropertyType {
             DocumentPropertyType::ByteArray(_) => {
                 value.to_binary_bytes().map_err(ProtocolError::ValueError)
             }
-            DocumentPropertyType::Identifier => value
-                .to_identifier_bytes()
-                .map_err(ProtocolError::ValueError),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                value
+                    .to_identifier_bytes()
+                    .map_err(ProtocolError::ValueError)
+            }
             DocumentPropertyType::Boolean => {
                 let value_as_boolean = value
                     .as_bool()
@@ -1330,7 +1471,7 @@ impl DocumentPropertyType {
                 Ok(Value::Float(float))
             }
             DocumentPropertyType::ByteArray(_) => Ok(Value::Bytes(value.to_vec())),
-            DocumentPropertyType::Identifier => {
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 let identifier = Identifier::from_bytes(value)?;
                 Ok(identifier.into())
             }
@@ -1456,12 +1597,14 @@ impl DocumentPropertyType {
                     DataContractError::ValueDecodingError("could not parse hex bytes".to_string())
                 })?))
             }
-            DocumentPropertyType::Identifier => Ok(Value::Identifier(
-                Value::Text(str.to_owned())
-                    .to_identifier()
-                    .map_err(|e| DataContractError::ValueDecodingError(format!("{:?}", e)))?
-                    .into_buffer(),
-            )),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Ok(Value::Identifier(
+                    Value::Text(str.to_owned())
+                        .to_identifier()
+                        .map_err(|e| DataContractError::ValueDecodingError(format!("{:?}", e)))?
+                        .into_buffer(),
+                ))
+            }
             DocumentPropertyType::Boolean => {
                 if str.to_lowercase().as_str() == "true" {
                     Ok(Value::Bool(true))
@@ -2140,7 +2283,10 @@ impl DocumentPropertyType {
             }
 
             // Convert hex or base58 strings to identifiers for Identifier fields
-            (DocumentPropertyType::Identifier, Value::Text(str_value)) => {
+            (
+                DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_),
+                Value::Text(str_value),
+            ) => {
                 // First try base58 decoding (most common for identifiers)
                 if let Ok(id) = Identifier::from_string_unknown_encoding(&str_value) {
                     *value = Value::Identifier(id.into_buffer());
@@ -2735,6 +2881,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -2743,6 +2890,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -4108,6 +4256,71 @@ mod tests {
     // read_optionally_from() tests
     // -----------------------------------------------------------------------
 
+    /// A serialized document is untrusted input: a length prefix must never
+    /// size an allocation before it has been checked against the bytes that
+    /// are actually present. Before this check a two-byte string field
+    /// declaring a multi-gigabyte length aborted the process on allocation.
+    #[test]
+    fn test_read_optionally_from_rejects_length_prefix_longer_than_input() {
+        use std::io::BufReader;
+        let prop = DocumentPropertyType::String(StringPropertySizes {
+            min_length: None,
+            max_length: None,
+        });
+        // varint 2^62 followed by two bytes of payload
+        let mut data = vec![0xffu8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3f];
+        data.extend_from_slice(b"ab");
+        let mut reader = BufReader::new(data.as_slice());
+        let err = prop
+            .read_optionally_from(&mut reader, true)
+            .expect_err("oversized length prefix must be rejected, not allocated");
+        assert!(
+            err.to_string()
+                .contains("remain in the serialized document"),
+            "unexpected error: {err}"
+        );
+
+        let object = DocumentPropertyType::Object(IndexMap::new());
+        let mut reader = BufReader::new(data.as_slice());
+        let err = object
+            .read_optionally_from(&mut reader, true)
+            .expect_err("oversized object length must be rejected, not allocated");
+        assert!(
+            err.to_string()
+                .contains("remain in the serialized document"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// The guard must not reject a prefix that exactly consumes the rest of
+    /// the document: that is the normal shape of a document's last field.
+    #[test]
+    fn test_read_optionally_from_accepts_length_prefix_equal_to_remaining_input() {
+        use std::io::BufReader;
+        let prop = DocumentPropertyType::String(StringPropertySizes {
+            min_length: None,
+            max_length: None,
+        });
+        let mut data = vec![2u8];
+        data.extend_from_slice(b"ab");
+        let mut reader = BufReader::new(data.as_slice());
+        let (value, finished) = prop
+            .read_optionally_from(&mut reader, true)
+            .expect("exact-length prefix must decode");
+        assert_eq!(value, Some(Value::Text("ab".to_string())));
+        assert!(!finished);
+
+        // One byte short of the declared length is still a rejection.
+        let mut reader = BufReader::new(&data[..2]);
+        let err = prop
+            .read_optionally_from(&mut reader, true)
+            .expect_err("short input must be rejected");
+        assert!(
+            err.to_string().contains("only 1 remain"),
+            "unexpected error: {err}"
+        );
+    }
+
     #[test]
     fn test_read_optionally_from_optional_marker_none() {
         use std::io::BufReader;
@@ -5031,6 +5244,7 @@ mod tests {
                 }),
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         inner_fields.insert(
@@ -5039,6 +5253,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5089,6 +5304,7 @@ mod tests {
                 }),
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5108,6 +5324,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         inner_fields.insert(
@@ -5116,6 +5333,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5548,6 +5766,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5582,6 +5801,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -5590,6 +5810,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -5607,6 +5828,7 @@ mod tests {
                 property_type: DocumentPropertyType::U16,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -5615,6 +5837,7 @@ mod tests {
                 property_type: DocumentPropertyType::Boolean,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -5906,6 +6129,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -5914,6 +6138,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -5973,6 +6198,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -5981,6 +6207,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -6066,6 +6293,7 @@ mod tests {
                 property_type: DocumentPropertyType::U8,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -6074,6 +6302,7 @@ mod tests {
                 property_type: DocumentPropertyType::Boolean,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -6339,6 +6568,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6367,6 +6597,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         // Second field is required
@@ -6376,6 +6607,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6491,6 +6723,7 @@ mod tests {
                 }),
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6508,6 +6741,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6813,6 +7047,7 @@ mod tests {
                 property_type: DocumentPropertyType::U8,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -7064,6 +7299,102 @@ mod tests {
             .collect();
         for window in encoded.windows(2) {
             assert!(window[0] < window[1]);
+        }
+    }
+
+    #[test]
+    fn should_serialize_reference_metadata() {
+        let property = DocumentProperty {
+            property_type: DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Identity,
+            ),
+            required: false,
+            transient: false,
+            required_since: None,
+        };
+
+        let value = serde_json::to_value(&property).expect("serialization should succeed");
+
+        assert_eq!(
+            value.get("property_type"),
+            Some(&serde_json::json!({
+                "IdentifierWithReference": "identity"
+            }))
+        );
+    }
+
+    #[test]
+    fn should_display_reference_targets() {
+        let contract_id = Identifier::from([7u8; 32]);
+
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Identity.to_string(),
+            "identity"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract.to_string(),
+            "contract"
+        );
+        assert_eq!(DocumentPropertyReferenceTarget::Token.to_string(), "token");
+        assert_eq!(
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: Some(contract_id),
+                document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
+            }
+            .to_string(),
+            format!("permanent document (contract {contract_id}, document type note)")
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
+            }
+            .to_string(),
+            "permanent document (own contract, document type note)"
+        );
+    }
+
+    /// A compile-time guard, not a behavioural test.
+    ///
+    /// `DocumentPropertyReferenceTarget` is mirrored outside this crate —
+    /// notably by wasm-dpp2's `DocumentPropertyReference` TypeScript union
+    /// and the conversion that builds it. Those live behind a `match` that
+    /// a new variant would not break, because they can fall back to a
+    /// catch-all. This exhaustive `match` has no catch-all, so adding a
+    /// sixth variant fails to compile *here*, in the crate that owns the
+    /// enum, where whoever adds it will see it.
+    #[test]
+    fn reference_targets_are_exhaustively_mirrored() {
+        let targets = [
+            DocumentPropertyReferenceTarget::Identity,
+            DocumentPropertyReferenceTarget::Contract,
+            DocumentPropertyReferenceTarget::Token,
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
+            },
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property: "signerKeyId".to_string(),
+            },
+        ];
+
+        for target in &targets {
+            // No `_ =>` arm: a new variant is a compile error.
+            let json_tag = match target {
+                DocumentPropertyReferenceTarget::Identity => "identity",
+                DocumentPropertyReferenceTarget::Contract => "contract",
+                DocumentPropertyReferenceTarget::Token => "token",
+                DocumentPropertyReferenceTarget::PermanentDocument { .. } => "permanentDocument",
+                DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
+            };
+
+            // The tag is the `refersTo` schema keyword's own `type` value,
+            // which is what the JS surface reports verbatim.
+            assert!(!json_tag.is_empty());
+            assert!(!target.to_string().is_empty());
         }
     }
 }

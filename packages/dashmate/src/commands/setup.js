@@ -13,6 +13,10 @@ import {
 } from '../constants.js';
 
 export default class SetupCommand extends BaseCommand {
+  // Reconfigures the node: changes configuration repeatedly while doing long,
+  // partly irreversible work, so it holds the config lock for its whole run.
+  static mutatesConfig = true;
+
   static description = 'Set up a new Dash node';
 
   static args = {

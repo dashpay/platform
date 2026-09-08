@@ -302,7 +302,11 @@ mod tests {
         // We expect a different app hash because data contract is not serialized the same way
         let expected_app_hash = match platform_version.protocol_version {
             0..=8 => "1b80f4a9f00597b3f1ddca904b3cee67576868adcdd802c0a3f91e14209bb402",
-            _ => "14d9e2cdc3f25d1dfd079c1f9dd0d44db5bf73d397b04258449231a2d5bafda7",
+            // The DashPay contract v2 (protocol version 14, DIP-33) adds profile
+            // payment address fields, changing the contract's serialized bytes
+            // and therefore the root hash after insertion.
+            9..=13 => "14d9e2cdc3f25d1dfd079c1f9dd0d44db5bf73d397b04258449231a2d5bafda7",
+            _ => "02a78b45ecac17a6c08ce352c22b888fcd044de9f4ff82983c5d8fd97e6e8793",
         };
 
         assert_eq!(

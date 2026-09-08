@@ -13,16 +13,20 @@ mod tests {
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::Network::Regtest;
     use dpp::dashcore::{BlockHash, ChainLock};
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contracts::SystemDataContract;
     use dpp::version::PlatformVersion;
     use drive::config::DriveConfig;
     use drive::query::proposer_block_count_query::ProposerQueryType;
+    use drive_abci::abci::app::FullAbciApplication;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
     };
     use drive_abci::logging::LogLevel;
     use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
-    use drive_abci::test::helpers::setup::TestPlatformBuilder;
+    use drive_abci::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
     use platform_version::version::mocks::v3_test::TEST_PROTOCOL_VERSION_3;
     use platform_version::version::INITIAL_PROTOCOL_VERSION;
@@ -548,6 +552,365 @@ mod tests {
             assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
             assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&1));
         }
+    }
+
+    #[stack_size(4 * 1024 * 1024)]
+    #[test]
+    async fn run_chain_v12_to_v13_locks_in_before_activation() {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 50,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: Some(UpgradingInfo {
+                current_protocol_version: 12,
+                proposed_protocol_versions_with_weight: vec![(13, 1)],
+                upgrade_three_quarters_life: 0.0,
+            }),
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig {
+                quorum_size: 30,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                epoch_time_length_s: 60,
+                ..Default::default()
+            },
+            block_spacing_ms: 1_000,
+            testing_configs: PlatformTestConfig {
+                store_platform_state: true,
+                ..PlatformTestConfig::default_minimal_verifications()
+            },
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .with_initial_protocol_version(12)
+            .build_with_mock_rpc();
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums,
+            current_validator_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            ..
+        } = run_chain_for_strategy(
+            &mut platform,
+            60,
+            strategy.clone(),
+            config.clone(),
+            13,
+            &mut None,
+            &mut None,
+        )
+        .await;
+
+        let state = abci_app.platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 0);
+        assert_eq!(state.current_protocol_version_in_consensus(), 12);
+        assert_eq!(state.next_epoch_protocol_version(), 12);
+        let block_start = state
+            .last_committed_block_info()
+            .as_ref()
+            .expect("expected committed block info")
+            .basic_info()
+            .height
+            + 1;
+        drop(state);
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums,
+            current_validator_quorum_hash,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            ..
+        } = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 1,
+                block_count: 1,
+                proposers,
+                validator_quorums,
+                current_validator_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions.clone()),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: 1681094380000,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
+            },
+            strategy.clone(),
+            config.clone(),
+            StrategyRandomness::SeedEntropy(7),
+        )
+        .await;
+
+        let state = abci_app.platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 1);
+        assert_eq!(state.current_protocol_version_in_consensus(), 12);
+        assert_eq!(state.next_epoch_protocol_version(), 13);
+        let block_start = state
+            .last_committed_block_info()
+            .as_ref()
+            .expect("expected committed block info")
+            .basic_info()
+            .height
+            + 1;
+        drop(state);
+
+        let platform_version_12 = PlatformVersion::get(12).expect("platform version 12");
+        let persisted_dpns_v12 = abci_app
+            .platform
+            .drive
+            .fetch_contract(
+                SystemDataContract::DPNS.id().to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_12,
+            )
+            .value
+            .expect("fetch persisted DPNS before activation")
+            .expect("DPNS must be persisted before activation");
+        let persisted_domain_v12 = persisted_dpns_v12
+            .contract
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+        assert!(!persisted_domain_v12.documents_keep_transfer_history());
+        assert!(!persisted_domain_v12.documents_keep_purchase_history());
+        assert!(!persisted_domain_v12.documents_keep_pricing_history());
+        assert!(abci_app
+            .platform
+            .drive
+            .fetch_contract(
+                SystemDataContract::DocumentHistory.id().to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_12,
+            )
+            .value
+            .expect("query persisted Document History before activation")
+            .is_none());
+
+        drop(abci_app);
+        let TempPlatform {
+            platform: mut platform_before_activation_restart,
+            tempdir,
+        } = platform;
+        let core_rpc = std::mem::take(&mut platform_before_activation_restart.core_rpc);
+        drop(platform_before_activation_restart);
+        platform = TempPlatform::open_with_tempdir(tempdir, config.clone());
+        platform.platform.core_rpc = core_rpc;
+        let state = platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 1);
+        assert_eq!(state.current_protocol_version_in_consensus(), 12);
+        assert_eq!(state.next_epoch_protocol_version(), 13);
+        drop(state);
+        let abci_app = FullAbciApplication::new(&platform.platform);
+
+        let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 1,
+                block_count: 60,
+                proposers,
+                validator_quorums,
+                current_validator_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: 1681094380000,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
+            },
+            strategy,
+            config.clone(),
+            StrategyRandomness::SeedEntropy(18),
+        )
+        .await;
+
+        let state = abci_app.platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 2);
+        assert_eq!(state.current_protocol_version_in_consensus(), 13);
+        assert_eq!(state.next_epoch_protocol_version(), 13);
+        drop(state);
+        let platform_version_13 = PlatformVersion::get(13).expect("platform version 13");
+        let persisted_dpns_v13 = abci_app
+            .platform
+            .drive
+            .fetch_contract(
+                SystemDataContract::DPNS.id().to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_13,
+            )
+            .value
+            .expect("fetch persisted DPNS after activation")
+            .expect("DPNS must remain persisted after activation");
+        let persisted_domain_v13 = persisted_dpns_v13
+            .contract
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+        assert!(persisted_domain_v13.documents_keep_transfer_history());
+        assert!(persisted_domain_v13.documents_keep_purchase_history());
+        assert!(persisted_domain_v13.documents_keep_pricing_history());
+        assert!(abci_app
+            .platform
+            .drive
+            .fetch_contract(
+                SystemDataContract::DocumentHistory.id().to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_13,
+            )
+            .value
+            .expect("fetch persisted Document History after activation")
+            .is_some());
+        let dpns_v13 = abci_app
+            .platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(SystemDataContract::DPNS.id(), platform_version_13)
+            .expect("expected the DPNS lookup to succeed")
+            .expect("the public activation path must cache DPNS v2");
+        let domain = dpns_v13
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+        assert!(domain.documents_keep_transfer_history());
+        assert!(domain.documents_keep_purchase_history());
+        assert!(domain.documents_keep_pricing_history());
+        assert!(abci_app
+            .platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(
+                SystemDataContract::DocumentHistory.id(),
+                platform_version_13
+            )
+            .expect("expected the document history lookup to succeed")
+            .is_some());
+        drop(abci_app);
+
+        let TempPlatform {
+            platform: platform_before_restart,
+            tempdir,
+        } = platform;
+        drop(platform_before_restart);
+
+        let reopened_platform = TempPlatform::open_with_tempdir(tempdir, config);
+        let state = reopened_platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 2);
+        assert_eq!(state.current_protocol_version_in_consensus(), 13);
+        assert_eq!(state.next_epoch_protocol_version(), 13);
+        drop(state);
+        let reopened_persisted_dpns_v13 = reopened_platform
+            .drive
+            .fetch_contract(
+                SystemDataContract::DPNS.id().to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_13,
+            )
+            .value
+            .expect("fetch persisted DPNS after restart")
+            .expect("DPNS must remain persisted after restart");
+        let reopened_persisted_domain_v13 = reopened_persisted_dpns_v13
+            .contract
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+        assert!(reopened_persisted_domain_v13.documents_keep_transfer_history());
+        assert!(reopened_persisted_domain_v13.documents_keep_purchase_history());
+        assert!(reopened_persisted_domain_v13.documents_keep_pricing_history());
+        assert!(reopened_platform
+            .drive
+            .fetch_contract(
+                SystemDataContract::DocumentHistory.id().to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_13,
+            )
+            .value
+            .expect("fetch persisted Document History after restart")
+            .is_some());
+        let reopened_dpns_v13 = reopened_platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(SystemDataContract::DPNS.id(), platform_version_13)
+            .expect("expected the DPNS lookup to succeed")
+            .expect("restart must reconstruct DPNS v2");
+        let reopened_domain = reopened_dpns_v13
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+        assert!(reopened_domain.documents_keep_transfer_history());
+        assert!(reopened_domain.documents_keep_purchase_history());
+        assert!(reopened_domain.documents_keep_pricing_history());
+        let reopened_dpns_v12 = reopened_platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(SystemDataContract::DPNS.id(), platform_version_12)
+            .expect("expected the DPNS lookup to succeed")
+            .expect("restart must materialize explicitly requested DPNS v1");
+        let reopened_domain_v12 = reopened_dpns_v12
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+        assert!(!reopened_domain_v12.documents_keep_transfer_history());
+        assert!(!reopened_domain_v12.documents_keep_purchase_history());
+        assert!(!reopened_domain_v12.documents_keep_pricing_history());
+        assert!(reopened_platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(
+                SystemDataContract::DocumentHistory.id(),
+                platform_version_13
+            )
+            .expect("expected the document history lookup to succeed")
+            .is_some());
     }
 
     #[stack_size(4 * 1024 * 1024)]

@@ -11,6 +11,7 @@ import org.dashfoundation.example.services.shielded.ShieldedFundFromAssetLockCon
 import org.dashfoundation.example.services.shielded.ShieldedFundFromAssetLockCoordinator.StartFundingResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -54,7 +55,7 @@ class ShieldedFundFromAssetLockCoordinatorTest {
         val coordinator = coordinator()
         val gate = CompletableDeferred<Unit>()
 
-        val controller = coordinator.startFunding(walletA, recipientX) { gate.await() }.controller()
+        val controller = coordinator.startFunding(walletA, recipientX, "shield") { gate.await() }.controller()
         assertEquals(Phase.InFlight, controller.phase.value)
         assertTrue(controller.phase.value.isActive)
 
@@ -70,7 +71,7 @@ class ShieldedFundFromAssetLockCoordinatorTest {
         val coordinator = coordinator()
         val gate = CompletableDeferred<Unit>()
 
-        val controller = coordinator.startFunding(walletA, recipientX) { gate.await() }.controller()
+        val controller = coordinator.startFunding(walletA, recipientX, "shield") { gate.await() }.controller()
         gate.completeExceptionally(RuntimeException("proof build failed"))
         advanceUntilIdle()
 
@@ -86,8 +87,8 @@ class ShieldedFundFromAssetLockCoordinatorTest {
         val gate = CompletableDeferred<Unit>()
         var invocations = 0
 
-        val first = coordinator.startFunding(walletA, recipientX) { invocations++; gate.await() }.controller()
-        val second = coordinator.startFunding(walletA, recipientX) { invocations++; gate.await() }.controller()
+        val first = coordinator.startFunding(walletA, recipientX, "shield") { invocations++; gate.await() }.controller()
+        val second = coordinator.startFunding(walletA, recipientX, "shield") { invocations++; gate.await() }.controller()
 
         assertSame(first, second)
         assertEquals(1, coordinator.controllers.value.size)
@@ -103,10 +104,10 @@ class ShieldedFundFromAssetLockCoordinatorTest {
         val coordinator = coordinator()
         val gate = CompletableDeferred<Unit>()
 
-        val started = coordinator.startFunding(walletA, recipientX) { gate.await() }
+        val started = coordinator.startFunding(walletA, recipientX, "shield") { gate.await() }
         assertTrue(started is StartFundingResult.Started)
 
-        val blocked = coordinator.startFunding(walletA, recipientY) { gate.await() }
+        val blocked = coordinator.startFunding(walletA, recipientY, "shield") { gate.await() }
         assertTrue(blocked is StartFundingResult.BlockedByOtherWalletFunding)
         assertSame(
             started.controller(),
@@ -124,8 +125,8 @@ class ShieldedFundFromAssetLockCoordinatorTest {
         val coordinator = coordinator()
         val gate = CompletableDeferred<Unit>()
 
-        val a = coordinator.startFunding(walletA, recipientX) { gate.await() }
-        val b = coordinator.startFunding(walletB, recipientY) { gate.await() }
+        val a = coordinator.startFunding(walletA, recipientX, "shield") { gate.await() }
+        val b = coordinator.startFunding(walletB, recipientY, "shield") { gate.await() }
         assertTrue(a is StartFundingResult.Started)
         assertTrue(b is StartFundingResult.Started)
         assertEquals(2, coordinator.controllers.value.size)
@@ -140,11 +141,11 @@ class ShieldedFundFromAssetLockCoordinatorTest {
         val firstGate = CompletableDeferred<Unit>()
         val secondGate = CompletableDeferred<Unit>()
 
-        coordinator.startFunding(walletA, recipientX) { firstGate.await() }
+        coordinator.startFunding(walletA, recipientX, "shield") { firstGate.await() }
         firstGate.complete(Unit)
         runCurrent() // first → Completed (not active)
 
-        val second = coordinator.startFunding(walletA, recipientY) { secondGate.await() }
+        val second = coordinator.startFunding(walletA, recipientY, "shield") { secondGate.await() }
         assertTrue(second is StartFundingResult.Started)
 
         secondGate.complete(Unit)
@@ -156,7 +157,7 @@ class ShieldedFundFromAssetLockCoordinatorTest {
         val coordinator = coordinator(retentionMillis = 30_000L, pollMillis = 1_000L)
         val gate = CompletableDeferred<Unit>()
 
-        val controller = coordinator.startFunding(walletA, recipientX) { gate.await() }.controller()
+        val controller = coordinator.startFunding(walletA, recipientX, "shield") { gate.await() }.controller()
         gate.complete(Unit)
         runCurrent()
         assertTrue(controller.phase.value is Phase.Completed)
@@ -175,7 +176,7 @@ class ShieldedFundFromAssetLockCoordinatorTest {
         val coordinator = coordinator()
         val gate = CompletableDeferred<Unit>()
 
-        coordinator.startFunding(walletA, recipientX) { gate.await() }
+        coordinator.startFunding(walletA, recipientX, "shield") { gate.await() }
         gate.completeExceptionally(RuntimeException("nope"))
         advanceUntilIdle()
         assertEquals(1, coordinator.controllers.value.size)
@@ -183,5 +184,175 @@ class ShieldedFundFromAssetLockCoordinatorTest {
         coordinator.dismiss(walletA, recipientX)
         assertTrue(coordinator.controllers.value.isEmpty())
         assertNull(coordinator.controller(walletA, recipientX))
+    }
+
+    // ------------------------------------------------------------------
+    // Operation identity: two resumable locks share the default recipient
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `re-tapping the same resumable lock reuses the in-flight controller`() = runTest {
+        val coordinator = coordinator()
+        val gate = CompletableDeferred<Unit>()
+        var invocations = 0
+
+        val first = coordinator
+            .startFunding(walletA, recipientX, "resume:aa:0") { invocations++; gate.await() }
+            .controller()
+        val second = coordinator.startFunding(walletA, recipientX, "resume:aa:0") {
+            invocations++
+            gate.await()
+        }
+
+        assertTrue(second is StartFundingResult.Started)
+        assertSame(first, second.controller())
+        runCurrent()
+        assertEquals(1, invocations)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `a second resumable lock on the same recipient is blocked while the first is in flight`() = runTest {
+        val coordinator = coordinator()
+        val gate = CompletableDeferred<Unit>()
+        var secondInvocations = 0
+
+        val first = coordinator.startFunding(walletA, recipientX, "resume:aa:0") { gate.await() }
+        assertTrue(first is StartFundingResult.Started)
+
+        // Same wallet, same (default) recipient, DIFFERENT lock: reusing
+        // the first controller would silently drop this body. The caller
+        // must see the wallet-serialization verdict instead.
+        val second = coordinator.startFunding(walletA, recipientX, "resume:bb:0") {
+            secondInvocations++
+        }
+        assertTrue(second is StartFundingResult.BlockedByOtherWalletFunding)
+        assertSame(
+            first.controller(),
+            (second as StartFundingResult.BlockedByOtherWalletFunding).blocker,
+        )
+        assertEquals(1, coordinator.controllers.value.size)
+        runCurrent()
+        assertEquals(0, secondInvocations)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `a second resumable lock starts during the first's completed retention window`() = runTest {
+        val coordinator = coordinator(retentionMillis = 30_000L, pollMillis = 1_000L)
+        val firstGate = CompletableDeferred<Unit>()
+        val secondGate = CompletableDeferred<Unit>()
+        var secondInvocations = 0
+
+        val first = coordinator
+            .startFunding(walletA, recipientX, "resume:aa:0") { firstGate.await() }
+            .controller()
+        firstGate.complete(Unit)
+        runCurrent()
+        assertTrue(first.phase.value is Phase.Completed)
+
+        // Within the 30s retention window, resume a DIFFERENT lock on the
+        // same recipient: a fresh controller must actually run its body —
+        // the retained completed controller may show first's terminal
+        // state to a re-tap of first only.
+        val second = coordinator.startFunding(walletA, recipientX, "resume:bb:0") {
+            secondInvocations++
+            secondGate.await()
+        }
+        assertTrue(second is StartFundingResult.Started)
+        val secondController = second.controller()
+        assertNotSame(first, secondController)
+        runCurrent()
+        assertEquals(1, secondInvocations)
+        assertEquals(Phase.InFlight, secondController.phase.value)
+
+        // The FIRST controller's retention sweep expires while the second
+        // operation is still in flight — it must not evict the
+        // replacement occupying its old slot.
+        advanceTimeBy(31_000L)
+        runCurrent()
+        assertSame(secondController, coordinator.controller(walletA, recipientX))
+        assertEquals(Phase.InFlight, secondController.phase.value)
+
+        secondGate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(Phase.Completed, secondController.phase.value)
+    }
+
+    // ------------------------------------------------------------------
+    // Operation identity: fresh shields mint a unique id per submission
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `a second fresh shield with a distinct id replaces the retained completed controller`() = runTest {
+        val coordinator = coordinator(retentionMillis = 30_000L, pollMillis = 1_000L)
+        val firstGate = CompletableDeferred<Unit>()
+        val secondGate = CompletableDeferred<Unit>()
+        var secondInvocations = 0
+
+        // The call sites mint "shield:<uuid>" at submission time; a
+        // FIXED marker here would rebind to the first controller's
+        // retained Completed state and never run the second body.
+        val first = coordinator
+            .startFunding(walletA, recipientX, "shield:attempt-1") { firstGate.await() }
+            .controller()
+        firstGate.complete(Unit)
+        runCurrent()
+        assertTrue(first.phase.value is Phase.Completed)
+
+        // Within the retention window, a SECOND fresh shield to the
+        // same recipient must replace the retained controller and
+        // execute its own body.
+        val second = coordinator.startFunding(walletA, recipientX, "shield:attempt-2") {
+            secondInvocations++
+            secondGate.await()
+        }
+        assertTrue(second is StartFundingResult.Started)
+        val secondController = second.controller()
+        assertNotSame(first, secondController)
+        runCurrent()
+        assertEquals(1, secondInvocations)
+        assertEquals(Phase.InFlight, secondController.phase.value)
+
+        secondGate.complete(Unit)
+        runCurrent()
+        assertEquals(Phase.Completed, secondController.phase.value)
+        // The replacement owns the slot until its own retention sweep
+        // retires it as usual.
+        assertSame(secondController, coordinator.controller(walletA, recipientX))
+        advanceUntilIdle()
+        assertNull(coordinator.controller(walletA, recipientX))
+    }
+
+    @Test
+    fun `a second fresh shield is blocked while the first is still in flight`() = runTest {
+        val coordinator = coordinator()
+        val gate = CompletableDeferred<Unit>()
+        var secondInvocations = 0
+
+        val first = coordinator.startFunding(walletA, recipientX, "shield:attempt-1") { gate.await() }
+        assertTrue(first is StartFundingResult.Started)
+
+        // Distinct per-submission ids mean a second fresh shield during
+        // the first's flight is a DIFFERENT operation: it must surface
+        // the wallet-serialization verdict, not silently rebind.
+        val second = coordinator.startFunding(walletA, recipientX, "shield:attempt-2") {
+            secondInvocations++
+        }
+        assertTrue(second is StartFundingResult.BlockedByOtherWalletFunding)
+        assertSame(
+            first.controller(),
+            (second as StartFundingResult.BlockedByOtherWalletFunding).blocker,
+        )
+        assertEquals(1, coordinator.controllers.value.size)
+        runCurrent()
+        assertEquals(0, secondInvocations)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
     }
 }

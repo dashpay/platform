@@ -57,6 +57,25 @@ pub struct DataContractSource {
 }
 
 impl SystemDataContract {
+    /// Every system data contract, including the reserved `FeatureFlags` slot.
+    ///
+    /// Deliberately kept beside the enum so that adding a variant and adding it here are the
+    /// same edit. `assert_every_variant_is_listed` below makes that mechanical rather than
+    /// remembered: a new variant makes its match non-exhaustive and the crate stops compiling.
+    pub const ALL: [SystemDataContract; 9] = [
+        SystemDataContract::Withdrawals,
+        SystemDataContract::MasternodeRewards,
+        SystemDataContract::FeatureFlags,
+        SystemDataContract::DPNS,
+        SystemDataContract::Dashpay,
+        SystemDataContract::WalletUtils,
+        SystemDataContract::TokenHistory,
+        SystemDataContract::KeywordSearch,
+        SystemDataContract::DocumentHistory,
+    ];
+
+    /// A new variant must also be added to [`SystemDataContract::ALL`]; this match is where the
+    /// compiler stops you, but it cannot check that list for you.
     pub fn id(&self) -> Identifier {
         let bytes = match self {
             #[cfg(feature = "withdrawals")]

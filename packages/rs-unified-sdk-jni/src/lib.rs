@@ -16,6 +16,7 @@
 
 mod credits;
 mod dashpay;
+mod dpns_marketplace;
 mod events;
 mod funding;
 mod identity;

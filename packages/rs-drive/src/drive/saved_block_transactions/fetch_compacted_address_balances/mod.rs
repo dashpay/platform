@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -55,7 +56,12 @@ impl Drive {
     /// * `platform_version` - The platform version
     ///
     /// # Returns
-    /// A grovedb proof
+    /// A proof whose wire format depends on the protocol version: feature
+    /// version 0 returns a single GroveDB proof, feature version 1 returns
+    /// the two-proof `CompactedAddressBalanceProof` bincode envelope. The
+    /// client's `verify_compacted_address_balance_changes` dispatches its
+    /// decoder on the same protocol version, so both sides switch formats
+    /// together at the version boundary.
     pub fn prove_compacted_address_balance_changes(
         &self,
         start_block_height: u64,
@@ -67,7 +73,7 @@ impl Drive {
             .drive
             .methods
             .saved_block_transactions
-            .fetch_address_balances
+            .prove_compacted_address_balance_changes
         {
             0 => self.prove_compacted_address_balance_changes_v0(
                 start_block_height,
@@ -75,9 +81,15 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.prove_compacted_address_balance_changes_v1(
+                start_block_height,
+                limit,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_compacted_address_balance_changes".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

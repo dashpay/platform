@@ -30,12 +30,17 @@ Shows default group name or sets another group as default
     },
     flags,
     configFile,
+    configFileRepository,
   ) {
     if (groupName === null) {
       // eslint-disable-next-line no-console
       console.log(configFile.getDefaultGroupName());
     } else {
-      configFile.setDefaultGroupName(groupName);
+      // Read, change and save in one locked step, so pointing the default at a
+      // group cannot revert a change another command saved in the meantime.
+      configFileRepository.update((freshConfigFile) => {
+        freshConfigFile.setDefaultGroupName(groupName);
+      });
 
       // eslint-disable-next-line no-console
       console.log(`${groupName} group set as default`);

@@ -122,6 +122,7 @@ pub const DRIVE_VERSION_V6: DriveVersion = DriveVersion {
         saved_block_transactions: DriveSavedBlockTransactionsMethodVersions {
             store_address_balances: 0,
             fetch_address_balances: 0,
+            prove_compacted_address_balance_changes: 0,
             compact_address_balances: 0,
             cleanup_expired_address_balances: 0,
             max_blocks_before_compaction: 64,

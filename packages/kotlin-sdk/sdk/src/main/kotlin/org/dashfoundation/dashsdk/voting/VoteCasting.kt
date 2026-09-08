@@ -49,7 +49,17 @@ class VoteCasting internal constructor() {
      * @param indexValues JSON-encodable index values (DPNS: `["dash",
      *   label]`). Text values are taken verbatim; a `"0x"`-prefixed value is
      *   hex-decoded Rust-side.
-     * @param proTxHash 32-byte masternode pro_tx_hash.
+     * @param proTxHash 32-byte masternode pro_tx_hash in **wire order** — the
+     *   orientation `Txid` stores, which is what a parsed ProRegTx yields and
+     *   what a wallet holds internally. NOT the byte order of the hex Core
+     *   displays, which is its reverse.
+     *
+     *   Not interchangeable: Platform identifies masternodes by the opposite
+     *   orientation (`ProTxHash` is declared `#[hash_newtype(forward)]`,
+     *   `Txid` is not), so the Rust side reverses these bytes before deriving
+     *   the voter identity. Passing display order asks Platform for an
+     *   identity that has never existed, and the vote is rejected as having no
+     *   voter identity.
      * @param votingPrivateKey 32-byte masternode voting private key.
      * @param networkOrd `Network.ffiValue` (0 Mainnet, 1 Testnet, 2 Devnet,
      *   3 Regtest).

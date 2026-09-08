@@ -192,6 +192,8 @@ class Wallet extends EventEmitter {
       }
     }
 
+    this.blockHeadersProviderInitializationPromise = null;
+    this.accountCreationPromises = new Map();
     this.accounts = [];
     this.interface = opts.interface;
     // Suppressed global require to avoid cyclic dependencies

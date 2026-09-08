@@ -220,6 +220,14 @@ impl WasmTrustedContext {
 }
 
 impl WasmTrustedContext {
+    /// Refresh quorum keys before proof verification.
+    pub(crate) async fn refresh_quorums(&self) -> Result<(), WasmSdkError> {
+        self.inner
+            .refresh_quorum_caches()
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to refresh quorums: {}", e)))
+    }
+
     /// Shared constructor used by every `prefetch*` factory. When `base_url`
     /// is `Some`, it overrides the default URL derived from `network` +
     /// `devnet_name` (the validator inside `new_with_url` still runs).
@@ -307,20 +315,29 @@ impl WasmTrustedContext {
 
     /// Build a `WasmTrustedContext` with the given `discovered_addresses` for
     /// use in unit tests. The inner provider is constructed against a local
-    /// loopback URL — its quorum/contract caches are unused by the tests and
-    /// the URL is never dialled — so we get a real `Arc<TrustedHttpContextProvider>`
-    /// without any network side effects.
+    /// loopback URL that these tests do not dial, providing a real
+    /// `Arc<TrustedHttpContextProvider>` without network side effects.
     #[cfg(test)]
     pub(crate) fn for_testing(
         discovered_addresses: Vec<rs_dapi_client::Address>,
     ) -> WasmTrustedContext {
+        Self::for_testing_with_url(discovered_addresses, "http://127.0.0.1:22444".to_string())
+    }
+
+    /// Build a test context whose provider reads from a controllable endpoint.
+    #[cfg(test)]
+    pub(crate) fn for_testing_with_url(
+        discovered_addresses: Vec<rs_dapi_client::Address>,
+        base_url: String,
+    ) -> WasmTrustedContext {
         let cache_size = std::num::NonZeroUsize::new(1).unwrap();
         let inner = rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
             dash_sdk::dpp::dashcore::Network::Regtest,
-            "http://127.0.0.1:22444".to_string(),
+            base_url,
             cache_size,
         )
-        .expect("loopback URL must construct a TrustedHttpContextProvider");
+        .expect("test URL must construct a TrustedHttpContextProvider")
+        .with_refetch_if_not_found(false);
 
         WasmTrustedContext {
             inner: Arc::new(inner),

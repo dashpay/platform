@@ -10,7 +10,27 @@ mod deletion_tests {
     async fn test_document_delete_on_document_type_that_is_mutable_and_can_be_deleted() {
         run_document_delete_on_document_type_that_is_mutable_and_can_be_deleted_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            1678920,
+            // v14: the deleted document carries the contract-version stamp
+            // (one stored byte, five estimated), shifting processing costs
+            1699620,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: fee predating every v14 change on this path —
+    /// both the contract-version stamp and the dashpay payment-address
+    /// contract (#4380), whose v2 schema is gated behind
+    /// `SYSTEM_DATA_CONTRACT_VERSIONS_V3` (v14 only; v13 genesis stores
+    /// dashpay v1, so its smaller node shifts the byte-billed contracts-
+    /// subtree reads). That gate is why this value is below the pre-stamp
+    /// v14 baseline by more than the stamp bytes — and this pin is what
+    /// fails if the gate ever leaks into v13. Pinned so v13 chain history
+    /// stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_delete_on_document_type_that_is_mutable_and_can_be_deleted_protocol_version_13(
+    ) {
+        run_document_delete_on_document_type_that_is_mutable_and_can_be_deleted_at_protocol_version(
+            13, 1678920,
         )
         .await;
     }
@@ -49,7 +69,12 @@ mod deletion_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let profile = dashpay_contract
@@ -72,6 +97,8 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
@@ -361,12 +388,12 @@ mod deletion_tests {
         assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
     }
 
-    /// PROTOCOL_VERSION_13 rejects deletes against contradictory keep-history
+    /// PROTOCOL_VERSION_14 rejects deletes against contradictory keep-history
     /// document types as invalid-paid consensus errors.
     #[tokio::test]
-    async fn test_document_delete_on_document_type_that_keeps_history_is_rejected_protocol_version_13(
+    async fn test_document_delete_on_document_type_that_keeps_history_is_rejected_protocol_version_14(
     ) {
-        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(13, true).await;
+        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(14, true).await;
     }
 
     /// PROTOCOL_VERSION_12 preserves the historical InternalError result for
@@ -378,8 +405,13 @@ mod deletion_tests {
             .await;
     }
 
+    #[tokio::test]
+    async fn test_document_delete_on_document_type_that_keeps_history_replays_protocol_version_13() {
+        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(13, false).await;
+    }
+
     /// Exercises an already-deployed contradictory contract at both sides of
-    /// the v13 validation-version boundary. Loading with `full_validation:
+    /// the v14 validation-version boundary. Loading with `full_validation:
     /// false` is intentional: reparsing deployed contracts must remain allowed.
     async fn run_document_delete_on_document_type_that_keeps_history_at_protocol_version(
         protocol_version: dpp::version::ProtocolVersion,
@@ -492,8 +524,8 @@ mod deletion_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        // V13 rejects during structure validation; v12 reaches rs-drive and
-        // retains the historical InternalError classification for replay.
+        // V14 rejects during structure validation; v12 and v13 retain the
+        // historical InternalError classification for replay.
         let documents_batch_deletion_transition =
             BatchTransition::new_document_deletion_transition_from_document(
                 altered_document,
@@ -552,6 +584,17 @@ mod deletion_tests {
             usize::from(!expect_invalid_paid),
             "unexpected InternalError classification at protocol version {protocol_version}"
         );
+        if expect_invalid_paid {
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(
+                        dpp::consensus::basic::BasicError::InvalidDocumentTransitionActionError(error)
+                    ),
+                    ..
+                }] if error.action() == "documents of type note keep history and therefore can not be deleted"
+            );
+        }
     }
 
     #[tokio::test]
@@ -778,7 +821,12 @@ mod deletion_tests {
 
         let (other_identity, ..) = setup_identity(&mut platform, 495, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let contact_request_document_type = dashpay_contract
@@ -947,7 +995,12 @@ mod deletion_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let profile = dashpay_contract
@@ -966,6 +1019,8 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
@@ -1410,7 +1465,12 @@ mod deletion_tests {
         let (other_identity, other_signer, other_key) =
             setup_identity(&mut platform, 495, dash_to_credits!(0.1));
 
-        let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
         let dpns_contract = dpns.clone();
 
         let preorder_document_type = dpns_contract

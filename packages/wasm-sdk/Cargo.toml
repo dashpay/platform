@@ -66,6 +66,9 @@ console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.17" }
 wasm-bindgen = { version = "=0.2.108" }
 wasm-bindgen-futures = { version = "0.4.58" }
+# `future::Shared` — one in-flight contract fetch per id, joined by every
+# concurrent cache miss (see `WasmSdk::get_or_fetch_contract`).
+futures = { version = "0.3.30" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false } # TODO: I think it's not needed (LKl)
 tracing = { version = "0.1.41" }
 tracing-subscriber = { version = "0.3.22", default-features = false, features = [
@@ -93,8 +96,19 @@ dpp-json-convertible-derive = { path = "../rs-dpp-json-convertible-derive" }
 wasm-dpp2 = { path = "../wasm-dpp2" }
 
 [dev-dependencies]
-wasm-sdk = { path = ".", features = ["mocks", "all-system-contracts"] }
+# Self-dependency to enable `mocks` for the lib under test. Do not add
+# system-contract features here: Cargo unifies them into the tested lib, so
+# `all-system-contracts` would let the trusted context resolve every contract
+# and silently defeat the tests that assert an uncompiled one is fetched.
+wasm-sdk = { path = ".", features = ["mocks"] }
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+# wasm32-only test harness. Host tests cover every decision that can regress;
+# this covers the one thing they cannot observe — that a wide integer group
+# key really crosses as an exact JS BigInt. Run with:
+#   CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner \
+#     cargo test -p wasm-sdk --target wasm32-unknown-unknown
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3.58"
 
 [package.metadata.wasm-pack]
 wasm-opt = false

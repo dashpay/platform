@@ -118,6 +118,8 @@ private val DATE_COLUMNS = setOf(
     "createdAt", "updatedAt", "lastUpdated", "lastUpdatedAt", "lastAccessedAt",
     "lastAccessed", "lastSyncedAt", "eventTimestamp", "localCreatedAt",
     "localUpdatedAt", "transferredAt",
+    "marketplaceUpdatedAt", "documentCreatedAtMs", "documentUpdatedAtMs",
+    "documentTransferredAtMs",
 )
 
 @Composable

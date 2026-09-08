@@ -50,7 +50,7 @@ Error codes are organized into ranges that correspond to error categories and su
 |-------|----------|----------|
 | 10000-10099 | Versioning | `UnsupportedVersionError` (10000), `ProtocolVersionParsingError` (10001), `IncompatibleProtocolVersionError` (10004) |
 | 10100-10199 | Structure | `JsonSchemaCompilationError` (10100), `InvalidIdentifierError` (10102), `ValueError` (10103) |
-| 10200-10275 | Data Contract | `DataContractMaxDepthExceedError` (10200), `DuplicateIndexError` (10201), `InvalidDataContractIdError` (10204) |
+| 10200-10276 | Data Contract | `DataContractMaxDepthExceedError` (10200), `DuplicateIndexError` (10201), `InvalidDataContractIdError` (10204), `DataContractInvalidRequiredFieldsUpdateError` (10276) |
 | 10350-10359 | Groups | `GroupPositionDoesNotExistError` (10350), `GroupExceedsMaxMembersError` (10354) |
 | 10400-10418 | Documents | `DataContractNotPresentError` (10400), `DuplicateDocumentTransitionsWithIdsError` (10401) |
 | 10450-10460 | Tokens | `InvalidTokenIdError` (10450), `TokenTransferToOurselfError` (10456) |

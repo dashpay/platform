@@ -197,6 +197,7 @@ impl DocumentTypeV0 {
                 property_type: document_type,
                 required,
                 transient: false,
+                required_since: None,
             }
         };
 
@@ -325,7 +326,7 @@ impl DocumentTypeV0 {
                     schema.insert("byteArray".to_string(), serde_json::Value::Bool(true));
                     serde_json::Value::Object(schema)
                 },
-                DocumentPropertyType::Identifier => {
+                DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                     json!({
                         "type": "array",
                         "items": {
@@ -526,6 +527,7 @@ impl DocumentTypeV0 {
                 property_type: document_type,
                 required,
                 transient: false,
+                required_since: None,
             }
         };
 

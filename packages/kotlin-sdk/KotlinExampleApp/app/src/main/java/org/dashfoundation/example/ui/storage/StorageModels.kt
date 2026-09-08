@@ -81,7 +81,15 @@ val STORAGE_MODELS: List<StorageModel> = listOf(
         headline = { row ->
             "${row.text("label") ?: "?"}.${row.text("parentDomainName") ?: "dash"}"
         },
-        subtitle = { row -> row.base58("identityId")?.let { truncateMiddle(it) } },
+        subtitle = { row ->
+            val ownership = if (row.bool("isOwned")) "owned" else when (row.long("saleStatusRaw")) {
+                1L -> "sold"
+                2L -> "transferred"
+                else -> "departed"
+            }
+            val price = row.long("priceCredits")?.let { " · $it credits" }.orEmpty()
+            "$ownership$price"
+        },
     ),
     StorageModel(
         name = "dashpayProfiles", displayName = "DashPay Profiles",

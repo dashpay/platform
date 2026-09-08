@@ -391,6 +391,7 @@ mod tests {
         );
 
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id,
             owner_id,
             properties,

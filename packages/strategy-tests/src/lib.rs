@@ -1627,8 +1627,11 @@ impl Strategy {
                             } else if current_identities.len() > 1 {
                                 // Handle the case where no sender, recipient, and amount are provided
 
+                                // A transfer needs a distinct sender and recipient; with
+                                // fewer than 2 identities the recipient draw below would
+                                // panic on an empty range.
                                 let identities_count = current_identities.len();
-                                if identities_count == 0 {
+                                if identities_count < 2 {
                                     break;
                                 }
 

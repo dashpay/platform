@@ -174,6 +174,7 @@ struct DPNSNameStorageDetailView: View {
                 FieldRow(label: "Network", value: record.network.displayName)
             }
             Section("Status") {
+                FieldRow(label: "Currently Owned", value: record.isOwned ? "Yes" : "No")
                 // `acquiredAt` is Unix-millis from
                 // `DpnsNameInfo.acquired_at`. Zero when the FFI
                 // changeset didn't carry a timestamp (legacy rows
@@ -188,6 +189,35 @@ struct DPNSNameStorageDetailView: View {
                     )
                     FieldRow(label: "Acquired", value: dateString(date))
                 }
+            }
+            Section("Marketplace") {
+                FieldRow(label: "Document ID", value: record.documentIdBase58 ?? "—")
+                FieldRow(
+                    label: "Sale Status",
+                    value: record.saleStatus.map(DpnsMarketplaceUI.status) ?? "Not tracked"
+                )
+                FieldRow(
+                    label: "Price",
+                    value: record.listedPriceCredits.map(DpnsMarketplaceUI.price) ?? "Not listed"
+                )
+                FieldRow(label: "Counterparty", value: record.counterpartyIdBase58 ?? "—")
+                FieldRow(
+                    label: "Document Created (ms)",
+                    value: record.documentCreatedAtMs.map { String($0) } ?? "—"
+                )
+                FieldRow(
+                    label: "Document Updated (ms)",
+                    value: record.documentUpdatedAtMs.map { String($0) } ?? "—"
+                )
+                FieldRow(
+                    label: "Document Transferred (ms)",
+                    value: record.documentTransferredAtMs.map { String($0) } ?? "—"
+                )
+                FieldRow(
+                    label: "Marketplace Synced (ms)",
+                    value: record.marketplaceUpdatedAt == 0
+                        ? "—" : String(record.marketplaceUpdatedAt)
+                )
             }
             Section("Relationships") {
                 NavigationLink(destination: IdentityStorageDetailView(record: record.identity)) {
@@ -1172,6 +1202,52 @@ struct IndexStorageDetailView: View {
                 FieldRow(label: "Unique", value: record.unique ? "Yes" : "No")
                 FieldRow(label: "Null Searchable", value: record.nullSearchable ? "Yes" : "No")
                 FieldRow(label: "Contested", value: record.contested ? "Yes" : "No")
+            }
+            // Protocol v14 index keywords - persisted verbatim as authored
+            // and rendered raw here (this is the storage debug view); rows
+            // appear only when set, so pre-v14 indexes render as before
+            if record.countable != nil || record.summable != nil || record.averageable != nil
+                || record.terminal != nil || record.preallocated || record.timeRangeJSON != nil {
+                Section("Axes & Storage Mode") {
+                    if let countable = record.countable {
+                        FieldRow(label: "Countable", value: countable)
+                    }
+                    if record.rangeCountable {
+                        FieldRow(label: "Range Countable", value: "Yes")
+                    }
+                    if let summable = record.summable {
+                        FieldRow(label: "Summable", value: summable)
+                    }
+                    if record.rangeSummable {
+                        FieldRow(label: "Range Summable", value: "Yes")
+                    }
+                    if let averageable = record.averageable {
+                        FieldRow(label: "Averageable", value: averageable)
+                    }
+                    if record.rangeAverageable {
+                        FieldRow(label: "Range Averageable", value: "Yes")
+                    }
+                    if record.rankedCountable {
+                        FieldRow(label: "Ranked by Count", value: "Yes")
+                    }
+                    if record.rankedSummable {
+                        FieldRow(label: "Ranked by Sum", value: "Yes")
+                    }
+                    if record.rankedAverageable {
+                        FieldRow(label: "Ranked by Average", value: "Yes")
+                    }
+                    if let terminal = record.terminal {
+                        FieldRow(label: "Terminal", value: terminal)
+                    }
+                    if record.preallocated {
+                        FieldRow(label: "Preallocated", value: "Yes")
+                    }
+                    if let timeRange = record.timeRange,
+                       let range = timeRange["range"] as? Int,
+                       let step = timeRange["step"] as? Int {
+                        FieldRow(label: "Time Range", value: "\(range)s windows every \(step)s")
+                    }
+                }
             }
             if let props = record.properties, !props.isEmpty {
                 Section("Properties") {
@@ -2183,6 +2259,34 @@ struct MasternodeStorageDetailView: View {
             }
         }
         .navigationTitle(record.displayTitle)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentTrackedMasternode
+
+struct TrackedMasternodeStorageDetailView: View {
+    let record: PersistentTrackedMasternode
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Network", value: record.network?.displayName ?? "raw \(record.networkRaw)")
+                FieldRow(label: "proTxHash (wire)", value: hexString(record.proTxHash))
+                FieldRow(label: "Label", value: record.label ?? "—")
+                FieldRow(
+                    label: "Added",
+                    value: dateString(Date(timeIntervalSince1970: TimeInterval(record.addedAt))))
+            }
+            Section("Snapshot") {
+                // Opaque, Rust-owned document (PUBLIC material only) —
+                // shown verbatim; only Rust interprets it.
+                Text(record.snapshotJSON)
+                    .font(.system(.caption2, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+        }
+        .navigationTitle(record.label ?? "Tracked Masternode")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

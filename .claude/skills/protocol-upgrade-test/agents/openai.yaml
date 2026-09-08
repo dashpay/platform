@@ -1,0 +1,4 @@
+interface:
+  display_name: "Protocol Upgrade Test"
+  short_description: "Review and rehearse Platform protocol upgrades"
+  default_prompt: "Use $protocol-upgrade-test to review a Drive protocol transition and design its upgrade rehearsal."

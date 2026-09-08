@@ -6,6 +6,7 @@ use crate::{Error, Sdk};
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
 use dpp::identity::signer::Signer;
@@ -69,10 +70,11 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
             .await?;
 
         let settings = settings.unwrap_or_default();
+        let document = prepare_document_for_transition(self, &document_type);
         let transition =
             if self.revision().is_some() && self.revision().unwrap() != INITIAL_REVISION {
                 BatchTransition::new_document_replacement_transition_from_document(
-                    self.clone(),
+                    document,
                     document_type.as_ref(),
                     &identity_public_key,
                     new_identity_contract_nonce,
@@ -94,16 +96,16 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
                             // before broadcasting to fail locally (no wasted nonce/fee).
                             ensure_entropy_matches_document_id(
                                 &document_type.data_contract_id(),
-                                &self.owner_id(),
+                                &document.owner_id(),
                                 document_type.name(),
                                 &entropy,
-                                self.id(),
+                                document.id(),
                             )?;
-                            (self.clone(), entropy)
+                            (document, entropy)
                         }
                         None => {
                             let mut rng = StdRng::from_entropy();
-                            let mut document = self.clone();
+                            let mut document = document;
                             let entropy = rng.gen::<[u8; 32]>();
                             document.set_id(Document::generate_document_id_v0(
                                 &document_type.data_contract_id(),
@@ -161,6 +163,14 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
     }
 }
 
+fn prepare_document_for_transition(document: &Document, document_type: &DocumentType) -> Document {
+    let mut document = document.clone();
+    document_type
+        .as_ref()
+        .sanitize_document_properties(document.properties_mut());
+    document
+}
+
 /// Ensures a caller-supplied `entropy` derives the same document id already set
 /// on a create document.
 ///
@@ -197,6 +207,11 @@ fn ensure_entropy_matches_document_id(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::document::DocumentV0;
+    use dpp::platform_value::{platform_value, Value};
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
 
     fn contract_id() -> Identifier {
         Identifier::from([1u8; 32])
@@ -250,6 +265,59 @@ mod tests {
         assert!(
             matches!(result, Err(Error::Generic(_))),
             "a document id derived from a different entropy must be rejected locally"
+        );
+    }
+
+    #[test]
+    fn should_normalize_wasm_uint8_array_property_without_mutating_caller_document() {
+        let platform_version = PlatformVersion::latest();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create default data contract config");
+        let document_type = DocumentType::try_from_schema(
+            contract_id(),
+            1,
+            config.version(),
+            "preorder",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "saltedDomainHash": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32_u32,
+                        "maxItems": 32_u32,
+                        "position": 0
+                    }
+                },
+                "required": ["saltedDomainHash"],
+                "additionalProperties": false,
+            }),
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("should create DPNS-like document type");
+        let integer_array = Value::Array(vec![Value::U64(7); 32]);
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::new([3; 32]),
+            owner_id: owner_id(),
+            properties: BTreeMap::from([("saltedDomainHash".to_string(), integer_array.clone())]),
+            revision: Some(INITIAL_REVISION),
+            ..Default::default()
+        });
+
+        let prepared = prepare_document_for_transition(&document, &document_type);
+
+        assert_eq!(
+            prepared.properties().get("saltedDomainHash"),
+            Some(&Value::Bytes32([7; 32]))
+        );
+        assert_eq!(
+            document.properties().get("saltedDomainHash"),
+            Some(&integer_array)
         );
     }
 }

@@ -1,10 +1,13 @@
 import { Listr } from 'listr2';
+import lodash from 'lodash';
 import {
   PRESET_LOCAL,
 } from '../../../constants.js';
 import deriveTenderdashNodeId from '../../../tenderdash/deriveTenderdashNodeId.js';
 import generateTenderdashNodeKey from '../../../tenderdash/generateTenderdashNodeKey.js';
 import generateRandomString from '../../../util/generateRandomString.js';
+
+const { cloneDeep: lodashCloneDeep } = lodash;
 
 /**
  * @param {ConfigFile} configFile
@@ -126,10 +129,14 @@ export default function setupLocalPresetTaskFactory(
                 config.set('core.rpc.port', config.get('core.rpc.port') + (i * 100));
                 config.set('core.zmq.port', config.get('core.zmq.port') + (i * 100));
 
-                Object.values(config.get('core.rpc.users')).forEach((options) => {
+                // Reads hand back a frozen snapshot, so build the new value and set it
+                // back rather than writing through the object get() returned.
+                const rpcUsers = lodashCloneDeep(config.get('core.rpc.users'));
+                Object.values(rpcUsers).forEach((options) => {
                   // eslint-disable-next-line no-param-reassign
                   options.password = generateRandomString(12);
                 });
+                config.set('core.rpc.users', rpcUsers);
 
                 config.set('externalIp', hostDockerInternalIp);
 

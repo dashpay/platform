@@ -105,6 +105,8 @@ impl PlatformWalletInfo {
             // is future). Drop explicitly so future readers don't expect a
             // replay hook.
             invitations: _,
+            dpns_name_states,
+            identity_scan_state,
             // Registration-round metadata / per-account specs /
             // per-pool snapshots are persistence-only — the
             // canonical in-memory wallet state is built up at
@@ -139,7 +141,7 @@ impl PlatformWalletInfo {
         //    not through changeset replay. The core field on `cs` is
         //    therefore informational here and intentionally not
         //    applied; we drop it explicitly so future readers don't
-        //    expect a re-application path that no longer exists.
+        //    expect a re-application path that does not exist.
         drop(core);
 
         // 2. Identities.
@@ -158,6 +160,30 @@ impl PlatformWalletInfo {
             // reach in and touch the index from out here.
             for removed_id in &removed {
                 self.identity_manager.remove_for_apply(removed_id);
+            }
+        }
+
+        // 2a'. Identity-scan verdict. Replayed rather than dropped: unlike the
+        //      registration metadata below it, this one has live in-memory
+        //      state on the identity manager, and it is read on the next
+        //      bring-up to decide whether the identity set may be treated as
+        //      settled. A verdict that survived to persistence and then got
+        //      dropped on the way back in would leave a partial scan looking
+        //      complete — the exact failure the verdict exists to prevent.
+        if let Some(scan) = identity_scan_state {
+            self.identity_manager
+                .record_identity_scan(wallet.wallet_id, scan);
+        }
+
+        // 2a. DPNS name states (username marketplace): upserts land
+        //     first, then tombstones, into the in-memory working set —
+        //     same LWW-then-remove discipline as the rest of this
+        //     function.
+        if let Some(dpns_cs) = dpns_name_states {
+            let crate::changeset::DpnsNameStateChangeSet { names, removed } = dpns_cs;
+            self.dpns_name_states.extend(names);
+            for document_id in &removed {
+                self.dpns_name_states.remove(document_id);
             }
         }
 
@@ -359,7 +385,7 @@ impl PlatformWalletInfo {
         // Mirror the recomputed balance into the lock-free Arc that the
         // UI reads.
         let core_balance = &self.core_wallet.balance;
-        self.balance.set(
+        self.generation.set(
             core_balance.confirmed(),
             core_balance.unconfirmed(),
             core_balance.immature(),
@@ -389,7 +415,7 @@ mod tests {
         ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet,
     };
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
-    use crate::wallet::core::WalletBalance;
+    use crate::wallet::core::WalletGeneration;
     use crate::wallet::identity::state::managed_identity::ManagedIdentity;
     use crate::wallet::identity::IdentityManager;
     use crate::wallet::identity::{ContactRequest, EstablishedContact};
@@ -410,9 +436,11 @@ mod tests {
     fn empty_info(wallet: &Wallet) -> PlatformWalletInfo {
         PlatformWalletInfo {
             core_wallet: ManagedWalletInfo::from_wallet(wallet, 0),
-            balance: std::sync::Arc::new(WalletBalance::new()),
+            generation: std::sync::Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
+            observed_input_conflicts: Default::default(),
+            dpns_name_states: BTreeMap::new(),
         }
     }
 
@@ -746,7 +774,7 @@ mod tests {
 
     /// Token-balance changesets are accepted by `apply_changeset` for
     /// shape compatibility but are not replayed onto
-    /// `PlatformWalletInfo` (which no longer has token_balances /
+    /// `PlatformWalletInfo` (which has no token_balances /
     /// token_watched fields). The canonical balance cache lives on
     /// `IdentitySyncManager` and is rebuilt by the next sync pass; the
     /// FFI persister surfaces the upserts/tombstones to the Swift side
@@ -1368,9 +1396,8 @@ mod tests {
         assert_eq!(restored.identity.revision(), 5);
     }
 
-    /// Reviewer #6d: contact tombstone for a present (non-orphan) owner
-    /// must drop the matching pending request — happy-path coverage
-    /// previously only existed via the orphan-skip test.
+    /// A contact tombstone for a present (non-orphan) owner
+    /// must drop the matching pending request.
     #[test]
     fn apply_contact_tombstone_drops_pending_for_present_owner() {
         let mut wallet = build_test_wallet();
@@ -1827,10 +1854,9 @@ mod tests {
         });
 
         // Token balance changesets are accepted for shape compat but
-        // no longer drive `PlatformWalletInfo` state — the manager
+        // do not drive `PlatformWalletInfo` state — the manager
         // owns the balance cache. Include one anyway to confirm the
-        // double-apply still works once the field has been replaced
-        // with a `drop`.
+        // double-apply still works while the field is simply dropped.
         let mut tok_cs = TokenBalanceChangeSet::default();
         let token = Identifier::from([8u8; 32]);
         tok_cs.balances.insert((identity, token), 42);

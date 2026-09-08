@@ -130,6 +130,10 @@ pub fn build_pending_entry(
         block_height: None,
         status: ShieldedActivityStatus::Pending,
         created_at_ms: ShieldedActivityEntry::now_ms(),
+        // Live entries order by their real record time; the chain-order
+        // key is the scan deriver's (positions aren't known at record
+        // time — the notes are discovered by a later scan).
+        min_note_position: None,
         note_cmxs,
         spent_nullifiers,
     })
@@ -190,6 +194,7 @@ mod tests {
             block_height: None,
             status: ShieldedActivityStatus::Pending,
             created_at_ms: 123,
+            min_note_position: None,
             note_cmxs: vec![[7u8; 32]],
             spent_nullifiers: vec![[3u8; 32]],
         };
@@ -226,6 +231,7 @@ mod tests {
             block_height: None,
             status: ShieldedActivityStatus::Pending,
             created_at_ms: 0,
+            min_note_position: None,
             note_cmxs: vec![[1u8; 32]],
             spent_nullifiers: vec![],
         };

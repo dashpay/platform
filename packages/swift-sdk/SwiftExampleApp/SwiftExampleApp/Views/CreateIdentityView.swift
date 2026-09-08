@@ -37,16 +37,22 @@ import SwiftData
 /// can be unit-tested with lightweight structs instead of forcing
 /// tests to spin up a SwiftData `ModelContainer` just to construct
 /// `PersistentAssetLock` `@Model` instances. `PersistentAssetLock`
-/// conforms automatically because it already exposes all three
+/// conforms automatically because it already exposes all four
 /// properties on its public surface.
+///
+/// `fundingTypeRaw` is the `AssetLockFundingType` discriminator
+/// (0 IdentityRegistration, 1 IdentityTopUp, 2 IdentityTopUpNotBound,
+/// 3 IdentityInvitation, 4 AssetLockAddressTopUp,
+/// 5 AssetLockShieldedAddressTopUp). Generic identity Resume accepts
+/// only 0...2. IdentityInvitation (3) is a bearer voucher consumed
+/// only by the invitation reclaim flow with
+/// `consumeInvitationVoucher: true`; 4 and 5 belong to the platform-
+/// address and shielded-address trackers. The filter rejects every
+/// other discriminator fail-closed.
 protocol AssetLockResumeRow {
     var walletId: Data { get }
     var statusRaw: Int { get }
     var identityIndexRaw: Int32 { get }
-    /// Funding-type discriminant (mirrors the Rust `AssetLockFundingType`).
-    /// Carried through the row contract so the resumable-registrations
-    /// anti-join can exclude `IdentityInvitation` (3) vouchers — a shared
-    /// bearer lock that generic resume must never consume.
     var fundingTypeRaw: Int { get }
 }
 

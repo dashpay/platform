@@ -5,5 +5,6 @@
 //! locks, and re-deriving private keys.
 
 mod proof;
-mod recovery;
+pub(crate) mod reconstruction;
+pub(crate) mod recovery;
 mod tracking;

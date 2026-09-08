@@ -166,4 +166,27 @@ describe('BlockHeadersProvider - integration', function describe() {
     expect(headHeight).to.equal(chainHeight + 1);
     await blockHeadersProvider.stop();
   });
+
+  it('should accept the first historical batch after initializing from genesis', async function shouldAcceptFirstHistoricalBatch() {
+    const chainFromGenesis = await mockHeadersChain(
+      'regtest',
+      2,
+      undefined,
+      { mine: true },
+    );
+    await createBlockHeadersProvider(this.sinon, {
+      network: 'regtest',
+      targetBatchSize: historicalBatchSize,
+    });
+    this.sinon.spy(blockHeadersProvider, 'emit');
+
+    await blockHeadersProvider.readHistorical(1, 1);
+    historicalStreams[0].sendHeaders(chainFromGenesis.slice(1));
+    historicalStreams[0].end();
+
+    expect(blockHeadersProvider.spvChain.getLongestChain({ withPruned: true }))
+      .to.have.length(2);
+    expect(blockHeadersProvider.emit)
+      .to.have.been.calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
+  });
 });

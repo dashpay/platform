@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
 
-    use crate::execution::run_chain_for_strategy;
+    use crate::execution::{run_chain_for_strategy, GENESIS_TIME_MS};
     use crate::strategy::NetworkStrategy;
     use dapi_grpc::platform::v0::get_addresses_trunk_state_request::{
         GetAddressesTrunkStateRequestV0, Version as RequestVersion,
@@ -771,6 +771,11 @@ mod tests {
             query_testing: None,
             verify_state_transition_results: true,
             sign_instant_locks: true,
+            // Checkpoints are only taken for blocks the network produced recently,
+            // so the chain has to start near the wall clock. Keep the same phase
+            // within the ten-minute checkpoint interval as the fixed genesis time,
+            // so the heights that checkpoint are the ones asserted below.
+            start_time_ms: recent_start_time_with_phase_of(GENESIS_TIME_MS, 600_000),
             ..Default::default()
         };
         let config = PlatformConfig {
@@ -899,6 +904,16 @@ mod tests {
         );
     }
 
+    /// The most recent instant no more than `interval_ms` ago that falls on the
+    /// same offset within the interval as `reference_ms`.
+    fn recent_start_time_with_phase_of(reference_ms: u64, interval_ms: u64) -> u64 {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock is before the unix epoch")
+            .as_millis() as u64;
+        now_ms - (now_ms - reference_ms) % interval_ms
+    }
+
     #[tokio::test]
     async fn run_chain_address_transitions_with_checkpoints_stop_and_restart() {
         drive_abci::logging::init_for_tests(LogLevel::Debug);
@@ -953,6 +968,11 @@ mod tests {
             query_testing: None,
             verify_state_transition_results: true,
             sign_instant_locks: true,
+            // Checkpoints are only taken for blocks the network produced recently,
+            // so the chain has to start near the wall clock. Keep the fixed genesis
+            // time's phase within the ten-minute checkpoint interval, so the same
+            // heights checkpoint as before.
+            start_time_ms: recent_start_time_with_phase_of(GENESIS_TIME_MS, 600_000),
             ..Default::default()
         };
         let config = PlatformConfig {
@@ -2123,6 +2143,11 @@ mod tests {
             query_testing: None,
             verify_state_transition_results: true,
             sign_instant_locks: true,
+            // Checkpoints are only taken for blocks the network produced recently,
+            // so the chain has to start near the wall clock. Keep the fixed genesis
+            // time's phase within the ten-minute checkpoint interval, so the same
+            // heights checkpoint as before.
+            start_time_ms: recent_start_time_with_phase_of(GENESIS_TIME_MS, 600_000),
             ..Default::default()
         };
         let config = PlatformConfig {
@@ -2341,6 +2366,11 @@ mod tests {
             query_testing: None,
             verify_state_transition_results: true,
             sign_instant_locks: true,
+            // Checkpoints are only taken for blocks the network produced recently,
+            // so the chain has to start near the wall clock. Keep the fixed genesis
+            // time's phase within the ten-minute checkpoint interval, so the same
+            // heights checkpoint as before.
+            start_time_ms: recent_start_time_with_phase_of(GENESIS_TIME_MS, 600_000),
             ..Default::default()
         };
 
@@ -2691,6 +2721,11 @@ mod tests {
             query_testing: None,
             verify_state_transition_results: true,
             sign_instant_locks: true,
+            // Checkpoints are only taken for blocks the network produced recently,
+            // so the chain has to start near the wall clock. Keep the fixed genesis
+            // time's phase within the ten-minute checkpoint interval, so the same
+            // heights checkpoint as before.
+            start_time_ms: recent_start_time_with_phase_of(GENESIS_TIME_MS, 600_000),
             ..Default::default()
         };
 
@@ -3282,6 +3317,11 @@ mod tests {
             query_testing: None,
             verify_state_transition_results: true,
             sign_instant_locks: true,
+            // Checkpoints are only taken for blocks the network produced recently,
+            // so the chain has to start near the wall clock. Keep the fixed genesis
+            // time's phase within the ten-minute checkpoint interval, so the same
+            // heights checkpoint as before.
+            start_time_ms: recent_start_time_with_phase_of(GENESIS_TIME_MS, 600_000),
             ..Default::default()
         };
 
@@ -3743,6 +3783,7 @@ mod tests {
     #[stack_size(8000000)]
     #[test]
     async fn run_chain_blast_sync_full_flow() {
+        let chain_start_time_ms = recent_start_time_with_phase_of(GENESIS_TIME_MS, 600_000);
         use crate::execution::{continue_chain_for_strategy, GENESIS_TIME_MS};
         use crate::strategy::{
             ChainExecutionOutcome, ChainExecutionParameters, StrategyRandomness,
@@ -3805,6 +3846,11 @@ mod tests {
             query_testing: None,
             verify_state_transition_results: true,
             sign_instant_locks: true,
+            // Checkpoints are only taken for blocks the network produced recently,
+            // so the chain has to start near the wall clock. Keep the fixed genesis
+            // time's phase within the ten-minute checkpoint interval, so the same
+            // heights checkpoint as before.
+            start_time_ms: chain_start_time_ms,
             ..Default::default()
         };
 
@@ -4008,7 +4054,7 @@ mod tests {
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                 current_votes: BTreeMap::default(),
-                start_time_ms: GENESIS_TIME_MS,
+                start_time_ms: chain_start_time_ms,
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
                 current_identities: identities,
@@ -4168,7 +4214,7 @@ mod tests {
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                 current_votes: BTreeMap::default(),
-                start_time_ms: GENESIS_TIME_MS,
+                start_time_ms: chain_start_time_ms,
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
                 current_identities: identities,
@@ -4413,7 +4459,7 @@ mod tests {
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                 current_votes: BTreeMap::default(),
-                start_time_ms: GENESIS_TIME_MS,
+                start_time_ms: chain_start_time_ms,
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
                 current_identities: identities,

@@ -8,8 +8,6 @@ use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-use crate::verify::address_funds::verify_compacted_address_balance_changes::CompactedAddressBalanceProof;
-
 /// Result type for fetched compacted address balance changes
 /// Each entry is (start_block, end_block, address_balance_map)
 pub type CompactedAddressBalanceChanges = Vec<(
@@ -189,15 +187,17 @@ impl Drive {
         Ok(compacted_changes)
     }
 
-    /// Version 0 implementation for proving compacted address balance changes.
+    /// Version 0 implementation for proving compacted address balance changes
+    /// — legacy single-proof wire format used by protocol versions whose
+    /// `prove_compacted_address_balance_changes` feature version is 0.
     ///
-    /// Uses two independently verifiable proofs:
-    /// 1. A descending predecessor proof authenticates which range, if any,
-    ///    contains `start_block_height`.
-    /// 2. A forward proof starts at that authenticated range (or at the
-    ///    request-derived fallback key when no range contains the height).
+    /// Uses a two-step approach:
+    /// 1. First query (non-proving): descending to find any range containing start_block_height
+    /// 2. Second query (proving): ascending from the found start_block or start_block_height
     ///
-    /// This ensures the proof covers all relevant ranges efficiently.
+    /// Kept byte-for-byte wire-compatible with the legacy
+    /// `verify_compacted_address_balance_changes_v0` decoder. The two-proof
+    /// envelope (predecessor authentication) lives in v1.
     pub(super) fn prove_compacted_address_balance_changes_v0(
         &self,
         start_block_height: u64,
@@ -207,7 +207,7 @@ impl Drive {
     ) -> Result<Vec<u8>, Error> {
         let path = Self::saved_compacted_block_transactions_address_balances_path_vec();
 
-        // Step 1: Authenticate the predecessor used to select the forward query.
+        // Step 1: Non-proving descending query to find any range containing start_block_height
         let mut desc_end_key = Vec::with_capacity(16);
         desc_end_key.extend_from_slice(&start_block_height.to_be_bytes());
         desc_end_key.extend_from_slice(&u64::MAX.to_be_bytes());
@@ -222,13 +222,6 @@ impl Drive {
             &desc_path_query,
             transaction,
             QueryResultType::QueryKeyElementPairResultType,
-            &mut vec![],
-            &platform_version.drive,
-        )?;
-
-        let predecessor_proof = self.grove_get_proved_path_query(
-            &desc_path_query,
-            transaction,
             &mut vec![],
             &platform_version.drive,
         )?;
@@ -269,27 +262,12 @@ impl Drive {
 
         let path_query = PathQuery::new(path, SizedQuery::new(query, limit, None));
 
-        let forward_proof = self.grove_get_proved_path_query(
+        self.grove_get_proved_path_query(
             &path_query,
             transaction,
             &mut vec![],
             &platform_version.drive,
-        )?;
-
-        bincode::encode_to_vec(
-            CompactedAddressBalanceProof {
-                predecessor_proof,
-                forward_proof,
-            },
-            bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit(),
         )
-        .map_err(|e| {
-            Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
-                "cannot encode compacted address balance proof: {e}"
-            ))))
-        })
     }
 }
 

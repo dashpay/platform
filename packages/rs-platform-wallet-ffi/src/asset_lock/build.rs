@@ -20,6 +20,14 @@ use std::os::raw::c_char;
 
 /// Build an asset lock transaction via an external mnemonic resolver.
 ///
+/// Funding is POOLED across `platform_wallet::ASSET_LOCK_FUNDING_SOURCES`:
+/// coin selection draws from the union of the BIP44 and BIP32 accounts at
+/// `account_index` plus every DashPay contact-receiving account, and change
+/// returns to BIP44. A lock therefore no longer needs its whole amount sitting
+/// in one account, and the caller no longer has to sweep accounts together
+/// first. `account_index` addresses the standard families only; DashPay
+/// accounts span their own indices and are pooled in regardless.
+///
 /// On success:
 /// - `out_tx_bytes`/`out_tx_len`: serialized signed transaction
 /// - `out_derivation_path`: NUL-terminated C string with the

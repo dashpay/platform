@@ -11,6 +11,8 @@ mod state_transition_validation;
 pub mod v0;
 mod version;
 
+pub use state_transition_estimated_fee_validation::calculate_address_funding_from_asset_lock_min_required_fee;
+
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]

@@ -57,6 +57,20 @@ data class PublicKeyEntity(
     /** Document-type qualifier for `.singleContractDocumentType` bounds. */
     val contractBoundsDocumentTypeName: String? = null,
     val privateKeyKeychainIdentifier: String? = null,
+    /**
+     * Derivation breadcrumb (DIP-9 identity index) captured from the
+     * persist-callback payload whenever Rust supplied derivation indices —
+     * on SUCCESSFUL derives too, not just failures (the breadcrumb is not a
+     * failure marker; a null [privateKeyKeychainIdentifier] is). Makes the
+     * "keys pending repair" state reconstructible after process restart:
+     * a row with breadcrumbs whose private half is missing or undecryptable
+     * re-seeds `PlatformWalletPersistenceHandler.pendingIdentityKeys`
+     * (dashpay/platform#4060 finding 5). Null for rows persisted without
+     * derivation indices (read-only / foreign keys).
+     */
+    val derivationIdentityIndex: Int? = null,
+    /** Derivation breadcrumb (key index) — see [derivationIdentityIndex]. */
+    val derivationKeyIndex: Int? = null,
     /** Owning identity id as base58 String (Swift stores String here). */
     val identityId: String,
     val createdAt: Date = Date(),

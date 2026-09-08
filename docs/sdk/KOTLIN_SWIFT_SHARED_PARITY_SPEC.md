@@ -630,8 +630,10 @@ Required validation per slice:
 ## 12. Compatibility and rollout
 
 - Database migrations are additive and serialized as v5 unsigned token storage, v6
-  FVK, v7 provider membership/position, and v8 invitations; do not
-  destructively rewrite address identity columns.
+  FVK, v7 provider membership/position, and v8 identity-key derivation
+  breadcrumbs (pending-repair durability, dashpay/platform#4060); the
+  invitations migration shifts to v9. Do not destructively rewrite address
+  identity columns.
 - New Rust FFI functions are additive and new result PODs are opaque/versioned.
   Existing released split-builder entry points are deprecated before removal;
   existing struct layouts and JNI descriptors do not change silently. The
@@ -643,6 +645,41 @@ Required validation per slice:
   closed before broadcast.
 - The parity manifest initially records known gaps. CI prevents regression but does
   not require all gaps to close in the first slice.
+
+### Keystore rework divergences and convergences (dashpay/platform#4060)
+
+Recorded in `sdk-parity-manifest.json`; rationale here:
+
+- **`KeySecurityPolicy` + Keystore alias split (Kotlin-only, deliberate).**
+  Android Keystore fixes authentication parameters at key generation, so the
+  AUTH_GATED/DEVICE_BOUND policies require distinct aliases; iOS Keychain has
+  no per-alias auth-parameter analog (item access control covers the same
+  ground), so the manifest marks Swift `not-applicable` — no Swift port is
+  planned. The lockless-device degradation (AUTH_GATED writes redirect to the
+  DEVICE_BOUND alias, surfaced via `effectiveKeySecurityPolicy`) is likewise
+  Android-specific: KeyMint rejects gated key generation without a secure
+  lock screen.
+- **Platform-wallet code 98 is now CONVERGENT.** Kotlin previously collapsed
+  the blanket Option-miss code into the top-level `DashSdkError.NotFound`
+  while Swift kept it in the wallet family; Kotlin now maps 98 to
+  `DashSdkError.PlatformWallet.NotFound` (BREAKING for hosts that caught the
+  top-level type from platform-wallet operations).
+- **Durable pending-repair surface (Kotlin-only, port candidate).**
+  `pendingIdentityKeys` + forced/verified `repairIdentityKey` + the Room v8
+  derivation breadcrumbs have no Swift counterpart; the manifest records the
+  gap as `unsupported` for Swift.
+- **Structured `SigningKeyUnavailable` discriminator (both hosts).** The
+  signer completion carries a typed `error_code` (rs-sdk-ffi
+  `DashSDKSignerErrorCode`), restored as platform-wallet code 31 on both
+  hosts. The Rust-internal segment rides the machine prefix
+  `signer_error:key_unavailable: ` through `ProtocolError::Generic` (a typed
+  rs-dpp variant was rejected for serialization blast radius — accepted
+  residual). The Kotlin `MESSAGE_MARKER` text sniff survives ONLY as a
+  deprecated fallback for the #4191 merge-order transition (marker-based
+  classification predating the typed code) and for conversion paths that
+  lose the machine prefix; mixed old-native/new-Kotlin artifacts are
+  unsupported outright (the sign-completion JNI arity changed 3→4 args).
+  Remove it (and the marker's matcher role) in the next minor release.
 
 ## 13. Explicitly out of scope
 

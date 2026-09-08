@@ -88,18 +88,86 @@ impl PaymentTaskTracker {
         true
     }
 
+    /// Unbounded drain — test-only convenience over
+    /// [`quiesce_within`](Self::quiesce_within) with an effectively
+    /// infinite budget.
+    #[cfg(test)]
     async fn quiesce(&self) {
+        let _ = self
+            .quiesce_within(std::time::Duration::from_secs(60 * 60))
+            .await;
+    }
+
+    /// Close admission and join every admitted task, bounded by `budget`.
+    ///
+    /// Returns `true` when every task terminated. Two phases, each under a
+    /// **shared** deadline so the whole drain is bounded by
+    /// `budget + PAYMENT_ABORT_GRACE` regardless of how many stragglers
+    /// there are: every task gets until `budget` to finish on its own, then
+    /// every survivor is aborted *first* and only then confirmed, all
+    /// against one [`PAYMENT_ABORT_GRACE`](crate::manager::PAYMENT_ABORT_GRACE)
+    /// deadline. (Aborting and confirming one straggler at a time would
+    /// cost `survivors × PAYMENT_ABORT_GRACE`, which is not the bound
+    /// `shutdown` advertises.)
+    ///
+    /// A task stuck in a synchronous call (e.g. an FFI persister `store`)
+    /// cannot be interrupted by an abort — it is put **back into the
+    /// tracker** (so a destroy retry re-joins it instead of silently
+    /// detaching a callback-capable task) and the method returns `false`.
+    ///
+    /// Aborting is safe here: the payment hooks are reconciliation-based
+    /// (re-derivable from wallet transaction records on the next launch),
+    /// so a hook cancelled between awaits loses no unrecoverable state.
+    async fn quiesce_within(&self, budget: std::time::Duration) -> bool {
         let handles = {
             let mut state = self.state.lock().expect("payment task mutex poisoned");
             state.accepting = false;
             std::mem::take(&mut state.handles)
         };
 
-        for handle in handles {
-            if let Err(error) = handle.await {
-                tracing::warn!(?error, "DashPay payment task join error");
+        // Phase 1 — graceful, one shared deadline for all tasks.
+        let deadline = tokio::time::Instant::now() + budget;
+        let mut survivors = Vec::new();
+        for mut handle in handles {
+            match tokio::time::timeout_at(deadline, &mut handle).await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => tracing::warn!(?error, "DashPay payment task join error"),
+                Err(_) => survivors.push(handle),
             }
         }
+
+        if survivors.is_empty() {
+            return true;
+        }
+
+        // Phase 2 — abort EVERY straggler before awaiting any of them, so
+        // the grace below is paid once rather than once per straggler.
+        for handle in &survivors {
+            handle.abort();
+        }
+        let abort_deadline = tokio::time::Instant::now() + crate::manager::PAYMENT_ABORT_GRACE;
+        let mut still_live = Vec::new();
+        for mut handle in survivors {
+            match tokio::time::timeout_at(abort_deadline, &mut handle).await {
+                Ok(Err(error)) if !error.is_cancelled() => {
+                    tracing::warn!(?error, "DashPay payment task abort join error");
+                }
+                Ok(_) => {}
+                Err(_) => still_live.push(handle),
+            }
+        }
+
+        if still_live.is_empty() {
+            return true;
+        }
+        tracing::warn!(
+            survivors = still_live.len(),
+            "DashPay payment tasks did not terminate within the drain budget; \
+             keeping them tracked for a retry"
+        );
+        let mut state = self.state.lock().expect("payment task mutex poisoned");
+        state.handles.extend(still_live);
+        false
     }
 
     #[cfg(test)]
@@ -124,9 +192,15 @@ impl DashPayPaymentHandler {
     }
 
     /// Stop admitting callback-bearing work and join every task admitted
-    /// before the gate closed. Idempotent.
-    pub(crate) async fn quiesce(&self) {
-        self.tasks.quiesce().await;
+    /// before the gate closed, bounded by `budget`. Idempotent.
+    ///
+    /// Returns `false` when a task outlived the budget (and its post-abort
+    /// grace); the straggler stays tracked so a retry can re-join it, and
+    /// the caller must report the shutdown non-clean — these tasks clone
+    /// the FFI persister and can fire host callbacks.
+    #[must_use = "a false return means a callback-capable task is still live; report non-clean"]
+    pub(crate) async fn quiesce_within(&self, budget: std::time::Duration) -> bool {
+        self.tasks.quiesce_within(budget).await
     }
 }
 
@@ -177,7 +251,16 @@ fn dashpay_payment_records(event: &WalletEvent) -> Vec<&TransactionRecord> {
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => inserted.iter().chain(updated.iter()).collect(),
+        // `TransactionsSwept` carries txids, not records: the wallet has
+        // already dropped the records these name. Its payment consequence
+        // — failing the matching `Pending` sent payments, since a swept
+        // transaction can never confirm — is NOT this handler's to apply:
+        // a sweep never re-emits once its round is durable, so the flip
+        // must ride the sweep's own atomic store round, which belongs to
+        // the wallet-event adapter. Routing it here would persist the
+        // flip on a separate round with no replay if that round fails.
         WalletEvent::TransactionInstantLocked { .. }
+        | WalletEvent::TransactionsSwept { .. }
         | WalletEvent::SyncHeightAdvanced { .. }
         | WalletEvent::ChainLockProcessed { .. } => Vec::new(),
     }
@@ -200,16 +283,25 @@ fn drives_payment_hooks(event: &WalletEvent) -> bool {
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => !inserted.is_empty() || !updated.is_empty(),
-        WalletEvent::SyncHeightAdvanced { .. } | WalletEvent::ChainLockProcessed { .. } => false,
+        // No records to route (see `dashpay_payment_records`), so a task
+        // here would take and release the wallet-manager write lock for
+        // nothing. The sweep's payment consequence belongs on the
+        // wallet-event adapter's own store round — see `dashpay_payment_records`.
+        WalletEvent::TransactionsSwept { .. }
+        | WalletEvent::SyncHeightAdvanced { .. }
+        | WalletEvent::ChainLockProcessed { .. } => false,
     }
 }
 
 /// Run the DashPay payment hooks for `event`: record any incoming DashPay
 /// payment, then advance a matching sent payment from `Pending` to
 /// `Confirmed` once its transaction reaches finality (mined or
-/// InstantSend-locked). All paths are idempotent per txid, so re-detections
-/// and repeated block-processing rounds converge without duplicating
-/// entries.
+/// InstantSend-locked). The opposite terminal — `Failed`, when a sweep
+/// proves the transaction never can confirm — is deliberately not applied
+/// here: it belongs on the sweep's own atomic store round in the
+/// wallet-event adapter (see `dashpay_payment_records`). All paths are
+/// idempotent per txid, so re-detections and repeated block-processing
+/// rounds converge without duplicating entries.
 pub(crate) async fn run_dashpay_payment_hooks(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
@@ -384,6 +476,28 @@ mod tests {
         assert!(drives_payment_hooks(&event));
     }
 
+    /// `TransactionsSwept` must NOT drive the payment hooks: its payment
+    /// consequence — failing the losers' `Pending` sent payments — belongs
+    /// on the wallet-event adapter's own atomic store round, because a
+    /// sweep never re-emits once its round is durable and a separately
+    /// persisted flip that failed its store would be lost for good.
+    /// Spawning a hook task here would race a second write against that
+    /// round.
+    #[test]
+    fn transactions_swept_does_not_drive_payment_hooks() {
+        let event = WalletEvent::TransactionsSwept {
+            wallet_id: [0u8; 32],
+            txids: vec![dashcore::Txid::from([0x21; 32])],
+            superseded_by: dashcore::Txid::from([0x22; 32]),
+            winner_mined_height: None,
+            released_outpoints: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: std::collections::BTreeMap::new(),
+        };
+        assert!(dashpay_payment_records(&event).is_empty());
+        assert!(!drives_payment_hooks(&event));
+    }
+
     /// A `BlockProcessed` that changed no records (syncing past an empty
     /// block) has no payment work, so it must not spawn a hook task. Pins
     /// the spawn-skip that keeps initial sync from taking the wallet-manager
@@ -438,5 +552,64 @@ mod tests {
         // Repeated shutdown is safe and keeps admission closed.
         tasks.quiesce().await;
         assert!(!tasks.spawn(async {}));
+    }
+
+    /// A straggler parked at an await point must be reaped by the abort
+    /// escalation: `quiesce_within` stays bounded and still reports a
+    /// clean drain because the task verifiably terminated.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn quiesce_within_aborts_await_parked_straggler_and_reports_clean() {
+        let tasks = Arc::new(PaymentTaskTracker::new());
+        assert!(tasks.spawn(async {
+            std::future::pending::<()>().await;
+        }));
+
+        let drained = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            tasks.quiesce_within(std::time::Duration::from_millis(50)),
+        )
+        .await
+        .expect("bounded quiesce must return");
+        assert!(
+            drained,
+            "an await-parked task is abortable and must count as terminated"
+        );
+        assert!(!tasks.spawn(async {}), "admission must stay closed");
+    }
+
+    /// A straggler stuck in a synchronous call (no await point — an abort
+    /// cannot land) must NOT be silently detached: `quiesce_within`
+    /// returns `false` and keeps the handle tracked so a retry re-joins
+    /// it once the blocking call finally returns.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    async fn quiesce_within_keeps_unabortable_straggler_tracked_and_reports_false() {
+        let tasks = Arc::new(PaymentTaskTracker::new());
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        assert!(tasks.spawn(async move {
+            let _ = started_tx.send(());
+            // Stands in for a synchronous FFI persister call: blocks the
+            // task without ever reaching an await point, so the abort in
+            // `quiesce_within` cannot take effect.
+            std::thread::sleep(std::time::Duration::from_millis(2500));
+        }));
+        started_rx.await.expect("straggler should start");
+
+        let drained = tasks
+            .quiesce_within(std::time::Duration::from_millis(50))
+            .await;
+        assert!(
+            !drained,
+            "an uninterruptible straggler must be reported non-clean"
+        );
+
+        // The handle stayed tracked: a retry joins it once the blocking
+        // call returns.
+        let retry = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            tasks.quiesce_within(std::time::Duration::from_secs(10)),
+        )
+        .await
+        .expect("retry quiesce must return");
+        assert!(retry, "retry must re-join the tracked straggler");
     }
 }

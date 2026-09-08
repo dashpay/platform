@@ -35,7 +35,7 @@ use dash_sdk::platform::shielded::{
 use futures::StreamExt;
 use grovedb_commitment_tree::{ExtractedNoteCommitment, Note as OrchardNote, PaymentAddress};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use super::keys::AccountViewingKeys;
 use super::store::{ShieldedStore, SubwalletId};
@@ -369,9 +369,14 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // — drives the watermark advance and the host-visible scan volume,
     // exactly as `result.total_notes_scanned` did in the one-shot path.
     let mut total_notes_scanned: u64 = 0;
-    // Mirrors the one-shot rewind rule: track the last non-empty
-    // batch's `(start_index, is_partial)` so we can warn on a
-    // rewind-to-zero just like before.
+    // Track the last non-empty batch's `(start_index, is_partial)` —
+    // diagnostic only. The one-shot path used this to rewind its resume
+    // point to the mutable buffer chunk's start; the streaming path's
+    // watermark is `aligned_start + total_notes_scanned` (the partial
+    // chunk is re-fetched via the chunk-boundary realignment at the
+    // next pass's start instead), so this value never feeds the
+    // watermark — it is surfaced in the completion log for parity with
+    // the SDK's `next_start_index` semantics.
     let mut last_nonempty: Option<(u64, bool)> = None;
 
     // Scan-based spend detection (replaces the dedicated
@@ -511,9 +516,16 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         }
     }
 
-    // Preserve the one-shot `next_start_index` warning: if the resume
-    // point would rewind to 0 after scanning notes, the next sync
-    // rescans from the beginning.
+    // Diagnostic mirror of the SDK's one-shot `next_start_index`
+    // (rewinds to the last partial chunk's start). NOT the watermark:
+    // the streaming path persists `aligned_start + total_notes_scanned`
+    // below, and re-covers the partial buffer chunk through the
+    // chunk-boundary realignment at the next pass's start. The old
+    // "next_start_index is 0 — next sync will rescan from the
+    // beginning" warning keyed off this value was therefore wrong for
+    // any single-partial-batch cold scan (a from-scratch rescan always
+    // tripped it while the watermark advanced correctly), and sent a
+    // real field investigation chasing the wrong mechanism — dropped.
     let next_start_index = match last_nonempty {
         Some((s, true)) => s,
         _ => aligned_start + total_notes_scanned,
@@ -527,13 +539,6 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         next_start_index,
         "SDK stream consumed"
     );
-    if next_start_index == 0 && total_notes_scanned > 0 {
-        warn!(
-            "Shielded sync: next_start_index is 0 after scanning {} notes — \
-             next sync will rescan from the beginning",
-            total_notes_scanned,
-        );
-    }
 
     if appended > 0 {
         // Checkpoint at the tree's true post-append leaf count. The

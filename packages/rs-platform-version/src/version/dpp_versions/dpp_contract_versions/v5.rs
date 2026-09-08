@@ -36,11 +36,7 @@ pub const CONTRACT_VERSIONS_V5: DPPContractVersions = DPPContractVersions {
             index_levels_from_indices: 0,
         },
         class_method_versions: DocumentTypeClassMethodVersions {
-            // changed: v3 rejects the self-contradictory `documentsKeepHistory:
-            // true` + `canBeDeleted: true` combination during full validation.
-            // v2 stays as-is for protocol version 12, which is released and
-            // consensus-frozen. See issue #3927.
-            try_from_schema: 3,
+            try_from_schema: 2,
             create_document_types_from_document_schemas: 1,
         },
         structure_version: 0,
@@ -49,6 +45,9 @@ pub const CONTRACT_VERSIONS_V5: DPPContractVersions = DPPContractVersions {
             should_add_creator_id: 1,
             enrich_with_base_schema: 1,
             find_identifier_and_binary_paths: 0,
+            // This version predates the `refersTo` reference keyword
+            apply_property_reference: None,
+            apply_required_since: None,
             validate_max_depth: 0,
             max_depth: 256,
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {

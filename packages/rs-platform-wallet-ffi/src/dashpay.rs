@@ -50,6 +50,46 @@ use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 // Managed identity lookup
 // ---------------------------------------------------------------------------
 
+/// Outcome of the layered [`platform_wallet_get_managed_identity`] lookup,
+/// split out so the dual-error decision (dashpay/platform#4060, findings
+/// `03ff842bd7d7` / `d7c06333de19`) is unit-testable without a fully-seeded
+/// `PlatformWallet` fixture.
+enum ManagedIdentityOutcome<T> {
+    /// A present, live wallet manages the identity.
+    Found(T),
+    /// The `wallet_handle` no longer resolves to a live, managed wallet:
+    /// either absent from `PLATFORM_WALLET_STORAGE` (the outer lookup miss) OR
+    /// present as a handle but already removed from the shared `WalletManager`
+    /// map (a `get_wallet_info` miss — a stale handle racing `removeWallet`,
+    /// which clears the manager entry *before* destroying the handle). Both are
+    /// real wallet failures and must surface as `ErrorInvalidHandle`, never be
+    /// swallowed as "identity not managed".
+    InvalidHandle,
+    /// A valid, live wallet that simply does not manage the identity — the only
+    /// outcome Kotlin's `translateManagedIdentityNotFoundToZero` turns into a
+    /// zero handle.
+    NotManaged,
+}
+
+/// Classify the nested lookup `Option` layers into the FFI result contract:
+///  - outer  = `wallet_handle` presence in `PLATFORM_WALLET_STORAGE`,
+///  - middle = `get_wallet_info` presence in the shared `WalletManager` map,
+///  - inner  = `managed_identity` presence on that wallet.
+///
+/// The two distinct `None`-producing failures (handle absent, and wallet
+/// removed from the manager map) must NOT collapse into `NotManaged` — see
+/// [`ManagedIdentityOutcome`]. Pure and generic so both error arms are directly
+/// unit-testable.
+fn classify_managed_identity_outcome<T>(
+    outcome: Option<Option<Option<T>>>,
+) -> ManagedIdentityOutcome<T> {
+    match outcome {
+        None | Some(None) => ManagedIdentityOutcome::InvalidHandle,
+        Some(Some(None)) => ManagedIdentityOutcome::NotManaged,
+        Some(Some(Some(managed))) => ManagedIdentityOutcome::Found(managed),
+    }
+}
+
 /// Look up the live [`ManagedIdentity`](platform_wallet::ManagedIdentity)
 /// for `identity_id` under `wallet_handle` and return a fresh handle
 /// into the shared `MANAGED_IDENTITY_STORAGE`.
@@ -74,13 +114,42 @@ pub unsafe extern "C" fn platform_wallet_get_managed_identity(
     check_ptr!(out_managed_identity_handle);
     let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+    // THREE distinct outcomes must stay distinct — they must NOT collapse into
+    // one `NotFound` (dashpay/platform#4060, finding 03ff842bd7d7). Using `?`
+    // inside the closure previously folded the `get_wallet_info` miss into the
+    // same closure-`None` as the `managed_identity` miss, so a wallet removed
+    // from the manager map (but not yet handle-destroyed) reported as "identity
+    // not managed". `.map()` keeps the `get_wallet_info` presence in its own
+    // layer instead:
+    //   outer `None`           -> handle absent from PLATFORM_WALLET_STORAGE
+    //   `Some(None)`           -> handle live, wallet REMOVED from the manager map
+    //                             (a stale handle racing `removeWallet`)
+    //   `Some(Some(None))`     -> valid live wallet, identity not managed
+    //   `Some(Some(Some(mi)))` -> found
+    // Kotlin's `translateManagedIdentityNotFoundToZero` (Dashpay.kt) turns ONLY
+    // `NotFound` into a zero handle, so the two handle-invalid cases must surface
+    // as `ErrorInvalidHandle` and never masquerade as an empty (zero-balance)
+    // unmanaged identity. See [`classify_managed_identity_outcome`].
+    let outcome = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let wm = wallet.wallet_manager().blocking_read();
-        let info = wm.get_wallet_info(&wallet.wallet_id())?;
-        info.identity_manager.managed_identity(&id).cloned()
+        wm.get_wallet_info(&wallet.wallet_id())
+            .map(|info| info.identity_manager.managed_identity(&id).cloned())
     });
-    let inner = unwrap_option_or_return!(option);
-    let managed = unwrap_option_or_return!(inner);
+    let managed = match classify_managed_identity_outcome(outcome) {
+        ManagedIdentityOutcome::Found(managed) => managed,
+        ManagedIdentityOutcome::InvalidHandle => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                format!("platform wallet handle {wallet_handle} is not backed by a live wallet"),
+            );
+        }
+        ManagedIdentityOutcome::NotManaged => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::NotFound,
+                format!("wallet {wallet_handle} does not manage the requested identity"),
+            );
+        }
+    };
     unsafe { *out_managed_identity_handle = MANAGED_IDENTITY_STORAGE.insert(managed) };
     PlatformWalletFFIResult::ok()
 }
@@ -529,6 +598,20 @@ pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
 /// The wallet seed is never made resident; every signature is produced
 /// inside the signer's atomic derive-and-sign step.
 ///
+/// # Seed binding
+///
+/// The send begins by draining any deferred contact-crypto build for this
+/// contact, which derives and registers contact accounts from whatever seed
+/// the resolver resolves. That drain runs behind the same gate as
+/// `platform_wallet_drain_pending_contact_crypto`: whenever there is drainable
+/// work, the resolver is checked against this wallet's persisted BIP44
+/// account-0 xpub first. A resolver mapped to a different wallet fails the
+/// call with `ErrorInvalidParameter`, derives NOTHING, and leaves the queue
+/// intact. Without the gate the wrong-seed contact account would be written
+/// permanently (`register_contact_account` keys its existence check on the
+/// contact pair, not the xpub) and the payment would then fail anyway on the
+/// funding signatures — corruption first, error second.
+///
 /// # Safety
 /// - `core_signer_handle` must be a valid, non-destroyed
 ///   `*mut MnemonicResolverHandle`. Ownership is retained by the caller —
@@ -595,7 +678,22 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
         })
     });
     let result = unwrap_option_or_return!(option);
-    let (txid, _entry, fee_duffs) = unwrap_result_or_return!(result);
+    // The send opens with the SEED-VERIFIED contact-crypto drain, so a
+    // resolver mapped to a different wallet is refused here instead of
+    // registering a wrong-seed contact account and only then failing on the
+    // funding signatures. Reported with the same code the standalone verify
+    // and the drain entry point use, so a host recognizes the wrong-seed
+    // condition identically however it arrives.
+    let (txid, _entry, fee_duffs) = match result {
+        Ok(v) => v,
+        Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                e.to_string(),
+            );
+        }
+        Err(e) => return e.into(),
+    };
     // Exact network fee of the broadcast transaction — Σ(selected input
     // values) − Σ(output values), computed by the transaction builder
     // itself since rust-dashcore#872, so a sub-dust change remainder
@@ -770,6 +868,24 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
 /// identity `signer_handle` to send the reciprocal). Writes the total number of
 /// completed entries (drained + auto-accepted) to `out_drained`.
 ///
+/// # Seed binding
+///
+/// Whenever there is drainable work, the resolver behind `core_signer_handle`
+/// is first checked against this wallet's persisted BIP44 account-0 xpub
+/// (`PlatformWallet::drain_pending_contact_crypto_verified`, the same gate the
+/// startup sequence drains through). A resolver mapped to a different wallet
+/// fails the call with `ErrorInvalidParameter` and derives NOTHING — the queue
+/// is left intact for the next correct-seed drain. This is not advisory: a
+/// wrong-seed drain writes contact receiving accounts that no later
+/// correct-seed pass revisits (`register_contact_account` keys its existence
+/// check on the contact pair, not on the xpub), so the corruption would be
+/// permanent and its only symptom payments that never arrive. Any other
+/// verification failure — a resolver that simply cannot answer — fails closed
+/// the same way, with `ErrorWalletOperation`.
+///
+/// An empty queue skips the check entirely, so a poll with nothing to do still
+/// costs no key material.
+///
 /// # Safety
 /// - `signer_handle` (the identity document signer) is **optional**: pass null to
 ///   run only the provider-derived ops (account build / contactInfo decrypt) and
@@ -787,6 +903,10 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
 ) -> PlatformWalletFFIResult {
     check_ptr!(core_signer_handle);
     check_ptr!(out_drained);
+    // Zero-init before any fallible work so a refused drain leaves a truthful
+    // count rather than whatever the caller's stack held — same discipline as
+    // the cached seed-binding verify.
+    unsafe { *out_drained = 0 };
 
     // The identity signer is optional — null means "provider-only drain".
     let signer_addr = if signer_handle.is_null() {
@@ -797,7 +917,6 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
     let core_signer_addr = core_signer_handle as usize;
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
         let wallet_id = wallet.wallet_id();
         let network = wallet.network();
         // SAFETY: same lifetime contract as platform_wallet_send_dashpay_payment —
@@ -809,30 +928,45 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
                 network,
             )
         };
+        let wallet = wallet.clone();
         block_on_worker(async move {
-            let drained = identity
-                .dashpay()
-                .drain_pending_contact_crypto(&provider)
-                .await;
             // The auto-accept pass needs the identity signer for the reciprocal;
-            // skip it when no identity signer was supplied.
-            let accepted = if signer_addr != 0 {
-                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                identity
-                    .dashpay()
-                    .drain_auto_accepts(signer, &provider)
-                    .await
+            // `None` skips it, matching a null `signer_handle`.
+            let signer: Option<&VTableSigner> = if signer_addr != 0 {
+                Some(&*(signer_addr as *const VTableSigner))
             } else {
-                0
+                None
             };
-            drained + accepted
+            // Unbounded, as this entry point has always been: it is called off
+            // the main thread by a host that decided the work is worth waiting
+            // for, not from the Core-SPV-gating startup path that owns a budget.
+            wallet
+                .drain_pending_contact_crypto_verified(&provider, signer, None)
+                .await
         })
     });
-    let total = unwrap_option_or_return!(option);
-    unsafe {
-        *out_drained = total as u32;
+    let result = unwrap_option_or_return!(option);
+    match result {
+        Ok(total) => {
+            unsafe {
+                *out_drained = total as u32;
+            }
+            PlatformWalletFFIResult::ok()
+        }
+        // Same code the standalone verify reports for a mis-mapped resolver, so
+        // a host recognizes the wrong-seed condition identically whether it
+        // checked up front or was refused at the drain.
+        Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                e.to_string(),
+            )
+        }
+        Err(e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            e.to_string(),
+        ),
     }
-    PlatformWalletFFIResult::ok()
 }
 
 /// Number of deferred **account-build** contact-crypto ops queued for this
@@ -856,11 +990,17 @@ pub unsafe extern "C" fn platform_wallet_pending_contact_crypto_count(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_count);
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.dashpay().pending_contact_crypto_count().await })
-    });
-    let count = unwrap_option_or_return!(option);
+    // Look the identity up under the registry guard, but wait outside it:
+    // the count needs `wallet_manager.read()`, which parks behind any writer
+    // (measured in minutes behind a slow host persistence round), and a
+    // registry read guard held across that wait would stall
+    // `platform_wallet_destroy` (a registry write) and, through parking_lot's
+    // writer preference, every other registry reader.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity = unwrap_option_or_return!(option);
+    let count =
+        block_on_worker(async move { identity.dashpay().pending_contact_crypto_count().await });
     unsafe {
         *out_count = count as u32;
     }
@@ -1130,11 +1270,16 @@ pub unsafe extern "C" fn platform_wallet_drainable_contact_crypto_count(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_count);
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.dashpay().drainable_contact_crypto_count().await })
-    });
-    let count = unwrap_option_or_return!(option);
+    // Waited on outside the registry guard — see
+    // `platform_wallet_pending_contact_crypto_count`. This one is called
+    // inline from the host's unlock path, so a guard held across the wait
+    // would freeze that caller AND every other registry user for the
+    // duration of whatever holds `wallet_manager`.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity = unwrap_option_or_return!(option);
+    let count =
+        block_on_worker(async move { identity.dashpay().drainable_contact_crypto_count().await });
     unsafe {
         *out_count = count as u32;
     }
@@ -1244,5 +1389,73 @@ mod tests {
         let r = unsafe { platform_wallet_pending_contact_crypto_count(0xDEAD_BEEF, &mut count) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
         assert_eq!(count, 7, "out_count is untouched on a lookup miss");
+    }
+
+    /// An unknown `wallet_handle` surfaces `ErrorInvalidHandle` — the OUTER
+    /// `with_item` miss — NOT `NotFound` (dashpay/platform#4060). This is the
+    /// load-bearing half of the dual-error contract: the Kotlin `Dashpay` layer
+    /// translates only `NotFound` (a valid wallet that does not manage the id)
+    /// into a zero handle, so a stale/closed wallet MUST arrive as
+    /// `ErrorInvalidHandle` to avoid masquerading as an unmanaged identity. The
+    /// 32-byte `identity_id` is read before the wallet lookup (`read_identifier`),
+    /// so a real buffer is supplied; `out_managed_identity_handle` must be left
+    /// untouched on the miss.
+    ///
+    /// The complementary inner outcome (a valid wallet lacking the managed
+    /// identity → `NotFound`) needs a fully seeded wallet in
+    /// `PLATFORM_WALLET_STORAGE`, which this unit-test module has no fixture for;
+    /// that path is covered at the translation layer by the Kotlin
+    /// `ManagedIdentityNotFoundTranslationTest`.
+    #[test]
+    fn get_managed_identity_unknown_wallet_is_invalid_handle() {
+        let id = [0u8; 32];
+        let mut out: Handle = 0;
+        let r = unsafe { platform_wallet_get_managed_identity(0xDEAD_BEEF, id.as_ptr(), &mut out) };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        assert_eq!(out, 0, "out handle is untouched on an invalid-handle miss");
+    }
+
+    /// The dual-error decision (dashpay/platform#4060, findings 03ff842bd7d7 &
+    /// d7c06333de19), exercised at the `classify_managed_identity_outcome` seam
+    /// so BOTH error codes are covered without a fully-seeded `PlatformWallet`
+    /// fixture (which this unit-test module cannot build). This is exactly the
+    /// layer where the two `None` outcomes previously collapsed:
+    ///
+    /// - Outer `None` (handle absent from `PLATFORM_WALLET_STORAGE`) AND
+    ///   `Some(None)` (handle live but the wallet was REMOVED from the shared
+    ///   `WalletManager` map — the removed-but-not-destroyed race the finding
+    ///   describes) both classify as `InvalidHandle` → `ErrorInvalidHandle`, so
+    ///   Kotlin's `translateManagedIdentityNotFoundToZero` never swallows a real
+    ///   wallet failure as a zero-balance unmanaged identity.
+    /// - `Some(Some(None))` (valid live wallet that does not manage the id)
+    ///   classifies as `NotManaged` → `NotFound`, the only outcome Kotlin
+    ///   translates to a zero handle.
+    /// - `Some(Some(Some(_)))` classifies as `Found`.
+    ///
+    /// The full FFI path for the outer-`None` arm is additionally covered by
+    /// `get_managed_identity_unknown_wallet_is_invalid_handle` above.
+    #[test]
+    fn classify_managed_identity_outcome_distinguishes_removed_wallet_from_unmanaged() {
+        // Handle absent from storage → invalid handle.
+        assert!(matches!(
+            classify_managed_identity_outcome::<u32>(None),
+            ManagedIdentityOutcome::InvalidHandle
+        ));
+        // Removed-but-not-destroyed: handle live, wallet gone from the manager
+        // map (get_wallet_info miss). Must NOT be "not managed".
+        assert!(matches!(
+            classify_managed_identity_outcome::<u32>(Some(None)),
+            ManagedIdentityOutcome::InvalidHandle
+        ));
+        // Valid live wallet that simply does not manage the identity.
+        assert!(matches!(
+            classify_managed_identity_outcome::<u32>(Some(Some(None))),
+            ManagedIdentityOutcome::NotManaged
+        ));
+        // Found.
+        assert!(matches!(
+            classify_managed_identity_outcome(Some(Some(Some(7u32)))),
+            ManagedIdentityOutcome::Found(7)
+        ));
     }
 }

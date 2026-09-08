@@ -7,6 +7,15 @@ import org.dashfoundation.dashsdk.ffi.TrackedAssetLocksNativeResult
  * Rust-authoritative tracked asset-lock snapshot eligible for generic
  * identity recovery. Invitation (3), address/shielded (4/5), consumed (4),
  * and malformed rows are deliberately absent.
+ *
+ * [Status.RECOVERED_FROM_CHAIN] rows ARE eligible: they are asset locks
+ * the restore scan rebuilt from chain-locked history (Core finality
+ * proven, Platform-side consumption unknown), and the registration /
+ * top-up recovery screens are exactly the user-driven surface allowed
+ * to try consuming one — Platform rejects an already-spent outpoint
+ * with a typed error. Do NOT feed this status into any automatic
+ * stuck-lock retry sweep; blind retries of historical locks are the
+ * failure mode the dedicated status exists to prevent.
  */
 data class TrackedAssetLock(
     val outpointTxid: ByteArray,
@@ -28,6 +37,13 @@ data class TrackedAssetLock(
         BROADCAST(1),
         INSTANT_SEND_LOCKED(2),
         CHAIN_LOCKED(3),
+        // 4 (CONSUMED) stays deliberately unmapped: consumed rows are
+        // terminal tombstones and must never surface as recoverable.
+
+        /** Rebuilt by the restore scan from a chain-locked record —
+         * finality proven (chain proof attached Rust-side), consumption
+         * unknown. Selectable for user-driven recovery only. */
+        RECOVERED_FROM_CHAIN(5),
     }
 
     init {

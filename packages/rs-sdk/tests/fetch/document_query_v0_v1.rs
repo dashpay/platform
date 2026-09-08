@@ -66,6 +66,78 @@ fn build_basic_document_query() -> DocumentQuery {
         .with_limit(7)
 }
 
+/// Exercise the shared DocumentQuery adapter, Fetch binding, and mock
+/// serialization together. Proof verification is tested against real
+/// server-generated proofs in drive-abci's composite trust-boundary suite.
+#[tokio::test]
+async fn should_fetch_composite_documents_with_the_unified_query() {
+    use super::common::bootstrap_mock_sdk_to_latest;
+    use dash_sdk::platform::{CompositeDocuments, CompositeSubQuery, Fetch};
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::DocumentV0Getters;
+    use dpp::tests::json_document::json_document_to_contract;
+    use drive_proof_verifier::{CompositeSubQueryResult, SplitCountEntry};
+
+    let mut sdk = SdkBuilder::new_mock().build().expect("mock SDK");
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+    let feed = Arc::new(
+        json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/yappr-feed/yappr-feed-contract.json",
+            false,
+            sdk.version(),
+        )
+        .expect("feed contract"),
+    );
+    let post_type = feed.document_type_for_name("post").expect("post doctype");
+    let mut post = post_type
+        .random_document(Some(1), sdk.version())
+        .expect("page document");
+    let mut quoted = post_type
+        .random_document(Some(2), sdk.version())
+        .expect("quoted document");
+    // Mock documents share the ordinary document CBOR format, which
+    // decodes binary properties as Bytes without a contract schema.
+    post.properties_mut().insert(
+        "quotedPostId".to_string(),
+        Value::Bytes(quoted.id().to_vec()),
+    );
+    quoted.properties_mut().remove("quotedPostId");
+    let query = DocumentQuery::new(feed.clone(), "post")
+        .expect("page query")
+        .with_limit(10)
+        .with_sub_query(
+            CompositeSubQuery::count(feed.clone(), "like")
+                .expect("count query")
+                .bound_to_page("$id", "postId"),
+        )
+        .with_sub_query(
+            CompositeSubQuery::documents(feed, "post")
+                .expect("quoted query")
+                .bound_to_page("quotedPostId", "$id"),
+        );
+    let expected = CompositeDocuments {
+        sub_results: vec![
+            CompositeSubQueryResult::Counts(vec![SplitCountEntry {
+                in_key: None,
+                key: post.id().to_vec(),
+                count: Some(2),
+            }]),
+            CompositeSubQueryResult::Documents(vec![quoted]),
+        ],
+        page_documents: vec![post],
+    };
+    sdk.mock()
+        .expect_fetch::<CompositeDocuments, _>(query.clone(), Some(expected.clone()))
+        .await
+        .expect("register composition");
+    let retrieved = CompositeDocuments::fetch(&sdk, query)
+        .await
+        .expect("fetch composition")
+        .expect("proven page");
+    assert_eq!(retrieved, expected);
+}
+
 #[test]
 fn v1_wire_shape_with_latest_platform_version() {
     let q = build_basic_document_query();
@@ -140,9 +212,10 @@ fn v0_wire_shape_with_forced_v0_platform_version() {
 #[test]
 fn v0_rejects_count_star_projection() {
     let q = build_basic_document_query().with_select(SelectProjection::count_star());
-    let err = q
-        .try_into_request_for_version(v0_dispatch_version())
-        .expect_err("count_star on v0 must reject");
+    let err = SdkError::from(
+        q.try_into_request_for_version(v0_dispatch_version())
+            .expect_err("count_star on v0 must reject"),
+    );
     match err {
         SdkError::Config(msg) => assert!(
             msg.contains("v3.1+"),
@@ -155,9 +228,10 @@ fn v0_rejects_count_star_projection() {
 #[test]
 fn v0_rejects_group_by() {
     let q = build_basic_document_query().with_group_by("a");
-    let err = q
-        .try_into_request_for_version(v0_dispatch_version())
-        .expect_err("group_by on v0 must reject");
+    let err = SdkError::from(
+        q.try_into_request_for_version(v0_dispatch_version())
+            .expect_err("group_by on v0 must reject"),
+    );
     assert!(matches!(err, SdkError::Config(_)));
 }
 
@@ -174,9 +248,10 @@ fn v0_rejects_having() {
         operator: HavingOperator::GreaterThan,
         right: HavingRightOperand::Value(Value::U64(0)),
     }]);
-    let err = q
-        .try_into_request_for_version(v0_dispatch_version())
-        .expect_err("having on v0 must reject");
+    let err = SdkError::from(
+        q.try_into_request_for_version(v0_dispatch_version())
+            .expect_err("having on v0 must reject"),
+    );
     assert!(matches!(err, SdkError::Config(_)));
 }
 

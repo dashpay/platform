@@ -60,6 +60,17 @@ abstract class NativePersistenceBridge {
 
     open fun persistenceCapabilitiesBits(): Long = 0L
 
+    companion object {
+        /**
+         * `PersistenceCapabilities::CORE_SWEEP_REMOVAL` (bit 11, `0x800`).
+         * The one Kotlin home of this bit: `PlatformWalletPersistenceHandler`
+         * declares it through [persistenceCapabilitiesBits] and the public
+         * diagnostic mirror (`PlatformWalletPersistenceCapabilities`) aliases
+         * it, so the declaration and the mirror can never drift apart.
+         */
+        const val CAPABILITY_CORE_SWEEP_REMOVAL: Long = 0x800
+    }
+
     // ── Transactional bracketing ──────────────────────────────────────
 
     /** `on_changeset_begin_fn` — descriptor `([B)I`. */
@@ -294,6 +305,98 @@ abstract class NativePersistenceBridge {
     /** Close the current account bucket. Descriptor `([BI)I`. */
     open fun onWalletChangesetAccountEnd(walletId: ByteArray, accountIndex: Int): Int = 0
 
+    /**
+     * Transactions the wallet removed in one sweep batch: [txidCount] raw
+     * 32-byte txids packed back to back in [txids], the single transaction
+     * [supersededBy] that settled their inputs, and the
+     * [releasedOutpointCount] 36-byte outpoint keys (raw txid followed by a
+     * little-endian vout, the same packing as `onWalletChangesetTransaction`'s
+     * `inputOutpoints`) packed in [releasedOutpoints] that this batch
+     * actually freed. Descriptor `([B[BI[B[BIZI)I`.
+     *
+     * Order within a round, stated once here (`store()` in
+     * `rs-platform-wallet-ffi/src/persistence.rs`): native fires the
+     * changeset callback — the header, then every account slice
+     * (transactions, then `utxos_added`, then `utxos_spent` per account) —
+     * then the chainlock-height slot ([onWalletChangesetChainLockHeight])
+     * when the round carries a chainlock, then this slot once PER BATCH in
+     * the round's emission order, and only when the round swept
+     * something. Batches are non-commutative — each release is true only
+     * of the wallet its own sweep saw, and a later batch can keep spent a
+     * coin an earlier one freed — so an implementation must apply every
+     * call's holds before its releases and must apply the calls in order.
+     * It may buffer them until the round's end (the handler does, so the
+     * co-swept set spans the round), but it must never reorder them.
+     *
+     * [hasWinnerMinedHeight] says whether [winnerMinedHeight] is the
+     * winner's own mined block height (a block-context sweep) or
+     * meaningless (an InstantSend-locked winner not yet mined). It keys the
+     * lifetime of the durable claim every non-released input retains: a
+     * stamped hold is collectible once the chainlock finality boundary
+     * reaches the stamp, while the unmined case leaves the SAME hold
+     * UNSTAMPED — an IS-locked winner has no mining deadline, so no
+     * boundary can prove the held input's funding delivered-or-never — and
+     * no collector may ever remove an unstamped hold: it resolves only
+     * through proof, when the funding TXO materializes it, a later
+     * block-context sweep re-stamps it, or a release deletes it. An
+     * implementation that drops the hold instead (either by skipping it
+     * for an unmined winner or by aging it out) deletes the only
+     * cross-restart carrier of a consumed coin's spend claim and later
+     * restores that coin as spendable.
+     *
+     * Each removed transaction was a recorded spend that its winner beat to
+     * one of its inputs, so it can never confirm. Every other slot on this
+     * bus is additive; this is the only removal, and an implementation that
+     * ignores it keeps dead rows that are handed back at the next load and
+     * re-create a balance the wallet has already corrected.
+     *
+     * [releasedOutpoints] is wallet-scoped, not attributed per removal: an
+     * implementation holds every input of every row it deletes, so it only
+     * needs to know which of them came free. Everything else it holds was
+     * taken by the transaction that won those inputs and must stay spent.
+     * The set cannot be inferred from [supersededBy] — that transaction may
+     * pay entirely to outside addresses and never be reported here at all.
+     *
+     * Native delivers these through the persistence extension's
+     * size-negotiated sweep callback (not the wallet-changeset struct, whose
+     * bare-pointer ABI cannot version itself). The JNI layer wires that
+     * slot only when the concrete bridge OVERRIDES this method
+     * (`rs-unified-sdk-jni/src/persistence.rs`, `bridge_overrides`), and
+     * Rust's own derivation — slot present AND
+     * [CAPABILITY_CORE_SWEEP_REMOVAL] declared through
+     * [persistenceCapabilitiesBits] — is the gate: a subclass that declares
+     * the bit without overriding never has the slot wired, so Rust strips
+     * the bit and the sync watermark with it rather than trusting a
+     * removal that would never be applied. This default is therefore the
+     * benign ignore, never reached in production for a wired slot.
+     */
+    open fun onWalletChangesetTransactionsSwept(
+        walletId: ByteArray,
+        txids: ByteArray,
+        txidCount: Int,
+        supersededBy: ByteArray,
+        releasedOutpoints: ByteArray,
+        releasedOutpointCount: Int,
+        hasWinnerMinedHeight: Boolean,
+        winnerMinedHeight: Int,
+    ): Int = 0
+
+    /**
+     * The round's numeric chainlock height, fired on every round whose
+     * changeset carries a chainlock, after the changeset callback and
+     * before the sweep batches (see [onWalletChangesetTransactionsSwept]
+     * for the full order). Descriptor `([BI)I`.
+     *
+     * The bincode chainlock blob on the header call is opaque to Kotlin,
+     * and this scalar is the half of the swept-tombstone collection
+     * boundary `min(chainlockHeight, syncedHeight)` an implementation
+     * cannot otherwise know. Purely additive: a host that ignores it
+     * simply never collects tombstones, which is the safe direction —
+     * holding a tombstone forever is junk, collecting one early is a
+     * wrongly-freed claim.
+     */
+    open fun onWalletChangesetChainLockHeight(walletId: ByteArray, height: Int): Int = 0
+
     // ── Identities ────────────────────────────────────────────────────
 
     /**
@@ -327,6 +430,35 @@ abstract class NativePersistenceBridge {
 
     /** One identity-id removal. Descriptor `([B[B)I`. */
     open fun onPersistIdentityRemoval(walletId: ByteArray, identityId: ByteArray): Int = 0
+
+    // ── DPNS marketplace state extension ─────────────────────────────
+
+    /**
+     * `PersistenceCallbacksExtension.on_persist_dpns_name_states_fn`, one
+     * call per upsert row. Descriptor
+     * `([B[B[BZ[BLjava/lang/String;Ljava/lang/String;Ljava/lang/String;ZJBJJJJ)I`.
+     */
+    @Suppress("LongParameterList")
+    open fun onPersistDpnsNameState(
+        walletId: ByteArray,
+        documentId: ByteArray,
+        walletIdentityId: ByteArray,
+        hasCounterparty: Boolean,
+        counterpartyId: ByteArray,
+        label: String,
+        normalizedLabel: String,
+        normalizedParentDomainName: String,
+        hasPrice: Boolean,
+        priceCredits: Long,
+        status: Byte,
+        createdAtMs: Long,
+        updatedAtMs: Long,
+        transferredAtMs: Long,
+        lastSyncedAtMs: Long,
+    ): Int = 0
+
+    /** DPNS marketplace removal; descriptor `([B[B)I`. */
+    open fun onRemoveDpnsNameState(walletId: ByteArray, documentId: ByteArray): Int = 0
 
     // ── Identity keys ─────────────────────────────────────────────────
 
@@ -485,6 +617,35 @@ abstract class NativePersistenceBridge {
 
     /** One 36-byte outpoint removal. Descriptor `([B[B)I`. */
     open fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = 0
+
+    // ── Invitations (DIP-13) ──────────────────────────────────────────
+
+    /**
+     * One `InvitationEntryFFI` upsert. Descriptor `([B[BIJIIZI)I`.
+     *
+     * A non-zero return fails the persist round: `create_invitation` treats
+     * an unrecorded invitation row as a hard error (a funded voucher with no
+     * durable record would be invisible and unreclaimable), so the handler
+     * must never silently skip this write.
+     *
+     * @param outPoint 36-byte outpoint (`txid_le ‖ vout_le`)
+     * @param status `InvitationStatus` discriminant (0 Created, 1 Claimed,
+     *   2 Reclaimed); Rust emits only Created today
+     */
+    @Suppress("LongParameterList")
+    open fun onPersistInvitationUpsert(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        fundingIndex: Int,
+        amountDuffs: Long,
+        expiryUnix: Int,
+        createdAtSecs: Int,
+        hasInviter: Boolean,
+        status: Int,
+    ): Int = 0
+
+    /** One 36-byte outpoint removal. Descriptor `([B[B)I`. */
+    open fun onPersistInvitationRemoval(walletId: ByteArray, outPoint: ByteArray): Int = 0
 
     // ── Shielded persist ──────────────────────────────────────────────
 
@@ -692,8 +853,8 @@ class WalletRestoreData(
      *
      * Without this, a restored UTXO on an address BEYOND the gap window
      * has no derivation-path mapping, so `managed.address_derivation_path`
-     * (called from `core_wallet_tx_builder_build_signed`) fails and the
-     * wallet cannot sign a core-to-core spend after a cold restart. Mirror
+     * (resolved during the signing finalizers) fails and the wallet cannot
+     * sign a core-to-core spend after a cold restart. Mirror
      * of the Swift `buildCoreAddressPoolBuffer` slice on `loadWalletList`.
      */
     @JvmField val coreAddressPools: Array<CoreAddressPoolRestoreData>,

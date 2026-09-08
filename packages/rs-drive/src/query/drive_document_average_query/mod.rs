@@ -30,7 +30,7 @@
 pub mod drive_dispatcher;
 
 #[cfg(feature = "server")]
-use crate::query::{OrderClause, WhereClause};
+use crate::query::{OrderClause, ResolvedTimeRange, WhereClause};
 
 #[cfg(feature = "server")]
 use crate::config::DriveConfig;
@@ -114,6 +114,13 @@ pub struct DocumentAverageRequest<'a> {
     pub sum_property: String,
     /// Structured where-clauses.
     pub where_clauses: Vec<WhereClause>,
+    /// The fields among `where_clauses` whose equality clause was produced by
+    /// `IN_TIME_RANGE` resolution rather than written by the caller. Same
+    /// contract and same purpose as
+    /// [`crate::query::DriveDocumentQuery::resolved_time_ranges`]:
+    /// it is what gates which indexes the sum pickers (which average rides)
+    /// may select.
+    pub resolved_time_ranges: Vec<ResolvedTimeRange>,
     /// Structured order-clauses.
     pub order_clauses: Vec<OrderClause>,
     /// The average mode requested.

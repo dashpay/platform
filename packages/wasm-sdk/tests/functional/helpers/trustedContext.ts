@@ -8,35 +8,56 @@ export interface PrefetchLocalReadyOptions {
   intervalMs?: number;
 }
 
+export interface PrefetchLocalReadyDependencies {
+  prefetchLocal?: () => Promise<sdk.WasmTrustedContext>;
+  now?: () => number;
+  sleep?: (durationMs: number) => Promise<void>;
+}
+
 // Wait for the local dashmate network to be ready, then return a prefetched
 // WasmTrustedContext. Retries on any error from prefetchLocal() until the
 // timeout — masternodes can take time to reach status=ENABLED + versionCheck=success
 // after `yarn start`, and a single failed attempt would otherwise abort the suite.
 export async function prefetchLocalReady(
   options: PrefetchLocalReadyOptions = {},
+  dependencies: PrefetchLocalReadyDependencies = {},
 ): Promise<sdk.WasmTrustedContext> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
-  const deadline = Date.now() + timeoutMs;
+  const prefetchLocal = dependencies.prefetchLocal
+    ?? (() => sdk.WasmTrustedContext.prefetchLocal());
+  const now = dependencies.now ?? (() => performance.now());
+  const sleep = dependencies.sleep ?? ((durationMs: number) => (
+    new Promise((resolve) => {
+      setTimeout(resolve, durationMs);
+    })
+  ));
+  const deadline = now() + timeoutMs;
   let lastError: unknown;
   let attempts = 0;
 
-  while (Date.now() < deadline) {
+  while (now() < deadline) {
     attempts += 1;
     try {
-      return await sdk.WasmTrustedContext.prefetchLocal();
+      return await prefetchLocal();
     } catch (error) {
       lastError = error;
-      const remaining = deadline - Date.now();
-      if (remaining > intervalMs) {
-        await new Promise((resolve) => {
-          setTimeout(resolve, intervalMs);
-        });
+      const remaining = deadline - now();
+      if (remaining > 0) {
+        await sleep(Math.min(intervalMs, remaining));
       }
     }
   }
 
-  const message = lastError instanceof Error ? lastError.message : String(lastError);
+  let message: string;
+  if (lastError instanceof Error) {
+    message = lastError.message;
+  } else if (lastError && typeof lastError === 'object' && 'message' in lastError) {
+    message = String(lastError.message);
+  } else {
+    message = String(lastError);
+  }
+
   throw new Error(
     `prefetchLocalReady: local network not ready after ${timeoutMs}ms (${attempts} attempts); last error: ${message}`,
   );

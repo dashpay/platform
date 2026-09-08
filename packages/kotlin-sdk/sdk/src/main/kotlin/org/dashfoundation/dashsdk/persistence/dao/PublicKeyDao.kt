@@ -57,6 +57,19 @@ interface PublicKeyDao {
         ownedIdentityIds: List<String>,
     ): Int
 
+    /**
+     * Rows carrying a derivation breadcrumb (dashpay/platform#4060 finding
+     * 5) — the candidate set for reconstructing the pending-repair state
+     * after a restart. Kotlin-side filtering decides which of these are
+     * actually unrecoverable (null keychain identifier, or a stored blob the
+     * cheap capability check rejects).
+     */
+    @Query(
+        "SELECT * FROM public_keys WHERE derivationIdentityIndex IS NOT NULL " +
+            "AND derivationKeyIndex IS NOT NULL",
+    )
+    suspend fun getWithDerivationBreadcrumbs(): List<PublicKeyEntity>
+
     @Insert
     suspend fun insert(publicKey: PublicKeyEntity): Long
 

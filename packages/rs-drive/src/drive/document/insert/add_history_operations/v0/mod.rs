@@ -30,7 +30,10 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let contract = self.cache.system_data_contracts.load_document_history();
+        let contract = self
+            .cache
+            .system_data_contracts
+            .load_document_history(platform_version)?;
 
         let document_type = event.associated_document_type(&contract)?;
 

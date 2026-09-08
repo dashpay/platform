@@ -144,8 +144,18 @@ pub struct ShieldedActivityFFI {
     /// `1` if `block_height` is meaningful (confirmed), `0` while pending.
     pub has_block_height: u8,
     /// Created-at time in ms since the Unix epoch (display-only;
-    /// `block_height` is the canonical sort key).
+    /// `block_height` is the canonical sort key). `0` = unknown —
+    /// scan-derived (restored) entries carry no wall-clock provenance.
     pub created_at_ms: u64,
+    /// Chain-order key when `has_min_note_position == 1`: the smallest
+    /// commitment-tree position among the entry's own received notes.
+    /// Tree positions are exact append-only chain order — hosts use
+    /// this to order otherwise-undatable restored entries. Set by the
+    /// scan deriver; live entries (which carry a real `created_at_ms`)
+    /// and outgoing-only clusters report `0`/`0`.
+    pub min_note_position: u64,
+    /// `1` if `min_note_position` is meaningful.
+    pub has_min_note_position: u8,
     /// Created identity id (only meaningful when `kind_tag == 6` /
     /// IdentityCreate); all-zero and ignored otherwise.
     pub identity_id: [u8; 32],
@@ -268,6 +278,8 @@ pub struct ShieldedActivityRestoreFFI {
     pub block_height: u64,
     pub has_block_height: u8,
     pub created_at_ms: u64,
+    pub min_note_position: u64,
+    pub has_min_note_position: u8,
     pub identity_id: [u8; 32],
     pub has_identity_id: u8,
     pub counterparty_ptr: *const u8,

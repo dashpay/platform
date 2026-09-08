@@ -40,9 +40,13 @@ internal object IdentityNative {
      * `(J[BII[BJJZ)Lorg/dashfoundation/dashsdk/ffi/IdentityRegistrationNativeResult;`
      *
      * Thinly marshals
-     * `platform_wallet_resume_identity_with_existing_asset_lock_signer`.
-     * Generic recovery always supplies `consumeInvitationVoucher=false`;
-     * invitation reclaim is a separate P2 surface.
+     * `platform_wallet_resume_identity_with_existing_asset_lock_signer`,
+     * forwarding [consumeInvitationVoucher] verbatim (Rust core refuses
+     * invitation locks on every generic path — the flag only authorizes
+     * the invitation-reclaim flow). Generic recovery call sites always
+     * supply `false`;
+     * `IdentityRegistration.reclaimInvitationAsNewIdentity` is the sole
+     * `true` caller.
      */
     external fun resumeIdentityWithExistingAssetLock(
         walletHandle: Long,

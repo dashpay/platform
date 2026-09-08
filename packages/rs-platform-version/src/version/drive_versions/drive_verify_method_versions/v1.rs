@@ -1,8 +1,9 @@
 use crate::version::drive_versions::drive_verify_method_versions::{
-    DriveVerifyAddressFundsMethodVersions, DriveVerifyContractMethodVersions,
+    DriveVerifyAddressFundsMethodVersions, DriveVerifyChainedDocumentMethodVersions,
+    DriveVerifyCompositeDocumentMethodVersions, DriveVerifyContractMethodVersions,
     DriveVerifyDocumentCountMethodVersions, DriveVerifyDocumentMethodVersions,
-    DriveVerifyDocumentSumMethodVersions, DriveVerifyGroupMethodVersions,
-    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
+    DriveVerifyDocumentRankedMethodVersions, DriveVerifyDocumentSumMethodVersions,
+    DriveVerifyGroupMethodVersions, DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
     DriveVerifyShieldedMethodVersions, DriveVerifySingleDocumentMethodVersions,
     DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions,
     DriveVerifyTokenMethodVersions, DriveVerifyVoteMethodVersions,
@@ -19,6 +20,12 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_proof_keep_serialized: 0,
         verify_document_history: 0,
         verify_start_at_document_in_proof: 0,
+    },
+    chained_document: DriveVerifyChainedDocumentMethodVersions {
+        verify_chained_documents_proof: 0,
+    },
+    composite_document: DriveVerifyCompositeDocumentMethodVersions {
+        verify_composite_documents_proof: 0,
     },
     document_count: DriveVerifyDocumentCountMethodVersions {
         verify_aggregate_count_proof: 0,
@@ -38,6 +45,10 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_distinct_sum_proof: 0,
         verify_distinct_count_and_sum_proof: 0,
         verify_point_lookup_count_and_sum_proof: 0,
+    },
+    document_ranked: DriveVerifyDocumentRankedMethodVersions {
+        verify_ranked_top_k_proof: 0,
+        verify_having_range_proof: 0,
     },
     identity: DriveVerifyIdentityMethodVersions {
         verify_full_identities_by_public_key_hashes: 0,

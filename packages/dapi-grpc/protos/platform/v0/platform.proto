@@ -594,6 +594,18 @@ message GetDocumentsRequest {
     BETWEEN_EXCLUDE_RIGHT = 8;
     IN = 9;
     STARTS_WITH = 10;
+    // Time-range bucket selection (v1 only; the v0 CBOR surface is
+    // unaffected). `field` names a timestamp covered by a `timeRange`
+    // index. The operand is `WhereClause.time_range` (a
+    // `TimeRangeSelection`); `WhereClause.value` must be unset. For the
+    // relative selectors (`NEWEST` / `OLDEST`) the server resolves the
+    // selection to a bucket-start equality from current block time and
+    // the verifier re-derives the same bucket from the quorum-signed
+    // metadata time; `BY_START` names the window absolutely, so both
+    // sides read the start straight from the query — an ordinary
+    // index/count proof either way. See `timeRange` in the document
+    // meta-schema and `drive::query::resolve_time_range_bucket_clause`.
+    IN_TIME_RANGE = 11;
   }
 
   // Tagged scalar (or list) operand for a `WhereClause`. The
@@ -646,6 +658,54 @@ message GetDocumentsRequest {
     }
   }
 
+  // Operand of an `IN_TIME_RANGE` where clause: which window of a
+  // `timeRange` grid the query selects. Typed rather than riding
+  // `DocumentFieldValue` — the selection is not a field value, and a
+  // structured message keeps the selector an enum instead of a
+  // magic string.
+  //
+  // The relative selectors are resolved server-side: `NEWEST` is the
+  // freshest started window (largest grid start <= block time; the
+  // latest partial slice of history), `OLDEST` the oldest window still
+  // active at block time (a near-full trailing window of ~`range` —
+  // best for "trending over the last window"). The proof verifier
+  // re-derives the same window from the quorum-signed response
+  // metadata time, so neither side trusts the other's clock.
+  //
+  // `BY_START` names a window absolutely — any window, current or
+  // historic — by its start. `start_ms` is then required and must lie
+  // on the grid (`start_ms == phase + k * step`, in milliseconds);
+  // an unaligned start is rejected rather than snapped. A window with
+  // no documents (including one that has not started yet) is a
+  // provable empty answer, not an error. The relative selectors must
+  // NOT carry `start_ms` — one wire spelling per meaning.
+  message TimeRangeSelection {
+    enum Selector {
+      NEWEST = 0;
+      OLDEST = 1;
+      BY_START = 2;
+    }
+    // Names one of the field's declared grids, in the contract's own
+    // seconds — verbatim from the contract's `timeRange` declaration.
+    // Required when more than one `timeRange` grid buckets the field
+    // (the bare selector is ambiguous there and rejected); optional
+    // while exactly one grid does. A zero `phase` is the proto3
+    // default, matching the contract grammar where `phase` is an
+    // omittable key — every grid has exactly one wire spelling by
+    // construction.
+    message Grid {
+      uint64 range = 1 [jstype = JS_STRING];
+      uint64 step = 2 [jstype = JS_STRING];
+      uint64 phase = 3 [jstype = JS_STRING];
+    }
+    Selector selector = 1;
+    // `BY_START` only: the selected window's start, as a millisecond
+    // timestamp on the grid (see the message docstring). Rejected on
+    // the relative selectors.
+    optional uint64 start_ms = 2 [jstype = JS_STRING];
+    Grid grid = 3;
+  }
+
   // Single `field <op> value` clause. The server reassembles a
   // `Vec<WhereClause>` from the request's `where_clauses` field,
   // runs the same `WhereClause::group_clauses` validator (rejects
@@ -654,16 +714,26 @@ message GetDocumentsRequest {
   // then hands the structured clauses to the executor. Wire
   // semantics are identical to v0's CBOR `[field, op, value]`
   // triples — only the envelope differs.
+  //
+  // Exactly one operand field is set, keyed by the operator:
+  // `operator = IN_TIME_RANGE` carries its operand in `time_range`
+  // (`value` must be unset); every other operator carries `value`
+  // (`time_range` must be unset). Either mismatch is rejected.
   message WhereClause {
     string field = 1;
     WhereOperator operator = 2;
     DocumentFieldValue value = 3;
+    TimeRangeSelection time_range = 4;
   }
 
   // Per-group aggregate operand for the left side of a
-  // `HavingClause`. Only the per-group aggregates live here:
-  // `MIN` / `MAX` / `TOP` / `BOTTOM` are **cross-group** ranking
-  // primitives and appear on the right side via `HavingRanking`.
+  // `HavingClause`, and the aggregate-function target of an
+  // `OrderClause`. Only the per-group aggregates live here —
+  // `HAVING` is a boolean predicate over one group's own aggregate,
+  // and nothing on this message reaches across groups. Cross-group
+  // ranking ("which groups score highest?") is expressed with SQL's
+  // ordering surface instead: `ORDER BY <the selected aggregate>
+  // DESC LIMIT n [OFFSET m]`. See `GetDocumentsRequestV1.order_by`.
   //
   // **Field semantics by function**:
   // - `COUNT`: empty `field` means `COUNT(*)` (group cardinality);
@@ -682,45 +752,38 @@ message GetDocumentsRequest {
     string field = 2;
   }
 
-  // Cross-group ranking primitive on the right side of a
-  // `HavingClause`. The ranking is computed over the set of
-  // group-aggregate results (one per `GROUP BY` row), so
-  // `HAVING COUNT(*) EQ MAX` selects groups whose count equals
-  // the maximum count across all groups, and
-  // `HAVING COUNT(*) IN TOP(5)` selects groups whose count is
-  // among the five largest. Concise way to express top-N /
-  // bottom-N selection without window functions or
-  // `ORDER BY` + `LIMIT`.
-  //
-  // **Operator compatibility**:
-  // - Scalar operators (`=`, `!=`, `<`, `<=`, `>`, `>=`) work
-  //   with `MIN` / `MAX`. `TOP` / `BOTTOM` with scalar operators
-  //   only make sense when `n=1` (the single largest / smallest);
-  //   evaluation rejects other combinations as ambiguous.
-  // - `IN` works with `TOP(n)` / `BOTTOM(n)` for set membership.
-  // - `BETWEEN*` doesn't compose meaningfully with rankings and
-  //   is rejected at evaluation time.
-  message HavingRanking {
-    enum Kind {
-      MIN = 0;
-      MAX = 1;
-      TOP = 2;
-      BOTTOM = 3;
-    }
-    Kind kind = 1;
-    // N-th rank for `TOP` / `BOTTOM` (1-indexed: `n=1` is the
-    // single largest / smallest). Required for those two kinds;
-    // must be unset for `MIN` / `MAX`. The wire allows setting
-    // it on `MIN` / `MAX` for forward compatibility, but
-    // evaluation rejects it as a malformed ranking.
-    optional uint64 n = 2 [jstype = JS_STRING];
-  }
-
-  // Single `HAVING <aggregate> <op> <right>` clause. Multiple
+  // Single `HAVING <aggregate> <op> <value>` clause. Multiple
   // entries in `GetDocumentsRequestV1.having` combine with
   // implicit AND — same semantics as multiple `where_clauses`
   // entries. `HAVING COUNT(*) > 5 AND SUM(amount) > 100` is two
   // `HavingClause` rows, not a tree.
+  //
+  // **`HAVING` is a boolean per-group predicate and nothing else.**
+  // Its right operand is always a literal `DocumentFieldValue`; it
+  // never names another group or the set of groups. Cross-group
+  // ranking — "the 5 highest-scoring groups" — is `ORDER BY <the
+  // selected aggregate> DESC LIMIT 5`, exactly as in SQL, and is
+  // served by the ranked executor (protocol v14+). An earlier draft
+  // of this surface carried the ranking on the right of a `HAVING`
+  // (`HAVING AVG(grade) IN TOP(5)`); that spelling was removed
+  // before release rather than deprecated, because it invented
+  // non-SQL grammar for something SQL already expresses.
+  //
+  // **From protocol v14 a single `HAVING` clause is served as a
+  // bounded range read** (having-range mode): `SELECT <agg> GROUP BY
+  // p HAVING <agg> <op> <value> [ORDER BY <order-key> ASC|DESC]
+  // LIMIT n` answers from the same per-axis secondary as ranked
+  // mode, on an index declaring the matching ranked axis. The
+  // clause's aggregate must be the selected aggregate, the operator
+  // must describe one contiguous range (`NOT_EQUAL` / `IN` are
+  // rejected), and the optional `ORDER BY` picks the walk direction
+  // using the same order-key spelling as ranked mode: `f` for
+  // `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)` —
+  // never an explicit `OrderClause.aggregate` target, which is
+  // rejected. See the supported-shape table on
+  // `GetDocumentsRequestV1`. On protocol v13 and earlier every
+  // non-empty `having` stays rejected with `Unsupported`, exactly as
+  // before.
   //
   // The operator set mirrors `WhereOperator` minus `STARTS_WITH`
   // (prefix matching has no natural meaning against a scalar
@@ -728,12 +791,12 @@ message GetDocumentsRequest {
   // `IN` operand semantics match `WhereOperator`: `BETWEEN*`
   // expects a 2-element `DocumentFieldValue.list` carrying
   // `[lower, upper]`, and `IN` expects a `list` of candidate
-  // values (or a ranking set via `right.ranking`).
+  // values.
   //
-  // The `right` oneof carries either a concrete
-  // `DocumentFieldValue` (literal comparison target) or a
-  // `HavingRanking` (cross-group reference). Exactly one is set;
-  // the wire rejects an unset `right`.
+  // The `right` oneof exists (rather than a bare
+  // `DocumentFieldValue` field) so the "unset right operand" case
+  // stays distinguishable from "the literal null value"; the wire
+  // rejects an unset `right`.
   message HavingClause {
     enum Operator {
       EQUAL = 0;
@@ -752,33 +815,65 @@ message GetDocumentsRequest {
     Operator operator = 2;
     oneof right {
       DocumentFieldValue value = 3;
-      HavingRanking ranking = 4;
     }
   }
 
-  // Single `ORDER BY field <direction>` clause. Multi-field
+  // Single `ORDER BY <target> <direction>` clause. Multi-field
   // ordering is expressed by repeating this message at the
   // request level (`repeated OrderClause order_by = 4`), matching
   // SQL's `ORDER BY a ASC, b DESC` shape.
-  // Single ORDER BY entry. Multi-entry ordering is expressed by
-  // repeating this message at the request level.
   //
   // The `target` oneof carries either a plain field name
   // (`ORDER BY field`) or an aggregate function applied to a
-  // field (`ORDER BY COUNT(*)`, `ORDER BY SUM(amount)`) — the
-  // latter sorts per-group result rows produced by `GROUP BY`,
-  // useful with `LIMIT` for top-N / bottom-N selection at the
-  // routing layer (overlapping `HavingRanking::Top` / `Bottom`
-  // but more general because the ranking field can be any
-  // aggregate, not just count).
+  // field (`ORDER BY COUNT(*)`, `ORDER BY SUM(amount)`).
   //
-  // **Aggregate target currently rejected** with
-  // `Unsupported("ORDER BY on aggregate is not yet implemented")`.
-  // The wire surface is shipped now so callers can encode the
-  // shape ahead of server support landing.
+  // **Two distinct roles ride the `field` target.**
+  //
+  // 1. *Row ordering* — `select = DOCUMENTS`. `field` names a
+  //    document property and the matched rows come back in that
+  //    order. This is v0's behaviour, unchanged.
+  //
+  // 2. *Aggregate ordering* — the **ranked** surface (protocol
+  //    v14+). With a `GROUP BY` and a single aggregate `select`,
+  //    exactly one `order_by` clause naming that select's
+  //    aggregate orders the *groups* by their aggregate value and
+  //    routes the request to the ranked executor:
+  //
+  //    ```text
+  //    SELECT AVG(grade) GROUP BY restaurantId
+  //      ORDER BY grade DESC LIMIT 3          -- 3 best restaurants
+  //    SELECT COUNT(*)   GROUP BY restaurantId
+  //      ORDER BY $count DESC LIMIT 10 OFFSET 10  -- busiest, page 2
+  //    ```
+  //
+  //    `SUM(f)` / `AVG(f)` are named by `f` — the same property the
+  //    projection aggregates, which is how `ORDER BY avg(grade)`
+  //    reads once `SELECT` has already fixed the function.
+  //    `COUNT(*)` aggregates no property, so it is named by the
+  //    reserved sentinel **`$count`**. The `$` prefix is what keeps
+  //    the sentinel from colliding with a real document property:
+  //    document properties cannot start with `$` (that namespace is
+  //    the system fields' `$id` / `$ownerId` / …), so `$count` can
+  //    never be mistaken for a column. `DESC` is the "top n"
+  //    reading, `ASC` the "bottom n" reading.
+  //
+  //    An `order_by` naming anything other than the selected
+  //    aggregate — a second clause, the `GROUP BY` property, an
+  //    unrelated field — is rejected rather than normalized: it
+  //    asks for an ordering the ranked secondary cannot produce.
+  //
+  // **Aggregate target still rejected** with
+  // `Unsupported("ORDER BY on aggregate keys is not yet
+  // implemented")`. It is the *explicit* spelling of role 2
+  // (`ORDER BY AVG(grade)` rather than `ORDER BY grade` under a
+  // `SELECT AVG(grade)`) and is wire-stable so it can start being
+  // evaluated without another version bump; today the field-target
+  // spelling above is the one the ranked executor reads.
   message OrderClause {
     oneof target {
-      // Plain field name. Today's evaluated form.
+      // Plain field name. Today's evaluated form — a document
+      // property for row ordering, or the selected aggregate's
+      // property (`$count` for `COUNT(*)`) for aggregate ordering.
       string field = 1;
       // Aggregate function applied to a field, sorted by the
       // per-group result. `function = DOCUMENTS` is invalid
@@ -823,12 +918,22 @@ message GetDocumentsRequest {
   //   other shapes return `Unsupported` (see supported-shape table
   //   below).
   //
-  // `having` is wire-reserved for a future server capability. Any
-  // non-empty `having` list currently returns
-  // `Unsupported("HAVING clause is not yet implemented")`
-  // regardless of `select` / `group_by`. The wire shape is
-  // `repeated WhereClause` so when execution lands the surface is
-  // already typed end-to-end and callers don't need to re-encode.
+  // **Ranked mode** is served from protocol v14 and is selected by
+  // `group_by` + a single `order_by` naming the selected aggregate —
+  // SQL's own top-n spelling, `ORDER BY <agg> DESC LIMIT n OFFSET m`.
+  // It returns `ResultData.ranked`. See `order_by` and the
+  // supported-shape table below.
+  //
+  // **Having-range mode** is served from protocol v14: a single
+  // `having` clause whose aggregate is the selected aggregate turns
+  // the request into a bounded range read over the same per-axis
+  // secondary ranked mode walks, answered in `ResultData.ranked`.
+  // On protocol v13 and earlier every non-empty `having` is rejected
+  // (`"HAVING clause is not yet implemented"`). `having` carries no
+  // ranking spelling: an earlier draft put cross-group ranking on the
+  // right of a `HAVING` (`HAVING AVG(grade) IN TOP(5)`) and that
+  // grammar was removed before release in favour of `ORDER BY` +
+  // `LIMIT`. See the supported-shape table below.
   //
   // **Supported shapes** (everything else rejects with a typed
   // `QuerySyntaxError::Unsupported` so callers can detect un-wired
@@ -853,8 +958,17 @@ message GetDocumentsRequest {
   // `select=COUNT, group_by=[a, b]`:
   // - a is the In field AND b is the range field, in that order → existing compound distinct shape; entries carry both `in_key` (= a's value) and `key` (= b's value).
   //
+  // `select=<COUNT(*)|SUM(f)|AVG(f)>, group_by=[p], order_by=[<the selected aggregate>]` (protocol v14+) — **ranked mode**:
+  // - exactly one `group_by` property, exactly one `order_by` clause naming the select's aggregate (`f` for `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)`), a `limit` in `1 ..= 100`, an optional `offset`, and no `having` / `start_at`, on an index declaring the matching `rankedCountable` / `rankedSummable` / `rankedAverageable` axis → ranked executor, answered in `ResultData.ranked`. On a single-property ranked index no `where` is accepted; on a compound ranked index every leading index property must be pinned (one clause per property, `group_by` names the trailing property) — `EQUAL` pins one prefix, and **at most one** clause may be `IN` (2..=10 distinct elements, `null` legal; a single-element `IN` normalizes to the equality pin; an element whose prefix was never written — at any depth of its pinned chain — contributes an empty branch, union semantics), fanning the walk out across one prefix branch per element and merging by `(aggregate, encoded prefix, group key)`; merged entries carry `in_key`. A non-zero `offset` is rejected together with `IN` (rank-skip is per-secondary; `OFFSET 0` is the offset-free request).
+  // - `DESC` is the "top n" reading (walk the axis from the largest aggregate down), `ASC` the "bottom n" reading. Worked example: `SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 1 OFFSET 4` is the 5th-best restaurant.
+  //
+  // `select=<COUNT(*)|SUM(f)|AVG(f)>, group_by=[p], having=[<the selected aggregate> <op> <value>]` (protocol v14+) — **having-range mode**:
+  // - exactly one `group_by` property, exactly one `having` clause whose aggregate is the select's aggregate, an operator describing one contiguous range (`EQUAL`, `GREATER_THAN[_OR_EQUALS]`, `LESS_THAN[_OR_EQUALS]`, `BETWEEN*`; `NOT_EQUAL` / `IN` rejected), a `limit` in `1 ..= 100`, an optional `order_by` naming the same aggregate (walk direction; ascending by default), and no `offset` / `start_at` / `start_after`, on an index declaring the matching ranked axis → having-range executor, answered in `ResultData.ranked`. `where` follows the same rule as ranked mode: none on a single-property ranked index; exactly one pin per leading index property on a compound ranked index, at most one of them an `IN` (2..=10 distinct elements; a never-written element contributes an empty branch) that fans the bound out across prefix branches and merges, entries carrying `in_key`.
+  // - no offset or cursor pagination: a page cut at `limit` continues only by tightening the bound past the last *distinct* aggregate value seen; a cut inside a tie (several groups sharing the boundary aggregate) cannot be continued, so size `limit` above the widest expected tie.
+  //
   // **Rejected shapes** (return `Unsupported`):
-  // - any non-empty `having` (always — pending future server capability).
+  // - any non-empty `having` on protocol v13 and earlier; at v14+, any `having` shape outside having-range mode above (multiple clauses, an aggregate other than the select's, `NOT_EQUAL` / `IN` as the having operator, a `where` shape other than the compound-index prefix pins above — equality pins plus at most one bounded `IN` — or a carried `offset` / cursor).
+  // - at v14+: a ranked-shaped request carrying a `where` shape other than the compound-index prefix pins above (an operator other than `EQUAL` or the one permitted `IN`, more than one `IN`, a `null` pin combined with an `IN`, a repeated or non-leading property, or a missing pin), a `start_at` / `start_after` cursor, more than one `order_by`, or an `order_by` naming anything but the selected aggregate.
   // - `select=DOCUMENTS` with non-empty `group_by`.
   // - `select=COUNT` with `group_by` on a field that is not constrained by an `In` or range where clause.
   // - `select=COUNT` with `group_by.len() > 2`.
@@ -927,11 +1041,11 @@ message GetDocumentsRequest {
         AVG = 3;
         // Per-group MIN / MAX — `SELECT MIN(field) GROUP BY
         // category` returns the smallest `field` value in each
-        // category. Semantically distinct from
-        // `HavingRanking::Min` / `Max` (which are cross-group
-        // meta-aggregates over group results). MIN/MAX here
-        // operate over the row values within each group, the
-        // same way `SUM` and `AVG` do.
+        // category. These operate over the row values *within*
+        // each group, the same way `SUM` and `AVG` do; they are
+        // not a cross-group ranking. To pick out the extreme
+        // *group*, order by the aggregate instead:
+        // `ORDER BY <agg> ASC|DESC LIMIT 1` (see `order_by`).
         MIN = 4;
         MAX = 5;
       }
@@ -1044,34 +1158,181 @@ message GetDocumentsRequest {
     // message-level docstring for the supported-shape table.
     repeated string group_by = 10;
 
-    // SQL `HAVING` clauses — aggregate filters that apply to the
-    // grouped rows produced by `select=COUNT, group_by=[…]`. The
-    // wire shape is `HavingClause`, not `WhereClause`, because
-    // HAVING evaluates against per-group aggregates
-    // (`COUNT`/`SUM`/`AVG`/`MIN`/`MAX`/`TOP`/`BOTTOM`) rather than
-    // row field values. Multiple entries combine with implicit
-    // AND. See `HavingClause` / `HavingAggregate` for the
-    // operator and aggregate-function catalogs.
+    // SQL `HAVING` clauses — **boolean** aggregate filters that
+    // apply to the grouped rows produced by `select=<COUNT|SUM|AVG>,
+    // group_by=[…]`. The wire shape is `HavingClause`, not
+    // `WhereClause`, because HAVING evaluates against per-group
+    // aggregates (`COUNT` / `SUM` / `AVG`) rather than row field
+    // values. Multiple entries combine with implicit AND. See
+    // `HavingClause` / `HavingAggregate` for the operator and
+    // aggregate-function catalogs.
     //
-    // **Always rejected when non-empty** today with
-    // `Unsupported("HAVING clause is not yet implemented")`. The
-    // wire shape is shipped now so the future server capability
-    // can land without another version bump — and so callers can
-    // construct full `HAVING COUNT(*) > 5 AND SUM(amount) > 100`
-    // requests in their builders even before the server evaluates
-    // them.
+    // **From protocol v14 a single clause is served** as a bounded
+    // range read — having-range mode; see the message-level
+    // supported-shape table. On v13 and earlier every non-empty
+    // `having` is rejected with `Unsupported("HAVING clause is not
+    // yet implemented")`. Multi-clause `HAVING COUNT(*) > 5 AND
+    // SUM(amount) > 100` requests can still be constructed on the
+    // wire, but stay rejected until a multi-clause evaluator lands.
+    //
+    // **`having` does not express ranking.** "The n highest-scoring
+    // groups" is `ORDER BY <the selected aggregate> DESC LIMIT n`
+    // (see `order_by`), which *is* served, from protocol v14. An
+    // earlier draft of this surface spelled it
+    // `HAVING AVG(grade) IN TOP(5)`; that grammar was removed
+    // before release rather than deprecated.
     repeated HavingClause having = 11;
 
     // Row-based pagination offset, on top of the cursor-based
     // `start_after` / `start_at` pagination. `OFFSET N` skips the
-    // first `N` matching rows before applying `limit`. Currently
-    // **always rejected when non-`None`** with
-    // `Unsupported("OFFSET pagination is not yet implemented")`
-    // — the wire surface is shipped now so callers can encode it
-    // ahead of server support landing without another version
-    // bump. Cursor pagination via `start_after` / `start_at`
-    // remains the supported way to page through results.
+    // first `N` result rows before applying `limit`.
+    //
+    // **Consumed in ranked mode** (protocol v14+): on a request that
+    // routes to the ranked executor (`group_by` + a single `order_by`
+    // naming the selected aggregate), `offset` skips that many ranks
+    // before the returned page, so `ORDER BY avg(grade) DESC LIMIT 1
+    // OFFSET 4` is the 5th-best group. The skip is **counted, not
+    // walked**: grovedb descends on each subtree's aggregate count and
+    // collapses whole subtrees that fit inside the remaining offset, so
+    // the work stays `O(log n + k)` at any offset and the response
+    // reports the skip it performed in `RankedEntries.skipped`. On a
+    // proved request that count is additionally *attested* — committed
+    // to by the proof and re-derived by the verifier; on an unproved
+    // one it is the node's own report. See `RankedEntries.skipped`. There is deliberately no ceiling — an
+    // offset of 4 and an offset of four billion cost the same *order*
+    // of work — neither walks the region it skips — so there is no
+    // denial-of-service lever a cap would close. An offset
+    // past the end of the ranking is a provable answer rather than an
+    // error: `entries` comes back empty and `skipped` is the ranking's
+    // whole population.
+    //
+    // **Rejected everywhere else** with
+    // `Unsupported("OFFSET pagination is not yet implemented")` —
+    // including on every path at protocol v13 and earlier, which has
+    // no ranked executor. Cursor pagination via `start_after` /
+    // `start_at` remains the supported way to page through documents.
     optional uint32 offset = 12;
+
+    // Chained mode — a provable semi-join:
+    // `SELECT * FROM <outer_document_type> WHERE $id IN
+    //   (SELECT <join_property> FROM <document_type> WHERE ...)`.
+    //
+    // Presence of this message selects chained mode: this request's
+    // own `document_type` / `where_clauses` / `order_by` / `limit`
+    // describe the INNER indexOnly query, and the outer half is
+    // DERIVED from its results — the request carries no outer
+    // clauses by design, and the verifier re-derives the outer
+    // query from the proven inner values, so the join cannot be
+    // steered by the responding node.
+    //
+    // Mode gates (rejected otherwise): the inner type must be
+    // indexOnly and resolve to an index carrying `join_property`;
+    // `join_property` must declare a same-contract
+    // `refersTo: permanentDocument` targeting
+    // `outer_document_type`; `limit` is REQUIRED (it bounds the
+    // derived outer query — no server-default fallback) and capped
+    // by the outer `$id IN` clause's 100-value limit; `selects`
+    // must be empty or a single DOCUMENTS projection; `group_by`,
+    // `having`, time-range clauses, cursors, and `offset` are all
+    // rejected. Pagination is a range clause on `join_property`.
+    //
+    // The verifier needs nothing beyond the proof itself: it
+    // subset-verifies the inner query against the merged proof to
+    // extract the join values, re-derives the outer component, and
+    // verifies the whole composition. A node that predates this
+    // field ignores it (proto3 unknown field) and serves the plain
+    // inner query — which FAILS CLOSED client-side: an inner-only
+    // proof cannot satisfy the re-derived merged query for a
+    // non-empty page, and an unproven response carries the wrong
+    // ResultData variant.
+    message ChainedJoin {
+      // The inner property whose proven values become the outer
+      // documents' `$id`s.
+      string join_property = 1;
+      // The joined document type — the `refersTo` target.
+      string outer_document_type = 2;
+    }
+    ChainedJoin chained = 13;
+
+    // Composite mode — a page plus sub-queries DERIVED from its
+    // results, answered as ONE merged proof over one state root.
+    //
+    // Presence of any `sub_queries` selects composite mode: this
+    // request's own `data_contract_id` / `document_type` /
+    // `where_clauses` / `order_by` / `limit` describe the PAGE, and
+    // every sub-query's `IN` clause is derived by the node from the
+    // page's (or an earlier sub-query's) proven documents. The
+    // verifier re-derives every sub-query from the proven page with
+    // the same builders, re-merges, and verifies the whole
+    // composition — so the composition cannot be steered by the
+    // responding node, and a node that predates this field (proto3
+    // unknown field) serves a page-only proof that FAILS CLOSED
+    // client-side.
+    //
+    // Mode gates (rejected otherwise): `limit` is REQUIRED on the
+    // page (at most 100 — it bounds every derived clause); `selects`
+    // must be empty or a single DOCUMENTS projection; `group_by`,
+    // `having`, time-range clauses, cursors and `offset` are
+    // rejected (paginate with a range clause on the page's ordering
+    // property); `chained` and `sub_queries` are mutually exclusive.
+    // See `SubQuery` for the per-sub-query rules.
+    message SubQuery {
+      // The contract this sub-query targets. Empty = the page's own
+      // contract; otherwise any contract (profiles keyed by owner,
+      // names keyed by identity).
+      bytes data_contract_id = 1;
+      string document_type = 2;
+      // The FIXED clauses — everything but the derived `IN`, which
+      // must not be named here.
+      repeated WhereClause where_clauses = 3;
+      // Ordering (documents only). Every component of the merged proof
+      // walks in the page's direction: a bound field missing from here
+      // is appended in that direction by the node and the verifier
+      // alike, and an ordering that disagrees with the page's direction
+      // is refused (turning a limited lookup around would change the
+      // rows it returns).
+      repeated OrderClause order_by = 4;
+      // Documents lookups on a non-unique index REQUIRE a limit: it
+      // caps the rows the lookup returns in total, in walk order, like
+      // an ordinary IN query's limit (at most 100). Lookups already
+      // bounded by their values (a unique index, or an indexOnly
+      // terminal with every prefix fixed), by-id joins (completeness is
+      // set equality) and counts take none.
+      optional uint32 limit = 5;
+      enum Kind {
+        // The matching documents.
+        DOCUMENTS = 0;
+        // One count per derived value from the `countable` index
+        // covering the fixed clauses plus the bound field. Must be
+        // bound, and must not share its index path with a documents
+        // component (the count reads the value trees the documents
+        // query descends past).
+        COUNT = 1;
+      }
+      Kind kind = 6;
+      // The derived clause `<field> IN <values>`. Absent = a SIBLING:
+      // an independent documents query proven under the same root.
+      message Binding {
+        // Whose proven documents supply the values: `0` = the page,
+        // `n` = `sub_queries[n - 1]` (which must precede this one and
+        // be a DOCUMENTS sub-query).
+        uint32 source = 1;
+        // The source property read off each document: `$id`,
+        // `$ownerId`, or an identifier-typed property (dotted paths
+        // reach nested properties). Documents without it contribute
+        // nothing.
+        string source_property = 2;
+        // The sub-query field receiving the `IN` clause. `$id` makes
+        // this a by-id JOIN: the source property must then declare
+        // `refersTo: permanentDocument` targeting this document type,
+        // so every derived id resolves and a missing document is an
+        // invalid proof. Otherwise `$ownerId` or an indexed property
+        // (a LOOKUP, where absence is a proven fact).
+        string field = 3;
+      }
+      Binding bind = 7;
+    }
+    repeated SubQuery sub_queries = 14;
   }
 
   oneof version {
@@ -1258,9 +1519,134 @@ message GetDocumentsResponse {
       }
     }
 
+    // One group in a ranked (`GROUP BY … ORDER BY <agg> LIMIT n`)
+    // result: the group's index key plus the aggregate it was ranked
+    // by.
+    //
+    // `key` is the raw index-key bytes of the GROUP BY property's
+    // value — the same bytes that name the group's value tree under
+    // the index (for a `string` property, its UTF-8 bytes). Clients
+    // that want the typed value decode it with the document type's
+    // key deserialization; the wire carries bytes so prover and
+    // verifier agree without a schema round-trip.
+    //
+    // Exactly one `value` variant is set, determined by the
+    // request's SELECT function:
+    //   * `count`  — `SELECT COUNT(*)`, ranked on the index's
+    //     `rankedCountable` axis.
+    //   * `sum`    — `SELECT SUM(field)`, `rankedSummable` axis.
+    //     Signed for the same reason `SumEntry.sum` is.
+    //   * `avg`    — `SELECT AVG(field)`,
+    //     `rankedAverageable` axis.
+    message RankedEntry {
+      bytes key = 1;
+      oneof value {
+        // `jstype = JS_STRING` so JS/Web clients receive a string
+        // and don't round counts > 2^53−1 to the nearest
+        // representable Number — same choice as `CountEntry.count`.
+        uint64 count = 2 [jstype = JS_STRING];
+        // `jstype = JS_STRING` for the same precision reason as
+        // `SumEntry.sum`.
+        sint64 sum = 3 [jstype = JS_STRING];
+        // The group's average, as a **`double` approximation** of the
+        // exact value the Avg axis is ordered by.
+        //
+        // What grovedb actually commits to and sorts by is an `i128`
+        // fixed-point integer: `floor(sum * SCALE / count)` with
+        // euclidean (toward −∞) division, where SCALE is grovedb's
+        // `AVG_FIXED_POINT_SCALE` (currently 10^19). This field is
+        // that integer divided by SCALE in `f64`, i.e.
+        // `fixed_point as f64 / SCALE as f64`.
+        //
+        // A `double` is honest here because `RankedEntry` is only ever
+        // populated on the **no-proof ("quick answer") path**, where
+        // the client has already chosen to trust the server's reply.
+        // A proof-verifying client never reads this field: it
+        // reconstructs each entry from the grovedb proof itself, where
+        // the exact fixed-point `i128` lives, so nothing about proof
+        // verification depends on this number's precision.
+        //
+        // Precision bound: `f64` carries ~15–16 significant decimal
+        // digits, so two groups whose exact fixed-point averages differ
+        // only beyond that can compare equal here. Do not use this
+        // value for equality checks, tie-breaking, or any
+        // reconstruction of the committed integer — request the proof
+        // and read the fixed point from it instead. Entry *order* is
+        // still exact: the server ranks on the i128 before converting.
+        //
+        // SCALE is a grovedb constant, not a wire constant: it moved
+        // from 10^15 to 10^19 before release. Clients that need it
+        // (e.g. to go back to fixed point on the proof path) should
+        // read it from the SDK's re-export (`RANKED_AVG_SCALE`) rather
+        // than hardcoding the literal.
+        double avg = 4;
+      }
+      // The prefix branch this entry came from, set **only** on an
+      // `IN`-pinned request (see the supported-shape table): the
+      // encoded index-key bytes of the `IN` property's pinned value —
+      // empty bytes for the `null` (absent-value) branch. Absent on
+      // single-prefix responses. The same group key can legally appear
+      // under two prefixes, so `(in_key, key)` is the entry's identity
+      // on a merged page, exactly as on `CountEntry`.
+      optional bytes in_key = 5;
+    }
+
+    // Ranked result entries. **Entry order IS the ranking order** —
+    // best-first for `ORDER BY <agg> DESC`, worst-first for `ASC`.
+    // Clients must not re-sort; ties (equal aggregates) come back in
+    // group-key order in the direction of the walk, which is
+    // descending group-key order for `DESC`.
+    //
+    // Fewer than `limit` entries is normal — the index simply has
+    // fewer groups than requested — and is not an error.
+    message RankedEntries {
+      repeated RankedEntry entries = 1;
+
+      // How many groups were skipped before the first entry — the
+      // page's **starting rank base**. Entry `i` of `entries` is the
+      // group at rank `skipped + i` (0-based).
+      //
+      // `0` for an `OFFSET 0` (or offset-less) query, which is what
+      // makes this field additive: a caller that never paginates sees
+      // the value it would have assumed. For `OFFSET m` it is
+      // normally `m`, and it is what turns a page back into a
+      // *ranking* — without it, a caller who asked for
+      // `ORDER BY avg(grade) DESC LIMIT 1 OFFSET 4` receives one
+      // entry with no way to tell that it really is the 5th-best
+      // group rather than the best.
+      //
+      // **When a requested offset exceeds the population**, `entries`
+      // is empty and `skipped` is the ranking's *total* reported
+      // population — a positive, useful answer ("there are only 12
+      // groups") rather than a bare empty list.
+      //
+      // Both paths report the same quantity: the offset you asked for
+      // when the skip succeeded, and the ranking's total population
+      // when the walk ran out of groups first. They no longer disagree
+      // anywhere, including past the end.
+      //
+      // What differs is the *warrant*, not the value. On the proved
+      // path the number is cryptographically attested — re-derived by
+      // the verifier from the counted subtree commitments in the proof
+      // bytes rather than trusted from this field — so a proving client
+      // should use the verified value and ignore this one. On the
+      // unproven path it is an **unverified claim**, exactly like the
+      // entries beside it: it equals the attested value on an honest
+      // node, and nothing forces a node to be honest. Read "the true
+      // population" as "what this node says the population is".
+      // Callers who need to trust it, rather than merely receive it,
+      // must still prove.
+      //
+      // Do not assume this field equals the offset you requested. It
+      // equals the offset only when the skip succeeded; when the walk
+      // ran out of groups first it is smaller, and that is the answer
+      // rather than an inconsistency.
+      optional uint64 skipped = 2 [jstype = JS_STRING];
+    }
+
     // Non-proof result wrapper. The outer `oneof result` switches
     // between this and `proof`; this inner oneof switches between
-    // the four non-proof shapes the v1 surface can return.
+    // the non-proof shapes the v1 surface can return.
     message ResultData {
       oneof variant {
         Documents documents = 1;
@@ -1280,7 +1666,56 @@ message GetDocumentsResponse {
         // `book/src/drive/average-index-examples.md` for the design
         // and the grades-contract worked example.
         AverageResults averages = 4;
+        // Ranked-aggregate result. Routed when the request pairs a
+        // single-property `group_by` with a single `order_by` clause
+        // naming the single aggregate `select` (the `$count` sentinel
+        // for `COUNT(*)`) and a `limit` — SQL's `ORDER BY <agg>
+        // DESC LIMIT n [OFFSET m]`. Answered from the per-axis
+        // secondary of an indexed tree, so the index must declare the
+        // matching `rankedCountable` / `rankedSummable` /
+        // `rankedAverageable` keyword (meta-schema v3, protocol
+        // version 14+). Entry order is the ranking order, and
+        // `skipped` carries the page's starting rank — see
+        // `RankedEntries`.
+        RankedEntries ranked = 5;
+        // Chained-mode result: both halves of the provable
+        // semi-join, in inner order (the last inner projection's
+        // join-property value is the pagination cursor; outer
+        // documents are ordered by first appearance of their id
+        // among the inner projections, deduplicated). Routed when
+        // the request's `chained` message is present.
+        ChainedDocuments chained = 6;
+        // Composite-mode result: the page plus one result per
+        // sub-query, in request order. Routed when the request
+        // carries `sub_queries`.
+        CompositeDocuments composite = 7;
       }
+    }
+
+    // Both halves of a chained (semi-join) query, each serialized
+    // with its own document type.
+    message ChainedDocuments {
+      repeated bytes inner_documents = 1;
+      repeated bytes outer_documents = 2;
+    }
+
+    // A composite query's page and per-sub-query results, documents
+    // serialized with their own document type.
+    message CompositeDocuments {
+      // The page, exactly as the page query alone would return it.
+      repeated bytes page_documents = 1;
+      message SubQueryResult {
+        oneof result {
+          // DOCUMENTS: a by-id join in first-appearance order of the
+          // derived ids; a lookup or sibling in query order.
+          Documents documents = 1;
+          // COUNT: one entry per derived value that has a count tree
+          // (a value with no entry counts zero), keyed by the
+          // value's index-key bytes.
+          CountEntries counts = 2;
+        }
+      }
+      repeated SubQueryResult sub_results = 2;
     }
 
     oneof result {

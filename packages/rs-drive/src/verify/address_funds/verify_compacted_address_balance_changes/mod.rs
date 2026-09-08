@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -45,6 +46,14 @@ impl Drive {
     ///   - `RootHash`: The root hash of the Merkle tree.
     ///   - `VerifiedCompactedAddressBalanceChanges`: Vector of (start_block, end_block, address_balance_changes) tuples.
     /// - `Err(Error)`: If verification fails.
+    ///
+    /// # Wire format versioning
+    /// Feature version 0 decodes the legacy single GroveDB proof; feature
+    /// version 1 decodes the two-proof [`CompactedAddressBalanceProof`]
+    /// envelope. The server's
+    /// `prove_compacted_address_balance_changes` dispatches its encoder on
+    /// the same protocol version, so both sides switch formats together at
+    /// the version boundary.
     pub fn verify_compacted_address_balance_changes(
         proof: &[u8],
         start_block_height: u64,
@@ -64,9 +73,15 @@ impl Drive {
                 limit,
                 platform_version,
             ),
+            1 => Self::verify_compacted_address_balance_changes_v1(
+                proof,
+                start_block_height,
+                limit,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_compacted_address_balance_changes".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

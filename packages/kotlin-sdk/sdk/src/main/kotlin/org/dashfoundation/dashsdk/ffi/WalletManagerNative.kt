@@ -7,11 +7,14 @@ package org.dashfoundation.dashsdk.ffi
  *
  * [nativeCreate] takes the SDK handle plus the two Kotlin bridge objects
  * (persistence + event), builds the native persistence / event vtables
- * with boxed `GlobalRef` contexts, hands them to
- * `platform_wallet_manager_create_with_persistence_capabilities`, and returns a boxed **bundle** pointer
- * as a `jlong`. The bundle owns the two context boxes for the manager's
- * lifetime; [nativeDestroy] shuts the manager down (quiescing every
- * callback-firing task) and only then frees them.
+ * with boxed `GlobalRef` contexts, hands them — **with ownership** (the
+ * vtables carry a `release_fn`) — to
+ * `platform_wallet_manager_create_with_persistence_capabilities`, and
+ * returns a boxed **bundle** pointer as a `jlong`. The native manager
+ * frees each context box exactly once, when its last worker reference
+ * drops; [nativeDestroy] shuts the manager down (bounded quiesce + join
+ * of every callback-firing task) and a worker that straggles past it
+ * keeps its bridge `GlobalRef` alive until that worker exits.
  *
  * The raw manager `Handle` used by the sync / wallet-accessor calls is
  * read from the bundle via [nativeManagerHandle].
@@ -46,6 +49,19 @@ internal object WalletManagerNative {
 
     /** Shut down + free a bundle from [nativeCreate]. Safe on 0. */
     external fun nativeDestroy(bundle: Long)
+
+    /**
+     * Resolve every (name, descriptor) pair the Rust persistence
+     * trampolines dispatch against [NativePersistenceBridge]. Returns
+     * `null` when all slots resolve; otherwise the first unresolvable
+     * `"name descriptor"` pair. Virtual dispatch defers each resolution to
+     * the slot's first live call, so without this check a drifted
+     * descriptor would surface only mid-flow at runtime — the instrumented
+     * suite calls it to pin the Rust↔Kotlin lockstep up front.
+     */
+    external fun nativeVerifyPersistenceBridgeDescriptors(
+        bridge: NativePersistenceBridge,
+    ): String?
 
     // ── Wallet creation / restore ─────────────────────────────────────
 
@@ -112,21 +128,37 @@ internal object WalletManagerNative {
     /** Balance as `long[4]` = {confirmed, unconfirmed, immature, locked}. */
     external fun walletGetBalance(walletHandle: Long): LongArray
 
+    /**
+     * Widen an account's address-pool gap limit, generating the addresses
+     * the wider limit now requires (capped Rust-side at MAX_GAP_LIMIT =
+     * 1000). The compact-filter scan watches `last used index + gap`, so
+     * this is the host's lever for wallets whose usage frontier advanced
+     * OUTSIDE the SDK's view (another client on the same seed spending
+     * past the default window). `accountType`: 0 BIP44, 1 BIP32,
+     * 2 CoinJoin — AllSpendable (3) is rejected, gap limits are
+     * per-account.
+     */
+    external fun coreWalletSetGapLimit(
+        walletHandle: Long,
+        accountType: Int,
+        accountIndex: Int,
+        gapLimit: Int,
+    )
+
     // ── Core transaction builder (1:1 over `core_wallet_tx_builder_*`) ─
     //
     // Each step is a thin extern (one export = one FFI call, per
     // `packages/kotlin-sdk/CLAUDE.md`); the `CoreTransactionBuilder` Kotlin
     // class orchestrates the sequence, mirroring the Swift
     // `CoreTransactionBuilder` + the `.coreToCore` flow in
-    // `SendViewModel.swift`. `builder` and `tx` are opaque native pointers
-    // carried as `Long` (the builder's `FFITransactionBuilder`, and a
-    // heap-boxed `FFICoreTransaction` from [coreTxBuilderBuildSigned]).
+    // `SendViewModel.swift`. `builder` is an opaque native pointer (the
+    // builder's `FFITransactionBuilder`) carried as `Long`.
 
     /**
      * `core_wallet_tx_builder_new` — create a builder for [network]
      * (`Network.ffiValue`). Returns the builder pointer (0 after throwing);
-     * free with [coreTxBuilderDestroy] or [coreTxBuilderBuildSigned] (which
-     * consumes it).
+     * free with [coreTxBuilderDestroy] or the consuming finalizers
+     * [coreTxBuilderFinalize] / [coreWalletFinalizeSignedPayment].
      */
     external fun coreTxBuilderNew(network: Int): Long
 
@@ -138,11 +170,34 @@ internal object WalletManagerNative {
     external fun coreTxBuilderAddOutput(builder: Long, address: String, amount: Long)
 
     /**
+     * `core_wallet_tx_builder_add_op_return` — append a zero-value OP_RETURN
+     * output carrying [data] (a MAYACHAIN-style deposit memo). Rejected
+     * Rust-side over the 80-byte standardness limit — BEFORE the builder's
+     * state is consumed, so a refused memo leaves prior outputs intact.
+     */
+    external fun coreTxBuilderAddOpReturn(builder: Long, data: ByteArray)
+
+    /**
      * `core_wallet_tx_builder_set_change_address` — override the change
-     * address (network-checked). Optional; the Core→Core send relies on
-     * [coreTxBuilderSetFunding], which also sets a change address.
+     * address (network-checked). Optional; the finalizers pick a change
+     * address themselves during funding selection.
      */
     external fun coreTxBuilderSetChangeAddress(builder: Long, address: String)
+
+    /**
+     * `core_wallet_tx_builder_preserve_output_order` — keep outputs in
+     * insertion order instead of BIP-69 sorting them at build time
+     * (MAYACHAIN deposits require vault = VOUT0, memo = VOUT1).
+     */
+    external fun coreTxBuilderPreserveOutputOrder(builder: Long)
+
+    /**
+     * `core_wallet_tx_builder_change_to_first_input` — route change to the
+     * address of the first selected input (VIN0). MAYACHAIN identifies the
+     * depositor by VIN0 and pays refunds there. Overrides the change address
+     * funding selection assigned.
+     */
+    external fun coreTxBuilderChangeToFirstInput(builder: Long)
 
     /** `core_wallet_tx_builder_set_fee_rate` — fee rate in duffs/kB (> 0). */
     external fun coreTxBuilderSetFeeRate(builder: Long, satPerKb: Long)
@@ -161,35 +216,7 @@ internal object WalletManagerNative {
      */
     external fun coreTxBuilderSetCurrentHeight(builder: Long, height: Int)
 
-    /**
-     * `core_wallet_tx_builder_set_funding` — fund from a wallet account,
-     * setting inputs AND the change address. [accountType]: 0 BIP44,
-     * 1 BIP32, 2 CoinJoin.
-     */
-    external fun coreTxBuilderSetFunding(
-        builder: Long,
-        walletHandle: Long,
-        accountType: Int,
-        accountIndex: Int,
-    )
-
-    /**
-     * `core_wallet_tx_builder_build_signed` — build + sign against the wallet
-     * account, resolving Core ECDSA signatures via [coreSignerHandle] (a
-     * `MnemonicResolverHandle`). CONSUMES the builder (do not reuse the
-     * builder handle afterwards). Returns an opaque built-transaction pointer
-     * (0 after throwing) for [coreWalletBroadcastTransaction] /
-     * [coreTransactionFree].
-     */
-    external fun coreTxBuilderBuildSigned(
-        builder: Long,
-        walletHandle: Long,
-        accountType: Int,
-        accountIndex: Int,
-        coreSignerHandle: Long,
-    ): Long
-
-    /** Atomic V2 finalizer; consumes [builder] and returns an opaque registry handle. */
+    /** Atomic finalizer; consumes [builder] and returns an opaque signed-transaction handle. */
     external fun coreTxBuilderFinalize(
         builder: Long,
         walletHandle: Long,
@@ -200,51 +227,118 @@ internal object WalletManagerNative {
 
     /**
      * `core_wallet_tx_builder_destroy` — free a builder from [coreTxBuilderNew]
-     * that was NOT consumed by [coreTxBuilderBuildSigned]. Safe on 0.
+     * that was NOT consumed by [coreTxBuilderFinalize] /
+     * [coreWalletFinalizeSignedPayment]. Safe on 0.
      */
     external fun coreTxBuilderDestroy(builder: Long)
 
     /**
      * `platform_wallet_get_core` — resolve the transient core-wallet handle
-     * from a `PlatformWallet` handle, for [coreWalletBroadcastTransaction].
-     * Free with [coreWalletDestroy]. Returns 0 after throwing.
+     * from a `PlatformWallet` handle, for
+     * [coreWalletBroadcastSignedTransaction]. Free with [coreWalletDestroy].
+     * Returns 0 after throwing.
      */
     external fun platformWalletGetCore(walletHandle: Long): Long
 
     /**
-     * `core_wallet_broadcast_transaction` — broadcast a transaction built by
-     * [coreTxBuilderBuildSigned]. [accountType]/[accountIndex] identify the
-     * funding account so a definitive rejection releases its UTXO
-     * reservation. Returns the txid as a lowercase hex string.
+     * `core_wallet_sign_message` — sign [message] with the private key behind
+     * [address] and return the base64 signature (a classic Dash signed message).
+     *
+     * [coreHandle] is a core-wallet handle from [platformWalletGetCore].
+     * [address] must be a P2PKH address of THIS wallet on its network, owned by
+     * a signable funds account: a foreign or watch-only address throws
+     * `ErrorSigningKeyUnavailable` (31), while an unparseable, wrong-network, or
+     * non-P2PKH address throws `ErrorInvalidParameter` (2). [message] is signed
+     * verbatim — it is length-prefixed into the digest, so trailing whitespace
+     * and newlines are significant, and an empty string is valid and signable.
+     * [coreSignerHandle] is the manager's `MnemonicResolverHandle`.
+     *
+     * Moves no value: nothing is selected, reserved, broadcast, or persisted.
      */
-    external fun coreWalletBroadcastTransaction(
+    external fun coreWalletSignMessage(
         coreHandle: Long,
-        tx: Long,
-        accountType: Int,
-        accountIndex: Int,
+        address: String,
+        message: String,
+        coreSignerHandle: Long,
     ): String
 
-    /** Consume and broadcast an atomically finalized V2 transaction. */
-    external fun coreWalletBroadcastSignedTransactionV2(coreHandle: Long, transaction: Long): String
+    /**
+     * `core_wallet_next_receive_address` — the engine's next unused BIP-44
+     * EXTERNAL (receive) address for [accountIndex], base58-encoded.
+     * Answered from the engine's in-memory used-set (authoritative over
+     * the Room `core_addresses` mirror). Kotlin parity for the Swift
+     * binding (`coreWallet().nextReceiveAddress(accountIndex:)`).
+     */
+    external fun coreWalletNextReceiveAddress(coreHandle: Long, accountIndex: Int): String
+
+    /**
+     * `core_wallet_next_change_address` — the engine's next unused BIP-44
+     * INTERNAL (change) address for [accountIndex], base58-encoded. The
+     * change-side twin of [coreWalletNextReceiveAddress].
+     */
+    external fun coreWalletNextChangeAddress(coreHandle: Long, accountIndex: Int): String
+
+    /** Consume and broadcast an atomically finalized transaction. */
+    external fun coreWalletBroadcastSignedTransaction(coreHandle: Long, transaction: Long): String
 
     /** Consume without sending and immediately release the reservation. */
-    external fun coreWalletAbandonSignedTransactionV2(coreHandle: Long, transaction: Long)
+    external fun coreWalletAbandonSignedTransaction(coreHandle: Long, transaction: Long)
 
     /** Idempotent cleaner fallback; abandons and releases the reservation. */
-    external fun coreSignedTransactionV2Free(transaction: Long)
+    external fun coreSignedTransactionFree(transaction: Long)
 
     /** Read the finalized transaction's fee before consumption. */
-    external fun coreSignedTransactionV2Fee(transaction: Long): Long
+    external fun coreSignedTransactionFee(transaction: Long): Long
+
+    /**
+     * `core_wallet_signed_transaction_bytes` — the consensus-serialized
+     * signed transaction bytes, read WITHOUT consuming the ownership token.
+     * Lets the caller assert the deposit shape (e.g. MAYACHAIN's
+     * vault/OP_RETURN/change ordering) before deciding to broadcast.
+     */
+    external fun coreSignedTransactionBytes(transaction: Long): ByteArray
 
     /** `core_wallet_destroy` — release a core handle from [platformWalletGetCore]. Safe on 0. */
     external fun coreWalletDestroy(coreHandle: Long)
 
     /**
-     * `core_wallet_transaction_free` — free a transaction from
-     * [coreTxBuilderBuildSigned] (its box AND the tx bytes it owns). Safe on
-     * 0; call exactly once per built transaction.
+     * `core_wallet_signed_payment_finalize` — atomically fund, reserve, sign,
+     * AND register a builder for deferred (BIP70/BIP270) submission in one
+     * native call. Selection and reservation commit as a single unit under the
+     * wallet-manager lock, closing the double-selection window. CONSUMES
+     * [builder]. [accountType]/[accountIndex] identify the funding account
+     * (0 BIP44, 1 BIP32, 2 CoinJoin); [coreSignerHandle] is a
+     * `MnemonicResolverHandle`.
+     *
+     * Returns a big-endian BLOB decoded into a `SignedCoreTransaction`:
+     * `u64 token, u64 feeDuffs, u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
      */
-    external fun coreTransactionFree(tx: Long)
+    external fun coreWalletFinalizeSignedPayment(
+        builder: Long,
+        walletHandle: Long,
+        accountType: Int,
+        accountIndex: Int,
+        coreSignerHandle: Long,
+    ): ByteArray
+
+    /**
+     * `core_wallet_signed_payment_broadcast` — broadcast the payment behind
+     * [token], reconciling its reservation on failure and consuming the token.
+     * Rather than double-broadcasting, an unusable token throws one of three
+     * sibling codes — `ErrorStaleReservationToken` (34, aged out),
+     * `ErrorReservationTokenConsumed` (35, already consumed/unknown), or
+     * `ErrorReservationWalletMismatch` (36, different wallet generation).
+     * [coreHandle] must resolve to the wallet the token was minted against.
+     * Returns the txid as a lowercase hex string.
+     */
+    external fun coreWalletBroadcastSignedPayment(coreHandle: Long, token: Long): String
+
+    /**
+     * `core_wallet_signed_payment_release` — release the funding reservation
+     * behind [token] and drop it. Idempotent: releasing an unknown /
+     * already-consumed token is a silent no-op.
+     */
+    external fun coreWalletReleaseSignedPayment(token: Long)
 
     /**
      * Enumerate the wallet's Platform-payment addresses with cached credit
@@ -378,6 +472,15 @@ internal object WalletManagerNative {
     external fun identitySyncStop(managerHandle: Long)
     external fun identitySyncIsRunning(managerHandle: Long): Boolean
 
+    /**
+     * Whether the durable sync watermark has been frozen this session because
+     * a persistence store was rejected (the lossless channel cannot drop
+     * events) — the persisted
+     * `syncedHeight` is held behind the chain tip and a rescan is pending on
+     * the next launch. Latches for this manager instance's lifetime.
+     */
+    external fun syncFaultDetected(managerHandle: Long): Boolean
+
     /** Shielded loop — only present when the native library is built with shielded. */
     external fun shieldedSyncStart(managerHandle: Long)
     external fun shieldedSyncStop(managerHandle: Long)
@@ -495,6 +598,25 @@ internal object WalletManagerNative {
     /** SPV `is_running`. */
     external fun spvIsRunning(managerHandle: Long): Boolean
     external fun spvStop(managerHandle: Long)
+
+    /**
+     * The proTxHashes of every masternode in the current-tip deterministic
+     * masternode list whose voting-key hash matches the 20-byte [votingKeyId]
+     * (hash160 of a voting public key), as a flat `byte[]` of concatenated
+     * 32-byte proTxHashes (internal byte order) — the caller splits into
+     * 32-byte rows. Replaces dashj's
+     * `MasternodeListManager.getMasternodesByVotingKey(votingKeyId)` used by
+     * contested-username voting. Returns an EMPTY (non-null) `byte[]` when the
+     * masternode list hasn't synced (SPV client not running / DML unavailable)
+     * or no masternode uses the key; throws only on a structural FFI error.
+     * JNI symbol:
+     * `Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_masternodesByVotingKey`;
+     * bridges `platform_wallet_manager_masternodes_by_voting_key`.
+     */
+    external fun masternodesByVotingKey(
+        managerHandle: Long,
+        votingKeyId: ByteArray,
+    ): ByteArray
 
     // ── Wallet-memory snapshots (Wave-1B) ─────────────────────────────
 

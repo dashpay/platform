@@ -37,6 +37,7 @@ mod contact_request {
             ),
             &data_contract,
             None,
+            platform_version,
         )
         .expect("failed to create query");
 
@@ -73,6 +74,7 @@ mod contact_request {
             ),
             &data_contract,
             None,
+            platform_version,
         )
             .expect("failed to create query");
 
@@ -109,6 +111,7 @@ mod contact_request {
             ),
             &data_contract,
             None,
+            platform_version,
         )
         .expect("failed to create query");
 
@@ -145,6 +148,7 @@ mod contact_request {
             ),
             &data_contract,
             None,
+            platform_version,
         )
         .expect("failed to create query");
 
@@ -182,6 +186,7 @@ mod contact_request {
             ),
             &data_contract,
             None,
+            platform_version,
         )
         .expect("failed to create query");
 

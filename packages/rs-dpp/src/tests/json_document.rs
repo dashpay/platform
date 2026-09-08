@@ -154,6 +154,7 @@ pub fn json_document_to_document(
     }
 
     let mut document: DocumentV0 = DocumentV0 {
+        contract_version: None,
         id: data.remove_identifier("$id")?,
         owner_id: data.remove_identifier("$ownerId")?,
         properties: Default::default(),

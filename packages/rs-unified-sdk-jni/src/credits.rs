@@ -25,9 +25,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{
-    generic_asset_lock_recovery_allowed, guard, take_pwffi_error, throw_sdk_exception,
-};
+use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jboolean, jint, jlong};
 use jni::JNIEnv;
@@ -279,9 +277,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_transfe
 
 // ── Top up (existing identity ← new Core asset lock) ───────────────────
 
-/// Resume an interrupted top-up from a tracked Core asset-lock outpoint.
-/// Generic recovery passes `consumeInvitationVoucher = false`; invitation
-/// reclaim is the only flow allowed to opt into type-3 consumption.
+/// Resume an interrupted top-up from a tracked Core asset-lock outpoint —
+/// or, with `consumeInvitationVoucher = true`, reclaim an unclaimed DIP-13
+/// invitation voucher as credits on an existing identity. The flag is
+/// forwarded verbatim: Rust core's funding resolver refuses
+/// invitation-typed locks on every generic path and consumes them only
+/// when the flag is set, so authorization lives below this binding.
+/// Generic recovery call sites always pass `false`.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpIdentityWithExistingAssetLock(
     mut env: JNIEnv,
@@ -308,15 +310,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpId
             throw_sdk_exception(env, 1, "coreSignerHandle must be non-zero");
             return 0;
         }
-        if !generic_asset_lock_recovery_allowed(consume_invitation_voucher != 0) {
-            throw_sdk_exception(
-                env,
-                1,
-                "generic identity top-up recovery cannot consume invitation vouchers",
-            );
-            return 0;
-        }
-
         let outpoint = OutPointFFI {
             txid,
             vout: outpoint_vout as u32,
@@ -328,7 +321,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpId
                 &outpoint,
                 &id,
                 core_signer_handle as *mut MnemonicResolverHandle,
-                false,
+                consume_invitation_voucher != 0,
                 &mut out_balance,
             )
         };
