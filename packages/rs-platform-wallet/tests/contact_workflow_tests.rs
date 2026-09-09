@@ -280,60 +280,6 @@ fn test_multiple_contact_requests_workflow() {
 }
 
 #[test]
-fn test_contact_alias_and_metadata() {
-    // Test setting alias, notes, and other metadata on established contacts
-
-    let identity_a = create_test_identity([1u8; 32]);
-    let identity_b = create_test_identity([2u8; 32]);
-
-    let id_a = identity_a.id();
-    let id_b = identity_b.id();
-
-    let mut managed_a = ManagedIdentity::new(identity_a, 0);
-
-    // Establish contact
-    let request_a_to_b = create_contact_request(id_a, id_b, 0, 1000);
-    let request_b_to_a = create_contact_request(id_b, id_a, 0, 1001);
-
-    managed_a
-        .add_sent_contact_request(request_a_to_b, &noop_persister())
-        .expect("setup persists");
-    managed_a
-        .add_incoming_contact_request(request_b_to_a, &noop_persister())
-        .expect("setup persists");
-
-    // Contact should be established
-    assert_eq!(managed_a.dashpay().established_contacts().len(), 1);
-
-    // Get mutable reference to contact and modify metadata
-    let contact = managed_a.established_contact_mut(&id_b).unwrap();
-
-    // Set alias
-    contact.set_alias("Best Friend".to_string());
-    assert_eq!(contact.alias, Some("Best Friend".to_string()));
-
-    // Set note
-    contact.set_note("Met at DevCon 2024".to_string());
-    assert_eq!(contact.note, Some("Met at DevCon 2024".to_string()));
-
-    // Test hiding/unhiding
-    assert!(!contact.is_hidden);
-    contact.hide();
-    assert!(contact.is_hidden);
-    contact.unhide();
-    assert!(!contact.is_hidden);
-
-    // Test account management
-    contact.add_accepted_account(1);
-    contact.add_accepted_account(2);
-    assert_eq!(contact.accepted_accounts.len(), 2);
-
-    contact.remove_accepted_account(1);
-    assert_eq!(contact.accepted_accounts.len(), 1);
-    assert!(contact.accepted_accounts.contains(&2));
-}
-
-#[test]
 fn test_reject_contact_request() {
     // Test rejecting/removing contact requests
 
@@ -355,9 +301,9 @@ fn test_reject_contact_request() {
 
     assert_eq!(managed_a.dashpay().incoming_contact_requests().len(), 1);
 
-    // Reject by removing the request
-    let (removed, _cs) = managed_a.remove_incoming_contact_request(&id_b);
-    assert!(removed.is_some());
+    // Reject by ignoring the sender — the path production actually uses.
+    let cs = managed_a.ignore_sender(&id_b);
+    assert!(cs.removed_incoming.len() == 1);
     assert_eq!(managed_a.dashpay().incoming_contact_requests().len(), 0);
 }
 

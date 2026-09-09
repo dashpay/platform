@@ -152,48 +152,6 @@ impl EstablishedContact {
             external_account_reference: None,
         }
     }
-
-    /// Set the alias for this contact
-    pub fn set_alias(&mut self, alias: String) {
-        self.alias = Some(alias);
-    }
-
-    /// Clear the alias for this contact
-    pub fn clear_alias(&mut self) {
-        self.alias = None;
-    }
-
-    /// Set a note for this contact
-    pub fn set_note(&mut self, note: String) {
-        self.note = Some(note);
-    }
-
-    /// Clear the note for this contact
-    pub fn clear_note(&mut self) {
-        self.note = None;
-    }
-
-    /// Hide this contact from the contact list
-    pub fn hide(&mut self) {
-        self.is_hidden = true;
-    }
-
-    /// Unhide this contact
-    pub fn unhide(&mut self) {
-        self.is_hidden = false;
-    }
-
-    /// Add an accepted account reference
-    pub fn add_accepted_account(&mut self, account_reference: u32) {
-        if !self.accepted_accounts.contains(&account_reference) {
-            self.accepted_accounts.push(account_reference);
-        }
-    }
-
-    /// Remove an accepted account reference
-    pub fn remove_accepted_account(&mut self, account_reference: u32) {
-        self.accepted_accounts.retain(|&a| a != account_reference);
-    }
 }
 
 #[cfg(test)]
@@ -255,10 +213,10 @@ mod tests {
             create_test_outgoing_request(),
             create_test_incoming_request(),
         );
-        existing.set_alias("Best Friend".to_string());
-        existing.set_note("Met at conference".to_string());
-        existing.hide();
-        existing.add_accepted_account(7);
+        existing.alias = Some("Best Friend".to_string());
+        existing.note = Some("Met at conference".to_string());
+        existing.is_hidden = true;
+        existing.accepted_accounts.push(7);
         existing.payment_channel_broken = true;
         existing.contact_account_label = Some("Stale label".to_string());
 
@@ -287,78 +245,5 @@ mod tests {
         // The label is re-derived from the fresh incoming request, not
         // carried over (it is a property of the request, not user metadata).
         assert_eq!(reestablished.contact_account_label, None);
-    }
-
-    #[test]
-    fn test_alias_management() {
-        let mut contact = EstablishedContact::new(
-            Identifier::from([2u8; 32]),
-            create_test_outgoing_request(),
-            create_test_incoming_request(),
-        );
-
-        contact.set_alias("Best Friend".to_string());
-        assert_eq!(contact.alias, Some("Best Friend".to_string()));
-
-        contact.clear_alias();
-        assert_eq!(contact.alias, None);
-    }
-
-    #[test]
-    fn test_note_management() {
-        let mut contact = EstablishedContact::new(
-            Identifier::from([2u8; 32]),
-            create_test_outgoing_request(),
-            create_test_incoming_request(),
-        );
-
-        contact.set_note("Met at conference".to_string());
-        assert_eq!(contact.note, Some("Met at conference".to_string()));
-
-        contact.clear_note();
-        assert_eq!(contact.note, None);
-    }
-
-    #[test]
-    fn test_hide_unhide() {
-        let mut contact = EstablishedContact::new(
-            Identifier::from([2u8; 32]),
-            create_test_outgoing_request(),
-            create_test_incoming_request(),
-        );
-
-        assert_eq!(contact.is_hidden, false);
-
-        contact.hide();
-        assert_eq!(contact.is_hidden, true);
-
-        contact.unhide();
-        assert_eq!(contact.is_hidden, false);
-    }
-
-    #[test]
-    fn test_accepted_accounts() {
-        let mut contact = EstablishedContact::new(
-            Identifier::from([2u8; 32]),
-            create_test_outgoing_request(),
-            create_test_incoming_request(),
-        );
-
-        // Add accounts
-        contact.add_accepted_account(1);
-        contact.add_accepted_account(2);
-        assert_eq!(contact.accepted_accounts.len(), 2);
-        assert!(contact.accepted_accounts.contains(&1));
-        assert!(contact.accepted_accounts.contains(&2));
-
-        // Adding duplicate should not increase count
-        contact.add_accepted_account(1);
-        assert_eq!(contact.accepted_accounts.len(), 2);
-
-        // Remove account
-        contact.remove_accepted_account(1);
-        assert_eq!(contact.accepted_accounts.len(), 1);
-        assert!(!contact.accepted_accounts.contains(&1));
-        assert!(contact.accepted_accounts.contains(&2));
     }
 }

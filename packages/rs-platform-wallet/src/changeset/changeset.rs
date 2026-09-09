@@ -1128,7 +1128,7 @@ pub struct ContactChangeSet {
     pub removed_sent: BTreeSet<SentContactRequestKey>,
     /// Incoming contact requests keyed by (owner ← sender).
     pub incoming_requests: BTreeMap<ReceivedContactRequestKey, ContactRequestEntry>,
-    /// Incoming requests explicitly removed (e.g. `remove_incoming_contact_request`).
+    /// Incoming requests explicitly removed (e.g. by `ignore_sender`).
     pub removed_incoming: BTreeSet<ReceivedContactRequestKey>,
     /// Newly established contacts keyed by (owner, contact). The full
     /// [`EstablishedContact`] is carried so the apply path can rebuild

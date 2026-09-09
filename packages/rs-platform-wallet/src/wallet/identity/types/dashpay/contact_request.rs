@@ -67,16 +67,6 @@ impl ContactRequest {
             created_at,
         }
     }
-
-    /// Check if this is an outgoing request for the given identity
-    pub fn is_outgoing(&self, identity_id: &Identifier) -> bool {
-        self.sender_id == *identity_id
-    }
-
-    /// Check if this is an incoming request for the given identity
-    pub fn is_incoming(&self, identity_id: &Identifier) -> bool {
-        self.recipient_id == *identity_id
-    }
 }
 
 #[cfg(test)]
@@ -108,25 +98,5 @@ mod tests {
         assert_eq!(request.encrypted_public_key.len(), 96);
         assert_eq!(request.core_height_created_at, 100000);
         assert_eq!(request.created_at, 1234567890);
-    }
-
-    #[test]
-    fn test_is_outgoing() {
-        let request = create_test_contact_request();
-        let sender_id = Identifier::from([1u8; 32]);
-        let other_id = Identifier::from([3u8; 32]);
-
-        assert!(request.is_outgoing(&sender_id));
-        assert!(!request.is_outgoing(&other_id));
-    }
-
-    #[test]
-    fn test_is_incoming() {
-        let request = create_test_contact_request();
-        let recipient_id = Identifier::from([2u8; 32]);
-        let other_id = Identifier::from([3u8; 32]);
-
-        assert!(request.is_incoming(&recipient_id));
-        assert!(!request.is_incoming(&other_id));
     }
 }
