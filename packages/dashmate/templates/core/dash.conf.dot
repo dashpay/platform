@@ -54,6 +54,20 @@ allowprivatenet=0
 {{?it.externalIp }}
 externalip={{=it.externalIp}}
 {{?}}
+
+# Tor. The sidecar shares this container's network namespace, so its SOCKS and
+# control ports are on loopback. Only onion destinations use the proxy: clearnet
+# peers (including quorum traffic) stay direct, so `proxy=` is deliberately not
+# set. Core registers an onion service through the control port and binds the
+# default onion target (127.0.0.1:<network onion port>) for its inbound side.
+{{? it.core.tor.enabled }}
+onion=127.0.0.1:9050
+listenonion=1
+torcontrol=127.0.0.1:9051
+torpassword={{=it.core.tor.control.password}}
+{{??}}
+listenonion=0
+{{?}}
 {{? it.network === 'local' && it.externalIp }}
 whitelist={{=it.externalIp}}
 {{?}}

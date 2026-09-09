@@ -29,6 +29,8 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
+use super::common::UpdateValidationOptions;
+
 impl DocumentTypeRef<'_> {
     #[inline(always)]
     pub(super) fn validate_update_v1(
@@ -37,8 +39,16 @@ impl DocumentTypeRef<'_> {
         new_contract_version: u32,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        // Validate configuration
-        let result = self.validate_config(new_document_type);
+        // Legacy keep-history types advertised deletes that Drive never allowed.
+        // Permit only true -> false for that flag while keeping history enabled.
+        // Every other config and schema check still runs, and v0 stays immutable.
+        let options = UpdateValidationOptions {
+            allow_history_delete_repair: self.documents_keep_history()
+                && new_document_type.documents_keep_history()
+                && self.documents_can_be_deleted()
+                && !new_document_type.documents_can_be_deleted(),
+        };
+        let result = self.validate_config_with_options(new_document_type, &options);
 
         if !result.is_valid() {
             return Ok(result);
@@ -68,7 +78,7 @@ impl DocumentTypeRef<'_> {
         }
 
         // Validate schema compatibility
-        self.validate_schema(new_document_type, platform_version)
+        self.validate_schema_with_options(new_document_type, platform_version, &options)
     }
 
     /// Top-level requiredness may only change in one way: a brand-new

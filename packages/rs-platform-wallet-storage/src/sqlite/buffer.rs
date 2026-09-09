@@ -4,7 +4,9 @@
 //! using each sub-changeset's `Merge` impl. `flush` drains one wallet's
 //! accumulator and returns the owned changeset for the schema dispatcher
 //! to write under one SQLite transaction. The buffer never owns the
-//! database connection.
+//! database connection: a caller that must validate an incoming
+//! changeset against disk hands the probe to `store_checked` as a
+//! closure, so the probe and the merge share one critical section.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -25,11 +27,40 @@ impl Buffer {
     }
 
     /// Merge a changeset into the buffer for `wallet_id`.
+    ///
+    /// Test-only convenience: every production write goes through
+    /// [`store_checked`](Self::store_checked), which the persister hands
+    /// the identity-slot probe.
+    #[cfg(test)]
     pub fn store(
         &self,
         wallet_id: WalletId,
         cs: PlatformWalletChangeSet,
     ) -> Result<(), WalletStorageError> {
+        self.store_checked(wallet_id, cs, |_, _| Ok(()))
+    }
+
+    /// Merge a changeset into the buffer for `wallet_id`, but only if
+    /// `check` accepts it.
+    ///
+    /// `check` is handed the wallet's currently-buffered changeset (if
+    /// any) and the incoming one, and runs UNDER the buffer lock — no
+    /// other `store` for this wallet can slip between the check and the
+    /// merge. On `Err` the buffered changeset is left exactly as it was
+    /// and `cs` is dropped, so only the caller that made the offending
+    /// write pays for it.
+    pub fn store_checked<F>(
+        &self,
+        wallet_id: WalletId,
+        cs: PlatformWalletChangeSet,
+        check: F,
+    ) -> Result<(), WalletStorageError>
+    where
+        F: FnOnce(
+            Option<&PlatformWalletChangeSet>,
+            &PlatformWalletChangeSet,
+        ) -> Result<(), WalletStorageError>,
+    {
         if cs.is_empty() {
             return Ok(());
         }
@@ -37,6 +68,7 @@ impl Buffer {
             .inner
             .lock()
             .map_err(|_| WalletStorageError::LockPoisoned)?;
+        check(guard.get(&wallet_id), &cs)?;
         guard.entry(wallet_id).or_default().merge(cs);
         Ok(())
     }
@@ -94,6 +126,17 @@ impl Buffer {
         ids.sort();
         Ok(ids)
     }
+
+    /// Discard every buffered changeset after the backing connection becomes
+    /// permanently unusable.
+    pub fn discard_all(&self) -> Result<(), WalletStorageError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| WalletStorageError::LockPoisoned)?;
+        guard.clear();
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -134,6 +177,42 @@ mod tests {
         let core = merged.core.expect("core present");
         assert_eq!(core.synced_height, Some(20));
         assert_eq!(core.last_processed_height, Some(10));
+    }
+
+    #[test]
+    fn store_checked_shows_the_check_what_is_already_buffered() {
+        let buf = Buffer::new();
+        let w = [0xCCu8; 32];
+        buf.store(w, cs_height(10, 10)).unwrap();
+
+        let seen = std::cell::Cell::new(None);
+        buf.store_checked(w, cs_height(20, 20), |buffered, incoming| {
+            seen.set(Some((
+                buffered.and_then(|cs| cs.core.as_ref()?.synced_height),
+                incoming.core.as_ref().unwrap().synced_height,
+            )));
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(seen.get(), Some((Some(10), Some(20))));
+    }
+
+    #[test]
+    fn store_checked_rejection_leaves_the_buffered_value_untouched() {
+        let buf = Buffer::new();
+        let w = [0xDDu8; 32];
+        buf.store(w, cs_height(10, 10)).unwrap();
+
+        let err = buf
+            .store_checked(w, cs_height(20, 20), |_, _| {
+                Err(WalletStorageError::LockPoisoned)
+            })
+            .expect_err("the check refused the incoming changeset");
+
+        assert!(matches!(err, WalletStorageError::LockPoisoned));
+        let kept = buf.take_for_flush(&w).unwrap().expect("value still staged");
+        assert_eq!(kept.core.expect("core present").synced_height, Some(10));
     }
 
     #[test]

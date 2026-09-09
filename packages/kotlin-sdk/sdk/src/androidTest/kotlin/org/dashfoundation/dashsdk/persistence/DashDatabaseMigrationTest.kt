@@ -394,13 +394,89 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v10 → v11 adds the four sweep-hold columns — `txos.supersededByTxid`
+     * (nullable), `pending_inputs.isSweptTombstone` (defaulted `false`),
+     * `pending_inputs.winnerMinedHeight` (nullable) and
+     * `wallets.lastAppliedChainLockHeight` (nullable) — plus the two
+     * `pending_inputs` indexes the sweep lookup and the collector use. All
+     * additive. Pre-existing rows in each table must survive and read back
+     * with the new columns at their defaults (an unstamped, non-tombstone
+     * row is never collected; a wallet with no chainlock height has no
+     * finality boundary), the nullable columns must accept an explicit
+     * value on write, and `runMigrationsAndValidate` pins the indexes
+     * against the exported 11.json.
+     */
+    @Test
+    fun migrate10To11AddsSweepHoldColumnsAndIndexes() {
+        val legacy = helper.createDatabase(dbName, 10)
+        legacy.execSQL(
+            "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                "VALUES (x'01', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)",
+        )
+        legacy.execSQL(
+            "INSERT INTO transactions (txid, transactionData, context, blockHeight, " +
+                "blockTimestamp, blockPosition, hasBlockPosition, direction, " +
+                "transactionType, transactionTypeKind, netAmount, label, firstSeen, " +
+                "createdAt, lastUpdated) " +
+                "VALUES (x'02', x'00', 0, 0, 0, 0, 0, 0, 'Standard', 0, 0, '', 0, 0, 0)",
+        )
+        legacy.execSQL(
+            "INSERT INTO txos (outpoint, vout, amount, address, scriptPubKey, height, " +
+                "isCoinbase, isConfirmed, isInstantLocked, isLocked, isSpent, createdAt, " +
+                "lastUpdated, walletId, txid) " +
+                "VALUES (x'0201', 1, 1000, 'y', x'00', 0, 0, 0, 0, 0, 0, 0, 0, x'01', x'02')",
+        )
+        legacy.execSQL(
+            "INSERT INTO pending_inputs (outpoint, inputIndex, spendingTxid, walletId, " +
+                "createdAt) VALUES (x'0301', 0, x'02', x'01', 0)",
+        )
+        legacy.close()
+
+        val db = helper.runMigrationsAndValidate(dbName, 11, true, DashDatabase.MIGRATION_10_11)
+        db.query("SELECT supersededByTxid FROM txos WHERE outpoint = x'0201'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(c.isNull(0))
+        }
+        db.query(
+            "SELECT isSweptTombstone, winnerMinedHeight FROM pending_inputs WHERE outpoint = x'0301'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(0, c.getInt(0))
+            assertTrue("pre-migration rows read back unstamped", c.isNull(1))
+        }
+        db.query("SELECT lastAppliedChainLockHeight FROM wallets WHERE walletId = x'01'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue("pre-migration wallets have no chainlock height on record", c.isNull(0))
+        }
+        db.execSQL(
+            "INSERT INTO pending_inputs (outpoint, inputIndex, spendingTxid, " +
+                "walletId, createdAt, isSweptTombstone, winnerMinedHeight) " +
+                "VALUES (x'07', 0, x'05', x'01', 0, 1, 1234)",
+        )
+        db.query(
+            "SELECT isSweptTombstone, winnerMinedHeight FROM pending_inputs WHERE outpoint = x'07'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(1, c.getInt(0))
+            assertEquals(1234, c.getInt(1))
+        }
+        db.execSQL("UPDATE wallets SET lastAppliedChainLockHeight = 4321 WHERE walletId = x'01'")
+        db.query("SELECT lastAppliedChainLockHeight FROM wallets WHERE walletId = x'01'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(4321, c.getInt(0))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            10,
+            11,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -408,16 +484,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_7_8,
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
+            DashDatabase.MIGRATION_10_11,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v10 schema. */
+    /** The full chain from v1 must also land on a valid v11 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            10,
+            11,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -428,6 +505,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_7_8,
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
+            DashDatabase.MIGRATION_10_11,
         ).close()
     }
 }

@@ -1,3 +1,4 @@
+use crate::execution::GENESIS_TIME_MS;
 use crate::masternodes::MasternodeListItemWithUpdates;
 use crate::query::QueryStrategy;
 use dpp::block::block_info::BlockInfo;
@@ -354,6 +355,10 @@ pub struct NetworkStrategy {
     pub independent_process_proposal_verification: bool,
     pub sign_chain_locks: bool,
     pub sign_instant_locks: bool,
+    /// Timestamp of the first block. Defaults to a fixed 2023 instant so runs
+    /// are reproducible; tests exercising behaviour that keys on how old a
+    /// block is relative to the wall clock (checkpoints) set it near now.
+    pub start_time_ms: u64,
 }
 
 impl Default for NetworkStrategy {
@@ -378,6 +383,7 @@ impl Default for NetworkStrategy {
             independent_process_proposal_verification: false,
             sign_chain_locks: false,
             sign_instant_locks: false,
+            start_time_ms: GENESIS_TIME_MS,
         }
     }
 }
