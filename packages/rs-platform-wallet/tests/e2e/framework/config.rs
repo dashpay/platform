@@ -18,15 +18,6 @@ use platform_wallet::spv::DevnetGenesisOverride;
 
 use super::{FrameworkError, FrameworkResult};
 
-// TODO(merge origin/v4.2-dev, 2026-09-09): the network-dependent cases in this
-// suite (notably AL-001, ID-002b — the `InBroadcastFences` /
-// `observed_input_conflicts` fencing and the no-discovery registration path
-// from PR #4611) were NOT re-run live against a funded wallet/network after
-// this merge; no `PLATFORM_WALLET_E2E_BANK_MNEMONIC` secret or reachable
-// testnet/dashmate group was available on the CI/agent host. Only the
-// offline `framework::` and `found_017` subsets were verified. Provision
-// `tests/.env` (see `tests/.env.example.testnet`) and run the full
-// `--features e2e` suite before treating those behaviors as validated.
 /// Environment variable names read by [`Config::from_env`].
 pub mod vars {
     /// BIP-39 bank-wallet mnemonic. Required.
