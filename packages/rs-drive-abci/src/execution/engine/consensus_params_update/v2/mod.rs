@@ -10,10 +10,13 @@ use tenderdash_abci::proto::types::{ConsensusParams, EvidenceParams};
 /// version 15 (state sync). Value proposed in issue #2512 for nodes that bootstrap
 /// from snapshots and do not hold full history.
 ///
-/// REVIEW BEFORE RELEASE: at ~6s blocks, 15_000 blocks is roughly one day, while
-/// [`V15_EVIDENCE_MAX_AGE_DURATION_SECONDS`] below is 20 days. Evidence expires when
-/// EITHER bound is exceeded, so the effective window is the smaller (~1 day) — the two
-/// values from #2512 look inconsistent and need to be confirmed before this ships.
+/// REVIEW BEFORE RELEASE. Tenderdash treats evidence as expired only when BOTH bounds
+/// are exceeded (`evidence/pool.go` `isExpired`), and the state sync backfill likewise
+/// stops only once BOTH are satisfied (`statesync/reactor.go` `Backfill`). So the
+/// effective window is the LARGER of the two: at ~6s blocks 15_000 blocks is about one
+/// day and never binds, and a state-synced node backfills the full 20 days of
+/// [`V15_EVIDENCE_MAX_AGE_DURATION_SECONDS`] below. If a ~1 day window was the intent
+/// of #2512, the duration is the value to lower. Confirm before this ships.
 const V15_EVIDENCE_MAX_AGE_NUM_BLOCKS: i64 = 15_000;
 
 /// Maximum evidence age in time: 20 days, per issue #2512. See the review note on
