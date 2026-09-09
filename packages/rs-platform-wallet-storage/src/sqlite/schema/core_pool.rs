@@ -318,6 +318,16 @@ pub struct OwningAccount {
     pub friend_identity_id: [u8; 32],
 }
 
+fn validate_account_type(label: &str) -> Result<(), WalletStorageError> {
+    if accounts::ACCOUNT_TYPE_LABELS.contains(&label) || label == accounts::LEGACY_STANDARD_LABEL {
+        Ok(())
+    } else {
+        Err(WalletStorageError::blob_decode(
+            "core_address_pool.account_type is unknown",
+        ))
+    }
+}
+
 /// Full owning-account identity for a UTXO, matched by its `script_pubkey`
 /// against a pool row. `None` when no pool row covers the script.
 pub(crate) fn owning_account_for_script(
@@ -343,6 +353,7 @@ pub(crate) fn owning_account_for_script(
         return Ok(None);
     };
     let account_type = row.get::<_, String>(0)?;
+    validate_account_type(&account_type)?;
     let index = row.get::<_, i64>(1)?;
     blob::check_fixed_width(
         row.get::<_, i64>(2)?,
@@ -387,6 +398,8 @@ pub(crate) fn owning_account_for_script(
 /// [`crate::sqlite::schema::core_state::load_used_addresses`].
 /// This compatibility entry point uses Strict; rehydration calls
 /// [`load_used_addresses_with_ctx`] with its policy context.
+/// Unknown account labels fail the wallet under either policy: dropping a
+/// used address would lose its reuse guard. Recovery isolates that wallet.
 pub fn load_used_addresses(
     conn: &rusqlite::Connection,
     wallet_id: &WalletId,
@@ -429,6 +442,7 @@ pub fn load_used_addresses_with_ctx(
     while let Some(row) = rows.next()? {
         let raw_script = row.get::<_, Vec<u8>>(0)?;
         let account_type = row.get::<_, String>(1)?;
+        validate_account_type(&account_type)?;
         let index = row.get::<_, i64>(2)?;
         blob::check_fixed_width(
             row.get::<_, i64>(3)?,
@@ -479,6 +493,45 @@ mod tests {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         conn
+    }
+
+    #[test]
+    fn should_accept_current_and_legacy_pool_account_labels() {
+        use dashcore::hashes::Hash;
+
+        let conn = migrated_conn();
+        let wallet = [0x79; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![wallet.as_slice()],
+        )
+        .unwrap();
+        let address = dashcore::Address::new(
+            dashcore::Network::Testnet,
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array([7; 20])),
+        );
+        let script = address.script_pubkey();
+        for label in accounts::ACCOUNT_TYPE_LABELS
+            .iter()
+            .copied()
+            .chain(std::iter::once(accounts::LEGACY_STANDARD_LABEL))
+        {
+            conn.execute("DELETE FROM core_address_pool", []).unwrap();
+            conn.execute(
+                "INSERT INTO core_address_pool \
+                    (wallet_id, account_type, account_index, key_class, pool_type, \
+                     address_index, script, used) \
+                 VALUES (?1, ?2, 0, 0, 0, 0, ?3, 1)",
+                params![wallet.as_slice(), label, script.as_bytes()],
+            )
+            .unwrap();
+            let owner = owning_account_for_script(&conn, &wallet, script.as_bytes())
+                .unwrap()
+                .unwrap();
+            assert_eq!(owner.account_type, label);
+            let used = load_used_addresses(&conn, &wallet, dashcore::Network::Testnet).unwrap();
+            assert_eq!(used, vec![(address.clone(), owner)]);
+        }
     }
 
     /// UTXO ownership considers every pool row, while the reuse guard selects
