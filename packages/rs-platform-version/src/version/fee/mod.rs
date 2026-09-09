@@ -31,14 +31,10 @@ pub type FeeVersionNumber = u32;
 
 /// The fee schedules [`FeeVersion::get`] can resolve, indexed by `fee_version_number - 1`.
 ///
-/// # This list is INCOMPLETE, and that is a known defect
+/// Every `FeeVersion` needs a unique `fee_version_number` and an entry here at the index
+/// that number implies, because only the number is persisted.
 ///
-/// `FEE_VERSION2` — what protocol versions 9 and later actually run with — is missing, and
-/// declares `fee_version_number: 1`, colliding with `FEE_VERSION1`. Since the fee version
-/// NUMBER is the only thing persisted (`PlatformStateForSavingV1` and
-/// `ReducedPlatformStateV0` both store `epoch index -> number`), every node that restarts
-/// or state-syncs rehydrates previous epochs' fees as `FEE_VERSION1`. See the doc comment
-/// on [`v2::FEE_VERSION2`] for why that is currently latent and what fixing it requires.
+/// BUG(#4647): incomplete. `FEE_VERSION2` is missing and reuses number 1; see its doc comment.
 pub const FEE_VERSIONS: &[FeeVersion] = &[FEE_VERSION1];
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
@@ -132,21 +128,9 @@ mod tests {
     use super::*;
     use crate::version::fee::v2::FEE_VERSION2;
 
-    /// Every `FeeVersion` constant must carry a distinct `fee_version_number`, and
-    /// `FEE_VERSIONS` must contain all of them, because the number is the ONLY thing
-    /// persisted: `PlatformStateForSavingV1` and `ReducedPlatformStateV0` both store
-    /// `(epoch index -> fee version number)` and rehydrate through `FeeVersion::get`. A
-    /// number that does not resolve back to the constant it came from silently substitutes
-    /// a different fee schedule on any node that restarts or state-syncs.
-    ///
-    /// This test FAILS today, which is why it is ignored: `FEE_VERSION2` declares
-    /// `fee_version_number: 1`, the same as `FEE_VERSION1`, and is absent from
-    /// `FEE_VERSIONS`, so `FeeVersion::get(1)` returns `FEE_VERSION1` even for the epochs
-    /// that ran on `FEE_VERSION2`. See the doc comment on `FEE_VERSION2`.
-    ///
-    /// Un-ignore it as part of giving `FEE_VERSION2` its own number and adding it to
-    /// `FEE_VERSIONS`. That is protocol-visible and needs a migration, which is why the
-    /// defect is pinned here rather than fixed in place.
+    /// Every `FeeVersion` constant needs a distinct `fee_version_number` that resolves
+    /// back to it through `FEE_VERSIONS`, because only the number is persisted. Fails
+    /// today (`FEE_VERSION2` reuses number 1, see its doc comment); un-ignore with the fix.
     #[test]
     #[ignore = "known defect: FEE_VERSION2 reuses fee_version_number 1 and is absent from \
                 FEE_VERSIONS; fixing it is protocol-visible - see the FEE_VERSION2 docs"]
