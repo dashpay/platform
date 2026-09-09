@@ -396,9 +396,47 @@ fn apply_property_reference_v0(
                 ));
             }
 
+            let property_agreement = match refers_to_map.get(property_names::PROPERTY_AGREEMENT) {
+                None => BTreeMap::new(),
+                Some(agreement_value) => {
+                    let agreement_map = agreement_value.to_btree_ref_string_map()?;
+                    if agreement_map.is_empty() || agreement_map.len() > 10 {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "permanentDocument refersTo propertyAgreement must declare \
+                             between 1 and 10 property pairs"
+                                .to_string(),
+                        ));
+                    }
+                    agreement_map
+                        .iter()
+                        .map(|(referring_property, referenced_value)| {
+                            let referenced_property =
+                                referenced_value.as_text().ok_or_else(|| {
+                                    DataContractError::InvalidContractStructure(
+                                        "propertyAgreement values must be referenced \
+                                         property paths (strings)"
+                                            .to_string(),
+                                    )
+                                })?;
+                            for path in [referring_property.as_str(), referenced_property] {
+                                if path.is_empty() || path.len() > 256 {
+                                    return Err(DataContractError::InvalidContractStructure(
+                                        "propertyAgreement property paths must be between 1 \
+                                         and 256 characters"
+                                            .to_string(),
+                                    ));
+                                }
+                            }
+                            Ok((referring_property.clone(), referenced_property.to_string()))
+                        })
+                        .collect::<Result<BTreeMap<String, String>, DataContractError>>()?
+                }
+            };
+
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id,
                 document_type_name: document_type_name.to_string(),
+                property_agreement,
             }
         }
         "identityPublicKey" => {
@@ -423,6 +461,19 @@ fn apply_property_reference_v0(
             )))
         }
     };
+
+    // `propertyAgreement` compares against a referenced DOCUMENT's values —
+    // no other target kind has a document body to agree with.
+    if refers_to_map.contains_key(property_names::PROPERTY_AGREEMENT)
+        && !matches!(
+            target,
+            DocumentPropertyReferenceTarget::PermanentDocument { .. }
+        )
+    {
+        return Err(DataContractError::InvalidContractStructure(
+            "propertyAgreement is only allowed on permanentDocument references".to_string(),
+        ));
+    }
 
     Ok(DocumentPropertyType::IdentifierWithReference(target))
 }
@@ -554,6 +605,144 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_property_agreement_on_permanent_document_refers_to() {
+        let document_type = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "hashtag": { "type": "string", "position": 0, "maxLength": 63 },
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 1,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "documentType": "post",
+                        "propertyAgreement": { "hashtag": "hashtag" }
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        let property_type = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("postId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present");
+
+        let DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                property_agreement, ..
+            },
+        ) = property_type
+        else {
+            panic!("expected a permanentDocument reference");
+        };
+        assert_eq!(
+            property_agreement,
+            BTreeMap::from([("hashtag".to_string(), "hashtag".to_string())])
+        );
+    }
+
+    #[test]
+    fn should_reject_property_agreement_on_non_document_reference() {
+        let err = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "toUserId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "identity",
+                        "propertyAgreement": { "hashtag": "hashtag" }
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("propertyAgreement is only allowed on permanentDocument"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn should_reject_empty_property_agreement() {
+        let err = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "documentType": "post",
+                        "propertyAgreement": {}
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("between 1 and 10 property pairs"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn should_reject_non_string_property_agreement_values() {
+        let err = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "documentType": "post",
+                        "propertyAgreement": { "hashtag": 7 }
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("must be referenced property paths"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
     fn should_parse_permanent_document_refers_to() {
         let contract_id = Identifier::from([7u8; 32]);
 
@@ -592,6 +781,7 @@ mod tests {
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id: Some(contract_id),
                     document_type_name: "note".to_string(),
+                    property_agreement: Default::default(),
                 }
             )
         );
@@ -633,6 +823,7 @@ mod tests {
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id: None,
                     document_type_name: "note".to_string(),
+                    property_agreement: Default::default(),
                 }
             )
         );

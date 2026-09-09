@@ -102,6 +102,28 @@ pub struct IndexLevelTypeInfo {
     /// other two. The set of axes declared here is what the rs-drive write path
     /// turns into the indexed tree's axis list.
     pub ranked_averageable: bool,
+    /// On an indexOnly document type, the property whose value is this
+    /// index's member key: the terminal key under the `0` storage marker,
+    /// where a normal index stores the document id — stored as an `Item`
+    /// instead of a `Reference` because there is no primary-storage row.
+    /// Always `Some` here when the declaring type is indexOnly (the parser
+    /// normalizes an omitted terminal to `$ownerId`), always `None`
+    /// otherwise. Carried on the level info because index levels merge
+    /// across indexes sharing prefixes, and the write path only sees the
+    /// level at the terminal — but two indexes can never share a full
+    /// property list (duplicates are rejected), so each terminating level
+    /// belongs to exactly one index and the field is unambiguous.
+    pub terminal: Option<String>,
+    /// Whether the terminating index is `preallocated` (see
+    /// [`crate::data_contract::document_type::index::PREALLOCATED`]): its
+    /// dynamic trees are created when a refersTo-referenced document is, and
+    /// the delete walker must NOT prune them upward when the last member
+    /// entry goes — removing the entry is the whole delete. Carried on the
+    /// level info for the same reason `terminal` is: the delete walker only
+    /// sees the terminating level, which belongs to exactly one index.
+    /// `false` on every pre-PV14 contract (the grammar rejects the keyword
+    /// below meta-schema v3).
+    pub preallocated: bool,
 }
 
 impl IndexType {
@@ -130,6 +152,47 @@ pub struct IndexLevel {
     /// is expanded into one key per overlapping range bucket instead of a
     /// single key. Immutable after contract creation.
     time_range: Option<TimeRangeTransform>,
+    /// When `true`, the property-name tree materialized at this level is the
+    /// prefix-level Count ranking tree of exactly one index — the one whose
+    /// [`Index::ranked_countable_at`] names this level's property. The
+    /// rs-drive write path lays that tree out as the Count-axis indexed tree
+    /// and this level's value trees as count-bearing, so the ordered
+    /// secondary ranks the property's values by whole-subtree document
+    /// count. Only ever `true` on PV14+ contracts (the grammar rejects the
+    /// object form of `rankedCountable` below meta-schema v3), and never on
+    /// a terminating level (`at` naming the last property canonicalizes to
+    /// the terminal boolean form). Unambiguous despite level merging: the
+    /// contract-level structural validation rejects any other index sharing
+    /// a ranked prefix level or anything below it.
+    ranked_count_grouping: bool,
+    /// When `true`, this level sits strictly between an index's ranked
+    /// prefix level ([`Self::ranked_count_grouping`] above it) and that
+    /// index's terminal level: the rs-drive write path lays out its
+    /// property-name tree and value trees count-bearing so every
+    /// insert/delete propagates its count delta up to the prefix level's
+    /// ranking secondary. Never set on the terminating level itself, whose
+    /// count-bearing layout already follows from its own
+    /// [`IndexLevelTypeInfo`] (`rankedCountable`'s `at` form requires
+    /// `rangeCountable`). Same PV14+ gating and same non-ambiguity argument
+    /// as `ranked_count_grouping`.
+    count_propagating: bool,
+    /// When `true`, this level is the branch point of a PLAIN sibling index
+    /// inside another index's prefix-ranking chain: its parent level is a
+    /// [`Self::ranked_count_grouping`] or [`Self::count_propagating`] level,
+    /// but this level continues no ranked chain (it is neither stamped nor a
+    /// range-countable terminal). The rs-drive write paths lay its
+    /// property-name tree out wrapped in `Element::NonCounted` inside the
+    /// chain's count-bearing value trees — readable and provable as usual,
+    /// contributing zero to every subtree total the ranking keys on — the
+    /// same demotion range-countable value trees apply to their sibling
+    /// continuations. Structural validation admits only flag-free
+    /// (countable/summable/range/ranked-free) siblings here, so nothing
+    /// under an exempt branch ever needs the counts the wrapper suppresses.
+    /// Stamped by a post-pass over the fully merged tree (the sibling and
+    /// the ranked index can be walked in either order), and only ever `true`
+    /// on PV14+ contracts (the `at` grammar is rejected below meta-schema
+    /// v3), so every historical index level derives bit-identically.
+    count_exempt_branch: bool,
     /// unique level identifier
     level_identifier: u64,
 }
@@ -147,6 +210,26 @@ impl IndexLevel {
     /// level, if any. Only set on first-property nodes.
     pub fn time_range(&self) -> Option<&TimeRangeTransform> {
         self.time_range.as_ref()
+    }
+
+    /// Whether this level hosts a prefix-level Count ranking — see the field
+    /// docs on [`IndexLevel`].
+    pub fn ranked_count_grouping(&self) -> bool {
+        self.ranked_count_grouping
+    }
+
+    /// Whether this level sits between a prefix-level Count ranking and its
+    /// index's terminal, and must be laid out count-bearing — see the field
+    /// docs on [`IndexLevel`].
+    pub fn count_propagating(&self) -> bool {
+        self.count_propagating
+    }
+
+    /// Whether this level is a plain sibling's branch point inside a
+    /// prefix-ranking chain, laid out count-exempt (`Element::NonCounted`)
+    /// — see the field docs on [`IndexLevel`].
+    pub fn count_exempt_branch(&self) -> bool {
+        self.count_exempt_branch
     }
 
     pub fn has_index_with_type(&self) -> Option<&IndexLevelTypeInfo> {
@@ -251,6 +334,9 @@ impl IndexLevel {
             sub_index_levels: Default::default(),
             has_index_with_type: None,
             time_range: None,
+            ranked_count_grouping: false,
+            count_propagating: false,
+            count_exempt_branch: false,
             level_identifier: 0,
         };
 
@@ -258,6 +344,18 @@ impl IndexLevel {
 
         for index_to_borrow in indices {
             let index = index_to_borrow.borrow();
+            // The positions of the properties hosting prefix-level Count
+            // rankings, when the index declares any. The parser guarantees
+            // each name resolves to a non-terminal property; the lookups
+            // stay defensive because unvalidated `Index` values can reach
+            // this derivation (check_tx, fixtures), and for those a
+            // dangling `at` simply stamps nothing.
+            let ranked_at_positions: Vec<usize> = index
+                .ranked_countable_at
+                .iter()
+                .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
+                .collect();
+            let min_ranked_at_position = ranked_at_positions.iter().copied().min();
             let mut current_level = &mut index_level;
             let mut properties_iter = index.properties.iter().enumerate().peekable();
 
@@ -283,12 +381,37 @@ impl IndexLevel {
                             sub_index_levels: Default::default(),
                             has_index_with_type: None,
                             time_range: None,
+                            ranked_count_grouping: false,
+                            count_propagating: false,
+                            count_exempt_branch: false,
                         }
                     });
 
                 if position == 0 {
                     if let Some(transform) = &index.time_range {
                         current_level.time_range = Some(transform.clone());
+                    }
+                }
+
+                // Prefix-level Count ranking stamps: every `at` level hosts
+                // a grouping tree; the levels strictly between the
+                // shallowest of them and the terminal that host none must
+                // be count-bearing so deltas propagate up through the
+                // chain. The terminal level never takes either stamp: its
+                // ranked/count-bearing layout follows from its own
+                // `IndexLevelTypeInfo` below (`at` requires
+                // `rangeCountable`), and the parser folds a last-property
+                // `at` name into the terminal boolean — so a hand-built
+                // `Index` carrying the terminal name in the vector stamps
+                // nothing rather than marking a level both grouping and
+                // terminating.
+                if let Some(min_at_position) = min_ranked_at_position {
+                    if properties_iter.peek().is_some() {
+                        if ranked_at_positions.contains(&position) {
+                            current_level.ranked_count_grouping = true;
+                        } else if position > min_at_position {
+                            current_level.count_propagating = true;
+                        }
                     }
                 }
 
@@ -335,12 +458,58 @@ impl IndexLevel {
                         ranked_countable: index.ranked_countable,
                         ranked_summable: index.ranked_summable,
                         ranked_averageable: index.ranked_averageable,
+                        // indexOnly member key. Only ever `Some` on PV14+
+                        // contracts (the grammar rejects the keyword below
+                        // generation 3), so stamping it here changes nothing
+                        // for any historical index level.
+                        terminal: index.terminal.clone(),
+                        // Same PV14+ gating as `terminal` — `false` on
+                        // every historical index level.
+                        preallocated: index.preallocated,
                     });
                 }
             }
         }
 
+        // Post-pass: stamp the branch points of plain siblings inside
+        // prefix-ranking chains. Runs over the fully merged tree because
+        // the stamps depend on BOTH indexes — the ranked one stamps the
+        // chain levels, the sibling contributes the branch child — and
+        // the iteration order of `indices` must not matter. A no-op for
+        // every index set without an `at` ranking (no level is stamped
+        // grouping or propagating), which is every pre-PV14 contract.
+        Self::stamp_count_exempt_branches(&mut index_level);
+
         Ok(index_level)
+    }
+
+    /// Recursively marks, under every prefix-ranking chain level (grouping
+    /// or count-propagating), the child levels that do NOT continue the
+    /// chain as [`Self::count_exempt_branch`]. The chain child is the one
+    /// that is itself stamped (a deeper `at` level, or a propagating level
+    /// between two chain levels) or that terminates the ranked index — the
+    /// `at` grammar requires `rangeCountable`, so the chain's terminal
+    /// level always carries a range-countable terminator stamp, while
+    /// structural validation guarantees every admitted sibling is flag-free
+    /// at and below the shared levels. For an unvalidated index set that
+    /// violates those invariants this derivation stays total (fixtures and
+    /// check_tx reach it); the rs-drive tree-type resolver keeps its own
+    /// fail-closed guards for the genuinely contradictory shapes.
+    fn stamp_count_exempt_branches(level: &mut IndexLevel) {
+        let level_is_chain = level.ranked_count_grouping || level.count_propagating;
+        for child in level.sub_index_levels.values_mut() {
+            if level_is_chain {
+                let child_continues_chain = child.ranked_count_grouping
+                    || child.count_propagating
+                    || child
+                        .has_index_with_type
+                        .as_ref()
+                        .map(|info| info.range_countable)
+                        .unwrap_or(false);
+                child.count_exempt_branch = !child_continues_chain;
+            }
+            Self::stamp_count_exempt_branches(child);
+        }
     }
 
     #[cfg(feature = "validation")]
@@ -447,6 +616,21 @@ impl IndexLevel {
             );
         }
 
+        // The `preallocated` flag decides who creates the index's dynamic
+        // trees and whether last-entry deletes may prune them — see
+        // `find_first_preallocated_change` for why a flip in either
+        // direction breaks already-written state. Immutable like the flags
+        // above.
+        if let Some(preallocated_change_path) = self.find_first_preallocated_change(new_indices) {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractInvalidIndexDefinitionUpdateError::new(
+                    document_type_name.to_string(),
+                    preallocated_change_path,
+                )
+                .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 }
@@ -476,10 +660,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -512,10 +699,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![
@@ -533,10 +723,13 @@ mod tests {
                 summable: None,
                 range_summable: false,
                 ranked_countable: false,
+                ranked_countable_at: vec![],
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
                 terminal: None,
+                preallocated: false,
+                skip_if_absent: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -552,10 +745,13 @@ mod tests {
                 summable: None,
                 range_summable: false,
                 ranked_countable: false,
+                ranked_countable_at: vec![],
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
                 terminal: None,
+                preallocated: false,
+                skip_if_absent: false,
             },
         ];
 
@@ -597,10 +793,13 @@ mod tests {
                 summable: None,
                 range_summable: false,
                 ranked_countable: false,
+                ranked_countable_at: vec![],
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
                 terminal: None,
+                preallocated: false,
+                skip_if_absent: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -616,10 +815,13 @@ mod tests {
                 summable: None,
                 range_summable: false,
                 ranked_countable: false,
+                ranked_countable_at: vec![],
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
                 terminal: None,
+                preallocated: false,
+                skip_if_absent: false,
             },
         ];
 
@@ -637,10 +839,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -680,10 +885,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -706,10 +914,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -755,10 +966,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -775,10 +989,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -818,10 +1035,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -838,10 +1058,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -881,10 +1104,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -901,10 +1127,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -944,10 +1173,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -987,10 +1219,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -1007,10 +1242,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -1050,10 +1288,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -1070,10 +1311,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -1119,10 +1363,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -1145,10 +1392,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -1194,10 +1444,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -1220,10 +1473,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -1277,10 +1533,13 @@ mod tests {
             summable: Some("score".to_string()),
             range_summable: true,
             ranked_countable,
+            ranked_countable_at: vec![],
             ranked_summable,
             ranked_averageable,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }
     }
 
@@ -1318,6 +1577,383 @@ mod tests {
         // The range axes the ranking extends live on the same info.
         assert!(info.range_countable);
         assert!(info.range_summable);
+    }
+
+    /// A prefix-ranked countable index on `[first, second, third]` whose
+    /// ranking sits at the named property's level.
+    fn prefix_ranked_index(at: &str) -> Index {
+        Index {
+            name: "prefixRanked".to_string(),
+            properties: ["first", "second", "third"]
+                .into_iter()
+                .map(|name| IndexProperty {
+                    name: name.to_string(),
+                    ascending: true,
+                })
+                .collect(),
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: true,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_countable_at: vec![at.to_string()],
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
+        }
+    }
+
+    /// `rankedCountable: { at: "first" }` on `[first, second, third]` stamps
+    /// the `at` level as the grouping level, the level below it as
+    /// count-propagating, and leaves the terminal level's stamps to its own
+    /// `IndexLevelTypeInfo` — where the boolean ranked axis stays off.
+    #[test]
+    fn ranked_countable_at_stamps_grouping_and_propagation_levels() {
+        let platform_version = PlatformVersion::latest();
+        let indices = vec![prefix_ranked_index("first")];
+
+        let structure = IndexLevel::try_from_indices(&indices, "test", platform_version)
+            .expect("failed to create index level");
+
+        let first = structure
+            .sub_levels()
+            .get("first")
+            .expect("first level exists");
+        assert!(first.ranked_count_grouping());
+        assert!(!first.count_propagating());
+        assert!(first.has_index_with_type().is_none());
+
+        let second = first
+            .sub_levels()
+            .get("second")
+            .expect("second level exists");
+        assert!(!second.ranked_count_grouping());
+        assert!(second.count_propagating());
+        assert!(second.has_index_with_type().is_none());
+
+        let third = second
+            .sub_levels()
+            .get("third")
+            .expect("third (terminal) level exists");
+        assert!(!third.ranked_count_grouping());
+        assert!(
+            !third.count_propagating(),
+            "the terminal level's count-bearing layout follows from its own info stamp"
+        );
+        let info = third
+            .has_index_with_type()
+            .expect("the index terminates at the last property level");
+        assert!(!info.ranked_countable);
+        assert!(info.range_countable);
+    }
+
+    /// A plain lookup index with the given properties and no flags at all.
+    fn plain_index(name: &str, properties: &[&str]) -> Index {
+        Index {
+            name: name.to_string(),
+            properties: properties
+                .iter()
+                .map(|name| IndexProperty {
+                    name: name.to_string(),
+                    ascending: true,
+                })
+                .collect(),
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_countable_at: vec![],
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
+        }
+    }
+
+    /// A plain sibling sharing a prefix-ranking's `at` level gets its
+    /// branch point stamped [`IndexLevel::count_exempt_branch`], while the
+    /// chain's own continuation (here the ranked terminal, which carries
+    /// `range_countable`) stays contributing — in either walk order, since
+    /// the stamp comes from a post-pass over the merged tree.
+    #[test]
+    fn a_plain_sibling_branch_is_stamped_count_exempt() {
+        let platform_version = PlatformVersion::latest();
+        let ranked = prefix_ranked_index("first");
+        let sibling = plain_index("sibling", &["first", "day", "extra"]);
+
+        for indices in [
+            vec![ranked.clone(), sibling.clone()],
+            vec![sibling.clone(), ranked.clone()],
+        ] {
+            let structure = IndexLevel::try_from_indices(&indices, "test", platform_version)
+                .expect("index level must build");
+
+            let first = structure
+                .sub_levels()
+                .get("first")
+                .expect("the shared at level exists");
+            assert!(first.ranked_count_grouping());
+            assert!(!first.count_exempt_branch());
+
+            let second = first
+                .sub_levels()
+                .get("second")
+                .expect("the chain continuation exists");
+            assert!(second.count_propagating());
+            assert!(
+                !second.count_exempt_branch(),
+                "the chain's own continuation must stay contributing"
+            );
+
+            let day = first
+                .sub_levels()
+                .get("day")
+                .expect("the sibling branch exists");
+            assert!(!day.ranked_count_grouping());
+            assert!(!day.count_propagating());
+            assert!(
+                day.count_exempt_branch(),
+                "the sibling branch point must be stamped count-exempt"
+            );
+
+            let extra = day
+                .sub_levels()
+                .get("extra")
+                .expect("the sibling's deeper level exists");
+            assert!(
+                !extra.count_exempt_branch(),
+                "only the branch point is exempt; below it the wrapper already shields the chain"
+            );
+        }
+    }
+
+    /// A plain sibling that shares the ENTIRE ranked property list and
+    /// extends past its terminal stamps nothing: the ranked terminal is a
+    /// chain member (its `range_countable` terminator is the chain's count
+    /// source), and the extension hangs under a non-chain level, where the
+    /// pre-existing continuation demotion already applies.
+    #[test]
+    fn a_sibling_past_the_ranked_terminal_stamps_nothing() {
+        let platform_version = PlatformVersion::latest();
+        let mut ranked = prefix_ranked_index("first");
+        ranked.properties.truncate(2); // [first, second], at first
+        let sibling = plain_index("sibling", &["first", "second", "day"]);
+
+        let structure = IndexLevel::try_from_indices([&ranked, &sibling], "test", platform_version)
+            .expect("index level must build");
+
+        let second = structure
+            .sub_levels()
+            .get("first")
+            .and_then(|level| level.sub_levels().get("second"))
+            .expect("the shared terminal level exists");
+        assert!(
+            !second.count_exempt_branch(),
+            "the ranked terminal is the chain's contributing continuation"
+        );
+        assert!(
+            second
+                .has_index_with_type()
+                .expect("the ranked index terminates here")
+                .range_countable
+        );
+
+        let day = second
+            .sub_levels()
+            .get("day")
+            .expect("the sibling's extension exists");
+        assert!(
+            !day.count_exempt_branch(),
+            "an extension below a non-chain level relies on the existing demotion, not the stamp"
+        );
+    }
+
+    /// Without an `at` ranking the post-pass stamps nothing — pinned so
+    /// the derivation stays bit-identical for every existing contract.
+    #[test]
+    fn count_exempt_branch_defaults_off_without_at() {
+        let platform_version = PlatformVersion::latest();
+        let indices = vec![
+            ranked_index(true, false, false),
+            plain_index("sibling", &["first", "day"]),
+        ];
+
+        let structure = IndexLevel::try_from_indices(&indices, "test", platform_version)
+            .expect("index level must build");
+        let first = structure
+            .sub_levels()
+            .get("first")
+            .expect("first level exists");
+        assert!(!first.count_exempt_branch());
+        for child in first.sub_levels().values() {
+            assert!(!child.count_exempt_branch());
+        }
+    }
+
+    /// Adding the plain sibling to an existing prefix-ranked doctype on
+    /// update is rejected like any added index (subset rule); pinned so
+    /// the sibling admission can't be read as an update carve-out.
+    #[test]
+    fn adding_a_sibling_on_update_stays_rejected() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![prefix_ranked_index("first")];
+        let new_indices = vec![
+            prefix_ranked_index("first"),
+            plain_index("sibling", &["first", "day", "extra"]),
+        ];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create new index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "first -> day"
+        );
+    }
+
+    /// A middle-property `at` leaves the levels above it unstamped.
+    #[test]
+    fn ranked_countable_at_middle_property_leaves_levels_above_unstamped() {
+        let platform_version = PlatformVersion::latest();
+        let indices = vec![prefix_ranked_index("second")];
+
+        let structure = IndexLevel::try_from_indices(&indices, "test", platform_version)
+            .expect("failed to create index level");
+
+        let first = structure
+            .sub_levels()
+            .get("first")
+            .expect("first level exists");
+        assert!(!first.ranked_count_grouping());
+        assert!(!first.count_propagating());
+
+        let second = first
+            .sub_levels()
+            .get("second")
+            .expect("second level exists");
+        assert!(second.ranked_count_grouping());
+        assert!(!second.count_propagating());
+    }
+
+    /// A hand-built `Index` (this derivation accepts unvalidated values)
+    /// carrying the LAST property's name in `ranked_countable_at` — a
+    /// spelling the parser always folds into the terminal boolean — must
+    /// not stamp the terminal level as a grouping level: the terminal's
+    /// ranked layout is its info's business, and a level that is both
+    /// grouping and terminating has no coherent layout.
+    #[test]
+    fn a_terminal_name_in_the_at_vector_stamps_nothing() {
+        let platform_version = PlatformVersion::latest();
+        let mut invalid = prefix_ranked_index("first");
+        invalid.ranked_countable_at = vec!["third".to_string()];
+
+        let structure = IndexLevel::try_from_indices([&invalid], "test", platform_version)
+            .expect("index level must build");
+        let third = structure
+            .sub_levels()
+            .get("first")
+            .and_then(|level| level.sub_levels().get("second"))
+            .and_then(|level| level.sub_levels().get("third"))
+            .expect("the terminal level exists");
+        assert!(!third.ranked_count_grouping());
+        assert!(!third.count_propagating());
+        assert!(third.has_index_with_type().is_some());
+    }
+
+    /// Without the `at` form nothing stamps the level flags — pinned so the
+    /// derivation stays bit-identical for every existing contract.
+    #[test]
+    fn ranked_level_flags_default_off_without_at() {
+        let platform_version = PlatformVersion::latest();
+        let indices = vec![ranked_index(true, false, true)];
+
+        let structure = IndexLevel::try_from_indices(&indices, "test", platform_version)
+            .expect("failed to create index level");
+
+        let first = structure
+            .sub_levels()
+            .get("first")
+            .expect("first level exists");
+        assert!(!first.ranked_count_grouping());
+        assert!(!first.count_propagating());
+        let second = first
+            .sub_levels()
+            .get("second")
+            .expect("second level exists");
+        assert!(!second.ranked_count_grouping());
+        assert!(!second.count_propagating());
+    }
+
+    /// Adding, removing or moving a prefix-level ranking on update is
+    /// rejected: the flags live on the level, so the diff helper must
+    /// catch them even though every `IndexLevelTypeInfo` stays identical.
+    #[test]
+    fn should_return_invalid_result_if_ranked_countable_at_changed() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let unranked = {
+            let mut index = prefix_ranked_index("first");
+            index.ranked_countable_at = vec![];
+            index
+        };
+
+        for (old_index, new_index, expected_path) in [
+            (
+                unranked.clone(),
+                prefix_ranked_index("first"),
+                "first -> (ranked_count_grouping: false -> true)",
+            ),
+            (
+                prefix_ranked_index("first"),
+                unranked.clone(),
+                "first -> (ranked_count_grouping: true -> false)",
+            ),
+            (
+                prefix_ranked_index("first"),
+                prefix_ranked_index("second"),
+                "first -> (ranked_count_grouping: true -> false)",
+            ),
+        ] {
+            let old_index_structure =
+                IndexLevel::try_from_indices(&[old_index], document_type_name, platform_version)
+                    .expect("failed to create old index level");
+            let new_index_structure =
+                IndexLevel::try_from_indices(&[new_index], document_type_name, platform_version)
+                    .expect("failed to create new index level");
+
+            let result =
+                old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+                )] if e.index_path() == expected_path
+            );
+        }
     }
 
     #[test]
@@ -1435,10 +2071,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         }];
 
         let mut new_indices = old_indices.clone();
@@ -1459,5 +2098,65 @@ mod tests {
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
             )] if e.index_path() == "first"
         );
+    }
+
+    /// The `preallocated` flag is immutable across contract updates in
+    /// either direction: turning it on leaves existing referenced
+    /// documents without preallocated trees while deletes already refuse
+    /// to prune, and turning it off lets last-entry deletes prune trees a
+    /// referenced document's creator paid for as permanent structure.
+    #[test]
+    fn should_return_invalid_result_if_preallocated_changed() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let index_with_preallocated = |preallocated: bool| Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_countable_at: vec![],
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            terminal: None,
+            preallocated,
+            skip_if_absent: false,
+        };
+
+        for (old_flag, new_flag) in [(false, true), (true, false)] {
+            let old_index_structure = IndexLevel::try_from_indices(
+                &[index_with_preallocated(old_flag)],
+                document_type_name,
+                platform_version,
+            )
+            .expect("failed to create old index level");
+            let new_index_structure = IndexLevel::try_from_indices(
+                &[index_with_preallocated(new_flag)],
+                document_type_name,
+                platform_version,
+            )
+            .expect("failed to create new index level");
+
+            let result =
+                old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+            let expected_path = format!("test -> (preallocated: {} -> {})", old_flag, new_flag);
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+                )] if e.index_path() == expected_path
+            );
+        }
     }
 }

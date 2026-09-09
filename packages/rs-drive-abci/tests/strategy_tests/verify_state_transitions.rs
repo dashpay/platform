@@ -613,6 +613,15 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     // we expect no document
                                     assert!(document.is_none());
                                 }
+                                DocumentTransitionAction::IndexOnlyDeleteAction(_) => {
+                                    // indexOnly documents never have a
+                                    // primary-storage row, so the by-id query
+                                    // this harness proves against returns
+                                    // nothing whether or not the delete
+                                    // executed; strategies do not generate
+                                    // indexOnly deletes today.
+                                    assert!(document.is_none());
+                                }
                                 DocumentTransitionAction::TransferAction(transfer_action) => {
                                     if *was_executed {
                                         // it's also possible we deleted something we replaced

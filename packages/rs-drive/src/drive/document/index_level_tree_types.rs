@@ -73,10 +73,12 @@
 //! provable variant did, so a ranked index's secondaries keep ranking
 //! correctly over a shared-prefix shape.
 
-use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::error::Error;
 use crate::util::object_size_info::DriveKeyInfo;
-use dpp::data_contract::document_type::{IndexLevel, TimeRangeTransform};
+use dpp::data_contract::document_type::{
+    IndexCountability, IndexLevel, IndexLevelTypeInfo, TimeRangeTransform,
+};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::element::IndexAxis;
 use grovedb::TreeType;
@@ -114,15 +116,32 @@ pub(crate) struct IndexLevelTreeTypes {
 pub(crate) fn index_level_tree_types_with_continuation_demotion(
     sub_level: &IndexLevel,
 ) -> Result<IndexLevelTreeTypes, Error> {
-    let info = sub_level.has_index_with_type();
-    let (property_name_tree_type, ranked_axes) = property_name_tree_type_and_ranked_axes(info)?;
-    let value_tree_type = derive_value_tree_type(
-        info.map(|i| i.countable.is_countable()).unwrap_or(false),
-        info.map(|i| i.range_countable).unwrap_or(false),
-        info.map(|i| i.summable.is_some()).unwrap_or(false),
-        info.map(|i| i.range_summable).unwrap_or(false),
-        !sub_level.sub_levels().is_empty(),
-    );
+    let (property_name_tree_type, ranked_axes) =
+        property_name_tree_type_and_ranked_axes_for_level(sub_level)?;
+    // A prefix-ranking chain level (the `rankedCountable: { at }` grouping
+    // level or a count-propagating level below it) counts its chain
+    // continuation: the value tree's count IS the subtree total the
+    // grouping secondary ranks by, so that continuation is inserted
+    // contributing rather than zero-wrapped (see the walkers). A plain
+    // sibling's branch sharing such a level (`count_exempt_branch` on the
+    // CHILD level) is the one other child the validation admits — the
+    // walkers insert it `Element::NonCounted`-wrapped, contributing zero,
+    // which a `CountTree` parent accepts (only the provable count-bearing
+    // variants reject suppressed children). No index terminates at a chain
+    // level itself (the resolver above fails closed on one), so the
+    // terminator-flag derivation below never applies to it.
+    let value_tree_type = if sub_level.ranked_count_grouping() || sub_level.count_propagating() {
+        TreeType::CountTree
+    } else {
+        let info = sub_level.has_index_with_type();
+        derive_value_tree_type(
+            info.map(|i| i.countable.is_countable()).unwrap_or(false),
+            info.map(|i| i.range_countable).unwrap_or(false),
+            info.map(|i| i.summable.is_some()).unwrap_or(false),
+            info.map(|i| i.range_summable).unwrap_or(false),
+            !sub_level.sub_levels().is_empty(),
+        )
+    };
     Ok(IndexLevelTreeTypes {
         property_name_tree_type,
         ranked_axes,
@@ -193,6 +212,58 @@ pub(crate) fn time_range_index_keys<'a>(
     }
 }
 
+/// The tree type of the `0` member bucket at an index's terminal level
+/// — the tree holding one member per document (stored types: references
+/// keyed by document id; indexOnly types: entry items keyed by the
+/// terminal property's value). Composed from the index's countability
+/// and summability axes, per-axis provable vs root-only (grovedb PR
+/// 670's expanded `TreeType` set) — see the dispatch commentary in
+/// `add_reference_for_index_level_for_contract_operations`.
+///
+/// Single source of truth for the four terminal branches (insert/delete
+/// × stored/indexOnly): the insert side creates the tree and the delete
+/// side emits `EstimatedLayerInformation` describing it, and any drift
+/// produces dry-run fees that disagree with applied fees.
+pub(crate) fn terminal_member_tree_type(index_type: &IndexLevelTypeInfo) -> TreeType {
+    let count_provable = matches!(
+        index_type.countable,
+        IndexCountability::CountableAllowingOffset
+    );
+    let count_root_only =
+        matches!(index_type.countable, IndexCountability::Countable) && !count_provable;
+    let sum_provable = index_type.range_summable;
+    let sum_root_only = index_type.summable.is_some() && !sum_provable;
+    match (count_provable, count_root_only, sum_provable, sum_root_only) {
+        (false, false, false, false) => TreeType::NormalTree,
+        (false, true, false, false) => TreeType::CountTree,
+        (true, _, false, false) => TreeType::ProvableCountTree,
+        (false, false, false, true) => TreeType::SumTree,
+        (false, false, true, _) => TreeType::ProvableSumTree,
+        (false, true, false, true) => TreeType::CountSumTree,
+        (true, _, false, true) => TreeType::ProvableCountSumTree,
+        (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
+        (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
+    }
+}
+
+/// The value-tree type an index's terminal level lives inside, derived
+/// from the level info's four terminator flags — the tree the `0` member
+/// bucket is inserted INTO. Used by the indexOnly terminal branch's
+/// stateless apply type so estimation accounts the parent's aggregate
+/// bytes (a `NormalTree` claim under-counts a count-bearing value tree's
+/// per-child propagation, and the bucket fan-out multiplies the gap).
+/// Continuations only demote provable variants, whose stateless costs
+/// match their demoted forms at this call site, so `false` is passed.
+pub(crate) fn terminal_value_tree_type(index_type: &IndexLevelTypeInfo) -> TreeType {
+    derive_value_tree_type(
+        index_type.countable.is_countable(),
+        index_type.range_countable,
+        index_type.summable.is_some(),
+        index_type.range_summable,
+        false,
+    )
+}
+
 /// Pure derivation of the value-tree type over the level's four
 /// terminator flags plus whether continuations hang beneath it. Split
 /// out so the full input space is unit-testable without constructing
@@ -236,6 +307,7 @@ fn derive_value_tree_type(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
     use crate::fees::op::LowLevelDriveOperation;
     use dpp::data_contract::document_type::{IndexCountability, IndexLevelTypeInfo, IndexType};
 
@@ -265,6 +337,8 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            terminal: None,
+            preallocated: false,
         }
     }
 
@@ -365,6 +439,266 @@ mod tests {
         }
     }
 
+    /// A `rankedCountable: { at }` index resolves its chain levels to the
+    /// documented tree types: the grouping level to the Count-axis indexed
+    /// tree over `CountTree` value trees, the propagating level to a
+    /// `CountTree` pair, and the terminal level to its unchanged
+    /// terminator-flag derivation.
+    #[test]
+    fn prefix_ranked_chain_levels_resolve_to_the_chain_tree_types() {
+        use dpp::data_contract::document_type::{Index, IndexProperty};
+        use dpp::version::PlatformVersion;
+        use grovedb::element::IndexAxis;
+
+        let prefix_ranked = Index {
+            name: "byHashtagRegionPost".to_string(),
+            properties: ["hashtag", "region", "postId"]
+                .into_iter()
+                .map(|name| IndexProperty {
+                    name: name.to_string(),
+                    ascending: true,
+                })
+                .collect(),
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: true,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_countable_at: vec!["hashtag".to_string()],
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
+        };
+
+        let index_structure =
+            IndexLevel::try_from_indices([&prefix_ranked], "like", PlatformVersion::latest())
+                .expect("index level must build");
+
+        let hashtag_level = index_structure
+            .sub_levels()
+            .get("hashtag")
+            .expect("the grouping level exists");
+        let hashtag_types = index_level_tree_types_with_continuation_demotion(hashtag_level)
+            .expect("grouping resolution must succeed");
+        assert_eq!(
+            hashtag_types,
+            IndexLevelTreeTypes {
+                property_name_tree_type: TreeType::ProvableCountIndexedTree,
+                ranked_axes: vec![IndexAxis::Count],
+                value_tree_type: TreeType::CountTree,
+            }
+        );
+
+        let region_level = hashtag_level
+            .sub_levels()
+            .get("region")
+            .expect("the propagating level exists");
+        let region_types = index_level_tree_types_with_continuation_demotion(region_level)
+            .expect("propagating resolution must succeed");
+        assert_eq!(
+            region_types,
+            IndexLevelTreeTypes {
+                property_name_tree_type: TreeType::CountTree,
+                ranked_axes: Vec::new(),
+                value_tree_type: TreeType::CountTree,
+            }
+        );
+
+        let post_level = region_level
+            .sub_levels()
+            .get("postId")
+            .expect("the terminal level exists");
+        let post_types = index_level_tree_types_with_continuation_demotion(post_level)
+            .expect("terminal resolution must succeed");
+        assert_eq!(
+            post_types,
+            IndexLevelTreeTypes {
+                property_name_tree_type: TreeType::ProvableCountTree,
+                ranked_axes: Vec::new(),
+                value_tree_type: TreeType::CountTree,
+            },
+            "the terminal keeps its rangeCountable derivation — the boolean ranked axis is off"
+        );
+    }
+
+    /// A plain sibling admitted beside a `rankedCountable: { at }` chain
+    /// resolves its branch level to plain trees, and the chain's
+    /// `CountTree` value trees accept it as a zero-contributing
+    /// (`Element::NonCounted`-wrapped) child — the layout the walkers
+    /// create for the count-exempt sibling shape.
+    #[test]
+    fn a_count_exempt_sibling_branch_resolves_plain_and_wraps_under_the_chain() {
+        use dpp::data_contract::document_type::{Index, IndexProperty};
+        use dpp::version::PlatformVersion;
+
+        let base = |name: &str, properties: &[&str]| Index {
+            name: name.to_string(),
+            properties: properties
+                .iter()
+                .map(|property| IndexProperty {
+                    name: property.to_string(),
+                    ascending: true,
+                })
+                .collect(),
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_countable_at: vec![],
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
+        };
+        let mut ranked = base("byAuthorPost", &["postAuthor", "postId"]);
+        ranked.countable = IndexCountability::Countable;
+        ranked.range_countable = true;
+        ranked.ranked_countable_at = vec!["postAuthor".to_string()];
+        let sibling = base("byAuthorTimePost", &["postAuthor", "day", "postId"]);
+
+        let index_structure =
+            IndexLevel::try_from_indices([&ranked, &sibling], "like", PlatformVersion::latest())
+                .expect("index level must build");
+
+        let author_level = index_structure
+            .sub_levels()
+            .get("postAuthor")
+            .expect("the grouping level exists");
+        let author_types = index_level_tree_types_with_continuation_demotion(author_level)
+            .expect("grouping resolution must succeed");
+        assert_eq!(
+            author_types.value_tree_type,
+            TreeType::CountTree,
+            "the chain's value trees stay count-bearing with the sibling present"
+        );
+
+        // The chain continuation is not exempt; the sibling branch is.
+        let chain_child = author_level
+            .sub_levels()
+            .get("postId")
+            .expect("the chain continuation exists");
+        assert!(!chain_child.count_exempt_branch());
+        let branch = author_level
+            .sub_levels()
+            .get("day")
+            .expect("the sibling branch exists");
+        assert!(branch.count_exempt_branch());
+
+        // The branch resolves to plain trees…
+        let branch_types = index_level_tree_types_with_continuation_demotion(branch)
+            .expect("branch resolution must succeed");
+        assert_eq!(
+            branch_types,
+            IndexLevelTreeTypes {
+                property_name_tree_type: TreeType::NormalTree,
+                ranked_axes: Vec::new(),
+                value_tree_type: TreeType::NormalTree,
+            }
+        );
+
+        // …and the zero-contribution dispatcher wraps it under the chain's
+        // CountTree value trees (NonCounted around a plain tree).
+        LowLevelDriveOperation::for_known_path_key_empty_tree_contributing_zero_to_parent(
+            vec![b"path".to_vec()],
+            b"day".to_vec(),
+            author_types.value_tree_type,
+            branch_types.property_name_tree_type,
+            None,
+        )
+        .expect("the sibling branch must be insertable zero-wrapped under the chain value tree");
+    }
+
+    /// A grouping level that also carries a terminator stamp has two
+    /// contradictory layouts; the resolver must fail closed instead of
+    /// picking one. Reachable only through an index set the contract-level
+    /// structural validation rejects (`try_from_indices` alone does not run
+    /// it), which is exactly why the resolver keeps its own guard.
+    #[test]
+    fn a_grouping_level_with_a_terminator_fails_closed() {
+        use dpp::data_contract::document_type::{Index, IndexProperty};
+        use dpp::version::PlatformVersion;
+
+        let base = |name: &str, properties: &[&str]| Index {
+            name: name.to_string(),
+            properties: properties
+                .iter()
+                .map(|property| IndexProperty {
+                    name: property.to_string(),
+                    ascending: true,
+                })
+                .collect(),
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: true,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_countable_at: vec![],
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
+        };
+        let mut prefix_ranked = base("byHashtagPost", &["hashtag", "postId"]);
+        prefix_ranked.ranked_countable_at = vec!["hashtag".to_string()];
+        let terminating = base("byHashtag", &["hashtag"]);
+
+        let index_structure = IndexLevel::try_from_indices(
+            [&prefix_ranked, &terminating],
+            "like",
+            PlatformVersion::latest(),
+        )
+        .expect("index level must build — the overlap rule runs at contract parse, not here");
+
+        let hashtag_level = index_structure
+            .sub_levels()
+            .get("hashtag")
+            .expect("the shared level exists");
+        assert!(
+            index_level_tree_types_with_continuation_demotion(hashtag_level).is_err(),
+            "a grouping level with a terminator stamp must fail closed"
+        );
+
+        // Same guard one level down: a COUNT-PROPAGATING level that also
+        // carries a terminator stamp (an index terminating inside another
+        // index's ranked chain — rejected by contract validation, but
+        // constructible by hand) has the same two contradictory layouts.
+        let mut chain = base("byHashtagRegionPost", &["hashtag", "region", "postId"]);
+        chain.ranked_countable_at = vec!["hashtag".to_string()];
+        let terminating_inside = base("byHashtagRegion", &["hashtag", "region"]);
+        let index_structure = IndexLevel::try_from_indices(
+            [&chain, &terminating_inside],
+            "like",
+            PlatformVersion::latest(),
+        )
+        .expect("index level must build — the overlap rule runs at contract parse, not here");
+        let region_level = index_structure
+            .sub_levels()
+            .get("hashtag")
+            .and_then(|level| level.sub_levels().get("region"))
+            .expect("the shared propagating level exists");
+        assert!(
+            index_level_tree_types_with_continuation_demotion(region_level).is_err(),
+            "a count-propagating level with a terminator stamp must fail closed"
+        );
+    }
+
     /// The two v14 fixes on one level: a ranked index terminating at
     /// `restaurantId` next to a compound index that continues below it.
     /// The ranking upgrades the property-name tree to its indexed
@@ -392,10 +726,13 @@ mod tests {
             summable: Some("grade".to_string()),
             range_summable: true,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: true,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         };
         let compound = Index {
             name: "byRestaurantChef".to_string(),
@@ -417,10 +754,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
         };
 
         let index_structure =

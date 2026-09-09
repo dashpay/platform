@@ -5380,6 +5380,55 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_register_contract_with_valid_property_agreement() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-valid.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_agreement_on_missing_referenced_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-missing-property.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_agreement_between_different_value_kinds() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-kind-mismatch.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
         async fn should_register_contract_with_valid_identity_key_reference() {
             let result = run_contract_create(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-valid.json",

@@ -6,6 +6,7 @@ import lodash from 'lodash';
 import promptOrThrow from '../../../../util/promptOrThrow.js';
 import wait from '../../../../util/wait.js';
 import { ERRORS } from '../../../../ssl/zerossl/validateZeroSslCertificateFactory.js';
+import VerificationServerUnreachableError from '../../../../ssl/errors/VerificationServerUnreachableError.js';
 
 /**
  * @param {generateCsr} generateCsr
@@ -177,7 +178,7 @@ export default function obtainZeroSSLCertificateTaskFactory(
           const isResponding = await verificationServer.waitForServerIsResponding();
 
           if (!isResponding) {
-            throw new Error(`Verification server is not responding.
+            throw new VerificationServerUnreachableError(`Verification server is not responding.
 Please ensure that port 80 on your public IP address ${ctx.externalIp} is open
 for incoming HTTP connections. You may need to configure your firewall to
 ensure this port is accessible from the public internet. If you are using

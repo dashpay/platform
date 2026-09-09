@@ -53,15 +53,14 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "3d13d9838c80fb5e67cf1f62cf5f3f4477bd5b9a" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "3d13d9838c80fb5e67cf1f62cf5f3f4477bd5b9a" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "3d13d9838c80fb5e67cf1f62cf5f3f4477bd5b9a" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "3d13d9838c80fb5e67cf1f62cf5f3f4477bd5b9a" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "3d13d9838c80fb5e67cf1f62cf5f3f4477bd5b9a" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "3d13d9838c80fb5e67cf1f62cf5f3f4477bd5b9a" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "3d13d9838c80fb5e67cf1f62cf5f3f4477bd5b9a" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "3d13d9838c80fb5e67cf1f62cf5f3f4477bd5b9a" }
-
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
 tokio-metrics = "0.5"
 
 # Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which
@@ -129,5 +128,5 @@ opt-level = 3
 
 [workspace.package]
 
-version = "4.2.0-dev.2"
+version = "4.2.0-dev.8"
 rust-version = "1.92"

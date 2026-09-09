@@ -374,6 +374,41 @@ fn stringify_key(key: &platform_value::Value) -> platform_value::Value {
     }
 }
 
+/// Serialize platform_value::Value to JsValue as a JS object like
+/// [`platform_value_to_object`], but with `Value::Identifier` VALUES as
+/// base58 strings (matching the `Identifier` JSON convention and the
+/// base58 form query where-clauses accept). `Value::Bytes*` still become
+/// Uint8Array. This is the document `properties` surface: every typed
+/// decode path (binary document deserialization, index-key synthesis)
+/// produces `Value::Identifier` for identifier-typed properties, so the
+/// variant alone marks them — no document-type schema is needed here.
+pub fn platform_value_to_object_with_base58_identifiers(
+    value: &platform_value::Value,
+) -> WasmDppResult<JsValue> {
+    platform_value_to_object(&identifier_values_to_base58(value))
+}
+
+/// Recursively convert `Value::Identifier` values to base58 `Value::Text`.
+/// Map keys are left alone — [`stringify_map_keys_for_object`] already
+/// renders identifier keys as base58.
+fn identifier_values_to_base58(value: &platform_value::Value) -> platform_value::Value {
+    use dpp::platform_value::Value;
+    use dpp::platform_value::string_encoding::{Encoding, encode};
+    match value {
+        Value::Identifier(bytes) => Value::Text(encode(bytes, Encoding::Base58)),
+        Value::Map(entries) => Value::Map(
+            entries
+                .iter()
+                .map(|(k, v)| (k.clone(), identifier_values_to_base58(v)))
+                .collect(),
+        ),
+        Value::Array(items) => {
+            Value::Array(items.iter().map(identifier_values_to_base58).collect())
+        }
+        other => other.clone(),
+    }
+}
+
 /// Serialize platform_value::Value to JsValue as JSON-compatible (human-readable).
 ///
 /// Converts Value::Identifier and Value::Bytes to base58/base64 strings for JSON compatibility.

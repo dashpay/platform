@@ -1,6 +1,8 @@
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
@@ -27,7 +29,7 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use crate::state_transition::batch_transition::{
     batched_transition::{
         document_transition_action_type::DocumentTransitionActionType, DocumentCreateTransition,
-        DocumentDeleteTransition, DocumentReplaceTransition,
+        DocumentDeleteTransition, DocumentIndexOnlyDeleteTransition, DocumentReplaceTransition,
     },
     BatchTransition, BatchTransitionV0,
 };
@@ -510,6 +512,32 @@ impl DocumentFactoryV0 {
                     }
                     .into());
                 }
+
+                // Deleting an indexOnly document is a different OPERATION
+                // from deleting a stored one (delete-by-values vs
+                // delete-by-id), so the factory picks the transition kind
+                // from the doctype's storage mode. Index-only documents
+                // carry no revision (there is no stored row to revise), so
+                // the revision gate only applies to the by-id path.
+                if document_type.index_only() {
+                    let nonce = nonce_counter
+                        .entry((document.owner_id(), document_type.data_contract_id()))
+                        .or_default();
+                    let transition = DocumentIndexOnlyDeleteTransition::from_document(
+                        document,
+                        document_type,
+                        token_payment_info,
+                        *nonce,
+                        platform_version,
+                        None,
+                        None,
+                    )?;
+
+                    *nonce += 1;
+
+                    return Ok(transition.into());
+                }
+
                 let Some(_document_revision) = document.revision() else {
                     return Err(DocumentError::RevisionAbsentError {
                         document: Box::new(document),
@@ -545,13 +573,18 @@ impl DocumentFactoryV0 {
 #[cfg(test)]
 mod test {
     use data_contracts::SystemDataContract;
+    use platform_value::platform_value;
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
 
     use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::document_type::DocumentType;
     use crate::document::document_factory::DocumentFactoryV0;
     use crate::document::{Document, DocumentV0};
     use crate::identifier::Identifier;
+    use crate::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
+    use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
     use crate::system_data_contracts::load_system_data_contract;
 
     #[test]
@@ -608,5 +641,132 @@ mod test {
         assert!(result.is_ok(), "The function should succeed");
         let transitions = result.unwrap();
         assert_eq!(transitions.len(), 1, "There should be one transition");
+    }
+
+    #[test]
+    /// The factory picks the delete KIND from the doctype's storage mode:
+    /// an indexOnly type gets a delete-by-values transition carrying the
+    /// document's properties, and no revision is required (synthesized
+    /// index-only documents carry none).
+    fn delete_index_only_documents_produces_index_only_delete_kind() {
+        let platform_version = PlatformVersion::latest();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("default config available");
+
+        let schema = platform_value!({
+            "type": "object",
+            "indexOnly": true,
+            "documentsMutable": false,
+            "canBeDeleted": true,
+            "properties": {
+                "hashtag": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "position": 0
+                },
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "refersTo": { "type": "identity" },
+                    "position": 1
+                }
+            },
+            "required": ["hashtag", "postId"],
+            "indices": [
+                {
+                    "name": "byPost",
+                    "properties": [{ "postId": "asc" }]
+                },
+                {
+                    "name": "byLiker",
+                    "properties": [{ "$ownerId": "asc" }],
+                    "terminal": "postId"
+                },
+                {
+                    "name": "byHashtagPost",
+                    "properties": [{ "hashtag": "asc" }, { "postId": "asc" }],
+                    "terminal": "$ownerId"
+                }
+            ],
+            "additionalProperties": false
+        });
+
+        let contract_id = Identifier::new([1; 32]);
+        let document_type = DocumentType::try_from_schema(
+            contract_id,
+            1,
+            config.version(),
+            "like",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("the indexOnly like schema parses");
+        let document_type_ref = document_type.as_ref();
+
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "hashtag".to_string(),
+            platform_value::Value::Text("dash".to_string()),
+        );
+        properties.insert(
+            "postId".to_string(),
+            platform_value::Value::Identifier([2; 32]),
+        );
+        let document = Document::V0(DocumentV0 {
+            contract_version: None,
+            id: Identifier::random(),
+            owner_id: Identifier::random(),
+            properties,
+            // Synthesized index-only documents have no revision — the
+            // by-id path's revision gate must not apply here.
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+
+        let mut nonce_counter = BTreeMap::new();
+        let transitions = DocumentFactoryV0::document_delete_transitions(
+            vec![(document, document_type_ref, None)],
+            &mut nonce_counter,
+            platform_version,
+        )
+        .expect("the delete transition builds");
+
+        assert_eq!(transitions.len(), 1, "There should be one transition");
+        let DocumentTransition::IndexOnlyDelete(transition) = &transitions[0] else {
+            panic!(
+                "an indexOnly doctype must produce an indexOnlyDelete transition, got {}",
+                transitions[0]
+            );
+        };
+        let data = transition.data();
+        assert_eq!(
+            data.get("hashtag"),
+            Some(&platform_value::Value::Text("dash".to_string()))
+        );
+        assert_eq!(
+            data.get("postId"),
+            Some(&platform_value::Value::Identifier([2; 32]))
+        );
+        assert!(
+            !data.contains_key("$createdAt"),
+            "$createdAt must not ride along when the doctype does not require it"
+        );
     }
 }

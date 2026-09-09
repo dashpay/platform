@@ -20,6 +20,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V3: DriveStateTransitionMethodV
                 data_contract_update_transition: 0,
                 document_create_transition: 0,
                 document_delete_transition: 0,
+                document_index_only_delete_transition: 0,
                 // PROTOCOL_VERSION_13: v1 rewrites a transferred or purchased
                 // DPNS domain document's `records.identity` to the new owner
                 // so the username resolves to the buyer. v0 stays for

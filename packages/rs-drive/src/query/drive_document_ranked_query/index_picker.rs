@@ -10,6 +10,7 @@
 use super::{DocumentRankedMode, DriveDocumentRankedQuery, PrefixPin, RankedAxis};
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::{index_admissible_for_resolved_time_range, ResolvedTimeRange};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 use dpp::version::PlatformVersion;
@@ -21,12 +22,18 @@ use std::collections::BTreeMap;
 ///
 /// An index qualifies when **all** of:
 ///
-/// - it has exactly one more property than there are pins, and its
-///   **last** property is `group_by_property` — the ranked secondary's
-///   group keys are the values of an index's last property;
-/// - every **leading** property is pinned: each appears (by name) among
-///   `equality_pin_fields`. Lengths matching plus the pins being
-///   distinct (enforced upstream by
+/// - one of its **ranked levels** for `axis` is `group_by_property`,
+///   with exactly one pin per property before it. For the boolean axes
+///   the ranked level is the index's **last** property; a prefix-level
+///   `rankedCountable: { at }` hosts a Count secondary at the `at`
+///   property as well, ranking its values by whole-subtree count — an
+///   index may declare both, and the (group property, pin count) pair
+///   singles out which level a request addresses. At a prefix level the
+///   properties *after* `at` never appear in the request at all (they
+///   are interior to the subtrees being counted);
+/// - every property **before** the ranked level is pinned: each appears
+///   (by name) among `equality_pin_fields`. Lengths matching plus the
+///   pins being distinct (enforced upstream by
 ///   [`super::mode_detection::prefix_pins_from_where_clauses`]) makes
 ///   this set equality, so no pin is left over either;
 /// - it declares the ranking keyword for `axis`
@@ -35,11 +42,22 @@ use std::collections::BTreeMap;
 ///   property is exactly `aggregate_field`. Both axes are derived from
 ///   the same running sum the index maintains (`Avg` is that sum over the
 ///   group's count), so summing a *different* field than the one the
-///   index accumulates would silently answer about the wrong property;
-/// - it carries no time-range transform.
+///   index accumulates would silently answer about the wrong property.
+///   A prefix-level Count ranking excludes both (the grammar rejects the
+///   combination), so those arms never see an `at` index;
+/// - it is admissible for the request's resolved time-range selections
+///   ([`index_admissible_for_resolved_time_range`]): a request whose
+///   leading pin was produced by `IN_TIME_RANGE` resolution may only be
+///   served by the index bucketing that field with exactly that grid,
+///   and a raw request never by a bucketed index — either mismatch
+///   would be a validly-proven wrong answer. The resolved bucket-start
+///   pin then descends the grid-qualified first level like any other
+///   leading-property pin, into that window's own per-prefix secondary.
 ///
-/// With no pins this degenerates to the original single-property rule.
-/// A partial pin (some but not all leading properties) matches nothing —
+/// With no pins this degenerates to the original single-property rule —
+/// or, for an index ranked at its FIRST property, to the global group
+/// ranking ("top hashtags by total likes" with nothing pinned). A
+/// partial pin (some but not all leading properties) matches nothing —
 /// the per-prefix secondary lives under one value tree per leading
 /// property, so there is no subtree an unpinned prefix could address —
 /// and callers turn the `None` into a loud
@@ -69,39 +87,63 @@ pub fn find_ranked_index_for_axis<'b>(
     equality_pin_fields: &[String],
     axis: RankedAxis,
     aggregate_field: &str,
+    resolved_time_ranges: &[ResolvedTimeRange],
 ) -> Option<&'b Index> {
     indexes.values().find(|index| {
-        // Trailing property is the grouping property; every leading
-        // property is pinned exactly once (length equality + distinct
-        // pins ⇒ set equality).
-        let Some((terminal, leading)) = index.properties.split_last() else {
+        // Bucketed and raw indexes are never interchangeable, and one
+        // grid's index never serves another grid's resolution — the same
+        // provenance rule every other aggregate picker applies. This is
+        // what keeps a raw request off bucketed indexes AND routes a
+        // resolved request to exactly the grid it was resolved against.
+        if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
             return false;
-        };
-        if terminal.name != group_by_property
-            || leading.len() != equality_pin_fields.len()
-            || !leading
+        }
+        // The positions whose levels host this axis's secondaries — for
+        // the Count axis every `at` level plus the terminal when the
+        // boolean is on (any subset of an index's levels may rank); empty
+        // when the index does not declare the axis (or aggregates a
+        // different field than requested).
+        let candidate_positions: Vec<usize> = match axis {
+            RankedAxis::Count => index
+                .ranked_countable_at
                 .iter()
-                .all(|property| equality_pin_fields.iter().any(|f| f == &property.name))
-        {
-            return false;
-        }
-        // Ranking over bucket keys is an undesigned surface: a document is
-        // stored once per bucket that contains it, so it would contribute to
-        // `overlap_factor` groups at once, and a ranked query carries no
-        // where clauses that could pin a single bucket. Exclude bucketed
-        // indexes until the semantics are deliberately designed.
-        if index.time_range.is_some() {
-            return false;
-        }
-        match axis {
-            RankedAxis::Count => index.ranked_countable,
-            RankedAxis::Sum => {
-                index.ranked_summable && index.summable.as_deref() == Some(aggregate_field)
-            }
-            RankedAxis::Avg => {
-                index.ranked_averageable && index.summable.as_deref() == Some(aggregate_field)
-            }
-        }
+                .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
+                .chain(
+                    index
+                        .ranked_countable
+                        .then(|| index.properties.len().checked_sub(1))
+                        .flatten(),
+                )
+                .collect(),
+            RankedAxis::Sum => (index.ranked_summable
+                && index.summable.as_deref() == Some(aggregate_field))
+            .then(|| index.properties.len().checked_sub(1))
+            .flatten()
+            .into_iter()
+            .collect(),
+            RankedAxis::Avg => (index.ranked_averageable
+                && index.summable.as_deref() == Some(aggregate_field))
+            .then(|| index.properties.len().checked_sub(1))
+            .flatten()
+            .into_iter()
+            .collect(),
+        };
+        // A candidate matches when its property is the grouping property
+        // and every property before it is pinned exactly once (length
+        // equality + distinct pins ⇒ set equality). At most one candidate
+        // can match a given request: the two levels are distinct
+        // positions, and the pin count singles one out.
+        candidate_positions.into_iter().any(|ranked_position| {
+            let Some(ranked_property) = index.properties.get(ranked_position) else {
+                return false;
+            };
+            let leading = &index.properties[..ranked_position];
+            ranked_property.name == group_by_property
+                && leading.len() == equality_pin_fields.len()
+                && leading
+                    .iter()
+                    .all(|property| equality_pin_fields.iter().any(|f| f == &property.name))
+        })
     })
 }
 
@@ -110,6 +152,7 @@ pub fn find_ranked_index_for_axis<'b>(
 pub fn find_ranked_index_for_mode<'b>(
     indexes: &'b BTreeMap<String, Index>,
     mode: &DocumentRankedMode,
+    resolved_time_ranges: &[ResolvedTimeRange],
 ) -> Option<&'b Index> {
     let pin_fields: Vec<String> = mode
         .prefix_pins
@@ -122,6 +165,7 @@ pub fn find_ranked_index_for_mode<'b>(
         &pin_fields,
         mode.axis,
         &mode.aggregate_field,
+        resolved_time_ranges,
     )
 }
 
@@ -153,19 +197,21 @@ pub fn resolve_ranked_query_for_mode<'a>(
     document_type_name: String,
     indexes: &'a BTreeMap<String, Index>,
     mode: &DocumentRankedMode,
+    resolved_time_ranges: &[ResolvedTimeRange],
     platform_version: &PlatformVersion,
 ) -> Result<DriveDocumentRankedQuery<'a>, Error> {
-    let index = find_ranked_index_for_mode(indexes, mode).ok_or_else(|| {
-        Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
-            no_covering_index_message(
-                "ranked",
-                mode.axis,
-                &mode.group_by_property,
-                &mode.prefix_pins,
-                &mode.aggregate_field,
-            ),
-        ))
-    })?;
+    let index =
+        find_ranked_index_for_mode(indexes, mode, resolved_time_ranges).ok_or_else(|| {
+            Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                no_covering_index_message(
+                    "ranked",
+                    mode.axis,
+                    &mode.group_by_property,
+                    &mode.prefix_pins,
+                    &mode.aggregate_field,
+                ),
+            ))
+        })?;
     let prefix_branches =
         encode_prefix_branches(document_type, index, &mode.prefix_pins, platform_version)?;
     Ok(DriveDocumentRankedQuery {
@@ -254,7 +300,11 @@ pub fn encode_prefix_branches(
     prefix_pins: &[PrefixPin],
     platform_version: &PlatformVersion,
 ) -> Result<Vec<Vec<Vec<u8>>>, Error> {
-    let leading = &index.properties[..index.properties.len().saturating_sub(1)];
+    // The pinnable properties end at the ranked level the pin count
+    // addresses (an index may host secondaries at both its `at` property
+    // and its terminal — the pin count singles one out; properties past
+    // it are interior to the counted subtrees and never pinned).
+    let (leading, _) = super::path::ranked_level_split(index, prefix_pins.len())?;
     // Enforced BEFORE any encoding: the ceiling bounds every downstream
     // cost (encode, sort, clone, walk, proof size), so an oversized pin
     // must not buy that work first. The post-product branch count check

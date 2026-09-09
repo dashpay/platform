@@ -23,7 +23,6 @@ use crate::framework::config::Config;
 use dpp::address_funds::PlatformAddress;
 use dpp::util::hash::ripemd160_sha256;
 use key_wallet::account::account_type::StandardAccountType;
-use key_wallet::mnemonic::Language;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::{AccountType, ChildNumber, Mnemonic, Wallet};
 
@@ -48,8 +47,8 @@ async fn print_bank_address_offline() {
     let config = Config::from_env().expect("config load failed (need tests/.env)");
     let network = config.network;
 
-    let mnemonic = Mnemonic::from_phrase(config.bank_mnemonic.trim(), Language::English)
-        .expect("invalid BIP-39 bank mnemonic");
+    let mnemonic =
+        Mnemonic::from_phrase(config.bank_mnemonic.trim()).expect("invalid BIP-39 bank mnemonic");
 
     let wallet = Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
         .expect("offline wallet construction failed");

@@ -35,6 +35,17 @@ impl DriveDocumentQuery<'_> {
         proof: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<Document>), Error> {
+        // indexOnly documents have no stored serialization — the entry's
+        // proved (path, key) position IS the document, so it is synthesized
+        // directly rather than round-tripping through serialized bytes
+        // (which a subset index's projection could not produce at all).
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if self.document_type.index_only() {
+                return self.verify_index_only_proof(proof, platform_version);
+            }
+        }
+
         self.verify_proof_keep_serialized(proof, platform_version)
             .map(|(root_hash, documents)| {
                 let documents = documents

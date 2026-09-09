@@ -2,6 +2,7 @@ import { Listr } from 'listr2';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { PassThrough } from 'stream';
 
 import { ERRORS } from '../../../../ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 import LegoCertificate from '../../../../ssl/letsencrypt/LegoCertificate.js';
@@ -13,6 +14,99 @@ import promptOrThrow from '../../../../util/promptOrThrow.js';
 import renderConfigFlag from '../../../../util/renderConfigFlag.js';
 
 const LEGO_IMAGE = 'goacme/lego:v4.31.0';
+
+/**
+ * How long to wait for a container's output after it has already exited.
+ *
+ * The stream is attached and mostly drained by then, so this only bounds a
+ * daemon that stops producing without closing the connection - a renewal runs
+ * unattended, and one that never returns reports nothing at all.
+ */
+const OUTPUT_DRAIN_TIMEOUT_MS = 10000;
+
+/**
+ * Start collecting a container's output while it is still running.
+ *
+ * `AutoRemove` deletes a container the moment it exits, and takes its logs with
+ * it - so reading them after `wait()` returns is a race against the daemon that
+ * the daemon usually wins. Losing it drops the certificate authority's own
+ * account of the failure, which is the only part worth reporting: what remains
+ * is an exit code, and every cause looks alike. Attaching first means the
+ * output has already been read by the time the container can be removed.
+ *
+ * @param {Object} container
+ * @return {function(): Promise<string>}
+ */
+function collectContainerOutput(container) {
+  const chunks = [];
+
+  const attaching = container.logs({ follow: true, stdout: true, stderr: true });
+
+  const collected = attaching
+    .then((stream) => new Promise((resolve) => {
+      const sink = new PassThrough();
+      let finished = false;
+
+      // The connection can both end and close; ending the sink twice makes it
+      // raise, and this must not turn evidence into a failure.
+      const finish = () => {
+        if (!finished) {
+          finished = true;
+          sink.end();
+        }
+      };
+
+      sink.on('data', (chunk) => chunks.push(chunk));
+
+      // Resolved when the sink drains rather than when the connection ends:
+      // the last frames are still in flight at that point, and a reader that
+      // stops there loses the end of the output - which is where lego says
+      // what went wrong.
+      sink.on('end', resolve);
+
+      // Docker frames stdout and stderr into a single connection unless a TTY
+      // was allocated, and lego is run without one. Undemultiplexed, each
+      // frame's eight-byte header lands in the middle of the text - which is
+      // read by an operator and stored as the recorded reason for the failure.
+      container.modem.demuxStream(stream, sink, sink);
+
+      stream.on('end', finish);
+      stream.on('close', finish);
+      stream.on('error', finish);
+    }))
+    // Output is evidence, never the outcome. A daemon that will not hand it
+    // over leaves the error thinner, and must not replace it.
+    .catch(() => {});
+
+  // Resolved once the daemon has handed over the stream. Awaiting this before
+  // the result is waited on is what makes the attach ordered rather than
+  // merely started: without it the request is in flight while the container
+  // may already have exited and been removed.
+  const attached = attaching.then(() => {}, () => {});
+
+  const read = async () => {
+    // The timer is cleared whichever side wins. Left running it keeps this
+    // callback's closure - and the buffered output - reachable for another ten
+    // seconds on every renewal, and holds the event loop open for a command
+    // that has otherwise finished.
+    let timer;
+
+    try {
+      await Promise.race([
+        collected,
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, OUTPUT_DRAIN_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+
+    return Buffer.concat(chunks).toString();
+  };
+
+  return { attached, read };
+}
 
 /**
  * Let's Encrypt allows five failed authorizations per address per account per
@@ -427,6 +521,11 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               ExposedPorts: { '80/tcp': {} },
               ...legoContainerOptions,
               HostConfig: {
+                // Auto-removed, with the residual this leaves documented on
+                // collectContainerOutput. Retaining it instead is worse here:
+                // every run shares one container name, and the stale-container
+                // cleanup force-removes whatever holds it - which kills a live
+                // lego, observed as exit 137 across the Pebble suite.
                 AutoRemove: true,
                 Binds: binds,
                 PortBindings: { '80/tcp': [{ HostPort: '80' }] },
@@ -439,6 +538,13 @@ export default function obtainLetsEncryptCertificateTaskFactory(
             // eslint-disable-next-line no-param-reassign
             task.output = `Running lego ${command}...`;
 
+            const { attached, read: readOutput } = collectContainerOutput(container);
+
+            // Confirmed, not merely requested. The daemon deletes an
+            // auto-removed container the moment it exits, so a stream still
+            // being set up when the process ends can arrive empty.
+            await attached;
+
             // The container is running, so a request may have been made - but a
             // result nobody read is not a result that can be reported.
             let result;
@@ -448,19 +554,16 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               throw new LegoResultNotObservedError(e);
             }
 
+            const output = await readOutput();
+
             if (result.StatusCode !== 0) {
               // lego's own output is the best account of what went wrong -
               // Boulder answers "why did port 80 fail" in prose better than any
               // classifier dashmate could keep current.
               let errorMessage = `Lego exited with code ${result.StatusCode}`;
-              try {
-                const logs = await container.logs({
-                  stdout: true,
-                  stderr: true,
-                });
-                errorMessage += `\n${logs.toString()}`;
-              } catch (e) {
-                // Container may have been auto-removed
+
+              if (output.length > 0) {
+                errorMessage += `\n${output}`;
               }
 
               throw new Error(`Failed to obtain Let's Encrypt certificate: ${errorMessage}`);
@@ -495,20 +598,32 @@ export default function obtainLetsEncryptCertificateTaskFactory(
 
               break;
             } catch (e) {
+              // Each of these replaces the typed error with guidance written
+              // for a terminal, so the original is carried as the cause. How
+              // far the attempt got - whether the certificate check ever ran,
+              // whether an issuance was spent - cannot be recovered by reading
+              // that prose, and an unattended renewal has to record it.
+              //
               // The helper never ran, so there is nothing the authority could
               // tell us and nothing to retry against - the fix is local.
               if (e instanceof LegoDidNotStartError) {
-                throw new Error(renderHelperDidNotStartGuidance(config, e.cause, e.neverRan));
+                throw new Error(
+                  renderHelperDidNotStartGuidance(config, e.cause, e.neverRan),
+                  { cause: e },
+                );
               }
 
               if (e instanceof LegoResultNotObservedError) {
-                throw new Error(renderResultNotObservedGuidance(config, e.cause));
+                throw new Error(renderResultNotObservedGuidance(config, e.cause), { cause: e });
               }
 
               // A certificate exists. Retrying would ask for another one for a
               // problem that is entirely local to this machine.
               if (e instanceof LegoArtifactsMissingError) {
-                throw new Error(renderArtifactsMissingGuidance(config, e.missingPath));
+                throw new Error(
+                  renderArtifactsMissingGuidance(config, e.missingPath),
+                  { cause: e },
+                );
               }
 
               // Prompting needs a positive opt-in from the entry point. The

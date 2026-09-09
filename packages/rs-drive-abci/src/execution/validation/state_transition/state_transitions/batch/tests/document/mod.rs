@@ -1,6 +1,7 @@
 mod creation;
 mod deletion;
 mod dpns;
+mod index_only;
 mod nft;
 mod ranked_group_drain;
 mod replacement;

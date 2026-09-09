@@ -208,4 +208,106 @@ describe('analyseConfigFactory', () => {
 
     expect(problems).to.be.empty();
   });
+
+  // These checks predate the renewal record and each ends in its own request.
+  // They run before the renewal-aware analyser in the same report, so a node
+  // whose recorded cause forbids asking again would read "do not obtain" from
+  // one and a runnable command from the other - and follow the command.
+  describe('when the renewal record forbids another request', () => {
+    /**
+     * @param {Object} renewal
+     * @return {Problem[]}
+     */
+    function analyseWithRecord(renewal) {
+      samples.setServiceInfo('gateway', 'certificateRenewal', renewal);
+
+      return analyseSslSample({
+        error: 'CERTIFICATE_EXPIRES_SOON',
+        data: { certificate: { expires: '2026-01-01' } },
+      }, 'letsencrypt');
+    }
+
+    it('should withhold its own request when an issuance is outstanding', () => {
+      const [problem] = analyseWithRecord({
+        state: 'PRESENT',
+        provider: 'letsencrypt',
+        outcome: 'failed',
+        code: 'CERTIFICATE_ISSUED_NOT_SAVED',
+        attemptedAt: new Date().toISOString(),
+        consecutiveFailures: 1,
+        issuanceSpentAt: new Date().toISOString(),
+      });
+
+      expect(problem.getSolution()).to.not.contain('ssl obtain');
+      expect(problem.getSolution()).to.contain('could not be saved');
+    });
+
+    it('should withhold it when the record cannot be read', () => {
+      const [problem] = analyseWithRecord({ state: 'UNREADABLE', error: 'not json' });
+
+      expect(problem.getSolution()).to.not.contain('ssl obtain');
+    });
+
+    // Quota and plan failures produce a provider switch, not an outright
+    // refusal. These remedies ask the same provider for another certificate,
+    // while the renewal-aware analyser in the same report says that provider
+    // will never issue one again.
+    it('should withhold its own request when the provider must be switched', () => {
+      const [problem] = analyseWithRecord({
+        state: 'PRESENT',
+        provider: 'letsencrypt',
+        outcome: 'failed',
+        code: 'QUOTA_EXHAUSTED',
+        attemptedAt: new Date().toISOString(),
+        consecutiveFailures: 1,
+      });
+
+      expect(problem.getSolution()).to.contain('--provider letsencrypt');
+    });
+
+    // The configuration watcher hands over without clearing the old provider's
+    // record, so a stale one must not suppress a request that is now valid.
+    it('should ignore a record left by a provider no longer in use', () => {
+      const [problem] = analyseWithRecord({
+        state: 'PRESENT',
+        provider: 'zerossl',
+        outcome: 'failed',
+        code: 'CERTIFICATE_ISSUED_NOT_SAVED',
+        attemptedAt: new Date().toISOString(),
+        consecutiveFailures: 1,
+        issuanceSpentAt: new Date().toISOString(),
+      });
+
+      expect(problem.getSolution()).to.contain('ssl obtain');
+    });
+
+    // A certificate installed after the recorded failure overtakes it. The
+    // renewal-aware analyser already ignores such a record; without the same
+    // input here, this one would replace a valid repair with stale guidance
+    // and the two would contradict each other in the same report.
+    it('should ignore a failure a newer certificate has overtaken', () => {
+      samples.setServiceInfo('gateway', 'installedCertificate', {
+        validFrom: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      });
+
+      const [problem] = analyseWithRecord({
+        state: 'PRESENT',
+        provider: 'letsencrypt',
+        outcome: 'failed',
+        code: 'CERTIFICATE_ISSUED_NOT_SAVED',
+        // Two hours ago, so the installed certificate came after it.
+        attemptedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        consecutiveFailures: 1,
+        issuanceSpentAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      });
+
+      expect(problem.getSolution()).to.contain('ssl obtain');
+    });
+
+    it('should still print it when nothing forbids one', () => {
+      const [problem] = analyseWithRecord({ state: 'ABSENT' });
+
+      expect(problem.getSolution()).to.contain('ssl obtain');
+    });
+  });
 });

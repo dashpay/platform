@@ -579,7 +579,7 @@ mod tests {
         assert!(mn.owner_key_hash.is_some());
         assert!(mn.voting_key_hash.is_some());
         assert!(mn.collateral.is_some());
-        // #4116 key-ownership extraction: operator BLS key + payout script
+        // Key-ownership extraction: operator BLS key + payout script
         // are lifted; the legacy (v1) fixture is a regular MN so it has no
         // platform node id.
         assert!(

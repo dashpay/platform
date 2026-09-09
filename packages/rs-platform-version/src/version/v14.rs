@@ -8,7 +8,7 @@ use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V
 use crate::version::dpp_versions::dpp_method_versions::v3::DPP_METHOD_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v2::STATE_TRANSITION_SERIALIZATION_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v3::STATE_TRANSITION_SERIALIZATION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_versions::v3::STATE_TRANSITION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_token_versions::v2::TOKEN_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_validation_versions::v5::DPP_VALIDATION_VERSIONS_V5;
@@ -114,12 +114,14 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    per-document write amplification is capped per index by
 ///    `SystemLimits::max_time_range_overlap_factor`), and the v1
 ///    `getDocuments` handler resolves the new `IN_TIME_RANGE` operator —
-///    bare `"newest"`/`"oldest"` on a single-grid field, or a structured
-///    `[selector, range, step(, phase)]` operand naming one grid — into a
-///    bucket-start equality from committed block time, making "newest
-///    window" trending/leaderboard document and count/sum/avg queries
-///    provable. `unique: true` is admitted only for non-overlapping windows
-///    (`range == step`) sourced from the immutable `$createdAt`.
+///    a typed `TimeRangeSelection` operand: `NEWEST`/`OLDEST` (resolved to
+///    a bucket-start equality from committed block time) or `BY_START`
+///    (naming any window, current or historic, by its grid-aligned start),
+///    with a `grid` member naming one grid where several bucket the field
+///    — making trending/leaderboard document and count/sum/avg queries
+///    provable over the current or any named window. `unique: true` is
+///    admitted only for non-overlapping windows (`range == step`) sourced
+///    from the immutable `$createdAt`.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type
@@ -206,7 +208,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
         validation: DPP_VALIDATION_VERSIONS_V5,
-        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V2,
+        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
         state_transitions: STATE_TRANSITION_VERSIONS_V3,

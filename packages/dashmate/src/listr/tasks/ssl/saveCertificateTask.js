@@ -7,9 +7,10 @@ import renderConfigFlag from '../../../util/renderConfigFlag.js';
 
 /**
  * @param {HomeDir} homeDir
+ * @param {RenewalRecordRepository} renewalRecordRepository
  * @return {saveCertificateTask}
  */
-export default function saveCertificateTaskFactory(homeDir) {
+export default function saveCertificateTaskFactory(homeDir, renewalRecordRepository) {
   /**
    * @typedef {function} saveCertificateTask
    * @param {Config} config
@@ -83,11 +84,42 @@ export default function saveCertificateTaskFactory(homeDir) {
             throw new Error(`The certificate and private key written for the gateway do not match:`
               + ` ${detail}.\n`
               + `Certificate: ${crtFile}\nPrivate key: ${keyFile}\n`
-              + 'The gateway will not start with these files. Obtain the certificate again:\n'
+              + 'The gateway will not start with these files.\n\n'
+              + 'A certificate was already issued for this node, and it counts against\n'
+              + "the authority's weekly limit whether or not these files are usable.\n"
+              + 'Asking for another spends a second one, so check free space and the\n'
+              + 'permissions on this directory first. Then, if the files are still\n'
+              + 'wrong:\n'
               + `    dashmate ssl obtain ${renderConfigFlag(config.getName())} --force`);
           }
 
           config.set('platform.gateway.ssl.enabled', true);
+
+          // A usable pair is installed, so any earlier failure has been
+          // overtaken. The helper cannot notice this on its own: after a failed
+          // renewal it stops watching the configuration until it retries an
+          // hour later, and installing a certificate changes none of the values
+          // it watches anyway. Without this an operator who has just repaired
+          // their node is told renewal is failing, at the moment they run the
+          // command to check their work.
+          try {
+            // A renewal that reaches this point is installing its own
+            // certificate, and it still has to record the success afterwards -
+            // so it clears under the generation it already holds. A command run
+            // by hand holds none, and takes a new one: the operator is acting
+            // now, so an attempt still in flight from before must not be able
+            // to recreate the failure this install just settled.
+            renewalRecordRepository.remove(
+              config.getName(),
+              ctx.renewalGeneration ?? renewalRecordRepository.claimGeneration(config.getName()),
+            );
+          } catch (e) {
+            // Bookkeeping must not fail an install. The pair is already on
+            // disk and the provider is already set; throwing here would report
+            // a renewal that fully succeeded as a failure.
+            // eslint-disable-next-line no-console
+            console.warn(`Could not clear the renewal record: ${e.message}`);
+          }
         },
       }]);
   }

@@ -41,6 +41,7 @@ async function fetchTextOrError(url) {
  * @param {validateZeroSslCertificate} validateZeroSslCertificate
  * @param {validateLetsEncryptCertificate} validateLetsEncryptCertificate
  * @param {checkGatewayCertificate} checkGatewayCertificate
+ * @param {RenewalRecordRepository} renewalRecordRepository
  * @return {collectSamplesTask}
  */
 /**
@@ -103,6 +104,7 @@ export default function collectSamplesTaskFactory(
   validateZeroSslCertificate,
   validateLetsEncryptCertificate,
   checkGatewayCertificate,
+  renewalRecordRepository,
 ) {
   /**
    * @typedef {function} collectSamplesTask
@@ -256,6 +258,12 @@ export default function collectSamplesTaskFactory(
                     validTo: verdict.installed
                       ? verdict.installed.validTo.toUTCString()
                       : null,
+                    // When this certificate was issued, which is what says
+                    // whether a recorded renewal failure came before it. A
+                    // failure the certificate outlives has been overtaken.
+                    validFrom: verdict.installed
+                      ? verdict.installed.validFrom.toUTCString()
+                      : null,
                     // Which pair was judged. The wire probe records the same
                     // fingerprint for the file it read, so an analyser can tell
                     // whether the two samples describe the same certificate
@@ -274,6 +282,37 @@ export default function collectSamplesTaskFactory(
                   obfuscateOperatorName(installed);
 
                   ctx.samples.setServiceInfo('gateway', 'installedCertificate', installed);
+                },
+              },
+              {
+                // Read next to the certificate it describes rather than
+                // anywhere else in this collection. The helper replaces the
+                // certificate and writes this seconds apart, and the rest of
+                // the collection takes long enough - there is a call out to the
+                // internet in it - that reading them minutes apart would
+                // routinely straddle a renewal and report a node that has just
+                // succeeded as one that is failing.
+                enabled: () => config.get('platform.enable'),
+                title: 'Gateway certificate renewal',
+                task: async () => {
+                  const renewal = renewalRecordRepository.read(config.getName());
+
+                  // Absent and unreadable are kept apart all the way to the
+                  // analyser. "Nothing was recorded" is a fair thing to say;
+                  // saying it about a file that could not be opened is not.
+                  const sample = {
+                    state: renewal.state,
+                    path: renewal.path,
+                    error: renewal.error,
+                    ...renewal.record?.toObject(),
+                  };
+
+                  // Same treatment as the certificate above: the path is what
+                  // makes a problem actionable and stays, the operator's name
+                  // in it does not.
+                  obfuscateOperatorName(sample);
+
+                  ctx.samples.setServiceInfo('gateway', 'certificateRenewal', sample);
                 },
               },
               {

@@ -28,26 +28,13 @@ use dash_async::block_on;
 pub(crate) fn parse_mnemonic_any_language(
     phrase: &str,
 ) -> Result<key_wallet::mnemonic::Mnemonic, &'static str> {
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
 
-    const LANGUAGES: [Language; 10] = [
-        Language::English,
-        Language::Spanish,
-        Language::French,
-        Language::Italian,
-        Language::Japanese,
-        Language::Korean,
-        Language::ChineseSimplified,
-        Language::ChineseTraditional,
-        Language::Czech,
-        Language::Portuguese,
-    ];
-    for lang in LANGUAGES {
-        if let Ok(m) = Mnemonic::from_phrase(phrase, lang) {
-            return Ok(m);
-        }
-    }
-    Err("phrase does not match any supported BIP-39 wordlist")
+    // Upstream's `from_phrase` IS the auto-detecting parse since
+    // rust-dashcore#981 — one path, English diagnostics preserved when
+    // nothing matches. This wrapper survives only to narrow the error to
+    // the `&'static str` its callers report.
+    Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
 }
 
 /// Create a signer from a private key.

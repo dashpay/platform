@@ -85,6 +85,8 @@ use crate::error::query::QuerySyntaxError;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::Error;
 #[cfg(any(feature = "server", feature = "verify"))]
+use crate::query::ResolvedTimeRange;
+#[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::element::indexed::{encode_avg_sort_key, encode_count_sort_key, encode_sum_sort_key};
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::Query;
@@ -373,6 +375,7 @@ pub fn resolve_having_query_for_mode<'a>(
     document_type_name: String,
     indexes: &'a BTreeMap<String, Index>,
     mode: &DocumentHavingMode,
+    resolved_time_ranges: &[ResolvedTimeRange],
     platform_version: &PlatformVersion,
 ) -> Result<DriveDocumentHavingQuery<'a>, Error> {
     let axis = mode.bounds.axis();
@@ -387,6 +390,7 @@ pub fn resolve_having_query_for_mode<'a>(
         &pin_fields,
         axis,
         &mode.aggregate_field,
+        resolved_time_ranges,
     )
     .ok_or_else(|| {
         Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(

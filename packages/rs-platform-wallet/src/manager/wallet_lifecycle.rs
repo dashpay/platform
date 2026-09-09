@@ -3,11 +3,10 @@
 use std::sync::Arc;
 
 use dash_spv::chain::CheckpointManager;
-use key_wallet::bip32::ExtendedPrivKey;
-use key_wallet::mnemonic::{Language, Mnemonic};
+use key_wallet::mnemonic::Mnemonic;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
-use key_wallet::wallet::{Wallet, WalletType};
+use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
 #[cfg(any(feature = "bls", feature = "eddsa"))]
@@ -18,63 +17,20 @@ use crate::changeset::{
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
-use crate::wallet::identity::network::IdentityDiscoveryOptions;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
 use super::PlatformWalletManager;
 
-/// Parse a BIP-39 mnemonic against every supported wordlist in turn,
-/// returning the first language that yields a valid mnemonic.
+/// Parse a BIP-39 mnemonic in any supported language.
 ///
-/// `key_wallet::Mnemonic` only exposes language-tagged constructors,
-/// so callers that take a user-supplied mnemonic must walk the
-/// language list themselves to avoid rejecting non-English phrases as
-/// "invalid English". BIP-39 wordlists are mutually exclusive per
-/// phrase, so the first match is unambiguous.
+/// Since rust-dashcore#981 `Mnemonic::from_phrase` IS the auto-detecting
+/// parse — one path, with English diagnostics kept when nothing matches —
+/// so there is no language list left for a caller to walk. What remains is
+/// the error narrowing: callers report a `&'static str`, and this is where
+/// upstream's richer error is reduced to one.
 fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
-    const LANGUAGES: [Language; 10] = [
-        Language::English,
-        Language::Spanish,
-        Language::French,
-        Language::Italian,
-        Language::Japanese,
-        Language::Korean,
-        Language::ChineseSimplified,
-        Language::ChineseTraditional,
-        Language::Czech,
-        Language::Portuguese,
-    ];
-    for lang in LANGUAGES {
-        if let Ok(m) = Mnemonic::from_phrase(phrase, lang) {
-            return Ok(m);
-        }
-    }
-    Err("phrase does not match any supported BIP-39 wordlist")
-}
-
-/// Master BIP-32 xpriv for built-in identity discovery, or `None` for a
-/// keyless (watch-only / external-signable) wallet that carries no key
-/// material to derive from. Must be read BEFORE
-/// [`Wallet::downgrade_to_external_signable`] strips the resident key.
-///
-/// The returned node equals `ExtendedPrivKey::new_master(network, seed)`,
-/// so [`IdentityWallet::discover_from_master`] derives exactly the key
-/// hashes a key-resident scan would (see the reference in
-/// `identity::network::loading`).
-fn capture_discovery_master(wallet: &Wallet) -> Option<ExtendedPrivKey> {
-    match &wallet.wallet_type {
-        WalletType::Mnemonic {
-            root_extended_private_key,
-            ..
-        }
-        | WalletType::Seed {
-            root_extended_private_key,
-            ..
-        } => Some(root_extended_private_key.to_extended_priv_key(wallet.network)),
-        WalletType::ExtendedPrivKey(root) => Some(root.to_extended_priv_key(wallet.network)),
-        WalletType::ExternalSignable | WalletType::WatchOnly => None,
-    }
+    Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
 }
 
 /// Test-only rendezvous fired inside [`PlatformWalletManager::remove_wallet_with_teardown`],
@@ -84,11 +40,10 @@ fn capture_discovery_master(wallet: &Wallet) -> Option<ExtendedPrivKey> {
 /// publish a NEW generation into both maps — the id is free in the inner
 /// manager from the moment the removal above completes, and nothing gates
 /// registration. Reproducing it deterministically from outside is not possible:
-/// the window is bounded by two *different* locks, and the only lock a test
-/// could hold to park the remover inside it (`self.wallets`) is the same lock
-/// the registration must acquire to publish, so parking the remover would also
-/// block the registration — and `tokio`'s `RwLock` hands the writer queue out
-/// in FIFO order, which puts the remover first. A rendezvous is therefore the
+/// the window is bounded by two *different* synchronization domains — the
+/// inner manager's lock and the public map's `ArcSwap` publication — and a
+/// test holds no lock that could park the remover between them without also
+/// stalling the registration's own publish. A rendezvous is therefore the
 /// only way to pin this ordering without a sleep or a completion-order race.
 ///
 /// Compiled under `cfg(test)` only: neither this static nor its call site
@@ -200,7 +155,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // downstream `walletId`-keyed structure network-correct by
         // construction — no per-network disambiguation needed in the
         // persistence layer, and network-blind child tables (UTXOs,
-        // asset locks, platform addresses) can no longer cross-feed
+        // asset locks, platform addresses) cannot cross-feed
         // between a mnemonic's per-network wallets. The watch-only
         // restore path (`Wallet::new_external_signable`) reuses the
         // persisted id verbatim, so it stays self-consistent across
@@ -236,7 +191,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // place below, BEFORE the address-pool snapshot is taken.
         let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
 
-        let generation = Arc::new(WalletGeneration::new());
+        // The id this wallet is about to occupy. Computed HERE — before
+        // `downgrade_to_external_signable` below flips the wallet type, and
+        // before `wallet` is moved into `insert_wallet` — because the
+        // generation must be born already holding this wallet's fence map.
+        //
+        // A registration under an id a previous generation held is exactly the
+        // remove-and-recreate case: that generation's pending-spend fences
+        // protect signed transactions that are still valid and still relayable,
+        // so the replacement inherits them rather than starting clean. A first
+        // registration finds no entry and gets an empty map.
+        let registration_wallet_id = wallet.compute_wallet_id();
+        let generation = Arc::new(WalletGeneration::with_fences(
+            self.in_broadcast_fences_for(&registration_wallet_id),
+        ));
 
         // Snapshot per-account xpubs and address-pool entries BEFORE
         // the wallet / managed-info are moved into insert_wallet. The
@@ -385,17 +353,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .unwrap_or(wallet.wallet_id);
 
         let platform_info = PlatformWalletInfo {
+            observed_input_conflicts: Default::default(),
             core_wallet: wallet_info,
             generation: Arc::clone(&generation),
             identity_manager: crate::wallet::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
             dpns_name_states: std::collections::BTreeMap::new(),
         };
-
-        // Capture the master xpriv while key material is still resident;
-        // the downgrade below strips it. `None` == a keyless (watch-only /
-        // external-signable) restore, so built-in discovery is skipped.
-        let discovery_master = capture_discovery_master(&wallet);
 
         wallet.downgrade_to_external_signable();
 
@@ -418,6 +382,31 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 }
             })?
         };
+
+        // `insert_wallet` recomputes the id from the (now external-signable)
+        // wallet. The two agree by construction — the downgrade flips only the
+        // wallet TYPE, and the type's own branch returns the same stamped
+        // network-scoped digest — but the fence map is safety state, so a
+        // divergence must not silently key it under an id nothing will look up.
+        // Alias the same `Arc` under the authoritative id instead: one map,
+        // reachable either way.
+        debug_assert_eq!(
+            wallet_id, registration_wallet_id,
+            "the registered wallet id must match the id the fence map was keyed by"
+        );
+        if wallet_id != registration_wallet_id {
+            tracing::error!(
+                registered = %hex::encode(wallet_id),
+                fenced_as = %hex::encode(registration_wallet_id),
+                "wallet id changed across registration; aliasing the in-broadcast \
+                 fence map under both"
+            );
+            let fences = self.in_broadcast_fences_for(&registration_wallet_id);
+            self.in_broadcast_fences
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(wallet_id, fences);
+        }
 
         // Emit metadata + per-account xpubs + per-pool address
         // snapshots to the persister so the watch-only restore path
@@ -570,11 +559,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         let platform_wallet = Arc::new(platform_wallet);
 
-        // Register the PlatformWallet handle.
-        {
-            let mut wallets = self.wallets.write().await;
+        // Register the PlatformWallet handle. `rcu` publishes a new map
+        // snapshot; the closure can rerun under a concurrent-writer
+        // retry, so it must stay pure map manipulation.
+        self.wallets.rcu(|wallets| {
+            let mut wallets = std::collections::BTreeMap::clone(wallets);
             wallets.insert(wallet_id, Arc::clone(&platform_wallet));
-        }
+            wallets
+        });
 
         // Re-seed the lock-free balance atomic from the wallet's inner
         // balance now that the wallet is in `self.wallets`.
@@ -591,6 +583,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // into the atomic here (as `manager::load` does for restored
         // wallets); any later block events are applied normally now that
         // the wallet is mapped.
+        //
+        // Last writer wins between this seed and the handler: if SPV
+        // processes another block between the read below and the `set`, the
+        // atomic briefly goes back to the older totals. The next
+        // balance-bearing event corrects it, and during the rescan this
+        // exists for those arrive continuously.
         {
             let wm = self.wallet_manager.read().await;
             if let Some(info) = wm.get_wallet_info(&wallet_id) {
@@ -604,40 +602,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
         }
 
-        // Best-effort identity discovery via the captured master xpriv —
-        // the resident key was stripped by the downgrade above, so the
-        // resident scan path would always fail here. For a recovery flow
-        // (existing mnemonic re-typed by the user) this hydrates every
-        // identity the wallet had on Platform without the caller having to
-        // fire discovery manually. For a fresh wallet the gap-limit miss
-        // loop bails after a handful of empty queries (~seconds) and finds
-        // nothing. Failures never block registration: a sync hiccup or
-        // offline DAPI shouldn't lose the user the wallet they just
-        // imported.
-        match &discovery_master {
-            Some(master) => {
-                if let Err(e) = platform_wallet
-                    .identity()
-                    .discover_from_master(IdentityDiscoveryOptions::default(), master)
-                    .await
-                {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        error = %e,
-                        "Identity discovery failed during wallet registration; callers can \
-                         retry via PlatformWallet::identity().discover_from_master(..)"
-                    );
-                }
-            }
-            None => {
-                tracing::debug!(
-                    wallet_id = %hex::encode(wallet_id),
-                    "skipped built-in identity discovery: external-signable wallet has no \
-                     resident key; call PlatformWallet::identity().discover_from_master(..) to hydrate"
-                );
-            }
-        }
-
+        // Registration deliberately runs no identity discovery. The wallet
+        // was downgraded to external-signable above, so the resident-key
+        // scan (`identity().discover(..)`) cannot derive its first auth key and
+        // fails before ever reaching Platform — all it did here was wait on
+        // the wallet-manager lock twice, spend one host persistence round
+        // and leave a spurious "scan incomplete at index 0" verdict behind
+        // (on a host whose persister commit was in flight, that wait
+        // stretched a wallet import to minutes). Discovery belongs to the
+        // host's startup sequence (`start_wallet_subsystems`: budgeted,
+        // master key resolved on demand) or to an explicit
+        // `identity().discover_from_master(..)`.
         Ok(platform_wallet)
     }
 
@@ -667,8 +642,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// inside it, `CoreWallet::is_same_generation` passes for a removed
     /// generation (a removed generation matches itself), and the reservation age
     /// guard is disabled once `last_processed_height` returns `None`. So a
-    /// payment for a wallet the host already deleted reaches the network
-    /// (`dashpay/platform#4185`).
+    /// payment for a wallet the host already deleted reaches the network.
     ///
     /// Taking the gate *inside* this method rather than leaving it to the caller
     /// is deliberate: `PlatformWalletManager` is public and `SignedPaymentRegistry`
@@ -702,7 +676,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// So once this method has removed generation G1 from the inner
     /// `wallet_manager`, the id is free and a concurrent registration can publish
     /// a *different* generation G2 into both maps before this method reaches its
-    /// own `self.wallets` removal — the two removals are separately locked, with
+    /// own `self.wallets` removal — the two removals are separately synchronized, with
     /// no happens-before edge between them and the registration. Removing by key
     /// there would take G2 out of the public map (leaving it registered in the
     /// inner manager, invisible and unremovable) and hand G2 to `tear_down`,
@@ -713,11 +687,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// The `Arc<PlatformWallet>` validated under the gate is therefore retained,
     /// and the public-map entry is removed only while it still names that same
     /// generation. Both maps, the returned handle and the `tear_down` argument
-    /// are then all that one generation (`dashpay/platform#4185`). The one
-    /// remaining id-keyed step is the shielded coordinator detach below, which
-    /// has no generation concept at all; a generation that has just been
-    /// registered has not run `bind_shielded` yet, so it holds no coordinator
-    /// entry to detach.
+    /// then all name that one generation. The one remaining id-keyed step is
+    /// the shielded coordinator detach below, which has no generation concept
+    /// at all; a generation that has just been registered has not run
+    /// `bind_shielded` yet, so it holds no coordinator entry to detach.
     ///
     /// The inner-manager removal needs no such check: G1 can only leave
     /// `wallet_manager` through this method (which requires G1's gate, held here)
@@ -743,7 +716,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // matched against.
         let (removed, _teardown) = loop {
             let candidate = {
-                let wallets = self.wallets.read().await;
+                let wallets = self.wallets.load();
                 match wallets.get(wallet_id) {
                     None => {
                         return Err(PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))
@@ -753,7 +726,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             };
             let guard = candidate.generation().teardown_guard().await;
             let still_current = {
-                let wallets = self.wallets.read().await;
+                let wallets = self.wallets.load();
                 wallets
                     .get(wallet_id)
                     .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), candidate.generation()))
@@ -884,13 +857,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // this method); removing by key would evict that live wallet and hand it
         // to `tear_down` under the wrong gate.
         {
-            let mut wallets = self.wallets.write().await;
-            let entry_is_ours = wallets
-                .get(wallet_id)
-                .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), &generation));
-            if entry_is_ours {
-                wallets.remove(wallet_id);
-            } else {
+            // `rcu` keeps the generation check and the removal atomic: the
+            // closure sees the map the CAS will replace, and a concurrent
+            // publication retries the whole closure against the new map.
+            // The `Cell` therefore ends up holding the verdict of the
+            // attempt that actually committed.
+            let entry_is_ours = std::cell::Cell::new(false);
+            self.wallets.rcu(|wallets| {
+                let ours = wallets
+                    .get(wallet_id)
+                    .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), &generation));
+                entry_is_ours.set(ours);
+                if ours {
+                    let mut next = std::collections::BTreeMap::clone(wallets);
+                    next.remove(wallet_id);
+                    Arc::new(next)
+                } else {
+                    // Not ours: publish the map unchanged.
+                    Arc::clone(wallets)
+                }
+            });
+            if !entry_is_ours.get() {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
                     "remove_wallet: a new generation was registered under this id while the \
@@ -911,7 +898,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
 #[cfg(test)]
 mod scoped_wallet_id_tests {
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
@@ -922,8 +909,7 @@ mod scoped_wallet_id_tests {
          abandon abandon abandon abandon abandon about";
 
     fn wallet_id_for(network: Network) -> [u8; 32] {
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
         let wallet =
             Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
                 .expect("wallet construction");
@@ -938,8 +924,7 @@ mod scoped_wallet_id_tests {
     /// "Networks" section can group a seed's sibling-network wallets.
     /// Mirrors the `register_wallet` derivation exactly.
     fn wallet_group_id_for(network: Network) -> [u8; 32] {
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
         let wallet =
             Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
                 .expect("wallet construction");
@@ -1020,9 +1005,9 @@ mod scoped_wallet_id_tests {
 
 #[cfg(test)]
 mod register_wallet_duplicate_tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
 
@@ -1064,11 +1049,90 @@ mod register_wallet_duplicate_tests {
     impl EventHandler for NoopEventHandler {}
     impl PlatformEventHandler for NoopEventHandler {}
 
+    /// Persister that records every store round so a test can assert on
+    /// exactly what registration hands the host.
+    #[derive(Default)]
+    struct RecordingPersister {
+        stores: Mutex<Vec<(WalletId, PlatformWalletChangeSet)>>,
+    }
+
+    impl PlatformWalletPersistence for RecordingPersister {
+        fn store(
+            &self,
+            wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.stores.lock().unwrap().push((wallet_id, changeset));
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// Registration must not run (or record) an identity scan: the wallet
+    /// is downgraded to external-signable before it could, so the scan
+    /// never reached Platform — it only left a spurious "incomplete at
+    /// index 0" verdict and one extra host persistence round behind.
+    /// Against the pre-fix `register_wallet` both assertions fail.
+    #[tokio::test]
+    async fn register_wallet_records_no_identity_scan_verdict() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(RecordingPersister::default());
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            vec![event_handler],
+        ));
+
+        let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid test mnemonic")
+            .to_seed("");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("create should succeed");
+
+        // Read the verdict out before the await below (no std guard across it).
+        let persisted_no_scan = persister
+            .stores
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(_, cs)| cs.identity_scan_state.is_none() && cs.identities.is_none());
+        assert!(
+            persisted_no_scan,
+            "registration must not persist an identity-scan verdict or identities"
+        );
+
+        let wm = wallet.wallet_manager().read().await;
+        let info = wm
+            .get_wallet_info(&wallet.wallet_id())
+            .expect("wallet info");
+        assert!(
+            !info
+                .identity_manager
+                .identity_scan_is_incomplete(&wallet.wallet_id()),
+            "registration must not leave an incomplete-scan verdict behind"
+        );
+    }
+
     /// Build a manager wired to a no-op persister over a mock SDK. The
-    /// duplicate-create path under test never reaches the network: the
-    /// first `create` returns `Ok` (its only network touch — best-effort
-    /// master-based identity discovery — is logged-and-ignored), and the
-    /// second fails at `WalletManager::insert_wallet` before any query.
+    /// duplicate-create path under test never reaches the network:
+    /// registration runs no identity discovery, so the first `create`
+    /// returns `Ok` without a query, and the second fails at
+    /// `WalletManager::insert_wallet` before any.
     fn make_manager() -> Arc<PlatformWalletManager<NoopPersister>> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(NoopPersister);
@@ -1092,8 +1156,7 @@ mod register_wallet_duplicate_tests {
         let manager = make_manager();
 
         let network = Network::Testnet;
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
         let seed_bytes = mnemonic.to_seed("");
 
         // First registration succeeds. `Some(0)` skips the SPV-tip
@@ -1126,138 +1189,167 @@ mod register_wallet_duplicate_tests {
             "duplicate create must map to WalletAlreadyExists, got: {err:?}"
         );
     }
+
+    /// PENDING-SPEND PROTECTION MUST SURVIVE WALLET RECREATION.
+    ///
+    /// If the in-broadcast fence lived in the `WalletGeneration` itself, it
+    /// would be not merely process-local but *generation*-local. Removing a
+    /// wallet and re-creating it under the same id mints a fresh generation,
+    /// and the fence map would go with the old one — while the signed
+    /// transaction it protects stays perfectly valid and can still be relayed
+    /// by a DAPI endpoint or a peer that retained it. The re-created wallet
+    /// would restore the persisted UTXO with neither the fence nor key-wallet's
+    /// memory-only reservation holding it, and could sign a conflicting spend
+    /// of the very same outpoint.
+    ///
+    /// Fences are therefore keyed by WALLET, not by generation: a generation
+    /// that replaces another under the same id inherits its predecessor's
+    /// pending-spend fences, and they are retired by the same evidence as ever —
+    /// an observed spend — not by the replacement.
+    ///
+    /// Without wallet-keyed fences the re-created wallet reports no conflict
+    /// at all.
+    #[tokio::test]
+    async fn a_recreated_wallet_inherits_the_pending_fences_of_the_generation_it_replaces() {
+        use dashcore::hashes::Hash;
+        use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, Txid, Witness};
+
+        let manager = make_manager();
+        let network = Network::Testnet;
+        let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid test mnemonic")
+            .to_seed("");
+
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("first create should succeed");
+        let wallet_id = wallet.wallet_id();
+
+        // One dispatch that reached the network and has NOT been observed
+        // spent — the state that must outlive the generation holding it.
+        let funded = OutPoint {
+            txid: Txid::from_slice(&[0x7E; 32]).expect("valid txid"),
+            vout: 0,
+        };
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: funded,
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffff_ffff,
+                witness: Witness::new(),
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        wallet
+            .generation()
+            .pin_in_broadcast(&tx)
+            .settle_pending_spend();
+        assert_eq!(
+            wallet.generation().in_broadcast_conflict(&tx),
+            Some(funded),
+            "the dispatching wallet must fence its own pending spend"
+        );
+
+        // Remove and re-create under the same id — the host-visible
+        // "delete and restore this wallet" round trip.
+        manager.remove_wallet(&wallet_id).await.expect("remove");
+        let recreated = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("re-create should succeed");
+        assert_eq!(
+            recreated.wallet_id(),
+            wallet_id,
+            "the re-created wallet must occupy the same id"
+        );
+
+        assert_eq!(
+            recreated.generation().in_broadcast_conflict(&tx),
+            Some(funded),
+            "a wallet re-created under the same id must inherit the pending-spend \
+             fence of the generation it replaced — the signed transaction that \
+             fence protects is still valid and still relayable"
+        );
+    }
+
+    /// The inheritance above is per WALLET, not global: one wallet's dispatch
+    /// must never fence another wallet's inputs.
+    #[tokio::test]
+    async fn fences_do_not_leak_between_different_wallets() {
+        use dashcore::hashes::Hash;
+        use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, Txid, Witness};
+
+        let manager = make_manager();
+        let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid test mnemonic")
+            .to_seed("");
+
+        // Same seed, DIFFERENT networks — key-wallet stamps a network-scoped
+        // id, so these are two distinct wallets in one manager.
+        let first = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("testnet create");
+        let second = manager
+            .create_wallet_from_seed_bytes(
+                Network::Devnet,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("devnet create");
+        assert_ne!(first.wallet_id(), second.wallet_id());
+
+        let funded = OutPoint {
+            txid: Txid::from_slice(&[0x7F; 32]).expect("valid txid"),
+            vout: 0,
+        };
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: funded,
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffff_ffff,
+                witness: Witness::new(),
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        first
+            .generation()
+            .pin_in_broadcast(&tx)
+            .settle_pending_spend();
+
+        assert_eq!(
+            second.generation().in_broadcast_conflict(&tx),
+            None,
+            "a different wallet's fence must not block this one's builds"
+        );
+    }
 }
 
-#[cfg(test)]
-mod register_wallet_discovery_master_tests {
-    use key_wallet::bip32::ExtendedPrivKey;
-    use key_wallet::mnemonic::{Language, Mnemonic};
-    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-    use key_wallet::wallet::Wallet;
-    use key_wallet::Network;
-
-    use crate::wallet::identity::network::{
-        derive_identity_auth_key_hash, derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX,
-    };
-
-    use super::capture_discovery_master;
-
-    // Canonical all-`abandon` BIP-39 test vector — deterministic seed.
-    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
-         abandon abandon abandon abandon abandon about";
-
-    fn test_mnemonic() -> Mnemonic {
-        Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic")
-    }
-
-    /// The BIP-32 master node `discover_from_master` documents as its
-    /// contract: `ExtendedPrivKey::new_master(network, seed)`.
-    fn canonical_master(network: Network) -> ExtendedPrivKey {
-        let seed = test_mnemonic().to_seed("");
-        ExtendedPrivKey::new_master(network, &seed).expect("master xpriv from test seed")
-    }
-
-    /// A key-resident `WalletType::Mnemonic` wallet yields the canonical
-    /// master node — the value `discover_from_master` expects — so
-    /// registration's built-in discovery derives from live key material
-    /// instead of the now-dead resident scan path.
-    #[test]
-    fn mnemonic_wallet_captures_canonical_master() {
-        for network in [Network::Mainnet, Network::Testnet] {
-            let wallet =
-                Wallet::from_mnemonic(test_mnemonic(), network, WalletAccountCreationOptions::None)
-                    .expect("mnemonic wallet");
-            let captured = capture_discovery_master(&wallet)
-                .expect("key-resident wallet must yield a master xpriv");
-            assert_eq!(
-                captured,
-                canonical_master(network),
-                "captured master must equal ExtendedPrivKey::new_master (network={network:?})"
-            );
-        }
-    }
-
-    /// A `WalletType::Seed` wallet captures the same canonical master —
-    /// the create-from-seed-bytes entry point is covered too.
-    #[test]
-    fn seed_wallet_captures_canonical_master() {
-        for network in [Network::Mainnet, Network::Testnet] {
-            let seed = test_mnemonic().to_seed("");
-            let wallet = Wallet::from_seed_bytes(seed, network, WalletAccountCreationOptions::None)
-                .expect("seed wallet");
-            let captured = capture_discovery_master(&wallet)
-                .expect("key-resident seed wallet must yield a master xpriv");
-            assert_eq!(captured, canonical_master(network));
-        }
-    }
-
-    /// A keyless (external-signable / watch-only) wallet — the shape a
-    /// watch-only restore loads — carries no key material, so capture is
-    /// `None` and registration cleanly SKIPS discovery (no WARN, no dead
-    /// resident-scan failure). Mirrors the `downgrade_to_external_signable`
-    /// step in `register_wallet`.
-    #[test]
-    fn external_signable_wallet_captures_no_master() {
-        for network in [Network::Mainnet, Network::Testnet] {
-            let mut wallet =
-                Wallet::from_mnemonic(test_mnemonic(), network, WalletAccountCreationOptions::None)
-                    .expect("mnemonic wallet");
-            wallet.downgrade_to_external_signable();
-            assert!(
-                capture_discovery_master(&wallet).is_none(),
-                "external-signable wallet has no resident key to capture (network={network:?})"
-            );
-        }
-    }
-
-    /// The captured master reproduces the RESIDENT wallet's own MASTER-key
-    /// hash byte-for-byte across identity indices and networks. This is the
-    /// load-bearing guarantee: the master path built-in discovery now takes
-    /// is a faithful substitute for the resident derive that
-    /// `downgrade_to_external_signable` renders unusable — not merely
-    /// self-consistent. Comparing against `derive_identity_auth_key_hash`
-    /// (the resident path) rather than another master derive is what makes
-    /// this catch a master-vs-resident divergence; mirrors the
-    /// resident-vs-master equivalence pinned in `identity::network::loading`.
-    #[test]
-    fn captured_master_reproduces_resident_key_hashes() {
-        for network in [Network::Mainnet, Network::Testnet] {
-            let wallet =
-                Wallet::from_mnemonic(test_mnemonic(), network, WalletAccountCreationOptions::None)
-                    .expect("mnemonic wallet");
-            let captured =
-                capture_discovery_master(&wallet).expect("key-resident wallet yields master");
-
-            for identity_index in 0..4u32 {
-                let from_captured = derive_identity_auth_key_hash_from_master(
-                    &captured,
-                    network,
-                    identity_index,
-                    MASTER_KEY_INDEX,
-                )
-                .expect("captured-master discovery hash");
-                // The resident derive walks the in-wallet key material — the
-                // path the pre-downgrade wallet would have used — so equality
-                // proves the captured master targets the identical key.
-                let from_resident = derive_identity_auth_key_hash(
-                    &wallet,
-                    network,
-                    identity_index,
-                    MASTER_KEY_INDEX,
-                )
-                .expect("resident-wallet discovery hash");
-                assert_eq!(
-                    from_captured, from_resident,
-                    "captured master must reproduce the resident-wallet MASTER-key hash \
-                     (network={network:?}, identity_index={identity_index})"
-                );
-            }
-        }
-    }
-}
-
-/// Removal versus a same-id re-registration that lands *during* the removal
-/// (`dashpay/platform#4185` review).
+/// Removal versus a same-id re-registration that lands *during* the removal.
 ///
 /// The invariant: `remove_wallet_with_teardown` removes, returns and tears down
 /// exactly the wallet generation it validated under that generation's lifecycle
@@ -1268,7 +1360,7 @@ mod remove_versus_recreate_tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
 
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
 
@@ -1387,8 +1479,8 @@ mod remove_versus_recreate_tests {
                     if already_fired {
                         return;
                     }
-                    let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
-                        .expect("valid test mnemonic");
+                    let mnemonic =
+                        Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
                     let seed_bytes = mnemonic.to_seed("");
                     // The real registration path: inner `WalletManager` first,
                     // then `self.wallets`. `Some(0)` skips the SPV-tip lookup.

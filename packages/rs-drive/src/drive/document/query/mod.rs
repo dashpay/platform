@@ -4,6 +4,8 @@
 //!
 
 mod fetch_document_history_query;
+mod query_chained_documents;
+mod query_composite_documents;
 /// query of the vote state
 pub mod query_contested_documents_vote_state;
 mod query_documents;
@@ -12,6 +14,8 @@ mod query_documents_with_flags;
 /// query of the contested documents in their storage
 pub mod query_contested_documents_storage;
 
+pub use query_chained_documents::*;
+pub use query_composite_documents::*;
 pub use query_documents::*;
 pub use query_documents_with_flags::*;
 

@@ -19,6 +19,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1: DriveStateTransitionMethodV
                 data_contract_update_transition: 0,
                 document_create_transition: 0,
                 document_delete_transition: 0,
+                document_index_only_delete_transition: 0,
                 document_purchase_transition: 0,
                 document_replace_transition: 0,
                 document_transfer_transition: 0,

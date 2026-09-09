@@ -127,6 +127,10 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           version: '32.x'
+          # Without a token the action resolves the protoc release
+          # unauthenticated, and the shared macOS-runner egress IP burns
+          # through the 60 req/h anonymous limit.
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build DashSDKFFI.xcframework and install into Swift package
         run: |

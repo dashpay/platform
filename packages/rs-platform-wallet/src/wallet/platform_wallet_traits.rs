@@ -40,6 +40,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
             generation: std::sync::Arc::new(super::core::WalletGeneration::new()),
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
+            observed_input_conflicts: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
         }
     }
@@ -53,6 +54,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
             generation: std::sync::Arc::new(super::core::WalletGeneration::new()),
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
+            observed_input_conflicts: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
         }
     }
@@ -85,11 +87,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.birth_height()
     }
 
-    // `first_loaded_at` / `set_first_loaded_at` were dropped from
-    // `WalletInfoInterface` upstream and have no backing methods on
-    // `ManagedWalletInfo` anymore. The field still exists on
-    // `WalletMetadata` but is read/written directly there; the trait
-    // surface no longer requires delegating accessors here.
+    // `first_loaded_at` lives on `WalletMetadata` and is read/written
+    // directly there; `WalletInfoInterface` has no accessors for it and
+    // `ManagedWalletInfo` has no backing methods, so nothing is
+    // delegated here.
 
     fn update_last_synced(&mut self, timestamp: u64) {
         self.core_wallet.update_last_synced(timestamp);

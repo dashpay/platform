@@ -18,13 +18,14 @@ use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// A wrapper for a document operation
 #[derive(Clone, Debug)]
@@ -97,6 +98,22 @@ pub enum DocumentOperationType<'a> {
     DeleteDocument {
         /// The document id
         document_id: Identifier,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
+    },
+    /// Deletes an indexOnly document from its property values — there is
+    /// no primary-storage row to fetch, so the values (plus the owner)
+    /// are what every index entry is recomputed from. `$createdAt` may
+    /// ride in `data` under its system key when the type indexes it.
+    DeleteIndexOnlyDocument {
+        /// The document id (deterministic; never stored)
+        document_id: Identifier,
+        /// The owner whose entries are being removed
+        owner_id: Identifier,
+        /// The document's property values
+        data: BTreeMap<String, Value>,
         /// Data Contract info to potentially be resolved if needed
         contract_info: DataContractInfo<'a>,
         /// Document type
@@ -314,6 +331,37 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
 
                 drive.delete_document_for_contract_operations(
                     document_id,
+                    contract,
+                    document_type,
+                    None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )
+            }
+            DocumentOperationType::DeleteIndexOnlyDocument {
+                document_id,
+                owner_id,
+                data,
+                contract_info,
+                document_type_info,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+
+                // Reconstruct the document the entries were written from.
+                let document = Drive::index_only_document_from_values(document_id, owner_id, data)?;
+
+                drive.delete_index_only_document_for_contract_operations(
+                    document,
                     contract,
                     document_type,
                     None,

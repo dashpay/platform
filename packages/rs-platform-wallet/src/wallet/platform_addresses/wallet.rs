@@ -542,8 +542,7 @@ impl PlatformAddressWallet {
     ///
     /// Equivalent to [`initialize`]: the unified provider is rebuilt
     /// from the current account set in the wallet manager. The name
-    /// is kept for API continuity with call sites that used to add
-    /// per-account providers.
+    /// is kept for API continuity with per-account-provider call sites.
     pub async fn add_provider(&self, _account_index: u32) -> Result<(), PlatformWalletError> {
         self.initialize().await;
         Ok(())
@@ -970,6 +969,7 @@ mod found_026_tests {
 
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let info = PlatformWalletInfo {
+            observed_input_conflicts: Default::default(),
             core_wallet: ManagedWalletInfo::from_wallet(&wallet, 0),
             generation: Arc::new(crate::wallet::core::WalletGeneration::new()),
             identity_manager: crate::wallet::identity::IdentityManager::new(),

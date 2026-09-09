@@ -23,6 +23,171 @@ mod replacement_tests {
     /// Creates a document from `contract_path`'s message type, applies `create_setup`
     /// to it, processes the creation (asserting success), then applies `replace_mutation`
     /// and processes the replacement, returning its execution result.
+    /// propertyAgreement on replace: changing the REFERRING property while
+    /// leaving the reference untouched must re-validate the agreement —
+    /// the changed-fields gate binds the agreement's referring properties,
+    /// not only the reference property itself.
+    #[tokio::test]
+    async fn should_document_replace_fail_when_agreement_property_diverges() {
+        use crate::platform_types::platform_state::PlatformState;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::state_transition::StateTransition;
+
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let mut rng = StdRng::seed_from_u64(4433);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let contract = setup_contract(
+            &platform.drive,
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-valid.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let process = |platform: &TempPlatform<MockCoreRPCLike>,
+                       platform_state: &PlatformState,
+                       transition: &StateTransition| {
+            let serialized = transition
+                .serialize_to_bytes()
+                .expect("expected the transition to serialize");
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+            result
+                .execution_results()
+                .first()
+                .expect("expected one execution result")
+                .clone()
+        };
+
+        // A note with topic "alpha" for the message to agree with.
+        let note_type = contract
+            .document_type_for_name("note")
+            .expect("expected the note document type");
+        let note_entropy = Bytes32::random_with_rng(&mut rng);
+        let mut note = note_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                note_entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random note");
+        note.set("topic", "alpha".into());
+        let note_create = BatchTransition::new_document_creation_transition_from_document(
+            note.clone(),
+            note_type,
+            note_entropy.0,
+            &key,
+            2,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the note create transition");
+        assert_matches!(
+            process(&platform, &platform_state, &note_create),
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        // An agreeing message referencing it.
+        let message_type = contract
+            .document_type_for_name("message")
+            .expect("expected the message document type");
+        let message_entropy = Bytes32::random_with_rng(&mut rng);
+        let mut message = message_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                message_entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random message");
+        message.set(
+            "noteId",
+            dpp::platform_value::Value::Identifier(note.id().to_buffer()),
+        );
+        message.set("topic", "alpha".into());
+        let message_create = BatchTransition::new_document_creation_transition_from_document(
+            message.clone(),
+            message_type,
+            message_entropy.0,
+            &key,
+            3,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the message create transition");
+        assert_matches!(
+            process(&platform, &platform_state, &message_create),
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        // Replace ONLY the referring property: the reference is untouched,
+        // so this must be caught by the agreement-aware changed-fields gate.
+        message.set("topic", "beta".into());
+        message.increment_revision().expect("revision increments");
+        let message_replace = BatchTransition::new_document_replacement_transition_from_document(
+            message,
+            message_type,
+            &key,
+            4,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the message replace transition");
+        assert_matches!(
+            process(&platform, &platform_state, &message_replace),
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentPropertyMismatchError(_)
+                ),
+                ..
+            }
+        );
+    }
+
     async fn run_reference_validation_create_then_replace<C, R>(
         contract_path: &str,
         create_setup: C,

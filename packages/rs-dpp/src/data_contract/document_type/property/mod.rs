@@ -102,6 +102,15 @@ pub enum DocumentPropertyReferenceTarget {
         /// the declaring contract itself
         contract_id: Option<Identifier>,
         document_type_name: String,
+        /// Property agreement: each `{referring property: referenced
+        /// property}` pair must hold as an EQUALITY between the referring
+        /// document's value and the referenced document's value, checked by
+        /// consensus at document write time (the referenced document is
+        /// already fetched for existence validation, so agreement adds no
+        /// reads). Declarations are validated at contract registration:
+        /// both properties must exist and share one property type.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        property_agreement: BTreeMap<String, String>,
     },
     /// A specific public key of an identity: the property value holds the
     /// identity id and the named sibling property of the same document type
@@ -125,6 +134,7 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: Some(contract_id),
                 document_type_name,
+                ..
             } => write!(
                 f,
                 "permanent document (contract {contract_id}, document type {document_type_name})"
@@ -132,6 +142,7 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
                 document_type_name,
+                ..
             } => write!(
                 f,
                 "permanent document (own contract, document type {document_type_name})"
@@ -7247,6 +7258,7 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: Some(contract_id),
                 document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
             }
             .to_string(),
             format!("permanent document (contract {contract_id}, document type note)")
@@ -7255,9 +7267,52 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
                 document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
             }
             .to_string(),
             "permanent document (own contract, document type note)"
         );
+    }
+
+    /// A compile-time guard, not a behavioural test.
+    ///
+    /// `DocumentPropertyReferenceTarget` is mirrored outside this crate —
+    /// notably by wasm-dpp2's `DocumentPropertyReference` TypeScript union
+    /// and the conversion that builds it. Those live behind a `match` that
+    /// a new variant would not break, because they can fall back to a
+    /// catch-all. This exhaustive `match` has no catch-all, so adding a
+    /// sixth variant fails to compile *here*, in the crate that owns the
+    /// enum, where whoever adds it will see it.
+    #[test]
+    fn reference_targets_are_exhaustively_mirrored() {
+        let targets = [
+            DocumentPropertyReferenceTarget::Identity,
+            DocumentPropertyReferenceTarget::Contract,
+            DocumentPropertyReferenceTarget::Token,
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
+            },
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property: "signerKeyId".to_string(),
+            },
+        ];
+
+        for target in &targets {
+            // No `_ =>` arm: a new variant is a compile error.
+            let json_tag = match target {
+                DocumentPropertyReferenceTarget::Identity => "identity",
+                DocumentPropertyReferenceTarget::Contract => "contract",
+                DocumentPropertyReferenceTarget::Token => "token",
+                DocumentPropertyReferenceTarget::PermanentDocument { .. } => "permanentDocument",
+                DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
+            };
+
+            // The tag is the `refersTo` schema keyword's own `type` value,
+            // which is what the JS surface reports verbatim.
+            assert!(!json_tag.is_empty());
+            assert!(!target.to_string().is_empty());
+        }
     }
 }

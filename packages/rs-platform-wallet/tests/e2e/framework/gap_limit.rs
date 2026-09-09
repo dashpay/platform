@@ -227,13 +227,12 @@ mod tests {
     use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey};
     use key_wallet::dashcore::secp256k1::Secp256k1;
     use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::{KeySource, Network};
 
     fn test_key_source() -> KeySource {
         let mnemonic = Mnemonic::from_phrase(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-            Language::English,
         )
         .expect("mnemonic parses");
         let seed = mnemonic.to_seed("");
