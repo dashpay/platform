@@ -8,7 +8,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use dashcore::{Address, OutPoint, Transaction};
+use dashcore::{Address, OutPoint, PubkeyHash, ScriptBuf, Transaction};
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_collection::ManagedAccountCollection;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -72,6 +72,39 @@ fn map_builder_error(error: BuilderError, context: FundingContext<'_>) -> Platfo
         };
     }
     PlatformWalletError::TransactionBuild(error.to_string())
+}
+
+/// key-wallet's `FeeRate::calculate_fee`, with the multiplication checked.
+///
+/// Upstream computes `(sat_per_kb * size_bytes).div_ceil(1000)` unchecked, and
+/// the rate reaching [`CoreWallet::pooled_max_sendable`] is a `u64` the host
+/// picks and hands across the FFI. An overflow there is not a wrong number:
+/// the iOS profile builds with `panic = "abort"`, so it takes the host process
+/// down instead of surfacing as an error the caller can show — and a profile
+/// without overflow checks is worse still, wrapping silently into a fee that
+/// makes the reported maximum nonsense. Both become a typed error here.
+fn checked_fee(fee_rate: FeeRate, size_bytes: usize) -> Result<u64, PlatformWalletError> {
+    fee_rate
+        .as_sat_per_kb()
+        .checked_mul(size_bytes as u64)
+        .map(|total| total.div_ceil(1000))
+        .ok_or_else(|| {
+            PlatformWalletError::TransactionBuild(format!(
+                "fee rate {} sat/kb overflows for a {size_bytes}-byte transaction",
+                fee_rate.as_sat_per_kb()
+            ))
+        })
+}
+
+/// The output [`CoreWallet::pooled_max_sendable`] prices: one P2PKH, matching
+/// the `estimate_tx_size(_, 1, false)` model it sizes the transaction with.
+///
+/// Only the script *shape* matters — `dust_value` reads the encoded length, not
+/// the hash — so a zero hash stands in for the real destination, which the
+/// caller has not chosen yet at send-max time.
+fn modeled_output_script() -> ScriptBuf {
+    use dashcore::hashes::Hash;
+    ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0u8; 20]))
 }
 
 /// A signed Core transaction whose selected inputs remain reserved until it is
@@ -263,13 +296,6 @@ pub const SEND_FUNDING_SOURCES: [AccountTypePreference; 3] = [
 /// through `AssetLockBuildAmount::DrainAll`.
 pub const ASSET_LOCK_FUNDING_SOURCES: [AccountTypePreference; 3] = SEND_FUNDING_SOURCES;
 
-/// The concrete accounts `preference` resolves to at `source_index` — the
-/// platform mirror of key-wallet's private `account_types_for`: the single
-/// account at `source_index` for the standard families, and every DashPay
-/// receiving account the selector picks (which span their own indices) for a
-/// DashPay source. A set selector matching nothing resolves to an empty list,
-/// not an error — a wallet with no contacts still sends from its standard
-/// accounts.
 /// The accounts a pooled build will actually fund from, in funding order and
 /// deduplicated: those `resolve_source_accounts` names AND that resolve on both
 /// halves — the keys side (`wallet.accounts`) and the managed side
@@ -312,16 +338,27 @@ pub(crate) fn resolved_funding_accounts(
         }
     }
     // A strict SET selector (a DashPay preference naming zero accounts) is a
-    // miss too: the caller asked for exactly those funds.
+    // miss too: the caller asked for exactly those funds. Name the preference
+    // itself, not the `Option` wrapping it — `strict` only ever arrives with a
+    // one-element list, but formatting the `Option` would print `Some(BIP44)`.
     if strict && resolved.is_empty() {
-        return Err(PlatformWalletError::WalletNotFound(format!(
-            "wallet account {:?} #{source_index} not found",
-            sources.first()
-        )));
+        return Err(PlatformWalletError::WalletNotFound(match sources.first() {
+            Some(preference) => {
+                format!("wallet account {preference:?} #{source_index} not found")
+            }
+            None => format!("no funding source named for #{source_index}"),
+        }));
     }
     Ok(resolved)
 }
 
+/// The concrete accounts `preference` resolves to at `source_index` — the
+/// platform mirror of key-wallet's private `account_types_for`: the single
+/// account at `source_index` for the standard families, and every DashPay
+/// receiving account the selector picks (which span their own indices) for a
+/// DashPay source. A set selector matching nothing resolves to an empty list,
+/// not an error — a wallet with no contacts still sends from its standard
+/// accounts.
 pub(crate) fn resolve_source_accounts(
     accounts: &key_wallet::account::ManagedAccountCollection,
     preference: AccountTypePreference,
@@ -488,7 +525,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
         // A UTXO earns its place only if it brings in more than its own input
         // costs at this rate; the rest are dead weight and are dropped.
-        let input_cost = fee_rate.calculate_fee(per_input);
+        let input_cost = checked_fee(fee_rate, per_input)?;
         let mut values: Vec<u64> = Vec::new();
         for at in resolved {
             let Some(managed) = info.core_wallet.accounts.funds_account(&at) else {
@@ -515,8 +552,17 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         }
 
         let selected: u64 = values.iter().sum();
-        let fee = fee_rate.calculate_fee(estimate_tx_size(values.len(), 1, false));
-        Ok(selected.saturating_sub(fee))
+        let fee = checked_fee(fee_rate, estimate_tx_size(values.len(), 1, false))?;
+        let net = selected.saturating_sub(fee);
+
+        // Covering the fee is not enough: an output below the modeled script's
+        // dust threshold is rejected by standard relay policy, so offering that
+        // amount as a maximum names a payment that cannot be relayed. Report
+        // nothing sendable instead — the same answer an empty pool gives.
+        if net < modeled_output_script().dust_value().to_sat() {
+            return Ok(0);
+        }
+        Ok(net)
     }
 
     /// Consume a configured builder, atomically fund and reserve its selected
@@ -604,26 +650,27 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 source_index,
                 strict,
             )?;
-            {
-                for at in resolved {
-                    let (Some(account), Some(managed)) = (
-                        wallet.accounts.account_of_type(at),
-                        info.core_wallet.accounts.funds_account_mut(&at),
-                    ) else {
-                        continue;
-                    };
-                    for utxo in managed.utxos.values() {
-                        if let Some(path) = managed.address_derivation_path(&utxo.address) {
-                            paths.insert(utxo.address.clone(), path);
-                        }
+            for at in resolved {
+                // `resolved_funding_accounts` already dropped anything missing
+                // from either half, so this destructure is defensive only —
+                // the `continue` is not a reachable skip.
+                let (Some(account), Some(managed)) = (
+                    wallet.accounts.account_of_type(at),
+                    info.core_wallet.accounts.funds_account_mut(&at),
+                ) else {
+                    continue;
+                };
+                for utxo in managed.utxos.values() {
+                    if let Some(path) = managed.address_derivation_path(&utxo.address) {
+                        paths.insert(utxo.address.clone(), path);
                     }
-                    builder = if reservation_only {
-                        builder.add_funding_reservation_only(managed, account)
-                    } else {
-                        builder.add_funding(managed, account)
-                    };
-                    offered_accounts.push(at);
                 }
+                builder = if reservation_only {
+                    builder.add_funding_reservation_only(managed, account)
+                } else {
+                    builder.add_funding(managed, account)
+                };
+                offered_accounts.push(at);
             }
             if offered_accounts.is_empty() {
                 return Err(PlatformWalletError::WalletNotFound(format!(
@@ -949,7 +996,9 @@ mod tests {
         funded_wallet_manager_with_contact, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
         AlwaysRejectedBroadcaster, WalletSigner,
     };
-    use crate::wallet::core::transaction::MAX_STANDARD_TX_INPUTS;
+    use key_wallet::wallet::managed_wallet_info::fee::{estimate_tx_size, FeeRate};
+
+    use crate::wallet::core::transaction::{modeled_output_script, MAX_STANDARD_TX_INPUTS};
     use crate::wallet::core::CoreWallet;
     use crate::PlatformWalletError;
 
@@ -1352,15 +1401,37 @@ mod tests {
             )
         };
 
-        // Anything needing the UTXO beyond the cap is unbuildable — this is the
-        // amount an uncapped maximum would have offered.
-        let over = core
-            .finalize_transaction(spend(capped_value + 1, 80), sources, 0, &signer)
-            .await;
+        // Anything needing the UTXO beyond the cap is unbuildable. The amount
+        // has to be the one an UNCAPPED maximum would have offered — the gross
+        // total minus the fee a build spending every UTXO would pay — so that
+        // funds are sufficient and the cap is the only thing left to refuse.
+        // `capped_value + 1` looks like the same test but is not: it leaves too
+        // little for the 501-input fee, fails on funds first, and would keep
+        // passing if key-wallet dropped its cap entirely.
+        let uncapped_max = gross
+            - FeeRate::normal().calculate_fee(estimate_tx_size(
+                MAX_STANDARD_TX_INPUTS + 1,
+                1,
+                false,
+            ));
+        // Note it is BELOW `capped_value`: the 501st input's fee costs more
+        // than the 10,000 duffs it brings. What makes it need that input is
+        // that it is beyond what a 500-input build can pay for — which is
+        // exactly the reported maximum.
         assert!(
-            over.is_err(),
-            "an amount requiring more than the cap must not build, got {over:?}"
+            uncapped_max > max,
+            "the uncapped amount must be past what a capped build can pay: {uncapped_max} vs {max}"
         );
+        let over = core
+            .finalize_transaction(spend(uncapped_max, 80), sources, 0, &signer)
+            .await;
+        match over {
+            Err(PlatformWalletError::TransactionBuild(message)) => assert!(
+                message.contains("Too many inputs"),
+                "the refusal must be the input cap, not something else: {message}"
+            ),
+            other => panic!("an amount requiring more than the cap must be refused for that reason, got {other:?}"),
+        }
 
         // The reported maximum builds, and fills the transaction exactly to the
         // cap — which is only true if the mirrored constant matches key-wallet's.
@@ -1374,6 +1445,95 @@ mod tests {
             "spending the capped maximum must fill the transaction to the cap"
         );
         core.abandon_transaction(&finalized).await;
+    }
+
+    /// A fee rate the host may pass but the fee arithmetic cannot hold.
+    ///
+    /// key-wallet multiplies `sat_per_kb * size_bytes` unchecked, and the rate
+    /// arrives as a `u64` chosen host-side and forwarded verbatim by
+    /// `core_wallet_pooled_max_sendable`. The iOS profile builds with
+    /// `panic = "abort"`, so an overflow inside that multiplication ends the
+    /// process rather than the call — it has to be refused before it happens,
+    /// and the largest representable rate must still compute.
+    #[tokio::test]
+    async fn pooled_max_sendable_refuses_a_fee_rate_that_would_overflow() {
+        let (manager, wallet_id, generation, _signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                StandardAccountType::BIP44Account,
+                &[10_000_000],
+            )
+            .await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+        let sources = &[AccountTypePreference::BIP44][..];
+
+        let refused = core
+            .pooled_max_sendable(sources, 0, Some(FeeRate::new(u64::MAX)))
+            .await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::TransactionBuild(_))),
+            "an unrepresentable fee rate must be an error, not a panic: {refused:?}"
+        );
+
+        // The boundary itself: the highest rate whose per-input fee still fits.
+        // Every UTXO is priced out at a rate this large, so the answer is zero —
+        // but it is an ANSWER, which is the point.
+        let per_input =
+            estimate_tx_size(1, 1, false).saturating_sub(estimate_tx_size(0, 1, false)) as u64;
+        let highest = u64::MAX / per_input;
+        assert_eq!(
+            core.pooled_max_sendable(sources, 0, Some(FeeRate::new(highest)))
+                .await
+                .expect("the largest representable rate must still compute"),
+            0,
+            "no UTXO can outearn its own input cost at that rate"
+        );
+    }
+
+    /// Covering the fee is not the same as being spendable: an output under the
+    /// dust threshold is refused by standard relay, so a maximum reported below
+    /// it names a payment that cannot be made. Both sides of the boundary.
+    #[tokio::test]
+    async fn pooled_max_sendable_reports_nothing_when_the_net_output_would_be_dust() {
+        let fee = FeeRate::normal().calculate_fee(estimate_tx_size(1, 1, false));
+        let dust = modeled_output_script().dust_value().to_sat();
+
+        let max_for = |funding: u64| async move {
+            let (manager, wallet_id, generation, _signer) =
+                crate::test_support::funded_wallet_manager_with_outputs(
+                    StandardAccountType::BIP44Account,
+                    &[funding],
+                )
+                .await;
+            let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+            CoreWallet::new(
+                sdk,
+                manager,
+                wallet_id,
+                Arc::new(AlwaysOkBroadcaster),
+                generation,
+            )
+            .pooled_max_sendable(&[AccountTypePreference::BIP44][..], 0, None)
+            .await
+            .expect("max sendable")
+        };
+
+        assert_eq!(
+            max_for(dust + fee - 1).await,
+            0,
+            "one duff short of a relayable output must report nothing sendable"
+        );
+        assert_eq!(
+            max_for(dust + fee).await,
+            dust,
+            "exactly at the dust threshold is still sendable"
+        );
     }
 
     /// The DashPay leg, and the exclusion the ticket turned on: contact funds
