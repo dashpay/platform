@@ -400,13 +400,16 @@ impl DashPaySyncManager {
     /// operation (each also has its own standalone on-demand FFI caller).
     ///
     /// The six steps run **independently** (log-and-continue) so a failure in
-    /// one does not skip the others. The two network *fetch* steps
-    /// (`sync_contact_requests`, `sync_profiles`) surface their first error so
-    /// the sweep can record this wallet as failed; the remaining steps
-    /// (contact profiles, contactInfo, the two payment reconciles) are
-    /// display- or local-only and never fail the pass. Contact requests run
-    /// first so freshly established contacts' accounts are registered before
-    /// the incoming-payment reconcile.
+    /// one does not skip the others. Four of them surface their first error
+    /// once every step has run, so the sweep can record this wallet as failed:
+    /// the two network *fetch* steps (`sync_contact_requests`,
+    /// `sync_profiles`), plus the two sent-payment reconciles, whose only
+    /// failure mode is a permanently unreadable persisted record — a store
+    /// fault the host has to hear about, not a display gap. The display-only
+    /// steps (contact profiles, contactInfo, the incoming reconcile, the
+    /// rescan backfill) never fail the pass. Contact requests run first so
+    /// freshly established contacts' accounts are registered before the
+    /// incoming-payment reconcile.
     async fn sync_wallet_dashpay(
         &self,
         wallet: &Arc<PlatformWallet>,
@@ -467,11 +470,11 @@ impl DashPaySyncManager {
         // wallet transaction history + the contact external-account
         // address pools. Runs after the incoming reconcile so an
         // existing received entry under the txid wins the dedup guard.
-        if let Err(e) = identity
+        let reconstruct_result = identity
             .dashpay()
             .reconcile_sent_payments_from_tx_history()
-            .await
-        {
+            .await;
+        if let Err(e) = &reconstruct_result {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 error = %e,
@@ -495,7 +498,8 @@ impl DashPaySyncManager {
 
         // Local-only: confirm `Pending` `Sent` payments the persisted core
         // record reports final (mined or InstantSend-locked).
-        if let Err(e) = identity.dashpay().reconcile_sent_payments().await {
+        let confirm_result = identity.dashpay().reconcile_sent_payments().await;
+        if let Err(e) = &confirm_result {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 error = %e,
@@ -503,9 +507,12 @@ impl DashPaySyncManager {
             );
         }
 
-        // Surface the first fetch error (if any); both fetch steps have run.
+        // Surface the first error (if any); every step above has already run,
+        // so reporting one costs the others nothing.
         contact_result?;
         profile_result?;
+        reconstruct_result?;
+        confirm_result?;
         Ok(())
     }
 }

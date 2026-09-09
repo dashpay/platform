@@ -644,6 +644,13 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic_wit
 /// produce wallet handles — the caller should follow up with
 /// [`platform_wallet_manager_get_wallet`] per `wallet_id` it knows
 /// about.
+///
+/// On error the handle stays valid and the manager is unchanged: fix the
+/// store and call again, or destroy the manager and reconstruct it. Reopening
+/// the same store path requires all persister references to be released.
+/// [`platform_wallet_manager_destroy`] drops the manager's own references;
+/// wallet handles, workers and in-flight operations can retain others after
+/// it returns.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_load_from_persistor(
     manager_handle: Handle,
@@ -725,10 +732,8 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
                  release them on exit"
             );
         }
-        // Dropping the manager here releases its persister/event-handler
-        // references; the host contexts are released (via `release_fn`)
-        // as soon as the last worker's reference drops — typically right
-        // now, or later if a straggler is still draining.
+        // Host contexts release with their last reference, which may outlive
+        // this manager through a wallet handle, worker or in-flight operation.
     }
     PlatformWalletFFIResult::ok()
 }
