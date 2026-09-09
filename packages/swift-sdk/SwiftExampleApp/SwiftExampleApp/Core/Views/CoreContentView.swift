@@ -969,84 +969,6 @@ struct CompactSyncRow: View {
     }
 }
 
-// MARK: - Sync Progress Row (Legacy)
-
-struct SyncProgressRow: View {
-    let title: String
-    let progress: Double
-    let detail: String
-    let icon: String
-    let trailingValue: String?
-    let onRestart: () -> Void
-    var navigationDestination: AnyView? = nil
-
-    // Ensure progress is always between 0 and 1
-    private var safeProgress: Double {
-        min(max(progress, 0.0), 1.0)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                // Make only the label tappable if there's a navigation destination
-                if let destination = navigationDestination {
-                    NavigationLink(destination: destination) {
-                        HStack(spacing: 6) {
-                            Image(systemName: icon)
-                                .font(.subheadline)
-                            Text(title)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                        }
-                        .foregroundColor(.blue)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                } else {
-                    Label(title, systemImage: icon)
-                        .font(.subheadline)
-                        .foregroundColor(.primary)
-                }
-
-                Spacer()
-
-                if let trailingValue = trailingValue {
-                    Text(trailingValue)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                Button(action: onRestart) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                }
-                .buttonStyle(BorderlessButtonStyle())
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                ProgressView(value: safeProgress)
-                    .progressViewStyle(LinearProgressViewStyle())
-                    .tint(progressColor(for: safeProgress))
-
-                Text(detail)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func progressColor(for value: Double) -> Color {
-        if value >= 1.0 {
-            return .green
-        } else if value >= 0.5 {
-            return .blue
-        } else {
-            return .orange
-        }
-    }
-}
-
 // MARK: - Wallet Row View
 
 struct WalletRowView: View {
@@ -1377,7 +1299,6 @@ private struct QueryCountBadge: View {
 struct ProofDetailView: View {
     let proofData: Data
     @State private var formattedProof: String = "Decoding..."
-    @State private var copiedText: String?
 
     private var proofHex: String {
         proofData.map { String(format: "%02x", $0) }.joined()

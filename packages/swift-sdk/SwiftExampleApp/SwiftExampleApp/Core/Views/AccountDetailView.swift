@@ -16,11 +16,6 @@ struct AccountDetailView: View {
     @Query private var allMasternodes: [PersistentMasternode]
 
     @State private var errorMessage: String?
-    @State private var copiedText: String?
-    @State private var showingPrivateKey: String?
-    @State private var privateKeyToShow: (hex: String, wif: String)?
-    @State private var showingPINPrompt = false
-    @State private var pinInput = ""
 
     // MARK: Provider derived-keys state
     /// The #0..#19 keys derived from a provider account's extended
@@ -165,18 +160,6 @@ struct AccountDetailView: View {
         .navigationBarTitleDisplayMode(.large)
         .sheet(item: $selectedTransaction) { transaction in
             TransactionDetailView(transaction: transaction)
-        }
-        .sheet(isPresented: $showingPINPrompt) {
-            PINPromptView(
-                pinInput: $pinInput,
-                isPresented: $showingPINPrompt,
-                onSubmit: {
-                    Task {
-                        await derivePrivateKeyWithPIN()
-                        pinInput = ""
-                    }
-                }
-            )
         }
         .onAppear { appUIState.showWalletsSyncDetails = false }
     }
@@ -1152,60 +1135,5 @@ struct AccountDetailView: View {
             return "\(formatted) DASH"
         }
         return String(format: "%.8f DASH", dash)
-    }
-
-    private func derivePrivateKeyWithPIN() async {
-        // TODO(platform-wallet): needs new FFI for WIF derivation via
-        // PlatformWalletManager. For now, surface a stubbed error.
-        await MainActor.run {
-            errorMessage = "Private key derivation is not yet available through the new PlatformWalletManager."
-        }
-    }
-}
-
-// MARK: - PIN Prompt View
-
-struct PINPromptView: View {
-    @Binding var pinInput: String
-    @Binding var isPresented: Bool
-    let onSubmit: () -> Void
-
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                Text("Enter Wallet PIN")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-
-                Text("Your PIN is required to access private keys")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-
-                SecureField("PIN", text: $pinInput)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numberPad)
-                    .padding(.horizontal)
-
-                HStack(spacing: 20) {
-                    Button("Cancel") {
-                        pinInput = ""
-                        isPresented = false
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button("Unlock") {
-                        onSubmit()
-                        isPresented = false
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(pinInput.isEmpty)
-                }
-
-                Spacer()
-            }
-            .padding()
-            .navigationBarHidden(true)
-        }
     }
 }
