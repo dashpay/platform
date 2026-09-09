@@ -7,7 +7,7 @@ use chacha20poly1305::aead::Aead;
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
 use getrandom::getrandom;
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use super::super::secret::{SecretBytes, SecretString};
 use super::format::KDF_ID_ARGON2ID;
@@ -185,49 +185,11 @@ impl KdfParams {
     }
 }
 
-/// Caller-owned Argon2 working memory, wiped before it is released.
-///
-/// The block matrix is key-equivalent — its seed blocks derive from
-/// `H0` and the last pass's final block is hashed straight into the
-/// output tag — but argon2 0.5.3's `zeroize` feature covers only
-/// `initial_hash`/`blockhash`. [`Argon2::hash_password_into`] allocates
-/// the matrix internally and drops it intact, so this crate owns it
-/// instead and passes it to `hash_password_into_with_memory`.
-struct ScopedBlocks(Vec<Block>);
-
-impl ScopedBlocks {
-    fn new(block_count: usize) -> Self {
-        Self(vec![Block::default(); block_count])
-    }
-
-    /// Zeroize every block IN PLACE, keeping the vector's length — a
-    /// length-clearing `Vec::zeroize` would make the wipe unobservable to
-    /// `argon2_block_matrix_is_wiped_before_release`, and an unverifiable
-    /// security fix is not one.
-    fn wipe(&mut self) {
-        for block in &mut self.0 {
-            block.zeroize();
-        }
-    }
-}
-
-impl AsMut<[Block]> for ScopedBlocks {
-    fn as_mut(&mut self) -> &mut [Block] {
-        &mut self.0
-    }
-}
-
-impl Drop for ScopedBlocks {
-    fn drop(&mut self) {
-        self.wipe();
-    }
-}
-
 /// Derive a 32-byte AEAD key from `passphrase` + `salt` with Argon2id,
 /// landing directly in a [`SecretBytes`]. Takes `&SecretString` so the
 /// bare-byte passphrase view lives only inside this function.
 ///
-/// The Argon2 block matrix is caller-owned ([`ScopedBlocks`]), so it is
+/// The Argon2 block matrix is caller-owned inside [`Zeroizing`], so it is
 /// wiped on every exit including the error path. Residual against A5
 /// (swap / core-dump while unlocked): that matrix is ordinary heap, not
 /// `mlock`ed — a guarded allocation of up to `m_kib` does not fit the
@@ -244,7 +206,9 @@ pub(crate) fn derive_key(
     let block_count = argon_params.block_count();
     let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params);
     let mut key = SecretBytes::zeroed(KEY_LEN);
-    let mut blocks = ScopedBlocks::new(block_count);
+    // Argon2 0.5.3 does not wipe its internally allocated matrix. A boxed
+    // slice keeps our key-equivalent working memory fixed in place until drop.
+    let mut blocks = Zeroizing::new(vec![Block::default(); block_count].into_boxed_slice());
     argon
         .hash_password_into_with_memory(
             passphrase.expose_secret().as_bytes(),
@@ -337,6 +301,7 @@ pub(crate) fn open(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zeroize::Zeroize;
 
     // Compile-time guard: argon2's `impl Zeroize for Block` is feature-
     // gated, so this fails to build if `argon2/zeroize` is ever dropped.
@@ -403,18 +368,18 @@ mod tests {
         assert!(KdfParams::floor_target().enforce_read_ceiling().is_ok());
     }
 
-    /// The block matrix is key-equivalent state, so `ScopedBlocks` must
+    /// The block matrix is key-equivalent state, so zeroization must
     /// leave none of it behind. Filled through argon2's public
     /// `fill_memory`, so the wipe is proven against REAL derived material
     /// rather than a synthetic pattern.
     #[test]
     fn argon2_block_matrix_is_wiped_before_release() {
-        // Deliberately tiny (8 KiB): this exercises ScopedBlocks, not the
+        // Deliberately tiny (8 KiB): this exercises matrix zeroization, not the
         // production cost parameters.
         let params = Params::new(8, 1, 1, Some(KEY_LEN)).unwrap();
         let block_count = params.block_count();
         let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-        let mut blocks = ScopedBlocks::new(block_count);
+        let mut blocks = Zeroizing::new(vec![Block::default(); block_count].into_boxed_slice());
         argon
             .fill_memory(b"passphrase", &[7u8; SALT_LEN], &mut blocks)
             .unwrap();
@@ -433,7 +398,12 @@ mod tests {
             "fixture must hold real derived state before the wipe"
         );
 
-        blocks.wipe();
+        blocks.zeroize();
+        assert_eq!(
+            blocks.len(),
+            block_count,
+            "the wipe must preserve the matrix"
+        );
 
         assert_eq!(
             nonzero_words(blocks.as_mut()),
