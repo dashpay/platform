@@ -1,15 +1,21 @@
-//! Build-only proof (M-S4) that the default build (no flag passed)
-//! reaches `EncryptedFileStore` as a public type.
+//! Build-only proof (M-S4) that the `secrets` public surface is reachable
+//! from the crate root, not only by a deep module path.
 //!
-//! With `secrets` in the default feature set, importing the type from
-//! the crate root without enabling any feature flag is the assertion.
-//! The test body never exercises a backend — it only compiles.
+//! Naming every re-export in a body that never runs a backend is the whole
+//! assertion: it fails to COMPILE if a type stops being re-exported at
+//! `platform_wallet_storage::secrets`.
+//!
+//! It does NOT prove that `secrets` is default-on, and cannot: the
+//! dev-dependency this file compiles under sets `default-features = false` and
+//! then lists `secrets` explicitly, so the feature is on by request here, not
+//! by default. Proving the shipped default set would take a separate crate or
+//! a CI step that builds with real defaults.
 
 #![cfg(feature = "secrets")]
 
 use platform_wallet_storage::secrets::{
     default_credential_store, EncryptedFileStore, SecretBytes, SecretStoreError, SecretString,
-    WalletId, SERVICE_PREFIX,
+    WalletId, MAX_PLAINTEXT_LEN, MIN_PASSPHRASE_LEN, SERVICE_PREFIX,
 };
 
 #[test]
@@ -23,6 +29,9 @@ fn default_build_exposes_secrets_surface() {
     }
     let _ = _accepts_path as fn(_, _) -> _;
     let _ = SERVICE_PREFIX.len();
+    // The Tier-2 public consts are re-exported on the default build.
+    let _ = MAX_PLAINTEXT_LEN;
+    let _ = MIN_PASSPHRASE_LEN;
     let _ = std::mem::size_of::<WalletId>();
     let _ = std::mem::size_of::<SecretBytes>();
     let _ = std::mem::size_of::<SecretStoreError>();
