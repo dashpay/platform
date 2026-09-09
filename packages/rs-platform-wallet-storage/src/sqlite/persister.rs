@@ -829,6 +829,11 @@ impl PlatformWalletPersistence for SqlitePersister {
         // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
         // `load()` still reports `ClientStartState::wallets` in
         // `LOAD_UNIMPLEMENTED`. Shielded state lives in a separate store.
+        // `CORE_SWEEP_REMOVAL`: the full contract — loser removal, the
+        // outpoint-keyed placeholder for a held input whose funding has not
+        // classified, releases by outpoint, and the finality-boundary
+        // collector — is implemented and documented in `core_state::apply`,
+        // `apply_sweep` and `collect_finalized_tombstones`.
         PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
@@ -837,6 +842,8 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
+            .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
+            .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
     }
 
     fn persist_tracked_masternodes(

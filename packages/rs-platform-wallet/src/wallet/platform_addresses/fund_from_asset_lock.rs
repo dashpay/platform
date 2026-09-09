@@ -80,10 +80,10 @@ impl PlatformAddressWallet {
     ///   [`remainder_fee_strategy`], because the only address that can
     ///   legitimately absorb the fee is the remainder output and its
     ///   consensus index is a property of that map's ordering, not of
-    ///   any caller's list order. Every binding that computed the index
-    ///   from its own list order silently mis-targeted the fee whenever
-    ///   the remainder was not also first lexicographically, so the
-    ///   index is no longer the caller's to supply. This mirrors the C
+    ///   any caller's list order. A binding that computes the index
+    ///   from its own list order silently mis-targets the fee whenever
+    ///   the remainder is not also first lexicographically, so the
+    ///   index is not the caller's to supply. This mirrors the C
     ///   ABI, where `fee_strategy` / `fee_strategy_count` are likewise
     ///   still accepted and ignored.
     ///
@@ -1151,10 +1151,10 @@ mod tests {
     /// Both arrangements are pinned, because the hazard is asymmetric:
     /// a caller computing the index from its own array order happens to
     /// be right whenever the remainder is also first lexicographically,
-    /// and silently wrong otherwise. The second case below is the one
-    /// that used to misfire — with a third-party payee in the set it
-    /// charges the fee to the payee's explicit amount instead of the
-    /// sender's change.
+    /// and silently wrong otherwise. The second case below is the one a
+    /// list-order index gets wrong — with a third-party payee in the set
+    /// it would charge the fee to the payee's explicit amount instead of
+    /// the sender's change.
     #[test]
     fn remainder_fee_strategy_targets_the_remainder_output() {
         let alice = p2pkh(0x0A);

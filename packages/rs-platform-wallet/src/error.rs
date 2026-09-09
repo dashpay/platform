@@ -14,6 +14,41 @@ pub enum PlatformWalletError {
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
 
+    /// The persister failed to load the client start state during rehydration.
+    ///
+    /// Scope: emitted by manager rehydration (`load_from_persistor` and the
+    /// post-registration rehydration) and by the DashPay sent-payment
+    /// reconcile reads. The shielded-build reads still flatten their failure
+    /// into `ShieldedBuildError(String)`.
+    ///
+    /// This and the sibling `Persister*` variants carry their typed
+    /// [`PersistenceError`](crate::changeset::PersistenceError) rather than a
+    /// flattened string, so its retry classification survives — a transient
+    /// `SQLITE_BUSY` stays distinguishable from a permanent failure, in-crate
+    /// and across the C ABI (`platform-wallet-ffi` maps each variant and kind
+    /// to its own `PlatformWalletFFIResultCode`). They are separate variants
+    /// so a failed write is never reported as a failed read.
+    #[error("failed to load persisted client state: {0}")]
+    PersisterLoad(#[source] crate::changeset::PersistenceError),
+
+    /// The persister failed to store the wallet-registration changeset.
+    /// See [`Self::PersisterLoad`] for why the typed cause is carried.
+    ///
+    /// Scope: wallet registration is the only write that reports this today.
+    /// A contact un-ignore flattens its failure into `Persistence(String)`,
+    /// the asset-lock pool write returns the raw `PersistenceError` on its own
+    /// signature, and the fire-and-forget writes (DPNS marketplace, platform
+    /// addresses, asset-lock tracking) log and swallow it. A host branching on
+    /// the classification gets it for registration and nowhere else yet.
+    #[error("failed to persist wallet registration changeset: {0}")]
+    PersisterStore(#[source] crate::changeset::PersistenceError),
+
+    /// Restoring persisted platform-address state into a freshly registered
+    /// wallet failed. Boxed to break the recursion; the inner variant and its
+    /// `#[source]` chain survive intact.
+    #[error("failed to restore persisted platform-address state: {0}")]
+    PersisterRestore(#[source] Box<PlatformWalletError>),
+
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
 
@@ -55,8 +90,8 @@ pub enum PlatformWalletError {
     /// A gap-limit scan ended empty with at least one index left unanswered.
     /// Distinct from an empty success: it means "we do not know", so the
     /// caller must retry rather than record that the seed owns no identity.
-    /// Both outcomes used to arrive as `Ok(vec![])`, which is how a transient
-    /// DAPI failure right after restore-from-seed became a whole session
+    /// Collapsing both outcomes into `Ok(vec![])` would let a transient
+    /// DAPI failure right after restore-from-seed become a whole session
     /// without an identity.
     ///
     /// "Retry" is the contract, not a promise that the cause is transient — a
@@ -122,16 +157,14 @@ pub enum PlatformWalletError {
     /// still provably unswept. The generation's pending-spend fence
     /// ([`WalletGeneration`](crate::wallet::core::WalletGeneration)) is NOT
     /// swept with either: it has no bound of its own and is released by the
-    /// wallet OBSERVING the outpoint spent, and by nothing else
-    /// (`dashpay/platform#4309`).
+    /// wallet OBSERVING the outpoint spent, and by nothing else.
     ///
-    /// So an earlier promise made here — that the reservation TTL reconciles an
-    /// ambiguous outcome — no longer holds and was never sound: elapsed time is
-    /// not evidence about the transaction, which stays valid and relayable no
-    /// matter how long the wait. The build refusal that follows a `MaybeSent`
-    /// is [`Self::InputMidBroadcast`], and it stands until a spend is observed
-    /// — this wallet's own transaction landing, or a conflicting one taking the
-    /// outpoint.
+    /// The reservation TTL does NOT reconcile an ambiguous outcome: elapsed
+    /// time is not evidence about the transaction, which stays valid and
+    /// relayable no matter how long the wait. The build refusal that follows
+    /// a `MaybeSent` is [`Self::InputMidBroadcast`], and it stands until a
+    /// spend is observed — this wallet's own transaction landing, or a
+    /// conflicting one taking the outpoint.
     ///
     /// Removing the wallet and re-creating it under the same id does NOT end
     /// the refusal: the fence map is keyed by wallet id and handed to the
@@ -203,11 +236,11 @@ pub enum PlatformWalletError {
     /// [`Self::AssetLockTransaction`] string: the refusal says nothing wrong
     /// about the request itself — the same intent can be re-attempted once
     /// the conflict resolves (see below for what "resolves" requires) — and
-    /// telling it apart from a genuine build failure previously meant
-    /// substring-matching prose (`message.contains("mid-broadcast")`, which
-    /// the tests did too). All three selection choke points — the
+    /// telling it apart from a genuine build failure must not require
+    /// substring-matching prose (`message.contains("mid-broadcast")`).
+    /// All three selection choke points — the
     /// finalized-transaction build, the contact-payment build and the
-    /// asset-lock build — now return this one variant.
+    /// asset-lock build — return this one variant.
     ///
     /// # Retrying the INTENT requires reconciling the fenced transaction first
     ///
@@ -231,8 +264,7 @@ pub enum PlatformWalletError {
     /// Reaching a caller at all is the uncommon path: a fenced input is
     /// normally still reserved and never offered to selection. This fires only
     /// in the window after key-wallet's reservation TTL swept that dispatch's
-    /// reservation, which is exactly what the fence exists to cover
-    /// (`dashpay/platform#4309`).
+    /// reservation, which is exactly what the fence exists to cover.
     #[error(
         "selected input {outpoint} is mid-broadcast by an in-flight dispatch; \
          retry after it completes"
@@ -505,7 +537,7 @@ pub enum PlatformWalletError {
 
     /// Asset-lock coin selection came up short, so a host (and ultimately the
     /// wallet UI) can render a precise shortfall instead of a stringly-typed
-    /// "Insufficient funds" message (dashpay/platform#4073).
+    /// "Insufficient funds" message.
     ///
     /// What `available` covers depends on the build's funding form. An
     /// exact-amount build funds from a POOLED source list — the default
@@ -910,6 +942,49 @@ pub enum PlatformWalletError {
     ShieldedNotBound,
 }
 
+impl PlatformWalletError {
+    /// A persister `load` failed.
+    ///
+    /// There is deliberately no blanket `From<PersistenceError>`: the
+    /// conversion is undecidable from the value, because a `PersistenceError`
+    /// does not record whether a load, a store or a flush produced it, so an
+    /// inferred one would silently label failed writes as failed reads. Pick
+    /// the constructor naming the operation that actually failed.
+    pub fn from_load_failure(source: crate::changeset::PersistenceError) -> Self {
+        Self::PersisterLoad(source)
+    }
+
+    /// A persister `store` failed. See [`Self::from_load_failure`] for why no
+    /// blanket conversion exists.
+    ///
+    /// `persister` is the one that failed: this is where the "transient means
+    /// nothing was committed, so re-issue it" promise is MADE — to the caller,
+    /// and across the C ABI as `ErrorPersisterStoreTransient` — so this is
+    /// where it is enforced. A `Transient` classification is narrowed to
+    /// `Fatal` unless the persister attests
+    /// [`store_transient_is_reissuable`](crate::changeset::PlatformWalletPersistence::store_transient_is_reissuable),
+    /// which is fail-closed. The `#[source]` chain survives the narrowing.
+    pub fn from_store_failure<P>(persister: &P, source: crate::changeset::PersistenceError) -> Self
+    where
+        P: crate::changeset::PlatformWalletPersistence + ?Sized,
+    {
+        use crate::changeset::PersistenceErrorKind;
+        let source = match source.kind() {
+            Some(PersistenceErrorKind::Transient) if !persister.store_transient_is_reissuable() => {
+                source.with_kind(PersistenceErrorKind::Fatal)
+            }
+            _ => source,
+        };
+        Self::PersisterStore(source)
+    }
+
+    /// Restoring persisted platform-address state failed. Boxes `source`, so
+    /// callers never write `Box::new`.
+    pub fn from_restore_failure(source: PlatformWalletError) -> Self {
+        Self::PersisterRestore(Box::new(source))
+    }
+}
+
 /// Check whether an SDK error indicates that an InstantSend lock proof was
 /// rejected by Platform (e.g. the IS lock has expired).
 ///
@@ -1177,7 +1252,7 @@ pub fn promote_document_trade_error_or(
 /// error, yet is deliberately kept free of any dependency on the FFI crate.
 /// The two definitions are pinned byte-identical by a compile-time assertion in
 /// `platform-wallet-ffi` (`src/error.rs`), so any drift is a build failure
-/// rather than a silent code-31 regression (dashpay/platform#4183 review).
+/// rather than a silent code-31 regression.
 pub const SIGNER_KEY_UNAVAILABLE_PREFIX: &str = "signer_error:key_unavailable: ";
 
 /// Preserve a structured `SigningKeyUnavailable` signer failure through an
@@ -1199,7 +1274,7 @@ pub const SIGNER_KEY_UNAVAILABLE_PREFIX: &str = "signer_error:key_unavailable: "
 /// The check is **structural and position-0 only** (the marker must start the
 /// nested `ProtocolError::Generic` payload); it is never a substring sniff of
 /// the rendered error, so a foreign signer that merely mentions the token is
-/// not misrouted into key repair (dashpay/platform#4183 review). This mirrors
+/// not misrouted into key repair. This mirrors
 /// the guarded restore already performed by the FFI conversion.
 pub fn preserve_signer_key_unavailable_or(
     error: dash_sdk::Error,
@@ -1258,7 +1333,7 @@ mod signer_key_unavailable_tests {
 
     /// The marker only counts at position 0: a generic error that merely
     /// mentions it mid-message is wrapped, never preserved as the typed
-    /// key-unavailable shape (dashpay/platform#4183 review).
+    /// key-unavailable shape.
     #[test]
     fn substring_marker_is_not_preserved() {
         let error = dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(

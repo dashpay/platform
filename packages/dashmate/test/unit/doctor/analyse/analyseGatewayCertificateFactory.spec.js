@@ -764,7 +764,10 @@ describe('analyseGatewayCertificateFactory', () => {
         detail: 'acme: error: 400 :: urn:ietf:params:acme:error:connection :: timeout',
         attemptedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
         lastSuccessAt: new Date(Date.now() - 5 * DAY_MS).toISOString(),
-        consecutiveFailures: 37,
+        // A sentinel no rendered date or time can contain: the counter-leak
+        // assertions below match it verbatim, so a coincidental "37" in a
+        // minute field can no longer fail them.
+        consecutiveFailures: 739577,
         issuanceSpentAt: null,
         issuanceUncertainAt: null,
         gatewayReloadFailedAt: null,
@@ -919,14 +922,13 @@ describe('analyseGatewayCertificateFactory', () => {
       const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
       const description = stripAnsi(renewal.getDescription());
       const solution = stripAnsi(renewal.getSolution());
-      const misleadingCounter = /\b37\b[^\n.]*\b(?:attempts?|failures?|failed|wake-ups?)\b/i;
 
       expect(solution).to.contain('Last renewed');
       expect(description).to.not.contain('failing since');
       expect(solution).to.not.contain('failing since');
       // The counter counts scheduler wake-ups, not attempts.
-      expect(description).to.not.match(misleadingCounter);
-      expect(solution).to.not.match(misleadingCounter);
+      expect(description).to.not.contain('739577');
+      expect(solution).to.not.contain('739577');
     });
 
     it('should name the cause instead of sending an operator to the logs', () => {

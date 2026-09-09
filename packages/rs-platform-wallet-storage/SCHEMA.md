@@ -90,10 +90,11 @@ erDiagram
         BLOB outpoint PK "bincode-encoded OutPoint"
         INTEGER value "satoshis"
         BLOB script "scriptPubKey bytes"
-        INTEGER height "NULL if unconfirmed"
+        INTEGER height "funding height, 0 if unconfirmed; NULL only for an unmaterialised sweep placeholder"
         INTEGER account_index
         INTEGER spent "0 | 1"
-        BLOB spent_in_txid "NULL until spend; cleared by trigger on tx delete"
+        BLOB spent_in_txid "set by apply_sweep for an unresolved held input; else NULL"
+        INTEGER winner_mined_height "V007: sweep winner's mined height; NULL when unstamped or materialised"
     }
 
     CORE_INSTANT_LOCKS {
@@ -115,6 +116,7 @@ erDiagram
         BLOB wallet_id PK "one row per wallet"
         INTEGER last_processed_height "NULL until first block processed"
         INTEGER synced_height "NULL until first sync"
+        INTEGER chainlock_height "V007: monotonic-max applied chainlock height; NULL until one is applied"
     }
 ```
 
@@ -381,14 +383,44 @@ is `1` once block context is present.
 
 ### `core_utxos`
 
-One row per UTXO, spent or unspent. `spent_in_txid` is set to NULL
-by a trigger when its referenced `core_transactions` row is deleted
-(instead of a native `ON DELETE SET NULL`, which would also null the
-NOT NULL `wallet_id` column).
+One row per UTXO, spent or unspent. `spent_in_txid` is written only by
+`apply_sweep`, naming the winner that took an input a swept loser claimed
+but this store had no released record for. It is set to NULL by a trigger
+when its referenced `core_transactions` row is deleted (instead of a native
+`ON DELETE SET NULL`, which would also null the NOT NULL `wallet_id`
+column) — and by a later sweep that releases the same outpoint.
+
+What gates the funding UTXO's own later upsert (`execute_upsert_utxo`) is
+the row's shape, not that link: a never-materialised held row (`height`
+NULL, `spent = 1` — the placeholder `apply_sweep` writes for an input whose
+funding this store had not seen) stays spent when the funding arrives, with
+or without a `spent_in_txid` (the trigger can null it underneath a live
+hold). A materialised row follows the wallet: it knows the coin, any
+network-final spender of a coin it knows is wallet-relevant, so its view of
+`spent` is authoritative and a re-delivery clears both `spent` and the
+link. A delivery through `spent_utxos` onto a placeholder materialises it
+the same way instead of marking it in place.
+
+`winner_mined_height` (V007) stamps that claim with the mined height of the
+winner named in `spent_in_txid`, and decides the placeholder's lifetime
+rather than its existence. A block-context sweep stamps the winner's own
+height and `collect_finalized_tombstones` evicts the row once
+`min(chainlock_height, synced_height)` reaches it — upstream's
+`prune_finalized_observed_spends` boundary verbatim. An InstantSend-locked
+winner that is not yet mined leaves it NULL: the lock alone settles the
+input, but it carries no height to key a lifetime on, so the row resolves
+only through proof (the funding upsert materialising it, a later
+block-context sweep re-stamping it, or a release). The funding upsert
+clears the stamp, because a materialised row is the wallet's own coin held
+spent and is permanently outside the collector's reach.
 
 - PK: `(wallet_id, outpoint)`.
 - FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
 - Index: `idx_core_utxos_spent(wallet_id, spent)`.
+- Index: `idx_core_utxos_unmaterialized(wallet_id, winner_mined_height)
+  WHERE height IS NULL` (V007) — covers exactly the unmaterialised rows, so
+  the collector's per-round scan touches tombstones rather than the
+  wallet's full spent history.
 
 ### `core_instant_locks`
 
@@ -412,6 +444,13 @@ transaction so the UTXO writer can resolve `account_index` by address.
 One row per wallet, holding monotonically-advancing SPV sync watermarks.
 `last_processed_height` and `synced_height` are NULL until the first
 block is processed.
+
+`chainlock_height` (V007) mirrors `CoreChangeSet::last_applied_chain_lock`
+as a monotonic max — the height alone, which this store previously dropped.
+It is one half of the finality boundary
+`collect_finalized_tombstones` collects sweep tombstones against, so a
+tombstone is never collected before a chainlock has been persisted,
+matching upstream's "no-op until a chainlock has been applied".
 
 - PK: `wallet_id` (single-row-per-wallet).
 - FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.

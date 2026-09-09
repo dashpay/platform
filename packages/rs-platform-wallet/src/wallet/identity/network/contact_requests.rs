@@ -1217,7 +1217,7 @@ fn count_account_build_ops(queue: &[crate::changeset::PendingContactCrypto]) -> 
 /// on the wallet. That is right for a recurring background sweep and wrong for
 /// anything that treats the pass as a precondition, because the two endings it
 /// collapses are opposites — "Platform answered, and there is nothing new" and
-/// "Platform answered nobody, so we do not know". Both used to arrive as
+/// "Platform answered nobody, so we do not know". Both arrive as
 /// `Ok(vec![])`.
 ///
 /// The distinction matters most at startup, where a completed pass is the
@@ -2318,11 +2318,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     //
                     // Deciding here means a MIXED failure — our key
                     // purpose-rejected and the contact's key hard-faulted —
-                    // now leaves the entry queued where the composed validator
-                    // would have marked the channel broken. Deliberate: see
+                    // leaves the entry queued where a composed validator would
+                    // mark the channel broken. Deliberate: see
                     // `validate_recipient_key`. Marking broken is unappealable
-                    // by the user, and the retry it avoids no longer costs a
-                    // fetch.
+                    // by the user, and the retry it avoids costs no fetch.
                     let our_identity = {
                         let wm = self.wallet_manager.read().await;
                         wm.get_wallet_info(&self.wallet_id)
@@ -5462,14 +5461,14 @@ mod contact_info_provider_tests {
     use crate::wallet::identity::crypto::contact_info::derive_contact_info_keys;
     use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
     use key_wallet::bip32::KeyDerivationType;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::Network;
 
     // Canonical BIP-39 test mnemonic.
     const PHRASE: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
-    /// MUST-FIX (security review): the contactInfo seal/open the signer produces
+    /// Invariant: the contactInfo seal/open the signer produces
     /// must be byte-identical to the resident `derive_contact_info_keys` AT THE
     /// REAL identity-auth root path — not an arbitrary path. contactInfo is
     /// self-encrypted (no counterparty round-trip), so a wrong root silently
@@ -5478,7 +5477,7 @@ mod contact_info_provider_tests {
     /// open round-trips.
     #[tokio::test]
     async fn contact_info_seal_open_matches_resident_derivation_at_real_auth_path() {
-        let seed = Mnemonic::from_phrase(PHRASE, Language::English)
+        let seed = Mnemonic::from_phrase(PHRASE)
             .expect("valid mnemonic")
             .to_seed("");
         let network = Network::Testnet;
@@ -5561,7 +5560,7 @@ mod contact_info_provider_tests {
     async fn ecdh_shared_secret_returns_zeroizing_matching_resident_derivation() {
         use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
 
-        let seed = Mnemonic::from_phrase(PHRASE, Language::English)
+        let seed = Mnemonic::from_phrase(PHRASE)
             .expect("valid mnemonic")
             .to_seed("");
         let network = Network::Testnet;
@@ -5663,7 +5662,7 @@ mod stamp_race_tests {
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::Identity;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
     use std::collections::BTreeMap;
@@ -5699,8 +5698,7 @@ mod stamp_race_tests {
             Arc::clone(&persister),
             handler,
         ));
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet = manager
             .create_wallet_from_seed_bytes(
