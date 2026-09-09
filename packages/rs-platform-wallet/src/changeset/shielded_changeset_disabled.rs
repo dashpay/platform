@@ -14,7 +14,8 @@
 use crate::changeset::merge::Merge;
 
 /// Shielded delta that can never carry data — the `shielded` feature is off.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ShieldedChangeSet;
 
 impl ShieldedChangeSet {
