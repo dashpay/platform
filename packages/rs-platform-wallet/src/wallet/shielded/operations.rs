@@ -510,33 +510,6 @@ fn resolve_shield_recipient(
 }
 
 /// Shield credits from transparent platform addresses into the
-/// shielded pool, with the resulting note assigned to `account`'s
-/// default Orchard payment address derived from `keys`.
-///
-/// Self-shield front for [`shield_to`], preserving the pre-recipient
-/// signature for existing callers.
-#[allow(clippy::too_many_arguments)]
-pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardProver>(
-    sdk: &Arc<dash_sdk::Sdk>,
-    store: &Arc<RwLock<S>>,
-    persister: Option<&WalletPersister>,
-    wallet_id: WalletId,
-    keys: &AccountViewingKeys,
-    account: u32,
-    inputs: BTreeMap<PlatformAddress, Credits>,
-    amount: u64,
-    signer: &Sig,
-    prover: &P,
-) -> Result<(), PlatformWalletError> {
-    shield_to(
-        sdk, store, persister, wallet_id, keys, account, None, inputs, amount,
-        [0u8; 36], // empty memo
-        signer, prover,
-    )
-    .await
-}
-
-/// Shield credits from transparent platform addresses into the
 /// shielded pool. `recipient` selects the note's Orchard payment
 /// address: `None` assigns it to `account`'s default address derived
 /// from `keys` (the internal shield-to-self); `Some` pays a
@@ -2030,8 +2003,13 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
     let unspent = store
         .get_unspent_notes(id)
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-    let (selected, total_input, exact_fee) =
-        select_notes_with_fee(&unspent, amount, outputs, fee_kind, sdk.version())?.into_owned();
+    let (selected, total_input, exact_fee) = own_selection(select_notes_with_fee(
+        &unspent,
+        amount,
+        outputs,
+        fee_kind,
+        sdk.version(),
+    )?);
     for note in &selected {
         store
             .mark_pending(id, &note.nullifier)
@@ -2058,14 +2036,13 @@ async fn reserve_unspent_notes_for_denomination<S: ShieldedStore>(
     let unspent = store
         .get_unspent_notes(id)
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-    let (selected, total_input, predicted_fee) = select_notes_for_denomination(
+    let (selected, total_input, predicted_fee) = own_selection(select_notes_for_denomination(
         &unspent,
         denomination,
         min_actions,
         num_keys,
         sdk.version(),
-    )?
-    .into_owned();
+    )?);
     for note in &selected {
         store
             .mark_pending(id, &note.nullifier)
@@ -2526,17 +2503,11 @@ fn classify_spend_wait_failure(
     }
 }
 
-/// Helper to clone selection results out from under the store lock.
-trait SelectionResultOwned {
-    fn into_owned(self) -> (Vec<ShieldedNote>, u64, u64);
-}
-
-impl SelectionResultOwned for (Vec<&ShieldedNote>, u64, u64) {
-    fn into_owned(self) -> (Vec<ShieldedNote>, u64, u64) {
-        let (refs, total, fee) = self;
-        let owned: Vec<ShieldedNote> = refs.into_iter().cloned().collect();
-        (owned, total, fee)
-    }
+/// Clone a selection result out from under the store lock.
+fn own_selection(
+    (refs, total, fee): (Vec<&ShieldedNote>, u64, u64),
+) -> (Vec<ShieldedNote>, u64, u64) {
+    (refs.into_iter().cloned().collect(), total, fee)
 }
 
 /// Convert a `PaymentAddress` to an `OrchardAddress` for the DPP builder.

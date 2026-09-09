@@ -4,7 +4,7 @@
 //!
 //! This is the exact client-side pair the app exercises end-to-end:
 //!
-//!   * build side — `operations::shield` passes the account's
+//!   * build side — `operations::shield_to` passes the account's
 //!     `OrchardKeySet::outgoing_viewing_key` into dpp's
 //!     `build_shield_transition`, which keys the recipient output's
 //!     `out_ciphertext` to it (the Zcash outgoing-transaction-history

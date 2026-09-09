@@ -5,7 +5,7 @@
 //! Two complementary halves, mirroring the two scan-side primitives:
 //!
 //!   * IVK side — build a real Type 15 Shield transition (exactly as
-//!     `operations::shield` does: `OrchardKeySet::from_seed` →
+//!     `operations::shield_to` does: `OrchardKeySet::from_seed` →
 //!     `build_shield_transition` with the `&&prover` double-ref) carrying
 //!     a text memo, then assert the FULL incoming decryption
 //!     (`try_decrypt_note_with_memo`) under the recipient's IVK recovers
@@ -172,7 +172,7 @@ async fn shield_memo_round_trips_through_ivk_decryption() {
     let keys = OrchardKeySet::from_seed(&seed, Network::Testnet, 0)
         .expect("ZIP-32 derivation from a fixed seed should succeed");
 
-    // Recipient = the wallet's own default address, as `operations::shield`
+    // Recipient = the wallet's own default address, as `operations::shield_to`
     // derives via `default_orchard_address`.
     let recipient = OrchardAddress::from_raw_bytes(&keys.default_address.to_raw_address_bytes())
         .expect("default address must convert to OrchardAddress");
@@ -186,7 +186,7 @@ async fn shield_memo_round_trips_through_ivk_decryption() {
 
     // `OrchardProver` is impl'd for `&CachedOrchardProver`, so the
     // builder's `&P` is a double reference — the same shape
-    // `operations::shield` passes.
+    // `operations::shield_to` passes.
     let prover = CachedOrchardProver::new();
     let st = build_shield_transition(
         &recipient,

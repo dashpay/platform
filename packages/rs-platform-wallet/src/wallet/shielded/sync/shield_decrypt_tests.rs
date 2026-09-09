@@ -3,7 +3,7 @@
 //!
 //! This is the exact client-side pair the app exercises end-to-end:
 //!
-//!   * build side — `operations::shield` derives the recipient from
+//!   * build side — `operations::shield_to` derives the recipient from
 //!     `OrchardKeySet::default_address` and calls dpp's
 //!     `build_shield_transition`, whose serialized actions are stored
 //!     verbatim on-chain (`ShieldedActionNote::from(&SerializedAction)`
@@ -75,7 +75,7 @@ async fn shield_built_note_is_trial_decryptable_by_own_ivk() {
         .expect("ZIP-32 derivation from a fixed seed should succeed");
 
     // Recipient = the wallet's own default address — the same
-    // conversion `operations::shield` performs via
+    // conversion `operations::shield_to` performs via
     // `default_orchard_address`.
     let recipient = OrchardAddress::from_raw_bytes(&keys.default_address.to_raw_address_bytes())
         .expect("default address must convert to OrchardAddress");
@@ -90,7 +90,7 @@ async fn shield_built_note_is_trial_decryptable_by_own_ivk() {
     // `OrchardProver` is implemented for `&CachedOrchardProver`
     // (the cached key lives in a static), so P = `&CachedOrchardProver`
     // and the builder's `&P` is a double reference — the same shape
-    // `shielded_shield_from_account` passes through `operations::shield`.
+    // `shielded_shield_from_account` passes through `operations::shield_to`.
     let prover = CachedOrchardProver::new();
     let st = build_shield_transition(
         &recipient,
@@ -101,7 +101,7 @@ async fn shield_built_note_is_trial_decryptable_by_own_ivk() {
         0,
         &&prover,
         [0u8; 36],
-        // Production config (`operations::shield`): the output's
+        // Production config (`operations::shield_to`): the output's
         // out_ciphertext is keyed to the wallet's own OVK. Irrelevant to
         // the IVK trial-decryption under test, but kept in lockstep.
         Some(keys.outgoing_viewing_key.clone()),
@@ -190,7 +190,7 @@ async fn shield_to_external_recipient_decrypts_for_recipient_and_recovers_for_se
         0,
         &&prover,
         memo,
-        // Production config (`operations::shield`): OVK-keyed to the
+        // Production config (`operations::shield_to`): OVK-keyed to the
         // SENDER, so the sender's scan can recover the send.
         Some(sender_keys.outgoing_viewing_key.clone()),
         PlatformVersion::latest(),
