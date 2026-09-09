@@ -23,7 +23,7 @@ mod tests {
     use crate::execution::run_chain_for_strategy;
     use crate::strategy::{ChainExecutionOutcome, NetworkStrategy};
     use crate::test_cases::state_sync_tests::tests::{
-        install_reconstruction_core_mocks, sync_snapshot, SnapshotSyncOutcome,
+        install_reconstruction_core_mocks, recent_start_time_ms, sync_snapshot, SnapshotSyncOutcome,
     };
     use dpp::version::v15::PROTOCOL_VERSION_15;
     use dpp::version::PlatformVersion;
@@ -99,6 +99,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            start_time_ms: recent_start_time_ms(),
             ..Default::default()
         }
     }
