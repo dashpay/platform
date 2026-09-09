@@ -149,66 +149,6 @@ private func createPublicKeyHandle(from key: IdentityPublicKey, operation: Strin
 @MainActor
 extension SDK {
 
-    // MARK: - Helpers (nonisolated)
-
-    /// JSON-encode a contract sub-payload off-actor for FFI hand-off.
-    /// Used by `dataContractCreate` to serialize document schemas,
-    /// token schemas, groups, keywords, and config — every payload
-    /// the FFI accepts as a JSON string. `allowEmpty: false` returns
-    /// `nil` for empty containers so callers can drop the parameter
-    /// entirely (the FFI treats a missing pointer as "field absent",
-    /// which lets the V1 deserializer fall back to its serde default).
-    nonisolated fileprivate static func encodeContractField(
-        _ value: Any,
-        fieldName: String,
-        allowEmpty: Bool
-    ) throws -> String? {
-        if !allowEmpty {
-            if let dict = value as? [String: Any], dict.isEmpty { return nil }
-            if let arr = value as? [Any], arr.isEmpty { return nil }
-        }
-        guard JSONSerialization.isValidJSONObject(value) else {
-            throw SDKError.serializationError("\(fieldName) is not JSON-serializable")
-        }
-        guard let data = try? JSONSerialization.data(withJSONObject: value),
-              let str = String(data: data, encoding: .utf8) else {
-            throw SDKError.serializationError("Failed to serialize \(fieldName)")
-        }
-        return str
-    }
-
-    /// Run `body` with parallel C-string pointers for each input,
-    /// where `nil` Swift entries map to NULL pointers. The caller
-    /// receives an array `ptrs` whose `ptrs[i]` is either a valid
-    /// `UnsafePointer<CChar>` for the duration of the call or
-    /// `nil`. Implemented recursively over `inputs.indices` so
-    /// every backing `String`'s lifetime extends through the
-    /// entire body — six nested `withCString` calls in source form
-    /// without the visual nesting.
-    nonisolated fileprivate static func withOptionalCStrings<R>(
-        _ inputs: [String?],
-        _ body: ([UnsafePointer<CChar>?]) -> R
-    ) -> R {
-        var collected: [UnsafePointer<CChar>?] = Array(repeating: nil, count: inputs.count)
-        func step(_ index: Int) -> R {
-            if index == inputs.count {
-                return body(collected)
-            }
-            switch inputs[index] {
-            case .some(let s):
-                return s.withCString { ptr in
-                    collected[index] = ptr
-                    let result = step(index + 1)
-                    collected[index] = nil
-                    return result
-                }
-            case .none:
-                return step(index + 1)
-            }
-        }
-        return step(0)
-    }
-
     // MARK: - Identity Handle Management
 
     /// Convert a DPPIdentity to an identity handle
@@ -1381,17 +1321,6 @@ extension SDK {
     }
 
     // MARK: - Token State Transitions
-
-    /// Transfer tokens between identities
-    public func tokenTransfer(
-        tokenId: String,
-        fromIdentityId: String,
-        toIdentityId: String,
-        amount: UInt64
-    ) async throws -> (senderBalance: UInt64, receiverBalance: UInt64) {
-        // TODO: Implement when FFI binding is available
-        throw SDKError.notImplemented("Token transfer not yet implemented")
-    }
 
     /// Mint new tokens
     public func tokenMint(

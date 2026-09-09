@@ -298,19 +298,6 @@ public class ManagedCoreWallet {
         }
     }
 
-    /// Compatibility wrapper preserving the former throwing API.
-    @available(*, deprecated, message: "Use broadcastTransactionWithOutcome(_:) and handle accepted/rejected/unknown")
-    public func broadcastTransaction(_ tx: FinalizedCoreTransaction) throws -> String {
-        switch try broadcastTransactionWithOutcome(tx) {
-        case .accepted(let txid):
-            return txid
-        case .rejected(_, let reason):
-            throw PlatformWalletError.transactionBroadcastRejected(reason)
-        case .unknown(_, let reason):
-            throw PlatformWalletError.transactionBroadcastUnconfirmed(reason)
-        }
-    }
-
     /// Broadcast the deferred (BIP70/BIP270) payment behind `token` and return
     /// its txid. The token is consumed atomically before the send, so a repeated
     /// or concurrent broadcast gets an error rather than a second send.
@@ -342,7 +329,7 @@ public class ManagedCoreWallet {
     public func abandonTransaction(_ tx: FinalizedCoreTransaction) throws {
         try core_wallet_abandon_signed_transaction(
             handle,
-            tx.takeForAbandon()
+            tx.takeForBroadcast()
         ).check()
     }
 }

@@ -1210,45 +1210,6 @@ public class Addresses: @unchecked Sendable {
         return PlatformAddressInfosResult(infos: infos)
     }
 
-    // MARK: - Convenience Methods
-
-    /// Get the balance for a single address
-    ///
-    /// - Parameter addressBytes: Address bytes (21 bytes)
-    /// - Returns: Balance in credits, or nil if address not found
-    /// - Throws: SDKError if the query fails
-    public func getBalance(addressBytes: Data) throws -> UInt64? {
-        return try getInfo(addressBytes: addressBytes)?.balance
-    }
-
-    /// Get the nonce for a single address
-    ///
-    /// - Parameter addressBytes: Address bytes (21 bytes)
-    /// - Returns: Nonce value, or nil if address not found
-    /// - Throws: SDKError if the query fails
-    public func getNonce(addressBytes: Data) throws -> UInt32? {
-        return try getInfo(addressBytes: addressBytes)?.nonce
-    }
-
-    /// Check if an address exists on Platform
-    ///
-    /// - Parameter addressBytes: Address bytes (21 bytes)
-    /// - Returns: true if the address has been used on Platform
-    /// - Throws: SDKError if the query fails
-    public func exists(addressBytes: Data) throws -> Bool {
-        return try getInfo(addressBytes: addressBytes) != nil
-    }
-
-    /// Get total balance across multiple addresses
-    ///
-    /// - Parameter addressesBytesList: Array of address bytes
-    /// - Returns: Total balance in credits across all found addresses
-    /// - Throws: SDKError if the query fails
-    public func getTotalBalance(addressesBytesList: [Data]) throws -> UInt64 {
-        let result = try getInfos(addressesBytesList: addressesBytesList)
-        return result.totalBalance
-    }
-
     // MARK: - Identity State Transitions (Address-Related)
 
     /// Top up an identity using Platform address balances

@@ -83,7 +83,7 @@ import SwiftData
 /// Result: every `KeychainSigner` instance leaked forever. The
 /// current `passUnretained` shape removes the leak at the cost
 /// of the explicit keepalive contract above.
-public final class KeychainSigner: Signer, @unchecked Sendable {
+public final class KeychainSigner: @unchecked Sendable {
     final class AdditionalSigningKeyEntry: @unchecked Sendable {
         let publicKey: Data
         private var privateKeyBytes: [UInt8]
@@ -950,12 +950,6 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         } catch {
             return .failure(.ffiSignFailed(message: String(describing: error)))
         }
-    }
-
-    // MARK: - Signer protocol conformance (legacy)
-
-    public func canSign(identityPublicKey: Data) -> Bool {
-        canSign(publicKey: identityPublicKey, keyType: KeyType.ecdsaSecp256k1.rawValue)
     }
 }
 

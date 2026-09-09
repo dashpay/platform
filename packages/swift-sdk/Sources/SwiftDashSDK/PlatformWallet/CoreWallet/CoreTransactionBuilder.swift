@@ -33,8 +33,6 @@ public final class FinalizedCoreTransaction {
         return value
     }
 
-    func takeForAbandon() throws -> Handle { try takeForBroadcast() }
-
     /// Consensus-serialized signed transaction bytes (copied out) without
     /// consuming the ownership token.
     public func serializedData() throws -> Data {
