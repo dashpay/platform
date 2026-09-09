@@ -194,7 +194,7 @@ where
             saved.previous_instant_lock_quorums.as_ref(),
         )?;
 
-        let block_height = platform_state.last_committed_block_height();
+        let block_height = saved_block_info.basic_info.height;
 
         // Advance the state to the snapshot block: rotates next-into-current exactly as
         // the source did on finalization, persists to aux storage and publishes the
