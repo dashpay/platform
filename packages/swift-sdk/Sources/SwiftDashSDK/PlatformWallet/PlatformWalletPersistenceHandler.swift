@@ -3005,14 +3005,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
-    private func addDelta(_ base: UInt64, _ delta: Int64) -> UInt64 {
-        if delta >= 0 {
-            return base.addingReportingOverflow(UInt64(delta)).0
-        }
-        let sub = UInt64(-delta)
-        return base >= sub ? base - sub : 0
-    }
-
     // MARK: - Callbacks
 
     /// Explicit semantic capability declaration passed alongside (not inside)
@@ -4835,7 +4827,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let readOnly: Bool
         let disabledAt: UInt64?
         let publicKeyData: Data
-        let publicKeyHash: Data
         /// Owning wallet if this key is derivable from one we control.
         let walletId: Data?
         /// DIP-9 `(identity_index, key_index)` pair. Present iff the key is
@@ -5117,8 +5108,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 && acc.friendIdentityId == key.friendIdentityId
         }
     }
-
-    // MARK: - Watch-only Restore: Wallet Metadata
 
     // MARK: - Shielded persistence (Orchard)
 
@@ -5485,7 +5474,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // future field additions safe.)
             let buf = UnsafeMutablePointer<ShieldedNoteRestoreFFI>.allocate(capacity: rows.count)
             allocation.entries = buf
-            allocation.entriesCount = rows.count
             // `written` is the next free slot in `buf`; we increment it
             // only after a row's struct is fully populated, so the
             // returned prefix `[0..written)` is contiguous initialized
@@ -5594,7 +5582,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 capacity: rows.count
             )
             allocation.entries = buf
-            allocation.entriesCount = rows.count
             // Same `written`-counter discipline as `loadShieldedNotes`:
             // increment only after a slot is fully populated so the
             // returned prefix `[0..written)` is contiguous initialized
@@ -5704,7 +5691,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 capacity: rows.count
             )
             allocation.entries = buf
-            allocation.entriesCount = rows.count
             var written = 0
             for row in rows {
                 guard row.walletId.count == 32, row.entryId.count == 32 else { continue }
@@ -5828,7 +5814,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 capacity: rows.count
             )
             allocation.entries = buf
-            allocation.entriesCount = rows.count
             // Same `written`-counter pattern as `loadShieldedNotes`:
             // skip malformed rows without leaving holes in the
             // contiguous prefix Rust will read.
@@ -5927,7 +5912,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 capacity: rows.count
             )
             allocation.entries = buf
-            allocation.entriesCount = rows.count
             var written = 0
             for row in rows {
                 var entry = ShieldedViewingKeyRestoreFFI()
@@ -6706,7 +6690,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             capacity: restorable.count
         )
         allocation.entries = entriesPtr
-        allocation.entriesCount = restorable.count
 
         for (i, w) in restorable.enumerated() {
             let sortedAccounts = w.accounts
@@ -6995,8 +6978,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             entriesPtr[i] = entry
             // Bump the initialized-count so a later abort path's
             // `release()` only deinitializes slots that were
-            // actually written (see `entriesInitialized`'s
-            // doc-comment for why we can't reuse `entriesCount`).
+            // actually written (see `entriesInitialized`'s doc).
             allocation.entriesInitialized = i + 1
         }
 
@@ -8538,17 +8520,12 @@ private final class TrackedMasternodeLoadAllocation {
 
 private final class LoadAllocation {
     var entries: UnsafeMutablePointer<WalletRestoreEntryFFI>?
-    /// Allocated capacity — equal to `restorable.count`. Used for
-    /// `deallocate()` (which only requires "the original allocation
-    /// size") and as the upper bound on `entriesInitialized`.
-    var entriesCount: Int = 0
-    /// How many of the `entriesCount` slots have actually been
-    /// written via `entriesPtr[i] = entry`. Tracked separately from
-    /// `entriesCount` because early-abort paths (account-tag
+    /// How many slots have actually been written via
+    /// `entriesPtr[i] = entry`. Early-abort paths (account-tag
     /// overflow, UTXO marshalling failure) call `release()` after
-    /// only `0..<i` slots have been initialized; calling
-    /// `deinitialize(count: entriesCount)` over the full capacity
-    /// would deinitialize uninitialized memory, which is UB by
+    /// only `0..<i` slots have been initialized; deinitializing the
+    /// full allocated capacity instead would deinitialize
+    /// uninitialized memory, which is UB by
     /// `UnsafeMutablePointer`'s contract. The fact that
     /// `WalletRestoreEntryFFI` and its siblings happen to import as
     /// trivial C structs means the no-op deinit doesn't crash today,
@@ -8598,11 +8575,6 @@ private final class LoadAllocation {
     /// (`label`, dpns name labels, etc.). Allocated via plain
     /// `UnsafeMutablePointer<CChar>.allocate`, freed by `deallocate()`.
     var cStringBuffers: [(UnsafeMutablePointer<CChar>, Int)] = []
-    /// `*const c_char` arrays referenced by `dpns_names` /
-    /// `contested_dpns_names`. Each inner pointer points into
-    /// `cStringBuffers`; releasing this array doesn't touch the
-    /// underlying strings.
-    var cStringPointerArrays: [(UnsafeMutablePointer<UnsafePointer<CChar>?>, Int)] = []
     /// Per-wallet `UtxoRestoreEntryFFI` arrays. The script bytes each
     /// row references live in `scalarBuffers`.
     var utxoArrays: [(UnsafeMutablePointer<UtxoRestoreEntryFFI>, Int)] = []
@@ -8630,8 +8602,7 @@ private final class LoadAllocation {
     func release() {
         if let entries = entries {
             // Deinitialize ONLY the slots that were actually written
-            // (`entriesInitialized`), then deallocate the full
-            // capacity (`entriesCount`). Per Swift's pointer
+            // (`entriesInitialized`), then deallocate. Per Swift's pointer
             // contract, `deinitialize(count:)` requires the region
             // to be initialized; `deallocate()` only requires the
             // pointer to match the original allocation.
@@ -8681,9 +8652,6 @@ private final class LoadAllocation {
         for (ptr, _) in cStringBuffers {
             ptr.deallocate()
         }
-        for (ptr, _) in cStringPointerArrays {
-            ptr.deallocate()
-        }
         for (ptr, count) in utxoArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
@@ -8715,7 +8683,6 @@ private final class LoadAllocation {
 /// buffer plus per-row `note_data` byte buffers.
 private final class ShieldedLoadAllocation {
     var entries: UnsafeMutablePointer<ShieldedNoteRestoreFFI>?
-    var entriesCount: Int = 0
     var entriesInitialized: Int = 0
     /// Per-row `note_data` byte buffers; each entry's
     /// `note_data_ptr` references one of these.
@@ -8740,7 +8707,6 @@ private final class ShieldedLoadAllocation {
 /// of the `scalarBuffers`.
 private final class ShieldedOutgoingNoteLoadAllocation {
     var entries: UnsafeMutablePointer<ShieldedOutgoingNoteRestoreFFI>?
-    var entriesCount: Int = 0
     var entriesInitialized: Int = 0
     /// Per-row `memo` byte buffers; each entry's `memo_ptr`
     /// references one of these.
@@ -8764,7 +8730,6 @@ private final class ShieldedOutgoingNoteLoadAllocation {
 /// entries buffer.
 private final class ShieldedSyncStateLoadAllocation {
     var entries: UnsafeMutablePointer<ShieldedSubwalletSyncStateFFI>?
-    var entriesCount: Int = 0
     var entriesInitialized: Int = 0
 
     func release() {
@@ -8783,7 +8748,6 @@ private final class ShieldedSyncStateLoadAllocation {
 /// `ShieldedSyncStateLoadAllocation`.
 private final class ShieldedViewingKeyLoadAllocation {
     var entries: UnsafeMutablePointer<ShieldedViewingKeyRestoreFFI>?
-    var entriesCount: Int = 0
     var entriesInitialized: Int = 0
 
     func release() {
@@ -8802,7 +8766,6 @@ private final class ShieldedViewingKeyLoadAllocation {
 /// entry's `*_ptr` references one of `scalarBuffers`.
 private final class ShieldedActivityLoadAllocation {
     var entries: UnsafeMutablePointer<ShieldedActivityRestoreFFI>?
-    var entriesCount: Int = 0
     var entriesInitialized: Int = 0
     var scalarBuffers: [(UnsafeMutablePointer<UInt8>, Int)] = []
 
@@ -9494,7 +9457,6 @@ private func persistIdentityKeysCallback(
                 readOnly: e.read_only,
                 disabledAt: e.disabled_at_is_some ? e.disabled_at : nil,
                 publicKeyData: pubKey,
-                publicKeyHash: dataFromTuple20(e.public_key_hash),
                 walletId: walletId,
                 derivationIndices: indices,
                 contractBounds: bounds
@@ -9950,15 +9912,6 @@ private func persistContactsCallback(
 /// fields as `(UInt8, UInt8, ...)` tuples.
 @inline(__always)
 private func dataFromTuple32(_ tuple: FFIByteTuple32) -> Data {
-    var value = tuple
-    return Swift.withUnsafeBytes(of: &value) { Data($0) }
-}
-
-/// Copy a fixed 20-byte C tuple into an owned `Data`. Identical
-/// idiom to `dataFromTuple32`, just for RIPEMD160(SHA256) pubkey
-/// hashes on identity-key entries.
-@inline(__always)
-private func dataFromTuple20(_ tuple: FFIByteTuple20) -> Data {
     var value = tuple
     return Swift.withUnsafeBytes(of: &value) { Data($0) }
 }
