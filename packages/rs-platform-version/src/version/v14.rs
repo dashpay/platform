@@ -32,7 +32,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
 /// v14 hosts six consensus changes:
 ///
-/// 1. **Contract-level ranked aggregates** (this branch): an index can
+/// 1. **Contract-level ranked aggregates**: an index can
 ///    declare that its groups are rankable by an aggregate, so a query like
 ///    "top 5 restaurants by average grade" is served from an ordered
 ///    secondary tree in O(log n + k) with a proof, instead of being rejected.
@@ -133,7 +133,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    time and at contract registration (validation evaluates the start
 ///    value). Gated on `distribution_function_evaluate_version` so both
 ///    architectures switch at the same height; pre-v14 blocks replay on the
-///    old math byte-for-byte.
+///    old math byte-for-byte. `log`/`exp` have no architecture dispatch and
+///    `pow`'s only arch-touching call is the correctly-rounded `sqrt`, so the
+///    result is bit-identical on every target Platform builds for. The goal
+///    is determinism, not correct rounding: on a boundary tuple the host
+///    libm (glibc, macOS) can still be 1 ulp away, so anything predicting
+///    rewards with host math may differ from consensus by one unit.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type

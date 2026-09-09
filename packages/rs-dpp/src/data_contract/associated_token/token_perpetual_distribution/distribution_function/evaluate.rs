@@ -671,6 +671,8 @@ mod tests {
     }
 
     /// One instance of each variant whose evaluation routes through the versioned math helpers.
+    /// Each instance must still reach `ln`/`exp`/`pow` at `x = 5` with registration step 0;
+    /// otherwise `unknown_evaluate_version_errors` passes vacuously.
     fn transcendental_variants() -> [DistributionFunction; 4] {
         [
             DistributionFunction::Logarithmic {
@@ -773,12 +775,14 @@ mod tests {
     #[test]
     fn v1_math_golden_bits() {
         // (input, expected bits of libm::log(input)); first entry is the reporter's argument.
+        // Inputs avoid libm's special-case shortcuts (y == 2, y == 0.5, exact powers of two)
+        // so the general reduction paths are what is pinned.
         let ln_cases: [(f64, u64); 8] = [
             (2.6074500542902848, 0x3feeaafd55faabf4),
             (1.0, 0x0000000000000000),
             (2.0, 0x3fe62e42fefa39ef),
             (10.0, 0x40026bb1bbb55516),
-            (0.001, 0xc01ba18a998fffa0),
+            (3.7e-5, 0xc02468c05e014db1),
             (123456.789, 0x40277281cad8a844),
             (0.5, 0xbfe62e42fefa39ef),
             (1e12, 0x403ba18a998fffa0),
@@ -796,12 +800,12 @@ mod tests {
         let pow_cases: [(f64, f64, u64); 8] = [
             (2.0, 0.5, 0x3ff6a09e667f3bcd),
             (10.0, 1.0 / 3.0, 0x40013c484138704f),
-            (7.0, 2.0, 0x4048800000000000),
+            (std::f64::consts::E, 0.7, 0x40001c2a61268986),
             (100000.0, 3.0 / 7.0, 0x40615e62b5806653),
-            (0.25, -0.5, 0x4000000000000000),
+            (12345.678, -0.3, 0x3fae53765290f79a),
             (3.0, 1.5, 0x4014c8dc2e423980),
             (1e6, 0.125, 0x40167e600b234626),
-            (2.0, 10.0, 0x4090000000000000),
+            (1.5, 2.25, 0x4003eb971cfb5f72),
         ];
         for (x, bits) in ln_cases {
             assert_eq!(ln_versioned(x, 1).unwrap().to_bits(), bits, "ln({x})");

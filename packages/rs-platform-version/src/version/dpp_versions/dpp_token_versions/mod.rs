@@ -21,6 +21,6 @@ pub struct DPPTokenVersions {
     /// v0: std `f64` methods, which link to the platform libm and differ by 1 ulp between
     ///     aarch64-musl and x86_64-musl (musl's `__FP_FAST_FMA` branch); a claim amount can land
     ///     on either side of a `floor` boundary and split the app hash.
-    /// v1: the pinned pure-Rust `libm` crate, bit-identical on every target.
+    /// v1: the pinned pure-Rust `libm` crate, bit-identical on every target Platform builds for.
     pub distribution_function_evaluate_version: FeatureVersion,
 }
