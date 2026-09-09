@@ -14,10 +14,10 @@
 //!   enforcement entirely once ANY child key column is NULL — so for an
 //!   out-of-wallet identity (`wallet_id IS NULL` on both sides) the
 //!   cascade is dormant and its keys would survive the delete.
-//! - `contacts` and `ignored_senders` are keyed by `owner_id` (an
-//!   identity id) but carry no FK to `identities` at all, only to
-//!   `wallets`. Left behind, they surface at load time as
-//!   `OrphanedIdentityEntry` and fail the whole wallet's `load()`.
+//! - `contacts`, `ignored_senders`, and `pending_contact_crypto` carry
+//!   identity owners but no FK to `identities`. Orphan contacts fail a
+//!   strict load; orphan ignored-sender rows are omitted by the loader,
+//!   and the deferred-crypto queue has no production reader.
 //!
 //! `token_balances`, `dashpay_profiles` and `dashpay_payments_overlay`
 //! need nothing new: their FK column is `identity_id NOT NULL`, so it is
@@ -37,14 +37,14 @@ BEGIN
     DELETE FROM identity_keys   WHERE identity_id = OLD.identity_id;
     DELETE FROM contacts        WHERE owner_id    = OLD.identity_id;
     DELETE FROM ignored_senders WHERE owner_id    = OLD.identity_id;
+    DELETE FROM pending_contact_crypto WHERE owner_identity_id = OLD.identity_id;
 END;
 
--- The broom's access path. `owner_id` is the SECOND column of each
--- table's primary key, so an `owner_id`-only predicate cannot use it:
--- without these indexes a wallet delete scans both tables once per
--- cascaded identity.
+-- Owner columns follow wallet_id in these primary keys. Owner-leading
+-- indexes avoid scanning each child table once per cascaded identity.
 CREATE INDEX idx_contacts_owner ON contacts(owner_id);
 CREATE INDEX idx_ignored_senders_owner ON ignored_senders(owner_id);
+CREATE INDEX idx_pending_contact_crypto_owner ON pending_contact_crypto(owner_identity_id);
 
 -- Purge what earlier schemas only flagged. Spelled out per table rather
 -- than left to the cascade and the trigger above, so the outcome does
@@ -55,6 +55,8 @@ DELETE FROM contacts
     WHERE owner_id IN (SELECT identity_id FROM identities WHERE tombstoned = 1);
 DELETE FROM ignored_senders
     WHERE owner_id IN (SELECT identity_id FROM identities WHERE tombstoned = 1);
+DELETE FROM pending_contact_crypto
+    WHERE owner_identity_id IN (SELECT identity_id FROM identities WHERE tombstoned = 1);
 DELETE FROM token_balances
     WHERE identity_id IN (SELECT identity_id FROM identities WHERE tombstoned = 1);
 DELETE FROM dashpay_profiles

@@ -130,8 +130,9 @@ pub fn apply_upserts(
 /// `identity_id`, V001's `cascade_meta_on_identity_delete`, and V018's
 /// `cascade_children_on_identity_delete` for the rows no live foreign
 /// key reaches (an out-of-wallet identity's `identity_keys`, whose
-/// compound FK is dormant under MATCH SIMPLE, plus `contacts` and
-/// `ignored_senders`, which have no FK to `identities` at all).
+/// compound FK is dormant under MATCH SIMPLE, plus `contacts`,
+/// `ignored_senders`, and `pending_contact_crypto`, which have no FK to
+/// `identities` at all).
 pub fn apply_removals(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -594,7 +595,7 @@ pub fn ensure_exists(
 /// [`WalletStorageError::OrphanedIdentityEntry`] when an entry's owner is
 /// absent from the loaded set. Removing an identity sweeps its rows, so an
 /// absent owner is corruption rather than routine bookkeeping. A `contacts`
-/// or `ignored_senders` row is the reachable shape: both key on `owner_id`
+/// row is the reachable shape: it keys on `owner_id`
 /// with no foreign key to `identities`, so nothing rejects one naming an
 /// identity that is not there. `identity_keys` cannot reach this state —
 /// its wallet-scoped FK is live, and V016's trigger pair covers the
@@ -602,6 +603,8 @@ pub fn ensure_exists(
 /// [`LoadPolicy::Recovery`](crate::LoadPolicy) skips and counts those;
 /// `Strict` aborts, because "the owner is gone" is exactly the state that
 /// silently drops live key / contact material.
+/// Ignored senders are restored separately; missing-owner rows are omitted
+/// by that loader without a policy error or a recovery tally.
 pub fn merge_contacts_and_keys(
     state: &mut IdentityManagerStartState,
     contacts: ContactChangeSet,

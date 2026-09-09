@@ -29,7 +29,9 @@ Schema evolution is version-gated by refinery. Every read-write connection turns
 - **metadata-version rows** (`meta_data_versions`) carry a `wallet_id` column and are cleaned directly by `cascade_meta_data_versions_on_wallet_delete`.
 - **identity-scoped meta** (`meta_identity`, `meta_token`) carries no `wallet_id` — only `identity_id` (+ `token_id`). It is cleaned by `cascade_meta_on_identity_delete` (AFTER DELETE ON `identities`), which fires for the wallet's own identities when the FK cascade removes them on a wallet delete.
 
-Deleting an `identities` row — on its own, or cascaded from a wallet delete — additionally fires `cascade_children_on_identity_delete` (V018), which brooms `identity_keys`, `contacts`, and `ignored_senders` by the deleted `identity_id`. That trigger exists because no live foreign key reaches those rows in every case: `identity_keys`' FK to `identities` is compound (`wallet_id, identity_id`), and SQLite's default MATCH SIMPLE skips FK enforcement entirely once ANY column of the child key is NULL, leaving it dormant for an out-of-wallet identity; `contacts` and `ignored_senders` are keyed by `owner_id` (an identity id) but carry no FK to `identities` at all. Keying the broom on `identity_id` alone covers the wallet-owned case too, as an idempotent overlap with the live cascade.
+Deleting an `identities` row — on its own, or cascaded from a wallet delete — additionally fires `cascade_children_on_identity_delete` (V018), which brooms `identity_keys`, `contacts`, `ignored_senders`, and `pending_contact_crypto` by the deleted `identity_id`. That trigger exists because no live foreign key reaches those rows in every case: `identity_keys`' FK to `identities` is compound (`wallet_id, identity_id`), and SQLite's default MATCH SIMPLE skips FK enforcement entirely once ANY column of the child key is NULL, leaving it dormant for an out-of-wallet identity; `contacts` and `ignored_senders` use `owner_id`, while `pending_contact_crypto` uses `owner_identity_id`, with no FK to `identities`. Keying the broom on the identity id alone covers the wallet-owned case too, as an idempotent overlap with the live cascade.
+
+Manual flushes preserve removal/re-addition boundaries as ordered segments inside one transaction. Removal sweeps the previous incarnation before the later segment recreates the identity and its new children; mixed child writes in the removal's own segment are swept with it.
 
 ### Orphan metadata and future garbage collection
 
@@ -357,6 +359,8 @@ SQL lookups without blob decoding.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 
 ### `pending_contact_crypto`
+
+- Identity cleanup: `cascade_children_on_identity_delete` deletes rows by `owner_identity_id`, using `idx_pending_contact_crypto_owner(owner_identity_id)`.
 
 Deferred, signer-dependent contact cryptography operations. The owner,
 contact, and operation kind form the deduplication key; `payload` carries the
@@ -842,4 +846,4 @@ table-rebuild migration, as V004 does.
 | V015 | `V015__purge_legacy_empty_script_spent_utxos.rs` | Deletes legacy `core_utxos` rows matching `spent = 1 AND length(script) = 0 AND is_sweep_placeholder = 0`, left by a producer that fabricated an empty script for a spend of an output the wallet never recorded. One such row rejects the load of the whole file, since `load_used_addresses` decodes every stored script with no load-policy escape hatch. Balance-neutral: the balance readers select `spent = 0` only. |
 | V016 | `V016__identity_keys_null_scope_requires_existing_identity.rs` | Recreates the `identity_keys` null-scope trigger pair (see Triggers above) to also reject a NULL-scoped key naming an identity that does not exist at all, closing the gap where V008's guard caught only the wallet-owned case. |
 | V017 | `V017__identity_scan_state.rs` | Adds `identity_scan_states` (one row per wallet: the last gap-limit identity-scan verdict — `complete`, `probed_from`/`probed_through`, `unlocated_gap`) and `identity_scan_failed_indices` (indices probed without an answer, cascading from the verdict row via `wallet_id`). Purely additive; an upgraded database reads back "no verdict recorded" for every wallet until the next scan (dashpay/platform#4365). |
-| V018 | `V018__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` by the deleted `identity_id`, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner` and `idx_ignored_senders_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
+| V018 | `V018__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` / `pending_contact_crypto` by the deleted identity id, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner`, `idx_ignored_senders_owner`, and `idx_pending_contact_crypto_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |

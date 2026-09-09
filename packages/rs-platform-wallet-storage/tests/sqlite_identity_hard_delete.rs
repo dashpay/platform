@@ -14,6 +14,7 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
+use common::{fresh_persister_with_mode, FlushMode};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -21,8 +22,9 @@ use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
     ContactChangeSet, IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet,
-    PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
-    SentContactRequestKey, TokenBalanceChangeSet,
+    PendingContactCrypto, PendingContactCryptoOp, PersistenceError, PersistenceErrorKind,
+    PlatformWalletChangeSet, PlatformWalletPersistence, SentContactRequestKey,
+    TokenBalanceChangeSet,
 };
 use platform_wallet::wallet::identity::{ContactRequest, EstablishedContact, IdentityStatus};
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -142,6 +144,291 @@ fn removal_of(id: Identifier) -> IdentityChangeSet {
     let mut cs = IdentityChangeSet::default();
     cs.removed.insert(id);
     cs
+}
+
+fn pending_crypto(owner: Identifier, contact: Identifier) -> PendingContactCrypto {
+    PendingContactCrypto {
+        owner_identity_id: owner,
+        contact_id: contact,
+        op: PendingContactCryptoOp::RegisterReceiving,
+        enqueued_at_ms: 1,
+    }
+}
+
+#[test]
+fn manual_re_add_preserves_new_incarnation_and_slot_reuse() {
+    for cycles in [1, 3] {
+        let (p, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
+        let w = wid(0xD9);
+        ensure_wallet_meta(&p, &w);
+        let owner = iid(0x81);
+        let old_contact = iid(0x82);
+        let new_contact = iid(0x83);
+        let other = iid(0x84);
+        p.store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(upsert_of(entry(owner, Some(w), Some(1)))),
+                identity_keys: Some(keys_of(owner, 0, 0xAA)),
+                contacts: Some(contacts_of(owner, old_contact)),
+                pending_contact_crypto_added: vec![pending_crypto(owner, old_contact)],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        p.flush(w).unwrap();
+
+        for _ in 0..cycles {
+            p.store(
+                w,
+                PlatformWalletChangeSet {
+                    identities: Some(removal_of(owner)),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            p.store(
+                w,
+                PlatformWalletChangeSet {
+                    identities: Some(upsert_of(entry(owner, Some(w), Some(2)))),
+                    identity_keys: Some(keys_of(owner, 1, 0xBB)),
+                    contacts: Some(contacts_of(owner, new_contact)),
+                    pending_contact_crypto_added: vec![pending_crypto(owner, new_contact)],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        }
+        // The removed incarnation's old slot is available to another id.
+        p.store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(upsert_of(entry(other, Some(w), Some(1)))),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            count_by_id(
+                &p.lock_conn_for_test(),
+                "SELECT COUNT(*) FROM identity_keys WHERE identity_id = ?1 AND key_id = 0",
+                owner
+            ),
+            1,
+            "Manual stores must not delete the old incarnation before flush"
+        );
+        p.flush(w).unwrap();
+        drop(p);
+        let reopened = reopen(&path);
+        let state = reopened.load().unwrap();
+        let identities = &state.wallets[&w].identity_manager.wallet_identities[&w];
+        assert_eq!(identities[&1].identity.id(), other);
+        let restored = &identities[&2];
+        assert_eq!(restored.identity.id(), owner);
+        assert_eq!(
+            restored
+                .identity
+                .public_keys()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+        assert_eq!(restored.dashpay().established_contacts().len(), 1);
+        assert!(restored
+            .dashpay()
+            .established_contacts()
+            .contains_key(&new_contact));
+        let conn = reopened.lock_conn_for_test();
+        assert_eq!(
+            count_by_id(
+                &conn,
+                "SELECT COUNT(*) FROM pending_contact_crypto WHERE owner_identity_id = ?1",
+                owner
+            ),
+            1
+        );
+        let contact: Vec<u8> = conn
+            .query_row(
+                "SELECT contact_id FROM pending_contact_crypto WHERE owner_identity_id = ?1",
+                params![owner.as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(contact, new_contact.as_slice());
+    }
+}
+
+#[test]
+fn removal_sweeps_pending_crypto_without_touching_another_identity() {
+    let (p, _tmp, _path) = fresh_persister();
+    let w = wid(0xDA);
+    ensure_wallet_meta(&p, &w);
+    for owner in [iid(0x91), iid(0x92)] {
+        p.store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(upsert_of(entry(owner, Some(w), None))),
+                pending_contact_crypto_added: vec![pending_crypto(owner, iid(0x93))],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    }
+    p.store(
+        w,
+        PlatformWalletChangeSet {
+            identities: Some(removal_of(iid(0x91))),
+            pending_contact_crypto_added: vec![pending_crypto(iid(0x91), iid(0x94))],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let conn = p.lock_conn_for_test();
+    let query = "SELECT COUNT(*) FROM pending_contact_crypto WHERE owner_identity_id = ?1";
+    assert_eq!(count_by_id(&conn, query, iid(0x91)), 0);
+    assert_eq!(count_by_id(&conn, query, iid(0x92)), 1);
+}
+
+#[test]
+fn re_add_batch_rolls_back_atomically_and_survives_retry() {
+    for retryable in [false, true] {
+        let (p, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
+        let w = wid(0xDB);
+        let owner = iid(0x95);
+        ensure_wallet_meta(&p, &w);
+        p.store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(upsert_of(entry(owner, Some(w), Some(1)))),
+                identity_keys: Some(keys_of(owner, 0, 0xAA)),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        p.flush(w).unwrap();
+        p.store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(removal_of(owner)),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        p.store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(upsert_of(entry(owner, Some(w), Some(2)))),
+                identity_keys: Some(keys_of(owner, 1, 0xBB)),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        if retryable {
+            p.force_next_flush_to_fail(platform_wallet_storage::WalletStorageError::Sqlite(
+                rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                    None,
+                ),
+            ));
+        } else {
+            // Fail after the first segment has deleted the old incarnation.
+            p.lock_conn_for_test().execute_batch(
+                "CREATE TRIGGER reject_new_key BEFORE INSERT ON identity_keys WHEN NEW.key_id = 1 BEGIN SELECT RAISE(ABORT, 'injected later-segment failure'); END;"
+            ).unwrap();
+        }
+        p.flush(w).expect_err("the injected error must surface");
+        {
+            let conn = p.lock_conn_for_test();
+            assert_eq!(
+                count_by_id(
+                    &conn,
+                    "SELECT COUNT(*) FROM identities WHERE identity_id = ?1 AND identity_index = 1",
+                    owner
+                ),
+                1
+            );
+            assert_eq!(
+                count_by_id(
+                    &conn,
+                    "SELECT COUNT(*) FROM identity_keys WHERE identity_id = ?1 AND key_id = 0",
+                    owner
+                ),
+                1
+            );
+        }
+        if retryable {
+            // New writes after restore still belong to the re-added identity.
+            p.store(
+                w,
+                PlatformWalletChangeSet {
+                    identity_keys: Some(keys_of(owner, 2, 0xCC)),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            p.flush(w).unwrap();
+            let state = p.load().unwrap();
+            let restored = &state.wallets[&w].identity_manager.wallet_identities[&w][&2];
+            assert_eq!(
+                restored
+                    .identity
+                    .public_keys()
+                    .keys()
+                    .copied()
+                    .collect::<Vec<_>>(),
+                vec![1, 2]
+            );
+        }
+    }
+}
+
+#[test]
+fn re_add_boundary_keeps_other_identity_snapshot_merge_semantics() {
+    let (p, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0xDC);
+    let owner = iid(0x96);
+    let other = iid(0x97);
+    ensure_wallet_meta(&p, &w);
+    let mut old = entry(owner, Some(w), Some(1));
+    old.revision = 100;
+    p.store(w, upsert_of(old).into()).unwrap();
+    p.flush(w).unwrap();
+
+    let mut newer = entry(other, Some(w), Some(2));
+    newer.revision = 100;
+    newer.balance = 2000;
+    newer.ignored_senders.insert(iid(0x98));
+    p.store(w, upsert_of(newer).into()).unwrap();
+    p.store(w, removal_of(owner).into()).unwrap();
+    p.store(w, upsert_of(entry(owner, Some(w), Some(1))).into())
+        .unwrap();
+    let mut stale = entry(other, Some(w), Some(2));
+    stale.revision = 99;
+    stale.balance = 100;
+    stale.ignored_senders.insert(iid(0x99));
+    p.store(w, upsert_of(stale).into()).unwrap();
+    p.flush(w).unwrap();
+
+    let conn = p.lock_conn_for_test();
+    let restored =
+        platform_wallet_storage::sqlite::schema::identities::fetch(&conn, &w, &other.to_buffer())
+            .unwrap()
+            .unwrap();
+    assert_eq!(restored.revision, 100);
+    assert_eq!(restored.balance, 2000);
+    assert_eq!(
+        restored.ignored_senders,
+        BTreeSet::from([iid(0x98), iid(0x99)])
+    );
+    let readded =
+        platform_wallet_storage::sqlite::schema::identities::fetch(&conn, &w, &owner.to_buffer())
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        readded.revision, 1,
+        "a new incarnation does not retain the old revision gate"
+    );
 }
 
 fn upsert_of(e: IdentityEntry) -> IdentityChangeSet {
@@ -693,6 +980,10 @@ fn v018_purges_tombstoned_rows_and_retires_the_column() {
         )
         .expect("insert ignored sender");
         conn.execute(
+            "INSERT INTO pending_contact_crypto (wallet_id, owner_identity_id, contact_id, kind, payload, enqueued_at_ms) VALUES (?1, ?2, ?3, 'register_receiving', X'00', 1)",
+            params![w.as_slice(), id.as_slice(), contact.as_slice()],
+        ).expect("insert pending crypto");
+        conn.execute(
             "INSERT INTO token_balances (identity_id, token_id, balance, updated_at) \
              VALUES (?1, ?2, 1, 0)",
             params![id.as_slice(), token.as_slice()],
@@ -759,4 +1050,7 @@ fn v018_purges_tombstoned_rows_and_retires_the_column() {
             .expect("count kept");
         assert_eq!(kept, 1, "`{table}` must be untouched for a live identity");
     }
+    let sql = "SELECT COUNT(*) FROM pending_contact_crypto WHERE owner_identity_id = ?1";
+    assert_eq!(count_by_id(&conn, sql, Identifier::from(tombstoned)), 0);
+    assert_eq!(count_by_id(&conn, sql, Identifier::from(live)), 1);
 }
