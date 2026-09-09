@@ -86,12 +86,7 @@ struct EnvLoader {
         #if os(iOS)
         // On iOS simulator, NSHomeDirectory returns the app's sandbox, not the user's home
         // We need to use hardcoded paths for common usernames
-        let username = NSUserName()
-        let possibleHomeDirs = [
-            "/Users/\(username)",
-            "/Users/quantum",
-            "/Users/samuelw"
-        ]
+        let possibleHomeDirs = ["/Users/\(NSUserName())"]
 
         for homeDir in possibleHomeDirs {
             paths.append(contentsOf: [

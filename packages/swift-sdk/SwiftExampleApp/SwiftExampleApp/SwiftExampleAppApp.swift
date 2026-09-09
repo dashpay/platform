@@ -522,16 +522,6 @@ struct SwiftExampleAppApp: App {
         }
     }
 
-    // MARK: - Helpers
-
-    /// Read local Core peers from UserDefaults (comma-separated addresses).
-    private func readLocalCorePeers() -> [String] {
-        if let csv = UserDefaults.standard.string(forKey: "localCorePeers"), !csv.isEmpty {
-            return csv.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-        }
-        return ["127.0.0.1"]
-    }
-
     /// Materialize a `PlatformWalletManager` for every network that
     /// has an orphan keychain mnemonic, except the already-active
     /// one. Used during bootstrap so the orphan-recovery flow has
