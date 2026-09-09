@@ -13,47 +13,6 @@ lazy_static::lazy_static! {
     pub static ref CONTACT_REQUEST_STORAGE: HandleStorage<ContactRequest> = HandleStorage::new();
 }
 
-/// Create a new contact request
-#[no_mangle]
-pub unsafe extern "C" fn contact_request_create(
-    sender_id: *const u8,
-    recipient_id: *const u8,
-    sender_key_index: u32,
-    recipient_key_index: u32,
-    account_reference: u32,
-    encrypted_public_key_bytes: *const std::os::raw::c_uchar,
-    encrypted_public_key_len: usize,
-    core_height_created_at: u32,
-    created_at: u64,
-    out_handle: *mut Handle,
-) -> PlatformWalletFFIResult {
-    check_ptr!(encrypted_public_key_bytes);
-    check_ptr!(out_handle);
-
-    let sender = unwrap_result_or_return!(unsafe { read_identifier(sender_id) });
-    let recipient = unwrap_result_or_return!(unsafe { read_identifier(recipient_id) });
-
-    let encrypted_key =
-        unsafe { std::slice::from_raw_parts(encrypted_public_key_bytes, encrypted_public_key_len) }
-            .to_vec();
-
-    let contact_request = ContactRequest::new(
-        sender,
-        recipient,
-        sender_key_index,
-        recipient_key_index,
-        account_reference,
-        encrypted_key,
-        core_height_created_at,
-        created_at,
-    );
-
-    let handle = CONTACT_REQUEST_STORAGE.insert(contact_request);
-    unsafe { *out_handle = handle };
-
-    PlatformWalletFFIResult::ok()
-}
-
 /// Create a contact request handle from a managed identity's sent request
 #[no_mangle]
 pub unsafe extern "C" fn managed_identity_get_sent_contact_request(

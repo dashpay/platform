@@ -1,7 +1,5 @@
-use crate::contact_request::CONTACT_REQUEST_STORAGE;
 use crate::error::*;
 use crate::handle::*;
-use crate::identity_manager::ffi_noop_persister;
 use crate::types::*;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
@@ -92,74 +90,6 @@ pub unsafe extern "C" fn managed_identity_is_contact_established(
         identity.dashpay().established_contacts().contains_key(&id)
     });
     *out_is_established = unwrap_option_or_return!(option);
-    PlatformWalletFFIResult::ok()
-}
-
-/// Send a contact request from this identity to another
-/// The request will be added to sent_contact_requests
-/// If there's already an incoming request from the recipient, the contact will be automatically established
-#[no_mangle]
-pub unsafe extern "C" fn managed_identity_send_contact_request(
-    identity_handle: Handle,
-    request_handle: Handle,
-) -> PlatformWalletFFIResult {
-    let request_result = CONTACT_REQUEST_STORAGE.with_item(request_handle, |req| req.clone());
-
-    let request = unwrap_option_or_return!(request_result);
-
-    let option = MANAGED_IDENTITY_STORAGE.with_item_mut(identity_handle, |identity| {
-        // Return the persist result so a failure surfaces through the FFI
-        // result instead of being swallowed — correct for any persister on this
-        // handle path (today the infallible `ffi_noop_persister`).
-        identity.add_sent_contact_request(request, &ffi_noop_persister())
-    });
-    unwrap_result_or_return!(unwrap_option_or_return!(option));
-    PlatformWalletFFIResult::ok()
-}
-
-/// Accept an incoming contact request
-/// This will add the request to incoming_contact_requests
-/// If there's already a sent request to the sender, the contact will be automatically established
-#[no_mangle]
-pub unsafe extern "C" fn managed_identity_accept_contact_request(
-    identity_handle: Handle,
-    request_handle: Handle,
-) -> PlatformWalletFFIResult {
-    let request_result = CONTACT_REQUEST_STORAGE.with_item(request_handle, |req| req.clone());
-
-    let request = unwrap_option_or_return!(request_result);
-
-    let option = MANAGED_IDENTITY_STORAGE.with_item_mut(identity_handle, |identity| {
-        // Return the persist result so a failure surfaces through the FFI
-        // result instead of being swallowed — correct for any persister on this
-        // handle path (today the infallible `ffi_noop_persister`).
-        identity.add_incoming_contact_request(request, &ffi_noop_persister())
-    });
-    unwrap_result_or_return!(unwrap_option_or_return!(option));
-    PlatformWalletFFIResult::ok()
-}
-
-/// Ignore a contact sender (per-sender mute, = block, reversible).
-///
-/// Local in-memory path on a managed-identity handle (no persister) —
-/// drops the sender's pending incoming request and records them in
-/// `ignored_senders`. The durable, persisted path is the wallet-scoped
-/// `platform_wallet_ignore_contact_sender`.
-#[no_mangle]
-pub unsafe extern "C" fn managed_identity_ignore_contact_sender(
-    identity_handle: Handle,
-    sender_id: *const u8,
-) -> PlatformWalletFFIResult {
-    let id = unwrap_result_or_return!(unsafe { read_identifier(sender_id) });
-
-    let option = MANAGED_IDENTITY_STORAGE.with_item_mut(identity_handle, |identity| {
-        // `ignore_sender` returns a `ContactChangeSet`, not a `Result` — there is
-        // no error to surface. This handle has no persister, so the changeset is
-        // intentionally dropped; the durable `platform_wallet_ignore_contact_sender`
-        // path persists it.
-        drop(identity.ignore_sender(&id));
-    });
-    unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
 }
 

@@ -38,10 +38,10 @@ pub unsafe extern "C" fn managed_identity_get_established_contact(
     PlatformWalletFFIResult::ok()
 }
 
-/// Get the contact identity ID from an established contact into a
-/// 32-byte out-buffer.
+/// Get the contact identity ID from an established contact. `out_id`
+/// must point at writable storage of at least 32 bytes.
 #[no_mangle]
-pub unsafe extern "C" fn established_contact_get_contact_id(
+pub unsafe extern "C" fn established_contact_get_contact_identity_id(
     contact_handle: Handle,
     out_id: *mut u8,
 ) -> PlatformWalletFFIResult {
@@ -52,51 +52,6 @@ pub unsafe extern "C" fn established_contact_get_contact_id(
     let id = unwrap_option_or_return!(option);
     unsafe { write_identifier(out_id, &id) };
     PlatformWalletFFIResult::ok()
-}
-
-/// Get a handle to the outgoing contact request from an established contact
-#[no_mangle]
-pub unsafe extern "C" fn established_contact_get_outgoing_request(
-    contact_handle: Handle,
-    out_request_handle: *mut Handle,
-) -> PlatformWalletFFIResult {
-    check_ptr!(out_request_handle);
-
-    let option = ESTABLISHED_CONTACT_STORAGE
-        .with_item(contact_handle, |contact| contact.outgoing_request.clone());
-    let req = unwrap_option_or_return!(option);
-    unsafe {
-        *out_request_handle = crate::contact_request::CONTACT_REQUEST_STORAGE.insert(req);
-    }
-    PlatformWalletFFIResult::ok()
-}
-
-/// Get a handle to the incoming contact request from an established contact
-#[no_mangle]
-pub unsafe extern "C" fn established_contact_get_incoming_request(
-    contact_handle: Handle,
-    out_request_handle: *mut Handle,
-) -> PlatformWalletFFIResult {
-    check_ptr!(out_request_handle);
-
-    let option = ESTABLISHED_CONTACT_STORAGE
-        .with_item(contact_handle, |contact| contact.incoming_request.clone());
-    let req = unwrap_option_or_return!(option);
-    unsafe {
-        *out_request_handle = crate::contact_request::CONTACT_REQUEST_STORAGE.insert(req);
-    }
-    PlatformWalletFFIResult::ok()
-}
-
-/// Get the contact identity ID from an established contact (alias
-/// for [`established_contact_get_contact_id`]). `out_id` must point
-/// at writable storage of at least 32 bytes.
-#[no_mangle]
-pub unsafe extern "C" fn established_contact_get_contact_identity_id(
-    contact_handle: Handle,
-    out_id: *mut u8,
-) -> PlatformWalletFFIResult {
-    unsafe { established_contact_get_contact_id(contact_handle, out_id) }
 }
 
 /// Get the alias for an established contact
@@ -149,28 +104,6 @@ pub unsafe extern "C" fn established_contact_is_hidden(
 
     let option = ESTABLISHED_CONTACT_STORAGE.with_item(contact_handle, |contact| contact.is_hidden);
     *out_is_hidden = unwrap_option_or_return!(option);
-    PlatformWalletFFIResult::ok()
-}
-
-/// Check whether an established contact's DashPay payment channel is
-/// permanently broken.
-///
-/// `true` means the account-building sweep hit a permanent failure
-/// (decrypt/decode of the counterparty xpub, or a key-index validation
-/// failure) and stopped retrying. The UI should disable "Send Dash" and
-/// surface "Payment channel broken — ask the contact to send a new
-/// request"; the flag clears automatically when a superseding contact
-/// request (re-)establishes the relationship.
-#[no_mangle]
-pub unsafe extern "C" fn established_contact_is_payment_channel_broken(
-    contact_handle: Handle,
-    out_is_broken: *mut bool,
-) -> PlatformWalletFFIResult {
-    check_ptr!(out_is_broken);
-
-    let option = ESTABLISHED_CONTACT_STORAGE
-        .with_item(contact_handle, |contact| contact.payment_channel_broken);
-    *out_is_broken = unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
 }
 

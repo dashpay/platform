@@ -365,27 +365,6 @@ public final class ManagedIdentity: @unchecked Sendable {
         return isEstablished
     }
 
-    /// Send a contact request by attaching a pre-built request handle.
-    /// Build the request via `ContactRequest.create(...)` first.
-    public func sendContactRequest(_ request: ContactRequest) throws {
-        try managed_identity_send_contact_request(handle, request.handle).check()
-    }
-
-    /// Accept an incoming contact request.
-    /// The request handle typically comes from `getIncomingContactRequest(senderId:)`.
-    public func acceptContactRequest(_ request: ContactRequest) throws {
-        try managed_identity_accept_contact_request(handle, request.handle).check()
-    }
-
-    /// Ignore a contact sender (per-sender mute, = block, reversible).
-    /// Local in-memory path on this handle (no persister) — the durable
-    /// path is `ManagedPlatformWallet.ignoreContactSender`.
-    public func ignoreContactSender(senderId: Identifier) throws {
-        try senderId.withFFIBytes { idPtr in
-            try managed_identity_ignore_contact_sender(handle, idPtr).check()
-        }
-    }
-
     // MARK: - DPNS names
 
     /// Read the cached DPNS labels for this identity. Empty when

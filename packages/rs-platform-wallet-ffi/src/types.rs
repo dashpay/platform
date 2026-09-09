@@ -75,24 +75,6 @@ pub unsafe fn write_identifier(ptr: *mut u8, id: &dpp::prelude::Identifier) {
     }
 }
 
-/// Contact request structure
-#[repr(C)]
-pub struct ContactRequest {
-    /// 32-byte identifier (raw bytes, not a struct, to keep this
-    /// struct ABI-compatible with the C-side cbindgen view).
-    pub identity_id: [u8; 32],
-    pub label: *mut c_char,
-    pub timestamp: u64,
-}
-
-/// Established contact structure
-#[repr(C)]
-pub struct EstablishedContact {
-    pub identity_id: [u8; 32],
-    pub label: *mut c_char,
-    pub established_at: u64,
-}
-
 /// Array wrapper for returning multiple identifiers.
 ///
 /// `items` points at a contiguous `[[u8; 32]; count]` buffer — flat

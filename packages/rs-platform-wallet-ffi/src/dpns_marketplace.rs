@@ -770,72 +770,17 @@ pub unsafe extern "C" fn platform_wallet_dpns_purchase_name(
 // On-demand sync
 // ---------------------------------------------------------------------------
 
-/// Run one marketplace sync pass on THIS wallet and report its delta.
+/// Run one marketplace sync pass on THIS wallet and retain the complete
+/// delta and completion timestamp.
 ///
 /// Refreshes owned-name rows (price / sale state), adds newly observed
 /// names to the identity label lists, detects names that LEFT an
 /// identity (sold or transferred away), and refreshes the balances of
-/// identities that sold a name. All four out-params are optional — pass
-/// `null` to ignore any of them:
-///
-///   * `out_names_tracked`: owned-name rows written this pass.
-///   * `out_names_added`: labels newly observed on a wallet identity.
-///   * `out_names_departed`: names that left a wallet identity.
-///   * `out_prices_changed`: listed-price changes since the last pass.
+/// identities that sold a name.
 ///
 /// This is the per-wallet, on-demand entry point (pull-to-refresh). The
 /// recurring cross-wallet sweep is the manager-level coordinator in
 /// [`crate::dpns_sync`].
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_dpns_marketplace_sync(
-    wallet_handle: Handle,
-    out_names_tracked: *mut u32,
-    out_names_added: *mut u32,
-    out_names_departed: *mut u32,
-    out_prices_changed: *mut u32,
-) -> PlatformWalletFFIResult {
-    // Optional out-params: define every non-null slot before the fallible
-    // work so an error return leaves well-defined zeros, not garbage.
-    unsafe {
-        for slot in [
-            out_names_tracked,
-            out_names_added,
-            out_names_departed,
-            out_prices_changed,
-        ] {
-            if !slot.is_null() {
-                *slot = 0;
-            }
-        }
-    }
-
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.sync_dpns_marketplace().await })
-    });
-    let result = unwrap_option_or_return!(option);
-    let summary = unwrap_result_or_return!(result);
-
-    unsafe {
-        if !out_names_tracked.is_null() {
-            *out_names_tracked = summary.names_tracked;
-        }
-        if !out_names_added.is_null() {
-            *out_names_added = summary.names_added.len() as u32;
-        }
-        if !out_names_departed.is_null() {
-            *out_names_departed = summary.names_departed.len() as u32;
-        }
-        if !out_prices_changed.is_null() {
-            *out_prices_changed = summary.prices_changed.len() as u32;
-        }
-    }
-    PlatformWalletFFIResult::ok()
-}
-
-/// Run one marketplace sync pass and retain the complete delta and completion
-/// timestamp. This is the lossless companion to the original counts-only
-/// [`platform_wallet_dpns_marketplace_sync`] entry point.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_dpns_marketplace_sync_detailed(
     wallet_handle: Handle,
@@ -1379,19 +1324,6 @@ mod tests {
                 ptr::null(),
                 &mut rows,
                 &mut rows_count,
-            )
-        };
-        assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
-
-        // All four sync out-params are optional — a null-only call must
-        // still reach the handle lookup.
-        let r = unsafe {
-            platform_wallet_dpns_marketplace_sync(
-                bogus,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
             )
         };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);

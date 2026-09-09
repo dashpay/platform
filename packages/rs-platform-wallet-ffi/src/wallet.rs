@@ -5,19 +5,6 @@ use crate::handle::*;
 use crate::runtime::runtime;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
-/// Get the wallet ID (32 bytes).
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_get_id(
-    handle: Handle,
-    out_wallet_id: *mut [u8; 32],
-) -> PlatformWalletFFIResult {
-    check_ptr!(out_wallet_id);
-
-    let option = PLATFORM_WALLET_STORAGE.with_item(handle, |wallet| wallet.wallet_id());
-    *out_wallet_id = unwrap_option_or_return!(option);
-    PlatformWalletFFIResult::ok()
-}
-
 /// Get lock-free balance (spendable, unconfirmed, immature, locked).
 ///
 /// These are atomic reads — no lock contention.
@@ -195,67 +182,6 @@ pub unsafe extern "C" fn platform_wallet_manager_free_account_balances(
     }
 }
 
-/// Aggregate the wallet's masternodes from its retained provider special
-/// transactions (ProRegTx / ProUpServTx / ProUpRegTx / ProUpRevTx),
-/// grouped by proTxHash. Returns an array of
-/// [`MasternodeEntryFFI`](crate::core_wallet_types::MasternodeEntryFFI),
-/// one per masternode, sorted by registration order. The caller owns the
-/// array and must free it via
-/// [`platform_wallet_manager_free_masternodes`].
-///
-/// The record source (rust-dashcore #876 provider-payload retention) is
-/// populated in every feature configuration; see
-/// `PlatformWalletManager::wallet_masternodes_blocking`, which also resolves
-/// status and operator / platform key ownership — this function only
-/// marshals. `out_*` are set to null / 0 when the wallet has no masternodes
-/// or isn't found.
-///
-/// Reads the wallet manager lock via `blocking_read` — must not be called
-/// from within a tokio async context.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_manager_list_masternodes(
-    manager_handle: Handle,
-    wallet_id: *const u8,
-    out_entries: *mut *const crate::core_wallet_types::MasternodeEntryFFI,
-    out_count: *mut usize,
-) -> PlatformWalletFFIResult {
-    check_ptr!(wallet_id);
-    check_ptr!(out_entries);
-    check_ptr!(out_count);
-    // Initialise outputs immediately so the invalid-handle / unknown-wallet
-    // early returns below leave the caller looking at valid empty state
-    // rather than uninitialised / stale pointers.
-    *out_entries = std::ptr::null();
-    *out_count = 0;
-
-    let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
-
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        manager.wallet_masternodes_blocking(&wid)
-    });
-    // Outer Option: handle resolved. Inner Option: wallet found.
-    let inner = unwrap_option_or_return!(option);
-    let masternodes = unwrap_option_or_return!(inner);
-
-    let entries: Vec<crate::core_wallet_types::MasternodeEntryFFI> = masternodes
-        .records
-        .iter()
-        .map(|mn| crate::core_wallet_types::masternode_entry_ffi(mn, masternodes.network))
-        .collect();
-    let count = entries.len();
-
-    if count == 0 {
-        *out_entries = std::ptr::null();
-        *out_count = 0;
-        return PlatformWalletFFIResult::ok();
-    }
-
-    let boxed = entries.into_boxed_slice();
-    *out_entries = Box::into_raw(boxed) as *const _;
-    *out_count = count;
-    PlatformWalletFFIResult::ok()
-}
-
 /// Version 2 of [`platform_wallet_manager_list_masternodes`]. It returns
 /// [`MasternodeEntryV2FFI`](crate::core_wallet_types::MasternodeEntryV2FFI),
 /// which adds record provenance and an optional tracked-node label without
@@ -295,7 +221,9 @@ pub unsafe extern "C" fn platform_wallet_manager_list_masternodes_v2(
     PlatformWalletFFIResult::ok()
 }
 
-unsafe fn free_masternode_entry_strings(entry: &crate::core_wallet_types::MasternodeEntryFFI) {
+pub(crate) unsafe fn free_masternode_entry_strings(
+    entry: &crate::core_wallet_types::MasternodeEntryFFI,
+) {
     for ptr in [
         entry.service_address,
         entry.owner_address,
@@ -308,23 +236,6 @@ unsafe fn free_masternode_entry_strings(entry: &crate::core_wallet_types::Master
             let _ = std::ffi::CString::from_raw(ptr);
         }
     }
-}
-
-/// Free an array returned by [`platform_wallet_manager_list_masternodes`],
-/// including each entry's heap C strings.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_manager_free_masternodes(
-    entries: *mut crate::core_wallet_types::MasternodeEntryFFI,
-    count: usize,
-) {
-    if entries.is_null() || count == 0 {
-        return;
-    }
-    let slice = std::slice::from_raw_parts_mut(entries, count);
-    for entry in slice.iter() {
-        free_masternode_entry_strings(entry);
-    }
-    let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
 }
 
 /// Free an array returned by

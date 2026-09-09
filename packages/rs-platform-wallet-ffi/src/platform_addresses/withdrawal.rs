@@ -15,89 +15,15 @@ use std::str::FromStr;
 use super::parse_input_selection;
 use crate::runtime::block_on_worker;
 
-/// Withdraw platform credits to a Core L1 address.
-#[no_mangle]
-#[allow(clippy::too_many_arguments)]
-pub unsafe extern "C" fn platform_address_wallet_withdraw(
-    handle: Handle,
-    account_index: u32,
-    input_type: InputSelectionType,
-    explicit_inputs: *const ExplicitInputFFI,
-    explicit_inputs_count: usize,
-    nonce_inputs: *const ExplicitInputWithNonceFFI,
-    nonce_inputs_count: usize,
-    output_script: *const u8,
-    output_script_len: usize,
-    core_fee_per_byte: u32,
-    fee_strategy: *const FeeStrategyStepFFI,
-    fee_strategy_count: usize,
-    signer_address_handle: *mut SignerHandle,
-    out_changeset: *mut PlatformAddressChangeSetFFI,
-) -> PlatformWalletFFIResult {
-    check_ptr!(out_changeset);
-    // Sentinel first: input parsing, the wallet lookup, and the async
-    // withdraw below are all fallible. See
-    // `PlatformAddressChangeSetFFI::empty` for the double-free rationale.
-    *out_changeset = PlatformAddressChangeSetFFI::empty();
-    check_ptr!(output_script);
-    check_ptr!(signer_address_handle);
-
-    let script_bytes = std::slice::from_raw_parts(output_script, output_script_len);
-    let core_script = CoreScript::from_bytes(script_bytes.to_vec());
-
-    let input_selection = unwrap_result_or_return!(parse_input_selection(
-        input_type,
-        explicit_inputs,
-        explicit_inputs_count,
-        nonce_inputs,
-        nonce_inputs_count,
-    ));
-
-    let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
-
-    // Clone the wallet out of handle storage so the read lock is released
-    // before the long-running withdraw, then poll on a worker thread
-    // (8 MB stack): the withdraw future verifies the execution proof, and
-    // GroveDB proof verification recurses past the ~512 KB stacks of iOS
-    // dispatch / Swift-concurrency threads (see runtime.rs) — polling it
-    // on the calling thread crashes with EXC_BAD_ACCESS after the funds
-    // already moved on-chain. Round-trip the signer pointer through
-    // `usize` so the future's capture is `Send + 'static`; the caller
-    // guarantees the handle outlives this synchronously-awaited call.
-    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.clone());
-    let wallet = unwrap_option_or_return!(option);
-    let signer_addr = signer_address_handle as usize;
-    let result = block_on_worker(async move {
-        let address_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
-        wallet
-            .withdraw(
-                account_index,
-                input_selection,
-                core_script,
-                core_fee_per_byte,
-                fee,
-                None,
-                address_signer,
-            )
-            .await
-    });
-    let changeset = unwrap_result_or_return!(result);
-    *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
-    PlatformWalletFFIResult::ok()
-}
-
 /// Withdraw platform credits to a Core L1 address given as a base58
 /// string (e.g. `yXV…` on testnet / `X…` on mainnet).
 ///
-/// Sibling of [`platform_address_wallet_withdraw`] that accepts a
-/// human-facing Core address instead of a pre-built `output_script`
-/// byte buffer. The address is parsed and **network-checked against
-/// the wallet's own network** entirely on the Rust side — a
-/// testnet-shaped address can never be withdrawn to on a mainnet
-/// wallet (and vice versa). The resulting P2PKH/P2SH `script_pubkey`
-/// is then handed to the same `wallet.withdraw(...)` entry point, so
-/// input selection, fee strategy, and signing are identical to the
-/// raw-script path.
+/// Takes a human-facing Core address rather than a pre-built
+/// `output_script` byte buffer. The address is parsed and
+/// **network-checked against the wallet's own network** entirely on the
+/// Rust side — a testnet-shaped address can never be withdrawn to on a
+/// mainnet wallet (and vice versa). The resulting P2PKH/P2SH
+/// `script_pubkey` is handed to `wallet.withdraw(...)`.
 ///
 /// `signer_address_handle` is a `*mut SignerHandle` produced by
 /// `dash_sdk_signer_create_with_ctx` (e.g. via `KeychainSigner.handle`)

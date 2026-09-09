@@ -1,10 +1,10 @@
 //! Document creation operations
 
 use crate::sdk::SDKWrapper;
-use crate::types::{DashSDKResultDataType, DocumentHandle, SDKHandle};
+use crate::types::{DocumentHandle, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::document::{Document, DocumentV0};
+use dash_sdk::dpp::document::Document;
 // identity getters not used here
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::platform_value::Value;
@@ -34,23 +34,6 @@ pub struct DashSDKDocumentCreateParams {
     pub owner_identity_id: *const c_char,
     /// JSON string of document properties
     pub properties_json: *const c_char,
-}
-
-/// Document handle creation parameters
-#[repr(C)]
-pub struct DashSDKDocumentHandleParams {
-    /// Document ID (base58 encoded)
-    pub id: *const c_char,
-    /// Data contract ID (base58 encoded)
-    pub data_contract_id: *const c_char,
-    /// Document type name
-    pub document_type: *const c_char,
-    /// Owner identity ID (base58 encoded)
-    pub owner_identity_id: *const c_char,
-    /// JSON string of document properties
-    pub properties_json: *const c_char,
-    /// Optional revision number (0 means no revision)
-    pub revision: u64,
 }
 
 /// Create a new document
@@ -217,153 +200,6 @@ pub unsafe extern "C" fn dash_sdk_document_create_result_free(
     if !result.is_null() {
         let _ = Box::from_raw(result);
     }
-}
-
-/// Create a document handle from parameters
-/// This creates a Document object directly without broadcasting to the network
-///
-/// # Safety
-/// - `params` must be a valid, non-null pointer to a `DashSDKDocumentHandleParams` structure.
-/// - All C string fields inside `params` must be valid pointers to NUL-terminated strings and remain valid
-///   for the duration of the call.
-/// - On success, the returned `DashSDKResult` contains a heap-allocated `DocumentHandle` which must be freed by the caller
-///   using the appropriate SDK destroy function.
-/// - Passing dangling or invalid pointers results in undefined behavior.
-#[no_mangle]
-pub unsafe extern "C" fn dash_sdk_document_make_handle(
-    params: *const DashSDKDocumentHandleParams,
-) -> DashSDKResult {
-    // Validate input
-    if params.is_null() {
-        return DashSDKResult::error(DashSDKError::new(
-            DashSDKErrorCode::InvalidParameter,
-            "Parameters are null".to_string(),
-        ));
-    }
-
-    let params = &*params;
-
-    // Validate required fields
-    if params.id.is_null()
-        || params.data_contract_id.is_null()
-        || params.document_type.is_null()
-        || params.owner_identity_id.is_null()
-        || params.properties_json.is_null()
-    {
-        return DashSDKResult::error(DashSDKError::new(
-            DashSDKErrorCode::InvalidParameter,
-            "One or more required parameters is null".to_string(),
-        ));
-    }
-
-    // Parse document ID
-    let id_str = match CStr::from_ptr(params.id).to_str() {
-        Ok(s) => s,
-        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
-    };
-
-    let document_id = match Identifier::from_string(id_str, Encoding::Base58) {
-        Ok(id) => id,
-        Err(e) => {
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                format!("Invalid document ID: {}", e),
-            ))
-        }
-    };
-
-    // Parse owner identity ID
-    let owner_id_str = match CStr::from_ptr(params.owner_identity_id).to_str() {
-        Ok(s) => s,
-        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
-    };
-
-    let owner_id = match Identifier::from_string(owner_id_str, Encoding::Base58) {
-        Ok(id) => id,
-        Err(e) => {
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                format!("Invalid owner identity ID: {}", e),
-            ))
-        }
-    };
-
-    // Parse properties JSON
-    let properties_json_str = match CStr::from_ptr(params.properties_json).to_str() {
-        Ok(s) => s,
-        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
-    };
-
-    // Parse JSON into Value
-    let properties_value: Value = match serde_json::from_str(properties_json_str) {
-        Ok(val) => val,
-        Err(e) => {
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                format!("Invalid JSON properties: {}", e),
-            ))
-        }
-    };
-
-    // Convert Value to BTreeMap<String, Value>
-    let properties = match properties_value {
-        Value::Map(map) => {
-            let mut btree_map = BTreeMap::new();
-            for (key, value) in map {
-                match key {
-                    Value::Text(key_str) => {
-                        btree_map.insert(key_str, value);
-                    }
-                    _ => {
-                        return DashSDKResult::error(DashSDKError::new(
-                            DashSDKErrorCode::InvalidParameter,
-                            "Property keys must be strings".to_string(),
-                        ))
-                    }
-                }
-            }
-            btree_map
-        }
-        _ => {
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                "Properties must be a JSON object".to_string(),
-            ))
-        }
-    };
-
-    // Handle optional revision
-    let revision = if params.revision == 0 {
-        None
-    } else {
-        Some(params.revision)
-    };
-
-    // Create the document
-    let document = Document::V0(DocumentV0 {
-        contract_version: None,
-        id: document_id,
-        owner_id,
-        properties,
-        revision,
-        created_at: None,
-        updated_at: None,
-        transferred_at: None,
-        created_at_block_height: None,
-        updated_at_block_height: None,
-        transferred_at_block_height: None,
-        created_at_core_block_height: None,
-        updated_at_core_block_height: None,
-        transferred_at_core_block_height: None,
-        creator_id: None,
-    });
-
-    // Box and return as handle
-    let handle = Box::into_raw(Box::new(document)) as *mut DocumentHandle;
-    DashSDKResult::success_handle(
-        handle as *mut std::os::raw::c_void,
-        DashSDKResultDataType::ResultDocumentHandle,
-    )
 }
 
 #[cfg(test)]

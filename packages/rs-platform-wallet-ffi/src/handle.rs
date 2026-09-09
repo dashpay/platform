@@ -101,14 +101,6 @@ impl<T> Default for HandleStorage<T> {
     }
 }
 
-/// Storage for PlatformWalletInfo handles
-pub static WALLET_INFO_STORAGE: Lazy<HandleStorage<platform_wallet::PlatformWalletInfo>> =
-    Lazy::new(HandleStorage::new);
-
-/// Storage for IdentityManager handles
-pub static IDENTITY_MANAGER_STORAGE: Lazy<HandleStorage<platform_wallet::IdentityManager>> =
-    Lazy::new(HandleStorage::new);
-
 /// Storage for ManagedIdentity handles
 pub static MANAGED_IDENTITY_STORAGE: Lazy<HandleStorage<platform_wallet::ManagedIdentity>> =
     Lazy::new(HandleStorage::new);

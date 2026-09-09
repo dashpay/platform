@@ -517,32 +517,6 @@ unsafe fn create_wallet_from_mnemonic_impl(
     PlatformWalletFFIResult::ok()
 }
 
-/// Create a wallet from raw seed bytes (64 bytes).
-///
-/// On success, `out_wallet_handle` is set to a `PlatformWallet` handle and
-/// `out_wallet_id` is filled with the 32-byte wallet ID.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_seed(
-    manager_handle: Handle,
-    network: FFINetwork,
-    seed_bytes: *const u8,
-    seed_len: usize,
-    account_options: u32,
-    out_wallet_handle: *mut Handle,
-    out_wallet_id: *mut [u8; 32],
-) -> PlatformWalletFFIResult {
-    create_wallet_from_seed_impl(
-        manager_handle,
-        network,
-        seed_bytes,
-        seed_len,
-        account_options,
-        None,
-        out_wallet_handle,
-        out_wallet_id,
-    )
-}
-
 /// Create a wallet from raw seed bytes (64 bytes) with an optional
 /// birth-height override.
 ///
@@ -573,30 +547,6 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_seed_with_bi
         seed_len,
         account_options,
         birth_height_override_opt(has_birth_height_override, birth_height_override),
-        out_wallet_handle,
-        out_wallet_id,
-    )
-}
-
-/// Create a wallet from a BIP39 mnemonic phrase (English).
-///
-/// On success, `out_wallet_handle` is set to a `PlatformWallet` handle and
-/// `out_wallet_id` is filled with the 32-byte wallet ID.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic(
-    manager_handle: Handle,
-    mnemonic: *const std::os::raw::c_char,
-    network: FFINetwork,
-    account_options: u32,
-    out_wallet_handle: *mut Handle,
-    out_wallet_id: *mut [u8; 32],
-) -> PlatformWalletFFIResult {
-    create_wallet_from_mnemonic_impl(
-        manager_handle,
-        mnemonic,
-        network,
-        account_options,
-        None,
         out_wallet_handle,
         out_wallet_id,
     )

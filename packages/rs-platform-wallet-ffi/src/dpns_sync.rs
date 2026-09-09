@@ -15,7 +15,7 @@
 //! completion timestamp through out-params; all three are optional —
 //! pass null to ignore any of them. For a single wallet's delta (names
 //! tracked / added / departed / re-priced) use the per-wallet
-//! [`platform_wallet_dpns_marketplace_sync`](crate::dpns_marketplace::platform_wallet_dpns_marketplace_sync)
+//! [`platform_wallet_dpns_marketplace_sync_detailed`](crate::dpns_marketplace::platform_wallet_dpns_marketplace_sync_detailed)
 //! instead.
 //!
 //! Not auto-started. The host lifecycle calls

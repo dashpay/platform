@@ -255,60 +255,6 @@ fn test_mixed_contact_scenario() {
 }
 
 #[test]
-fn test_identity_manager_with_multiple_identities() {
-    unsafe {
-        use dpp::identity::accessors::IdentityGettersV0;
-
-        // Create identity manager
-        let mut manager_handle: Handle = NULL_HANDLE;
-        let result = identity_manager_create(&mut manager_handle);
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-
-        // Add Alice, Bob, and Carol
-        let alice = identities::alice();
-        let bob = identities::bob();
-        let carol = identities::carol();
-
-        let alice_id = alice.identity.id();
-        let _bob_id = bob.identity.id();
-        let _carol_id = carol.identity.id();
-
-        let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice);
-        let bob_handle = MANAGED_IDENTITY_STORAGE.insert(bob);
-        let carol_handle = MANAGED_IDENTITY_STORAGE.insert(carol);
-
-        identity_manager_add_identity(manager_handle, alice_handle);
-        identity_manager_add_identity(manager_handle, bob_handle);
-        identity_manager_add_identity(manager_handle, carol_handle);
-
-        // Verify count
-        let mut count: usize = 0;
-        let result = identity_manager_get_identity_count(manager_handle, &mut count);
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(count, 3);
-
-        // Get all identity IDs
-        let mut array = IdentifierArray {
-            items: std::ptr::null_mut(),
-            count: 0,
-        };
-        let result = identity_manager_get_all_identity_ids(manager_handle, &mut array);
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(array.count, 3);
-
-        // Primary-identity FFI was dropped along with the field;
-        // the test_data fixture's `alice_id` is no longer relevant
-        // here.
-        let alice_id_bytes: [u8; 32] = alice_id.to_buffer();
-        let _ = alice_id_bytes;
-
-        // Cleanup
-        platform_wallet_identifier_array_free(&mut array);
-        identity_manager_destroy(manager_handle);
-    }
-}
-
-#[test]
 fn test_managed_identity_label_operations() {
     // `ManagedIdentity` no longer carries a `label` field — the FFI
     // get/set entry points return null / no-op success respectively.
@@ -444,43 +390,6 @@ fn test_contact_request_not_found() {
 
         // Cleanup
         managed_identity_destroy(alice_handle);
-    }
-}
-
-#[test]
-fn test_identifier_operations() {
-    unsafe {
-        // Generate random identifier
-        let mut id = [0u8; 32];
-        let result = platform_wallet_generate_random_identifier(id.as_mut_ptr());
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        // Should not be all zeros
-        assert_ne!(id, [0u8; 32]);
-
-        // Convert to string (actually Base58, despite function name)
-        let mut id_string: *mut std::os::raw::c_char = std::ptr::null_mut();
-        let result = platform_wallet_identifier_to_hex(id.as_ptr(), &mut id_string);
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert!(!id_string.is_null());
-
-        let id_str = std::ffi::CStr::from_ptr(id_string).to_str().unwrap();
-        // Base58-encoded 32-byte identifier is 43-44 chars (variable length encoding)
-        assert!(
-            id_str.len() == 43 || id_str.len() == 44,
-            "Expected Base58 identifier length 43-44, got {}",
-            id_str.len()
-        );
-
-        // Convert back from string
-        let mut id2 = [0u8; 32];
-        let result = platform_wallet_identifier_from_hex(id_string, id2.as_mut_ptr());
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-
-        // Should match original
-        assert_eq!(id, id2);
-
-        // Cleanup
-        platform_wallet_string_free(id_string);
     }
 }
 
@@ -638,124 +547,12 @@ fn test_get_established_contact_and_fields() {
 
         // Get contact ID
         let mut retrieved_id = [0u8; 32];
-        let result = established_contact_get_contact_id(contact_handle, retrieved_id.as_mut_ptr());
+        let result =
+            established_contact_get_contact_identity_id(contact_handle, retrieved_id.as_mut_ptr());
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(retrieved_id, bob_id_bytes);
 
         // Cleanup
-        established_contact_destroy(contact_handle);
-        managed_identity_destroy(alice_handle);
-    }
-}
-
-#[test]
-fn test_established_contact_outgoing_and_incoming_requests() {
-    unsafe {
-        use dpp::identity::accessors::IdentityGettersV0;
-
-        let (alice, _contacts) = test_data::scenarios::alice_with_established_contacts();
-        let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice.clone());
-
-        let bob_id = test_data::identities::bob().identity.id();
-        let bob_id_bytes: [u8; 32] = bob_id.to_buffer();
-
-        let mut contact_handle: Handle = NULL_HANDLE;
-
-        managed_identity_get_established_contact(
-            alice_handle,
-            bob_id_bytes.as_ptr(),
-            &mut contact_handle,
-        );
-
-        // Get outgoing request
-        let mut outgoing_handle: Handle = NULL_HANDLE;
-        let result = established_contact_get_outgoing_request(contact_handle, &mut outgoing_handle);
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_ne!(outgoing_handle, NULL_HANDLE);
-
-        // Get incoming request
-        let mut incoming_handle: Handle = NULL_HANDLE;
-        let result = established_contact_get_incoming_request(contact_handle, &mut incoming_handle);
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_ne!(incoming_handle, NULL_HANDLE);
-
-        // Verify the requests have correct sender/recipient
-        let alice_id = alice.identity.id();
-        let alice_id_bytes: [u8; 32] = alice_id.to_buffer();
-        let mut sender_id = [0u8; 32];
-        let mut recipient_id = [0u8; 32];
-
-        // Outgoing: from alice to bob
-        contact_request_get_sender_id(outgoing_handle, sender_id.as_mut_ptr());
-        contact_request_get_recipient_id(outgoing_handle, recipient_id.as_mut_ptr());
-        assert_eq!(sender_id, alice_id_bytes);
-        assert_eq!(recipient_id, bob_id_bytes);
-
-        // Incoming: from bob to alice
-        contact_request_get_sender_id(incoming_handle, sender_id.as_mut_ptr());
-        contact_request_get_recipient_id(incoming_handle, recipient_id.as_mut_ptr());
-        assert_eq!(sender_id, bob_id_bytes);
-        assert_eq!(recipient_id, alice_id_bytes);
-
-        // Cleanup
-        contact_request_destroy(outgoing_handle);
-        contact_request_destroy(incoming_handle);
-        established_contact_destroy(contact_handle);
-        managed_identity_destroy(alice_handle);
-    }
-}
-
-#[test]
-fn test_established_contact_request_fields() {
-    unsafe {
-        use dpp::identity::accessors::IdentityGettersV0;
-
-        let (alice, _contacts) = test_data::scenarios::alice_with_established_contacts();
-        let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice.clone());
-
-        let bob_id = test_data::identities::bob().identity.id();
-        let bob_id_bytes: [u8; 32] = bob_id.to_buffer();
-
-        let mut contact_handle: Handle = NULL_HANDLE;
-
-        managed_identity_get_established_contact(
-            alice_handle,
-            bob_id_bytes.as_ptr(),
-            &mut contact_handle,
-        );
-
-        // Get outgoing request and verify all fields
-        let mut outgoing_handle: Handle = NULL_HANDLE;
-        established_contact_get_outgoing_request(contact_handle, &mut outgoing_handle);
-
-        let mut sender_key_idx: u32 = 0;
-        let mut recipient_key_idx: u32 = 0;
-        let mut account_ref: u32 = 0;
-        let mut created_at: u64 = 0;
-
-        contact_request_get_sender_key_index(outgoing_handle, &mut sender_key_idx);
-        contact_request_get_recipient_key_index(outgoing_handle, &mut recipient_key_idx);
-        contact_request_get_account_reference(outgoing_handle, &mut account_ref);
-        contact_request_get_created_at(outgoing_handle, &mut created_at);
-
-        // The test data should have specific values
-        assert_eq!(sender_key_idx, 0);
-        assert_eq!(recipient_key_idx, 1);
-        assert_eq!(account_ref, 0);
-        assert!(created_at > 0);
-
-        // Get encrypted public key
-        let mut bytes_ptr: *mut std::os::raw::c_uchar = std::ptr::null_mut();
-        let mut len: usize = 0;
-        let result =
-            contact_request_get_encrypted_public_key(outgoing_handle, &mut bytes_ptr, &mut len);
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(len, 96); // Standard encrypted key length
-        assert!(!bytes_ptr.is_null());
-
-        // Cleanup
-        platform_wallet_bytes_free(bytes_ptr, len);
-        contact_request_destroy(outgoing_handle);
         established_contact_destroy(contact_handle);
         managed_identity_destroy(alice_handle);
     }
@@ -830,12 +627,18 @@ fn test_multiple_established_contacts() {
 
         // Verify Bob's contact ID
         let mut retrieved_bob_id = [0u8; 32];
-        established_contact_get_contact_id(bob_contact_handle, retrieved_bob_id.as_mut_ptr());
+        established_contact_get_contact_identity_id(
+            bob_contact_handle,
+            retrieved_bob_id.as_mut_ptr(),
+        );
         assert_eq!(retrieved_bob_id, bob_id_bytes);
 
         // Verify Carol's contact ID
         let mut retrieved_carol_id = [0u8; 32];
-        established_contact_get_contact_id(carol_contact_handle, retrieved_carol_id.as_mut_ptr());
+        established_contact_get_contact_identity_id(
+            carol_contact_handle,
+            retrieved_carol_id.as_mut_ptr(),
+        );
         assert_eq!(retrieved_carol_id, carol_id_bytes);
 
         // Cleanup

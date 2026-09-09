@@ -313,65 +313,6 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
     }
 }
 
-/// Recover a tracked asset lock from a serialized transaction.
-///
-/// Re-tracks the asset lock in memory so it can be resumed later.
-/// The transaction must be a valid asset lock transaction with a
-/// special transaction payload.
-#[no_mangle]
-#[allow(clippy::too_many_arguments)]
-pub unsafe extern "C" fn asset_lock_manager_recover(
-    handle: Handle,
-    tx_bytes: *const u8,
-    tx_bytes_len: usize,
-    amount_duffs: u64,
-    account_index: u32,
-    funding_type: u32,
-    identity_index: u32,
-    txid: *const [u8; 32],
-    vout: u32,
-    proof_bytes: *const u8,
-    proof_len: usize,
-) -> PlatformWalletFFIResult {
-    check_ptr!(tx_bytes);
-    check_ptr!(txid);
-
-    // Parse transaction
-    let tx_data = std::slice::from_raw_parts(tx_bytes, tx_bytes_len);
-    let tx: dashcore::Transaction =
-        unwrap_result_or_return!(dashcore::consensus::deserialize(tx_data));
-
-    let funding = unwrap_option_or_return!(super::build::parse_funding_type(funding_type));
-
-    let out_point = parse_outpoint(txid, vout);
-
-    // Parse optional proof
-    let proof = if !proof_bytes.is_null() && proof_len > 0 {
-        let data = std::slice::from_raw_parts(proof_bytes, proof_len);
-        let (p, _) = unwrap_result_or_return!(dpp::bincode::decode_from_slice(
-            data,
-            dpp::bincode::config::standard()
-        ));
-        Some(p)
-    } else {
-        None
-    };
-
-    let option = ASSET_LOCK_MANAGER_STORAGE.with_item(handle, |manager| {
-        manager.recover_asset_lock_blocking(
-            tx,
-            amount_duffs,
-            account_index,
-            funding,
-            identity_index,
-            out_point,
-            proof,
-        );
-    });
-    unwrap_option_or_return!(option);
-    PlatformWalletFFIResult::ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::{

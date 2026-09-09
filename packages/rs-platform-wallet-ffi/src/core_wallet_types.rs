@@ -1972,6 +1972,23 @@ mod tests {
     }
 
     /// The FFI entry carries the platform HTTP port gated by
+
+    /// Release a heap `MasternodeEntryFFI` array the way the removed
+    /// `platform_wallet_manager_free_masternodes` export used to. The v1
+    /// struct is still part of the ABI (V2 embeds it), so these layout
+    /// pins keep building one — they just no longer need a public free
+    /// routine to hand it back.
+    unsafe fn free_v1_entries(entries: *mut MasternodeEntryFFI, count: usize) {
+        if entries.is_null() || count == 0 {
+            return;
+        }
+        let slice = std::slice::from_raw_parts_mut(entries, count);
+        for entry in slice.iter() {
+            crate::wallet::free_masternode_entry_strings(entry);
+        }
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
+    }
+
     /// `has_platform_http_port`, and releases its heap C strings through the
     /// public free routine.
     #[test]
@@ -1986,9 +2003,9 @@ mod tests {
             !entry.platform_ownership_checked,
             "default record: unchecked"
         );
-        // Release the entry's heap C strings through the public free routine.
+        // Release the entry's heap C strings.
         let entries = Box::into_raw(vec![entry].into_boxed_slice()) as *mut MasternodeEntryFFI;
-        unsafe { crate::wallet::platform_wallet_manager_free_masternodes(entries, 1) };
+        unsafe { free_v1_entries(entries, 1) };
     }
 
     /// Pin the original array element layout used by already-built C/Swift
@@ -2066,7 +2083,7 @@ mod tests {
                 .unwrap(),
             "2.2.2.2:9999"
         );
-        unsafe { crate::wallet::platform_wallet_manager_free_masternodes(v1, 2) };
+        unsafe { free_v1_entries(v1, 2) };
 
         let v2 = vec![
             masternode_entry_v2_ffi(&first, dashcore::Network::Testnet),

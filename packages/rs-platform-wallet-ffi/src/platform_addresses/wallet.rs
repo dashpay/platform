@@ -4,7 +4,7 @@ use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
 use crate::platform_address_types::*;
-use crate::{unwrap_option_or_return, unwrap_result_or_return};
+use crate::unwrap_option_or_return;
 
 use super::runtime;
 
@@ -18,43 +18,6 @@ pub unsafe extern "C" fn platform_address_wallet_destroy(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     PLATFORM_ADDRESS_WALLET_STORAGE.remove(handle);
-    PlatformWalletFFIResult::ok()
-}
-
-/// Add a provider for a new account index.
-#[no_mangle]
-pub unsafe extern "C" fn platform_address_wallet_add_provider(
-    handle: Handle,
-    account_index: u32,
-) -> PlatformWalletFFIResult {
-    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
-        runtime().block_on(wallet.add_provider(account_index))
-    });
-    let result = unwrap_option_or_return!(option);
-    unwrap_result_or_return!(result);
-    PlatformWalletFFIResult::ok()
-}
-
-/// Restore sync state from persisted values.
-///
-/// Call after wallet creation and before the first sync to resume
-/// incremental mode. Without this, every app launch does a full
-/// trunk/branch/compact rescan.
-#[no_mangle]
-pub unsafe extern "C" fn platform_address_wallet_restore_sync_state(
-    handle: Handle,
-    sync_height: u64,
-    sync_timestamp: u64,
-    last_known_recent_block: u64,
-) -> PlatformWalletFFIResult {
-    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
-        runtime().block_on(wallet.restore_sync_state(
-            sync_height,
-            sync_timestamp,
-            last_known_recent_block,
-        ));
-    });
-    unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
 }
 
@@ -188,27 +151,6 @@ pub unsafe extern "C" fn platform_address_wallet_free_changeset(
             cs.updated,
             cs.updated_count,
             cs.updated_count,
-        ));
-    }
-}
-
-/// Free a single sync result.
-#[no_mangle]
-pub unsafe extern "C" fn platform_address_wallet_free_sync_result(
-    result: *const AddressSyncResultFFI,
-) {
-    if result.is_null() {
-        return;
-    }
-    let r = &*result;
-    if !r.found.is_null() && r.found_count > 0 {
-        drop(Vec::from_raw_parts(r.found, r.found_count, r.found_count));
-    }
-    if !r.absent.is_null() && r.absent_count > 0 {
-        drop(Vec::from_raw_parts(
-            r.absent,
-            r.absent_count,
-            r.absent_count,
         ));
     }
 }

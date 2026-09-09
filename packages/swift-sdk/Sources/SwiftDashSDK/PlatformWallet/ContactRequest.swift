@@ -18,43 +18,6 @@ public final class ContactRequest: @unchecked Sendable {
         contact_request_destroy(handle).discard()
     }
 
-    /// Create a new contact request
-    public static func create(
-        senderId: Identifier,
-        recipientId: Identifier,
-        senderKeyIndex: UInt32,
-        recipientKeyIndex: UInt32,
-        accountReference: UInt32,
-        encryptedPublicKey: Data,
-        coreHeightCreatedAt: UInt32,
-        createdAt: UInt64
-    ) throws -> ContactRequest {
-        var handle: Handle = NULL_HANDLE
-
-        // Nest the two `withFFIBytes` closures + `withUnsafeBytes`
-        // so all three buffers stay live for the FFI call window.
-        try senderId.withFFIBytes { senderPtr in
-            try recipientId.withFFIBytes { recipientPtr in
-                try encryptedPublicKey.withUnsafeBytes { keyPtr in
-                    try contact_request_create(
-                        senderPtr,
-                        recipientPtr,
-                        senderKeyIndex,
-                        recipientKeyIndex,
-                        accountReference,
-                        keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        UInt(encryptedPublicKey.count),
-                        coreHeightCreatedAt,
-                        createdAt,
-                        &handle
-                    ).check()
-                }
-            }
-        }
-
-        return ContactRequest(handle: handle)
-    }
-
     /// Get the sender identity ID
     public func getSenderId() throws -> Identifier {
         var buf = [UInt8](repeating: 0, count: 32)
