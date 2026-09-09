@@ -6,7 +6,6 @@ use dpp::prelude::{AddressNonce, CoreBlockHeight};
 use key_wallet::account::StandardAccountType;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
-use key_wallet::Network;
 
 /// Errors that can occur in platform wallet operations
 #[derive(Debug, thiserror::Error)]
@@ -25,9 +24,6 @@ pub enum PlatformWalletError {
 
     #[error("Identity not found: {0}")]
     IdentityNotFound(Identifier),
-
-    #[error("No primary identity set")]
-    NoPrimaryIdentity,
 
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
@@ -74,26 +70,6 @@ pub enum PlatformWalletError {
         /// the enum past the existing `Sdk` variant.
         #[source]
         source: Box<dash_sdk::Error>,
-    },
-
-    #[error(
-        "DashPay receiving account already exists for identity {identity} with contact {contact} on network {network:?} (account index {account_index})"
-    )]
-    DashpayReceivingAccountAlreadyExists {
-        identity: Identifier,
-        contact: Identifier,
-        network: Network,
-        account_index: u32,
-    },
-
-    #[error(
-        "DashPay external account already exists for identity {identity} with contact {contact} on network {network:?} (account index {account_index})"
-    )]
-    DashpayExternalAccountAlreadyExists {
-        identity: Identifier,
-        contact: Identifier,
-        network: Network,
-        account_index: u32,
     },
 
     #[error("Asset lock transaction failed: {0}")]
@@ -691,9 +667,6 @@ pub enum PlatformWalletError {
     #[error("Key derivation failed: {0}")]
     KeyDerivation(String),
 
-    #[error("Wallet is locked — unlock it before performing this operation")]
-    WalletLocked,
-
     #[error(
         "Signer does not bind to wallet {wallet_id}: it derives a different \
          BIP44 account-0 xpub (refusing to sign with the wrong seed)"
@@ -746,9 +719,6 @@ pub enum PlatformWalletError {
     #[error("SPV is already running — stop it before starting again")]
     SpvAlreadyRunning,
 
-    #[error("No wallets configured — add a wallet before starting SPV")]
-    NoWalletsConfigured,
-
     #[error("SPV error: {0}")]
     SpvError(String),
 
@@ -763,9 +733,6 @@ pub enum PlatformWalletError {
     /// which is BTreeMap-order, non-deterministic when multiple
     /// unproven locks share that key.
     FinalityTimeout(dashcore::OutPoint),
-
-    #[error("Asset lock proof expired (IS proof too old, CL not yet available): {0}")]
-    AssetLockExpired(String),
 
     #[error("Asset lock transaction not chain-locked, cannot fall back to CL proof: {0}")]
     AssetLockNotChainLocked(String),
