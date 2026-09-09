@@ -307,6 +307,7 @@ jobs:
           filters: |
             swift-sdk-changed:
               - .github/workflows/swift-sdk-build.yml
+              - .github/workflows/tests.yml
               - packages/swift-sdk/**
               - packages/dapi-grpc/**
               - packages/dashpay-contract/**
