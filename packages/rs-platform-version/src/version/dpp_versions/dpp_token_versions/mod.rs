@@ -1,5 +1,6 @@
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 use versioned_feature_core::FeatureVersion;
 
@@ -16,4 +17,10 @@ pub struct DPPTokenVersions {
     /// v0: uses only minimum_purchase_amount_and_price().1 (vulnerable to schedule swap)
     /// v1: includes the full serialized TokenPricingSchedule in the hash
     pub token_set_price_action_id_version: FeatureVersion,
+    /// Version for the transcendental math (`ln`, `exp`, `pow`) in `DistributionFunction::evaluate`.
+    /// v0: std `f64` methods, which link to the platform libm and differ by 1 ulp between
+    ///     aarch64-musl and x86_64-musl (musl's `__FP_FAST_FMA` branch); a claim amount can land
+    ///     on either side of a `floor` boundary and split the app hash.
+    /// v1: the pinned pure-Rust `libm` crate, bit-identical on every target.
+    pub distribution_function_evaluate_version: FeatureVersion,
 }
