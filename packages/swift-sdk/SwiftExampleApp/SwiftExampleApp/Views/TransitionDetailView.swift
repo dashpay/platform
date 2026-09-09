@@ -443,32 +443,7 @@ struct TransitionDetailView: View {
       let docType = String(action.dropFirst("documentTypeSelected:".count))
       selectedDocumentType = docType
       formInputs["documentType"] = docType
-      // Fetch schema for the selected document type
-      fetchDocumentSchema(contractId: selectedContractId, documentType: docType)
-    } else {
-      switch action {
-      case "generateTestSeed":
-        // Generate a test seed phrase
-        formInputs["seedPhrase"] = generateTestSeedPhrase()
-      case "fetchDocumentSchema":
-        if !selectedContractId.isEmpty && !selectedDocumentType.isEmpty {
-          fetchDocumentSchema(contractId: selectedContractId, documentType: selectedDocumentType)
-        }
-      case "loadExistingDocument":
-        // TODO: Load existing document
-        break
-      case "fetchContestedResources":
-        // TODO: Fetch contested resources
-        break
-      default:
-        break
-      }
     }
-  }
-
-  private func generateTestSeedPhrase() -> String {
-    // This is a placeholder - in production, use proper BIP39 generation
-    return "test seed phrase for development only do not use in production ever please"
   }
 
   private func getTransitionDefinition(_ key: String) -> TransitionDefinition? {
@@ -2396,29 +2371,6 @@ struct TransitionDetailView: View {
     }
 
     return input
-  }
-
-  private func fetchDocumentSchema(contractId: String, documentType: String) {
-    // TODO: Implement fetching schema and generating dynamic form
-    // For now, provide a template based on common patterns
-    var schemaTemplate = "{\n"
-
-    // Common document type templates
-    switch documentType.lowercased() {
-    case "note", "message":
-      schemaTemplate += "  \"message\": \"Enter your message here\"\n"
-    case "profile", "user":
-      schemaTemplate += "  \"displayName\": \"John Doe\",\n"
-      schemaTemplate += "  \"bio\": \"About me...\"\n"
-    case "post":
-      schemaTemplate += "  \"title\": \"Post title\",\n"
-      schemaTemplate += "  \"content\": \"Post content...\"\n"
-    default:
-      schemaTemplate += "  // Add document fields here\n"
-    }
-
-    schemaTemplate += "}"
-    formInputs["documentFields"] = schemaTemplate
   }
 
   private func normalizeIdentityId(_ identityId: String) -> String {

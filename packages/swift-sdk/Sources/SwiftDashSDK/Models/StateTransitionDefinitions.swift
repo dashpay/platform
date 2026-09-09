@@ -11,21 +11,6 @@ public struct TransitionDefinitions {
             description: "Create a new identity with initial credits",
             inputs: [
                 TransitionInput(
-                    name: "seedPhrase",
-                    type: "textarea",
-                    label: "Seed Phrase",
-                    required: true,
-                    placeholder: "Enter seed phrase (12-24 words) or click Generate",
-                    help: "The wallet seed phrase that will be used to derive identity keys"
-                ),
-                TransitionInput(
-                    name: "generateSeedButton",
-                    type: "button",
-                    label: "Generate New Seed",
-                    required: false,
-                    action: "generateTestSeed"
-                ),
-                TransitionInput(
                     name: "identityIndex",
                     type: "number",
                     label: "Identity Index",

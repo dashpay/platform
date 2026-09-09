@@ -45,9 +45,9 @@ struct TransitionCategoryView: View {
                 ("tokenSetPrice", "Set Token Price", "Set or update token pricing")
             ]
         case .voting:
-            return [
-                ("masternodeVote", "Cast Vote", "Vote on a governance proposal")
-            ]
+            // No voting transition is wired yet — executeStateTransition
+            // routes masternodeVote to `notImplemented`.
+            return []
         }
     }
 
