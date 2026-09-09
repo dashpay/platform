@@ -11,8 +11,6 @@ use crate::broadcaster::TransactionBroadcaster;
 use crate::changeset::{AccountRegistrationEntry, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
-use crate::wallet::identity::types::dashpay::payment::DashpayAddressMatch;
-use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Build the persistence round for a newly registered DashPay account
 /// (`DashpayReceivingFunds` / `DashpayExternalAccount`): the
@@ -255,109 +253,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         );
 
         Ok(())
-    }
-
-    /// Match an on-chain address against this wallet's registered
-    /// DashPay contact receival accounts.
-    ///
-    /// Iterates every `DashpayReceivingFunds` account in this
-    /// wallet's [`key_wallet::managed_account::ManagedAccountCollection`]
-    /// and checks whether the address belongs to any of their
-    /// address pools. Returns the first match as a
-    /// [`DashpayAddressMatch`], or `None` if the address is not
-    /// a DashPay contact address for this wallet.
-    ///
-    /// Used by the SPV / backend task layer to classify observed
-    /// transaction outputs as DashPay incoming payments from a
-    /// specific contact. No separate reverse-lookup table is needed
-    /// in the UI layer: the authoritative state is already
-    /// tracked by `register_contact_account`, which inserts the
-    /// account into the wallet's `ManagedAccountCollection` so
-    /// key-wallet manages the address pool (derivation + gap limit
-    /// + used tracking).
-    ///
-    /// Only the external pool of each receival account is
-    /// searched: DashPay uses a single-pool account type so all
-    /// contact payment addresses live on that one pool.
-    pub async fn match_incoming_dashpay_address(
-        &self,
-        address: &dashcore::Address,
-    ) -> Option<DashpayAddressMatch> {
-        let wm = self.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&self.wallet_id)?;
-        Self::match_in_collection(info, address)
-    }
-
-    /// Blocking variant of [`match_incoming_dashpay_address`] for
-    /// sync callers (SPV transaction-processing frame loop). Uses
-    /// `tokio::sync::RwLock::blocking_read` — must NOT be called
-    /// from within a tokio async context.
-    pub fn match_incoming_dashpay_address_blocking(
-        &self,
-        address: &dashcore::Address,
-    ) -> Option<DashpayAddressMatch> {
-        let wm = self.wallet_manager.blocking_read();
-        let info = wm.get_wallet_info(&self.wallet_id)?;
-        Self::match_in_collection(info, address)
-    }
-
-    /// Non-blocking variant of [`match_incoming_dashpay_address`].
-    /// Returns `Err(())` if the wallet-manager lock is currently
-    /// contended (e.g. SPV is processing a block). Returns `Ok(None)`
-    /// if the address does not belong to any DashPay receiving
-    /// account. Safe to call from any thread, including tokio runtime
-    /// threads, where the blocking variant would panic.
-    #[allow(clippy::result_unit_err)]
-    pub fn try_match_incoming_dashpay_address(
-        &self,
-        address: &dashcore::Address,
-    ) -> Result<Option<DashpayAddressMatch>, ()> {
-        let wm = self.wallet_manager.try_read().map_err(|_| ())?;
-        let Some(info) = wm.get_wallet_info(&self.wallet_id) else {
-            return Ok(None);
-        };
-        Ok(Self::match_in_collection(info, address))
-    }
-
-    /// Shared implementation that iterates
-    /// `info.core_wallet.accounts.dashpay_receival_accounts` and
-    /// checks each account's address pool for a match.
-    pub(super) fn match_in_collection(
-        info: &PlatformWalletInfo,
-        address: &dashcore::Address,
-    ) -> Option<DashpayAddressMatch> {
-        use key_wallet::managed_account::managed_account_type::ManagedAccountType;
-
-        for (key, account) in &info.core_wallet.accounts.dashpay_receival_accounts {
-            let ManagedAccountType::DashpayReceivingFunds {
-                user_identity_id,
-                friend_identity_id,
-                ..
-            } = account.managed_account_type()
-            else {
-                // Routing invariant: dashpay_receival_accounts must
-                // only contain DashpayReceivingFunds. If this ever
-                // trips, it's a key-wallet bug.
-                debug_assert!(
-                    false,
-                    "non-DashpayReceivingFunds in dashpay_receival_accounts"
-                );
-                continue;
-            };
-            let Some(info) = account.get_address_info(address) else {
-                continue;
-            };
-            // Sanity check — the collection key should match the
-            // account type's own identity ids.
-            debug_assert_eq!(&key.user_identity_id, user_identity_id);
-            debug_assert_eq!(&key.friend_identity_id, friend_identity_id);
-            return Some(DashpayAddressMatch {
-                user_identity_id: Identifier::from(*user_identity_id),
-                friend_identity_id: Identifier::from(*friend_identity_id),
-                address_index: info.index,
-            });
-        }
-        None
     }
 }
 

@@ -40,25 +40,6 @@ pub enum PaymentStatus {
     Failed,
 }
 
-/// Match result from
-/// [`IdentityWallet::match_incoming_dashpay_address`](crate::wallet::identity::IdentityWallet).
-///
-/// Returned when an on-chain address matches one of the DashPay
-/// contact receival accounts registered in this wallet's
-/// [`ManagedAccountCollection`]. Lets the SPV / backend task layer
-/// classify an observed transaction output as a DashPay incoming
-/// payment from a specific contact, at a specific BIP44 index,
-/// without needing to maintain a separate reverse-lookup table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DashpayAddressMatch {
-    /// Our (owner) identity ID — the recipient of the payment.
-    pub user_identity_id: Identifier,
-    /// The sending contact's identity ID.
-    pub friend_identity_id: Identifier,
-    /// Address index within the account's external pool.
-    pub address_index: u32,
-}
-
 /// A single DashPay payment entry recorded on a
 /// [`ManagedIdentity`](crate::wallet::identity::ManagedIdentity).
 ///

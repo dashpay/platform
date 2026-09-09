@@ -735,6 +735,52 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 }
 
+/// Classify an observed address against the wallet's registered DashPay
+/// contact receival accounts.
+///
+/// Iterates `info.core_wallet.accounts.dashpay_receival_accounts` and checks
+/// each account's address pool. Returns the `(user_identity_id,
+/// friend_identity_id)` pair of the first match, or `None` when the address
+/// is not a DashPay contact address for this wallet.
+///
+/// Only the external pool of each receival account is searched: DashPay uses
+/// a single-pool account type, so all contact payment addresses live there.
+fn match_receival_address(
+    info: &PlatformWalletInfo,
+    address: &dashcore::Address,
+) -> Option<(Identifier, Identifier)> {
+    use key_wallet::managed_account::managed_account_type::ManagedAccountType;
+
+    for (key, account) in &info.core_wallet.accounts.dashpay_receival_accounts {
+        let ManagedAccountType::DashpayReceivingFunds {
+            user_identity_id,
+            friend_identity_id,
+            ..
+        } = account.managed_account_type()
+        else {
+            // Routing invariant: dashpay_receival_accounts must only contain
+            // DashpayReceivingFunds. If this ever trips, it's a key-wallet bug.
+            debug_assert!(
+                false,
+                "non-DashpayReceivingFunds in dashpay_receival_accounts"
+            );
+            continue;
+        };
+        if account.get_address_info(address).is_none() {
+            continue;
+        }
+        // Sanity check — the collection key should match the account type's
+        // own identity ids.
+        debug_assert_eq!(&key.user_identity_id, user_identity_id);
+        debug_assert_eq!(&key.friend_identity_id, friend_identity_id);
+        return Some((
+            Identifier::from(*user_identity_id),
+            Identifier::from(*friend_identity_id),
+        ));
+    }
+    None
+}
+
 /// Record `Received` [`PaymentEntry`]s for a freshly detected Core
 /// transaction whose outputs pay DashPay receival-account addresses.
 ///
@@ -778,12 +824,8 @@ pub(crate) async fn record_incoming_dashpay_payments(
 
     let mut totals: BTreeMap<(Identifier, Identifier), u64> = BTreeMap::new();
     for (address, value) in candidates {
-        if let Some(m) =
-            DashPayView::<crate::broadcaster::SpvBroadcaster>::match_in_collection(info, &address)
-        {
-            *totals
-                .entry((m.user_identity_id, m.friend_identity_id))
-                .or_default() += value;
+        if let Some(pair) = match_receival_address(info, &address) {
+            *totals.entry(pair).or_default() += value;
         }
     }
 
