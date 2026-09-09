@@ -65,10 +65,7 @@ tempfile = { version = "3", optional = true }
 chrono = { version = "0.4", default-features = false, features = [
     "clock",
 ], optional = true }
-# Backs the migration-set fingerprint helpers in `sqlite::migrations`, which
-# are test-only (`cfg(test)` / `__test-helpers`). Kept optional and pulled in
-# by `__test-helpers` alone, so a shipping build does not compile a hash
-# crate it never calls.
+# Manifest integrity checks and migration fingerprints.
 sha2 = { version = "0.10", optional = true }
 # `JsonSchema` for `SecretString`, enabled by `secrets` (the only feature
 # under which the type exists). Reuses the workspace-locked 1.2.1.
@@ -198,6 +195,7 @@ dash-sdk = { path = "../rs-sdk", default-features = false, features = [
 default = ["sqlite", "cli", "secrets", "kv"]
 # SQLite-backed persister (`platform_wallet_storage::sqlite`).
 sqlite = [
+    "dep:sha2",
     "dep:libc",
     "dep:platform-wallet",
     "dep:serde",

@@ -1698,6 +1698,8 @@ fn load_one_wallet(
         ))
     })?;
 
+    schema::accounts::verify_manifest_checksums(conn, &wallet_id)
+        .map_err(PersistenceError::from)?;
     let account_manifest =
         schema::accounts::load_state(conn, &wallet_id, ctx).map_err(PersistenceError::from)?;
     let (core_state, utxo_accounts) =

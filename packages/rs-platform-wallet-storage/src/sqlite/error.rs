@@ -323,6 +323,12 @@ pub enum WalletStorageError {
     )]
     AccountRegistrationEntryMismatch,
 
+    /// An account manifest checksum is missing or differs from
+    /// `SHA-256(wallet_id ‖ account_xpub_bytes)`. Strict loading fails;
+    /// recovery excludes the wallet and reports its corruption.
+    #[error("account_registrations manifest integrity checksum mismatch")]
+    ManifestIntegrityMismatch,
+
     /// A provider key-material entry uses an incompatible account-registration
     /// path, pairs an account type with the wrong key curve, or has persisted
     /// typed columns that contradict its decoded `ProviderKeyAccountEntry`.
@@ -744,6 +750,7 @@ impl WalletStorageError {
             | Self::OrphanedIdentityEntry { .. }
             | Self::WalletRehydrationFailed { .. }
             | Self::AccountRegistrationEntryMismatch
+            | Self::ManifestIntegrityMismatch
             | Self::ProviderKeyAccountEntryMismatch
             | Self::ProviderKeyAccountConflict { .. }
             | Self::TypedPoolKeyConflict { .. }
@@ -848,6 +855,7 @@ impl WalletStorageError {
             | Self::OrphanedIdentityEntry { .. }
             | Self::WalletRehydrationFailed { .. }
             | Self::AccountRegistrationEntryMismatch
+            | Self::ManifestIntegrityMismatch
             | Self::ProviderKeyAccountEntryMismatch
             | Self::ProviderKeyAccountConflict { .. }
             | Self::TypedPoolKeyConflict { .. }
@@ -932,6 +940,7 @@ impl WalletStorageError {
             Self::MissingAccount { .. } => "missing_account_registration_entry",
             Self::AccountRejected { .. } => "account_rejected",
             Self::AccountRegistrationEntryMismatch => "account_registration_entry_mismatch",
+            Self::ManifestIntegrityMismatch => "manifest_integrity_mismatch",
             Self::ProviderKeyAccountEntryMismatch => "provider_key_account_entry_mismatch",
             Self::ProviderKeyAccountConflict { .. } => "provider_key_account_conflict",
             Self::TypedPoolKeyConflict { .. } => "typed_pool_key_conflict",

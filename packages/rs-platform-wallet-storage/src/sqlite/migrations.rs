@@ -45,6 +45,7 @@ fn run_with_runner(
         tx,
         registration_sql: hook_sql(8),
         pool_sql: hook_sql(11),
+        checksum_sql: hook_sql(18),
     };
     // Grouped reports never claim that rolled-back migrations were applied.
     let report = runner.set_grouped(true).run(&mut driver)?;
@@ -59,6 +60,7 @@ struct MigrationTransaction<'conn> {
     tx: rusqlite::Transaction<'conn>,
     registration_sql: String,
     pool_sql: String,
+    checksum_sql: String,
 }
 
 impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
@@ -75,6 +77,8 @@ impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
                 legacy_v008::backfill_registrations(&self.tx)?;
             } else if query == self.pool_sql {
                 legacy_v008::convert_pools(&self.tx)?;
+            } else if query == self.checksum_sql {
+                super::schema::accounts::backfill_missing_checksums(&self.tx)?;
             }
             count += 1;
         }

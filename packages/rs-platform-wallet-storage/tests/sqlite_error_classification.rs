@@ -264,6 +264,7 @@ fn samples() -> Vec<WalletStorageError> {
             source: dashcore::address::Error::UnrecognizedScript,
         },
         WalletStorageError::AccountRegistrationEntryMismatch,
+        WalletStorageError::ManifestIntegrityMismatch,
         WalletStorageError::ProviderKeyAccountEntryMismatch,
         WalletStorageError::ProviderKeyAccountConflict {
             account_type: "provider_platform",
@@ -452,6 +453,7 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::AccountRegistrationEntryMismatch => {
                 (false, "account_registration_entry_mismatch")
             }
+            WalletStorageError::ManifestIntegrityMismatch => (false, "manifest_integrity_mismatch"),
             WalletStorageError::ProviderKeyAccountEntryMismatch => {
                 (false, "provider_key_account_entry_mismatch")
             }
