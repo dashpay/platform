@@ -476,9 +476,9 @@ impl RoundOutcome {
 /// * [`PLATFORM_WALLET_PERSIST_RC_CONSTRAINT`] — a constraint / integrity
 ///   violation: the data is wrong, and retrying it unchanged will not help.
 ///
-/// Writes are never retried in-crate; the caller decides. Manager hydration
-/// and wallet registration retry transient loads up to four attempts, with
-/// 20/40/80 ms backoff. Direct trait reads follow their documented policy.
+/// Reads and writes are never retried in-crate; the caller decides. Manager
+/// hydration and wallet registration run synchronous loads on the blocking
+/// pool. Direct trait reads run inline.
 ///
 /// ## What a transient verdict promises, and who must honour it
 ///

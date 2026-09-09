@@ -405,8 +405,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // the producer has the most time to commit exactly when the promise is
         // about to be made. Reading first leaves nothing for it to write.
         //
-        // `load` is an idempotent read, so a transient blip is retried
-        // in-crate — unlike the `store` further down.
+        // The caller owns retry policy for both this read and the `store`
+        // further down.
         //
         // The whole per-wallet map is carried across `insert_wallet` rather
         // than sliced here: the authoritative id is the one that call returns,
@@ -414,7 +414,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // (see the divergence branch below).
         let load_persister: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
         let mut persisted_platform_addresses =
-            match super::retry_transient_load(move || load_persister.load()).await {
+            match super::run_blocking_load(move || load_persister.load()).await {
                 Ok(crate::changeset::ClientStartState {
                     platform_addresses, ..
                 }) => platform_addresses,
@@ -423,7 +423,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         wallet_id = %hex::encode(registration_wallet_id),
                         transient = e.is_transient(),
                         error = %e,
-                        "failed to load persisted wallet state after retries; \
+                        "failed to load persisted wallet state; \
                          registration aborted before the wallet was registered"
                     );
                     return Err(PlatformWalletError::from_load_failure(e));
@@ -1398,9 +1398,9 @@ mod register_wallet_duplicate_tests {
 }
 
 #[cfg(test)]
-mod persist_retry_tests {
-    //! Registration-path persistence: single-attempt `store`, bounded `load`
-    //! retry, typed error propagation, log-level policy.
+mod persister_error_tests {
+    //! Registration-path persistence: caller-owned retry policy, typed error
+    //! propagation, and log-level policy.
 
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
@@ -1461,8 +1461,6 @@ mod persist_retry_tests {
         /// Leading `load` calls that fail transiently.
         load_transient_failures: usize,
         load_fatal: bool,
-        /// Fail fatally after `load_transient_failures`, instead of succeeding.
-        load_then_fatal: bool,
         /// Model a buffering backend that keeps the failed changeset for its
         /// own later retry, so re-issuing it would merge it twice.
         retains_failed_changeset: bool,
@@ -1520,9 +1518,6 @@ mod persist_retry_tests {
             }
             if n < self.load_transient_failures {
                 return Err(transient());
-            }
-            if self.load_then_fatal {
-                return Err(fatal());
             }
             Ok(ClientStartState::default())
         }
@@ -1653,26 +1648,30 @@ mod persist_retry_tests {
         );
     }
 
-    /// A transient `load` blip is retried — it is an idempotent read.
+    /// A transient `load` is classified and left to the caller to retry.
     #[tokio::test]
-    async fn transient_load_failure_is_retried_and_succeeds() {
+    async fn transient_load_failure_surfaces_without_retry() {
         let persister = Arc::new(FaultyPersister {
             load_transient_failures: 1,
             ..Default::default()
         });
         let manager = make_manager(Arc::clone(&persister));
 
-        register(&manager)
+        let err = register(&manager)
             .await
-            .expect("registration must succeed after retrying the transient load");
+            .expect_err("a transient load failure must reach the caller");
 
-        assert_eq!(persister.registration_store_calls.load(Ordering::SeqCst), 1);
+        match err {
+            PlatformWalletError::PersisterLoad(source) => assert!(source.is_transient()),
+            other => panic!("expected transient PersisterLoad, got {other:?}"),
+        }
+        assert_eq!(persister.registration_store_calls.load(Ordering::SeqCst), 0);
         assert_eq!(persister.flush_calls.load(Ordering::SeqCst), 0);
-        assert_eq!(persister.load_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(persister.load_calls.load(Ordering::SeqCst), 1);
         assert_eq!(
             persister.scan_verdict_store_calls.load(Ordering::SeqCst),
-            1,
-            "a completed registration must publish the identity-scan verdict"
+            0,
+            "an aborted registration must not publish the identity-scan verdict"
         );
     }
 
@@ -1699,51 +1698,23 @@ mod persist_retry_tests {
         );
     }
 
-    #[tokio::test]
-    async fn transient_then_fatal_load_surfaces_as_persister_load_fatal() {
-        let persister = Arc::new(FaultyPersister {
-            load_transient_failures: 1,
-            load_then_fatal: true,
-            ..Default::default()
-        });
-        let manager = make_manager(Arc::clone(&persister));
-
-        let err = register(&manager)
-            .await
-            .expect_err("a load that turns fatal must abort registration");
-
-        match err {
-            PlatformWalletError::PersisterLoad(pe) => {
-                assert!(
-                    !pe.is_transient(),
-                    "the fatal outcome must win, not the earlier transient one"
-                )
-            }
-            other => panic!("expected PersisterLoad, got {other:?}"),
-        }
-        assert_eq!(persister.load_calls.load(Ordering::SeqCst), 2);
-    }
-
     /// Nothing the wallet-event producer can persist may exist before the
     /// registration read runs.
     ///
-    /// The read is retried and can exhaust, and an exhausted transient read
-    /// reports `PersisterLoad(Transient)` — FFI code 49, which promises the
-    /// host nothing was mutated and the registration is safe to re-issue.
+    /// A transient read reports `PersisterLoad(Transient)` — FFI code 49 —
+    /// after one attempt. This promises the host nothing was mutated and the
+    /// registration is safe to re-issue.
     /// Registering the wallet in `WalletManager` first breaks that promise
     /// without any code in this function writing anything: the SPV filter loop
     /// reads the same lock, sees a wallet whose `synced_height` is behind the
     /// chain, and its scan emits the events that the wallet-event adapter
-    /// commits through `store()`. The read exhausting is exactly the slow case
-    /// (a busy backend can take seconds per attempt), so the producer has the
-    /// most time to commit precisely when the promise is about to be made.
+    /// commits through `store()`.
     ///
     /// Standing in for SPV from inside `load()` is what makes this
     /// deterministic rather than a race: the probe plays the part of a filter
-    /// batch committing mid-read, then waits for the write it caused. Safe
-    /// because no caller of `retry_transient_load` holds the wallet-manager
-    /// lock across the call — verified at both call sites — and the probe
-    /// releases its own guard before waiting.
+    /// batch committing mid-read, then waits for the write it caused. No caller
+    /// holds the wallet-manager lock across the read, and the probe releases
+    /// its own guard before waiting.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_registration_read_precedes_any_wallet_the_event_producer_can_see() {
         use std::sync::atomic::AtomicBool;
@@ -1786,9 +1757,8 @@ mod persist_retry_tests {
                     .get()
                     .and_then(Weak::upgrade)
                     .expect("the probe is wired to the manager before any registration");
-                // On the blocking pool (`retry_transient_load` spawns each
-                // attempt there), and no caller holds this lock across the
-                // call, so blocking on it here cannot deadlock.
+                // On the blocking pool, and no caller holds this lock across
+                // the call, so blocking on it here cannot deadlock.
                 let emitted = {
                     let mut wallet_manager = manager.blocking_write();
                     match wallet_manager.get_all_wallet_infos().keys().next().copied() {
@@ -1850,11 +1820,11 @@ mod persist_retry_tests {
                 Some(0),
             )
             .await
-            .expect_err("an exhausted transient load must abort registration");
+            .expect_err("a transient load failure must abort registration");
         match err {
             PlatformWalletError::PersisterLoad(pe) => assert!(
                 pe.is_transient(),
-                "an exhausted transient load keeps its transient classification"
+                "a transient load keeps its transient classification"
             ),
             other => panic!("expected PersisterLoad, got {other:?}"),
         }
@@ -1862,7 +1832,7 @@ mod persist_retry_tests {
         assert_eq!(
             persister.store_calls.load(Ordering::SeqCst),
             0,
-            "an exhausted read reports that nothing was mutated, so nothing may \
+            "a failed read reports that nothing was mutated, so nothing may \
              have reached the persister before it — including writes this \
              function never makes itself"
         );
@@ -1892,8 +1862,7 @@ mod persist_retry_tests {
         );
     }
 
-    /// An exhausted transient `load` retry must leave nothing on disk to
-    /// double-write.
+    /// A transient `load` failure must leave nothing on disk to double-write.
     ///
     /// `PersisterLoad(Transient)` crosses the C ABI as code 49, which tells the
     /// host nothing was mutated and a later retry is safe. The only
@@ -1901,32 +1870,28 @@ mod persist_retry_tests {
     /// the read ordered after the registration write that retry appends the
     /// append-only changeset a second time.
     #[tokio::test]
-    async fn an_exhausted_load_retry_leaves_the_registration_unwritten() {
-        // The whole schedule — the initial attempt plus one per backoff entry
-        // — so the first registration exhausts it and the retry's read
-        // succeeds.
-        let attempts = 1 + super::super::persist_retry::LOAD_RETRY_BACKOFF.len();
+    async fn a_transient_load_failure_leaves_the_registration_unwritten() {
         let persister = Arc::new(FaultyPersister {
-            load_transient_failures: attempts,
+            load_transient_failures: 1,
             ..Default::default()
         });
         let manager = make_manager(Arc::clone(&persister));
 
         let err = register(&manager)
             .await
-            .expect_err("an exhausted transient load must abort registration");
+            .expect_err("a transient load failure must abort registration");
         match err {
             PlatformWalletError::PersisterLoad(pe) => assert!(
                 pe.is_transient(),
-                "an exhausted transient load keeps its transient classification"
+                "a transient load keeps its transient classification"
             ),
             other => panic!("expected PersisterLoad, got {other:?}"),
         }
-        assert_eq!(persister.load_calls.load(Ordering::SeqCst), attempts);
+        assert_eq!(persister.load_calls.load(Ordering::SeqCst), 1);
         assert_eq!(
             persister.registration_store_calls.load(Ordering::SeqCst),
             0,
-            "a read that can exhaust must run before the registration write: \
+            "a failed read must run before the registration write: \
              its error promises the caller nothing was mutated, and the retry \
              it invites is the registration"
         );
@@ -1940,32 +1905,6 @@ mod persist_retry_tests {
             1,
             "the retried registration must be the FIRST write of the changeset"
         );
-    }
-
-    /// Virtual time, so the test itself doesn't wait the schedule's 140 ms.
-    #[tokio::test(start_paused = true)]
-    async fn transient_load_retry_follows_the_backoff_schedule() {
-        let calls = Arc::new(AtomicUsize::new(0));
-        let op_calls = Arc::clone(&calls);
-        let start = tokio::time::Instant::now();
-
-        let result: Result<(), PersistenceError> = super::super::retry_transient_load(move || {
-            op_calls.fetch_add(1, Ordering::SeqCst);
-            Err(transient())
-        })
-        .await;
-
-        assert!(
-            result.is_err(),
-            "an always-transient op exhausts the schedule"
-        );
-        assert_eq!(
-            calls.load(Ordering::SeqCst),
-            1 + super::super::persist_retry::LOAD_RETRY_BACKOFF.len(),
-            "one initial attempt plus one per scheduled backoff"
-        );
-        let expected: Duration = super::super::persist_retry::LOAD_RETRY_BACKOFF.iter().sum();
-        assert_eq!(tokio::time::Instant::now() - start, expected);
     }
 
     /// A busy backend costs the scan verdict its durability this launch

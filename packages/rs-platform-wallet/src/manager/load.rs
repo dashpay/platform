@@ -10,7 +10,7 @@ use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
-use super::{retry_transient_load, PlatformWalletManager};
+use super::{run_blocking_load, PlatformWalletManager};
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Load the full [`ClientStartState`] from the configured persister
@@ -39,9 +39,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// failure and stays
     /// [`WalletCreation`](PlatformWalletError::WalletCreation).
     ///
-    /// A transient read is retried in-crate, so a contended backend can block
-    /// this call for up to four times its busy timeout plus 140 ms of backoff
-    /// (≈20 s at SQLite's 5 s default). Call it off any UI thread.
+    /// Persister errors surface after one attempt so the caller controls retry
+    /// policy. The synchronous read runs on the blocking pool.
     ///
     /// Any `Err` rolls back partial inserts and leaves the manager usable: fix
     /// the store and call again, or reconstruct. Reconstructing over the same
@@ -53,7 +52,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// [`WalletManager`]: key_wallet_manager::WalletManager
     pub async fn load_from_persistor(&self) -> Result<(), PlatformWalletError> {
         let persister = Arc::clone(&self.persister);
-        let start_state = match retry_transient_load(move || persister.load()).await {
+        let start_state = match run_blocking_load(move || persister.load()).await {
             Ok(state) => state,
             Err(e) => {
                 // Debug, not Display: it carries the real cause (e.g. a
@@ -742,19 +741,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transient_load_failure_during_startup_rehydration_is_retried() {
+    async fn transient_load_failure_during_startup_rehydration_surfaces_immediately() {
         let persister = Arc::new(TransientOnceLoadPersister {
             load_calls: AtomicUsize::new(0),
         });
         let probe = Arc::clone(&persister);
         let manager = make_manager(persister);
 
-        manager
+        let err = manager
             .load_from_persistor()
             .await
-            .expect("transient startup load failure must be retried");
+            .expect_err("transient startup load failure must reach the caller");
 
-        assert_eq!(probe.load_calls.load(Ordering::SeqCst), 2);
+        match err {
+            PlatformWalletError::PersisterLoad(source) => assert!(source.is_transient()),
+            other => panic!("expected transient PersisterLoad, got {other:?}"),
+        }
+        assert_eq!(probe.load_calls.load(Ordering::SeqCst), 1);
     }
 
     /// Isolating by construction: the count is read on a live, idle manager

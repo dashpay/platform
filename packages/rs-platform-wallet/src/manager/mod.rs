@@ -5,14 +5,14 @@ pub mod dashpay_sync;
 pub mod dpns_sync;
 pub mod identity_sync;
 mod load;
-mod persist_retry;
+mod persistence_load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 pub mod startup;
 mod wallet_lifecycle;
 
-pub(crate) use persist_retry::retry_transient_load;
+pub(crate) use persistence_load::run_blocking_load;
 
 use std::sync::Arc;
 use std::time::Duration;
