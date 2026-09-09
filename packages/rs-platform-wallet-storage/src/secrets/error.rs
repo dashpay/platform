@@ -11,7 +11,7 @@
 //!
 //! [`Io`]: SecretStoreError::Io
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use keyring_core::Error as KeyringError;
 
@@ -136,7 +136,7 @@ pub enum SecretStoreError {
 
     /// `label` failed the `^[A-Za-z0-9._-]{1,64}$` allowlist
     /// (CWE-22/CWE-20).
-    #[error("invalid label")]
+    #[error("invalid secret label; expected ^[A-Za-z0-9._-]{{1,64}}$")]
     InvalidLabel,
 
     /// No credential exists under `(service, label)` on either arm. Returned
@@ -147,7 +147,7 @@ pub enum SecretStoreError {
     /// OS arm when [`keyring_core::Error::NoEntry`] bubbles out.
     ///
     /// [`reprotect`]: crate::secrets::SecretStore::reprotect
-    #[error("no entry under (service, label)")]
+    #[error("secret was not found")]
     NoEntry,
 
     /// The host's memory pages are larger than the crate's locked-memory
@@ -181,19 +181,45 @@ pub enum SecretStoreError {
 
     /// A pre-existing vault file had permissions looser than `0600`.
     /// Refuse rather than tighten-and-trust.
-    #[error("vault file has insecure permissions")]
+    #[error(
+        "vault file at {path} has mode {mode:04o}; it must be 0600 — run `chmod 600 {path}`",
+        path = .path.display()
+    )]
     InsecurePermissions {
+        /// The vault path (not secret).
+        path: PathBuf,
         /// The offending POSIX mode bits (not secret).
         mode: u32,
+    },
+
+    /// A pre-existing vault file is owned by a user other than the process's
+    /// effective user. Refuse rather than trust a file another user controls.
+    #[error(
+        "vault file at {path} is owned by another user (uid {found}); change its owner to the current uid {expected}",
+        path = .path.display()
+    )]
+    InsecureOwnership {
+        /// The vault path (not secret).
+        path: PathBuf,
+        /// The file owner's uid.
+        found: u32,
+        /// The process's effective uid.
+        expected: u32,
     },
 
     /// A vault ancestor was writable without the sticky bit or owned by
     /// neither the current user nor root. Either condition can allow another
     /// local user to replace the vault despite its own `0600` mode.
-    #[error("vault parent directory has insecure permissions")]
+    ///
+    /// Names the offending ancestor, not the vault's own parent: the walk runs
+    /// to `/`, and telling a user that one of nine components is at fault is
+    /// not a remediation.
+    #[error("{}", crate::parent_permissions::insecure_ancestor_message("vault", .ancestor, .reason))]
     InsecureParentDir {
-        /// The offending POSIX mode bits on the ancestor directory (not secret).
-        mode: u32,
+        /// The ancestor that was refused (not secret).
+        ancestor: PathBuf,
+        /// Which of the two conditions fired; they need different remediations.
+        reason: crate::parent_permissions::InsecureAncestor,
     },
 
     /// A secret offered for storage exceeded the per-secret write cap
@@ -309,6 +335,7 @@ impl SecretStoreError {
             | Self::NoEntry
             | Self::HostPageSizeExceedsBudget { .. }
             | Self::InsecurePermissions { .. }
+            | Self::InsecureOwnership { .. }
             | Self::InsecureParentDir { .. }
             | Self::SecretTooLarge { .. }
             | Self::VaultTooLarge { .. }
@@ -341,6 +368,7 @@ impl SecretStoreError {
             Self::NoEntry => "no_entry",
             Self::HostPageSizeExceedsBudget { .. } => "host_page_size_exceeds_budget",
             Self::InsecurePermissions { .. } => "insecure_permissions",
+            Self::InsecureOwnership { .. } => "insecure_ownership",
             Self::InsecureParentDir { .. } => "insecure_parent_dir",
             Self::SecretTooLarge { .. } => "secret_too_large",
             Self::AlreadyLocked => "already_locked",
@@ -475,6 +503,7 @@ impl From<SecretStoreError> for KeyringError {
             | E::UnsupportedEnvelopeVersion { .. }
             | E::MalformedVault
             | E::InsecurePermissions { .. }
+            | E::InsecureOwnership { .. }
             | E::InsecureParentDir { .. }
             | E::SecretTooLarge { .. }
             | E::PassphraseTooLong { .. }
@@ -516,8 +545,21 @@ mod tests {
             SecretStoreError::KdfFailure,
             SecretStoreError::VersionUnsupported { found: 999 },
             SecretStoreError::MalformedVault,
-            SecretStoreError::InsecurePermissions { mode: 0o644 },
-            SecretStoreError::InsecureParentDir { mode: 0o777 },
+            SecretStoreError::InsecurePermissions {
+                path: "/vault".into(),
+                mode: 0o644,
+            },
+            SecretStoreError::InsecureOwnership {
+                path: "/vault".into(),
+                found: 1001,
+                expected: 1000,
+            },
+            SecretStoreError::InsecureParentDir {
+                ancestor: "/parent".into(),
+                reason: crate::parent_permissions::InsecureAncestor::WritableWithoutSticky {
+                    mode: 0o777,
+                },
+            },
             SecretStoreError::SecretTooLarge {
                 found: 100,
                 max: 10,
@@ -568,6 +610,54 @@ mod tests {
             panic!("expected Io variant");
         };
         assert!(io.path.is_none());
+    }
+
+    #[test]
+    fn validation_and_permission_errors_are_actionable() {
+        let file = SecretStoreError::InsecurePermissions {
+            path: "/vault".into(),
+            mode: 0o644,
+        }
+        .to_string();
+        assert!(file.contains("0644"));
+        assert!(file.contains("chmod 600"));
+
+        let parent = SecretStoreError::InsecureParentDir {
+            ancestor: "/parent".into(),
+            reason: crate::parent_permissions::InsecureAncestor::WritableWithoutSticky {
+                mode: 0o777,
+            },
+        }
+        .to_string();
+        // The offender's own path, not the vault's parent: without it the user
+        // is told a chain has a bad link and left to find which.
+        assert!(parent.contains("/parent"));
+        assert!(parent.contains("0777"));
+        assert!(parent.contains("chmod go-w /parent"));
+
+        // An ownership rejection must NOT hand out `chmod`: the mode is very
+        // likely unremarkable and changing it would not help.
+        let owned = SecretStoreError::InsecureParentDir {
+            ancestor: "/parent".into(),
+            reason: crate::parent_permissions::InsecureAncestor::UntrustedOwner {
+                uid: 999,
+                current_uid: 1000,
+            },
+        }
+        .to_string();
+        assert!(owned.contains("chown 1000 /parent"));
+        assert!(
+            !owned.contains("chmod"),
+            "an ownership rejection must not suggest chmod: {owned}"
+        );
+
+        assert!(SecretStoreError::InvalidLabel
+            .to_string()
+            .contains("A-Za-z0-9._-"));
+        assert_eq!(
+            SecretStoreError::NoEntry.to_string(),
+            "secret was not found"
+        );
     }
 
     #[test]
@@ -793,8 +883,22 @@ mod tests {
             E::MalformedVault,
             E::InvalidLabel,
             E::NoEntry,
-            E::InsecurePermissions { mode: 0 },
-            E::InsecureParentDir { mode: 0 },
+            E::InsecurePermissions {
+                path: "/vault".into(),
+                mode: 0,
+            },
+            E::InsecureOwnership {
+                path: "/vault".into(),
+                found: 1,
+                expected: 2,
+            },
+            E::InsecureParentDir {
+                ancestor: "/parent".into(),
+                reason: crate::parent_permissions::InsecureAncestor::UntrustedOwner {
+                    uid: 0,
+                    current_uid: 1,
+                },
+            },
             E::SecretTooLarge { found: 1, max: 0 },
             E::AlreadyLocked,
             E::VaultTooLarge { found: 1, max: 0 },

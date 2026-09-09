@@ -88,10 +88,9 @@ pub(crate) const CL_FALLBACK_TIMEOUT: Duration = Duration::from_secs(180);
 ///
 /// On expiry the reconciliation still returns the typed
 /// [`PlatformWalletError::AssetLockAlreadyConsumed`] — the code-24 signal
-/// hosts branch on — having simply failed to attach the chain proof. That
-/// matches the pre-#4357 behavior (typed error, no proof retained) while
-/// keeping #4357's proof retention whenever the ChainLock is reachable
-/// inside the bound.
+/// hosts branch on — having simply failed to attach the chain proof. The
+/// typed error is what matters to the host; the proof is retained only
+/// when the ChainLock is reachable inside the bound.
 pub(crate) const RECONCILIATION_CHAIN_LOCK_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Bounded proof wait applied after a resume re-broadcast came back
@@ -108,8 +107,8 @@ pub(crate) const RECONCILIATION_CHAIN_LOCK_TIMEOUT: Duration = Duration::from_se
 ///
 /// Sized to comfortably cover a ChainLock (~2.5 min) so a transaction that
 /// really was accepted still resolves inside the bound; on expiry the
-/// caller gets `TransactionBroadcastUnconfirmed`, which is what the
-/// pre-#4367 code returned immediately.
+/// caller gets `TransactionBroadcastUnconfirmed`, the same verdict an
+/// immediate give-up would report.
 pub(crate) const UNCONFIRMED_BROADCAST_PROOF_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Delay between retries when Platform rejected with CL-height-too-low.

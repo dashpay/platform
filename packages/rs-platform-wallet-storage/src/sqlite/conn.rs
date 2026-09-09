@@ -38,7 +38,8 @@ const _: () = assert!(
 );
 
 /// Magic stamped into the SQLite header `application_id` (offset 68) by
-/// `V001__initial`. ASCII `"PLWT"` (Platform Wallet) big-endian. A
+/// `V008__rehydration_base_schema`. ASCII `"PLWT"` (Platform Wallet)
+/// big-endian. A
 /// refinery-versioned DB whose `application_id` does not equal this is a
 /// foreign SQLite database, not a wallet-storage DB.
 pub(crate) const APPLICATION_ID: i32 = 0x504C_5754;
@@ -48,7 +49,7 @@ pub(crate) const APPLICATION_ID: i32 = 0x504C_5754;
 /// mismatch. The caller decides WHEN to run this — `open()` runs it
 /// pre-migration on a refinery-versioned DB; `restore_from` runs it on
 /// the staged copy. A brand-new (unmigrated) DB reports `0` and is the
-/// caller's responsibility to skip (V001 stamps the real value).
+/// caller's responsibility to skip (V008 stamps the real value).
 pub(crate) fn assert_wallet_application_id(conn: &Connection) -> Result<(), WalletStorageError> {
     let found: i32 = conn.pragma_query_value(None, "application_id", |row| row.get(0))?;
     if found != APPLICATION_ID {
@@ -58,6 +59,42 @@ pub(crate) fn assert_wallet_application_id(conn: &Connection) -> Result<(), Wall
         });
     }
     Ok(())
+}
+
+/// SQLite's default `application_id` for a file nobody stamped. A database
+/// created before `V008` carries this, so it cannot be told from a stamped
+/// wallet database by the header alone.
+const UNSTAMPED_APPLICATION_ID: i32 = 0;
+
+/// Accept a stamped wallet database, or a LEGACY one predating the stamp.
+///
+/// `V008` introduced `PRAGMA application_id`, so every database created by a
+/// `v4.2-dev` build reports `0` and [`assert_wallet_application_id`] alone
+/// would refuse it as foreign — before refinery ever runs, and with no way for
+/// the caller to tell that apart from a genuinely foreign file.
+///
+/// An unstamped file is admitted only when its `refinery_schema_history` names
+/// migrations this binary embeds, at the same versions. That is a positive
+/// identification rather than a relaxation: a foreign SQLite database does not
+/// carry our migration names, and one carrying no history at all is refused.
+/// Callers that have NOT established schema history must keep using
+/// [`assert_wallet_application_id`].
+pub(crate) fn assert_wallet_application_id_or_legacy(
+    conn: &Connection,
+) -> Result<(), WalletStorageError> {
+    let found: i32 = conn.pragma_query_value(None, "application_id", |row| row.get(0))?;
+    if found == APPLICATION_ID {
+        return Ok(());
+    }
+    if found == UNSTAMPED_APPLICATION_ID
+        && crate::sqlite::migrations::applied_history_matches_embedded(conn)?
+    {
+        return Ok(());
+    }
+    Err(WalletStorageError::NotAWalletDb {
+        expected: APPLICATION_ID,
+        found,
+    })
 }
 
 /// How the opened connection will be used.
@@ -77,12 +114,21 @@ pub(crate) enum Access {
 /// For [`Access::ReadWrite`], enables `PRAGMA foreign_keys = ON` and
 /// reads it back, returning [`WalletStorageError::ForeignKeysNotEnforced`]
 /// if the result is not `1`. For [`Access::ReadOnly`], opens with
-/// `SQLITE_OPEN_READ_ONLY` and performs no pragma. URI filename parsing is
-/// deliberately left off so a path can't smuggle query parameters (e.g.
-/// `?mode=rwc`) that defeat the read-only intent.
+/// `SQLITE_OPEN_READ_ONLY` and performs no pragma. URI-like filenames are
+/// rejected and `SQLITE_OPEN_URI` is omitted so a path can't smuggle query
+/// parameters (e.g. `?mode=rwc`) that defeat the read-only intent.
 pub(crate) fn open_conn(path: &Path, access: Access) -> Result<Connection, WalletStorageError> {
+    // Bundled SQLite enables URI parsing globally, independently of open flags.
+    if path.as_os_str().as_encoded_bytes().starts_with(b"file:") {
+        return Err(rusqlite::Error::InvalidPath(path.to_path_buf()).into());
+    }
     let conn = match access {
-        Access::ReadWrite => Connection::open(path)?,
+        Access::ReadWrite => Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+                | OpenFlags::SQLITE_OPEN_CREATE
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?,
         Access::ReadOnly => Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?,
     };
     // Hard-cap every string/BLOB column at SQLITE_MAX_BLOB_BYTES (32 MiB).
@@ -111,6 +157,18 @@ pub(crate) fn enforce_foreign_keys(conn: &Connection) -> Result<(), WalletStorag
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_write_open_does_not_interpret_uri_filenames() {
+        let path = Path::new("file:probe.db?mode=ro");
+        let result = open_conn(path, Access::ReadWrite);
+
+        assert!(matches!(
+            result,
+            Err(WalletStorageError::Sqlite(rusqlite::Error::InvalidPath(found)))
+                if found == path
+        ));
+    }
 
     /// A read-write open enables FK and the read-back confirms it — the
     /// assertion path that guards against a silently no-op pragma.

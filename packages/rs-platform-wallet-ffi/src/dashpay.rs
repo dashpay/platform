@@ -990,11 +990,17 @@ pub unsafe extern "C" fn platform_wallet_pending_contact_crypto_count(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_count);
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.dashpay().pending_contact_crypto_count().await })
-    });
-    let count = unwrap_option_or_return!(option);
+    // Look the identity up under the registry guard, but wait outside it:
+    // the count needs `wallet_manager.read()`, which parks behind any writer
+    // (measured in minutes behind a slow host persistence round), and a
+    // registry read guard held across that wait would stall
+    // `platform_wallet_destroy` (a registry write) and, through parking_lot's
+    // writer preference, every other registry reader.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity = unwrap_option_or_return!(option);
+    let count =
+        block_on_worker(async move { identity.dashpay().pending_contact_crypto_count().await });
     unsafe {
         *out_count = count as u32;
     }
@@ -1264,11 +1270,16 @@ pub unsafe extern "C" fn platform_wallet_drainable_contact_crypto_count(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_count);
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.dashpay().drainable_contact_crypto_count().await })
-    });
-    let count = unwrap_option_or_return!(option);
+    // Waited on outside the registry guard — see
+    // `platform_wallet_pending_contact_crypto_count`. This one is called
+    // inline from the host's unlock path, so a guard held across the wait
+    // would freeze that caller AND every other registry user for the
+    // duration of whatever holds `wallet_manager`.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity = unwrap_option_or_return!(option);
+    let count =
+        block_on_worker(async move { identity.dashpay().drainable_contact_crypto_count().await });
     unsafe {
         *out_count = count as u32;
     }

@@ -15,7 +15,7 @@ use platform_wallet::{
 
 use super::wallet_id_to_param;
 use crate::sqlite::error::WalletStorageError;
-use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
 
@@ -127,7 +127,7 @@ pub fn apply_upserts(
 /// is the same end state and the documented "removal wins" rule.
 ///
 /// Dependents go through three paths: the native `ON DELETE CASCADE` on
-/// `identity_id`, V001's `cascade_meta_on_identity_delete`, and V016's
+/// `identity_id`, V001's `cascade_meta_on_identity_delete`, and V018's
 /// `cascade_children_on_identity_delete` for the rows no live foreign
 /// key reaches (an out-of-wallet identity's `identity_keys`, whose
 /// compound FK is dormant under MATCH SIMPLE, plus `contacts` and
@@ -318,9 +318,25 @@ pub fn load_state(
 ///
 /// Only the duplicate-slot case consults `ctx`: a second live row claiming
 /// an `identity_index` this wallet has already filled is fatal under
-/// `Strict` and a counted, logged drop under `Recovery`. The typed-column
-/// cross-checks stay unconditional — a row whose columns contradict its own
-/// blob is corruption, not a recoverable projection.
+/// `Strict` and a counted, logged drop under `Recovery`. Rows are read by
+/// `identity_id` ascending, so the lexicographically higher id wins a
+/// collision.
+///
+/// # The typed-column cross-checks are DELIBERATELY fatal in both policies
+///
+/// An `identities` row carries the identity's credit balance, so skipping one
+/// would hand back a wallet whose reported credits are quietly too low — the
+/// same harm that keeps the unspent-script decode fail-hard in `core_state`,
+/// and the reason `platform_addresses` degrades by wallet rather than by row.
+/// Sitting outside `ctx` does NOT put these sites outside the load policy:
+/// they reach `load()`'s per-wallet isolation boundary, which drops the whole
+/// wallet under `Recovery` and names it in `LoadDegradation::wallets_degraded`.
+/// A visibly missing wallet is a fact a caller can act on; a wallet with
+/// silently missing credits is not.
+///
+/// Do not convert them to `ctx.tolerate`. Beyond the balance, a skipped
+/// identity also disconnects its keys and contacts, so tolerating the identity
+/// row would hand the caller an incomplete balance-bearing projection.
 pub fn load_state_with_ctx(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -335,7 +351,7 @@ pub fn load_state_with_ctx(
     let wallet_id_param = wallet_id_to_param(wallet_id);
     let mut stmt = conn.prepare(
         "SELECT identity_id, length(entry_blob), entry_blob, identity_index \
-         FROM identities WHERE wallet_id IS ?1",
+         FROM identities WHERE wallet_id IS ?1 ORDER BY identity_id",
     )?;
     // The ignored-senders TABLE is the authoritative ignore record (every
     // ignore/un-ignore maintains it transactionally); the `entry_blob`'s
@@ -389,15 +405,25 @@ pub fn load_state_with_ctx(
                 {
                     // `identities` carries no `(wallet_id, identity_index)`
                     // UNIQUE index, so a pre-guard duplicate can still be on
-                    // disk. Left unreported the map keyed by `idx` just drops
-                    // whichever row SQLite happened to yield first — an
-                    // identity silently missing from the wallet.
+                    // disk. Nothing in the persisted rows establishes which
+                    // identity genuinely holds `idx`, so the slot winner is
+                    // arbitrary on the merits — which is exactly why the loser
+                    // MUST NOT be dropped. Park it in
+                    // `out_of_wallet_identities` (the same bucket a NULL
+                    // `identity_index` row lands in) so a Recovery load hands
+                    // the caller every identity it read, slot or no slot. The
+                    // persister is read-only in Recovery, so anything dropped
+                    // here could never be recovered from a later flush.
+                    let displaced_identity_id = displaced.identity.id();
+                    state
+                        .out_of_wallet_identities
+                        .insert(displaced_identity_id, displaced);
                     ctx.tolerate(
                         LoadSite::IdentityIndexCollision,
                         WalletStorageError::IdentityIndexConflict {
                             wallet_id: *wallet_id,
                             identity_index: idx,
-                            existing: displaced.identity.id().to_buffer(),
+                            existing: displaced_identity_id.to_buffer(),
                             incoming: entry_id.to_buffer(),
                         },
                     )?;
@@ -426,8 +452,8 @@ pub fn load_prekeyed(
     ctx: &LoadCtx,
 ) -> Result<platform_wallet::changeset::IdentityManagerStartState, WalletStorageError> {
     let mut state = load_state_with_ctx(conn, wallet_id, ctx)?;
-    let identity_keys = crate::sqlite::schema::identity_keys::load_state(conn, wallet_id)?;
-    let records = crate::sqlite::schema::contacts::load_state(conn, wallet_id)?;
+    let identity_keys = crate::sqlite::schema::identity_keys::load_state(conn, wallet_id, ctx)?;
+    let records = crate::sqlite::schema::contacts::load_state(conn, wallet_id, ctx)?;
     // Ignored senders restore in `load_state` from the authoritative
     // `ignored_senders` table, so only the request / established maps ride
     // this changeset; `removed_*` / `ignored` / `unignored` stay empty.
@@ -437,7 +463,7 @@ pub fn load_prekeyed(
         established: records.established,
         ..Default::default()
     };
-    merge_contacts_and_keys(&mut state, contacts, identity_keys, ctx)?;
+    merge_contacts_and_keys(&mut state, contacts, identity_keys, *wallet_id, ctx)?;
     // The scan verdict rides the same per-wallet start state the identities
     // do, because it is the fact the startup sequence weighs against them:
     // "we already have one" is not evidence we have them all unless the scan
@@ -571,7 +597,7 @@ pub fn ensure_exists(
 /// or `ignored_senders` row is the reachable shape: both key on `owner_id`
 /// with no foreign key to `identities`, so nothing rejects one naming an
 /// identity that is not there. `identity_keys` cannot reach this state —
-/// its wallet-scoped FK is live, and V014's trigger pair covers the
+/// its wallet-scoped FK is live, and V016's trigger pair covers the
 /// NULL-scoped case the compound FK leaves dormant.
 /// [`LoadPolicy::Recovery`](crate::LoadPolicy) skips and counts those;
 /// `Strict` aborts, because "the owner is gone" is exactly the state that
@@ -580,6 +606,7 @@ pub fn merge_contacts_and_keys(
     state: &mut IdentityManagerStartState,
     contacts: ContactChangeSet,
     identity_keys: IdentityKeysChangeSet,
+    wallet_id: WalletId,
     ctx: &LoadCtx,
 ) -> Result<(), WalletStorageError> {
     // One transient id → &mut ManagedIdentity view over both buckets so
@@ -601,6 +628,7 @@ pub fn merge_contacts_and_keys(
             .into_values()
             .map(|entry| (entry.identity_id, entry.public_key)),
         &mut by_id,
+        wallet_id,
         ctx,
         "identity_keys",
         |managed, key| managed.identity.add_public_key(key),
@@ -611,6 +639,7 @@ pub fn merge_contacts_and_keys(
             .into_iter()
             .map(|(key, entry)| (key.owner_id, entry.request)),
         &mut by_id,
+        wallet_id,
         ctx,
         "sent_contact_requests",
         |managed, request| managed.apply_sent_contact_request(request),
@@ -621,6 +650,7 @@ pub fn merge_contacts_and_keys(
             .into_iter()
             .map(|(key, entry)| (key.owner_id, entry.request)),
         &mut by_id,
+        wallet_id,
         ctx,
         "incoming_contact_requests",
         |managed, request| managed.apply_incoming_contact_request(request),
@@ -631,6 +661,7 @@ pub fn merge_contacts_and_keys(
             .into_iter()
             .map(|(key, established)| (key.owner_id, established)),
         &mut by_id,
+        wallet_id,
         ctx,
         "established_contacts",
         |managed, established| managed.apply_established_contact(established),
@@ -649,6 +680,7 @@ pub fn merge_contacts_and_keys(
 fn route_by_owner<T>(
     entries: impl IntoIterator<Item = (Identifier, T)>,
     by_id: &mut HashMap<Identifier, &mut ManagedIdentity>,
+    wallet_id: WalletId,
     ctx: &LoadCtx,
     collection: &'static str,
     apply: impl Fn(&mut ManagedIdentity, T),
@@ -665,22 +697,18 @@ fn route_by_owner<T>(
         }
     }
     if let Some(owner) = first_skipped_owner {
-        // Saturating, not fallible: a tally must never fail a load it is
-        // only describing.
-        let skipped = u32::try_from(skipped).unwrap_or(u32::MAX);
-        ctx.tolerate_many(
+        ctx.tolerate_at(
             LoadSite::MissingIdentityOwner,
-            skipped,
+            SiteCoords {
+                wallet_id: Some(wallet_id),
+                account_type: &"identity",
+                affected: skipped,
+                detail: Some(&collection),
+            },
             WalletStorageError::OrphanedIdentityEntry {
                 owner: owner.to_buffer(),
             },
         )?;
-        tracing::warn!(
-            site = LoadSite::MissingIdentityOwner.as_str(),
-            collection,
-            count = skipped,
-            "skipped rehydration entries whose owning identity is absent"
-        );
     }
     Ok(())
 }
@@ -964,7 +992,7 @@ mod tests {
     /// guard only rejected keys whose identity was wallet-OWNED, so one
     /// naming no identity at all slipped through — MATCH SIMPLE leaves both
     /// foreign keys dormant on a NULL-scoped row, making the trigger the
-    /// only guard there is. Closed by V014.
+    /// only guard there is. Closed by V016.
     #[test]
     fn null_scoped_key_is_rejected_for_a_missing_identity() {
         use platform_wallet::changeset::IdentityKeysChangeSet;

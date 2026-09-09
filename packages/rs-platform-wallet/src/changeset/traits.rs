@@ -74,10 +74,6 @@ pub enum PersistenceError {
     #[error("persister lock poisoned")]
     LockPoisoned,
 
-    /// The backend does not implement an optional persistence operation.
-    #[error("persistence backend does not support {operation}")]
-    UnsupportedOperation { operation: &'static str },
-
     /// Error bubbled up from the underlying storage engine
     /// (SQLite, file I/O, FFI callback, etc.).
     ///
@@ -126,8 +122,8 @@ impl PersistenceError {
     }
 
     /// `true` if the error is a `Backend` whose kind is
-    /// [`PersistenceErrorKind::Transient`]. `LockPoisoned`, `Fatal`,
-    /// `UnsupportedOperation`, and `Constraint` all read as non-transient.
+    /// [`PersistenceErrorKind::Transient`]. `LockPoisoned`, `Fatal`, and
+    /// `Constraint` all read as non-transient.
     pub fn is_transient(&self) -> bool {
         matches!(
             self,
@@ -141,14 +137,12 @@ impl PersistenceError {
     /// Retry-policy classification for the error.
     ///
     /// Returns `None` for [`Self::LockPoisoned`] (which is its own
-    /// trait-level variant), `Fatal` for [`Self::UnsupportedOperation`],
-    /// and the stored kind for [`Self::Backend`].
+    /// trait-level variant) and the stored kind for [`Self::Backend`].
     /// Callers that always need a kind should treat `None` as
     /// [`PersistenceErrorKind::Fatal`].
     pub fn kind(&self) -> Option<PersistenceErrorKind> {
         match self {
             Self::LockPoisoned => None,
-            Self::UnsupportedOperation { .. } => Some(PersistenceErrorKind::Fatal),
             Self::Backend { kind, .. } => Some(*kind),
         }
     }
@@ -311,9 +305,8 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ///
     // TODO: wallet-less / global objects (the `WalletId::default()` /
     // `[0u8; 32]` sentinel scope for parentless or global metadata) are
-    // not yet expressible through `flush`. Hosts that previously called
-    // the now-removed `commit_writes` should call `flush` per wallet
-    // instead; a sentinel-scope flush path is still to be designed.
+    // not yet expressible through `flush`. Hosts call `flush` per wallet;
+    // a sentinel-scope flush path is still to be designed.
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError>;
 
     /// Replace the persisted tracked-masternode set for `network` with
@@ -360,17 +353,6 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// already keyed by wallet id and the sub-changesets carry their own
     /// wallet attribution where needed.
     fn load(&self) -> Result<ClientStartState, PersistenceError>;
-
-    /// Delete all durable state belonging to `wallet_id`.
-    ///
-    /// Backends without wallet-scoped deletion return
-    /// [`PersistenceError::UnsupportedOperation`]. Implementations that
-    /// support deletion must leave no wallet-owned state behind on success.
-    fn delete_wallet(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
-        Err(PersistenceError::UnsupportedOperation {
-            operation: "delete_wallet",
-        })
-    }
 
     /// Look up a single core transaction record by `txid` for `wallet_id`.
     ///
@@ -552,10 +534,4 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ) -> Result<Option<DpnsNameStateEntry>, PersistenceError> {
         Ok(None)
     }
-
-    // TODO: `list_wallets` and `delete_wallet` are deferred contract
-    // candidates. They live as inherent methods on the SQLite backend
-    // today; they may return to this trait once a cross-backend contract
-    // (consistent error/report semantics across SQLite, file, and FFI
-    // backends) is agreed.
 }

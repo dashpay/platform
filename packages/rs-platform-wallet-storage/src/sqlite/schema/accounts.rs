@@ -14,6 +14,7 @@ use platform_wallet::changeset::{
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
 
@@ -112,7 +113,10 @@ pub(crate) fn list_platform_payment_registrations(
 /// query.
 pub(crate) fn all_platform_payment_registrations(
     conn: &Connection,
-) -> Result<BTreeMap<WalletId, Vec<PlatformPaymentRegistration>>, WalletStorageError> {
+) -> Result<
+    BTreeMap<WalletId, Result<Vec<PlatformPaymentRegistration>, WalletStorageError>>,
+    WalletStorageError,
+> {
     let mut stmt = conn.prepare(
         "SELECT length(wallet_id), wallet_id, account_index, key_class, \
                 length(account_xpub_bytes), account_xpub_bytes \
@@ -121,18 +125,35 @@ pub(crate) fn all_platform_payment_registrations(
          ORDER BY wallet_id, account_index",
     )?;
     let mut rows = stmt.query([])?;
-    let mut out: BTreeMap<WalletId, Vec<PlatformPaymentRegistration>> = BTreeMap::new();
+    let mut out: BTreeMap<WalletId, Result<Vec<PlatformPaymentRegistration>, WalletStorageError>> =
+        BTreeMap::new();
     while let Some(row) = rows.next()? {
         blob::check_fixed_width(row.get::<_, i64>(0)?, 32, "account_registrations.wallet_id")?;
         let wid_bytes: Vec<u8> = row.get(1)?;
         let idx: i64 = row.get(2)?;
         let key_class: i64 = row.get(3)?;
-        blob::check_size(row.get::<_, i64>(4)?)?;
+        let payload_width: i64 = row.get(4)?;
         let bytes: Vec<u8> = row.get(5)?;
+        // An id that is not 32 bytes belongs to no wallet, so it stays
+        // file-fatal; everything after it is attributable to one.
         let wallet_id = super::id32("account_registrations.wallet_id", &wid_bytes)?;
-        out.entry(wallet_id)
-            .or_default()
-            .push(decode_platform_payment_row(idx, key_class, &bytes)?);
+        let decoded = blob::check_size(payload_width)
+            .and_then(|()| decode_platform_payment_row(idx, key_class, &bytes));
+        match decoded {
+            // A wallet already recorded as failed keeps its first cause;
+            // its remaining rows cannot change the outcome.
+            Ok(decoded) => {
+                if let Ok(rows) = out.entry(wallet_id).or_insert_with(|| Ok(Vec::new())) {
+                    rows.push(decoded);
+                }
+            }
+            Err(err) => {
+                let slot = out.entry(wallet_id).or_insert_with(|| Ok(Vec::new()));
+                if slot.is_ok() {
+                    *slot = Err(err);
+                }
+            }
+        }
     }
     Ok(out)
 }
@@ -361,12 +382,13 @@ fn provider_curve_matches_type(at: &AccountType, key: &ProviderKeyExtendedPubKey
 
 /// Read the provider key-material accounts of one wallet.
 ///
-/// Entries are ordered by `account_type`; a row that fails to decode,
-/// contradicts its typed columns, or carries the wrong curve for its account
-/// type is a hard [`WalletStorageError`].
+/// Entries are ordered by `account_type`. Decode failures stay fatal;
+/// Recovery skips typed-column drift and wrong-curve rows under distinct
+/// degradation sites.
 pub(crate) fn load_provider_state(
     conn: &Connection,
     wallet_id: &WalletId,
+    ctx: &LoadCtx,
 ) -> Result<Vec<ProviderKeyAccountEntry>, WalletStorageError> {
     let mut stmt = conn.prepare(
         "SELECT account_type, account_index, key_class, \
@@ -409,14 +431,24 @@ pub(crate) fn load_provider_state(
             "account_registrations.key_class",
             typed_key_class,
         )?;
-        if account_type_db_label(&entry.account_type) != typed_type.as_str()
+        if !db_label_matches_entry(typed_type.as_str(), &entry.account_type)
             || account_index(&entry.account_type) != typed_index
             || account_key_class(&entry.account_type) != typed_key_class
             || blob_user.as_slice() != typed_user.as_slice()
             || blob_friend.as_slice() != typed_friend.as_slice()
-            || !provider_curve_matches_type(&entry.account_type, &entry.extended_public_key)
         {
-            return Err(WalletStorageError::ProviderKeyAccountEntryMismatch);
+            ctx.tolerate(
+                LoadSite::ProviderKeyRegistrationDrift,
+                WalletStorageError::ProviderKeyAccountEntryMismatch,
+            )?;
+            continue;
+        }
+        if !provider_curve_matches_type(&entry.account_type, &entry.extended_public_key) {
+            ctx.tolerate(
+                LoadSite::ProviderKeyCurveMismatch,
+                WalletStorageError::ProviderKeyAccountEntryMismatch,
+            )?;
+            continue;
         }
 
         out.push(ProviderKeyAccountEntry {
@@ -431,15 +463,20 @@ pub(crate) fn load_provider_state(
 /// [`AccountManifest`] — the rehydration account-set oracle (which accounts to
 /// re-derive + the per-account xpubs the wrong-account gate checks). PUBLIC
 /// material only (xpub + account type), no `Wallet` minted. Each list is
-/// ordered by its typed columns for determinism; a row that fails to decode is
-/// a hard [`WalletStorageError`].
+/// ordered by its typed columns for determinism. Typed-column drift is fatal
+/// under Strict; Recovery drops the offending registration row. A pre-split
+/// `standard` row is reconciled against the precise-labelled row for the same
+/// account, so a forked registration is returned once. Persisted
+/// funds attributed to that missing account fall back to the first remaining
+/// funds account until the next sync rebuilds per-account attribution.
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
+    ctx: &LoadCtx,
 ) -> Result<AccountManifest, WalletStorageError> {
     Ok(AccountManifest {
-        ecdsa: load_ecdsa_state(conn, wallet_id)?,
-        provider: load_provider_state(conn, wallet_id)?,
+        ecdsa: load_ecdsa_state(conn, wallet_id, ctx)?,
+        provider: load_provider_state(conn, wallet_id, ctx)?,
     })
 }
 
@@ -448,6 +485,7 @@ pub fn load_state(
 fn load_ecdsa_state(
     conn: &Connection,
     wallet_id: &WalletId,
+    ctx: &LoadCtx,
 ) -> Result<Vec<AccountRegistrationEntry>, WalletStorageError> {
     // Select typed columns alongside the blob so we can cross-check them
     // against the decoded entry — a row whose blob disagrees with its indexed
@@ -469,6 +507,11 @@ fn load_ecdsa_state(
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut out = Vec::new();
+    // Positions in `out` of rows still carrying the pre-split `standard`
+    // label. `Vec::new` does not allocate until its first push, so a database
+    // written after the split pays one label comparison per row and nothing
+    // else — no allocation, and the same `out` it always returned.
+    let mut legacy_rows: Vec<usize> = Vec::new();
     while let Some(row) = rows.next()? {
         let typed_type: String = row.get(0)?; // account_type TEXT
         let typed_index: i64 = row.get(1)?; // account_index INTEGER
@@ -502,24 +545,91 @@ fn load_ecdsa_state(
             "account_registrations.key_class",
             typed_key_class,
         )?;
-        if account_type_db_label(&entry.account_type) != typed_type.as_str()
+        if !db_label_matches_entry(typed_type.as_str(), &entry.account_type)
             || blob_index != typed_index
             || blob_key_class != typed_key_class
             || blob_user.as_slice() != typed_user.as_slice()
             || blob_friend.as_slice() != typed_friend.as_slice()
         {
-            return Err(WalletStorageError::AccountRegistrationEntryMismatch);
+            ctx.tolerate(
+                LoadSite::AccountRegistrationDrift,
+                WalletStorageError::AccountRegistrationEntryMismatch,
+            )?;
+            continue;
+        }
+        if typed_type == LEGACY_STANDARD_LABEL {
+            legacy_rows.push(out.len());
         }
         out.push(entry);
     }
-    Ok(out)
+    if legacy_rows.is_empty() {
+        return Ok(out);
+    }
+    reconcile_legacy_standard_rows(out, &legacy_rows, ctx)
+}
+
+/// Collapse each pre-split `standard` row into the precise-labelled row that
+/// stands for the same account.
+///
+/// `V008` admits the legacy label rather than guessing which standard variant
+/// such a row is, so one account can hold two rows: the writer's upsert keys
+/// on `account_type`, so a post-split save INSERTS a precisely-labelled
+/// sibling instead of updating the legacy row. Returning both would make this
+/// reader emit one account twice and leave deduplication to a consumer that
+/// cannot see why the pair exists.
+///
+/// A sibling is matched on the whole typed `AccountType`, NOT on
+/// `(index, key_class, identity ids)`: BIP44 and BIP32 accounts at one index
+/// are different accounts that share those columns, and the coarser key would
+/// fuse them — dropping a real registration and calling a healthy wallet
+/// drifted. When the matched pair disagrees the legacy row is not a duplicate
+/// but genuine drift (only the precise row is ever updated, so a changed xpub
+/// leaves the legacy one behind), and it goes to
+/// [`LoadSite::AccountRegistrationDrift`] like every other disagreement here.
+/// A legacy row with no sibling is the account's only row and is kept.
+fn reconcile_legacy_standard_rows(
+    entries: Vec<AccountRegistrationEntry>,
+    legacy_rows: &[usize],
+    ctx: &LoadCtx,
+) -> Result<Vec<AccountRegistrationEntry>, WalletStorageError> {
+    let mut superseded = vec![false; entries.len()];
+    for &legacy in legacy_rows {
+        let Some(precise) = entries
+            .iter()
+            .enumerate()
+            .find(|(pos, candidate)| {
+                !legacy_rows.contains(pos) && candidate.account_type == entries[legacy].account_type
+            })
+            .map(|(_, candidate)| candidate)
+        else {
+            continue;
+        };
+        if *precise != entries[legacy] {
+            ctx.tolerate(
+                LoadSite::AccountRegistrationDrift,
+                WalletStorageError::AccountRegistrationEntryMismatch,
+            )?;
+        }
+        superseded[legacy] = true;
+    }
+    Ok(entries
+        .into_iter()
+        .zip(superseded)
+        .filter_map(|(entry, is_superseded)| (!is_superseded).then_some(entry))
+        .collect())
 }
 
 /// Source of truth for the `account_registrations.account_type` TEXT domain,
-/// mirroring [`key_wallet::account::AccountType`].
-/// `migrations/V001__initial.rs` interpolates it into the table's
-/// `CHECK (account_type IN (...))`; `account_type_labels_match_enum` keeps it
-/// in sync with [`account_type_db_label`].
+/// mirroring [`key_wallet::account::AccountType`]. The migrations interpolate
+/// nothing: V001 freezes its own copy of this domain, because a generated-SQL
+/// change breaks that migration's Refinery checksum on every database that
+/// already applied it. `account_type_labels_match_enum` pins this array to
+/// [`account_type_db_label`]; `account_type_labels_frozen_in_v007` pins it to
+/// the frozen list in `V008__rehydration_base_schema.rs`, which rebuilt
+/// `account_registrations` with the widened domain. V001 carries the narrower
+/// domain `v4.2-dev` shipped, in which both standard variants share the label
+/// `standard`. An upstream variant addition therefore fails a test with
+/// instructions, instead of silently rewriting applied SQL.
 ///
 /// `Standard` maps to two distinct labels by `StandardAccountType` variant
 /// (`"standard_bip44"` / `"standard_bip32"`) so BIP44 and BIP32 standard
@@ -549,6 +659,39 @@ pub(crate) const ACCOUNT_TYPE_LABELS: &[&str] = &[
 ///
 /// `Standard` maps to two distinct labels by `StandardAccountType` so BIP44
 /// and BIP32 accounts with the same `index` never collapse onto the same PK.
+/// The label `v4.2-dev` wrote for BOTH standard variants.
+///
+/// Its `account_type_db_label` matched `Standard { .. }` and ignored
+/// `standard_account_type`, so a database created before the domain split
+/// carries `standard` for BIP44 and BIP32 alike. Which one a row really is was
+/// never lost -- it is inside `account_xpub_bytes` -- it is simply not
+/// SQL-reachable, so no migration can resolve it. The value is therefore
+/// admitted rather than rewritten; see [`db_label_matches_entry`].
+pub(crate) const LEGACY_STANDARD_LABEL: &str = "standard";
+
+/// Does the stored `account_type` column agree with the blob's typed
+/// `AccountType`?
+///
+/// Exact match, plus one legacy equivalence: the pre-split `standard` matches
+/// EITHER standard variant. Rewriting such a row to one variant would be a
+/// guess, and guessing wrong turns a row that loads today into a fatal
+/// `AccountRegistrationEntryMismatch` under the default `LoadPolicy::Strict`.
+/// The blob stays the sole source of truth for which variant a row is; the
+/// column keeps its narrower job of filtering and key uniqueness.
+pub(crate) fn db_label_matches_entry(
+    column: &str,
+    entry_type: &key_wallet::account::AccountType,
+) -> bool {
+    if column == account_type_db_label(entry_type) {
+        return true;
+    }
+    column == LEGACY_STANDARD_LABEL
+        && matches!(
+            entry_type,
+            key_wallet::account::AccountType::Standard { .. }
+        )
+}
+
 pub(crate) fn account_type_db_label(at: &key_wallet::account::AccountType) -> &'static str {
     use key_wallet::account::{AccountType, StandardAccountType};
     match at {
@@ -603,11 +746,32 @@ pub(crate) fn account_index(at: &key_wallet::account::AccountType) -> u32 {
 /// Hardened `key_class` discriminator for `PlatformPayment`, persisted in the
 /// `account_registrations.key_class` PK column. `0` for every other variant —
 /// the sentinel "no key-class axis" value, matching the column default.
+///
+/// Wildcard-free on purpose, like [`account_index`] and
+/// [`account_type_db_label`]: this feeds a PRIMARY KEY column, so a variant
+/// this mapper has not been taught about would be given another variant's
+/// sentinel and collapse two distinct accounts onto one key — losing one of
+/// them at the next write, with no error anywhere. Listing the zeros costs a
+/// dozen lines and converts that silent loss into a compile error.
 pub(crate) fn account_key_class(at: &key_wallet::account::AccountType) -> u32 {
     use key_wallet::account::AccountType;
     match at {
         AccountType::PlatformPayment { key_class, .. } => *key_class,
-        _ => 0,
+        // No key-class axis: the column's sentinel default.
+        AccountType::Standard { .. }
+        | AccountType::CoinJoin { .. }
+        | AccountType::IdentityRegistration
+        | AccountType::IdentityTopUp { .. }
+        | AccountType::IdentityTopUpNotBoundToIdentity
+        | AccountType::IdentityInvitation
+        | AccountType::AssetLockAddressTopUp
+        | AccountType::AssetLockShieldedAddressTopUp
+        | AccountType::ProviderVotingKeys
+        | AccountType::ProviderOwnerKeys
+        | AccountType::ProviderOperatorKeys
+        | AccountType::ProviderPlatformKeys
+        | AccountType::DashpayReceivingFunds { .. }
+        | AccountType::DashpayExternalAccount { .. } => 0,
     }
 }
 
@@ -615,6 +779,10 @@ pub(crate) fn account_key_class(at: &key_wallet::account::AccountType) -> u32 {
 /// real account key for `DashpayReceivingFunds` / `DashpayExternalAccount`,
 /// persisted in the matching PK columns. All-zero for every non-DashPay
 /// variant (no identity axis), matching the column default.
+///
+/// Wildcard-free for the same reason as [`account_key_class`]: these are PK
+/// columns, and an untaught variant handed the all-zero sentinel shares a key
+/// with every other axis-less account at the same index.
 pub(crate) fn account_dashpay_ids(at: &key_wallet::account::AccountType) -> ([u8; 32], [u8; 32]) {
     use key_wallet::account::AccountType;
     match at {
@@ -628,7 +796,20 @@ pub(crate) fn account_dashpay_ids(at: &key_wallet::account::AccountType) -> ([u8
             friend_identity_id,
             ..
         } => (*user_identity_id, *friend_identity_id),
-        _ => ([0u8; 32], [0u8; 32]),
+        // No identity axis: the columns' sentinel default.
+        AccountType::Standard { .. }
+        | AccountType::CoinJoin { .. }
+        | AccountType::IdentityRegistration
+        | AccountType::IdentityTopUp { .. }
+        | AccountType::IdentityTopUpNotBoundToIdentity
+        | AccountType::IdentityInvitation
+        | AccountType::AssetLockAddressTopUp
+        | AccountType::AssetLockShieldedAddressTopUp
+        | AccountType::ProviderVotingKeys
+        | AccountType::ProviderOwnerKeys
+        | AccountType::ProviderOperatorKeys
+        | AccountType::ProviderPlatformKeys
+        | AccountType::PlatformPayment { .. } => ([0u8; 32], [0u8; 32]),
     }
 }
 
@@ -694,7 +875,8 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_state(&conn, &w).expect_err("load_state must fail on type mismatch");
+        let err = load_state(&conn, &w, &LoadCtx::strict())
+            .expect_err("load_state must fail on type mismatch");
         assert!(
             matches!(err, WalletStorageError::AccountRegistrationEntryMismatch),
             "expected AccountRegistrationEntryMismatch, got {err:?}"
@@ -733,7 +915,8 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_state(&conn, &w).expect_err("load_state must fail on index mismatch");
+        let err = load_state(&conn, &w, &LoadCtx::strict())
+            .expect_err("load_state must fail on index mismatch");
         assert!(
             matches!(err, WalletStorageError::AccountRegistrationEntryMismatch),
             "expected AccountRegistrationEntryMismatch, got {err:?}"
@@ -774,7 +957,14 @@ mod tests {
         )
         .unwrap();
 
-        let err = all_platform_payment_registrations(&conn)
+        // The bulk reader refuses the row per WALLET: the scan survives, and
+        // the wallet that owns the bad row carries the refusal.
+        let all = all_platform_payment_registrations(&conn)
+            .expect("the scan itself must survive one bad row");
+        let err = all
+            .get(&w)
+            .expect("the wallet must be present in the scan")
+            .as_ref()
             .expect_err("bulk reader must reject key_class mismatch");
         assert!(
             matches!(err, WalletStorageError::AccountRegistrationEntryMismatch),
@@ -814,7 +1004,7 @@ mod tests {
         )
         .unwrap();
 
-        let loaded = load_state(&conn, &w)
+        let loaded = load_state(&conn, &w, &LoadCtx::strict())
             .expect("consistent row must load cleanly")
             .ecdsa;
         assert_eq!(loaded.len(), 1);
@@ -849,7 +1039,9 @@ mod tests {
             apply_registrations(&tx, &w, &[entry(0), entry(1)]).unwrap();
             tx.commit().unwrap();
         }
-        let loaded = load_state(&conn, &w).expect("both key classes load").ecdsa;
+        let loaded = load_state(&conn, &w, &LoadCtx::strict())
+            .expect("both key classes load")
+            .ecdsa;
         assert_eq!(loaded.len(), 2, "distinct key classes must both persist");
         let key_classes: HashSet<u32> = loaded
             .iter()
@@ -887,7 +1079,9 @@ mod tests {
             apply_registrations(&tx, &w, &[entry([0x01; 32]), entry([0x02; 32])]).unwrap();
             tx.commit().unwrap();
         }
-        let loaded = load_state(&conn, &w).expect("both contacts load").ecdsa;
+        let loaded = load_state(&conn, &w, &LoadCtx::strict())
+            .expect("both contacts load")
+            .ecdsa;
         assert_eq!(loaded.len(), 2, "distinct contacts must both persist");
         let friends: HashSet<[u8; 32]> = loaded
             .iter()
@@ -926,7 +1120,9 @@ mod tests {
             apply_registrations(&tx, &w, std::slice::from_ref(&entry)).unwrap();
             tx.commit().unwrap();
         }
-        let loaded = load_state(&conn, &w).expect("load").ecdsa;
+        let loaded = load_state(&conn, &w, &LoadCtx::strict())
+            .expect("load")
+            .ecdsa;
         assert_eq!(loaded.len(), 1, "re-persist must not duplicate the row");
     }
 
@@ -995,6 +1191,36 @@ mod tests {
         variants
     }
 
+    /// No two account types may share a full PK tuple, whatever axes they
+    /// carry. This is the runtime half of the wildcard-free mappers: those
+    /// make an untaught variant a compile error, and this makes a variant
+    /// that IS taught but mapped onto an existing key a test failure.
+    ///
+    /// Reached through `all_account_type_variants`, whose own exhaustive
+    /// match means a new upstream variant cannot arrive without a decision
+    /// being taken here.
+    #[test]
+    fn no_two_account_types_share_a_pk_tuple() {
+        let keys: Vec<_> = all_account_type_variants()
+            .into_iter()
+            .map(|at| {
+                (
+                    account_type_db_label(&at),
+                    account_index(&at),
+                    account_key_class(&at),
+                    account_dashpay_ids(&at),
+                )
+            })
+            .collect();
+        let mut seen: HashSet<_> = HashSet::new();
+        let collisions: Vec<_> = keys.iter().filter(|key| !seen.insert(*key)).collect();
+        assert!(
+            collisions.is_empty(),
+            "these primary keys are claimed by more than one account type, so \
+             the second account written would overwrite the first: {collisions:?}"
+        );
+    }
+
     /// The reader's SQL inlines these two labels (SQLite has no list
     /// binding), so a rename upstream must break here rather than silently
     /// route every provider row into the ECDSA decode path.
@@ -1053,6 +1279,88 @@ mod tests {
             from_writer, from_const,
             "ACCOUNT_TYPE_LABELS ({:?}) drifted from account_type_db_label codomain ({:?})",
             from_const, from_writer
+        );
+    }
+
+    /// Pins the live domain to the list frozen in the latest migration that
+    /// rebuilt `account_registrations` (`V008__rehydration_base_schema.rs`).
+    /// That frozen list is this array plus [`LEGACY_STANDARD_LABEL`], which no
+    /// writer emits but pre-split rows still carry.
+    ///
+    /// IF THIS FAILS: do NOT edit V008's list to match. Refinery checksums a
+    /// migration's rendered SQL, so changing an applied migration's body makes
+    /// every database that already ran it fail to open, permanently. Append a
+    /// migration rebuilding the table with the widened CHECK (the
+    /// `V004__asset_lock_recovered_status.rs` pattern), then update this pin.
+    #[test]
+    fn account_type_labels_frozen_in_v007() {
+        assert_eq!(
+            ACCOUNT_TYPE_LABELS,
+            &[
+                "standard_bip44",
+                "standard_bip32",
+                "coinjoin",
+                "identity_registration",
+                "identity_topup",
+                "identity_topup_unbound",
+                "identity_invitation",
+                "asset_lock_address_topup",
+                "asset_lock_shielded_topup",
+                "provider_voting",
+                "provider_owner",
+                "provider_operator",
+                "provider_platform",
+                "dashpay_receiving",
+                "dashpay_external",
+                "platform_payment",
+            ]
+        );
+    }
+
+    /// The pre-split `standard` label matches EITHER standard variant, so a
+    /// database written before the domain split still cross-checks clean. A
+    /// migration cannot resolve which variant such a row is -- the answer is in
+    /// the blob, not in SQL -- so rewriting the label would be a guess, and a
+    /// wrong guess makes a row that loads today fail under `LoadPolicy::Strict`.
+    #[test]
+    fn legacy_standard_label_matches_either_standard_variant() {
+        use key_wallet::account::{AccountType, StandardAccountType};
+        for standard_account_type in [
+            StandardAccountType::BIP44Account,
+            StandardAccountType::BIP32Account,
+        ] {
+            let entry_type = AccountType::Standard {
+                index: 0,
+                standard_account_type,
+            };
+            assert!(
+                db_label_matches_entry(LEGACY_STANDARD_LABEL, &entry_type),
+                "legacy `standard` must match {standard_account_type:?}"
+            );
+            assert!(
+                db_label_matches_entry(account_type_db_label(&entry_type), &entry_type),
+                "the split label must still match its own variant"
+            );
+        }
+    }
+
+    /// The legacy equivalence is narrow: it admits `standard` for a Standard
+    /// account and nothing else. It must not let one split label stand in for
+    /// the other, nor `standard` stand in for a non-standard account.
+    #[test]
+    fn legacy_standard_label_equivalence_is_narrow() {
+        use key_wallet::account::{AccountType, StandardAccountType};
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        assert!(
+            !db_label_matches_entry("standard_bip32", &bip44),
+            "one split label must never stand in for the other"
+        );
+        assert!(
+            !db_label_matches_entry(LEGACY_STANDARD_LABEL, &AccountType::IdentityRegistration),
+            "legacy `standard` must not match a non-standard account"
         );
     }
 }

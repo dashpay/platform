@@ -19,6 +19,7 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
 
 use crate::sqlite::error::WalletStorageError;
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::accounts;
 use crate::sqlite::schema::blob;
 
@@ -81,6 +82,23 @@ const TYPED_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
 /// `used` is monotonic (`MAX`), so re-applying the same snapshot is a no-op
 /// and a used address can never revert to unused (the reuse-guard invariant).
 /// Writes reject any change or erasure of typed key material already stored.
+///
+/// # Errors
+///
+/// [`WalletStorageError::TypedPoolKeyConflict`] when incoming key material
+/// contradicts what is already stored, and
+/// [`WalletStorageError::EmptyPoolAddressScript`] when a row carries a
+/// zero-length `script`: `load()` turns every stored script back into an
+/// address, so an empty one degrades the load of the owning wallet and fails
+/// it outright under a strict policy. This is the only writer of
+/// `core_address_pool.script`, so refusing here closes the producer.
+///
+/// The script guard binds new writes only. Empty scripts already present in
+/// an existing database file remain fatal to a strict load, and are
+/// deliberately left in place rather than purged — the same posture V015
+/// took for the sibling `core_utxos.script` column, where it purged only
+/// legacy empty-script *spent* rows and left the surviving balance-bearing
+/// ones alone.
 pub fn apply_pools(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -109,6 +127,12 @@ pub fn apply_pools(
             accounts::account_dashpay_ids(&entry.account_type);
         let pool_type = pool_type_to_i64(entry.pool_type);
         for info in &entry.addresses {
+            if info.script_pubkey.as_bytes().is_empty() {
+                return Err(WalletStorageError::EmptyPoolAddressScript {
+                    account_type,
+                    address_index: info.index,
+                });
+            }
             let key_type = info.public_key.as_ref().map(key_type_to_i64);
             let (public_key, expected_key_len): (Option<&[u8]>, Option<usize>) =
                 match info.public_key.as_ref() {
@@ -178,7 +202,7 @@ pub fn apply_pools(
 }
 
 // TODO(#4188): `reserved_at` is persisted but deliberately not consumed here;
-// restoring it requires widening `insert_platform_node_pool_entry` in rs-platform-wallet.
+// restoring it requires widening `provider_accounts::insert_platform_node_pool_entry`.
 /// One restored typed-pool row: `(address_index, script_bytes, public_key, used)`.
 pub type TypedPoolEntry = (u32, Vec<u8>, PublicKeyType, bool);
 
@@ -294,6 +318,16 @@ pub struct OwningAccount {
     pub friend_identity_id: [u8; 32],
 }
 
+fn validate_account_type(label: &str) -> Result<(), WalletStorageError> {
+    if accounts::ACCOUNT_TYPE_LABELS.contains(&label) || label == accounts::LEGACY_STANDARD_LABEL {
+        Ok(())
+    } else {
+        Err(WalletStorageError::blob_decode(
+            "core_address_pool.account_type is unknown",
+        ))
+    }
+}
+
 /// Full owning-account identity for a UTXO, matched by its `script_pubkey`
 /// against a pool row. `None` when no pool row covers the script.
 pub(crate) fn owning_account_for_script(
@@ -319,6 +353,7 @@ pub(crate) fn owning_account_for_script(
         return Ok(None);
     };
     let account_type = row.get::<_, String>(0)?;
+    validate_account_type(&account_type)?;
     let index = row.get::<_, i64>(1)?;
     blob::check_fixed_width(
         row.get::<_, i64>(2)?,
@@ -358,27 +393,38 @@ pub(crate) fn owning_account_for_script(
 /// marked used. An unused row can therefore own a UTXO while a different used
 /// row supplies the reuse guard, which preserves each resolver's distinct
 /// source contract. `network` turns each stored `script` back into an
-/// [`Address`](dashcore::Address); a script that isn't a valid address is a
-/// hard error — corruption is never silently dropped, matching
+/// [`Address`](dashcore::Address); an invalid script is fatal under Strict and
+/// skipped under Recovery, matching
 /// [`crate::sqlite::schema::core_state::load_used_addresses`].
+/// This compatibility entry point uses Strict; rehydration calls
+/// [`load_used_addresses_with_ctx`] with its policy context.
+/// Unknown account labels fail the wallet under either policy: dropping a
+/// used address would lose its reuse guard. Recovery isolates that wallet.
 pub fn load_used_addresses(
     conn: &rusqlite::Connection,
     wallet_id: &WalletId,
     network: dashcore::Network,
 ) -> Result<Vec<(dashcore::Address, OwningAccount)>, WalletStorageError> {
+    load_used_addresses_with_ctx(conn, wallet_id, network, &LoadCtx::strict())
+}
+
+/// [`load_used_addresses`] under an explicit load policy.
+pub fn load_used_addresses_with_ctx(
+    conn: &rusqlite::Connection,
+    wallet_id: &WalletId,
+    network: dashcore::Network,
+    ctx: &LoadCtx,
+) -> Result<Vec<(dashcore::Address, OwningAccount)>, WalletStorageError> {
     // Gate the largest stored `script` with a cheap aggregate BEFORE the
     // ordered read materializes or sorts any blob, so a corrupt/oversize
     // column raises a typed `BlobTooLarge` (the crate's 16 MiB cap) rather
     // than SQLite's own `TooBig` mid-sort, and never OOMs the host.
-    let max_script_len: Option<i64> = conn.query_row(
+    blob::check_max_column_len(
+        conn,
         "SELECT MAX(length(script)) FROM core_address_pool \
          WHERE wallet_id = ?1 AND used = 1",
-        params![wallet_id.as_slice()],
-        |row| row.get(0),
+        wallet_id,
     )?;
-    if let Some(len) = max_script_len {
-        blob::check_size(len)?;
-    }
     // Order by script then the pool PK so the first row per script is the
     // tie-break winner; a `HashSet` on script drops the trailing duplicates.
     let mut stmt = conn.prepare(
@@ -396,6 +442,7 @@ pub fn load_used_addresses(
     while let Some(row) = rows.next()? {
         let raw_script = row.get::<_, Vec<u8>>(0)?;
         let account_type = row.get::<_, String>(1)?;
+        validate_account_type(&account_type)?;
         let index = row.get::<_, i64>(2)?;
         blob::check_fixed_width(
             row.get::<_, i64>(3)?,
@@ -412,8 +459,13 @@ pub fn load_used_addresses(
         if !seen.insert(raw_script.clone()) {
             continue;
         }
-        let script = dashcore::ScriptBuf::from_bytes(raw_script);
-        let address = dashcore::Address::from_script(&script, network)?;
+        let address = match blob::decode_script_to_address(raw_script, network) {
+            Ok(address) => address,
+            Err(error) => {
+                ctx.tolerate(LoadSite::UndecodableAddressScript, error)?;
+                continue;
+            }
+        };
         let account_index =
             crate::sqlite::util::safe_cast::i64_to_u32("core_address_pool.account_index", index)?;
         let user_identity_id = super::id32("core_address_pool.user_identity_id", &user)?;
@@ -441,6 +493,45 @@ mod tests {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         conn
+    }
+
+    #[test]
+    fn should_accept_current_and_legacy_pool_account_labels() {
+        use dashcore::hashes::Hash;
+
+        let conn = migrated_conn();
+        let wallet = [0x79; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![wallet.as_slice()],
+        )
+        .unwrap();
+        let address = dashcore::Address::new(
+            dashcore::Network::Testnet,
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array([7; 20])),
+        );
+        let script = address.script_pubkey();
+        for label in accounts::ACCOUNT_TYPE_LABELS
+            .iter()
+            .copied()
+            .chain(std::iter::once(accounts::LEGACY_STANDARD_LABEL))
+        {
+            conn.execute("DELETE FROM core_address_pool", []).unwrap();
+            conn.execute(
+                "INSERT INTO core_address_pool \
+                    (wallet_id, account_type, account_index, key_class, pool_type, \
+                     address_index, script, used) \
+                 VALUES (?1, ?2, 0, 0, 0, 0, ?3, 1)",
+                params![wallet.as_slice(), label, script.as_bytes()],
+            )
+            .unwrap();
+            let owner = owning_account_for_script(&conn, &wallet, script.as_bytes())
+                .unwrap()
+                .unwrap();
+            assert_eq!(owner.account_type, label);
+            let used = load_used_addresses(&conn, &wallet, dashcore::Network::Testnet).unwrap();
+            assert_eq!(used, vec![(address.clone(), owner)]);
+        }
     }
 
     /// UTXO ownership considers every pool row, while the reuse guard selects
@@ -494,7 +585,9 @@ mod tests {
         );
         tx.commit().unwrap();
 
-        let used = load_used_addresses(&conn, &w, dashcore::Network::Testnet).unwrap();
+        let used =
+            load_used_addresses_with_ctx(&conn, &w, dashcore::Network::Testnet, &LoadCtx::strict())
+                .unwrap();
         assert_eq!(used.len(), 1);
         assert_eq!(used[0].0, address);
         assert_eq!(used[0].1.account_index, 9);
@@ -525,12 +618,82 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_used_addresses(&conn, &w, dashcore::Network::Testnet)
-            .expect_err("an unparseable script must be a hard error");
+        let err =
+            load_used_addresses_with_ctx(&conn, &w, dashcore::Network::Testnet, &LoadCtx::strict())
+                .expect_err("an unparseable script must be a hard error");
         assert!(
             matches!(err, WalletStorageError::AddressDecode { .. }),
             "expected AddressDecode carrying the upstream error, got {err:?}"
         );
+    }
+
+    /// An empty `script` must be refused by the WRITER, not discovered by
+    /// the reader: `load()` turns every stored pool script back into an
+    /// address, so such a row degrades the load of the owning wallet and
+    /// fails it under a strict policy. `apply_pools` is the only writer of
+    /// `core_address_pool.script`, so guarding it closes the producer.
+    #[test]
+    fn apply_pools_refuses_an_empty_script() {
+        use dashcore::address::Payload;
+        use dashcore::hashes::Hash;
+        use key_wallet::account::{AccountType, StandardAccountType};
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::managed_account::address_pool::AddressState;
+        use key_wallet::AddressInfo;
+        use platform_wallet::changeset::AccountAddressPoolEntry;
+
+        let mut conn = migrated_conn();
+        let w = [0x99u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&w[..]],
+        )
+        .unwrap();
+        let address = dashcore::Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array([0xCD; 20])),
+        );
+        let entry = AccountAddressPoolEntry {
+            account_type: AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            pool_type: AddressPoolType::External,
+            addresses: vec![AddressInfo {
+                address,
+                script_pubkey: dashcore::ScriptBuf::from_bytes(Vec::new()),
+                public_key: None,
+                index: 7,
+                path: DerivationPath::master(),
+                state: AddressState::Available,
+                tx_count: 0,
+                total_received: 0,
+                total_sent: 0,
+                balance: 0,
+                label: None,
+                metadata: Default::default(),
+            }],
+        };
+
+        let tx = conn.transaction().unwrap();
+        let err = apply_pools(&tx, &w, std::slice::from_ref(&entry))
+            .expect_err("an empty script must be refused");
+        match err {
+            WalletStorageError::EmptyPoolAddressScript {
+                account_type,
+                address_index,
+            } => {
+                assert_eq!(account_type, "standard_bip44");
+                assert_eq!(address_index, 7, "the error must name the offending row");
+            }
+            other => panic!("expected EmptyPoolAddressScript, got {other:?}"),
+        }
+        let rows: i64 = tx
+            .query_row("SELECT COUNT(*) FROM core_address_pool", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(rows, 0, "the guard must refuse before binding the row");
     }
 
     #[test]

@@ -114,7 +114,8 @@ fn proof_bearing_asset_locks_round_trip_through_persister() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let feed = asset_locks::load_unconsumed(&conn, &w).expect("load must succeed");
+    let feed = asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load must succeed");
     drop(conn);
 
     let flat: std::collections::BTreeMap<OutPoint, Option<AssetLockProof>> = feed

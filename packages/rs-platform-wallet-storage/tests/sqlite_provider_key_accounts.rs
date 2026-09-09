@@ -3,8 +3,6 @@
 //! Provider key-material account persistence (dashpay/platform#4113): the BLS
 //! operator-key and EdDSA platform-node-key accounts survive `store()` →
 //! `load()` on par with the ECDSA `account_registrations` manifest.
-//!
-//! Test-case IDs follow `docs/testspec-4113.md` (`TC-PKA-0NN`).
 
 mod common;
 
@@ -20,7 +18,9 @@ use platform_wallet::changeset::{
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::sqlite::schema::versions::{self, Domain};
 use platform_wallet_storage::sqlite::schema::{accounts, blob};
-use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig, WalletStorageError};
+use platform_wallet_storage::{
+    LoadCtx, LoadSite, SqlitePersister, SqlitePersisterConfig, WalletStorageError,
+};
 
 /// Deterministic seed wallet carrying both provider key-material accounts
 /// (`WalletAccountCreationOptions::Default` creates every special-purpose
@@ -111,12 +111,12 @@ fn wallet_storage_error(err: PersistenceError) -> Box<WalletStorageError> {
         .unwrap_or_else(|source| panic!("expected WalletStorageError, got {source}"))
 }
 
-/// TC-PKA-001 — a reloaded wallet gets its BLS operator and EdDSA
+/// A reloaded wallet gets its BLS operator and EdDSA
 /// platform-node accounts back. The end-to-end contract #4113 exists for:
 /// a seedless/external-signable wallet can list its provider key accounts
 /// after a restart without the mnemonic.
 #[test]
-fn tc_pka_001_provider_accounts_survive_store_load() {
+fn provider_accounts_survive_store_load() {
     let (persister, _tmp, path) = fresh_persister();
     let w: WalletId = wid(0xC1);
     persister
@@ -161,11 +161,11 @@ fn tc_pka_001_provider_accounts_survive_store_load() {
     assert!(eddsa.is_watch_only, "a rehydrated account is watch-only");
 }
 
-/// TC-PKA-008 — a changeset carrying only provider-key registrations bumps
+/// A changeset carrying only provider-key registrations bumps
 /// the `account_registrations` domain seq and no other. The forgotten-domain
 /// guard (R8): a field that reaches the DB must invalidate a cache.
 #[test]
-fn tc_pka_008_provider_only_changeset_bumps_account_registrations_domain() {
+fn provider_only_changeset_bumps_account_registrations_domain() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xC2);
     ensure_wallet_meta(&persister, &w);
@@ -193,10 +193,10 @@ fn tc_pka_008_provider_only_changeset_bumps_account_registrations_domain() {
     }
 }
 
-/// TC-PKA-002 — a BLS operator account decodes back as BLS, never as the
+/// A BLS operator account decodes back as BLS, never as the
 /// other curve, and its xpub bytes survive verbatim.
 #[test]
-fn tc_pka_002_bls_decodes_as_bls() {
+fn bls_decodes_as_bls() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xC3);
     ensure_wallet_meta(&persister, &w);
@@ -211,7 +211,7 @@ fn tc_pka_002_bls_decodes_as_bls() {
         .expect("store");
 
     let conn = persister.lock_conn_for_test();
-    let provider = accounts::load_state(&conn, &w)
+    let provider = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
         .expect("load_state")
         .provider;
     assert_eq!(provider.len(), 1);
@@ -230,12 +230,12 @@ fn tc_pka_002_bls_decodes_as_bls() {
     );
 }
 
-/// TC-PKA-003 — an EdDSA account decodes as EdDSA, and a row whose
+/// An EdDSA account decodes as EdDSA, and a row whose
 /// `account_type` column claims the other curve's account is rejected: the
 /// column is the decode discriminator, so cross-curve confusion must be a
 /// hard error, never a silently-wrong account.
 #[test]
-fn tc_pka_003_eddsa_decodes_as_eddsa_and_cross_curve_row_is_rejected() {
+fn eddsa_decodes_as_eddsa_and_cross_curve_row_is_rejected() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xC4);
     ensure_wallet_meta(&persister, &w);
@@ -250,7 +250,7 @@ fn tc_pka_003_eddsa_decodes_as_eddsa_and_cross_curve_row_is_rejected() {
         .expect("store");
 
     let conn = persister.lock_conn_for_test();
-    let provider = accounts::load_state(&conn, &w)
+    let provider = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
         .expect("load_state")
         .provider;
     assert_eq!(provider.len(), 1);
@@ -296,13 +296,14 @@ fn tc_pka_003_eddsa_decodes_as_eddsa_and_cross_curve_row_is_rejected() {
         .expect("plant corrupt provider row");
     };
 
-    for (case, payload) in [
+    for (case, payload, recovery_site) in [
         (
             "blob type contradicts the account_type column",
             ProviderKeyAccountEntry {
                 account_type: AccountType::ProviderPlatformKeys,
                 extended_public_key: eddsa_xpub(0x24),
             },
+            LoadSite::ProviderKeyRegistrationDrift,
         ),
         (
             "blob carries the wrong curve for its account type",
@@ -310,21 +311,31 @@ fn tc_pka_003_eddsa_decodes_as_eddsa_and_cross_curve_row_is_rejected() {
                 account_type: AccountType::ProviderOperatorKeys,
                 extended_public_key: eddsa_xpub(0x24),
             },
+            LoadSite::ProviderKeyCurveMismatch,
         ),
     ] {
         plant(blob::encode(&payload).expect("encode"));
-        let err = accounts::load_state(&conn, &w2).expect_err("cross-curve row must hard-error");
+        let err = accounts::load_state(&conn, &w2, &platform_wallet_storage::LoadCtx::strict())
+            .expect_err("cross-curve row must hard-error");
         assert!(
             matches!(err, WalletStorageError::ProviderKeyAccountEntryMismatch),
             "{case}: expected ProviderKeyAccountEntryMismatch, got {err:?}"
         );
+
+        let ctx = LoadCtx::recovery();
+        let manifest = accounts::load_state(&conn, &w2, &ctx)
+            .expect("recovery skips the corrupt provider row");
+        assert!(manifest.provider.is_empty());
+        let degradation = ctx.degradation();
+        assert_eq!(degradation.by_site.get(&recovery_site), Some(&1));
+        assert_eq!(degradation.by_site.len(), 1);
     }
 }
 
-/// TC-PKA-005 — no provider accounts is a clean round-trip: no rows, no
+/// No provider accounts is a clean round-trip: no rows, no
 /// error, and the ECDSA manifest beside it is untouched.
 #[test]
-fn tc_pka_005_empty_provider_set_round_trips() {
+fn empty_provider_set_round_trips() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xC6);
     ensure_wallet_meta(&persister, &w);
@@ -350,15 +361,16 @@ fn tc_pka_005_empty_provider_set_round_trips() {
         .expect("store");
 
     let conn = persister.lock_conn_for_test();
-    let manifest = accounts::load_state(&conn, &w).expect("load_state");
+    let manifest = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load_state");
     assert!(manifest.provider.is_empty(), "no provider accounts stored");
     assert_eq!(manifest.ecdsa.len(), 1, "the ECDSA entry is unaffected");
 }
 
-/// TC-PKA-009 — a corrupt provider blob fails the whole load. Skipping the
+/// A corrupt provider blob fails the whole load. Skipping the
 /// row would hand back a wallet silently missing its operator account.
 #[test]
-fn tc_pka_009_corrupt_provider_blob_hard_errors() {
+fn corrupt_provider_blob_hard_errors() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xC7);
     ensure_wallet_meta(&persister, &w);
@@ -379,17 +391,18 @@ fn tc_pka_009_corrupt_provider_blob_hard_errors() {
     )
     .expect("corrupt the blob");
 
-    let err = accounts::load_state(&conn, &w).expect_err("a corrupt provider blob must hard-error");
+    let err = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect_err("a corrupt provider blob must hard-error");
     assert!(
         matches!(err, WalletStorageError::BincodeDecode { .. }),
         "expected a typed BincodeDecode, got {err:?}"
     );
 }
 
-/// TC-PKA-010 — an oversize provider blob is rejected by the `length()` gate
+/// An oversize provider blob is rejected by the `length()` gate
 /// before the `Vec<u8>` is materialized.
 #[test]
-fn tc_pka_010_oversize_provider_blob_is_rejected() {
+fn oversize_provider_blob_is_rejected() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xC8);
     ensure_wallet_meta(&persister, &w);
@@ -404,16 +417,17 @@ fn tc_pka_010_oversize_provider_blob_is_rejected() {
     )
     .expect("insert oversize provider blob");
 
-    let err = accounts::load_state(&conn, &w).expect_err("oversize blob must be rejected");
+    let err = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect_err("oversize blob must be rejected");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),
         "expected BlobTooLarge, got {err:?}"
     );
 }
 
-/// TC-PKA-015 — a retried `store()` updates the account row in place.
+/// A retried `store()` updates the account row in place.
 #[test]
-fn tc_pka_015_idempotent_repersist_does_not_duplicate() {
+fn idempotent_repersist_does_not_duplicate() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xCA);
     ensure_wallet_meta(&persister, &w);
@@ -434,7 +448,8 @@ fn tc_pka_015_idempotent_repersist_does_not_duplicate() {
     }
 
     let conn = persister.lock_conn_for_test();
-    let manifest = accounts::load_state(&conn, &w).expect("load_state");
+    let manifest = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load_state");
     assert_eq!(manifest.provider.len(), 2, "re-persist must not duplicate");
 }
 
@@ -547,7 +562,8 @@ fn conflicting_provider_xpub_against_persisted_row_is_rejected() {
     ));
 
     let conn = persister.lock_conn_for_test();
-    let provider = accounts::load_state(&conn, &w).expect("load original provider account");
+    let provider = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load original provider account");
     assert_eq!(provider.provider.len(), 1);
     assert_eq!(
         bls_bytes(&provider.provider[0].extended_public_key),
@@ -603,7 +619,8 @@ fn conflicting_provider_account_rejects_whole_batch_before_any_write() {
         platform_rows, 0,
         "the rejected batch must not partially write its new platform account"
     );
-    let provider = accounts::load_state(&conn, &w).expect("load original operator account");
+    let provider = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load original operator account");
     assert_eq!(provider.provider.len(), 1);
     assert_eq!(
         bls_bytes(&provider.provider[0].extended_public_key),
@@ -653,7 +670,8 @@ fn ecdsa_registration_path_rejects_provider_account_labels() {
     ));
 
     let conn = persister.lock_conn_for_test();
-    let provider = accounts::load_state(&conn, &w).expect("load original provider account");
+    let provider = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load original provider account");
     assert_eq!(provider.provider.len(), 1);
     assert_eq!(
         bls_bytes(&provider.provider[0].extended_public_key),

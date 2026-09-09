@@ -28,8 +28,8 @@ hex = "0.4"
 # `dpp` types reach the persister via `IdentityPublicKey` (identity_keys
 # writer), `AssetLockProof` (asset_locks writer) and `Identifier`
 # (dashpay writer). `dash-sdk` is here for the `AddressFunds` re-export
-# in `schema/platform_addrs.rs`. Feature set mirrors sibling
-# `rs-platform-wallet` so the resolver picks identical hashes.
+# in `schema/platform_addrs.rs`. Storage declares only the features it uses
+# directly; `platform-wallet` adds `dash-sdk/wallet` to Cargo's unified set.
 platform-wallet = { path = "../rs-platform-wallet", features = [
     "serde",
 ], optional = true }
@@ -49,9 +49,13 @@ rusqlite = { version = "0.38", features = [
     "limits",
     "trace",
 ], optional = true }
-refinery = { version = "0.9", default-features = false, features = [
+refinery = { version = "=0.9.2", default-features = false, features = [
     "rusqlite",
 ], optional = true }
+# The migration adapter uses refinery's supported synchronous driver traits.
+# Match refinery's driver traits and applied-history timestamp types.
+refinery-core = { version = "=0.9.2", default-features = false, optional = true }
+time = { version = "=0.3.49", features = ["parsing"], optional = true }
 # bincode 2 is required directly: we encode `dpp::IdentityPublicKey`
 # (which derives bincode 2 `Encode`/`Decode`) and decode
 # `dpp::AssetLockProof` from the asset-lock blob column. Exact-pinned to
@@ -61,6 +65,10 @@ tempfile = { version = "3", optional = true }
 chrono = { version = "0.4", default-features = false, features = [
     "clock",
 ], optional = true }
+# Backs the migration-set fingerprint helpers in `sqlite::migrations`, which
+# are test-only (`cfg(test)` / `__test-helpers`). Kept optional and pulled in
+# by `__test-helpers` alone, so a shipping build does not compile a hash
+# crate it never calls.
 sha2 = { version = "0.10", optional = true }
 # `JsonSchema` for `SecretString`, enabled by `secrets` (the only feature
 # under which the type exists). Reuses the workspace-locked 1.2.1.
@@ -153,12 +161,17 @@ filetime = "0.2"
 # Test-only: construct the `Zeroizing<[u8; 32]>` secret on an
 # `IdentityKeyEntry` to prove the on-disk wire shape drops it. The
 # production `zeroize` dep is gated behind the `secrets` feature, which
-# the off-state CI build disables, so the test surface needs its own.
+# the off-state build disables, so the test surface needs its own.
+# NOTE: that off-state build (`--no-default-features --features
+# sqlite,cli`) is a local/manual check, NOT a CI gate — no workflow runs
+# it today. Keep this dev-dep regardless: it is what lets the off-state
+# build succeed when someone does run it.
 zeroize = { version = "=1.8.2", features = ["derive"] }
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 serial_test = "3"
-# `default-features = false` so the off-state CI invocation
-# (`--no-default-features --features sqlite,cli`) actually exercises a
+# `default-features = false` so the off-state build
+# (`--no-default-features --features sqlite,cli`, a local/manual check —
+# see the note above; no CI job runs it) actually exercises a
 # build with `secrets`/`kv` disabled — otherwise the dev-dep view would
 # silently re-enable the default feature set for every integration test.
 # Test surface is opted into explicitly: `secrets` and `kv` are listed
@@ -194,10 +207,11 @@ sqlite = [
     "dep:dash-sdk",
     "dep:rusqlite",
     "dep:refinery",
+    "dep:refinery-core",
+    "dep:time",
     "dep:bincode",
     "dep:tempfile",
     "dep:chrono",
-    "dep:sha2",
 ]
 # Maintenance CLI binary. Requires `sqlite` because the only subcommands
 # in scope today operate on the SQLite persister.
@@ -217,10 +231,11 @@ cli = [
 secrets = [
     "dep:argon2",
     # Enable argon2's `zeroize` feature so the KDF wipes its sensitive
-    # intermediate state (`initial_hash`/`blockhash`) on drop. In argon2
-    # 0.5.3 this does NOT cover the bulk `Block` matrix — that residual is
-    # documented at `derive_key` in `secrets/file/crypto.rs`. Keep it in
-    # the feature list (not a `default-features = false` rewrite) so
+    # intermediate state (`initial_hash`/`blockhash`) on drop, and so
+    # `impl Zeroize for Block` is compiled in — `derive_key` in
+    # `secrets/file/crypto.rs` owns the block matrix itself and relies on
+    # it, because argon2 0.5.3 does NOT wipe that matrix on its own. Keep
+    # it in the feature list (not a `default-features = false` rewrite) so
     # argon2's own default features stay intact.
     "argon2/zeroize",
     # bincode is the producer for the Tier-2 envelope wire format and the
@@ -268,7 +283,7 @@ kv = ["sqlite"]
 # the write connection. The double-underscore prefix follows Cargo's
 # convention for "MUST NOT enable from downstream" features
 # (https://doc.rust-lang.org/cargo/reference/features.html#feature-resolver-version-2).
-__test-helpers = ["sqlite"]
+__test-helpers = ["sqlite", "dep:sha2"]
 # Exposes `SecretStore::file_mock` / `EncryptedFileStore::open_mock` — vault
 # constructors that use the Argon2id floor for fresh-vault creation and
 # per-secret wrapping; existing vaults retain their header parameters. Enable
@@ -278,4 +293,4 @@ test-util = []
 # Persists and restores Orchard viewing keys from the
 # `PlatformWalletChangeSet::shielded` field. Other shielded state remains in
 # the host-provided `ShieldedStore`.
-shielded = ["platform-wallet/shielded"]
+shielded = ["sqlite", "platform-wallet?/shielded"]

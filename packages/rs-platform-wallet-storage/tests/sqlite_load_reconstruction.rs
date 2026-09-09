@@ -277,7 +277,11 @@ fn load_all_reconstructs_only_registered_accounts() {
     // Sanity: wallet A really does carry the orphan row on disk.
     assert_eq!(total_rows_a, 3, "wallet A has 3 platform_addresses rows");
 
-    let (sync_a, count_a) = all.get(&a).expect("wallet A present in load_all");
+    let (sync_a, count_a) = all
+        .get(&a)
+        .expect("wallet A present in load_all")
+        .as_ref()
+        .expect("wallet A must read cleanly");
     assert_eq!(
         *count_a, 3,
         "count is the raw row total, so it includes the orphan row"
@@ -296,7 +300,11 @@ fn load_all_reconstructs_only_registered_accounts() {
         "the unregistered (orphan) account is excluded from per_account"
     );
 
-    let (sync_b, count_b) = all.get(&b).expect("wallet B present in load_all");
+    let (sync_b, count_b) = all
+        .get(&b)
+        .expect("wallet B present in load_all")
+        .as_ref()
+        .expect("wallet B must read cleanly");
     assert_eq!(*count_b, 1, "wallet B's single orphan row still counts");
     assert!(
         sync_b.per_account.is_empty(),
@@ -598,10 +606,18 @@ fn tc_p4_004_load_contacts_two_wallets() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let a_state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &a)
-        .expect("contacts load_state A");
-    let b_state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &b)
-        .expect("contacts load_state B");
+    let a_state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(
+        &conn,
+        &a,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("contacts load_state A");
+    let b_state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(
+        &conn,
+        &b,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("contacts load_state B");
     drop(conn);
     // Exact reconstruction: each wallet sees only its own request, with
     // the full `ContactRequest` surviving the round-trip.
@@ -636,8 +652,12 @@ fn contacts_round_trip(
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w)
-        .expect("contacts load_state")
+    platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(
+        &conn,
+        &w,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("contacts load_state")
 }
 
 /// A fully-populated [`EstablishedContact`] so the round-trip exercises
@@ -714,7 +734,7 @@ fn tc_p4_004b_received_only_round_trip() {
 }
 
 /// an established contact round-trips into `established` with
-/// both request blobs and all four metadata columns intact.
+/// both request blobs and all five metadata columns intact.
 #[test]
 fn tc_p4_004c_established_round_trip() {
     let key = SentContactRequestKey {
@@ -792,8 +812,12 @@ fn tc_p4_004d_removal_deletes_pending_rows() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w)
-        .expect("contacts load_state");
+    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(
+        &conn,
+        &w,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("contacts load_state");
     drop(conn);
     assert!(state.sent_requests.is_empty(), "removed_sent left a row");
     assert!(
@@ -876,8 +900,12 @@ fn tc_p4_004e_auto_establishment_collapses_pending() {
         assert_eq!(n, 1, "auto-establishment must collapse to a single row");
     }
     let conn = p2.lock_conn_for_test();
-    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w)
-        .expect("contacts load_state");
+    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(
+        &conn,
+        &w,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("contacts load_state");
     drop(conn);
     assert_eq!(state.established.get(&key), Some(&contact));
     assert!(
@@ -946,8 +974,12 @@ fn sent_then_matching_incoming_promotes_to_established() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w)
-        .expect("contacts load_state");
+    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(
+        &conn,
+        &w,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("contacts load_state");
     drop(conn);
     assert!(
         state.established.contains_key(&est_key),
@@ -1014,8 +1046,12 @@ fn received_then_matching_sent_promotes_to_established() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w)
-        .expect("contacts load_state");
+    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(
+        &conn,
+        &w,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("contacts load_state");
     drop(conn);
     assert!(
         state.established.contains_key(&sent_key),
@@ -1099,10 +1135,13 @@ fn tc_p4_005_load_asset_locks_bucketed() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let a_buckets = platform_wallet_storage::sqlite::schema::asset_locks::load_state(&conn, &a)
-        .expect("asset_locks load_state A");
-    let b_buckets = platform_wallet_storage::sqlite::schema::asset_locks::load_state(&conn, &b)
-        .expect("asset_locks load_state B");
+    let ctx = platform_wallet_storage::LoadCtx::strict();
+    let a_buckets =
+        platform_wallet_storage::sqlite::schema::asset_locks::load_state(&conn, &a, &ctx)
+            .expect("asset_locks load_state A");
+    let b_buckets =
+        platform_wallet_storage::sqlite::schema::asset_locks::load_state(&conn, &b, &ctx)
+            .expect("asset_locks load_state B");
     drop(conn);
     assert_eq!(a_buckets.len(), 2, "expected 2 account buckets for A");
     assert_eq!(a_buckets[&0].len(), 2);
@@ -1265,10 +1304,16 @@ fn tc_p4_008b_contacts_corruption_is_hard_error() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let blob_result = contacts::load_state_for_test(&conn, &bad_blob);
-    let id_result = contacts::load_state_for_test(&conn, &bad_id);
+    let blob_result = contacts::load_state_for_test(
+        &conn,
+        &bad_blob,
+        &platform_wallet_storage::LoadCtx::strict(),
+    );
+    let id_result =
+        contacts::load_state_for_test(&conn, &bad_id, &platform_wallet_storage::LoadCtx::strict());
     let good_state =
-        contacts::load_state_for_test(&conn, &good).expect("intact wallet must decode");
+        contacts::load_state_for_test(&conn, &good, &platform_wallet_storage::LoadCtx::strict())
+            .expect("intact wallet must decode");
     drop(conn);
 
     assert!(
@@ -1365,9 +1410,11 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let blob_result = asset_locks::load_state(&conn, &bad_blob);
-    let op_result = asset_locks::load_state(&conn, &bad_op);
-    let good_state = asset_locks::load_state(&conn, &good).expect("intact wallet must decode");
+    let ctx = platform_wallet_storage::LoadCtx::strict();
+    let blob_result = asset_locks::load_state(&conn, &bad_blob, &ctx);
+    let op_result = asset_locks::load_state(&conn, &bad_op, &ctx);
+    let good_state =
+        asset_locks::load_state(&conn, &good, &ctx).expect("intact wallet must decode");
     drop(conn);
 
     assert!(
@@ -1589,8 +1636,12 @@ fn pending_tombstones_do_not_destroy_established_rows() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w)
-        .expect("contacts load_state");
+    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(
+        &conn,
+        &w,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("contacts load_state");
     let survived = state
         .established
         .get(&est_key)
@@ -1640,8 +1691,12 @@ fn pending_tombstones_do_not_destroy_established_rows() {
     drop(persister);
     let p3 = reopen(&path2);
     let conn = p3.lock_conn_for_test();
-    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w2)
-        .expect("contacts load_state");
+    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(
+        &conn,
+        &w2,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("contacts load_state");
     assert!(
         state.incoming_requests.is_empty(),
         "a received-state row is still deleted by its tombstone"

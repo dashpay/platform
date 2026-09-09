@@ -1,9 +1,10 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Verbatim pool-snapshot reader. Covers TC-B-020 (used-set
-//! comes from `core_address_pool`, not `core_utxos` re-derivation), TC-B-023
-//! (deep-derivation window — no horizon-walk truncation), TC-B-025/007
-//! (empty wallet loads empty-but-valid), multi-wallet isolation (TC-B-026),
+//! Verbatim pool-snapshot reader.
+//!
+//! Covers the used-set coming from `core_address_pool` rather than a
+//! `core_utxos` re-derivation, the deep-derivation window with no horizon-walk
+//! truncation, an empty wallet loading empty-but-valid, multi-wallet isolation,
 //! and the pool ∪ `core_utxos` used-set union (pre-pool + mixed stores).
 //!
 //! These assert directly on the two shipped reader fns `load()` itself calls —
@@ -39,29 +40,42 @@ use platform_wallet_storage::SqlitePersister;
 /// reuse-guard set `load()` reads (owner dropped; these tests assert addresses).
 fn pool_used(persister: &SqlitePersister, w: &WalletId) -> Vec<Address> {
     let conn = persister.lock_conn_for_test();
-    core_pool::load_used_addresses(&conn, w, Network::Testnet)
-        .expect("pool used-set")
-        .into_iter()
-        .map(|(addr, _owner)| addr)
-        .collect()
+    core_pool::load_used_addresses_with_ctx(
+        &conn,
+        w,
+        Network::Testnet,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("pool used-set")
+    .into_iter()
+    .map(|(addr, _owner)| addr)
+    .collect()
 }
 
 /// `core_utxos`-derived used addresses (spent + unspent) — the UTXO half.
 fn utxo_used(persister: &SqlitePersister, w: &WalletId) -> Vec<Address> {
     let conn = persister.lock_conn_for_test();
-    core_state::load_used_addresses(&conn, w, Network::Testnet)
-        .expect("utxo used-set")
-        .into_iter()
-        .map(|(addr, _owner)| addr)
-        .collect()
+    core_state::load_used_addresses_with_ctx(
+        &conn,
+        w,
+        Network::Testnet,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("utxo used-set")
+    .into_iter()
+    .map(|(addr, _owner)| addr)
+    .collect()
 }
 
 /// The assembled reuse-guard set `load()` hands the manager: pool ∪ UTXO,
 /// deduped by script (mirrors `SqlitePersister::load`).
 fn used_set(persister: &SqlitePersister, w: &WalletId) -> Vec<Address> {
     let conn = persister.lock_conn_for_test();
-    let pool = core_pool::load_used_addresses(&conn, w, Network::Testnet).expect("pool used-set");
-    let utxo = core_state::load_used_addresses(&conn, w, Network::Testnet).expect("utxo used-set");
+    let ctx = platform_wallet_storage::LoadCtx::strict();
+    let pool = core_pool::load_used_addresses_with_ctx(&conn, w, Network::Testnet, &ctx)
+        .expect("pool used-set");
+    let utxo = core_state::load_used_addresses_with_ctx(&conn, w, Network::Testnet, &ctx)
+        .expect("utxo used-set");
     drop(conn);
     let mut seen = std::collections::HashSet::new();
     let mut union = Vec::new();
@@ -110,11 +124,11 @@ fn p2pkh(byte: u8) -> Address {
     )
 }
 
-/// TC-B-020 — the used-set is the verbatim pool `used=1` state, computed
+/// The used-set is the verbatim pool `used=1` state, computed
 /// without touching `core_utxos`: no UTXO is stored, yet the used addresses
 /// surface (a projection-derived reader would return an empty set).
 #[test]
-fn tc_b_020_used_set_from_pool_not_utxos() {
+fn used_set_from_pool_not_utxos() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0x20);
     ensure_wallet_meta(&persister, &w);
@@ -163,11 +177,11 @@ fn tc_b_020_used_set_from_pool_not_utxos() {
     );
 }
 
-/// TC-B-023 — a wallet whose pool advanced past the old horizon-walk window
+/// A wallet whose pool advanced past the old horizon-walk window
 /// (used up to index 45, then 30 unused) restores its full used-set: the
 /// index-45 address is present, never truncated at 30.
 #[test]
-fn tc_b_023_deep_derivation_window_not_truncated() {
+fn deep_derivation_window_not_truncated() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0x23);
     ensure_wallet_meta(&persister, &w);
@@ -204,10 +218,10 @@ fn tc_b_023_deep_derivation_window_not_truncated() {
     );
 }
 
-/// TC-B-025/007 — an empty wallet (a `wallets` row, no pool rows, no UTXOs)
+/// An empty wallet (a `wallets` row, no pool rows, no UTXOs)
 /// loads as empty-but-valid: present with an empty used-set, not corrupt.
 #[test]
-fn tc_b_025_empty_wallet_is_empty_but_valid() {
+fn empty_wallet_is_empty_but_valid() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0x25);
     ensure_wallet_meta(&persister, &w);
@@ -258,11 +272,11 @@ fn pre_pool_store_yields_utxo_derived_used_set() {
     assert_eq!(used[0].to_string(), addr.to_string());
 }
 
-/// TC-B-026 — reader multi-wallet isolation: two wallets seeded with
+/// Reader multi-wallet isolation: two wallets seeded with
 /// distinct, distinguishable used addresses (and balances) load such that
 /// neither wallet's snapshot shows the other's — no cross-wallet leakage.
 #[test]
-fn tc_b_026_reader_isolates_two_wallets() {
+fn reader_isolates_two_wallets() {
     let (persister, _tmp, _path) = fresh_persister();
     let a: WalletId = wid(0x2A);
     let b: WalletId = wid(0x2B);

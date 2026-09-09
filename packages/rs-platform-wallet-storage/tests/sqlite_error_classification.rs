@@ -11,9 +11,11 @@
 
 use std::path::PathBuf;
 
+use dashcore::hashes::Hash;
 use platform_wallet::changeset::PersistenceError;
 use platform_wallet_storage::sqlite::error::AutoBackupOperation;
 use platform_wallet_storage::sqlite::util::safe_cast::SafeCastTarget;
+use platform_wallet_storage::InsecureAncestor;
 use platform_wallet_storage::WalletStorageError;
 use rusqlite::{Error as SqlErr, ErrorCode};
 
@@ -172,7 +174,10 @@ fn samples() -> Vec<WalletStorageError> {
             dir: PathBuf::from("/nope"),
             source: std::io::Error::other("nope"),
         },
-        WalletStorageError::InsecureParentDir { mode: 0o777 },
+        WalletStorageError::InsecureParentDir {
+            ancestor: PathBuf::from("/opt/dash"),
+            reason: InsecureAncestor::WritableWithoutSticky { mode: 0o777 },
+        },
         WalletStorageError::WalletNotFound {
             wallet_id: [0u8; 32],
         },
@@ -198,6 +203,11 @@ fn samples() -> Vec<WalletStorageError> {
             typed_account_index: 5,
             blob_account_index: 9,
         },
+        WalletStorageError::AssetLockStatusMismatch {
+            outpoint: "txid:0".into(),
+            typed_status: "built".into(),
+            blob_status: "consumed".into(),
+        },
         WalletStorageError::CoreTransactionEntryMismatch {
             typed_txid: "11".repeat(32),
             blob_txid: "22".repeat(32),
@@ -213,6 +223,7 @@ fn samples() -> Vec<WalletStorageError> {
             requested: "WAL",
             actual: "delete".into(),
         },
+        WalletStorageError::SecureDeleteNotApplied { actual: 0 },
         WalletStorageError::SchemaHistoryMalformed {
             reason: "bad applied_on",
         },
@@ -245,6 +256,10 @@ fn samples() -> Vec<WalletStorageError> {
             identity_index: 2,
         },
         WalletStorageError::OrphanedIdentityEntry { owner: [0x0E; 32] },
+        WalletStorageError::WalletRehydrationFailed {
+            wallet_id: [0x0F; 32],
+            cause: "address decode failed".to_string(),
+        },
         WalletStorageError::AddressDecode {
             source: dashcore::address::Error::UnrecognizedScript,
         },
@@ -322,6 +337,23 @@ fn samples() -> Vec<WalletStorageError> {
             wallet_id: [0xFA; 32],
             failed_indices: 2,
         },
+        WalletStorageError::EmptyUtxoScript {
+            outpoint: dashcore::OutPoint {
+                txid: dashcore::Txid::from_byte_array([0xAB; 32]),
+                vout: 1,
+            },
+        },
+        WalletStorageError::EmptyPoolAddressScript {
+            account_type: "standard_bip44",
+            address_index: 7,
+        },
+        WalletStorageError::RehydrationGapLimitTargetOutOfRange {
+            highest_used: Some(u32::MAX - 5),
+            gap_limit: 20,
+        },
+        WalletStorageError::DatabasePathIsSymlink {
+            path: PathBuf::from("/tmp/wallet.db"),
+        },
     ]
 }
 
@@ -393,8 +425,14 @@ fn tc_p2_005_is_transient_table() {
                 (false, "walletless_identity_index")
             }
             WalletStorageError::OrphanedIdentityEntry { .. } => (false, "orphaned_identity_entry"),
+            WalletStorageError::WalletRehydrationFailed { .. } => {
+                (false, "wallet_rehydration_failed")
+            }
             WalletStorageError::AssetLockEntryMismatch { .. } => {
                 (false, "asset_lock_entry_mismatch")
+            }
+            WalletStorageError::AssetLockStatusMismatch { .. } => {
+                (false, "asset_lock_status_mismatch")
             }
             WalletStorageError::CoreTransactionEntryMismatch { .. } => {
                 (false, "core_transaction_entry_mismatch")
@@ -402,6 +440,9 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
             WalletStorageError::JournalModeNotApplied { .. } => (false, "journal_mode_not_applied"),
+            WalletStorageError::SecureDeleteNotApplied { .. } => {
+                (false, "secure_delete_not_applied")
+            }
             WalletStorageError::SchemaHistoryMalformed { .. } => {
                 (false, "schema_history_malformed")
             }
@@ -436,6 +477,9 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::RehydrationGapLimitRefillTooLarge { .. } => {
                 (false, "rehydration_gap_limit_refill_too_large")
             }
+            WalletStorageError::RehydrationGapLimitTargetOutOfRange { .. } => {
+                (false, "rehydration_gap_limit_target_out_of_range")
+            }
             WalletStorageError::RehydrationGapLimitFailed { .. } => {
                 (false, "rehydration_gap_limit_failed")
             }
@@ -445,6 +489,11 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::UnownedIdentityHasRegistrationIndex { .. } => {
                 (false, "unowned_identity_has_registration_index")
             }
+            WalletStorageError::EmptyUtxoScript { .. } => (false, "empty_utxo_script"),
+            WalletStorageError::EmptyPoolAddressScript { .. } => {
+                (false, "empty_pool_address_script")
+            }
+            WalletStorageError::DatabasePathIsSymlink { .. } => (false, "database_path_is_symlink"),
         }
     }
 

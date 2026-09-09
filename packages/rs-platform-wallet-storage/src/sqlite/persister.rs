@@ -19,13 +19,13 @@ use crate::sqlite::buffer::Buffer;
 use crate::sqlite::config::{FlushMode, LoadPolicy, SqlitePersisterConfig, Synchronous};
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation, LoadSite};
+use crate::sqlite::rehydrate::{
+    apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
+};
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
 use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
 use crate::sqlite::util::safe_cast;
-use crate::sqlite::util::wallet::{
-    apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
-};
 
 /// Persisted-but-not-rehydrated areas, surfaced in the structured
 /// `tracing::info!` summary on every `load()`.
@@ -35,7 +35,18 @@ use crate::sqlite::util::wallet::{
 /// - `dashpay::overlay`: the `dashpay_profiles` /
 ///   `dashpay_payments_overlay` tables are a write-only indexed overlay;
 ///   DashPay state rehydrates from the identities blob, not these tables.
-pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &["token_balances", "dashpay::overlay"];
+/// - `pending_contact_crypto`: the deferred contact-crypto queue is written
+///   on the production path and has no production reader, so a restart
+///   abandons it. Listed so the loss is at least COUNTED; wiring a reader is
+///   a behaviour change, not an accounting one.
+/// - `invitations`: deliberately not rehydrated — the Swift SwiftData mirror
+///   is the UI's source — which is precisely what this list is for.
+pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &[
+    "token_balances",
+    "dashpay::overlay",
+    "pending_contact_crypto",
+    "invitations",
+];
 
 /// Tables backing [`LOAD_UNIMPLEMENTED`], probed for a row count so a
 /// `load()` can report how much persisted state it did not rehydrate.
@@ -45,6 +56,8 @@ const LOAD_UNIMPLEMENTED_TABLES: &[&str] = &[
     "token_balances",
     "dashpay_profiles",
     "dashpay_payments_overlay",
+    "pending_contact_crypto",
+    "invitations",
 ];
 
 /// The all-zero `WalletId` reserved as the storage spelling of "owned by
@@ -96,6 +109,27 @@ impl RetentionPolicy {
     }
 }
 
+/// Apply retention to a directory of backup files without opening a
+/// database.
+///
+/// For tooling that holds no persister — the maintenance CLI's `prune`
+/// subcommand is the intended caller. **This carries no recovery-mode
+/// gate.** Whenever a [`SqlitePersister`] is open, call
+/// [`SqlitePersister::prune_backups`] instead: it refuses in
+/// [`LoadPolicy::Recovery`](crate::LoadPolicy), so a user rescuing a
+/// damaged database cannot shrink their own rollback set.
+///
+/// # Errors
+///
+/// [`WalletStorageError::Io`] when `dir` cannot be read. Per-file removal
+/// failures are collected into [`PruneReport::failed_removals`] instead.
+pub fn prune_backups_in(
+    dir: &Path,
+    policy: RetentionPolicy,
+) -> Result<PruneReport, WalletStorageError> {
+    backup::prune(dir, policy)
+}
+
 /// Canonicalized paths held by a live [`SqlitePersister`] in this process.
 /// Refusing a second in-process open ([`WalletStorageError::AlreadyOpen`])
 /// prevents two handles with independent buffers diverging; cross-process
@@ -116,6 +150,58 @@ fn register_open_path(path: PathBuf) -> Result<(), WalletStorageError> {
     }
     set.insert(path);
     Ok(())
+}
+
+/// Registry key for the database at `path`, whose parent is `parent`.
+///
+/// The canonical parent joined with the file name, NOT `canonicalize(path)`:
+/// the claim is taken before the database is created, and `Path::canonicalize`
+/// cannot resolve a path that does not exist yet, so keying on the whole path
+/// would hand two spellings of one not-yet-created database two different keys.
+/// Both callers verify `parent` exists first. A symlinked database is refused
+/// by `precreate_secure`, so for every path that actually opens this equals
+/// `canonicalize(path)`.
+fn registry_key(path: &Path, parent: &Path) -> PathBuf {
+    match (parent.canonicalize(), path.file_name()) {
+        (Ok(dir), Some(name)) => dir.join(name),
+        _ => path.to_path_buf(),
+    }
+}
+
+/// A live claim in the open-path registry, released on drop unless the
+/// persister takes it over.
+///
+/// Claiming EARLY is what closes the window in which two concurrent opens both
+/// compute their pending-migration list from the same pre-migration history and
+/// both apply it; releasing on drop is what keeps a failed open from leaving a
+/// claim nobody will ever remove. The two properties are independent, and the
+/// guard is what lets the code have both.
+struct OpenPathClaim {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl OpenPathClaim {
+    /// Claim `path`, or fail with [`WalletStorageError::AlreadyOpen`].
+    fn claim(path: PathBuf) -> Result<Self, WalletStorageError> {
+        register_open_path(path.clone())?;
+        Ok(Self { path, armed: true })
+    }
+
+    /// Hand the claimed path to the persister that will hold it; the guard
+    /// stops releasing it, and the persister's `Drop` takes over.
+    fn into_held_path(mut self) -> PathBuf {
+        self.armed = false;
+        std::mem::take(&mut self.path)
+    }
+}
+
+impl Drop for OpenPathClaim {
+    fn drop(&mut self) {
+        if self.armed {
+            release_open_path(&self.path);
+        }
+    }
 }
 
 /// Remove `path` from the open-path registry on persister drop.
@@ -231,10 +317,17 @@ impl SqlitePersister {
             crate::parent_permissions::ParentPermissionsError::Io(source) => {
                 WalletStorageError::Io(source)
             }
-            crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
-                WalletStorageError::InsecureParentDir { mode }
+            crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
+                WalletStorageError::InsecureParentDir { ancestor, reason }
             }
         })?;
+
+        // Claim the path BEFORE anything touches the file. The registry exists
+        // to stop two handles diverging, and the most destructive thing an
+        // unguarded second open does is re-run migrations the first has not
+        // committed yet. The guard releases the claim on every error path out
+        // of this function, so a failed open still leaves no stale claim.
+        let claim = OpenPathClaim::claim(registry_key(&config.path, parent))?;
 
         // Pre-create owner-only (0600) with O_EXCL before rusqlite opens:
         // no umask window, and a planted symlink makes the create fail
@@ -269,7 +362,7 @@ impl SqlitePersister {
         // migrated in place or panicking the runner.
         if had_schema_history {
             crate::sqlite::migrations::assert_schema_version_supported(&conn)?;
-            crate::sqlite::conn::assert_wallet_application_id(&conn)?;
+            crate::sqlite::conn::assert_wallet_application_id_or_legacy(&conn)?;
             crate::sqlite::migrations::assert_schema_history_well_formed(&conn)?;
         } else if crate::sqlite::migrations::db_has_objects(&conn)? {
             // A pre-existing file with schema objects but NO refinery history is
@@ -303,14 +396,9 @@ impl SqlitePersister {
 
         let _report = crate::sqlite::migrations::run_for_open(&mut conn)?;
 
-        // Claim the path LAST so a failed open leaves no stale claim;
-        // canonicalize so symlinks / `.`-segments key the same as a
-        // sibling open would.
-        let registered_path = config
-            .path
-            .canonicalize()
-            .unwrap_or_else(|_| config.path.clone());
-        register_open_path(registered_path.clone())?;
+        // The open succeeded, so the claim passes to the persister, whose
+        // `Drop` releases it.
+        let registered_path = claim.into_held_path();
 
         Ok(Self {
             config,
@@ -491,8 +579,8 @@ impl SqlitePersister {
             crate::parent_permissions::ParentPermissionsError::Io(source) => {
                 WalletStorageError::Io(source)
             }
-            crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
-                WalletStorageError::InsecureParentDir { mode }
+            crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
+                WalletStorageError::InsecureParentDir { ancestor, reason }
             }
         })?;
 
@@ -501,9 +589,7 @@ impl SqlitePersister {
         // diverge from the restored bytes. Canonicalize to match how `open()`
         // registers the path (symlinks / `.`-segments resolve to one key); a
         // not-yet-existing dest can't be open, so the fallback path is fine.
-        let dest_canonical = dest_db_path
-            .canonicalize()
-            .unwrap_or_else(|_| dest_db_path.to_path_buf());
+        let dest_canonical = registry_key(dest_db_path, parent);
         if is_path_open(&dest_canonical) {
             return Err(WalletStorageError::AlreadyOpen {
                 path: dest_canonical,
@@ -545,7 +631,7 @@ impl SqlitePersister {
         policy: RetentionPolicy,
     ) -> Result<PruneReport, WalletStorageError> {
         self.ensure_writable("prune_backups")?;
-        backup::prune(dir, policy)
+        prune_backups_in(dir, policy)
     }
 
     /// Read every identity that belongs to NO wallet, each already
@@ -624,6 +710,20 @@ impl SqlitePersister {
     /// `--no-auto-backup` — call
     /// [`delete_wallet_skip_backup`](Self::delete_wallet_skip_backup).
     ///
+    /// # What "deleted" guarantees on disk
+    ///
+    /// The cascade runs under `PRAGMA secure_delete = ON`, so the pages it
+    /// frees are zeroed rather than merely unlinked and the wallet's row
+    /// content does not remain readable in the `.db`. Two limits are NOT
+    /// covered and are real:
+    ///
+    /// - Backups taken **before** this call still contain the wallet, by
+    ///   design — including the pre-delete auto-backup this call takes.
+    ///   Erasing a wallet from the live database does not erase it from a
+    ///   rollback snapshot; remove those separately.
+    /// - The database file does not shrink. Zeroed pages stay in the file on
+    ///   the freelist and are reused by later writes.
+    ///
     /// # Cross-process rollback caveat
     ///
     /// The pre-delete auto-backup is taken BEFORE the cascade's
@@ -690,6 +790,13 @@ impl SqlitePersister {
                 }
             }
         };
+
+        // Erase rather than merely unlink for the whole delete window. The
+        // cascade releases whole pages to the freelist, and the steady-state
+        // `FAST` setting does not clear those — only `ON` does. Raised here
+        // rather than around the cascade alone so no path out of the closure
+        // can skip the restore below.
+        raise_secure_delete_for_erase(&conn, wallet_id);
 
         let result: Result<DeleteWalletReport, WalletStorageError> = (|| {
             // Existence check before backup so we don't snapshot for an
@@ -787,6 +894,21 @@ impl SqlitePersister {
             // `busy_timeout`.
             let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)?;
 
+            // Confirm the erasing mode is in force HERE, inside the transaction
+            // the cascade actually runs in — not merely where it was set. A
+            // pragma that failed to survive into this context fails silently,
+            // and the result would be a delete that reports success while
+            // leaving the wallet's pages legible.
+            match secure_delete_mode(&tx) {
+                Ok(SECURE_DELETE_ERASING_VALUE) => {}
+                other => tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    observed = ?other,
+                    "the wallet cascade is running without the erasing secure_delete mode; \
+                     freed pages will retain deleted row content"
+                ),
+            }
+
             // Deleting the parent `wallets` row drives all cleanup: native
             // `ON DELETE CASCADE` clears FK-bearing tables and AFTER DELETE
             // triggers reap the `meta_*` rows (the completeness test
@@ -821,6 +943,8 @@ impl SqlitePersister {
                 backup_path,
             })
         })();
+
+        restore_secure_delete_steady_state(&conn, wallet_id);
 
         if result.is_err() {
             restore_buffer(&drained_slot);
@@ -1196,7 +1320,9 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
-            .union(PersistenceCapabilities::TRACKED_MASTERNODES);
+            .union(PersistenceCapabilities::TRACKED_MASTERNODES)
+            .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
+            .union(PersistenceCapabilities::DASHPAY_PAYMENTS);
         #[cfg(feature = "shielded")]
         {
             capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
@@ -1212,6 +1338,11 @@ impl PlatformWalletPersistence for SqlitePersister {
         network: dashcore::Network,
         records: &[platform_wallet::masternode::TrackedMasternode],
     ) -> Result<(), PersistenceError> {
+        // Whole-set semantics: `replace_all` DELETEs the network's rows
+        // before re-inserting, so an ungated call from a degraded
+        // in-memory view zeroes the set on the database being rescued.
+        self.ensure_writable("persist_tracked_masternodes")
+            .map_err(PersistenceError::from)?;
         let mut conn = self.conn().map_err(PersistenceError::from)?;
         let tx = conn
             .transaction()
@@ -1227,7 +1358,8 @@ impl PlatformWalletPersistence for SqlitePersister {
         network: dashcore::Network,
     ) -> Result<Vec<platform_wallet::masternode::TrackedMasternode>, PersistenceError> {
         let conn = self.conn().map_err(PersistenceError::from)?;
-        schema::tracked_masternodes::load_all(&conn, network).map_err(PersistenceError::from)
+        let ctx = LoadCtx::new(self.config.load_policy);
+        schema::tracked_masternodes::load_all(&conn, network, &ctx).map_err(PersistenceError::from)
     }
 
     /// Merge `changeset` into the per-wallet buffer.
@@ -1303,12 +1435,6 @@ impl PlatformWalletPersistence for SqlitePersister {
 
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
         self.flush_inner(&wallet_id)
-    }
-
-    fn delete_wallet(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
-        SqlitePersister::delete_wallet(self, wallet_id)
-            .map(|_| ())
-            .map_err(PersistenceError::from)
     }
 
     /// Load every wallet's start-state from disk.
@@ -1405,7 +1531,21 @@ impl PlatformWalletPersistence for SqlitePersister {
 
         let addrs_all = schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
         let mut addresses_loaded: usize = 0;
-        for (wallet_id, (addrs, count)) in addrs_all {
+        // Wallets whose platform-address rows could not be read. They are
+        // already counted here, so the loop below skips them rather than
+        // rebuilding a wallet whose platform balance would be understated.
+        let mut unreadable: std::collections::BTreeSet<WalletId> =
+            std::collections::BTreeSet::new();
+        for (wallet_id, entry) in addrs_all {
+            let (addrs, count) = match entry {
+                Ok(entry) => entry,
+                Err(original) => {
+                    degrade_whole_wallet(&ctx, wallet_id, &original)
+                        .map_err(|_| PersistenceError::from(original))?;
+                    unreadable.insert(wallet_id);
+                    continue;
+                }
+            };
             // Skip a wallet with no platform state at all (no addresses,
             // no registrations, all sync watermarks zero).
             if count > 0
@@ -1424,180 +1564,24 @@ impl PlatformWalletPersistence for SqlitePersister {
         let wallet_ids = schema::wallets::list_ids(&conn).map_err(PersistenceError::from)?;
         let wallets_seen = wallet_ids.len();
         for wallet_id in wallet_ids {
-            let (network_str, birth_height) = schema::wallets::fetch(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?
-                .ok_or_else(|| {
-                    PersistenceError::backend(format!(
-                        "wallets row vanished mid-load for {}",
-                        hex::encode(wallet_id)
-                    ))
-                })?;
-            let network = schema::wallets::parse_network(&network_str).ok_or_else(|| {
-                PersistenceError::backend(format!(
-                    "unknown persisted network {:?} for wallet {}",
-                    network_str,
-                    hex::encode(wallet_id)
-                ))
-            })?;
-
-            let account_manifest =
-                schema::accounts::load_state(&conn, &wallet_id).map_err(PersistenceError::from)?;
-            let (core_state, utxo_accounts) =
-                schema::core_state::load_state(&conn, &wallet_id, network, &ctx)
-                    .map_err(PersistenceError::from)?;
-            // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
-            // already carrying its own public keys + contact state (matching
-            // the FFI persister), so signing works immediately post-load
-            // without a key sync. `ClientWalletStartState.contacts` /
-            // `.identity_keys` stay empty — nothing is layered on afterwards.
-            let identity_manager = schema::identities::load_prekeyed(&conn, &wallet_id, &ctx)
-                .map_err(PersistenceError::from)?;
-            let unused_asset_locks = schema::asset_locks::load_unconsumed(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?;
-            // Used addresses drive the reuse guard: a used-then-emptied
-            // address must never be handed back as a fresh receive address,
-            // and must come back used on ITS OWN account so it is never
-            // re-issued as a fresh receive address from that account. Union
-            // the verbatim `core_address_pool` used-set (known owner) with the
-            // `core_utxos`-derived set (spent + unspent; owner resolved per
-            // script, `None` when no pool row covers it). The guard is
-            // monotonic, so a mixed store — historical UTXOs plus a later
-            // partial pool snapshot that never enumerates them — must surface
-            // both; neither source may shadow the other. Keyed by address; the
-            // pool source is authoritative on owner, so a `None` from the
-            // `core_utxos` source never overrides a resolved pool owner. Two
-            // resolved-but-disagreeing owners for one script means the store
-            // cannot say which account may re-issue the address, so the
-            // policy decides: strict aborts, recovery keeps the pool owner.
-            let used_core_addresses = {
-                let mut union: std::collections::HashMap<
-                    dashcore::Address,
-                    Option<schema::core_pool::OwningAccount>,
-                > = std::collections::HashMap::new();
-                let pool = schema::core_pool::load_used_addresses(&conn, &wallet_id, network)
-                    .map_err(PersistenceError::from)?;
-                for (addr, owner) in pool {
-                    union.entry(addr).or_insert(Some(owner));
-                }
-                let utxo = schema::core_state::load_used_addresses(&conn, &wallet_id, network)
-                    .map_err(PersistenceError::from)?;
-                for (addr, owner) in utxo {
-                    match union.entry(addr) {
-                        std::collections::hash_map::Entry::Occupied(existing) => {
-                            if let (Some(pool_owner), Some(utxo_owner)) = (existing.get(), &owner) {
-                                if pool_owner != utxo_owner {
-                                    let conflict = WalletStorageError::UsedAddressOwnerConflict {
-                                        address: existing.key().to_string(),
-                                        pool_owner: format!(
-                                            "{}[{}]",
-                                            pool_owner.account_type, pool_owner.account_index
-                                        ),
-                                        utxo_owner: format!(
-                                            "{}[{}]",
-                                            utxo_owner.account_type, utxo_owner.account_index
-                                        ),
-                                    };
-                                    ctx.tolerate(LoadSite::UsedAddressOwnerConflict, conflict)
-                                        .map_err(PersistenceError::from)?;
-                                }
-                            }
-                        }
-                        std::collections::hash_map::Entry::Vacant(slot) => {
-                            slot.insert(owner);
-                        }
-                    }
-                }
-                union
-            };
-
-            // Reconstruct a populated `ManagedWalletInfo` from typed rows:
-            // rebuild the wallet watch-only from the manifest, then layer the
-            // persisted core-state projection (UTXOs, sync watermarks,
-            // chainlock, used-address pool depth) onto it. The manager consumes
-            // this directly — the old skeleton + core_state replay fallback is
-            // gone.
-            let wallet = if account_manifest.is_empty() {
-                // No accounts of any kind for this wallet. An empty manifest
-                // is NOT necessarily an orphaned row: a platform-only wallet — a
-                // Platform identity plus contacts, with no core accounts —
-                // legitimately has one. Register it as an external-signable
-                // placeholder (empty AccountCollection) that still carries its
-                // platform-side state (identities, contacts); the manager
-                // registers it like any other wallet. The genuinely-orphaned
-                // case (a crash between the wallet-row write and the first
-                // account write) also lands here and is harmless — it rehydrates
-                // as an empty wallet.
-                //
-                // TODO(product decision needed, task #14): the orphaned variant
-                // leaves a permanently empty manifest. It is not corrupted or
-                // lost, but there is no recovery path today: no re-registration
-                // flow, no eviction, no surfacing to the user. Open question:
-                // does this need one (a TTL-based cleanup, a re-registration
-                // entry point, or a surfaced "orphaned wallet" diagnostic), or is
-                // register-empty-forever acceptable? Awaiting product decision;
-                // not addressed here.
-                key_wallet::wallet::Wallet::new_external_signable(
-                    network,
-                    wallet_id,
-                    key_wallet::account::account_collection::AccountCollection::new(),
-                )
-            } else {
-                build_wallet(network, wallet_id, &account_manifest).map_err(|e| {
-                    PersistenceError::backend(format!(
-                        "watch-only wallet rebuild failed for {}: {e}",
-                        hex::encode(wallet_id)
-                    ))
-                })?
-            };
-            // TODO(insert-wallet-id-recompute): confirm whether key_wallet's
-            // insert_wallet recomputes wallet_id — see PR's existing Deferred
-            // #3992 note. Both construction paths above hand it the persisted
-            // id; if the manager derives its own instead, a rehydrated wallet
-            // could be filed under an id that no longer matches its rows.
-            // Answering it needs the key-wallet crate, not this repo.
-            let mut wallet_info =
-                key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(
-                    &wallet,
-                    birth_height,
-                );
-            // Provider key-material accounts hold no funds, so only the ECDSA
-            // half feeds the UTXO/balance projection here. The platform-node
-            // pre-derived-key pool is restored separately below.
-            apply_persisted_core_state(
-                &mut wallet_info,
-                &account_manifest.ecdsa,
-                &core_state,
-                &utxo_accounts,
-                &used_core_addresses,
-                &ctx,
-            )
-            .map_err(|e| {
-                PersistenceError::backend(format!(
-                    "core-state rehydration failed for {}: {e}",
-                    hex::encode(wallet_id)
-                ))
-            })?;
-            if account_manifest.provider.iter().any(|entry| {
-                entry.account_type == key_wallet::account::AccountType::ProviderPlatformKeys
-            }) {
-                restore_provider_platform_node_pool(&mut wallet_info, &conn, &wallet_id, network)
-                    .map_err(|e| {
-                    PersistenceError::backend(format!(
-                        "platform-node pool rehydration failed for {}: {e}",
-                        hex::encode(wallet_id)
-                    ))
-                })?;
+            if unreadable.contains(&wallet_id) {
+                continue;
             }
-
-            state.wallets.insert(
-                wallet_id,
-                platform_wallet::changeset::ClientWalletStartState {
-                    wallet,
-                    wallet_info,
-                    identity_manager,
-                    unused_asset_locks,
-                },
-            );
+            match load_one_wallet(&conn, wallet_id, &ctx) {
+                Ok(wallet_state) => {
+                    state.wallets.insert(wallet_id, wallet_state);
+                }
+                // The isolation boundary. One wallet's failure is recorded
+                // against that wallet and the walk continues; under Strict
+                // `tolerate_at` returns, and the ORIGINAL error propagates
+                // rather than the boundary's own wrapper, so a caller
+                // matching on a specific cause still sees it.
+                Err(original) => {
+                    let cause = wallet_storage_kind(&original);
+                    record_wallet_degradation(&ctx, wallet_id, cause, &original)
+                        .map_err(|_| original)?;
+                }
+            }
         }
         let wallets_rehydrated = state.wallets.len();
         #[cfg(feature = "shielded")]
@@ -1689,6 +1673,242 @@ fn populated_field_count(cs: &PlatformWalletChangeSet) -> usize {
 /// reader can pick it up — it simply is not in this `ClientStartState`.
 /// One statement, not one per table: `tc_p4_012` holds `load()`'s
 /// wallet-count-independent statement count to a small constant.
+/// Rehydrate one wallet, or fail without touching any other.
+///
+/// Extracted from `load()`'s loop so the loop has somewhere to put a
+/// boundary: every `?` in here ends this wallet, not the file.
+fn load_one_wallet(
+    conn: &Connection,
+    wallet_id: WalletId,
+    ctx: &LoadCtx,
+) -> Result<platform_wallet::changeset::ClientWalletStartState, PersistenceError> {
+    let (network_str, birth_height) = schema::wallets::fetch(conn, &wallet_id)
+        .map_err(PersistenceError::from)?
+        .ok_or_else(|| {
+            PersistenceError::backend(format!(
+                "wallets row vanished mid-load for {}",
+                hex::encode(wallet_id)
+            ))
+        })?;
+    let network = schema::wallets::parse_network(&network_str).ok_or_else(|| {
+        PersistenceError::backend(format!(
+            "unknown persisted network {:?} for wallet {}",
+            network_str,
+            hex::encode(wallet_id)
+        ))
+    })?;
+
+    let account_manifest =
+        schema::accounts::load_state(conn, &wallet_id, ctx).map_err(PersistenceError::from)?;
+    let (core_state, utxo_accounts) =
+        schema::core_state::load_state(conn, &wallet_id, network, ctx)
+            .map_err(PersistenceError::from)?;
+    // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
+    // already carrying its own public keys + contact state (matching
+    // the FFI persister), so signing works immediately post-load
+    // without a key sync. `ClientWalletStartState.contacts` /
+    // `.identity_keys` stay empty — nothing is layered on afterwards.
+    let identity_manager =
+        schema::identities::load_prekeyed(conn, &wallet_id, ctx).map_err(PersistenceError::from)?;
+    let unused_asset_locks = schema::asset_locks::load_unconsumed(conn, &wallet_id, ctx)
+        .map_err(PersistenceError::from)?;
+    // Used addresses drive the reuse guard: a used-then-emptied
+    // address must never be handed back as a fresh receive address,
+    // and must come back used on ITS OWN account so it is never
+    // re-issued as a fresh receive address from that account. Union
+    // the verbatim `core_address_pool` used-set (known owner) with the
+    // `core_utxos`-derived set (spent + unspent; owner resolved per
+    // script, `None` when no pool row covers it). The guard is
+    // monotonic, so a mixed store — historical UTXOs plus a later
+    // partial pool snapshot that never enumerates them — must surface
+    // both; neither source may shadow the other. Keyed by address; the
+    // pool source is authoritative on owner, so a `None` from the
+    // `core_utxos` source never overrides a resolved pool owner. Two
+    // resolved-but-disagreeing owners for one script means the store
+    // cannot say which account may re-issue the address, so the
+    // policy decides: strict aborts, recovery keeps the pool owner.
+    let used_core_addresses = {
+        let mut union: std::collections::HashMap<
+            dashcore::Address,
+            Option<schema::core_pool::OwningAccount>,
+        > = std::collections::HashMap::new();
+        let pool = schema::core_pool::load_used_addresses_with_ctx(conn, &wallet_id, network, ctx)
+            .map_err(PersistenceError::from)?;
+        for (addr, owner) in pool {
+            union.entry(addr).or_insert(Some(owner));
+        }
+        let utxo = schema::core_state::load_used_addresses_with_ctx(conn, &wallet_id, network, ctx)
+            .map_err(PersistenceError::from)?;
+        for (addr, owner) in utxo {
+            match union.entry(addr) {
+                std::collections::hash_map::Entry::Occupied(existing) => {
+                    if let (Some(pool_owner), Some(utxo_owner)) = (existing.get(), &owner) {
+                        if pool_owner != utxo_owner {
+                            let conflict = WalletStorageError::UsedAddressOwnerConflict {
+                                address: existing.key().to_string(),
+                                pool_owner: format!(
+                                    "{}[{}]",
+                                    pool_owner.account_type, pool_owner.account_index
+                                ),
+                                utxo_owner: format!(
+                                    "{}[{}]",
+                                    utxo_owner.account_type, utxo_owner.account_index
+                                ),
+                            };
+                            ctx.tolerate(LoadSite::UsedAddressOwnerConflict, conflict)
+                                .map_err(PersistenceError::from)?;
+                        }
+                    }
+                }
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    slot.insert(owner);
+                }
+            }
+        }
+        union
+    };
+
+    // Reconstruct a populated `ManagedWalletInfo` from typed rows:
+    // rebuild the wallet watch-only from the manifest, then layer the
+    // persisted core-state projection (UTXOs, sync watermarks,
+    // chainlock, used-address pool depth) onto it. The manager consumes
+    // this directly — the old skeleton + core_state replay fallback is
+    // gone.
+    let wallet = if account_manifest.is_empty() {
+        // No accounts of any kind for this wallet. An empty manifest
+        // is NOT necessarily an orphaned row: a platform-only wallet — a
+        // Platform identity plus contacts, with no core accounts —
+        // legitimately has one. Register it as an external-signable
+        // placeholder (empty AccountCollection) that still carries its
+        // platform-side state (identities, contacts); the manager
+        // registers it like any other wallet. The genuinely-orphaned
+        // case (a crash between the wallet-row write and the first
+        // account write) also lands here and is harmless — it rehydrates
+        // as an empty wallet.
+        //
+        // TODO(product decision needed, task #14): the orphaned variant
+        // leaves a permanently empty manifest. It is not corrupted or
+        // lost, but there is no recovery path today: no re-registration
+        // flow, no eviction, no surfacing to the user. Open question:
+        // does this need one (a TTL-based cleanup, a re-registration
+        // entry point, or a surfaced "orphaned wallet" diagnostic), or is
+        // register-empty-forever acceptable? Awaiting product decision;
+        // not addressed here.
+        key_wallet::wallet::Wallet::new_external_signable(
+            network,
+            wallet_id,
+            key_wallet::account::account_collection::AccountCollection::new(),
+        )
+    } else {
+        build_wallet(network, wallet_id, &account_manifest).map_err(|e| {
+            PersistenceError::backend(format!(
+                "watch-only wallet rebuild failed for {}: {e}",
+                hex::encode(wallet_id)
+            ))
+        })?
+    };
+    // TODO(insert-wallet-id-recompute): confirm whether key_wallet's
+    // insert_wallet recomputes wallet_id — see PR's existing Deferred
+    // #3992 note. Both construction paths above hand it the persisted
+    // id; if the manager derives its own instead, a rehydrated wallet
+    // could be filed under an id that no longer matches its rows.
+    // Answering it needs the key-wallet crate, not this repo.
+    let mut wallet_info = key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(
+        &wallet,
+        birth_height,
+    );
+    // Provider key-material accounts hold no funds, so only the ECDSA
+    // half feeds the UTXO/balance projection here. The platform-node
+    // pre-derived-key pool is restored separately below.
+    apply_persisted_core_state(
+        &mut wallet_info,
+        &account_manifest.ecdsa,
+        &core_state,
+        &utxo_accounts,
+        &used_core_addresses,
+        ctx,
+    )
+    .map_err(|e| {
+        PersistenceError::backend(format!(
+            "core-state rehydration failed for {}: {e}",
+            hex::encode(wallet_id)
+        ))
+    })?;
+    if account_manifest
+        .provider
+        .iter()
+        .any(|entry| entry.account_type == key_wallet::account::AccountType::ProviderPlatformKeys)
+    {
+        restore_provider_platform_node_pool(&mut wallet_info, conn, &wallet_id, network, ctx)
+            .map_err(|e| {
+                PersistenceError::backend(format!(
+                    "platform-node pool rehydration failed for {}: {e}",
+                    hex::encode(wallet_id)
+                ))
+            })?;
+    }
+    Ok(platform_wallet::changeset::ClientWalletStartState {
+        wallet,
+        wallet_info,
+        identity_manager,
+        unused_asset_locks,
+    })
+}
+
+/// Count one wallet's whole loss and attribute it, or return so the caller
+/// can propagate its own error under `Strict`.
+///
+/// The returned error is discarded by every caller: it exists only to say
+/// "Strict", because the caller holds a better error than this one — the
+/// original cause, in the type its own signature promises.
+fn record_wallet_degradation(
+    ctx: &LoadCtx,
+    wallet_id: WalletId,
+    cause: &'static str,
+    original: &dyn std::fmt::Display,
+) -> Result<(), WalletStorageError> {
+    ctx.tolerate_at(
+        LoadSite::WalletRehydration,
+        crate::sqlite::load_ctx::SiteCoords {
+            wallet_id: Some(wallet_id),
+            account_type: &"wallet",
+            affected: 1,
+            detail: Some(&cause),
+        },
+        WalletStorageError::WalletRehydrationFailed {
+            wallet_id,
+            cause: original.to_string(),
+        },
+    )?;
+    ctx.note_wallet_degraded(wallet_id, cause);
+    Ok(())
+}
+
+/// [`record_wallet_degradation`] for a failure that is already a typed
+/// storage error, so its own kind tag is the cause.
+fn degrade_whole_wallet(
+    ctx: &LoadCtx,
+    wallet_id: WalletId,
+    original: &WalletStorageError,
+) -> Result<(), WalletStorageError> {
+    record_wallet_degradation(ctx, wallet_id, original.error_kind_str(), original)
+}
+
+/// The kind tag of the typed storage error inside a persistence error.
+///
+/// The boundary attributes a dropped wallet to its cause, and the cause is
+/// more useful than the boundary's own name: a caller wants `address_decode`,
+/// not `wallet_rehydration_failed`.
+fn wallet_storage_kind(err: &PersistenceError) -> &'static str {
+    match err {
+        PersistenceError::Backend { source, .. } => source
+            .downcast_ref::<WalletStorageError>()
+            .map(WalletStorageError::error_kind_str)
+            .unwrap_or("backend"),
+        PersistenceError::LockPoisoned => "lock_poisoned",
+    }
+}
+
 fn count_unimplemented_rows(conn: &Connection) -> Result<u32, WalletStorageError> {
     let sum = LOAD_UNIMPLEMENTED_TABLES
         .iter()
@@ -1742,6 +1962,105 @@ fn validate_config(config: &SqlitePersisterConfig) -> Result<(), WalletStorageEr
     Ok(())
 }
 
+/// Switch `conn` to the erasing `secure_delete` mode for a wallet cascade.
+///
+/// A failure is logged and tolerated rather than aborting the delete: the user
+/// asked for the wallet to be gone, and refusing to remove it because the file
+/// cannot be scrubbed leaves them strictly worse off. The residue that survives
+/// is the same residue the steady-state mode already leaves.
+fn raise_secure_delete_for_erase(conn: &Connection, wallet_id: WalletId) {
+    set_secure_delete(
+        conn,
+        wallet_id,
+        SECURE_DELETE_ERASING,
+        SECURE_DELETE_ERASING_VALUE,
+        "could not raise secure_delete for the wallet cascade; freed pages may retain deleted row content",
+    );
+}
+
+/// Return `conn` to the steady-state `secure_delete` mode after a cascade.
+///
+/// A failure here leaves the connection MORE aggressive than configured, never
+/// less, so it costs I/O rather than confidentiality — logged and tolerated.
+fn restore_secure_delete_steady_state(conn: &Connection, wallet_id: WalletId) {
+    set_secure_delete(
+        conn,
+        wallet_id,
+        SECURE_DELETE_STEADY_STATE,
+        SECURE_DELETE_STEADY_STATE_VALUE,
+        "could not restore secure_delete after the wallet cascade; later writes pay full erase cost",
+    );
+}
+
+/// Set `secure_delete` to `mode` and confirm it reads back as `expected`.
+///
+/// `pragma_update` does not error when a setting fails to take, so the
+/// read-back is the only thing standing between a silent no-op and a guarantee
+/// the crate believes it has. It compares the exact value rather than "not
+/// off": `ON` and `FAST` are distinct modes, and accepting either would let a
+/// failed restore look like a successful one.
+///
+/// Logged and tolerated rather than fatal. Both callers bracket a delete the
+/// user asked for, and refusing to remove a wallet because the file cannot be
+/// scrubbed leaves them strictly worse off than removing it imperfectly.
+fn set_secure_delete(
+    conn: &Connection,
+    wallet_id: WalletId,
+    mode: &str,
+    expected: i64,
+    failure_message: &'static str,
+) {
+    let outcome = conn
+        .pragma_update(None, "secure_delete", mode)
+        .map_err(WalletStorageError::Sqlite)
+        .and_then(|()| secure_delete_mode(conn));
+    match outcome {
+        Ok(actual) if actual == expected => {}
+        Ok(actual) => tracing::warn!(
+            wallet_id = %hex::encode(wallet_id),
+            requested = mode,
+            actual,
+            failure_message
+        ),
+        Err(e) => tracing::warn!(
+            wallet_id = %hex::encode(wallet_id),
+            requested = mode,
+            error = %e,
+            failure_message
+        ),
+    }
+}
+
+/// Steady-state `secure_delete` mode: zero freed row content within pages that
+/// are being rewritten anyway, without paying to scrub pages released to the
+/// freelist on every ordinary write.
+const SECURE_DELETE_STEADY_STATE: &str = "FAST";
+/// What [`SECURE_DELETE_STEADY_STATE`] reads back as. SQLite reports the mode
+/// numerically and the three values are distinct — `0` off, `1` ON, `2` FAST —
+/// so a read-back that only checked for nonzero would accept `ON` where `FAST`
+/// was asked for, and, worse, would accept a failed restore after a cascade.
+const SECURE_DELETE_STEADY_STATE_VALUE: i64 = 2;
+/// `secure_delete` mode for a wallet cascade, which releases whole pages that
+/// `FAST` leaves intact. Deletion is rare, explicit and user-initiated, so it
+/// can afford the I/O that every ordinary write cannot.
+///
+/// Measured on this schema: deleting a wallet whose rows span whole pages
+/// leaves the row content fully legible under `off`, PARTLY legible under
+/// `FAST` (it clears only the part of a page it was rewriting anyway), and not
+/// at all under `ON`.
+const SECURE_DELETE_ERASING: &str = "ON";
+/// What [`SECURE_DELETE_ERASING`] reads back as.
+const SECURE_DELETE_ERASING_VALUE: i64 = 1;
+
+/// Read the connection's `secure_delete` mode back.
+///
+/// Must be issued on the connection that set it: the setting is per-connection,
+/// and a fresh handle reports the build default rather than any value another
+/// handle put in force.
+fn secure_delete_mode(conn: &Connection) -> Result<i64, WalletStorageError> {
+    Ok(conn.pragma_query_value(None, "secure_delete", |row| row.get(0))?)
+}
+
 fn apply_pragmas(
     conn: &mut Connection,
     config: &SqlitePersisterConfig,
@@ -1760,6 +2079,22 @@ fn apply_pragmas(
         });
     }
     conn.pragma_update(None, "synchronous", config.synchronous.pragma_value())?;
+    // Freed pages otherwise keep their content, so a deleted wallet's
+    // addresses, scripts, keys and contact data stay readable in the file — and
+    // `Backup` copies pages, freelist included, into every later snapshot.
+    // `FAST` zeroes freed content within a page already being rewritten, which
+    // is the right steady-state cost; `delete_wallet` raises it to `ON` for the
+    // cascade, where whole pages are released and only `ON` clears them.
+    conn.pragma_update(None, "secure_delete", SECURE_DELETE_STEADY_STATE)?;
+    // Read back like `journal_mode`: `pragma_update` does not error when the
+    // setting does not take, and a silent `0` here is an at-rest guarantee the
+    // crate documents and does not have.
+    let applied_secure_delete = secure_delete_mode(conn)?;
+    if applied_secure_delete != SECURE_DELETE_STEADY_STATE_VALUE {
+        return Err(WalletStorageError::SecureDeleteNotApplied {
+            actual: applied_secure_delete,
+        });
+    }
     let ms = safe_cast::u64_to_i64(
         "busy_timeout_ms",
         u64::try_from(config.busy_timeout.as_millis()).unwrap_or(i64::MAX as u64),
@@ -1963,8 +2298,8 @@ fn ensure_dir(dir: &Path) -> Result<(), WalletStorageError> {
                 source,
             }
         }
-        crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
-            WalletStorageError::InsecureParentDir { mode }
+        crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
+            WalletStorageError::InsecureParentDir { ancestor, reason }
         }
     })?;
     // Fast-fail writability probe. TOCTOU by construction (the dir can flip
@@ -2013,6 +2348,106 @@ fn current_schema_version(conn: &Connection) -> Result<Option<i32>, WalletStorag
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every table in the migrated schema is accounted for: rehydrated by
+    /// `load()`, reachable through a dedicated production API, listed as
+    /// unimplemented, or schema infrastructure. A table in none of those
+    /// lists is state this crate persists and never reports — which is
+    /// exactly how `pending_contact_crypto` and `invitations` stayed
+    /// invisible while `unimplemented_rows` reported zero.
+    ///
+    /// The catalogue is read from `sqlite_master` rather than scanned out of
+    /// the migration text, because DDL text lies about `RENAME` and `DROP`
+    /// and this schema does several of both.
+    #[test]
+    fn every_table_in_the_schema_is_accounted_for() {
+        // Rehydrated into `ClientStartState` by `load()`.
+        const REHYDRATED_BY_LOAD: &[&str] = &[
+            "account_registrations",
+            "asset_locks",
+            "contacts",
+            "core_address_pool",
+            "core_instant_locks",
+            "core_sync_state",
+            "core_transactions",
+            "core_utxos",
+            "identities",
+            "identity_keys",
+            "identity_scan_failed_indices",
+            "identity_scan_states",
+            "ignored_senders",
+            "platform_address_sync",
+            "platform_addresses",
+            "wallets",
+        ];
+        // Not rehydrated by `load()`, but read on demand by a production
+        // entry point, so the state is reachable rather than abandoned.
+        const READ_BY_A_DEDICATED_API: &[&str] = &[
+            "dpns_name_states",      // get_dpns_name_state
+            "meta_contact",          // the kv object store
+            "meta_data_versions",    // schema::versions
+            "meta_global",           // the kv object store
+            "meta_identity",         // the kv object store
+            "meta_platform_address", // the kv object store
+            "meta_store_generation", // schema::versions
+            "meta_token",            // the kv object store
+            "meta_wallet",           // the kv object store
+            "tracked_masternodes",   // load_tracked_masternodes
+        ];
+        const INFRASTRUCTURE: &[&str] = &["refinery_schema_history"];
+        // `load()` rehydrates these only with the `shielded` feature on, so
+        // the classification follows the build rather than claiming one.
+        #[cfg(feature = "shielded")]
+        const FEATURE_GATED: &[&str] = &["shielded_viewing_keys"];
+        #[cfg(not(feature = "shielded"))]
+        const FEATURE_GATED: &[&str] = &[];
+        #[cfg(feature = "shielded")]
+        const NOT_REHYDRATED_WITHOUT_FEATURE: &[&str] = &[];
+        #[cfg(not(feature = "shielded"))]
+        const NOT_REHYDRATED_WITHOUT_FEATURE: &[&str] = &["shielded_viewing_keys"];
+
+        let mut conn = Connection::open_in_memory().expect("in-memory db");
+        crate::sqlite::migrations::run(&mut conn).expect("migrate");
+        let tables: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' \
+                       AND name NOT LIKE 'sqlite_%' ORDER BY name",
+                )
+                .expect("read the catalogue");
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(0))
+                .expect("read the catalogue")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("read the catalogue");
+            rows
+        };
+        assert!(
+            tables.len() > 20,
+            "the catalogue probe returned {} tables, which cannot be right — \
+             a probe that finds nothing proves nothing",
+            tables.len()
+        );
+
+        let unaccounted: Vec<&String> = tables
+            .iter()
+            .filter(|table| {
+                !REHYDRATED_BY_LOAD.contains(&table.as_str())
+                    && !READ_BY_A_DEDICATED_API.contains(&table.as_str())
+                    && !LOAD_UNIMPLEMENTED_TABLES.contains(&table.as_str())
+                    && !INFRASTRUCTURE.contains(&table.as_str())
+                    && !FEATURE_GATED.contains(&table.as_str())
+                    && !NOT_REHYDRATED_WITHOUT_FEATURE.contains(&table.as_str())
+            })
+            .collect();
+        assert!(
+            unaccounted.is_empty(),
+            "unaccounted tables: {unaccounted:?}. A new table must join one of \
+             this test's lists. If `load()` does not read it and no other entry \
+             point does, it belongs in LOAD_UNIMPLEMENTED_TABLES so its rows are \
+             COUNTED — do not add it here to silence the test."
+        );
+    }
 
     /// `LOAD_UNIMPLEMENTED_TABLES` is hand-maintained beside the logical
     /// `LOAD_UNIMPLEMENTED` list, so a table renamed in a migration would

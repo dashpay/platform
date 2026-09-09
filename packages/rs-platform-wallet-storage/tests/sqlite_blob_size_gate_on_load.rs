@@ -135,8 +135,13 @@ fn blob_gate_core_pool_load_used_addresses_rejects_oversize_script() {
     )
     .expect("insert oversize pool script row");
 
-    let err = core_pool::load_used_addresses(&conn, &w, dashcore::Network::Testnet)
-        .expect_err("load_used_addresses must reject an oversize pool script blob");
+    let err = core_pool::load_used_addresses_with_ctx(
+        &conn,
+        &w,
+        dashcore::Network::Testnet,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect_err("load_used_addresses must reject an oversize pool script blob");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),
         "expected BlobTooLarge for oversize pool script, got {err:?}"
@@ -174,8 +179,13 @@ fn blob_gate_core_pool_owning_account_rejects_oversize_user_identity_id() {
     )
     .expect("insert matching UTXO");
 
-    let err = core_state::load_used_addresses(&conn, &w, dashcore::Network::Testnet)
-        .expect_err("ownership lookup must reject an oversize user identity id");
+    let err = core_state::load_used_addresses_with_ctx(
+        &conn,
+        &w,
+        dashcore::Network::Testnet,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect_err("ownership lookup must reject an oversize user identity id");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),
         "expected BlobTooLarge, got {err:?}"
@@ -206,8 +216,13 @@ fn blob_gate_core_pool_load_used_addresses_rejects_oversize_friend_identity_id()
     )
     .expect("insert used pool row with oversize friend identity id");
 
-    let err = core_pool::load_used_addresses(&conn, &w, dashcore::Network::Testnet)
-        .expect_err("used-address load must reject an oversize friend identity id");
+    let err = core_pool::load_used_addresses_with_ctx(
+        &conn,
+        &w,
+        dashcore::Network::Testnet,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect_err("used-address load must reject an oversize friend identity id");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),
         "expected BlobTooLarge, got {err:?}"
@@ -238,8 +253,13 @@ fn blob_gate_core_state_load_used_addresses_rejects_oversize_script() {
     )
     .expect("insert oversize utxo script row");
 
-    let err = core_state::load_used_addresses(&conn, &w, dashcore::Network::Testnet)
-        .expect_err("load_used_addresses must reject an oversize utxo script blob");
+    let err = core_state::load_used_addresses_with_ctx(
+        &conn,
+        &w,
+        dashcore::Network::Testnet,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect_err("load_used_addresses must reject an oversize utxo script blob");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),
         "expected BlobTooLarge for oversize utxo script, got {err:?}"
@@ -269,9 +289,15 @@ fn blob_gate_platform_addrs_load_all_rejects_wrong_width_address() {
     .expect("insert wrong-width address row");
 
     // load_all drives all_address_rows which has the check_fixed_width gate.
+    // The rejection is per WALLET: the row is never accepted, and the wallet
+    // that owns it carries the refusal instead of the whole scan aborting.
     use platform_wallet_storage::sqlite::schema::platform_addrs;
-    let err =
-        platform_addrs::load_all(&conn).expect_err("load_all must reject a wrong-width address");
+    let all = platform_addrs::load_all(&conn).expect("the scan itself must survive one bad row");
+    let err = all
+        .get(&w)
+        .expect("the wallet must be present in the scan")
+        .as_ref()
+        .expect_err("load_all must reject a wrong-width address");
     assert!(
         matches!(
             err,
@@ -300,8 +326,12 @@ fn blob_gate_platform_addrs_load_all_rejects_oversize_address() {
     .expect("insert oversize address row");
 
     use platform_wallet_storage::sqlite::schema::platform_addrs;
-    let err =
-        platform_addrs::load_all(&conn).expect_err("load_all must reject an oversize address blob");
+    let all = platform_addrs::load_all(&conn).expect("the scan itself must survive one bad row");
+    let err = all
+        .get(&w)
+        .expect("the wallet must be present in the scan")
+        .as_ref()
+        .expect_err("load_all must reject an oversize address blob");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),
         "expected BlobTooLarge for oversize address, got {err:?}"
@@ -364,7 +394,7 @@ fn blob_gate_accounts_load_state_rejects_oversize_xpub_bytes() {
     )
     .expect("insert oversize xpub_bytes row");
 
-    let err = accounts::load_state(&conn, &w)
+    let err = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
         .expect_err("load_state must reject an oversize account_xpub_bytes blob");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),
@@ -421,7 +451,7 @@ fn blob_gate_accounts_ecdsa_reader_rejects_oversize_user_identity_id() {
     )
     .expect("insert account row with oversize user identity id");
 
-    let err = accounts::load_state(&conn, &w)
+    let err = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
         .expect_err("ECDSA account load must reject an oversize user identity id");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),
@@ -452,7 +482,7 @@ fn blob_gate_accounts_provider_reader_rejects_oversize_friend_identity_id() {
     )
     .expect("insert provider row with oversize friend identity id");
 
-    let err = accounts::load_state(&conn, &w)
+    let err = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
         .expect_err("provider account load must reject an oversize friend identity id");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),
@@ -490,7 +520,7 @@ fn blob_gate_identity_keys_load_state_rejects_oversize_public_key_blob() {
     )
     .expect("insert oversize public_key_blob row");
 
-    let err = identity_keys::load_state(&conn, &w)
+    let err = identity_keys::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
         .expect_err("load_state must reject an oversize public_key_blob");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),

@@ -561,12 +561,12 @@ fn strict_load_survives_a_removed_identity() {
     assert_eq!(bucket[&2].identity.id(), survivor);
 }
 
-/// The seam between V014 and V016: an `identity_keys` orphan can be
+/// The seam between V016 and V018: an `identity_keys` orphan can be
 /// neither written nor left behind.
 ///
-/// V014's NULL-scope trigger refuses a key naming an identity that is not
+/// V016's NULL-scope trigger refuses a key naming an identity that is not
 /// there, closing the only door MATCH SIMPLE's dormant compound FK left
-/// open on the write side. V016's delete broom closes the read side, by
+/// open on the write side. V018's delete broom closes the read side, by
 /// sweeping such keys when their identity goes. Either migration alone
 /// leaves `identity_keys` able to orphan; this pins that together they
 /// do not, so `MissingIdentityOwner` is reachable only through the
@@ -577,7 +577,7 @@ fn null_scoped_key_can_neither_name_a_missing_identity_nor_outlive_one() {
     let (persister, _tmp, _path) = fresh_persister();
     let ghost = iid(0x6B);
 
-    // Write side (V014): the key is refused, and nothing lands.
+    // Write side (V018): the key is refused, and nothing lands.
     let err = persister
         .store(
             UNOWNED,
@@ -608,7 +608,7 @@ fn null_scoped_key_can_neither_name_a_missing_identity_nor_outlive_one() {
         );
     }
 
-    // Read side (V016): the same row, written legitimately under a live
+    // Read side (V018): the same row, written legitimately under a live
     // identity, does not survive that identity's removal.
     persister
         .store(
@@ -642,20 +642,20 @@ fn null_scoped_key_can_neither_name_a_missing_identity_nor_outlive_one() {
     );
 }
 
-/// V016 retires the `tombstoned` column, and purges the rows and
-/// dependents a pre-V016 database had already logically deleted.
+/// V018 retires the `tombstoned` column, and purges the rows and
+/// dependents a pre-V018 database had already logically deleted.
 #[test]
-fn v016_purges_tombstoned_rows_and_retires_the_column() {
+fn v018_purges_tombstoned_rows_and_retires_the_column() {
     let mut conn = Connection::open_in_memory().expect("open in-memory db");
     conn.pragma_update(None, "foreign_keys", true)
         .expect("enable foreign keys");
 
     // Stand the database up at every migration BEFORE this one, so the
-    // fixture is written against the schema V016 has to upgrade.
+    // fixture is written against the schema V018 has to upgrade.
     mig::runner()
-        .set_target(refinery::Target::Version(15))
+        .set_target(refinery::Target::Version(17))
         .run(&mut conn)
-        .expect("migrate to the last pre-V016 schema");
+        .expect("migrate to the last pre-V018 schema");
 
     let w = [0x5Au8; 32];
     let tombstoned = [0x51u8; 32];
@@ -718,7 +718,7 @@ fn v016_purges_tombstoned_rows_and_retires_the_column() {
     };
     assert!(
         !columns.contains(&"tombstoned".to_string()),
-        "V016 must drop the tombstoned column, got {columns:?}"
+        "V018 must drop the tombstoned column, got {columns:?}"
     );
 
     for (table, sql) in [

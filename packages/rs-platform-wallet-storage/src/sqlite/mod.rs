@@ -14,6 +14,8 @@ pub mod error;
 #[cfg(feature = "kv")]
 pub mod kv;
 pub mod persister;
+mod provider_accounts;
+pub mod rehydrate;
 pub mod reports;
 pub mod util;
 
@@ -31,7 +33,7 @@ pub mod schema;
 pub(crate) mod schema;
 
 // `LoadCtx` is the policy input every core-state reader takes, and
-// `util::apply_persisted_core_state` — the crate's public rehydration
+// `rehydrate::apply_persisted_core_state` — the crate's public rehydration
 // entry point — takes one too, so it is public unconditionally.
 pub mod load_ctx;
 
@@ -40,5 +42,12 @@ pub use config::{
 };
 pub use error::{AutoBackupOperation, WalletStorageError};
 pub use load_ctx::{LoadCtx, LoadDegradation, LoadSite};
-pub use persister::{PruneReport, RetentionPolicy, SqlitePersister};
+// `OwningAccount` names two of `rehydrate::apply_persisted_core_state`'s
+// parameters, and `schema` is `pub(crate)` unless `__test-helpers` is on — a
+// feature downstream MUST NOT enable. Re-exported for the same reason
+// `load_ctx` is public: a public entry point whose parameter types cannot be
+// named from a default build is not callable from one.
+pub use persister::{prune_backups_in, PruneReport, RetentionPolicy, SqlitePersister};
 pub use reports::{CommitReport, DeleteWalletReport};
+#[doc(inline)]
+pub use schema::core_pool::OwningAccount;

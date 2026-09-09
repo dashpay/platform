@@ -19,8 +19,29 @@ pub enum FlushMode {
 /// The two policies are not symmetric: `Strict` is the safe default and
 /// `Recovery` is a diagnostic escape hatch that reproduces the historical
 /// best-effort behaviour verbatim. `Recovery` never tolerates anything
-/// `Strict` would not also have reached — an oversize blob, an unusable
-/// schema version, or a failed `PRAGMA integrity_check` still hard-error.
+/// `Strict` would not also have reached — an unusable schema version or a
+/// failed `PRAGMA integrity_check` still hard-error.
+///
+/// # A per-row failure costs its wallet, not the file
+///
+/// Every failure `load()` meets inside a wallet's own rehydration — an
+/// undecodable script, an oversize blob, a row whose columns contradict its
+/// payload — degrades THAT wallet. Under `Recovery` the wallet is dropped
+/// whole, counted at [`LoadSite::WalletRehydration`], and named in
+/// [`LoadDegradation::wallets_degraded`] alongside the kind of what stopped
+/// it; every other wallet in the file still loads. Whole-wallet granularity
+/// is what keeps `Strict`'s promise intact under `Recovery` too: a wallet is
+/// never handed back half-formed, only entire or not at all.
+///
+/// This does NOT relax the allocation guard. `blob::check_size` still
+/// rejects an oversize blob on its stored LENGTH, before any buffer is
+/// materialised, so the bytes are never read whatever the policy says; the
+/// policy only decides what happens once the guard has already fired. Under
+/// `Strict` the original error propagates unchanged — the boundary reports
+/// the cause, never replaces it.
+///
+/// [`LoadSite::WalletRehydration`]: crate::LoadSite::WalletRehydration
+/// [`LoadDegradation::wallets_degraded`]: crate::LoadDegradation::wallets_degraded
 ///
 /// # Open-time gates are unconditional
 ///

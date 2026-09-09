@@ -8,25 +8,30 @@ use platform_wallet::wallet::shielded::SubwalletId;
 use rusqlite::{params, Connection, Transaction};
 
 use crate::sqlite::error::WalletStorageError;
-use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
 use crate::sqlite::schema::{blob, id32};
 
 const VIEWING_KEY_WIDTH: usize = 96;
 
-/// Log which row was skipped. The failure itself is already logged by
-/// [`LoadCtx::tolerate`], so this adds the coordinates needed to find the
-/// row under the same `site`, and fires only when the policy tolerated it.
-fn warn_skipped_row(row_number: usize, wallet_id: Option<&[u8]>, account_index: Option<i64>) {
-    let wallet_id = wallet_id
-        .map(hex::encode)
-        .unwrap_or_else(|| "<unreadable>".to_string());
-    tracing::warn!(
-        site = LoadSite::ShieldedViewingKeyRow.as_str(),
-        row_number,
-        wallet_id = %wallet_id,
-        account_index = ?account_index,
-        "skipped shielded viewing-key row located here during rehydration"
-    );
+fn tolerate_skipped_row(
+    ctx: &LoadCtx,
+    error: WalletStorageError,
+    row_number: usize,
+    wallet_id: Option<&[u8]>,
+    account_index: Option<i64>,
+) -> Result<(), WalletStorageError> {
+    let wallet_id = wallet_id.and_then(|bytes| bytes.try_into().ok());
+    let detail = (row_number, account_index);
+    ctx.tolerate_at(
+        LoadSite::ShieldedViewingKeyRow,
+        SiteCoords {
+            wallet_id,
+            account_type: &"shielded_viewing_key",
+            affected: 1,
+            detail: Some(&detail),
+        },
+        error,
+    )
 }
 
 pub(crate) fn apply(
@@ -87,24 +92,27 @@ pub(crate) fn load_all(
         let wallet_id_bytes = match row.get::<_, Vec<u8>>(0) {
             Ok(value) => value,
             Err(error) => {
-                ctx.tolerate(LoadSite::ShieldedViewingKeyRow, error.into())?;
-                warn_skipped_row(row_number, None, None);
+                tolerate_skipped_row(ctx, error.into(), row_number, None, None)?;
                 continue;
             }
         };
         let account_index = match row.get::<_, i64>(1) {
             Ok(value) => value,
             Err(error) => {
-                ctx.tolerate(LoadSite::ShieldedViewingKeyRow, error.into())?;
-                warn_skipped_row(row_number, Some(&wallet_id_bytes), None);
+                tolerate_skipped_row(ctx, error.into(), row_number, Some(&wallet_id_bytes), None)?;
                 continue;
             }
         };
         let viewing_key_length = match row.get::<_, i64>(2) {
             Ok(value) => value,
             Err(error) => {
-                ctx.tolerate(LoadSite::ShieldedViewingKeyRow, error.into())?;
-                warn_skipped_row(row_number, Some(&wallet_id_bytes), Some(account_index));
+                tolerate_skipped_row(
+                    ctx,
+                    error.into(),
+                    row_number,
+                    Some(&wallet_id_bytes),
+                    Some(account_index),
+                )?;
                 continue;
             }
         };
@@ -133,8 +141,13 @@ pub(crate) fn load_all(
                 viewing_keys.insert(subwallet_id, viewing_key);
             }
             Err(error) => {
-                ctx.tolerate(LoadSite::ShieldedViewingKeyRow, error)?;
-                warn_skipped_row(row_number, Some(&wallet_id_bytes), Some(account_index));
+                tolerate_skipped_row(
+                    ctx,
+                    error,
+                    row_number,
+                    Some(&wallet_id_bytes),
+                    Some(account_index),
+                )?;
             }
         }
     }

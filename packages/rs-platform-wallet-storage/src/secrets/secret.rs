@@ -46,6 +46,16 @@ const DEFAULT_CAPACITY: usize = 4096 - 16;
 /// This defense-in-depth floor rejects trivially short inputs but is not a
 /// strength estimator. Dictionary checks, UX feedback, and the real entropy
 /// policy remain the consumer's responsibility (see `SECRETS.md`).
+///
+/// **One-way.** Read paths gate on it, so it may only ever be LOWERED.
+// INTENTIONAL(read-gates-follow-write-side-tunables): raising this locks out
+// every vault and every Tier-2 secret enrolled under a shorter passphrase,
+// permanently — `open`, `rekey` and `unwrap_password_payload` all reject below
+// it, with no override and no legacy door. `MAX_SECRET_LEN` and
+// `MAX_VAULT_SIZE_BYTES` are one-way in the same sense, downward. Accepted
+// rather than split into policy/wire pairs the way `ARGON2_READ_MAX_*` is: no
+// shipped build has moved any of the three, and the split buys nothing until
+// one of them needs to move. Migrate enrolled data before it does.
 pub const MIN_PASSPHRASE_LEN: usize = 8;
 
 /// Maximum byte length for a vault passphrase or Tier-2 object password.
@@ -191,7 +201,8 @@ impl SecretString {
     /// vault write. The consequence is that growth driven by untrusted
     /// input (a paste into a text field) is unbounded `mlock`ed,
     /// page-rounded memory, and the locks fail open once `RLIMIT_MEMLOCK`
-    /// runs out. Bound such input at your own boundary.
+    /// runs out. Crossing [`MAX_PASSPHRASE_LEN`] emits a warning containing
+    /// only lengths; callers must still bound such input at their own boundary.
     ///
     /// ```
     /// use platform_wallet_storage::secrets::SecretString;
@@ -205,6 +216,13 @@ impl SecretString {
         let old_len = self.len;
         // `resolve_range` guarantees `start <= end <= old_len`.
         let new_len = old_len - (end - start) + replacement.len();
+        if old_len <= MAX_PASSPHRASE_LEN && new_len > MAX_PASSPHRASE_LEN {
+            tracing::warn!(
+                length = new_len,
+                maximum = MAX_PASSPHRASE_LEN,
+                "secret string grew beyond the store passphrase ceiling"
+            );
+        }
         self.reserve(new_len);
 
         let Some(buf) = &mut self.buf else {

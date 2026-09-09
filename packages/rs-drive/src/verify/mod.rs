@@ -3,6 +3,10 @@
 /// Chained document query (provable semi-join) verification methods on
 /// proofs — two grovedb proofs verified as one composed statement.
 pub mod chained_document;
+/// Composite document query (page plus derived sub-queries)
+/// verification methods on proofs — one merged proof verified as one
+/// composed statement.
+pub mod composite_document;
 ///DataContract verification methods on proofs
 pub mod contract;
 /// Document verification methods on proofs

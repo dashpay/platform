@@ -9,6 +9,16 @@ move funds. Keeping signing material out of that file by construction is what
 makes the rest of the crate safe to operate casually: you can back up the
 `.db` without backing up your keys.
 
+Copying it freely does carry one caveat that is about *deleted* data rather
+than keys. SQLite frees pages without clearing them, and `Backup` copies pages
+including the freelist, so a removed wallet's rows could otherwise ride along
+in every later snapshot. The persister therefore runs with
+`PRAGMA secure_delete = FAST` throughout and raises it to `ON` for the
+`delete_wallet` cascade, where whole pages are released and only `ON` clears
+them. What that does not do — and cannot — is scrub a backup taken before the
+deletion. Those snapshots still hold the wallet, by design; delete them
+yourself if the point of the deletion was to make the data unrecoverable.
+
 So secrets get their own home, their own crypto, and their own typed,
 secret-free error surface — separate from the persister entirely.
 
@@ -169,10 +179,17 @@ config). Trailing bytes after a valid decode are also refused —
   the (attacker-controllable) header, so on a read the Argon2 ceiling
   is enforced **before** any derivation/allocation — both the wider
   `enforce_bounds` (algorithm id + floors/ceilings) AND a tighter
-  per-read gate that refuses any `m_kib > default_target().m_kib` OR
-  `t > default_target().t`. A forged header cannot inflate memory by
-  more than the shipped default or CPU by more than the shipped
-  iteration count.
+  per-read gate that refuses any `m_kib > ARGON2_READ_MAX_M_KIB` OR
+  `t > ARGON2_READ_MAX_T`. A forged header cannot inflate memory or CPU
+  beyond that ceiling.
+
+  Those two constants are **wire-format, not tunables**: the read gate is
+  deliberately decoupled from `default_target()`, which is an ordinary
+  write-side tunable, so lowering the shipped default can never orphan an
+  already-enrolled secret. A `const` assertion keeps the write target at or
+  below the ceiling, so raising the default past it breaks the build rather
+  than the users. The ceiling may only ever be RAISED — a header this build
+  refuses is unrecoverable.
 - **No vault format bump.** The envelope lives *inside* the entry
   bytes, identical over File and Os, so there is no vault-parser or
   migration change.
@@ -378,12 +395,19 @@ unwrapped copy is allocated.
   One file, one passphrase, one lock — a multi-wallet
   store cannot lock its other wallets out by construction. Errors
   surface as the typed `SecretStoreError` through `SecretStore`.
-  On Unix the vault's parent directory must not be group/other writable
-  (`mode & 0o022`): directory write access governs rename/replace of the
-  vault, so a writable parent is refused at `open` with
-  `SecretStoreError::InsecureParentDir` (the A1 guarantee depends on it).
-  A read-only group-accessible parent (`0o750`) is accepted — it only
-  leaks filenames, never the 0600-protected vault contents.
+  On Unix the check covers EVERY ancestor of the vault's parent up to `/`,
+  walked twice — over the lexical path and over its canonical target — so a
+  symlink cannot hide an unsafe ancestor behind a safe-looking one. An
+  ancestor is refused at `open` with `SecretStoreError::InsecureParentDir`
+  when it is group/other writable (`mode & 0o022`) WITHOUT the sticky bit,
+  or when it is owned by neither the effective user nor a root identity:
+  directory write access governs rename/replace of the vault, and an
+  untrusted owner can grant itself that access at will (the A1 guarantee
+  depends on both). A sticky writable directory such as `/tmp` (`0o1777`)
+  is accepted — the sticky bit is what stops one user replacing another's
+  entries. A read-only group-accessible ancestor (`0o750`) is accepted too
+  — it only leaks filenames, never the 0600-protected vault contents. The
+  walk is Unix-only; Windows ACLs are not inspected (issue #3754).
   Each secret is capped at `MAX_SECRET_LEN` (8176 B) at the write
   boundary — still ~30× any mnemonic/seed/xpriv — so a single oversized
   entry cannot inflate the shared document past the read-side 128 MiB
@@ -407,13 +431,14 @@ unwrapped copy is allocated.
   **Over-long passphrases are rejected too.** `open`/`rekey` and both
   sides of the Tier-2 object-password path refuse anything past
   `MAX_PASSPHRASE_LEN` (4080 B, one guarded page) with
-  `SecretStoreError::PassphraseTooLong`. This is a memory bound, not a
-  policy one: a passphrase stays resident in `mlock`ed pages for its
-  store's whole lifetime, and three are live at once during a
-  `reprotect`, so an unbounded one would break the locked-memory budget
-  above. The `serde`-gated `Deserialize` impl applies the same ceiling,
-  since config is the one construction path whose size this crate does
-  not control.
+  `SecretStoreError::PassphraseTooLong`. This is a memory bound at the store
+  boundaries, not a policy one: a passphrase stays resident in `mlock`ed
+  pages for its store's whole lifetime, and three are live at once during a
+  `reprotect`, so an unbounded one would break the locked-memory budget above.
+  The `serde`-gated `Deserialize` impl applies the same ceiling, since config
+  is the one construction path whose size this crate does not control. A
+  caller-driven `SecretString::replace_range` applies no ceiling and can grow
+  a value past `MAX_PASSPHRASE_LEN` before it reaches those boundaries.
 - **OS keyring (`SecretStore::os` / `default_credential_store`)** —
   returns an `Arc<dyn CredentialStoreApi + Send + Sync>` over the
   platform's default credential store. The backend on Linux/FreeBSD is
@@ -464,48 +489,14 @@ automatic fallback between backends.
 
 ### Error surface
 
-`SecretStore` returns the typed `SecretStoreError` — 23 variants in total.
-For the file arm this is **lossless**: `WrongPassphrase`, `Corruption`,
-`AlreadyLocked`, `KdfFailure`, `EntropyUnavailable`, `VersionUnsupported`,
-`MalformedVault`, `InsecurePermissions`, `InsecureParentDir`,
-`SecretTooLarge`, `VaultTooLarge`, `PassphraseTooLong`, `Encrypt`, `NoEntry`,
-`Io`, and `InvalidLabel` are distinct typed variants. The Tier-2 layer adds
-five more: `ExpectedProtectedButUnsealed` (the fail-closed strip refusal),
-`NeedsPassword` (a protected object read with no password), `WrongPassword`
-(object-password tag fail — distinct from the Tier-1 `WrongPassphrase`),
-`BlankPassphrase` (a blank or sub-floor vault passphrase or object password), and
-`UnsupportedEnvelopeVersion { found }` (a future envelope format, fail
-closed regardless of the password). The four Tier-2 credential/protection
-*state* variants project to a recoverable `NoStorageAccess` (boxed,
-downcast-recoverable, like `WrongPassphrase`); `UnsupportedEnvelopeVersion`
-joins the secret-free `BadStoreFormat` group. `VaultTooLarge` surfaces when
-the on-disk vault exceeds the read-side ceiling; `SecretTooLarge` rejects an
-oversized secret at the write boundary before it can inflate the shared
-vault; `PassphraseTooLong` rejects a vault passphrase or object password
-past the 4080-byte `mlock`ed-page ceiling before it is ever derived (see
-"Short passphrases are rejected" above); `EntropyUnavailable` marks an
-exhausted or blocked OS CSPRNG draw for a salt, nonce, or key — kept
-distinct from `KdfFailure` so it is not misdiagnosed as an Argon2 parameter
-problem; `InsecureParentDir` refuses a vault whose ancestor chain has unsafe
-ownership or a group/other-writable component without the sticky bit (an
-attacker who can replace an ancestor can replace the `0600` file); `Encrypt`
-is the (effectively unreachable) AEAD
-encrypt-side failure, kept typed so a write failure is never mislabeled a
-key-derivation error; `NoEntry` surfaces from mutators that need an
-existing `(service, label)` entry to act on (e.g. `reprotect`, see above);
-`Io` wraps a filesystem failure (open/write/rename/fsync) with the OS error
-code and, when known, the non-secret caller-supplied path. `Decrypt` is an
-internal AEAD-tag discriminant with no vault context attached — every
-caller-facing path resolves it to `WrongPassphrase` (header verify-token),
-`Corruption` (entry, post-header), or `WrongPassword` (Tier-2 envelope)
-before it can escape, so it never reaches a `SecretStore` caller, but it is
-still a variant every exhaustive match below (including the `KeyringError`
-projection) must classify. For the OS arm,
-`keyring_core::Error` projects best-effort into
-`SecretStoreError::OsKeyring { kind: OsKeyringErrorKind }`, a payload-free
-discriminant — keyring variants carrying raw bytes (`BadEncoding`,
-`BadDataFormat`) are collapsed so their bytes never enter the error
-(CWE-209/CWE-532).
+`SecretStore` returns the typed `SecretStoreError`. The main caller decisions
+are whether to retry credentials (`WrongPassphrase`, `WrongPassword`,
+`NeedsPassword`), reject a protection downgrade
+(`ExpectedProtectedButUnsealed`), repair corrupt or unsupported data, fix an
+unsafe or over-budget host setup (including `HostPageSizeExceedsBudget`),
+handle `NoEntry`, or surface an `Io` / `OsKeyring` backend failure. See
+[`src/secrets/error.rs`](./src/secrets/error.rs) for the authoritative variants
+and their backend mappings.
 
 **`WrongPassword` on the OS arm is ambiguous.** A Tier-2 envelope AEAD tag
 failure surfaces as `WrongPassword`, but on the OS-keyring arm the stored
@@ -580,8 +571,10 @@ secret-free.
   `default_credential_store` from the crate root; the body never
   exercises a backend, so the proof is that it compiles. The negative
   direction — `--no-default-features --features sqlite,cli` must build
-  the persister without the `secrets` module — is enforced by the
-  feature gate plus the CI off-state build, not by a test file.
+  the persister without the `secrets` module — rests on the feature gate
+  alone. No test file and **no CI job** cover it: that invocation is a
+  local/manual check, so a regression in the off-state build reaches
+  `main` unnoticed.
 - **`tests/sqlite_persist_roundtrip.rs::tc082_no_box_dyn_error_in_src`**:
   all public method signatures use concrete error types
   (`WalletStorageError`, `PersistenceError`) — never

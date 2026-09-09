@@ -1,9 +1,15 @@
-//! Build-only proof (M-S4) that the default build (no flag passed)
-//! reaches `EncryptedFileStore` as a public type.
+//! Build-only proof (M-S4) that the `secrets` public surface is reachable
+//! from the crate root, not only by a deep module path.
 //!
-//! With `secrets` in the default feature set, importing the type from
-//! the crate root without enabling any feature flag is the assertion.
-//! The test body never exercises a backend — it only compiles.
+//! Naming every re-export in a body that never runs a backend is the whole
+//! assertion: it fails to COMPILE if a type stops being re-exported at
+//! `platform_wallet_storage::secrets`.
+//!
+//! It does NOT prove that `secrets` is default-on, and cannot: the
+//! dev-dependency this file compiles under sets `default-features = false` and
+//! then lists `secrets` explicitly, so the feature is on by request here, not
+//! by default. Proving the shipped default set would take a separate crate or
+//! a CI step that builds with real defaults.
 
 #![cfg(feature = "secrets")]
 

@@ -667,7 +667,7 @@ pub async fn test_platform_wallet_manager() -> (
     Arc<crate::PlatformWalletManager<NoopTestPersister>>,
     WalletId,
 ) {
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
     // Canonical all-`abandon` BIP-39 test vector.
@@ -684,8 +684,7 @@ pub async fn test_platform_wallet_manager() -> (
         event_handler,
     ));
 
-    let mnemonic =
-        Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+    let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
     let seed_bytes = mnemonic.to_seed("");
     // `Some(0)` skips the SPV birth-height lookup so the create never hits the
     // network.
@@ -733,9 +732,9 @@ pub(crate) async fn mnemonic_wallet_manager(
 ) {
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::ManagedWalletInfo;
-    use key_wallet::{Language, Mnemonic};
+    use key_wallet::Mnemonic;
 
-    let mnemonic = Mnemonic::from_phrase(phrase, Language::English).expect("valid test mnemonic");
+    let mnemonic = Mnemonic::from_phrase(phrase).expect("valid test mnemonic");
     let wallet = Wallet::from_mnemonic(
         mnemonic,
         Network::Testnet,

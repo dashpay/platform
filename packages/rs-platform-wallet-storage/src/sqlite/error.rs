@@ -99,10 +99,16 @@ pub enum WalletStorageError {
 
     /// A database ancestor is writable without the sticky bit or is owned by
     /// neither the current user nor root, allowing replacement despite `0600`.
-    #[error("database parent directory has insecure permissions")]
+    ///
+    /// Names the offending ancestor rather than the database's own parent: the
+    /// walk runs to `/`, and a nine-component path leaves the user nothing to
+    /// act on otherwise.
+    #[error("{}", crate::parent_permissions::insecure_ancestor_message("database", .ancestor, .reason))]
     InsecureParentDir {
-        /// Offending POSIX mode bits on the ancestor directory.
-        mode: u32,
+        /// The ancestor that was refused, not the database's parent.
+        ancestor: PathBuf,
+        /// Which of the two conditions fired; they need different remediations.
+        reason: crate::parent_permissions::InsecureAncestor,
     },
 
     /// `delete_wallet` (or another wallet-id-keyed operation) was
@@ -297,6 +303,16 @@ pub enum WalletStorageError {
     )]
     OrphanedIdentityEntry { owner: [u8; 32] },
 
+    /// One wallet could not be rehydrated by `load()`'s per-wallet loop.
+    ///
+    /// Raised only at the loop's isolation boundary, so a failure that
+    /// belongs to one wallet is attributable to it instead of ending the
+    /// whole load. The cause is carried as text rather than as a source: the
+    /// boundary hands the ORIGINAL error back under `LoadPolicy::Strict`, and
+    /// this variant exists for the degraded path, where the load survives.
+    #[error("wallet {} could not be rehydrated: {cause}", hex::encode(wallet_id))]
+    WalletRehydrationFailed { wallet_id: [u8; 32], cause: String },
+
     /// An `account_registrations` row's typed `(account_type, account_index)`
     /// columns disagreed with the decoded `AccountRegistrationEntry` blob.
     /// Rejected at decode time so the manifest oracle never hands back an
@@ -347,7 +363,10 @@ pub enum WalletStorageError {
     AccountRejected { cause: String },
 
     /// An `account_registrations` row is missing for a given `(account_type, account_index)`.
-    #[error("required account information is missing for wallet_id {wallet_id:?}")]
+    #[error(
+        "required account information is missing for wallet {}",
+        hex::encode(wallet_id)
+    )]
     MissingAccount { wallet_id: [u8; 32] },
 
     /// Account record is invalid
@@ -370,6 +389,17 @@ pub enum WalletStorageError {
         blob_outpoint: String,
         typed_account_index: u32,
         blob_account_index: u32,
+    },
+
+    /// An `asset_locks` row's typed status disagreed with its lifecycle blob.
+    #[error(
+        "asset lock {outpoint} status disagrees with lifecycle blob \
+         (typed status={typed_status}, blob status={blob_status})"
+    )]
+    AssetLockStatusMismatch {
+        outpoint: String,
+        typed_status: String,
+        blob_status: String,
     },
 
     /// A `core_transactions` row's typed txid or height disagreed with its
@@ -413,6 +443,14 @@ pub enum WalletStorageError {
         requested: &'static str,
         actual: String,
     },
+
+    /// `PRAGMA secure_delete` was issued on open but read back as `0` (off).
+    /// Without it SQLite leaves deleted row content readable in freed pages,
+    /// and `Backup` copies those pages into every later snapshot, so a wallet
+    /// the user deleted would keep propagating. Hard-error at open rather than
+    /// running with an at-rest guarantee the crate documents and does not have.
+    #[error("PRAGMA secure_delete could not be enabled on this connection (reports {actual})")]
+    SecureDeleteNotApplied { actual: i64 },
 
     /// A pre-existing / restored DB passed `integrity_check` but its
     /// `refinery_schema_history` carries a malformed row (non-RFC3339
@@ -485,14 +523,24 @@ pub enum WalletStorageError {
     },
 
     /// A write was attempted on a persister opened with
-    /// [`LoadPolicy::Recovery`](crate::LoadPolicy). Recovery mode serves a
-    /// degraded projection of the rows, so writing it back would overwrite
-    /// good data with the tolerated view of it. Reopen with
-    /// [`LoadPolicy::Strict`](crate::LoadPolicy) once the database is
-    /// repaired. `operation` names the blocked entry point.
+    /// [`LoadPolicy::Recovery`](crate::LoadPolicy). Recovery is read-only
+    /// **unconditionally, by policy** — `ensure_writable` gates on the
+    /// configured policy, not on whether the load actually tolerated
+    /// anything, because writing back a load that turned out clean would
+    /// be safe but writing back one that degraded would overwrite good
+    /// rows with the tolerated view of them, and nothing at the write
+    /// call site can tell the two apart. Use
+    /// [`SqlitePersister::last_load_degradation`](crate::SqlitePersister::last_load_degradation)
+    /// or
+    /// [`SqlitePersister::is_degraded`](crate::SqlitePersister::is_degraded)
+    /// to find out whether this persister's last load actually needs
+    /// repair before assuming so. `operation` names the blocked entry
+    /// point.
     #[error(
-        "`{operation}` is blocked: the persister is open in recovery mode (read-only) — \
-         repair the database, then reopen it under the strict load policy to write again"
+        "`{operation}` is blocked: the persister is open in recovery mode, which is read-only by \
+         policy regardless of whether the last load tolerated anything — check \
+         `last_load_degradation()` (or `is_degraded()`) to see whether a repair is actually \
+         needed, then reopen under the strict load policy to write again"
     )]
     ReadOnlyRecoveryMode { operation: &'static str },
 
@@ -522,6 +570,22 @@ pub enum WalletStorageError {
         already_generated: u32,
         implied: u32,
         cap: u32,
+    },
+
+    /// A pool's persisted state implies a gap-limit refill target that is
+    /// not a derivable non-hardened child index — either the target
+    /// over/underflows `u32`, or it lands at or past the BIP-32
+    /// normal-child ceiling of `2^31`. Refused before the refill runs:
+    /// upstream computes the same target with raw arithmetic and would
+    /// panic on it, which no load policy can tolerate.
+    #[error(
+        "an address pool with highest used index {highest_used:?} and gap limit {gap_limit} \
+         implies a refill target that is not a derivable address index; the pool's window \
+         stays short, so a previously-used address in it may be handed out again as fresh"
+    )]
+    RehydrationGapLimitTargetOutOfRange {
+        highest_used: Option<u32>,
+        gap_limit: u32,
     },
 
     /// The upstream gap-limit refill itself failed, leaving the pool's
@@ -562,6 +626,40 @@ pub enum WalletStorageError {
         identity_id: [u8; 32],
         identity_index: u32,
     },
+
+    /// A `core_utxos` write carried an empty `script`.
+    ///
+    /// `load()` turns every stored script back into an address, so an empty
+    /// one leaves a row that rejects the load of the entire database file —
+    /// the shape migration V015 had to purge. Refused at the producer, where
+    /// the write can still be reported, rather than at the reader, where the
+    /// wallet is already un-loadable.
+    #[error("refusing to persist a core_utxos row for {outpoint} with an empty script")]
+    EmptyUtxoScript { outpoint: dashcore::OutPoint },
+
+    /// A `core_address_pool` write carried an empty `script`.
+    ///
+    /// `load()` turns every stored pool script back into an address, so an
+    /// empty one degrades — and under a strict policy fails — the load of
+    /// the wallet that owns it. Refused at the producer, where the write can
+    /// still be reported, rather than at the reader, where the row is
+    /// already persisted.
+    #[error(
+        "refusing to persist a core_address_pool row for {account_type} at address index \
+         {address_index} with an empty script"
+    )]
+    EmptyPoolAddressScript {
+        account_type: &'static str,
+        address_index: u32,
+    },
+
+    /// The configured database path is a symbolic link.
+    ///
+    /// Opening it would follow the link, sending both the SQLite writes and
+    /// the owner-only chmod to the link's target. The path must name the
+    /// database file itself.
+    #[error("database path is a symlink: {}", path.display())]
+    DatabasePathIsSymlink { path: PathBuf },
 }
 
 impl From<WalletStorageError> for PersistenceError {
@@ -634,6 +732,7 @@ impl WalletStorageError {
             | Self::BackupDestinationExists { .. }
             | Self::ForeignKeysNotEnforced
             | Self::JournalModeNotApplied { .. }
+            | Self::SecureDeleteNotApplied { .. }
             | Self::SchemaHistoryMalformed { .. }
             | Self::NotAWalletDb { .. }
             | Self::AlreadyOpen { .. }
@@ -644,6 +743,7 @@ impl WalletStorageError {
             | Self::IdentityIndexConflict { .. }
             | Self::WalletlessIdentityIndex { .. }
             | Self::OrphanedIdentityEntry { .. }
+            | Self::WalletRehydrationFailed { .. }
             | Self::AccountRegistrationEntryMismatch
             | Self::ProviderKeyAccountEntryMismatch
             | Self::ProviderKeyAccountConflict { .. }
@@ -652,6 +752,7 @@ impl WalletStorageError {
             | Self::MissingAccount { .. }
             | Self::AccountRejected { .. }
             | Self::AssetLockEntryMismatch { .. }
+            | Self::AssetLockStatusMismatch { .. }
             | Self::CoreTransactionEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
             | Self::IntegerOverflow { .. }
@@ -660,9 +761,13 @@ impl WalletStorageError {
             | Self::ReadOnlyRecoveryMode { .. }
             | Self::RehydrationEnsureDerivedFailed { .. }
             | Self::RehydrationGapLimitRefillTooLarge { .. }
+            | Self::RehydrationGapLimitTargetOutOfRange { .. }
             | Self::RehydrationGapLimitFailed { .. }
             | Self::UsedAddressOwnerConflict { .. }
-            | Self::UnownedIdentityHasRegistrationIndex { .. } => false,
+            | Self::UnownedIdentityHasRegistrationIndex { .. }
+            | Self::EmptyUtxoScript { .. }
+            | Self::EmptyPoolAddressScript { .. }
+            | Self::DatabasePathIsSymlink { .. } => false,
         }
     }
 
@@ -698,7 +803,75 @@ impl WalletStorageError {
             // if that path leaks through here the typed variant lives in
             // `Self::Migration`, which we leave as `Fatal` since a
             // migration failure isn't a caller bug.
-            _ => PersistenceErrorKind::Fatal,
+            //
+            // Wildcard-free like `is_transient` above: a new variant must fail
+            // to compile here and force a decision, rather than inheriting
+            // `Fatal` — which is the wrong answer for every caller-data fault,
+            // as the hand-classified `Constraint` arms above attest. The
+            // transient variants are unreachable past the early return but
+            // still have to be named for exhaustiveness. The list is long; that
+            // is the cost of the guarantee.
+            Self::Sqlite(_)
+            | Self::FlushRetryable { .. }
+            | Self::Io(_)
+            | Self::Migration(_)
+            | Self::IntegrityCheckFailed { .. }
+            | Self::IntegrityCheckRunFailed { .. }
+            | Self::SourceOpenFailed { .. }
+            | Self::SchemaHistoryMissing
+            | Self::SchemaVersionUnsupported { .. }
+            | Self::AutoBackupDisabled { .. }
+            | Self::AutoBackupDirUnwritable { .. }
+            | Self::InsecureParentDir { .. }
+            | Self::WalletNotFound { .. }
+            | Self::WalletIdMismatch { .. }
+            | Self::LockPoisoned
+            | Self::RestoreDestinationLocked
+            | Self::InvalidWalletIdHex { .. }
+            | Self::InvalidWalletIdLength { .. }
+            | Self::ConfigInvalid { .. }
+            | Self::BincodeEncode { .. }
+            | Self::BincodeDecode { .. }
+            | Self::BlobDecode { .. }
+            | Self::HashDecode { .. }
+            | Self::ConsensusCodec { .. }
+            | Self::AddressDecode { .. }
+            | Self::BackupDestinationExists { .. }
+            | Self::ForeignKeysNotEnforced
+            | Self::JournalModeNotApplied { .. }
+            | Self::SecureDeleteNotApplied { .. }
+            | Self::SchemaHistoryMalformed { .. }
+            | Self::NotAWalletDb { .. }
+            | Self::AlreadyOpen { .. }
+            | Self::IdentityKeyEntryMismatch
+            | Self::IdentityEntryIdMismatch
+            | Self::IdentityScanStateContradiction { .. }
+            | Self::OrphanedIdentityEntry { .. }
+            | Self::WalletRehydrationFailed { .. }
+            | Self::AccountRegistrationEntryMismatch
+            | Self::ProviderKeyAccountEntryMismatch
+            | Self::ProviderKeyAccountConflict { .. }
+            | Self::TypedPoolKeyConflict { .. }
+            | Self::AccountRecordInvalid { .. }
+            | Self::MissingAccount { .. }
+            | Self::AccountRejected { .. }
+            | Self::AssetLockEntryMismatch { .. }
+            | Self::AssetLockStatusMismatch { .. }
+            | Self::CoreTransactionEntryMismatch { .. }
+            | Self::BlobTooLarge { .. }
+            | Self::IntegerOverflow { .. }
+            | Self::RehydrationPoolMismatch { .. }
+            | Self::RehydrationPoolTypeMismatch { .. }
+            | Self::ReadOnlyRecoveryMode { .. }
+            | Self::RehydrationEnsureDerivedFailed { .. }
+            | Self::RehydrationGapLimitRefillTooLarge { .. }
+            | Self::RehydrationGapLimitTargetOutOfRange { .. }
+            | Self::RehydrationGapLimitFailed { .. }
+            | Self::UsedAddressOwnerConflict { .. }
+            | Self::UnownedIdentityHasRegistrationIndex { .. }
+            | Self::EmptyUtxoScript { .. }
+            | Self::EmptyPoolAddressScript { .. }
+            | Self::DatabasePathIsSymlink { .. } => PersistenceErrorKind::Fatal,
         }
     }
 
@@ -741,9 +914,11 @@ impl WalletStorageError {
             Self::HashDecode { .. } => "hash_decode",
             Self::ConsensusCodec { .. } => "consensus_codec",
             Self::AddressDecode { .. } => "address_decode",
+            Self::WalletRehydrationFailed { .. } => "wallet_rehydration_failed",
             Self::BackupDestinationExists { .. } => "backup_destination_exists",
             Self::ForeignKeysNotEnforced => "foreign_keys_not_enforced",
             Self::JournalModeNotApplied { .. } => "journal_mode_not_applied",
+            Self::SecureDeleteNotApplied { .. } => "secure_delete_not_applied",
             Self::SchemaHistoryMalformed { .. } => "schema_history_malformed",
             Self::NotAWalletDb { .. } => "not_a_wallet_db",
             Self::AlreadyOpen { .. } => "already_open",
@@ -762,6 +937,7 @@ impl WalletStorageError {
             Self::ProviderKeyAccountConflict { .. } => "provider_key_account_conflict",
             Self::TypedPoolKeyConflict { .. } => "typed_pool_key_conflict",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
+            Self::AssetLockStatusMismatch { .. } => "asset_lock_status_mismatch",
             Self::CoreTransactionEntryMismatch { .. } => "core_transaction_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",
@@ -772,11 +948,17 @@ impl WalletStorageError {
             Self::RehydrationGapLimitRefillTooLarge { .. } => {
                 "rehydration_gap_limit_refill_too_large"
             }
+            Self::RehydrationGapLimitTargetOutOfRange { .. } => {
+                "rehydration_gap_limit_target_out_of_range"
+            }
             Self::RehydrationGapLimitFailed { .. } => "rehydration_gap_limit_failed",
             Self::UsedAddressOwnerConflict { .. } => "used_address_owner_conflict",
             Self::UnownedIdentityHasRegistrationIndex { .. } => {
                 "unowned_identity_has_registration_index"
             }
+            Self::EmptyUtxoScript { .. } => "empty_utxo_script",
+            Self::EmptyPoolAddressScript { .. } => "empty_pool_address_script",
+            Self::DatabasePathIsSymlink { .. } => "database_path_is_symlink",
         }
     }
 }
@@ -808,5 +990,42 @@ impl From<dashcore::consensus::encode::Error> for WalletStorageError {
 impl From<dashcore::address::Error> for WalletStorageError {
     fn from(source: dashcore::address::Error) -> Self {
         Self::AddressDecode { source }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Invariant: `MissingAccount` must hex-encode `wallet_id` like every
+    /// other wallet-id-bearing variant, not `Debug`-print it as thirty-two
+    /// bracketed decimal integers.
+    #[test]
+    fn missing_account_hex_encodes_the_wallet_id() {
+        let err = WalletStorageError::MissingAccount {
+            wallet_id: [0xa1; 32],
+        };
+        assert_eq!(
+            err.to_string(),
+            "required account information is missing for wallet a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+        );
+    }
+
+    /// Invariant: the message must not assert that something was tolerated
+    /// — `ensure_writable` gates on policy alone, so a clean Recovery load
+    /// hits this same text. It should point at `last_load_degradation`/
+    /// `is_degraded` instead of instructing a repair that may not be needed.
+    #[test]
+    fn read_only_recovery_mode_points_at_the_degradation_query_instead_of_asserting_repair() {
+        let err = WalletStorageError::ReadOnlyRecoveryMode { operation: "flush" };
+        let message = err.to_string();
+        assert!(message.contains("`flush` is blocked"));
+        assert!(message.contains("read-only by policy"));
+        assert!(message.contains("last_load_degradation()"));
+        assert!(message.contains("is_degraded()"));
+        assert!(
+            !message.contains("repair the database"),
+            "message must not tell the operator to repair a database that may be healthy: {message}"
+        );
     }
 }

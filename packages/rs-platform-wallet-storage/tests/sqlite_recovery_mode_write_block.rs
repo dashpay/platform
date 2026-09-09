@@ -15,6 +15,7 @@ use common::{fresh_recovery_persister, wid, LoadPolicy, SqlitePersister, SqliteP
 use platform_wallet::changeset::{
     CoreChangeSet, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
+use platform_wallet::masternode::{TrackedMasternode, TrackedMasternodeSnapshot};
 use platform_wallet_storage::{KvError, KvStore, ObjectId, RetentionPolicy, WalletStorageError};
 
 fn core_changeset() -> PlatformWalletChangeSet {
@@ -39,6 +40,15 @@ fn assert_blocked(err: PersistenceError, operation: &str) {
             assert_eq!(*got, operation, "blocked operation name");
         }
         other => panic!("expected ReadOnlyRecoveryMode, got {other:?}"),
+    }
+}
+
+fn tracked_masternode(byte: u8) -> TrackedMasternode {
+    TrackedMasternode {
+        pro_tx_hash: [byte; 32],
+        label: Some("rescue".to_string()),
+        added_at: byte as u64,
+        snapshot: TrackedMasternodeSnapshot::default(),
     }
 }
 
@@ -132,6 +142,41 @@ fn prune_backups_is_blocked_in_recovery() {
             operation: "prune_backups"
         }
     ));
+}
+
+#[test]
+fn persist_tracked_masternodes_is_blocked_in_recovery() {
+    let (persister, _tmp, _path) = fresh_recovery_persister(|_| {});
+    let err = persister
+        .persist_tracked_masternodes(dashcore::Network::Testnet, &[tracked_masternode(0x21)])
+        .expect_err("persist_tracked_masternodes must be refused in recovery mode");
+    assert_blocked(err, "persist_tracked_masternodes");
+}
+
+/// The gate has to hold the DATA, not just return an error: `replace_all`
+/// is whole-set, so an accepted write DELETEs the network's rows first. A
+/// host mid-rescue whose in-memory list is empty or short would otherwise
+/// zero the very set it opened Recovery to save.
+#[test]
+fn refused_persist_tracked_masternodes_leaves_the_stored_set_intact() {
+    let network = dashcore::Network::Testnet;
+    let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
+        strict
+            .persist_tracked_masternodes(network, &[tracked_masternode(0x22)])
+            .expect("seed the tracked set through the strict persister");
+    });
+
+    let _ = persister.persist_tracked_masternodes(network, &[]);
+
+    let rows = persister
+        .load_tracked_masternodes(network)
+        .expect("reads stay available in recovery mode");
+    assert_eq!(
+        rows.len(),
+        1,
+        "a refused whole-set write must not delete the rows the rescue is trying to save"
+    );
+    assert_eq!(rows[0].pro_tx_hash, [0x22u8; 32]);
 }
 
 #[test]

@@ -27,10 +27,14 @@ use crate::sqlite::schema::blob;
 // PUBLIC material only: ciphertext + public-key indices, never private bytes.
 crate::sqlite::schema::blob::impl_persistable_blob!(PendingContactCrypto);
 
-/// TEXT-column domain for `pending_contact_crypto.kind`. Single source of truth
-/// shared with the migration's CHECK clause and [`kind_db_label`]; pinned equal
-/// to the writer's codomain by `kind_labels_match_enum`.
-pub const KIND_LABELS: &[&str] = &[
+/// TEXT-column domain for `pending_contact_crypto.kind`. The migrations
+/// interpolate nothing: V001 freezes its own copy of this domain, because a
+/// generated-SQL change breaks that migration's Refinery checksum on every
+/// database that already applied it. Pinned equal to the writer's codomain by
+/// `kind_labels_match_enum`, and to V001's frozen list by
+/// `kind_labels_frozen_in_v001`.
+#[cfg(test)]
+pub(crate) const KIND_LABELS: &[&str] = &[
     "register_receiving",
     "register_external",
     "contact_info_decrypt",
@@ -103,16 +107,22 @@ pub fn apply_pending_contact_crypto(
 /// Every wallet's deferred-crypto queue, grouped by `wallet_id`, decoded from
 /// the `payload` blob.
 ///
-/// The production consumer is the `load()` restore into each identity's
-/// each identity's `DashPayState.pending_contact_crypto`, fanned out by `owner_identity_id`
-/// (this reader returns entries grouped by `wallet_id`; the restore must apply
-/// the wallet's identities BEFORE routing each entry to its owner's queue, or an
-/// entry whose owner isn't resident yet is dropped). It is blocked on the
-/// upstream per-wallet state restore (`LOAD_UNIMPLEMENTED: ClientStartState::wallets`
-/// — see `persister.rs`). Until that lands this reader is exercised only by the
-/// round-trip test, so it is `cfg(test)`-gated to keep both the lib and the
-/// `__test-helpers` builds dead-code-clean; widen to
-/// `any(test, feature = "__test-helpers")` when the load restore consumes it.
+/// **Nothing on the production path calls this.** `load()` does not restore
+/// the queue, so a restart abandons whatever it holds — the table is listed
+/// in `LOAD_UNIMPLEMENTED` (see `persister.rs`) so the abandoned rows are at
+/// least counted on `LoadDegradation` rather than reported as none.
+///
+/// The precondition once cited here — an upstream per-wallet state restore —
+/// is met: `load()` rebuilds a full `ClientWalletStartState`. What remains is
+/// a decision nobody has taken, not a blocker. The consumer would be each
+/// identity's `DashPayState.pending_contact_crypto`, fanned out by
+/// `owner_identity_id`; this reader groups by `wallet_id`, so a restore must
+/// make the wallet's identities resident BEFORE routing entries, or an entry
+/// whose owner is not yet loaded is silently dropped.
+///
+/// `cfg(test)`-gated to keep the lib and `__test-helpers` builds
+/// dead-code-clean; widen to `any(test, feature = "__test-helpers")` when a
+/// production consumer exists.
 #[cfg(test)]
 pub(crate) fn all_pending_contact_crypto(
     conn: &Connection,
@@ -156,6 +166,26 @@ mod tests {
         assert_eq!(
             mapped, labels,
             "KIND_LABELS must equal the kind_db_label codomain"
+        );
+    }
+
+    /// Pins the live domain to the list frozen in `V001__initial.rs`.
+    ///
+    /// IF THIS FAILS: do NOT edit V001's list to match. Refinery checksums a
+    /// migration's rendered SQL, so changing an applied migration's body makes
+    /// every database that already ran it fail to open, permanently. Append a
+    /// migration rebuilding the table with the widened CHECK (the
+    /// `V004__asset_lock_recovered_status.rs` pattern), then update this pin.
+    #[test]
+    fn kind_labels_frozen_in_v001() {
+        assert_eq!(
+            KIND_LABELS,
+            &[
+                "register_receiving",
+                "register_external",
+                "contact_info_decrypt",
+                "auto_accept",
+            ]
         );
     }
 

@@ -149,12 +149,25 @@ to be explicit about the backend.
 flush, 5 s busy timeout, WAL journal, `NORMAL` synchronous, and an
 auto-backup dir at `<db_dir>/backups/auto/`.
 
-The trait surface is `store` / `flush` / `load` / `get_core_tx_record`.
 Schema migrations are versioned Rust files under `migrations/`, applied via
 [`refinery`](https://github.com/rust-db/refinery) on every `open`. The current
-migration set is still unreleased, so every migration may be edited in place
-until the crate's first release. Once the schema ships, migrations become
-append-only.
+migrations V001-V007 have already been published on `v4.2-dev`: their bodies
+are frozen byte-for-byte and their versions are never reassigned to different
+DDL. Later migrations are append-only once published. A `CHECK` domain inside
+any migration is a frozen literal, never
+interpolated from a live Rust const, so adding an enum variant cannot rewrite
+an applied migration's SQL. Both rules exist because refinery validates an
+applied migration's checksum against the embedded migration of the same
+version, and a mismatch means the database never opens again.
+
+An upgrade applies its pending SQL, typed legacy-state conversion, and schema
+history in one transaction. The V008-V011 conversion recovers registration
+discriminators from their blobs and preserves legacy pool ownership, used and
+reserved states, public keys, and separately recorded derived addresses.
+Malformed state belonging to an existing wallet fails the upgrade and leaves
+the original schema, data, history, and pre-migration backup intact. Legacy
+pool tables remain available when stopping at V008-V010 and are retired only
+after their conversion succeeds.
 
 #### Flush semantics (store / flush)
 
@@ -343,7 +356,7 @@ untrusted replacement or modification.
 | `secrets` | yes | `platform_wallet_storage::secrets` submodule — zeroizing secret wrappers (`SecretBytes`, `SecretString`), the `EncryptedFileStore` Argon2id + XChaCha20-Poly1305 vault backend, and the `default_credential_store()` OS-keyring constructor. Implements the upstream `keyring_core::api::{CredentialApi, CredentialStoreApi}` SPI. |
 | `kv` | yes | Per-object-type key/value metadata API (`KvStore`, `KvError`, `ObjectId`) plus its SQLite-backed impl on `SqlitePersister`. Implies `sqlite`. The `meta_*` tables are always created by V001 so DB files stay interoperable across feature combos; this gate only controls the Rust API surface. |
 | `serde` | no | `Deserialize` for `SecretString`, so a config struct can carry a vault passphrase or object password straight into guarded memory. Gates the IMPL only — `secrets` compiles the serde dep regardless — and there is deliberately no `Serialize` under any combination. |
-| `shielded` | no | Persists and restores Orchard viewing keys from `PlatformWalletChangeSet::shielded`. Enables `platform-wallet/shielded`; the rest of the shielded state stays in the host-provided `ShieldedStore`. |
+| `shielded` | no | Persists and restores Orchard viewing keys from `PlatformWalletChangeSet::shielded`. Implies `sqlite` and enables `platform-wallet/shielded`; the rest of the shielded state stays in the host-provided `ShieldedStore`. |
 | `test-util` | no | `SecretStore::file_mock` / `EncryptedFileStore::open_mock` — vault constructors that use the Argon2id floor instead of the 64 MiB target, so a downstream suite does not pay a production KDF per call. `[dev-dependencies]` ONLY: the constructors panic outside debug builds. |
 | `__test-helpers` | no | Crate-private `lock_conn_for_test` / `config_for_test` accessors. The double-underscore prefix follows Cargo's "do not enable from downstream" convention; the methods are also `#[doc(hidden)]`. |
 
@@ -370,6 +383,42 @@ future variant must force every consumer `match` to update explicitly. The
 SQLite side classifies its native errors through
 `WalletStorageError::persistence_kind` and exposes the retry decision
 directly via `WalletStorageError::is_transient`.
+
+### Database trust model
+
+The wallet `.db` is **trusted local state**, not untrusted input. It is
+expected to sit under the host application's own private directory, owned
+by the same user at the same privilege level as the process reading it. An
+adversary who can write arbitrary rows into the `.db` has already achieved
+same-privilege local code execution, at which point the process's own
+memory, its keyring entries, and its vault passphrase prompt are all
+equally reachable — so hardening the read path against that adversary buys
+nothing. **Threat models premised on an attacker-authored database are out
+of scope for this crate.**
+
+The read path is nonetheless defensive, and deliberately so — against
+*corruption*, not against attack:
+
+- Layered size limits (16 MiB per-value cap, bounded bincode decode,
+  32 MiB connection backstop) keep a truncated or bit-rotted blob from
+  becoming an allocation the process cannot survive.
+- Typed columns are cross-checked against their decoded BLOB counterparts
+  on every read, so a partially-applied write is caught rather than
+  silently trusted.
+- Key/identity co-ownership is structurally enforced (compound FK plus a
+  trigger fallback where SQLite's own FK check goes dormant on NULL
+  columns), so a half-written relation fails closed.
+- `PRAGMA integrity_check` and `PRAGMA foreign_key_check` run
+  unconditionally at open in both load policies.
+
+Read every one of those as bounding the blast radius of a bug, a crash
+mid-write, or failing storage hardware. None of them is a security control,
+and none should be cited as one. Where a bound exists only to keep work
+finite — the rehydration derivation caps, for instance — its documentation
+says so in those terms rather than claiming to stop an attacker.
+
+Backups inherit the same model: restore validation establishes structure,
+not provenance. Protect backup directories as you protect the live DB.
 
 ### Schema
 

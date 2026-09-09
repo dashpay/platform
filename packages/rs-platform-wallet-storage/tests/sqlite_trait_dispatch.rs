@@ -66,46 +66,6 @@ fn trait_object_dispatches_store_flush_load() {
     assert!(state.wallets.is_empty());
 }
 
-#[test]
-fn trait_object_delete_wallet_defaults_to_unsupported() {
-    let persister: Arc<dyn PlatformWalletPersistence> = Arc::new(StoreOnlyPersister);
-    let error = persister
-        .delete_wallet(wid(0xAC))
-        .expect_err("backend without deletion support must return a typed error");
-    assert!(!error.is_transient());
-    assert_eq!(
-        error.kind(),
-        Some(platform_wallet::changeset::PersistenceErrorKind::Fatal)
-    );
-    assert!(matches!(
-        error,
-        PersistenceError::UnsupportedOperation {
-            operation: "delete_wallet"
-        }
-    ));
-}
-
-#[test]
-fn sqlite_trait_delete_wallet_cascades_rows() {
-    let (persister, _tmp, path) = fresh_persister();
-    let wallet_id = wid(0x54);
-    ensure_wallet_meta(&persister, &wallet_id);
-    PlatformWalletPersistence::store(&persister, wallet_id, changeset(core_with_height(12, 12)))
-        .expect("store must succeed in Immediate mode");
-
-    PlatformWalletPersistence::delete_wallet(&persister, wallet_id)
-        .expect("trait deletion must delegate to SQLite cascade");
-
-    let remaining: i64 = ro_conn(&path)
-        .query_row(
-            "SELECT COUNT(*) FROM core_sync_state WHERE wallet_id = ?1",
-            rusqlite::params![wallet_id.as_slice()],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(remaining, 0);
-}
-
 /// The inherent `delete_wallet` cascades the on-disk rows and reports
 /// the deleted id plus the auto-backup path it took.
 #[test]

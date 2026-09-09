@@ -431,6 +431,7 @@ fn tc010_asset_lock_roundtrip() {
     let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::load_state(
         &p2.lock_conn_for_test(),
         &w,
+        &platform_wallet_storage::LoadCtx::strict(),
     )
     .unwrap();
     let by_outpoint = &bucketed[&5];
@@ -499,6 +500,7 @@ fn tc010b_recovered_from_chain_lock_roundtrip() {
     let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::load_state(
         &p2.lock_conn_for_test(),
         &w,
+        &platform_wallet_storage::LoadCtx::strict(),
     )
     .unwrap();
     let tracked = &bucketed[&0][&outpoint];
@@ -623,6 +625,7 @@ fn tc010c_stale_recovery_snapshot_cannot_regress_consumed_row() {
     let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::load_state(
         &p2.lock_conn_for_test(),
         &w,
+        &platform_wallet_storage::LoadCtx::strict(),
     )
     .unwrap();
     assert_eq!(

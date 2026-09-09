@@ -77,12 +77,15 @@ pub fn delete(tx: &Transaction<'_>, wallet_id: &WalletId) -> Result<usize, Walle
 }
 
 /// Source of truth for the `wallets.network` TEXT domain, mirroring
-/// [`key_wallet::Network`]. `migrations/V001__initial.rs` interpolates it into
-/// a `CHECK (network IN (...))` clause; `network_labels_match_enum` keeps it in
-/// sync with [`network_to_str`].
+/// [`key_wallet::Network`]. The migrations interpolate nothing: V001 freezes
+/// its own copy of this domain, because a generated-SQL change breaks that
+/// migration's Refinery checksum on every database that already applied it.
+/// `network_labels_match_enum` pins this array to [`network_to_str`];
+/// `network_labels_frozen_in_v001` pins it to V001's frozen list.
+#[cfg(test)]
 pub(crate) const NETWORK_LABELS: &[&str] = &["mainnet", "testnet", "devnet", "regtest"];
 
-fn network_to_str(net: key_wallet::Network) -> &'static str {
+pub(crate) fn network_to_str(net: key_wallet::Network) -> &'static str {
     match net {
         key_wallet::Network::Mainnet => "mainnet",
         key_wallet::Network::Testnet => "testnet",
@@ -140,6 +143,18 @@ mod tests {
             "NETWORK_LABELS ({:?}) drifted from network_to_str codomain ({:?})",
             from_const, from_writer
         );
+    }
+
+    /// Pins the live domain to the list frozen in `V001__initial.rs`.
+    ///
+    /// IF THIS FAILS: do NOT edit V001's list to match. Refinery checksums a
+    /// migration's rendered SQL, so changing an applied migration's body makes
+    /// every database that already ran it fail to open, permanently. Append a
+    /// migration rebuilding the table with the widened CHECK (the
+    /// `V004__asset_lock_recovered_status.rs` pattern), then update this pin.
+    #[test]
+    fn network_labels_frozen_in_v001() {
+        assert_eq!(NETWORK_LABELS, &["mainnet", "testnet", "devnet", "regtest"]);
     }
 
     #[test]

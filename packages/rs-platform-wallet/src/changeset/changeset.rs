@@ -13,12 +13,11 @@
 //! key-wallet lives in dedicated sub-changesets: identities, contacts,
 //! platform addresses, asset locks, and token balances.
 //!
-//! Earlier revisions of this file used `key_wallet::changeset::WalletChangeSet`
-//! verbatim in the `core` field. That upstream type was deleted in favour
-//! of an event-bus model (see PR #696 in rust-dashcore). Platform-wallet
-//! subscribes to the event bus, projects each event into a `CoreChangeSet`,
-//! and routes it through this changeset's `core` slot — keeping the
-//! per-domain merge / apply shape downstream consumers already know.
+//! key-wallet exposes core wallet changes as an event bus rather than a
+//! changeset type of its own. Platform-wallet subscribes to that bus,
+//! projects each event into a `CoreChangeSet`, and routes it through this
+//! changeset's `core` slot — so every domain, core included, shares one
+//! merge / apply shape downstream consumers can rely on.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -63,12 +62,13 @@ use crate::wallet::identity::{
 /// `WalletEvent` bus delivers.
 ///
 /// Built by the platform-wallet event adapter from `WalletEvent` variants
-/// emitted by `WalletManager`. The merge implementation coalesces the
-/// record vecs newest-wins (by txid for the wallet-level `records`, by
+/// emitted by `WalletManager`. Every field is additive except
+/// [`Self::sweeps`]. The merge implementation coalesces the record vecs
+/// newest-wins (by txid for the wallet-level `records`, by
 /// `(txid, account)` for `account_records` — see
 /// [`fold_same_txid_records`]), uses monotonic-max for the height
-/// watermarks, `extend` for the utxo vecs, and last-write-wins for the
-/// IS-lock map.
+/// watermarks, `extend` for the utxo vecs and for `sweeps` (in emission
+/// order — see the field), and last-write-wins for the IS-lock map.
 ///
 /// # Why a projection instead of the upstream type
 ///
@@ -87,7 +87,7 @@ use crate::wallet::identity::{
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CoreChangeSet {
     /// Transaction records produced by this batch — one WALLET-LEVEL
-    /// record per txid (dashpay/platform#4387).
+    /// record per txid.
     ///
     /// Includes records first stored (`TransactionDetected`,
     /// `BlockProcessed.inserted`), records whose context advanced
@@ -232,6 +232,89 @@ pub struct CoreChangeSet {
     /// lower height never overwrites a higher one — chain locks are
     /// strictly forward-advancing per upstream's contract).
     pub last_applied_chain_lock: Option<ChainLock>,
+
+    /// Sweeps this batch carries, in the order the wallet emitted them.
+    ///
+    /// The one subtractive part of this type. Every other field is additive,
+    /// which is exactly why this one has to exist: a persister that only ever
+    /// appends keeps the dead rows and replays them on the next load,
+    /// re-creating a balance the wallet has already corrected.
+    ///
+    /// Kept as ordered batches rather than folded into one removal list plus
+    /// one release set. Each sweep describes the wallet at the moment it
+    /// fired, and those descriptions can disagree: an early sweep frees a
+    /// coin, something later spends it, and a later sweep removes that
+    /// spender while keeping the coin spent because its own winner took it.
+    /// Union the release sets and the first answer outlives the last one that
+    /// is actually true. Applied in order, each batch corrects the one before
+    /// it, which is what the wallet itself did.
+    /// `serde(default)` so a payload written before this field existed still
+    /// reads, as an empty vec — the exact backward-compatible meaning, since
+    /// a changeset from then could not have carried a sweep.
+    ///
+    /// Scope of that claim: it holds for SELF-DESCRIBING encodings (JSON and
+    /// friends), where a missing field is a fact the decoder can see. It does
+    /// NOT hold for a non-self-describing one — bincode, which is what this
+    /// workspace persists every stored blob with — where appending a field is
+    /// a wire break `default` cannot absorb. That is not a live hazard today:
+    /// nothing in-tree serializes a changeset at all (the derive is behind the
+    /// optional `serde` feature for out-of-tree consumers), and this note
+    /// exists so nobody starts persisting one with bincode believing the
+    /// attribute makes it upgrade-safe.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub sweeps: Vec<SweepBatch>,
+}
+
+/// One `TransactionsSwept` event: the transactions it removed, the
+/// transaction that beat them, and the coins its removal actually freed.
+///
+/// The grouping is what makes ordering expressible. `released_outpoints` is
+/// only true relative to the wallet as this event saw it, so it belongs with
+/// the removals it came from rather than in a set shared with every other
+/// sweep in the batch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SweepBatch {
+    /// The removed transactions. Their rows and every UTXO they created go.
+    pub txids: Vec<Txid>,
+    /// The transaction whose arrival settled the inputs — final, and
+    /// therefore the reason the removed ones can never confirm. Not
+    /// necessarily wallet-relevant: it can pay entirely to outside addresses
+    /// and still sweep, which is why it cannot be looked up to work out what
+    /// it took.
+    pub superseded_by: Txid,
+    /// Mined height of `superseded_by` when the sweep was triggered by its
+    /// arrival in a block; `None` when it was triggered by an
+    /// InstantSend-locked winner still waiting to be mined (upstream's only
+    /// two triggers — an unlocked mempool arrival never sweeps).
+    ///
+    /// This is the winner's finality context, straight from the event: the
+    /// winner need not be wallet-relevant, so no persister can look its
+    /// height up in its own records. A held-but-unfunded input is mirrored
+    /// as a durable placeholder in EITHER case; this field decides the
+    /// placeholder's lifetime. `Some` stamps the winner's own block height
+    /// — the projection of upstream's `observed_spent_outpoints` — and the
+    /// placeholder is collectible once `min(chainlock_height,
+    /// synced_height)` reaches it, exactly upstream's
+    /// `prune_finalized_observed_spends` boundary. `None` (IS-locked
+    /// winner, unmined) leaves the placeholder UNSTAMPED and never
+    /// collectible: under DIP-10 the lock alone settles the input —
+    /// upstream retains it in the account's `spent_outpoints`, a hold with
+    /// no height that no record survives to rebuild — and an IS-locked
+    /// winner has no mining deadline, so no watermark can ever prove the
+    /// funding output delivered-or-never. An unstamped placeholder
+    /// resolves only through proof: funding materialisation, a later
+    /// block-context sweep's re-stamp, or a release.
+    ///
+    /// `serde(default)`: a journaled payload written before this field
+    /// existed reads back as `None` — the conservative reading (no new
+    /// placeholder, existing stamps kept).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub winner_mined_height: Option<u32>,
+    /// Of the inputs those removed transactions claimed, the ones that came
+    /// free — no surviving transaction spends them too. Everything else they
+    /// claimed was taken by `superseded_by` and stays spent.
+    pub released_outpoints: Vec<OutPoint>,
 }
 
 /// Highest-used derivation index per pool slot for one account, as
@@ -265,8 +348,8 @@ impl HighestUsedIndexes {
     }
 }
 
-/// Fold same-txid [`TransactionRecord`]s into ONE wallet-level record —
-/// the dashpay/platform#4387 fix at the batch seam.
+/// Fold same-txid [`TransactionRecord`]s into ONE wallet-level record
+/// at the batch seam.
 ///
 /// Upstream `check_core_transaction` emits one record PER MATCHED ACCOUNT
 /// for a single transaction, each carrying only its account's slice
@@ -447,7 +530,7 @@ pub(crate) fn fold_same_txid_records(records: &mut Vec<TransactionRecord>) {
 ///
 /// One linear pass over each side per merge — the adapter's drain calls
 /// merge once per buffered event, so this deliberately avoids the
-/// full-vec re-fold a `fold_same_txid_records` call here used to cost.
+/// full-vec re-fold a `fold_same_txid_records` call here would cost.
 fn coalesce_newest_wins<K: std::hash::Hash + Eq>(
     existing: &mut Vec<TransactionRecord>,
     incoming: Vec<TransactionRecord>,
@@ -495,7 +578,30 @@ fn context_rank(context: &key_wallet::transaction_checking::TransactionContext) 
 
 impl Merge for CoreChangeSet {
     fn merge(&mut self, other: Self) {
-        // Records: coalesce by txid, NEWEST-WINS (dashpay/platform#4387).
+        // A record arriving after a sweep that removed the same transaction
+        // reinstates it, and every persister writes records before replaying
+        // sweeps — so without this the sweep would delete a row the wallet
+        // has since brought back. Reachable through IS-lock precedence: an
+        // unconfirmed transaction is swept when an IS-locked conflict lands,
+        // then returns chainlocked and sweeps that conflict in turn.
+        //
+        // The release set stays as it is. It is the aggregate for every loser
+        // in the batch, so dropping it when one of them is reinstated would
+        // discard coins freed by the losers that are still going. Entries
+        // belonging to the reinstated transaction are inert on every backend:
+        // each scopes its release to the remaining losers' own inputs, or
+        // withholds any outpoint a surviving record claims — and the
+        // reinstating record is exactly such a claim.
+        if !other.records.is_empty() && !self.sweeps.is_empty() {
+            let reinstated: std::collections::HashSet<Txid> =
+                other.records.iter().map(|record| record.txid).collect();
+            for batch in &mut self.sweeps {
+                batch.txids.retain(|txid| !reinstated.contains(txid));
+            }
+            self.sweeps.retain(|batch| !batch.txids.is_empty());
+        }
+
+        // Records: coalesce by txid, NEWEST-WINS.
         //
         // The event bridge already folded each event's per-account
         // slices into one wallet-level record per txid (see
@@ -610,11 +716,18 @@ impl Merge for CoreChangeSet {
                 .or_default()
                 .merge_max(indexes);
         }
+
+        // Sweeps: appended, never folded. Order is the whole point — a later
+        // batch's decision to keep a coin spent has to survive an earlier
+        // batch's decision to free it, and only replaying them in sequence
+        // preserves that.
+        self.sweeps.extend(other.sweeps);
     }
 
     fn is_empty(&self) -> bool {
         self.records.is_empty()
             && self.account_records.is_empty()
+            && self.sweeps.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
@@ -1247,32 +1360,47 @@ impl Merge for AssetLockChangeSet {
         // swift-sdk `persistAssetLocks`), making the store order of
         // racing snapshots immaterial.
         for (out_point, entry) in other.asset_locks {
-            if entry.status == AssetLockStatus::Consumed {
-                // A Consumed write supersedes any earlier-folded
-                // tombstone for the outpoint — Consumed rows are
-                // deliberately retained for historical lookup (see the
-                // variant doc), so the terminal write wins over a stale
-                // removal exactly as it wins over a stale status.
-                self.removed.remove(&out_point);
-            } else if let Some(existing) = self.asset_locks.get(&out_point) {
-                if existing.status == AssetLockStatus::Consumed {
-                    continue;
+            if entry.status != AssetLockStatus::Consumed {
+                if let Some(existing) = self.asset_locks.get(&out_point) {
+                    if existing.status == AssetLockStatus::Consumed {
+                        continue;
+                    }
                 }
             }
+            // Every ACCEPTED upsert supersedes an earlier-folded tombstone
+            // for its outpoint, not just a Consumed one. Sweeps are a
+            // removal producer now (`remove_tracked_asset_locks_for_swept`),
+            // and a swept funding transaction can return chainlocked in the
+            // same folded drain — the reinstating record re-inserts the
+            // entry through reconstruction at a non-Consumed status, and
+            // letting the sweep's tombstone ride along would have the store
+            // delete the row it just reinstated (SQLite applies upserts
+            // before removals) while the in-memory wallet keeps it. This is
+            // the asset-lock mirror of `CoreChangeSet::merge`'s
+            // reinstated-txid retraction. For Consumed the same line also
+            // covers the historical rule: the terminal write wins over a
+            // stale removal exactly as it wins over a stale status.
+            self.removed.remove(&out_point);
             self.asset_locks.insert(out_point, entry);
         }
-        // Tombstones folded after a Consumed upsert are dropped for the
-        // same reason. The only removal emitter (`untrack_asset_lock`)
-        // fires exclusively for Built rows whose broadcast was
-        // definitively rejected, so a Consumed/removed pair for one
-        // outpoint has no legitimate producer — this is defense in
-        // depth matching the upsert guard.
+        // Tombstones folded after a Consumed upsert are dropped — Consumed
+        // rows are deliberately retained for historical lookup (see the
+        // variant doc). Any other pending upsert is dropped WITH the
+        // tombstone landing: a removal is upstream's newer word for the
+        // outpoint (a lock tracked and then swept, or a Built row rejected
+        // at broadcast, inside one fold), and carrying the dead upsert
+        // alongside the tombstone would make every store's correctness
+        // depend on applying upserts before removals. Together with the
+        // retraction above this keeps the invariant every backend relies
+        // on: a merged changeset never carries both an upsert and a
+        // tombstone for the same outpoint.
         for out_point in other.removed {
             let consumed = self
                 .asset_locks
                 .get(&out_point)
                 .is_some_and(|entry| entry.status == AssetLockStatus::Consumed);
             if !consumed {
+                self.asset_locks.remove(&out_point);
                 self.removed.insert(out_point);
             }
         }
@@ -1468,7 +1596,7 @@ impl Merge for DpnsNameStateChangeSet {
 /// Per-(identity, token) balance changes emitted by
 /// [`crate::manager::identity_sync::IdentitySyncManager::sync_now`].
 ///
-/// The watch list itself is no longer changeset-replicated — it lives
+/// The watch list itself is not changeset-replicated — it lives
 /// purely in the manager's in-memory cache. Persistence carries only
 /// the post-sync balance updates and tombstones.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -1631,71 +1759,6 @@ pub struct ProviderKeyAccountEntry {
     pub account_type: AccountType,
     /// The account's extended public key.
     pub extended_public_key: ProviderKeyExtendedPubKey,
-}
-
-/// Why a provider key-material account could not be rebuilt into an
-/// [`AccountCollection`](key_wallet::account::account_collection::AccountCollection).
-#[cfg(any(feature = "bls", feature = "eddsa"))]
-#[derive(Debug, thiserror::Error)]
-pub enum ProviderAccountRebuildError {
-    /// The curve-specific account constructor rejected the key.
-    #[error("provider key account is invalid")]
-    Invalid(#[from] key_wallet::error::Error),
-    /// The collection refused the account — its `account_type` does not match
-    /// the curve (e.g. a BLS key offered as `ProviderPlatformKeys`).
-    #[error("account collection rejected the provider key account: {0}")]
-    Rejected(&'static str),
-}
-
-/// Rebuild one provider key-material account (BLS operator / EdDSA platform
-/// node) watch-only into `accounts`.
-///
-/// Shared by every persistence backend's restore path: these accounts live in
-/// dedicated `Option` slots that [`AccountCollection::insert`] rejects by
-/// design, so the curve-specific constructors and inserters below are the only
-/// way in, and both mint watch-only accounts.
-///
-/// # Errors
-///
-/// [`ProviderAccountRebuildError::Invalid`] if the constructor rejects the key;
-/// [`ProviderAccountRebuildError::Rejected`] if `account_type` and the key's
-/// curve disagree.
-///
-/// [`AccountCollection::insert`]: key_wallet::account::account_collection::AccountCollection::insert
-#[cfg(any(feature = "bls", feature = "eddsa"))]
-pub fn rebuild_provider_key_account(
-    accounts: &mut key_wallet::account::account_collection::AccountCollection,
-    wallet_id: [u8; 32],
-    network: key_wallet::Network,
-    account_type: AccountType,
-    extended_public_key: &ProviderKeyExtendedPubKey,
-) -> Result<(), ProviderAccountRebuildError> {
-    match extended_public_key {
-        #[cfg(feature = "bls")]
-        ProviderKeyExtendedPubKey::Bls(key) => {
-            let account = key_wallet::account::BLSAccount::new(
-                Some(wallet_id.to_vec()),
-                account_type,
-                key.clone(),
-                network,
-            )?;
-            accounts
-                .insert_bls_account(account)
-                .map_err(ProviderAccountRebuildError::Rejected)
-        }
-        #[cfg(feature = "eddsa")]
-        ProviderKeyExtendedPubKey::EdDSA(key) => {
-            let account = key_wallet::account::EdDSAAccount::new(
-                Some(wallet_id.to_vec()),
-                account_type,
-                key.clone(),
-                network,
-            )?;
-            accounts
-                .insert_eddsa_account(account)
-                .map_err(ProviderAccountRebuildError::Rejected)
-        }
-    }
 }
 
 /// Address-pool snapshot for one `(account_type, pool_type)` pair.
@@ -1956,8 +2019,8 @@ pub struct PlatformWalletChangeSet {
     /// carries: no persister vtable has a slot for this field yet, so on
     /// hosts that have not adopted it the verdict is process-lifetime only.
     /// Within a process it still redirects a second bring-up, and a partial
-    /// scan is now retried inside its own launch — but closing
-    /// dashpay/platform#4365 across launches needs the host slot.
+    /// scan is retried inside its own launch — but honouring the verdict
+    /// across launches needs the host slot.
     pub identity_scan_state: Option<IdentityScanStateEntry>,
     /// Per-account registration entries emitted at registration / on
     /// later `add_account` calls. See [`AccountRegistrationEntry`] for
@@ -1997,8 +2060,8 @@ pub struct PlatformWalletChangeSet {
     /// Present in every feature combination — downstream crates cannot
     /// `cfg` on this crate's features, so a conditional field breaks their
     /// exhaustive destructures under Cargo feature unification. Without
-    /// `shielded` the payload is an inert stand-in that stays empty and is
-    /// left out of the serde surface, so nothing observable changes.
+    /// `shielded` the payload is an inert stand-in that stays empty; omitting
+    /// it from serde preserves the feature-off wire shape.
     #[cfg_attr(all(feature = "serde", not(feature = "shielded")), serde(skip))]
     pub shielded: Option<crate::changeset::ShieldedChangeSet>,
 }
@@ -2156,90 +2219,75 @@ impl Merge for PlatformWalletChangeSet {
     }
 }
 
+#[cfg(all(test, feature = "serde"))]
+mod serde_compat_tests {
+    use super::*;
+
+    /// A changeset serialized before `sweeps` existed must still load. The
+    /// field postdates the representation, so an older payload simply omits
+    /// it — and an empty vec is the exact reading, since nothing back then
+    /// could have carried a sweep. Without `serde(default)` the whole
+    /// deserialization fails and every pre-sweep payload becomes unreadable.
+    #[test]
+    fn a_pre_sweep_payload_deserializes_with_no_sweeps() {
+        let json = r#"{
+            "records": [],
+            "spent_utxos": [],
+            "new_utxos": [],
+            "instant_locks_for_non_final_records": {},
+            "last_processed_height": 1000,
+            "synced_height": 900,
+            "account_highest_used": {},
+            "last_applied_chain_lock": null
+        }"#;
+
+        let cs: CoreChangeSet =
+            serde_json::from_str(json).expect("a pre-sweep payload must still deserialize");
+        assert!(cs.sweeps.is_empty());
+        assert_eq!(cs.last_processed_height, Some(1000));
+        assert_eq!(cs.synced_height, Some(900));
+    }
+
+    /// The compat test above only proves a MISSING `sweeps` reads as empty.
+    /// This one proves a present one survives the trip at all: `SweepBatch`
+    /// carries `Txid` and `OutPoint` from `dashcore`, whose `Serialize` /
+    /// `Deserialize` arrive through that crate's own feature wiring — if
+    /// that wiring were wrong or absent, every sweep-carrying changeset
+    /// would silently fail to round-trip and nothing else here would catch
+    /// it.
+    #[test]
+    fn a_populated_sweep_batch_round_trips() {
+        use dashcore::hashes::Hash;
+
+        let loser = Txid::from_byte_array([0x11; 32]);
+        let winner = Txid::from_byte_array([0x22; 32]);
+        let released = OutPoint::new(Txid::from_byte_array([0x33; 32]), 7);
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser],
+                superseded_by: winner,
+                winner_mined_height: Some(4_242),
+                released_outpoints: vec![released],
+            }],
+            ..Default::default()
+        };
+
+        let encoded = serde_json::to_string(&cs).expect("a sweep-carrying changeset serializes");
+        let decoded: CoreChangeSet =
+            serde_json::from_str(&encoded).expect("and reads back identically");
+
+        assert_eq!(decoded.sweeps.len(), 1);
+        let batch = &decoded.sweeps[0];
+        assert_eq!(batch.txids, vec![loser]);
+        assert_eq!(batch.superseded_by, winner);
+        assert_eq!(batch.winner_mined_height, Some(4_242));
+        assert_eq!(batch.released_outpoints, vec![released]);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[cfg(any(feature = "bls", feature = "eddsa"))]
-    fn provider_key_test_wallet() -> key_wallet::wallet::Wallet {
-        key_wallet::wallet::Wallet::from_seed_bytes(
-            [0x42; 64],
-            Network::Testnet,
-            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
-        )
-        .expect("provider key test wallet")
-    }
-
-    #[cfg(all(feature = "bls", feature = "eddsa"))]
-    #[test]
-    fn rebuild_provider_key_account_restores_bls_and_eddsa() {
-        let wallet = provider_key_test_wallet();
-        let bls_key = wallet
-            .accounts
-            .bls_account_of_type(AccountType::ProviderOperatorKeys)
-            .expect("BLS provider account")
-            .bls_public_key
-            .clone();
-        let eddsa_key = wallet
-            .accounts
-            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
-            .expect("EdDSA provider account")
-            .ed25519_public_key
-            .clone();
-        let mut accounts = key_wallet::account::account_collection::AccountCollection::new();
-        let wallet_id = [0x24; 32];
-
-        rebuild_provider_key_account(
-            &mut accounts,
-            wallet_id,
-            Network::Testnet,
-            AccountType::ProviderOperatorKeys,
-            &ProviderKeyExtendedPubKey::Bls(bls_key),
-        )
-        .expect("rebuild BLS provider account");
-        rebuild_provider_key_account(
-            &mut accounts,
-            wallet_id,
-            Network::Testnet,
-            AccountType::ProviderPlatformKeys,
-            &ProviderKeyExtendedPubKey::EdDSA(eddsa_key),
-        )
-        .expect("rebuild EdDSA provider account");
-
-        assert!(accounts
-            .bls_account_of_type(AccountType::ProviderOperatorKeys)
-            .is_some());
-        assert!(accounts
-            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
-            .is_some());
-    }
-
-    #[cfg(feature = "bls")]
-    #[test]
-    fn rebuild_provider_key_account_rejects_curve_account_type_mismatch() {
-        let wallet = provider_key_test_wallet();
-        let bls_key = wallet
-            .accounts
-            .bls_account_of_type(AccountType::ProviderOperatorKeys)
-            .expect("BLS provider account")
-            .bls_public_key
-            .clone();
-        let mut accounts = key_wallet::account::account_collection::AccountCollection::new();
-
-        let error = rebuild_provider_key_account(
-            &mut accounts,
-            [0x24; 32],
-            Network::Testnet,
-            AccountType::ProviderPlatformKeys,
-            &ProviderKeyExtendedPubKey::Bls(bls_key),
-        )
-        .expect_err("BLS key must not rebuild as a platform-node account");
-
-        assert!(matches!(error, ProviderAccountRebuildError::Rejected(_)));
-        assert!(accounts
-            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
-            .is_none());
-    }
 
     fn identity_entry_with_contested(id: Identifier, labels: &[&str]) -> IdentityEntry {
         IdentityEntry {
@@ -2281,6 +2329,18 @@ mod tests {
 
         cs.merge(PlatformWalletChangeSet::default());
         assert!(cs.is_empty());
+    }
+
+    #[cfg(all(feature = "serde", not(feature = "shielded")))]
+    #[test]
+    fn feature_off_serde_omits_inert_shielded_slot() {
+        let value =
+            serde_json::to_value(PlatformWalletChangeSet::default()).expect("changeset serializes");
+
+        assert!(!value
+            .as_object()
+            .expect("changeset serializes as an object")
+            .contains_key("shielded"));
     }
 
     /// Asset-lock merge is last-write-wins EXCEPT for the Consumed
@@ -2373,10 +2433,38 @@ mod tests {
             folded.asset_locks[&outpoint].status,
             AssetLockStatus::Consumed
         );
-        // …and a legitimate removal (rejected Built row) still folds.
+        // …and a legitimate removal (rejected Built row, or a sweep of the
+        // funding tx) still folds — taking the now-dead upsert with it, so
+        // no store ever sees an upsert/tombstone pair whose outcome would
+        // hinge on which it applies first.
         let mut folded = cs_with(AssetLockStatus::Built);
         folded.merge(removal());
         assert!(folded.removed.contains(&outpoint));
+        assert!(
+            !folded.asset_locks.contains_key(&outpoint),
+            "a tombstone folding in must not leave the dead upsert beside it"
+        );
+
+        // The coalesced sweep-then-chainlocked-reinstatement fold: the
+        // sweep removes the tracked entry and contributes a tombstone, then
+        // the reinstating record re-inserts through reconstruction at a
+        // non-Consumed status — in the SAME drain. The accepted upsert must
+        // cancel the earlier tombstone (the asset-lock mirror of
+        // `CoreChangeSet::merge`'s reinstated-txid retraction); otherwise
+        // SQLite — upserts before removals — deletes the row it just
+        // reinstated while the in-memory wallet keeps it, and the durable
+        // tracked lock is gone after restart even though its funding
+        // transaction survived.
+        let mut folded = removal();
+        folded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert!(
+            folded.removed.is_empty(),
+            "a reinstating reconstruction must cancel the folded sweep tombstone"
+        );
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::RecoveredFromChain
+        );
     }
 
     #[test]

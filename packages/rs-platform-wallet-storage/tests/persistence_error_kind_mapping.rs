@@ -17,6 +17,7 @@ use std::path::PathBuf;
 use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
 use platform_wallet_storage::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use platform_wallet_storage::sqlite::util::safe_cast::SafeCastTarget;
+use platform_wallet_storage::InsecureAncestor;
 use rusqlite::ErrorCode;
 
 /// Classify a converted `PersistenceError` to its `PersistenceErrorKind`.
@@ -27,9 +28,6 @@ fn kind_of(err: WalletStorageError) -> PersistenceErrorKind {
         PersistenceError::Backend { kind, .. } => kind,
         PersistenceError::LockPoisoned => {
             panic!("LockPoisoned has no Backend.kind — test was given LockPoisoned by accident")
-        }
-        PersistenceError::UnsupportedOperation { .. } => {
-            panic!("WalletStorageError conversion cannot yield UnsupportedOperation")
         }
     }
 }
@@ -195,7 +193,10 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
         ),
         (
             "InsecureParentDir",
-            WalletStorageError::InsecureParentDir { mode: 0o777 },
+            WalletStorageError::InsecureParentDir {
+                ancestor: std::path::PathBuf::from("/opt/dash"),
+                reason: InsecureAncestor::WritableWithoutSticky { mode: 0o777 },
+            },
         ),
         (
             "WalletNotFound",
@@ -244,6 +245,14 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             WalletStorageError::BlobTooLarge {
                 len_bytes: 1,
                 limit_bytes: 0,
+            },
+        ),
+        (
+            "AssetLockStatusMismatch",
+            WalletStorageError::AssetLockStatusMismatch {
+                outpoint: "txid:0".into(),
+                typed_status: "built".into(),
+                blob_status: "consumed".into(),
             },
         ),
         (

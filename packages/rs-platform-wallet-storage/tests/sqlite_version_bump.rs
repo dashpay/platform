@@ -1,9 +1,8 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! `meta_data_versions` bump discipline. Covers TC-B-011
-//! (bump rides the flush tx), TC-B-012 (atomic rollback — data and bump are
-//! all-or-nothing), TC-B-013 (every domain maps to a bump; none silently
-//! excluded), TC-B-014 (saturating seq, never wraps).
+//! `meta_data_versions` bump discipline: the bump rides the flush tx, rollback
+//! is atomic (data and bump are all-or-nothing), every domain maps to its own
+//! bump with none silently excluded, and the seq saturates rather than wrapping.
 
 mod common;
 
@@ -183,7 +182,7 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
             m.insert(Identifier::from([0x09; 32]), inner);
             cs.dashpay_payments_overlay = Some(m);
         }
-        Domain::WalletMetadata => {
+        Domain::Wallets => {
             cs.wallet_metadata = Some(WalletMetadataEntry {
                 network: Network::Testnet,
                 wallet_group_id: [0; 32],
@@ -199,7 +198,7 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
             // land in `account_registrations` rows (dashpay/platform#4113).
             cs.provider_key_account_registrations = vec![provider_operator_entry()];
         }
-        Domain::AccountAddressPools => {
+        Domain::CoreAddressPool => {
             cs.account_address_pools = vec![AccountAddressPoolEntry {
                 account_type: std_account(),
                 pool_type: AddressPoolType::External,
@@ -375,12 +374,12 @@ fn asset_lock_changeset() -> AssetLockChangeSet {
     cs
 }
 
-/// TC-B-013 — every domain maps to exactly its own bump; none silently
+/// Every domain maps to exactly its own bump; none silently
 /// excluded. Each single-field changeset yields exactly its domain, and the
 /// union covers `Domain::ALL`. The exhaustive destructure in
 /// `touched_domains` makes a newly added field a compile error there.
 #[test]
-fn tc_b_013_every_domain_maps_and_isolates() {
+fn every_domain_maps_and_isolates() {
     use std::collections::BTreeSet;
     assert_eq!(
         Domain::ALL.len(),
@@ -402,10 +401,10 @@ fn tc_b_013_every_domain_maps_and_isolates() {
     assert_eq!(covered, all, "all domains must be reachable");
 }
 
-/// TC-B-011 — a flush touching the core-pool domain commits the pool row and
+/// A flush touching the core-pool domain commits the pool row and
 /// its `meta_data_versions.seq` together (same connection, same tx).
 #[test]
-fn tc_b_011_bump_rides_the_flush() {
+fn bump_rides_the_flush() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xB1);
     ensure_wallet_meta(&persister, &w);
@@ -434,7 +433,7 @@ fn tc_b_011_bump_rides_the_flush() {
         )
         .unwrap();
     assert!(pool_rows >= 1, "pool row must be present");
-    let seq = versions::read_seq(&conn, &w, Domain::AccountAddressPools).unwrap();
+    let seq = versions::read_seq(&conn, &w, Domain::CoreAddressPool).unwrap();
     assert_eq!(seq, 1, "the domain's seq bumped in the same flush");
     // No unrelated domain bumped.
     assert_eq!(versions::read_seq(&conn, &w, Domain::Core).unwrap(), 0);
@@ -448,21 +447,18 @@ fn repeated_flush_increments_seq() {
     ensure_wallet_meta(&persister, &w);
     for _ in 0..2 {
         persister
-            .store(w, single_domain_changeset(Domain::WalletMetadata))
+            .store(w, single_domain_changeset(Domain::Wallets))
             .unwrap();
     }
     let conn = persister.lock_conn_for_test();
-    assert_eq!(
-        versions::read_seq(&conn, &w, Domain::WalletMetadata).unwrap(),
-        2
-    );
+    assert_eq!(versions::read_seq(&conn, &w, Domain::Wallets).unwrap(), 2);
 }
 
-/// TC-B-012 — atomicity: a flush that fails partway persists neither the
+/// Atomicity: a flush that fails partway persists neither the
 /// data nor the version bump. A pool write plus a token-balance write whose
 /// identity FK is absent must roll the whole tx back.
 #[test]
-fn tc_b_012_partial_failure_rolls_back_data_and_bump() {
+fn partial_failure_rolls_back_data_and_bump() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xB2);
     ensure_wallet_meta(&persister, &w);
@@ -510,10 +506,10 @@ fn tc_b_012_partial_failure_rolls_back_data_and_bump() {
     assert_eq!(version_rows, 0, "no bump may survive a rolled-back flush");
 }
 
-/// TC-B-014 — a seq pre-seeded to i64::MAX saturates on the next bump and
+/// A seq pre-seeded to i64::MAX saturates on the next bump and
 /// never wraps to a lower value (which would look like a cache rollback).
 #[test]
-fn tc_b_014_seq_saturates_at_i64_max() {
+fn seq_saturates_at_i64_max() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xB4);
     ensure_wallet_meta(&persister, &w);
@@ -521,17 +517,17 @@ fn tc_b_014_seq_saturates_at_i64_max() {
         let conn = persister.lock_conn_for_test();
         conn.execute(
             "INSERT INTO meta_data_versions (wallet_id, domain, seq) \
-             VALUES (?1, 'wallet_metadata', 9223372036854775807)",
+             VALUES (?1, 'wallets', 9223372036854775807)",
             rusqlite::params![w.as_slice()],
         )
         .unwrap();
     }
     persister
-        .store(w, single_domain_changeset(Domain::WalletMetadata))
+        .store(w, single_domain_changeset(Domain::Wallets))
         .unwrap();
     let conn = persister.lock_conn_for_test();
     assert_eq!(
-        versions::read_seq(&conn, &w, Domain::WalletMetadata).unwrap(),
+        versions::read_seq(&conn, &w, Domain::Wallets).unwrap(),
         i64::MAX,
         "seq must saturate, never wrap"
     );

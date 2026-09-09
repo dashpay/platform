@@ -1,10 +1,29 @@
 //! Load-time policy context — the one place [`LoadPolicy`] is branched on.
 //!
-//! Every reader that meets a recoverable inconsistency routes it through
+//! A reader that meets a recoverable inconsistency routes it through
 //! `LoadCtx::tolerate` (fatal under [`LoadPolicy::Strict`]) or
 //! `LoadCtx::note_degraded` (never fatal). No site open-codes the branch,
 //! so strictness cannot drift apart between readers. Both are crate-private:
 //! the policy decision belongs to the readers, not to callers.
+//!
+//! # What "recoverable" excludes
+//!
+//! Not every failure is a policy question, and this module does not claim
+//! otherwise:
+//!
+//! - **Structural failures** — a wrong-width id, an integer that will not
+//!   narrow, the blob-size guard — are fatal in both policies. They say the
+//!   row is not the shape the schema promises, which no projection survives.
+//! - **Balance-bearing rows** are never dropped individually. Skipping one
+//!   would under-report a balance with no signal, so their failure degrades
+//!   the whole owning wallet instead, at [`LoadSite::WalletRehydration`],
+//!   and the wallet is named in [`LoadDegradation::wallets_degraded`].
+//! - **Open-time gates** run before `load()` and never reach a `LoadCtx` at
+//!   all — see [`LoadPolicy`]'s own documentation.
+//!
+//! So `Recovery` is never-fatal for the persisted-data inconsistencies a
+//! reader can decline, at the cost of whichever unit — row or wallet — the
+//! declining loses.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
@@ -16,7 +35,11 @@ use crate::sqlite::error::WalletStorageError;
 /// A persisted inconsistency `load()` can meet, one variant per site.
 ///
 /// Used as the key of [`LoadDegradation::by_site`]; [`as_str`](Self::as_str)
-/// gives the snake_case tag that appears in logs.
+/// (and this type's `Display`) give the snake_case tag that appears in
+/// logs. [`explanation`](Self::explanation) gives the human-readable prose
+/// for the same site — the two are deliberately separate: a UI layer wants
+/// the prose, a log consumer wants the tag, and neither should have to
+/// derive one from the other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LoadSite {
     /// `core_sync_state.last_applied_chain_lock` failed to decode.
@@ -25,32 +48,57 @@ pub enum LoadSite {
     ShieldedViewingKeyRow,
     /// A `core_transactions` row's typed columns disagreed with its blob.
     CoreTransactionColumnDrift,
+    /// An ECDSA account-registration row's typed columns disagreed with its blob.
+    AccountRegistrationDrift,
+    /// A provider account-registration row's typed columns disagreed with its blob.
+    ProviderKeyRegistrationDrift,
+    /// A provider account-registration row carries the wrong key curve.
+    ProviderKeyCurveMismatch,
+    /// An `asset_locks` row's typed status disagreed with its lifecycle blob.
+    AssetLockStatusDrift,
     /// Rehydration could not derive a resolved index into an address pool.
     RehydrationEnsureDerived,
-    /// Rehydration's gap-limit refill failed for an address pool.
+    /// Rehydration rejected an address pool's oversized gap-limit refill.
     RehydrationGapLimit,
+    /// Rehydration could not maintain an address pool's gap limit.
+    RehydrationMaintainGapLimit,
     /// A restored UTXO or used address names an account this wallet lacks.
     /// Counted per address, though one record covers a whole account's.
     OrphanedUtxoOwner,
     /// A restored address did not resolve against its account's xpub.
     /// Counted per address, though one record covers a whole account's.
     UnresolvedUtxoAddress,
+    /// A stored UTXO or pool script could not be decoded as an address.
+    UndecodableAddressScript,
     /// One used address resolves to two different owning accounts.
     UsedAddressOwnerConflict,
-    /// An `identity_keys` / `contacts` row names an identity that is not
-    /// there. Counted per row, though `route_by_owner` decides once per
-    /// collection after its walk, so one log line can carry many counts.
+    /// An `identity_keys` row was unreadable or contradicted its columns.
+    IdentityKeyRow,
+    /// A `contacts` row was unreadable or contradicted its columns.
+    ContactRow,
+    /// One wallet could not be rehydrated at all; the rest of the file was.
+    WalletRehydration,
+    /// An `identity_keys` / `contacts` row's owner identity is absent.
+    /// Counted per row, though `route_by_owner` decides once per collection
+    /// after its walk, so one log line can carry many counts.
     MissingIdentityOwner,
     /// An identity owned by no wallet carries a registration index.
     UnownedIdentityHasRegistrationIndex,
     /// Two live `identities` rows of one wallet claim the same
-    /// `identity_index`. Only one can occupy the derivation slot, so the
-    /// loser is dropped from the wallet's identity map.
+    /// `identity_index`. Only one can occupy the derivation slot; the loser
+    /// is moved to `out_of_wallet_identities` rather than dropped, since
+    /// nothing persisted establishes which row truly owns the slot and a
+    /// Recovery load is read-only — anything discarded here could never be
+    /// re-persisted.
     IdentityIndexCollision,
     /// An `identity_scan_states` row claims a complete scan while unanswered
     /// indices sit beside it. Clamped toward incomplete, which costs one
     /// extra scan instead of an identity that never reappears.
     IdentityScanStateContradiction,
+    /// A `tracked_masternodes` row's `pro_tx_hash` is not 32 bytes. The
+    /// column is CHECK-constrained to 32, so a mismatch means the row
+    /// reached the file with the constraint bypassed.
+    TrackedMasternodeIdLength,
 }
 
 impl LoadSite {
@@ -60,15 +108,86 @@ impl LoadSite {
             Self::ChainLockBlob => "chain_lock_blob",
             Self::ShieldedViewingKeyRow => "shielded_viewing_key_row",
             Self::CoreTransactionColumnDrift => "core_transaction_column_drift",
+            Self::AccountRegistrationDrift => "account_registration_drift",
+            Self::IdentityKeyRow => "identity_key_row",
+            Self::ContactRow => "contact_row",
+            Self::WalletRehydration => "wallet_rehydration",
+            Self::ProviderKeyRegistrationDrift => "provider_key_registration_drift",
+            Self::ProviderKeyCurveMismatch => "provider_key_curve_mismatch",
+            Self::AssetLockStatusDrift => "asset_lock_status_drift",
             Self::RehydrationEnsureDerived => "rehydration_ensure_derived",
             Self::RehydrationGapLimit => "rehydration_gap_limit",
+            Self::RehydrationMaintainGapLimit => "rehydration_maintain_gap_limit",
             Self::OrphanedUtxoOwner => "orphaned_utxo_owner",
             Self::UnresolvedUtxoAddress => "unresolved_utxo_address",
+            Self::UndecodableAddressScript => "undecodable_address_script",
             Self::UsedAddressOwnerConflict => "used_address_owner_conflict",
             Self::MissingIdentityOwner => "missing_identity_owner",
             Self::UnownedIdentityHasRegistrationIndex => "unowned_identity_has_registration_index",
             Self::IdentityIndexCollision => "identity_index_collision",
             Self::IdentityScanStateContradiction => "identity_scan_state_contradiction",
+            Self::TrackedMasternodeIdLength => "tracked_masternode_id_length",
+        }
+    }
+
+    /// Human-readable prose for this site — public so a host application
+    /// can render *what* degraded without re-deriving eighteen strings
+    /// this crate already holds, or falling back to showing the user
+    /// [`as_str`](Self::as_str)'s log tag. This is the text every
+    /// `tracing::warn!` emitted for `self` also carries as its `message`
+    /// field, so a log reader and an API caller see the same wording.
+    ///
+    /// One entry per site, no `_` catch-all: adding a `LoadSite` must fail
+    /// to compile here and force a decision about its explanatory text,
+    /// instead of silently inheriting wording that describes it wrongly.
+    pub fn explanation(self) -> &'static str {
+        match self {
+            Self::ShieldedViewingKeyRow => {
+                "recovery mode: skipping an unreadable shielded viewing-key row"
+            }
+            Self::RehydrationEnsureDerived => {
+                "recovery mode: leaving an address pool short after derivation failed"
+            }
+            Self::RehydrationGapLimit => {
+                "recovery mode: refusing an oversized address-pool gap refill"
+            }
+            Self::RehydrationMaintainGapLimit => {
+                "recovery mode: leaving an address pool short after gap maintenance failed"
+            }
+            Self::MissingIdentityOwner => {
+                "recovery mode: skipping rows whose owning identity is absent"
+            }
+            Self::WalletRehydration => {
+                "recovery mode: dropping one wallet that could not be rebuilt, keeping the rest of the file"
+            }
+            // The only two sites `note_degraded` ever reaches (see its
+            // callers) — never-fatal in either policy, so their prose
+            // describes an accepted-as-is degradation rather than a
+            // tolerated inconsistency.
+            Self::OrphanedUtxoOwner => {
+                "load degraded: routing addresses from an unavailable owner to the first funds account"
+            }
+            Self::UnresolvedUtxoAddress => {
+                "load degraded: deferring addresses that did not resolve against the account xpub"
+            }
+            // Sites whose site tag plus the logged error already say
+            // everything a reader needs, so they share the generic line.
+            Self::ChainLockBlob
+            | Self::CoreTransactionColumnDrift
+            | Self::AccountRegistrationDrift
+            | Self::ProviderKeyRegistrationDrift
+            | Self::ProviderKeyCurveMismatch
+            | Self::AssetLockStatusDrift
+            | Self::UndecodableAddressScript
+            | Self::UsedAddressOwnerConflict
+            | Self::UnownedIdentityHasRegistrationIndex
+            | Self::IdentityIndexCollision
+            | Self::IdentityScanStateContradiction
+            | Self::IdentityKeyRow
+            | Self::ContactRow
+            | Self::TrackedMasternodeIdLength => {
+                "recovery mode: tolerating a persisted inconsistency instead of failing the load"
+            }
         }
     }
 }
@@ -99,6 +218,14 @@ pub struct LoadDegradation {
     /// the data is intact, merely not rehydrated, so it never sets
     /// `degraded`.
     pub unimplemented_rows: u32,
+    /// Wallets that were dropped whole, each mapped to the
+    /// [`WalletStorageError::error_kind_str`] of what stopped it.
+    ///
+    /// A count alone cannot answer the question a caller actually has here:
+    /// a wallet missing from `load()`'s result is otherwise indistinguishable
+    /// from a wallet that never existed. Raw ids rather than a wallet type,
+    /// matching [`SiteCoords`], which keeps this module free of them.
+    pub wallets_degraded: BTreeMap<[u8; 32], &'static str>,
 }
 
 impl LoadDegradation {
@@ -116,28 +243,66 @@ impl LoadDegradation {
         let unimplemented_rows = self
             .unimplemented_rows
             .saturating_add(other.unimplemented_rows);
-        *self = Self::from_counts(by_site, unimplemented_rows);
+        // First cause recorded for a wallet wins: a later read cannot know
+        // more about why the wallet was dropped than the read that dropped it.
+        let mut wallets_degraded = std::mem::take(&mut self.wallets_degraded);
+        for (wallet_id, cause) in other.wallets_degraded {
+            wallets_degraded.entry(wallet_id).or_insert(cause);
+        }
+        *self = Self::from_counts(by_site, unimplemented_rows, wallets_degraded);
     }
 
     /// Derive the invariant fields from the raw counters.
-    fn from_counts(by_site: BTreeMap<LoadSite, u32>, unimplemented_rows: u32) -> Self {
+    fn from_counts(
+        by_site: BTreeMap<LoadSite, u32>,
+        unimplemented_rows: u32,
+        wallets_degraded: BTreeMap<[u8; 32], &'static str>,
+    ) -> Self {
         Self {
             degraded: !by_site.is_empty(),
             total: by_site.values().copied().fold(0u32, u32::saturating_add),
             by_site,
             unimplemented_rows,
+            wallets_degraded,
         }
+    }
+}
+
+impl Display for LoadDegradation {
+    /// A short, human-readable summary: one line naming the total and site
+    /// count when clean or degraded, then one line per site pairing its
+    /// log tag with [`LoadSite::explanation`] and its tolerated count.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.degraded {
+            return write!(f, "load not degraded");
+        }
+        write!(
+            f,
+            "load degraded: {} inconsistenc{} tolerated across {} site{}",
+            self.total,
+            if self.total == 1 { "y" } else { "ies" },
+            self.by_site.len(),
+            if self.by_site.len() == 1 { "" } else { "s" },
+        )?;
+        for (site, count) in &self.by_site {
+            write!(f, "\n  - {site} (x{count}): {}", site.explanation())?;
+        }
+        for (wallet_id, cause) in &self.wallets_degraded {
+            write!(f, "\n  - wallet {}: {cause}", hex::encode(wallet_id))?;
+        }
+        Ok(())
     }
 }
 
 /// Where a degraded site fired, as structured log fields.
 ///
-/// `account_type` is `dyn Debug` so this stays free of the wallet types;
-/// `affected` is how many rows, addresses or entries the incident covers.
+/// `account_type` and optional `detail` are `dyn Debug` so this stays free of
+/// wallet types; `affected` is how many rows, addresses or entries it covers.
 pub(crate) struct SiteCoords<'a> {
-    pub wallet_id: [u8; 32],
+    pub wallet_id: Option<[u8; 32]>,
     pub account_type: &'a dyn fmt::Debug,
     pub affected: usize,
+    pub detail: Option<&'a dyn fmt::Debug>,
 }
 
 /// Per-`load()` policy + counters, created on the loading thread's stack.
@@ -150,6 +315,7 @@ pub struct LoadCtx {
     policy: LoadPolicy,
     counts: RefCell<BTreeMap<LoadSite, u32>>,
     unimplemented_rows: Cell<u32>,
+    wallets_degraded: RefCell<BTreeMap<[u8; 32], &'static str>>,
 }
 
 impl LoadCtx {
@@ -159,6 +325,7 @@ impl LoadCtx {
             policy,
             counts: RefCell::new(BTreeMap::new()),
             unimplemented_rows: Cell::new(0),
+            wallets_degraded: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -178,38 +345,54 @@ impl LoadCtx {
     /// Fatal-or-tolerated dispatch for a recoverable inconsistency.
     ///
     /// Returns `Err(err)` under [`LoadPolicy::Strict`]. Under
-    /// [`LoadPolicy::Recovery`] it warns, counts `site`, and returns
+    /// [`LoadPolicy::Recovery`] it warns, counts `site` once, and returns
     /// `Ok(())` so the caller continues with its documented degraded
-    /// projection.
+    /// projection. For a walk that counts several occurrences under one
+    /// log record, use [`tolerate_at`](Self::tolerate_at) with
+    /// `coords.affected` set to the count.
     pub(crate) fn tolerate(
         &self,
         site: LoadSite,
         err: WalletStorageError,
     ) -> Result<(), WalletStorageError> {
-        self.tolerate_many(site, 1, err)
+        if self.policy == LoadPolicy::Strict {
+            return Err(err);
+        }
+        self.count(site, 1);
+        tracing::warn!(
+            site = site.as_str(),
+            error_kind = err.error_kind_str(),
+            error = %err,
+            message = site.explanation(),
+        );
+        Ok(())
     }
 
-    /// [`tolerate`](Self::tolerate) for `occurrences` incidents at once.
+    /// [`tolerate`](Self::tolerate) with coordinates in the recovery log.
     ///
-    /// For the walks that count as they go and decide afterwards, so one
-    /// log record covers a whole collection while `by_site` still counts
-    /// occurrences like every other site.
-    pub(crate) fn tolerate_many(
+    /// Strict returns `err`; Recovery counts the incident and logs its error
+    /// kind and location. Unlike [`note_degraded`](Self::note_degraded), this
+    /// is never used for incidents accepted under Strict.
+    pub(crate) fn tolerate_at(
         &self,
         site: LoadSite,
-        occurrences: u32,
+        coords: SiteCoords<'_>,
         err: WalletStorageError,
     ) -> Result<(), WalletStorageError> {
         if self.policy == LoadPolicy::Strict {
             return Err(err);
         }
+        let occurrences = u32::try_from(coords.affected).unwrap_or(u32::MAX).max(1);
         self.count(site, occurrences);
         tracing::warn!(
             site = site.as_str(),
-            occurrences,
+            wallet_id = ?coords.wallet_id.map(hex::encode),
+            account_type = ?coords.account_type,
+            affected = coords.affected,
+            detail = ?coords.detail,
             error_kind = err.error_kind_str(),
             error = %err,
-            "recovery mode: tolerating a persisted inconsistency instead of failing the load"
+            message = site.explanation(),
         );
         Ok(())
     }
@@ -230,11 +413,12 @@ impl LoadCtx {
         self.count(site, occurrences);
         tracing::warn!(
             site = site.as_str(),
-            wallet_id = %hex::encode(coords.wallet_id),
+            wallet_id = ?coords.wallet_id.map(hex::encode),
             account_type = ?coords.account_type,
             affected = coords.affected,
+            detail = ?coords.detail,
             cause,
-            "load degraded: an ambiguous persisted inconsistency was accepted as-is"
+            message = site.explanation(),
         );
     }
 
@@ -247,7 +431,23 @@ impl LoadCtx {
 
     /// Snapshot the counters accumulated so far.
     pub fn degradation(&self) -> LoadDegradation {
-        LoadDegradation::from_counts(self.counts.borrow().clone(), self.unimplemented_rows.get())
+        LoadDegradation::from_counts(
+            self.counts.borrow().clone(),
+            self.unimplemented_rows.get(),
+            self.wallets_degraded.borrow().clone(),
+        )
+    }
+
+    /// Attribute a whole-wallet loss to the wallet it belongs to.
+    ///
+    /// Separate from [`tolerate_at`](Self::tolerate_at), which counts the
+    /// event: this records WHICH wallet and WHY, because a count cannot say
+    /// that. First cause wins — a wallet is dropped once, by one thing.
+    pub(crate) fn note_wallet_degraded(&self, wallet_id: [u8; 32], cause_kind: &'static str) {
+        self.wallets_degraded
+            .borrow_mut()
+            .entry(wallet_id)
+            .or_insert(cause_kind);
     }
 
     fn count(&self, site: LoadSite, occurrences: u32) {
@@ -293,12 +493,20 @@ mod tests {
         assert_eq!(snapshot.by_site.get(&LoadSite::ChainLockBlob), Some(&2));
     }
 
+    /// Invariant: `tolerate_many` (public-in-name-only, its only non-test
+    /// caller passed a constant 1) is gone — `tolerate_at` is the one path
+    /// for a walk that counts several occurrences under one log record.
     #[test]
-    fn tolerate_many_counts_every_occurrence_from_one_record() {
+    fn tolerate_at_counts_every_occurrence_from_one_record() {
         let ctx = LoadCtx::recovery();
-        ctx.tolerate_many(
+        ctx.tolerate_at(
             LoadSite::MissingIdentityOwner,
-            5,
+            SiteCoords {
+                wallet_id: Some([9u8; 32]),
+                account_type: &"n/a",
+                affected: 5,
+                detail: None,
+            },
             WalletStorageError::blob_decode("five leftover rows"),
         )
         .expect("recovery must tolerate");
@@ -310,15 +518,62 @@ mod tests {
         );
     }
 
+    /// Invariant: `tolerate` must log the site's bespoke
+    /// [`LoadSite::explanation`], not the old hard-coded generic literal —
+    /// `MissingIdentityOwner` has bespoke prose that the previous
+    /// literal could never surface.
+    #[tracing_test::traced_test]
+    #[test]
+    fn tolerate_logs_the_site_explanation_as_the_message_field() {
+        let ctx = LoadCtx::recovery();
+        ctx.tolerate(
+            LoadSite::MissingIdentityOwner,
+            WalletStorageError::blob_decode("orphaned row"),
+        )
+        .expect("recovery must tolerate");
+        assert!(logs_contain(
+            "recovery mode: skipping rows whose owning identity is absent"
+        ));
+    }
+
+    /// Invariant: `tolerate` and `tolerate_at` must both log via
+    /// `site.explanation()` — the same per-site text, computed the same
+    /// way — instead of `tolerate`'s old hard-coded literal that was
+    /// identical for every site regardless of which one fired.
+    #[tracing_test::traced_test]
+    #[test]
+    fn tolerate_and_tolerate_at_both_log_the_site_explanation() {
+        let ctx = LoadCtx::recovery();
+        ctx.tolerate(
+            LoadSite::ChainLockBlob,
+            WalletStorageError::blob_decode("test"),
+        )
+        .expect("recovery must tolerate");
+        ctx.tolerate_at(
+            LoadSite::ShieldedViewingKeyRow,
+            SiteCoords {
+                wallet_id: None,
+                account_type: &"n/a",
+                affected: 1,
+                detail: None,
+            },
+            WalletStorageError::blob_decode("test"),
+        )
+        .expect("recovery must tolerate");
+        assert!(logs_contain(LoadSite::ChainLockBlob.explanation()));
+        assert!(logs_contain(LoadSite::ShieldedViewingKeyRow.explanation()));
+    }
+
     #[test]
     fn note_degraded_counts_every_affected_row() {
         let ctx = LoadCtx::strict();
         ctx.note_degraded(
             LoadSite::UnresolvedUtxoAddress,
             SiteCoords {
-                wallet_id: [7u8; 32],
+                wallet_id: Some([7u8; 32]),
                 account_type: &"Standard[0]",
                 affected: 900,
+                detail: None,
             },
             "nine hundred addresses did not resolve",
         );
@@ -336,9 +591,10 @@ mod tests {
         ctx.note_degraded(
             LoadSite::OrphanedUtxoOwner,
             SiteCoords {
-                wallet_id: [7u8; 32],
+                wallet_id: Some([7u8; 32]),
                 account_type: &"Standard[0]",
                 affected: 1,
+                detail: None,
             },
             "ambiguous owner",
         );
@@ -402,5 +658,74 @@ mod tests {
         assert!(!snapshot.degraded);
         assert_eq!(snapshot.total, 0);
         assert_eq!(snapshot.unimplemented_rows, 7);
+    }
+
+    /// Invariant: `note_degraded` must log the same `message`
+    /// field shape as `tolerate`/`tolerate_at`, carrying the site's
+    /// bespoke [`LoadSite::explanation`].
+    #[tracing_test::traced_test]
+    #[test]
+    fn note_degraded_logs_the_site_explanation_as_the_message_field() {
+        let ctx = LoadCtx::strict();
+        ctx.note_degraded(
+            LoadSite::OrphanedUtxoOwner,
+            SiteCoords {
+                wallet_id: Some([7u8; 32]),
+                account_type: &"Standard[0]",
+                affected: 1,
+                detail: None,
+            },
+            "ambiguous owner",
+        );
+        assert!(logs_contain(
+            "load degraded: routing addresses from an unavailable owner to the first funds account"
+        ));
+    }
+
+    /// Invariant: `Display`/`as_str` stay the snake_case log tag —
+    /// `explanation` is the separate, human-readable rendering. A caller
+    /// must not get jargon from one and prose from the other by accident.
+    #[test]
+    fn display_is_the_tag_and_explanation_is_the_prose() {
+        assert_eq!(
+            LoadSite::IdentityIndexCollision.to_string(),
+            "identity_index_collision"
+        );
+        assert_eq!(
+            LoadSite::IdentityIndexCollision.as_str(),
+            LoadSite::IdentityIndexCollision.to_string()
+        );
+        assert_ne!(
+            LoadSite::IdentityIndexCollision.explanation(),
+            LoadSite::IdentityIndexCollision.as_str()
+        );
+        assert!(!LoadSite::IdentityIndexCollision
+            .explanation()
+            .contains("identity_index_collision"));
+    }
+
+    /// Invariant: `LoadDegradation`'s `Display` is the public rendering a
+    /// host app reaches for instead of re-deriving prose from `by_site`'s
+    /// tags — it must name the site's log tag, its count, and its prose.
+    #[test]
+    fn load_degradation_display_summarizes_by_site() {
+        assert_eq!(LoadDegradation::default().to_string(), "load not degraded");
+
+        let ctx = LoadCtx::recovery();
+        ctx.tolerate(
+            LoadSite::ChainLockBlob,
+            WalletStorageError::blob_decode("one"),
+        )
+        .expect("recovery must tolerate");
+        ctx.tolerate(
+            LoadSite::ChainLockBlob,
+            WalletStorageError::blob_decode("two"),
+        )
+        .expect("recovery must tolerate");
+        let rendered = ctx.degradation().to_string();
+        assert!(rendered.starts_with("load degraded: 2 inconsistencies tolerated across 1 site"));
+        assert!(rendered.contains("chain_lock_blob"));
+        assert!(rendered.contains("(x2)"));
+        assert!(rendered.contains(LoadSite::ChainLockBlob.explanation()));
     }
 }

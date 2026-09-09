@@ -1,9 +1,9 @@
 #![allow(clippy::field_reassign_with_default)]
 
 //! `core_address_pool` writer and read-time UTXO attribution.
-//! Covers TC-B-001 (pool rows with `used` flags), TC-B-002
-//! (pool-resolved account index), TC-B-010 (idempotent per-changeset pool
-//! state), TC-B-015 (`key_class` survives).
+//!
+//! Covers pool rows with their `used` flags, the pool-resolved account index,
+//! idempotent per-changeset pool state, and `key_class` survival.
 
 mod common;
 
@@ -155,10 +155,10 @@ fn loaded_provider_platform_infos(
         .collect()
 }
 
-/// TC-B-001 — six pool rows with `used` set on indices {0,2,4}; the pool
+/// Six pool rows with `used` set on indices {0,2,4}; the pool
 /// table is a first-class row store, not a `core_utxos` derivation.
 #[test]
-fn tc_b_001_pool_rows_with_used_flags() {
+fn pool_rows_with_used_flags() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xA0);
     ensure_wallet_meta(&persister, &w);
@@ -351,9 +351,9 @@ fn used_address_cannot_regain_reservation_from_stale_snapshot() {
     assert_eq!(state, (1, None));
 }
 
-/// TC-B-002 — UTXOs resolve to their pool-declared account during reads.
+/// UTXOs resolve to their pool-declared account during reads.
 #[test]
-fn tc_b_002_account_index_is_resolved_from_pool() {
+fn account_index_is_resolved_from_pool() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xA2);
     ensure_wallet_meta(&persister, &w);
@@ -436,10 +436,10 @@ fn utxo_without_pool_row_resolves_to_account_zero() {
     assert_eq!(by_account.get(&0).map(|rows| rows[0].value), Some(500));
 }
 
-/// TC-B-010 — a used-flag flip persists and a second no-op flush leaves the
+/// A used-flag flip persists and a second no-op flush leaves the
 /// pool rows unchanged; `used` is monotonic and never reverts.
 #[test]
-fn tc_b_010_pool_state_idempotent_and_monotonic() {
+fn pool_state_idempotent_and_monotonic() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xA4);
     ensure_wallet_meta(&persister, &w);
@@ -512,9 +512,9 @@ fn tc_b_010_pool_state_idempotent_and_monotonic() {
     );
 }
 
-/// TC-B-015 — a non-default `key_class` round-trips into the pool row's PK.
+/// A non-default `key_class` round-trips into the pool row's PK.
 #[test]
-fn tc_b_015_key_class_survives() {
+fn key_class_survives() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xA5);
     ensure_wallet_meta(&persister, &w);

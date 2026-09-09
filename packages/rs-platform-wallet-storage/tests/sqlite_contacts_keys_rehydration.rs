@@ -3,7 +3,7 @@
 //! Pre-keyed rehydration: identities load from SQLite already carrying
 //! their own public keys + contact state, with nothing layered on
 //! afterwards. store → drop → reopen → `load()` → assert on the
-//! `ManagedIdentity` fields directly (TC-1..TC-10 of the #3968 spec).
+//! `ManagedIdentity` fields directly.
 
 mod common;
 
@@ -127,7 +127,7 @@ fn established(owner: Identifier, contact: Identifier) -> EstablishedContact {
     }
 }
 
-/// TC-1 — a freshly-loaded identity carries its persisted keys in
+/// A freshly-loaded identity carries its persisted keys in
 /// `public_keys()` immediately, bit-exact, with no sync.
 #[test]
 fn tc1_identity_keys_populate_public_keys_on_load() {
@@ -157,7 +157,7 @@ fn tc1_identity_keys_populate_public_keys_on_load() {
     assert_eq!(pks.get(&1), Some(&e1.public_key));
 }
 
-/// TC-2 (load-bearing) — the freshly-loaded AUTHENTICATION/CRITICAL key is
+/// The freshly-loaded AUTHENTICATION/CRITICAL key is
 /// immediately selectable via the exact `get_first_public_key_matching`
 /// predicate the Platform signing path uses, before any sync.
 #[test]
@@ -195,7 +195,7 @@ fn tc2_loaded_auth_key_is_selectable_for_signing() {
     assert_eq!(selected, &key.public_key);
 }
 
-/// TC-3 — an established contact restores onto the identity, bit-exact.
+/// An established contact restores onto the identity, bit-exact.
 #[test]
 fn tc3_established_contact_restores_onto_identity() {
     let (persister, _tmp, path) = fresh_persister();
@@ -238,7 +238,7 @@ fn tc3_established_contact_restores_onto_identity() {
     assert!(managed.dashpay().incoming_contact_requests().is_empty());
 }
 
-/// TC-4 — pending sent and incoming requests restore with correct
+/// Pending sent and incoming requests restore with correct
 /// directionality and map keys.
 #[test]
 fn tc4_sent_and_incoming_requests_restore_directionally() {
@@ -304,7 +304,7 @@ fn tc4_sent_and_incoming_requests_restore_directionally() {
     assert!(managed.dashpay().established_contacts().is_empty());
 }
 
-/// TC-5 — two identities in one wallet with the same numeric `KeyID` keep
+/// Two identities in one wallet with the same numeric `KeyID` keep
 /// disjoint key maps; the group-by must not misattribute.
 #[test]
 fn tc5_no_cross_identity_key_leakage() {
@@ -352,7 +352,7 @@ fn tc5_no_cross_identity_key_leakage() {
     );
 }
 
-/// TC-6 — contact state does not leak across identities in one wallet.
+/// Contact state does not leak across identities in one wallet.
 #[test]
 fn tc6_no_cross_identity_contact_leakage() {
     let (persister, _tmp, path) = fresh_persister();
@@ -410,7 +410,7 @@ fn tc6_no_cross_identity_contact_leakage() {
     assert!(managed_b.dashpay().established_contacts().is_empty());
 }
 
-/// TC-7 — an identity with zero persisted keys loads fine with an empty
+/// An identity with zero persisted keys loads fine with an empty
 /// key map and its scalar fields intact.
 #[test]
 fn tc7_identity_with_zero_keys_loads_empty() {
@@ -437,7 +437,7 @@ fn tc7_identity_with_zero_keys_loads_empty() {
     assert!(managed.dashpay().established_contacts().is_empty());
 }
 
-/// TC-8 — an out-of-wallet identity (no `identity_index`) with zero keys
+/// An out-of-wallet identity (no `identity_index`) with zero keys
 /// and contacts loads into `out_of_wallet_identities`, empty.
 ///
 /// Note: the SQLite `load_state`/`managed_identity_from_entry` path always
@@ -616,7 +616,7 @@ fn orphaned_rows_of_one_owner_are_counted_per_row() {
     );
 }
 
-/// TC-10 — cross-wallet scoping is preserved: two wallets each holding an
+/// Cross-wallet scoping is preserved: two wallets each holding an
 /// identity with the same `KeyID` get only their own key.
 #[test]
 fn tc10_cross_wallet_scoping_preserved() {

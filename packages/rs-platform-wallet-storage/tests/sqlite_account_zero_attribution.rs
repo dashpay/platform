@@ -128,7 +128,7 @@ fn utxo_on_fresh_gap_limit_address_rehydrates_under_first_funds_account() {
     );
 
     let mut managed = ManagedWalletInfo::from_wallet(&wallet, 1);
-    platform_wallet_storage::sqlite::util::apply_persisted_core_state(
+    platform_wallet_storage::sqlite::rehydrate::apply_persisted_core_state(
         &mut managed,
         &manifest_for(&wallet),
         &core,

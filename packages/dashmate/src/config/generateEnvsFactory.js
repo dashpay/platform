@@ -58,6 +58,10 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       }
     }
 
+    if (config.get('core.tor.enabled')) {
+      dockerComposeFiles.push('docker-compose.tor.yml');
+    }
+
     if (config.get('core.insight.enabled')) {
       let insightComposeFile = 'docker-compose.insight_api.yml';
       if (config.get('core.insight.ui.enabled')) {

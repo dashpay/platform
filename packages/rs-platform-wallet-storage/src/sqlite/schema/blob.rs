@@ -10,6 +10,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::sqlite::error::WalletStorageError;
+use platform_wallet::wallet::platform_wallet::WalletId;
+use rusqlite::{params, Connection};
 
 /// Sealed-trait machinery enforcing the no-key-material-in-DB invariant at
 /// the type level: only types opting in via [`impl_persistable_blob!`] can
@@ -62,6 +64,29 @@ pub(crate) fn check_size(len: i64) -> Result<(), WalletStorageError> {
         });
     }
     Ok(())
+}
+
+/// Gate the largest value selected by a one-column aggregate query.
+pub(crate) fn check_max_column_len(
+    conn: &Connection,
+    sql: &'static str,
+    wallet_id: &WalletId,
+) -> Result<(), WalletStorageError> {
+    let max_len: Option<i64> =
+        conn.query_row(sql, params![wallet_id.as_slice()], |row| row.get(0))?;
+    if let Some(len) = max_len {
+        check_size(len)?;
+    }
+    Ok(())
+}
+
+/// Decode a stored script into an address for `network`.
+pub(crate) fn decode_script_to_address(
+    raw: impl Into<Vec<u8>>,
+    network: dashcore::Network,
+) -> Result<dashcore::Address, WalletStorageError> {
+    let script = dashcore::ScriptBuf::from_bytes(raw.into());
+    Ok(dashcore::Address::from_script(&script, network)?)
 }
 
 /// Gate a fixed-width blob column BEFORE materializing the `Vec<u8>`.
@@ -228,6 +253,23 @@ mod tests {
         assert!(
             matches!(res, Err(WalletStorageError::BincodeDecode { .. })),
             "a 4-byte payload must fail as BincodeDecode, got {res:?}"
+        );
+    }
+
+    /// Pins the encoded layout `V014__single_source_core_confirmation_height`
+    /// depends on: one length-prefix byte, then the 32 txid bytes. That
+    /// migration lifts the txid with `substr(outpoint, 2, 32)`, so a change
+    /// in the encoding must fail here rather than backfill the wrong bytes.
+    #[test]
+    fn encode_outpoint_txid_occupies_bytes_two_to_thirty_three() {
+        use dashcore::hashes::Hash;
+        let txid_bytes = [0x5Au8; 32];
+        let op = dashcore::OutPoint::new(dashcore::Txid::from_byte_array(txid_bytes), 3);
+        let encoded = encode_outpoint(&op).unwrap();
+        assert_eq!(
+            &encoded[1..33],
+            &txid_bytes,
+            "SQL substr(outpoint, 2, 32) must select exactly the txid"
         );
     }
 }
