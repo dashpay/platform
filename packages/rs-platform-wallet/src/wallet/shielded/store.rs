@@ -340,10 +340,6 @@ pub trait ShieldedStore: Send + Sync {
         entry_id: &[u8; 32],
     ) -> Result<Option<super::activity::ShieldedActivityEntry>, Self::Error>;
 
-    /// Return the set of all entry ids already recorded for `id`. Used by
-    /// the scan deriver to skip clusters a live entry already owns.
-    fn get_activity_ids(&self, id: SubwalletId) -> Result<BTreeSet<[u8; 32]>, Self::Error>;
-
     // ── Commitment tree (network-shared) ───────────────────────────────
 
     /// Append a note commitment to the shared tree.
@@ -384,18 +380,6 @@ pub trait ShieldedStore: Send + Sync {
         position: u64,
         depth: usize,
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error>;
-
-    /// Generate a Merkle authentication path for `position` against the
-    /// current tree state. Returns `Ok(None)` if no witness is available
-    /// (position not marked, or pruned).
-    ///
-    /// Delegates to [`Self::witness_at_depth`] at depth 0.
-    fn witness(
-        &self,
-        position: u64,
-    ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
-        self.witness_at_depth(position, 0)
-    }
 
     /// Number of leaves currently in the shared commitment tree
     /// (= highest appended position + 1, or 0 when empty).
@@ -745,10 +729,6 @@ impl SubwalletState {
     ) -> Option<super::activity::ShieldedActivityEntry> {
         self.activity.get(entry_id).cloned()
     }
-
-    pub(super) fn activity_ids(&self) -> BTreeSet<[u8; 32]> {
-        self.activity.keys().copied().collect()
-    }
 }
 
 // ── InMemoryShieldedStore ──────────────────────────────────────────────
@@ -776,10 +756,6 @@ pub struct InMemoryShieldedStore {
     subwallets: BTreeMap<SubwalletId, SubwalletState>,
     /// Flat list of commitments appended to the tree.
     commitments: Vec<[u8; 32]>,
-    /// Mark flag per position.
-    marked_positions: Vec<bool>,
-    /// Checkpoint ids in order.
-    checkpoints: Vec<u32>,
     /// Placeholder anchor; production stores compute the real Sinsemilla root.
     anchor: [u8; 32],
 }
@@ -959,22 +935,12 @@ impl ShieldedStore for InMemoryShieldedStore {
             .and_then(|sw| sw.activity_by_id(entry_id)))
     }
 
-    fn get_activity_ids(&self, id: SubwalletId) -> Result<BTreeSet<[u8; 32]>, Self::Error> {
-        Ok(self
-            .subwallets
-            .get(&id)
-            .map(SubwalletState::activity_ids)
-            .unwrap_or_default())
-    }
-
-    fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error> {
+    fn append_commitment(&mut self, cmx: &[u8; 32], _marked: bool) -> Result<(), Self::Error> {
         self.commitments.push(*cmx);
-        self.marked_positions.push(marked);
         Ok(())
     }
 
-    fn checkpoint_tree(&mut self, checkpoint_id: u32) -> Result<(), Self::Error> {
-        self.checkpoints.push(checkpoint_id);
+    fn checkpoint_tree(&mut self, _checkpoint_id: u32) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -1034,8 +1000,6 @@ impl ShieldedStore for InMemoryShieldedStore {
         // next append start at position 0, matching the file-backed
         // store's reset contract.
         self.commitments.clear();
-        self.marked_positions.clear();
-        self.checkpoints.clear();
         self.anchor = [0u8; 32];
         Ok(())
     }
@@ -1224,11 +1188,8 @@ mod tests {
             .unwrap();
         let page = store.get_activity(id, 0, 10).unwrap();
         assert_eq!(page.len(), 3, "upsert by id, not append");
-        assert_eq!(
-            store.get_activity_ids(id).unwrap().len(),
-            3,
-            "still exactly three distinct ids"
-        );
+        let ids: std::collections::BTreeSet<_> = page.iter().map(|e| e.id).collect();
+        assert_eq!(ids.len(), 3, "still exactly three distinct ids");
 
         // Pagination: offset/limit slice the display-sorted list.
         let first_two = store.get_activity(id, 0, 2).unwrap();

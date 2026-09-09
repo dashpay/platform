@@ -530,17 +530,6 @@ impl ShieldedStore for FileBackedShieldedStore {
             .and_then(|sw| sw.activity_by_id(entry_id)))
     }
 
-    fn get_activity_ids(
-        &self,
-        id: SubwalletId,
-    ) -> Result<std::collections::BTreeSet<[u8; 32]>, Self::Error> {
-        Ok(self
-            .subwallets
-            .get(&id)
-            .map(SubwalletState::activity_ids)
-            .unwrap_or_default())
-    }
-
     fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error> {
         let retention: Retention<u32> = if marked {
             Retention::Marked
@@ -967,7 +956,7 @@ mod tests {
 
         let mut failures = Vec::new();
         for pos in 0..N {
-            match store.witness(pos) {
+            match store.witness_at_depth(pos, 0) {
                 Ok(Some(_)) => {}
                 Ok(None) => failures.push(format!("position {pos}: witness returned None")),
                 Err(e) => failures.push(format!("position {pos}: {e}")),
@@ -1211,7 +1200,7 @@ mod tests {
             .into_option()
             .expect("valid cmx");
         let spend_anchor = store
-            .witness(0)
+            .witness_at_depth(0, 0)
             .unwrap()
             .expect("witness for marked position 0")
             .root(cmx0)

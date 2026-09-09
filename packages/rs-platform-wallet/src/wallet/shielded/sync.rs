@@ -148,20 +148,6 @@ impl MultiSyncNotesResult {
     pub fn total_new_notes(&self) -> usize {
         self.per_subwallet_new_notes.values().sum()
     }
-
-    /// Split out the per-account map for `wallet_id`. Useful for
-    /// callers that want to feed a single wallet's slice back into
-    /// the legacy per-wallet [`SyncNotesResult`] shape.
-    pub fn per_account_for(
-        &self,
-        wallet_id: crate::wallet::platform_wallet::WalletId,
-    ) -> BTreeMap<u32, usize> {
-        self.per_subwallet_new_notes
-            .iter()
-            .filter(|(id, _)| id.wallet_id == wallet_id)
-            .map(|(id, &c)| (id.account_index, c))
-            .collect()
-    }
 }
 
 /// Single-fetch, multi-IVK trial-decrypt across an arbitrary set
@@ -825,11 +811,6 @@ struct RecoveredOutgoing {
     memo: [u8; dash_sdk::platform::shielded::DASH_MEMO_SIZE],
     block_height: u64,
 }
-
-// Suppress dead_code on `address` field — kept for future use
-// (e.g. surfacing diversifier index per discovered note).
-#[allow(dead_code)]
-fn _unused_payment_address(_pa: PaymentAddress) {}
 
 /// Serialize an Orchard note to bytes for storage.
 ///
