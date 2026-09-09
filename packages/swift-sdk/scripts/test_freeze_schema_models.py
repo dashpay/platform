@@ -40,17 +40,17 @@ class CheckTests(unittest.TestCase):
             os.path.join(ROOT, gen.OUT_DIR), os.path.join(self.scratch, gen.OUT_DIR)
         )
 
-    def test_the_committed_files_are_the_generators_output(self):
+    def test_should_find_the_committed_files_are_the_generators_output(self):
         self.assertEqual(len(self.files), 37)
         self.assertEqual(gen.check_problems(ROOT, self.files), [])
 
-    def test_a_hand_edit_to_a_frozen_file_is_reported(self):
+    def test_should_report_a_hand_edit_to_a_frozen_file(self):
         path = f"{gen.OUT_DIR}/DashSchemaV1+PersistentWallet.swift"
         with open(os.path.join(self.scratch, path), "a", encoding="utf-8") as f:
             f.write("// edited by hand\n")
         self.assertEqual(gen.check_problems(self.scratch, self.files), [f"differs:  {path}"])
 
-    def test_a_missing_and_a_stale_file_are_reported(self):
+    def test_should_report_a_missing_and_a_stale_file(self):
         missing = f"{gen.OUT_DIR}/DashSchemaV3+PersistentAssetLock.swift"
         stale = f"{gen.OUT_DIR}/DashSchemaV9+PersistentGhost.swift"
         os.rename(
@@ -65,7 +65,7 @@ class CheckTests(unittest.TestCase):
 class BlockEndTests(unittest.TestCase):
     """A brace that is not code must not end the copied block early."""
 
-    def test_braces_in_strings_and_comments_do_not_count(self):
+    def test_should_not_count_braces_in_strings_and_comments(self):
         lines = [
             "final class PersistentThing {",
             '    init() { let brace = "{"; _ = brace }',
@@ -76,7 +76,7 @@ class BlockEndTests(unittest.TestCase):
         ]
         self.assertEqual(gen.block_end(lines, 0), 4)
 
-    def test_a_block_comment_is_refused_rather_than_misread(self):
+    def test_should_refuse_a_block_comment_rather_than_misread_it(self):
         lines = ["final class PersistentThing {", "    /* { */", "}"]
         with self.assertRaises(SystemExit):
             gen.block_end(lines, 0)
