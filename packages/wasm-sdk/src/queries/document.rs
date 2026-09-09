@@ -227,10 +227,10 @@ pub(super) struct DocumentsQueryInput {
     /// Default empty (one ungrouped aggregate result entry).
     #[serde(rename = "groupBy", default)]
     pub(super) group_by: Option<Vec<String>>,
-    // Order direction for count results flows through the existing
-    // `orderBy` field — the first clause's direction controls
-    // split-mode entry ordering and `(In + prove)` walk order. No
-    // separate `orderByAscending` knob.
+    // Order direction for aggregate results (count, sum, average)
+    // flows through the existing `orderBy` field — the first clause's
+    // direction controls split-mode entry ordering and `(In + prove)`
+    // walk order. No separate `orderByAscending` knob.
     /// Time-range bucket selections (`IN_TIME_RANGE`), each `{ field,
     /// selector }`. v1-only; resolved server-side from block time.
     #[serde(rename = "timeRange", default)]
