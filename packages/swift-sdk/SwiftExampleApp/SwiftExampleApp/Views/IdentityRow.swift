@@ -2,12 +2,6 @@ import SwiftUI
 import SwiftData
 import SwiftDashSDK
 
-// The `IdentitiesView` that used to live here was a legacy
-// duplicate of `IdentitiesContentView`. Nothing mounts it; the
-// Identities tab renders `IdentitiesContentView` directly.
-// Only `IdentityRow` stays — it's the row cell used by
-// `IdentitiesContentView`.
-
 /// One row in an identities list. Navigates to `IdentityDetailView`
 /// on tap. Takes a live `PersistentIdentity` so balance / DPNS name
 /// edits propagate reactively via `@Query` upstream without any
