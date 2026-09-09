@@ -79,12 +79,10 @@ pub use wallet::identity::network::{
     MASTER_KEY_INDEX,
 };
 pub use wallet::identity::{
-    calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
-    derive_contact_payment_addresses, derive_contact_xpub, pubkey_binds_expected_key_data,
+    calculate_account_reference, derive_contact_xpub, pubkey_binds_expected_key_data,
     unmask_account_reference, BlockTime, ContactProfileEntry, ContactRequest, ContactXpubData,
     DashPayProfile, DashPayState, DpnsNameInfo, EstablishedContact, IdentityLocation,
     IdentityManager, IdentityStatus, ManagedIdentity, ProfileUpdate, RegistrationIndex,
-    DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::masternode_withdrawal::{
     MasternodeWithdrawalKey, MasternodeWithdrawalKeys, MasternodeWithdrawalRequest,

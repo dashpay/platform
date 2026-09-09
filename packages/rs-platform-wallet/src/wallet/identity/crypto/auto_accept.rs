@@ -31,6 +31,7 @@ use key_wallet::bip32::{ChildNumber, DerivationPath};
 use key_wallet::dip9::{
     DASH_COIN_TYPE, DASH_TESTNET_COIN_TYPE, FEATURE_PURPOSE, FEATURE_PURPOSE_DASHPAY_AUTO_ACCEPT,
 };
+#[cfg(test)]
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
@@ -101,7 +102,11 @@ pub fn auto_accept_derivation_path(
 }
 
 /// Derive the auto-accept private key at `m/9'/coin'/16'/timestamp'`.
-pub fn derive_auto_accept_private_key(
+///
+/// Test-only: production is seedless and never holds a resident `Wallet`
+/// — the drain exports the key through `ContactCryptoProvider`.
+#[cfg(test)]
+pub(crate) fn derive_auto_accept_private_key(
     wallet: &Wallet,
     network: Network,
     timestamp: u32,
@@ -168,7 +173,8 @@ pub fn sign_auto_accept_proof(
 ///
 /// # Returns
 /// A 70-byte proof: `key_type(1) + timestamp(4 BE) + sig_size(1) + signature(64)`.
-pub fn generate_auto_accept_proof(
+#[cfg(test)]
+pub(crate) fn generate_auto_accept_proof(
     wallet: &Wallet,
     network: Network,
     sender_id: &Identifier,
@@ -253,7 +259,8 @@ pub fn verify_auto_accept_proof_with_pubkey(
 /// (there is no resident `Wallet`); the drain derives the public key via the
 /// `ContactCryptoProvider` and calls the pubkey variant directly. Kept for
 /// owner-side tests. Does not check expiry.
-pub fn verify_auto_accept_proof(
+#[cfg(test)]
+pub(crate) fn verify_auto_accept_proof(
     wallet: &Wallet,
     network: Network,
     proof_bytes: &[u8],

@@ -25,9 +25,8 @@ pub mod types;
 // latter so `lib.rs`-level re-exports keep resolving.
 
 pub use crypto::{
-    calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
-    derive_contact_payment_addresses, derive_contact_xpub, pubkey_binds_expected_key_data,
-    unmask_account_reference, ContactXpubData, DEFAULT_CONTACT_GAP_LIMIT,
+    calculate_account_reference, derive_contact_xpub, pubkey_binds_expected_key_data,
+    unmask_account_reference, ContactXpubData,
 };
 pub use network::{DashPayView, IdentityWallet};
 pub use state::{

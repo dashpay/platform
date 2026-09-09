@@ -26,8 +26,11 @@
 //! - [DIP-14](https://github.com/dashpay/dips/blob/master/dip-0014.md)
 //! - [DIP-15](https://github.com/dashpay/dips/blob/master/dip-0015.md)
 
+#[cfg(test)]
 use dashcore::secp256k1::Secp256k1;
-use dashcore::{Address, Network, PublicKey};
+use dashcore::Network;
+#[cfg(test)]
+use dashcore::{Address, PublicKey};
 use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
 use key_wallet::bip32::{ChildNumber, ExtendedPubKey};
@@ -205,7 +208,12 @@ pub use platform_encryption::{calculate_account_reference, unmask_account_refere
 /// * `contact_xpub` - The contact relationship extended public key.
 /// * `index`        - The payment address index (non-hardened).
 /// * `network`      - Network for address encoding.
-pub fn derive_contact_payment_address(
+///
+/// Test-only: production derives contact payment addresses through
+/// key-wallet's `AccountType::DashpayReceivingFunds` pool. Kept as the pin
+/// that [`reconstruct_contact_xpub`] yields an equivalent key.
+#[cfg(test)]
+pub(crate) fn derive_contact_payment_address(
     contact_xpub: &ExtendedPubKey,
     index: u32,
     network: Network,
@@ -227,31 +235,6 @@ pub fn derive_contact_payment_address(
     let pubkey = PublicKey::new(address_key.public_key);
     Ok(Address::p2pkh(&pubkey, network))
 }
-
-/// Derive multiple payment addresses for a contact, starting from
-/// `start_index` up to `start_index + count - 1`.
-///
-/// This is a convenience wrapper around [`derive_contact_payment_address`].
-pub fn derive_contact_payment_addresses(
-    contact_xpub: &ExtendedPubKey,
-    start_index: u32,
-    count: u32,
-    network: Network,
-) -> Result<Vec<Address>, PlatformWalletError> {
-    (start_index..start_index.saturating_add(count))
-        .map(|i| derive_contact_payment_address(contact_xpub, i, network))
-        .collect()
-}
-
-// ---------------------------------------------------------------------------
-// Gap limit constants
-// ---------------------------------------------------------------------------
-
-/// Default gap limit for contact payment addresses as recommended by DIP-15.
-///
-/// "We recommend a gap limit of 10 at this stage, which means to load 10
-/// addresses past the last used address."
-pub const DEFAULT_CONTACT_GAP_LIMIT: u32 = 10;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -384,46 +367,6 @@ mod tests {
             derive_contact_payment_address(&data.xpub, 5, Network::Testnet).expect("second call");
 
         assert_eq!(addr_a, addr_b, "Same index should yield same address");
-    }
-
-    #[test]
-    fn test_derive_contact_payment_addresses_batch() {
-        let wallet = test_wallet(Network::Testnet);
-        let (sender, recipient) = test_identifiers();
-
-        let data = derive_contact_xpub(&wallet, Network::Testnet, 0, &sender, &recipient)
-            .expect("derive xpub");
-
-        let addrs = derive_contact_payment_addresses(&data.xpub, 0, 5, Network::Testnet)
-            .expect("batch derive");
-
-        assert_eq!(addrs.len(), 5);
-        // All addresses should be unique.
-        for i in 0..addrs.len() {
-            for j in (i + 1)..addrs.len() {
-                assert_ne!(
-                    addrs[i], addrs[j],
-                    "Addresses at index {} and {} collide",
-                    i, j
-                );
-            }
-        }
-
-        // Individually derived addresses should match batch results.
-        for (i, addr) in addrs.iter().enumerate() {
-            let single = derive_contact_payment_address(&data.xpub, i as u32, Network::Testnet)
-                .expect("single derive");
-            assert_eq!(
-                addr, &single,
-                "Batch and single derivation mismatch at index {}",
-                i
-            );
-        }
-    }
-
-    #[test]
-    fn test_default_gap_limit() {
-        assert_eq!(DEFAULT_CONTACT_GAP_LIMIT, 10);
     }
 
     #[test]
