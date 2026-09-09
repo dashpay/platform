@@ -443,6 +443,21 @@ fn count_by_id(conn: &Connection, sql: &str, id: Identifier) -> i64 {
         .expect("count query")
 }
 
+// These write-only overlays are counted, not decoded, by the cleanup tests.
+fn seed_dashpay_overlays(conn: &Connection, id: &[u8]) {
+    conn.execute(
+        "INSERT INTO dashpay_profiles (identity_id, profile_blob) VALUES (?1, X'00')",
+        params![id],
+    )
+    .expect("seed DashPay profile");
+    conn.execute(
+        "INSERT INTO dashpay_payments_overlay (identity_id, payment_id, overlay_blob) \
+         VALUES (?1, 'payment', X'00')",
+        params![id],
+    )
+    .expect("seed DashPay payment overlay");
+}
+
 /// Every row a removed identity owns, counted in one pass.
 fn dependents_of(conn: &Connection, id: Identifier) -> Vec<(&'static str, i64)> {
     [
@@ -465,6 +480,14 @@ fn dependents_of(conn: &Connection, id: Identifier) -> Vec<(&'static str, i64)> 
         (
             "token_balances",
             "SELECT COUNT(*) FROM token_balances WHERE identity_id = ?1",
+        ),
+        (
+            "dashpay_profiles",
+            "SELECT COUNT(*) FROM dashpay_profiles WHERE identity_id = ?1",
+        ),
+        (
+            "dashpay_payments_overlay",
+            "SELECT COUNT(*) FROM dashpay_payments_overlay WHERE identity_id = ?1",
         ),
         (
             "meta_identity",
@@ -565,6 +588,7 @@ fn removing_a_wallet_identity_sweeps_every_dependent() {
     // DELETE brooms are its only cleanup path.
     {
         let conn = persister.lock_conn_for_test();
+        seed_dashpay_overlays(&conn, owner.as_slice());
         conn.execute(
             "INSERT INTO meta_identity (identity_id, key, value) VALUES (?1, 'alias', X'00')",
             params![owner.as_slice()],
@@ -933,9 +957,18 @@ fn null_scoped_key_can_neither_name_a_missing_identity_nor_outlive_one() {
 /// dependents a pre-V018 database had already logically deleted.
 #[test]
 fn v018_purges_tombstoned_rows_and_retires_the_column() {
+    assert_v018_purges_tombstones(true);
+}
+
+#[test]
+fn v018_purges_tombstoned_rows_with_foreign_keys_disabled() {
+    assert_v018_purges_tombstones(false);
+}
+
+fn assert_v018_purges_tombstones(foreign_keys: bool) {
     let mut conn = Connection::open_in_memory().expect("open in-memory db");
-    conn.pragma_update(None, "foreign_keys", true)
-        .expect("enable foreign keys");
+    conn.pragma_update(None, "foreign_keys", foreign_keys)
+        .expect("configure foreign keys");
 
     // Stand the database up at every migration BEFORE this one, so the
     // fixture is written against the schema V018 has to upgrade.
@@ -961,6 +994,7 @@ fn v018_purges_tombstoned_rows_and_retires_the_column() {
             params![id.as_slice(), w.as_slice(), flag],
         )
         .expect("insert identity");
+        seed_dashpay_overlays(&conn, id.as_slice());
         conn.execute(
             "INSERT INTO identity_keys \
                 (wallet_id, identity_id, key_id, public_key_blob, public_key_hash) \
@@ -994,8 +1028,25 @@ fn v018_purges_tombstoned_rows_and_retires_the_column() {
             params![id.as_slice()],
         )
         .expect("insert meta_identity");
+        conn.execute(
+            "INSERT INTO meta_token (identity_id, token_id, key, value) \
+             VALUES (?1, ?2, 'note', X'00')",
+            params![id.as_slice(), token.as_slice()],
+        )
+        .expect("insert meta_token");
     }
 
+    assert_eq!(
+        conn.pragma_query_value(None, "foreign_keys", |row| row.get::<_, bool>(0))
+            .expect("read foreign key setting"),
+        foreign_keys,
+        "V018 must run with the requested foreign key setting"
+    );
+    for id in [tombstoned, live] {
+        for (table, rows) in dependents_of(&conn, Identifier::from(id)) {
+            assert_eq!(rows, 1, "`{table}` must be seeded before migration");
+        }
+    }
     mig::run(&mut conn).expect("migrate to the newest version");
 
     let columns: Vec<String> = {
@@ -1012,42 +1063,13 @@ fn v018_purges_tombstoned_rows_and_retires_the_column() {
         "V018 must drop the tombstoned column, got {columns:?}"
     );
 
-    for (table, sql) in [
-        (
-            "identities",
-            "SELECT COUNT(*) FROM identities WHERE identity_id = ?1",
-        ),
-        (
-            "identity_keys",
-            "SELECT COUNT(*) FROM identity_keys WHERE identity_id = ?1",
-        ),
-        (
-            "contacts",
-            "SELECT COUNT(*) FROM contacts WHERE owner_id = ?1",
-        ),
-        (
-            "ignored_senders",
-            "SELECT COUNT(*) FROM ignored_senders WHERE owner_id = ?1",
-        ),
-        (
-            "token_balances",
-            "SELECT COUNT(*) FROM token_balances WHERE identity_id = ?1",
-        ),
-        (
-            "meta_identity",
-            "SELECT COUNT(*) FROM meta_identity WHERE identity_id = ?1",
-        ),
-    ] {
-        let purged: i64 = conn
-            .query_row(sql, params![tombstoned.as_slice()], |r| r.get(0))
-            .expect("count purged");
+    for (table, purged) in dependents_of(&conn, Identifier::from(tombstoned)) {
         assert_eq!(
             purged, 0,
             "`{table}` must be purged for a tombstoned identity"
         );
-        let kept: i64 = conn
-            .query_row(sql, params![live.as_slice()], |r| r.get(0))
-            .expect("count kept");
+    }
+    for (table, kept) in dependents_of(&conn, Identifier::from(live)) {
         assert_eq!(kept, 1, "`{table}` must be untouched for a live identity");
     }
     let sql = "SELECT COUNT(*) FROM pending_contact_crypto WHERE owner_identity_id = ?1";
