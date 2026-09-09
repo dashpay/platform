@@ -395,6 +395,8 @@ pub struct UpgradingInfo {
 }
 
 impl UpgradingInfo {
+    // Test-only simulation of validator upgrade timing; the sampled heights never reach state.
+    #[allow(clippy::disallowed_methods)]
     pub fn apply_to_proposers(
         &self,
         proposers: Vec<ProTxHash>,

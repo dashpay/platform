@@ -1,0 +1,24 @@
+# Consensus crates must not call libm-backed float methods: their results differ by
+# architecture (musl aarch64 vs x86_64, via the platform C library) and split the app hash.
+# Use the pinned `libm` crate via `DistributionFunction::evaluate`, or integer math.
+# `sqrt` and `mul_add` are IEEE correctly-rounded and deliberately not listed.
+disallowed-methods = [
+  { path = "f64::ln",     reason = "architecture-dependent; use libm::log via DistributionFunction::evaluate" },
+  { path = "f64::log",    reason = "architecture-dependent; use libm::log / libm::log2 / libm::log10" },
+  { path = "f64::log2",   reason = "architecture-dependent; use libm::log2" },
+  { path = "f64::log10",  reason = "architecture-dependent; use libm::log10" },
+  { path = "f64::ln_1p",  reason = "architecture-dependent; use libm::log1p" },
+  { path = "f64::exp",    reason = "architecture-dependent; use libm::exp" },
+  { path = "f64::exp2",   reason = "architecture-dependent; use libm::exp2" },
+  { path = "f64::exp_m1", reason = "architecture-dependent; use libm::expm1" },
+  { path = "f64::powf",   reason = "architecture-dependent; use libm::pow" },
+  { path = "f64::powi",   reason = "architecture-dependent; use libm::pow or integer math" },
+  { path = "f64::cbrt",   reason = "architecture-dependent; use libm::cbrt" },
+  { path = "f64::hypot",  reason = "architecture-dependent; use libm::hypot" },
+  { path = "f64::sin",    reason = "architecture-dependent; use libm::sin" },
+  { path = "f64::cos",    reason = "architecture-dependent; use libm::cos" },
+  { path = "f64::tan",    reason = "architecture-dependent; use libm::tan" },
+  { path = "f32::ln",     reason = "architecture-dependent; use libm::logf" },
+  { path = "f32::exp",    reason = "architecture-dependent; use libm::expf" },
+  { path = "f32::powf",   reason = "architecture-dependent; use libm::powf" },
+]
