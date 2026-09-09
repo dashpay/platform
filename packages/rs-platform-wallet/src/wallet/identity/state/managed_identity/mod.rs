@@ -7,7 +7,6 @@ mod contact_requests;
 mod contacts;
 mod dashpay;
 mod identity_ops;
-mod sync;
 
 pub use dashpay::DashPayState;
 
@@ -198,87 +197,6 @@ mod tests {
         assert_eq!(managed.revision(), 1);
         assert_eq!(managed.last_updated_balance_block_time, None);
         assert_eq!(managed.last_synced_keys_block_time, None);
-    }
-
-    #[test]
-    fn test_balance_block_time() {
-        let identity = create_test_identity();
-        let mut managed = ManagedIdentity::new(identity, 0);
-        let p = noop_persister();
-
-        let block_time = BlockTime::new(100000, 900000, 1234567890);
-        managed.update_balance_block_time(block_time, &p);
-
-        assert_eq!(managed.last_updated_balance_block_time, Some(block_time));
-        assert_eq!(
-            managed.last_updated_balance_block_time.unwrap().height,
-            100000
-        );
-        assert_eq!(
-            managed.last_updated_balance_block_time.unwrap().core_height,
-            900000
-        );
-        assert_eq!(
-            managed.last_updated_balance_block_time.unwrap().timestamp,
-            1234567890
-        );
-    }
-
-    #[test]
-    fn test_keys_sync_block_time() {
-        let identity = create_test_identity();
-        let mut managed = ManagedIdentity::new(identity, 0);
-        let p = noop_persister();
-
-        let block_time = BlockTime::new(50000, 450000, 9876543210);
-        managed.update_keys_sync_block_time(block_time, &p);
-
-        assert_eq!(managed.last_synced_keys_block_time, Some(block_time));
-        assert_eq!(managed.last_synced_keys_block_time.unwrap().height, 50000);
-        assert_eq!(
-            managed.last_synced_keys_block_time.unwrap().core_height,
-            450000
-        );
-        assert_eq!(
-            managed.last_synced_keys_block_time.unwrap().timestamp,
-            9876543210
-        );
-    }
-
-    #[test]
-    fn test_needs_balance_update() {
-        let identity = create_test_identity();
-        let mut managed = ManagedIdentity::new(identity, 0);
-        let p = noop_persister();
-
-        // Never updated - needs update
-        assert_eq!(managed.needs_balance_update(1000, 100), true);
-
-        // Just updated
-        let block_time = BlockTime::new(100, 900, 1000);
-        managed.update_balance_block_time(block_time, &p);
-        assert_eq!(managed.needs_balance_update(1050, 100), false);
-
-        // Old update - needs update
-        assert_eq!(managed.needs_balance_update(1200, 100), true);
-    }
-
-    #[test]
-    fn test_needs_keys_sync() {
-        let identity = create_test_identity();
-        let mut managed = ManagedIdentity::new(identity, 0);
-        let p = noop_persister();
-
-        // Never synced - needs sync
-        assert_eq!(managed.needs_keys_sync(1000, 100), true);
-
-        // Just synced
-        let block_time = BlockTime::new(100, 900, 1000);
-        managed.update_keys_sync_block_time(block_time, &p);
-        assert_eq!(managed.needs_keys_sync(1050, 100), false);
-
-        // Old sync - needs sync
-        assert_eq!(managed.needs_keys_sync(1200, 100), true);
     }
 
     #[test]

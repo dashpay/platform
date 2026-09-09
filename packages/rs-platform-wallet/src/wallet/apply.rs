@@ -1005,19 +1005,20 @@ mod tests {
                 .expect("add");
         }
         let id = Identifier::from([1u8; 32]);
-        let bt = BlockTime::new(100, 200, 1_700_000_000);
+        let bt = BlockTime {
+            height: 100,
+            core_height: 200,
+            timestamp: 1_700_000_000,
+        };
 
-        // Update both timestamps on A (persists internally via noop persister).
-        info_a
+        // Set both timestamps on A the way production does — the FFI writes
+        // these fields directly.
+        let managed_a = info_a
             .identity_manager
             .managed_identity_mut(&id)
-            .expect("a")
-            .update_balance_block_time(bt, &p);
-        info_a
-            .identity_manager
-            .managed_identity_mut(&id)
-            .expect("a")
-            .update_keys_sync_block_time(bt, &p);
+            .expect("a");
+        managed_a.last_updated_balance_block_time = Some(bt);
+        managed_a.last_synced_keys_block_time = Some(bt);
 
         // Build a single replay changeset from A's final state (both block times set).
         let managed = info_a.identity_manager.managed_identity(&id).expect("a");
