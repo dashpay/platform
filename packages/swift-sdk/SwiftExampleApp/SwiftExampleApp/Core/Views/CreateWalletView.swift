@@ -13,8 +13,6 @@ struct CreateWalletView: View {
     @State private var showImportOption: Bool = false
     @State private var importMnemonic: String = ""
     @State private var importBirthHeight: String = ""
-    @State private var walletPin: String = ""
-    @State private var confirmPin: String = ""
     @State private var isCreating: Bool = false
     @State private var error: Error? = nil
     @FocusState private var focusedField: Field?
@@ -32,8 +30,6 @@ struct CreateWalletView: View {
 
     enum Field: Hashable {
         case walletName
-        case pin
-        case confirmPin
         case mnemonic
     }
 
@@ -60,10 +56,10 @@ struct CreateWalletView: View {
                 TextField("Wallet Name", text: $walletLabel)
                     .textInputAutocapitalization(.words)
                     .focused($focusedField, equals: .walletName)
-                    .submitLabel(.next)
+                    .submitLabel(.done)
                     .accessibilityIdentifier("createWallet.walletNameField")
                     .onSubmit {
-                        focusedField = .pin
+                        focusedField = nil
                     }
             } header: {
                 Text("Wallet Information")
@@ -134,34 +130,6 @@ struct CreateWalletView: View {
             }
 
             Section {
-                HStack {
-                    Text("PIN:")
-                        .frame(width: 100, alignment: .leading)
-                    SecureField("4-6 digits", text: $walletPin)
-                        .keyboardType(.numberPad)
-                        .textContentType(.oneTimeCode)
-                        .autocorrectionDisabled()
-                        .focused($focusedField, equals: .pin)
-                        .accessibilityIdentifier("createWallet.pinField")
-                }
-
-                HStack {
-                    Text("Confirm PIN:")
-                        .frame(width: 100, alignment: .leading)
-                    SecureField("4-6 digits", text: $confirmPin)
-                        .keyboardType(.numberPad)
-                        .textContentType(.oneTimeCode)
-                        .autocorrectionDisabled()
-                        .focused($focusedField, equals: .confirmPin)
-                        .accessibilityIdentifier("createWallet.confirmPinField")
-                }
-            } header: {
-                Text("Security")
-            } footer: {
-                Text("Choose a PIN to secure your wallet (4-6 digits)")
-            }
-
-            Section {
                 Toggle("Import Existing Wallet", isOn: $showImportOption)
             } header: {
                 Text("Options")
@@ -225,11 +193,6 @@ struct CreateWalletView: View {
             }
         }
         .disabled(isCreating)
-        .alert("Wallet Created", isPresented: .constant(false)) {
-            Button("OK") { }
-        } message: {
-            Text("Wallet created successfully")
-        }
         .alert("Error", isPresented: .constant(error != nil)) {
             Button("OK") {
                 error = nil
@@ -255,8 +218,6 @@ struct CreateWalletView: View {
 
     private var canCreateWallet: Bool {
         !walletLabel.isEmpty &&
-        !walletPin.isEmpty &&
-        walletPin == confirmPin &&
         !isCreating &&
         hasNetworkSelected
     }
@@ -304,13 +265,8 @@ struct CreateWalletView: View {
     }
 
     private func createWallet(using mnemonic: String) {
-        guard !walletLabel.isEmpty,
-              walletPin == confirmPin,
-              walletPin.count >= 4 && walletPin.count <= 6 else {
-            print("=== WALLET CREATION VALIDATION FAILED ===")
-            print("Label empty: \(walletLabel.isEmpty)")
-            print("PINs match: \(walletPin == confirmPin)")
-            print("PIN length valid: \(walletPin.count >= 4 && walletPin.count <= 6)")
+        guard !walletLabel.isEmpty else {
+            print("=== WALLET CREATION VALIDATION FAILED: label empty ===")
             return
         }
 
@@ -321,7 +277,6 @@ struct CreateWalletView: View {
                 print("=== STARTING WALLET CREATION ===")
 
                 let mnemonicPhrase = (showImportOption ? importMnemonic : mnemonic)
-                print("PIN length: \(walletPin.count)")
                 print("Import option enabled: \(showImportOption)")
 
                 let selectedNetworks: [Network] = [

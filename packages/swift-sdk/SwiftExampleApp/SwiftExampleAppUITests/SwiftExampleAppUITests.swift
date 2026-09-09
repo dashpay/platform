@@ -14,8 +14,6 @@ final class SwiftExampleAppUITests: XCTestCase {
         static let addWalletButton = "wallets.addWalletButton"
         static let emptyCreateWalletButton = "wallets.empty.createWalletButton"
         static let walletNameField = "createWallet.walletNameField"
-        static let pinField = "createWallet.pinField"
-        static let confirmPinField = "createWallet.confirmPinField"
         static let createWalletButton = "createWallet.createButton"
         static let wroteItDownToggle = "seedBackup.wroteItDownToggle"
         static let confirmSeedCreateWalletButton = "seedBackup.createWalletButton"
@@ -110,16 +108,6 @@ final class SwiftExampleAppUITests: XCTestCase {
         XCTAssertTrue(walletNameField.waitForExistence(timeout: 5))
         walletNameField.tap()
         walletNameField.typeText(walletName)
-
-        let pinField = secureTextField(Identifier.pinField, in: app)
-        XCTAssertTrue(pinField.waitForExistence(timeout: 5))
-        pinField.tap()
-        pinField.typeText("1234")
-
-        let confirmPinField = secureTextField(Identifier.confirmPinField, in: app)
-        XCTAssertTrue(confirmPinField.waitForExistence(timeout: 5))
-        confirmPinField.tap()
-        confirmPinField.typeText("1234")
 
         let createButton = button(Identifier.createWalletButton, in: app)
         XCTAssertTrue(
@@ -255,13 +243,6 @@ final class SwiftExampleAppUITests: XCTestCase {
     @MainActor
     private func textField(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
         app.textFields
-            .matching(identifier: identifier)
-            .firstMatch
-    }
-
-    @MainActor
-    private func secureTextField(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
-        app.secureTextFields
             .matching(identifier: identifier)
             .firstMatch
     }
