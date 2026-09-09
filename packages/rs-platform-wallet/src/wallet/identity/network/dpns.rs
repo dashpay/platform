@@ -2,7 +2,6 @@
 
 use dpp::identity::accessors::IdentityGettersV0;
 
-use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyType;
 use dpp::identity::Purpose;
@@ -123,36 +122,6 @@ pub enum ContestWinner {
 // ---------------------------------------------------------------------------
 
 impl IdentityWallet {
-    /// Register a DPNS name using an externally-provided identity and signer.
-    ///
-    /// Unlike
-    /// [`register_name_with_external_signer`](Self::register_name_with_external_signer),
-    /// this method does **not** look up the identity in the internal
-    /// `IdentityManager`. The caller supplies the `Identity`, the
-    /// signing key, and a `Signer` directly.
-    ///
-    /// Returns the full domain name (e.g. "alice.dash").
-    pub async fn register_name_with_signer<S: Signer<IdentityPublicKey>>(
-        &self,
-        identity: Identity,
-        name: &str,
-        identity_public_key: IdentityPublicKey,
-        signer: S,
-    ) -> Result<String, dash_sdk::Error> {
-        use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
-
-        let input = RegisterDpnsNameInput {
-            label: name.to_string(),
-            identity,
-            identity_public_key,
-            signer,
-            preorder_callback: None,
-        };
-
-        let result = self.sdk.register_dpns_name(input).await?;
-        Ok(result.full_domain_name)
-    }
-
     /// Register a DPNS name for an identity using an
     /// externally-supplied signer.
     ///

@@ -701,58 +701,6 @@ impl IdentityWallet {
             .next())
     }
 
-    /// Fetch the domain documents associated with `identity_id` via the
-    /// `records.identity` index (the only identity-keyed index; the
-    /// protocol rewrites `records.identity` to the new owner on
-    /// purchase/transfer, so this stays authoritative across sales).
-    /// `None` drains every server page; `Some(n)` returns at most `n`
-    /// documents while still respecting the server's per-page limit.
-    pub async fn dpns_domain_states_for_identity(
-        &self,
-        identity_id: &Identifier,
-        limit: Option<u32>,
-    ) -> Result<Vec<DpnsDomainState>, PlatformWalletError> {
-        if limit == Some(0) {
-            return Ok(Vec::new());
-        }
-        let contract = self.dpns_contract().await?;
-        let maximum = limit.map(|value| value as usize);
-        let mut states = Vec::new();
-        let mut cursor: Option<Identifier> = None;
-
-        loop {
-            let remaining = maximum.map(|value| value.saturating_sub(states.len()));
-            let page_limit = remaining
-                .map(|value| value.min(SYNC_QUERY_LIMIT as usize))
-                .unwrap_or(SYNC_QUERY_LIMIT as usize);
-            if page_limit == 0 {
-                break;
-            }
-
-            let (page, next_cursor, complete) = self
-                .dpns_domain_states_page(
-                    Arc::clone(&contract),
-                    identity_id,
-                    cursor,
-                    page_limit as u32,
-                )
-                .await?;
-            states.extend(page);
-
-            if complete || maximum.is_some_and(|value| states.len() >= value) {
-                break;
-            }
-            if cursor == next_cursor {
-                return Err(PlatformWalletError::InvalidIdentityData(
-                    "DPNS identity query pagination cursor did not advance".to_string(),
-                ));
-            }
-            cursor = next_cursor;
-        }
-
-        Ok(states)
-    }
-
     /// Fetch exactly one identity-owned DPNS page. The returned cursor is
     /// retained by marketplace sync so one pass never drains an unbounded
     /// document set.

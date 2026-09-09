@@ -24,8 +24,6 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use dashcore::secp256k1::PublicKey;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::prelude::Identifier;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType};
 use key_wallet::dip9::{
@@ -390,83 +388,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 PlatformWalletError::InvalidIdentityData(format!("Invalid key ID: {}", e))
             })?,
         ]))
-    }
-
-    /// Derive the raw private key bytes for an identity authentication key.
-    ///
-    /// Determines the correct [`KeyDerivationType`] from the public key's
-    /// [`KeyType`], builds the DIP-9 derivation path, and derives the
-    /// private key from the wallet.
-    ///
-    /// Returns the bytes wrapped in [`Zeroizing`] so they are automatically
-    /// wiped from memory when the value is dropped.
-    pub fn derive_identity_key_bytes(
-        wallet: &Wallet,
-        network: Network,
-        identity_index: u32,
-        identity_public_key: &IdentityPublicKey,
-    ) -> Result<Zeroizing<[u8; 32]>, PlatformWalletError> {
-        let key_id = identity_public_key.id();
-        let key_derivation_type = match identity_public_key.key_type() {
-            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => KeyDerivationType::ECDSA,
-            KeyType::BLS12_381 => KeyDerivationType::BLS,
-            // EdDSA uses the ECDSA derivation path; the raw bytes are
-            // reinterpreted as an Ed25519 seed.
-            KeyType::EDDSA_25519_HASH160 => KeyDerivationType::ECDSA,
-            KeyType::BIP13_SCRIPT_HASH => {
-                return Err(PlatformWalletError::InvalidIdentityData(
-                    "BIP13_SCRIPT_HASH keys are not supported for signing".to_string(),
-                ));
-            }
-        };
-
-        let path = Self::identity_auth_derivation_path(
-            network,
-            key_derivation_type,
-            identity_index,
-            key_id,
-        )?;
-
-        let secret_key = wallet.derive_private_key(&path).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to derive private key for identity key {}: {}",
-                key_id, e
-            ))
-        })?;
-
-        Ok(Zeroizing::new(secret_key.secret_bytes()))
-    }
-
-    /// Get a read-lock handle to the shared [`WalletManager`].
-    ///
-    /// Access wallet info via `wm.get_wallet_info(&wallet_id)` and key material
-    /// via `wm.get_wallet(&wallet_id)` on the returned guard. The identity
-    /// manager is on the wallet info: `info.identity_manager`.
-    pub async fn wallet_manager_read(
-        &self,
-    ) -> tokio::sync::RwLockReadGuard<'_, WalletManager<PlatformWalletInfo>> {
-        self.wallet_manager.read().await
-    }
-
-    /// Get a write-lock handle to the shared [`WalletManager`].
-    ///
-    /// Access wallet info via `wm.get_wallet_info_mut(&wallet_id)` on the
-    /// returned guard. This allows callers to mutate managed identities (e.g.
-    /// adding or updating identities from an external persistence layer).
-    pub async fn wallet_manager_write(
-        &self,
-    ) -> tokio::sync::RwLockWriteGuard<'_, WalletManager<PlatformWalletInfo>> {
-        self.wallet_manager.write().await
-    }
-
-    /// Try to acquire a write-lock on the shared [`WalletManager`] without blocking.
-    ///
-    /// Returns `None` if the lock is currently held by another task.
-    /// Useful for synchronous callers that cannot await.
-    pub fn try_wallet_manager_write(
-        &self,
-    ) -> Option<tokio::sync::RwLockWriteGuard<'_, WalletManager<PlatformWalletInfo>>> {
-        self.wallet_manager.try_write().ok()
     }
 
     /// The wallet ID for this identity wallet's underlying key material.
