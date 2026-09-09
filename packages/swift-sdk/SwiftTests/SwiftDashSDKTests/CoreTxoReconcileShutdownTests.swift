@@ -69,9 +69,10 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
 
         let report = PlatformWalletManager.runCoreTxoReconcile(
             walletId: walletId, tipHeight: 2_535_898, pageSize: 2, engine: engine, handler: handler,
-            // The first check admits the first page; the second one (before
-            // the second page) reports the epoch bumped.
-            isCancelled: { checks.next() >= 2 }
+            // The run checks once before each engine read and once before
+            // each store step: the first two admit page one and its heal,
+            // the third (before page two) reports the epoch bumped.
+            isCancelled: { checks.next() >= 3 }
         )
 
         XCTAssertFalse(report.completed)

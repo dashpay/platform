@@ -48,9 +48,17 @@ final class BornSpentTxoPersistTests: XCTestCase {
         return (handler, container)
     }
 
+    /// A restorable wallet: one BIP44 account row carrying xpub bytes, the
+    /// shape the load path requires before it emits the wallet at all.
     private func seedWallet(in container: ModelContainer) throws {
         let context = ModelContext(container)
-        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+        context.insert(wallet)
+        let account = PersistentAccount(wallet: wallet, accountType: 0, accountIndex: 0, accountTypeName: "Standard { index: 0 }")
+        account.accountExtendedPubKeyBytes = Data(repeating: 0xEE, count: 78)
+        account.userIdentityId = Data(count: 32)
+        account.friendIdentityId = Data(count: 32)
+        context.insert(account)
         try context.save()
     }
 

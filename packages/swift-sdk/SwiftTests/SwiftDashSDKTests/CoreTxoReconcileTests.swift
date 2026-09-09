@@ -128,11 +128,15 @@ final class CoreTxoReconcileTests: XCTestCase {
         let wallet = PersistentWallet(walletId: walletId, network: .testnet)
         context.insert(wallet)
         let account = PersistentAccount(wallet: wallet, accountType: 0, accountIndex: 0, accountTypeName: "BIP44 Account")
+        // Xpub bytes make the wallet restorable: the load path emits a
+        // wallet only through accounts it can rebuild keys for.
+        account.accountExtendedPubKeyBytes = Data(repeating: walletId[0], count: 78)
         account.userIdentityId = Data(count: 32)
         account.friendIdentityId = Data(count: 32)
         context.insert(account)
         if withCoinJoinAccount {
             let cj = PersistentAccount(wallet: wallet, accountType: 1, accountIndex: 0, accountTypeName: "CoinJoin")
+            cj.accountExtendedPubKeyBytes = Data(repeating: walletId[0] &+ 1, count: 78)
             cj.userIdentityId = Data(count: 32)
             cj.friendIdentityId = Data(count: 32)
             context.insert(cj)

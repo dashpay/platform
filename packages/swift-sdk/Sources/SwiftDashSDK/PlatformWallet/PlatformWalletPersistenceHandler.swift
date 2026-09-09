@@ -10964,7 +10964,7 @@ extension PlatformWalletPersistenceHandler {
             }
             var rows: [CoreTxoStoreUnspentRow] = []
             for txo in fetched {
-                guard resolvedWalletId(of: txo) == walletId,
+                guard Self.resolvedWalletId(of: txo) == walletId,
                       let account = txo.account,
                       let typeTag = UInt8(exactly: account.accountType)
                 else { continue }

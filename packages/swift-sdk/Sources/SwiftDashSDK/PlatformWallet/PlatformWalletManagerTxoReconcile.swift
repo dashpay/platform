@@ -30,18 +30,18 @@ import Foundation
 extension PlatformWalletManager {
     /// Confirmations an engine coin needs before the heal pass inserts it.
     /// Coinbase maturity; also well past any plausible reorg.
-    static let coreTxoReconcileMinConfirmations: UInt32 = 100
+    nonisolated static let coreTxoReconcileMinConfirmations: UInt32 = 100
     /// How far the wallet's durable scan watermark may trail the scan tip
     /// for the scan to count as complete for this wallet.
-    static let coreTxoReconcileTipMargin: UInt32 = 6
+    nonisolated static let coreTxoReconcileTipMargin: UInt32 = 6
     /// Cadence of the automatic run while the client stays in steady state.
-    static let coreTxoReconcileCadence: Duration = .seconds(30 * 60)
+    nonisolated static let coreTxoReconcileCadence: Duration = .seconds(30 * 60)
     /// Rows per engine page / per store page.
-    static let coreTxoReconcilePageSize = 512
+    nonisolated static let coreTxoReconcilePageSize = 512
     /// How many times a step is deferred behind open Rust rounds before the
     /// run gives up (each deferral waits `coreTxoReconcileRetryDelay`).
-    static let coreTxoReconcileMaxRetries = 200
-    static let coreTxoReconcileRetryDelay: TimeInterval = 0.05
+    nonisolated static let coreTxoReconcileMaxRetries = 200
+    nonisolated static let coreTxoReconcileRetryDelay: TimeInterval = 0.05
 
     /// Reconcile the SwiftData TXO store of `walletId` against the engine,
     /// once the SPV scan has reached a trustworthy steady state — see the
@@ -265,8 +265,10 @@ extension PlatformWalletManager {
             }
             guard page.hasMore else { break }
             // Flipped rows left the `isSpent == false` predicate, so the
-            // next page starts that many rows earlier.
-            offset += max(page.fetched - flippedThisPage, 1)
+            // next page starts that many rows earlier — at the same offset
+            // when the whole page flipped, which still makes progress: the
+            // rows now at that offset are ones this walk has not seen.
+            offset += page.fetched - flippedThisPage
         }
         return report
     }
