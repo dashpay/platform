@@ -934,6 +934,9 @@ impl StateTransition {
                         BatchedTransitionRef::Document(DocumentTransition::Purchase(_)) => {
                             "Purchase"
                         }
+                        BatchedTransitionRef::Document(DocumentTransition::IndexOnlyDelete(_)) => {
+                            "IndexOnlyDelete"
+                        }
                         BatchedTransitionRef::Token(TokenTransition::Transfer(_)) => {
                             "TokenTransfer"
                         }

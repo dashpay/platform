@@ -47,6 +47,20 @@ pub struct DriveAbciValidationConstants {
     /// Per-action fee (in credits) for processing: RedPallas spend auth signature
     /// verification, nullifier duplicate check, and tree insertion.
     pub shielded_per_action_processing_fee: u64,
+    /// Per-action long-term storage allowance, in bytes, priced at the full
+    /// storage rate (disk + processing credits per byte) by
+    /// `compute_minimum_shielded_fee` — the flat storage component every
+    /// pool-paid shielded transition carries per action.
+    ///
+    /// The physical payload is 344 bytes: 312 in the BulkAppendTree — 32
+    /// (`cmx`) + 32 (`rho`) + 32 (`cv_net`, stored unencrypted for OVK
+    /// recovery) + 216 (the `DashMemo` Orchard `TransmittedNoteCiphertext`:
+    /// `epk(32) || enc_ciphertext(104) || out_ciphertext(80)`) — plus 32 in
+    /// the nullifier tree. The allowance may exceed that to cover what the
+    /// metering actually charges per append under the GroveVersion in force
+    /// (Merk node framing, dense path records, the amortized chunk-blob
+    /// framing).
+    pub shielded_storage_bytes_per_action: u64,
     /// Maximum surplus (in credits) that a `ShieldFromAssetLock` may implicitly
     /// donate to the fee pools when no `surplus_output` address is set. Above this
     /// cap the transition is rejected so a client cannot accidentally forfeit a
@@ -205,6 +219,9 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub is_allowed: FeatureVersion,
     pub document_create_transition_structure_validation: FeatureVersion,
     pub document_delete_transition_structure_validation: FeatureVersion,
+    /// The indexOnly delete-by-values kind (PV14+); 0 in every earlier
+    /// version table, where the kind cannot appear.
+    pub document_index_only_delete_transition_structure_validation: FeatureVersion,
     pub document_replace_transition_structure_validation: FeatureVersion,
     pub document_transfer_transition_structure_validation: FeatureVersion,
     pub document_purchase_transition_structure_validation: FeatureVersion,
@@ -212,6 +229,9 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub document_base_transition_state_validation: FeatureVersion,
     pub document_create_transition_state_validation: FeatureVersion,
     pub document_delete_transition_state_validation: FeatureVersion,
+    /// The indexOnly delete-by-values kind (PV14+); 0 in every earlier
+    /// version table, where the kind cannot appear.
+    pub document_index_only_delete_transition_state_validation: FeatureVersion,
     pub document_replace_transition_state_validation: FeatureVersion,
     pub document_transfer_transition_state_validation: FeatureVersion,
     pub document_purchase_transition_state_validation: FeatureVersion,

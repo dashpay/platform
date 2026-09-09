@@ -1,6 +1,44 @@
 import Foundation
 import DashSDKFFI
 
+private final class DPNSActiveContestsRequest: @unchecked Sendable {
+  private enum Phase {
+    case queued
+    case running
+    case cancelled
+  }
+
+  let sdk: SDK
+  let sdkHandle: OpaquePointer
+
+  private let lock = NSLock()
+  private var phase = Phase.queued
+
+  init(sdk: SDK, sdkHandle: OpaquePointer) {
+    self.sdk = sdk
+    self.sdkHandle = sdkHandle
+  }
+
+  func begin() -> Bool {
+    lock.withLock {
+      guard case .queued = phase else { return false }
+      phase = .running
+      return true
+    }
+  }
+
+  func cancel() {
+    lock.withLock { phase = .cancelled }
+  }
+
+  var isCancelled: Bool {
+    lock.withLock {
+      if case .cancelled = phase { return true }
+      return false
+    }
+  }
+}
+
 // MARK: - DPNS contested-username browsing
 //
 // Typed reads for the *voter's* view of DPNS username contests: every open
@@ -21,6 +59,14 @@ import DashSDKFFI
 
 @MainActor
 extension SDK {
+
+  /// Serializes the blocking active-contest FFI call on a GCD worker rather
+  /// than occupying Swift's cooperative executor. Serial execution also lets
+  /// canceled refreshes waiting behind an in-flight query skip entering Rust.
+  nonisolated private static let activeContestsQueue = DispatchQueue(
+    label: "org.dash.swiftdashsdk.dpns-active-contests",
+    qos: .userInitiated
+  )
 
   // MARK: - Label normalization
 
@@ -58,22 +104,64 @@ extension SDK {
   /// Every DPNS username contest that is still open, with its contenders,
   /// tallies and end time.
   ///
-  /// One round trip. Reads the FFI's `DashSDKContestedNamesList` structure
-  /// directly, so contender tallies arrive as integers.
+  /// The Rust bridge lists current contests, then loads their vote states with
+  /// bounded concurrency and an overall timeout. This async wrapper keeps that
+  /// blocking FFI operation off the caller's actor. Cancellation is cooperative
+  /// at the FFI boundary: it prevents work that has not entered Rust, but once
+  /// the synchronous call starts this method waits for it to return (bounded by
+  /// the Rust timeout), frees any result, then throws `CancellationError`.
   ///
   /// - Parameter limit: Maximum contests to return. The FFI has no
   ///   start-after cursor on this query, so this is a hard ceiling, not a
   ///   page size — raise it rather than trying to page.
   /// - Returns: Contests sorted by normalized label. Empty when nothing is
   ///   contested.
-  public func dpnsActiveContests(limit: UInt32 = 200) throws -> [DPNSContest] {
-    guard let handle = handle else {
+  public func dpnsActiveContests(limit: UInt32 = 200) async throws -> [DPNSContest] {
+    guard let sdkHandle = handle else {
       throw SDKError.invalidState("SDK not initialized")
     }
-    guard let listPtr = dash_sdk_dpns_get_contested_non_resolved_usernames(handle, limit) else {
-      throw SDKError.internalError("Failed to fetch contested DPNS usernames")
+
+    let request = DPNSActiveContestsRequest(sdk: self, sdkHandle: sdkHandle)
+
+    return try await withTaskCancellationHandler {
+      try Task.checkCancellation()
+
+      let contests = try await withCheckedThrowingContinuation {
+        (continuation: CheckedContinuation<[DPNSContest], Error>) in
+        Self.activeContestsQueue.async {
+          guard request.begin() else {
+            continuation.resume(throwing: CancellationError())
+            return
+          }
+
+          // `SDK` owns its handle; pin it until the synchronous FFI call has
+          // returned and any owned result has been copied and freed.
+          let contests: [DPNSContest]? = withExtendedLifetime(request.sdk) {
+            guard let listPtr = dash_sdk_dpns_get_contested_non_resolved_usernames(
+              request.sdkHandle, limit
+            ) else { return nil }
+            return Self.consumeContestedNamesList(listPtr)
+          }
+
+          // The FFI call cannot be interrupted. Check only after consuming the
+          // result so cancellation cannot leak an allocated list.
+          if request.isCancelled {
+            continuation.resume(throwing: CancellationError())
+          } else if let contests {
+            continuation.resume(returning: contests)
+          } else {
+            continuation.resume(
+              throwing: SDKError.internalError("Failed to fetch contested DPNS usernames")
+            )
+          }
+        }
+      }
+      // Cover cancellation after the worker's check but before this task resumes.
+      try Task.checkCancellation()
+      return contests
+    } onCancel: {
+      request.cancel()
     }
-    return Self.consumeContestedNamesList(listPtr)
   }
 
   /// The open contests **this identity is contending in** — the "how are my
@@ -105,7 +193,7 @@ extension SDK {
   /// the null-label handling to drift.
   ///
   /// Takes ownership: the list is freed before returning, on every path.
-  private static func consumeContestedNamesList(
+  nonisolated private static func consumeContestedNamesList(
     _ listPtr: UnsafeMutablePointer<DashSDKContestedNamesList>
   ) -> [DPNSContest] {
     defer { dash_sdk_contested_names_list_free(listPtr) }

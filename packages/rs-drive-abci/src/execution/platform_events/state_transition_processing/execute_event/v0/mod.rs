@@ -43,10 +43,12 @@ where
         block_info: &BlockInfo,
         mut consensus_errors: Vec<ConsensusError>,
         transaction: &Transaction,
+        block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         if fee_validation_result.is_valid_with_data() {
+            let credit_mints = DriveOperation::credit_mints(&operations);
             //todo: make this into an atomic event with partial batches
             let mut individual_fee_result = self
                 .drive
@@ -59,6 +61,8 @@ where
                     Some(previous_fee_versions),
                 )
                 .map_err(Error::Drive)?;
+
+            *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
 
             ValidationOperation::add_many_to_fee_result(
                 &execution_operations,
@@ -115,10 +119,12 @@ where
         mut consensus_errors: Vec<ConsensusError>,
         transaction: &Transaction,
         mut address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
+        block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         if fee_validation_result.is_valid_with_data() {
+            let credit_mints = DriveOperation::credit_mints(&operations);
             // Apply the drive operations first to calculate the fee
             let mut individual_fee_result = self
                 .drive
@@ -131,6 +137,8 @@ where
                     Some(previous_fee_versions),
                 )
                 .map_err(Error::Drive)?;
+
+            *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
 
             ValidationOperation::add_many_to_fee_result(
                 &execution_operations,
@@ -179,11 +187,18 @@ where
             // Defense in depth: the deduction min-caps each step, so an under-funded input set would
             // remove < `total_fee` from the inputs while the full `total_fee` is still booked to the
             // fee pools — minting the difference (`CorruptedCreditsNotBalanced` -> chain halt).
-            // `validate_fees_of_event` is re-run on this exact state immediately before execution and
-            // already rejects an under-funded transition, so this cannot trigger today. Guard anyway:
-            // if those two paths ever diverged, fail closed at the source with an actionable error
-            // rather than committing a mint that only surfaces as an opaque end-of-block sum-tree
-            // imbalance.
+            // `validate_fees_of_event` runs on the same state immediately before execution, but it
+            // prices the batch with the ESTIMATED cost model (`apply_drive_operations` with
+            // `apply = false`) while `total_fee` here is the ACTUAL metered cost — so this guard
+            // triggers whenever `estimated < actual` for a transition funded in between (the
+            // mainnet evo1 stalls of 2026-08-14/15; the keyless commitment-tree append is skipped
+            // in estimation, dashpay/grovedb#812). The invariant this guard actually enforces is
+            // `estimated >= actual`. Note the ops were already applied above: an Err here leaves
+            // this transition's writes in the block transaction. That is safe because the
+            // processing loop rolls dropped transitions back while proposing (the 4.1.1 fix),
+            // and a block that carries such a transition anyway is rejected wholesale by
+            // process_proposal's unexpected_execution_results gate, discarding the round's
+            // transaction along with the writes.
             if !fee_deduction_result.fee_fully_covered {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "address-input fee not fully covered at execution; validate_fees_of_event should have rejected the under-funded transition",
@@ -362,6 +377,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
+        block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
@@ -405,6 +421,7 @@ where
                     block_info,
                     consensus_errors,
                     transaction,
+                    block_credit_mints,
                     platform_version,
                     previous_fee_versions,
                 )
@@ -430,6 +447,7 @@ where
                     block_info,
                     consensus_errors,
                     transaction,
+                    block_credit_mints,
                     platform_version,
                     previous_fee_versions,
                 )?;
@@ -470,6 +488,7 @@ where
                     consensus_errors,
                     transaction,
                     address_balances_in_update,
+                    block_credit_mints,
                     platform_version,
                     previous_fee_versions,
                 )
@@ -480,6 +499,7 @@ where
                 processing_fees,
                 operations,
             } => {
+                let credit_mints = DriveOperation::credit_mints(&operations);
                 self.drive
                     .apply_drive_operations(
                         operations,
@@ -490,6 +510,8 @@ where
                         Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
+
+                *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
 
                 if consensus_errors.is_empty() {
                     Ok(SuccessfulPaidExecution(
@@ -509,6 +531,7 @@ where
                 fees_to_add_to_pool,
             } => {
                 if consensus_errors.is_empty() {
+                    let credit_mints = DriveOperation::credit_mints(&operations);
                     self.drive
                         .apply_drive_operations(
                             operations,
@@ -519,6 +542,8 @@ where
                             Some(previous_fee_versions),
                         )
                         .map_err(Error::Drive)?;
+
+                    *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
 
                     Ok(SuccessfulPaidExecution(
                         None,
@@ -559,6 +584,7 @@ where
                     return Ok(UnpaidConsensusExecutionError(consensus_errors));
                 }
 
+                let credit_mints = DriveOperation::credit_mints(&operations);
                 let applied_fees = self
                     .drive
                     .apply_drive_operations(
@@ -570,6 +596,8 @@ where
                         Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
+
+                *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
 
                 // The ops just applied credited any transparent output address (an Unshield's
                 // recipient, including the chargeable-failure fallback address). Record that credit
@@ -618,6 +646,7 @@ where
                 all_errors.extend(consensus_errors);
 
                 if all_errors.is_empty() {
+                    let credit_mints = DriveOperation::credit_mints(&operations);
                     let applied_fees = self
                         .drive
                         .apply_drive_operations(
@@ -629,6 +658,8 @@ where
                             Some(previous_fee_versions),
                         )
                         .map_err(Error::Drive)?;
+
+                    *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
 
                     // The ops just applied credited the shield's transparent surplus-output address
                     // (when set). Record that credit so incremental client sync sees it. ShieldedSpend
@@ -689,11 +720,13 @@ where
                     block_info,
                     consensus_errors,
                     transaction,
+                    block_credit_mints,
                     platform_version,
                     previous_fee_versions,
                 )
             }
             ExecutionEvent::Free { operations } => {
+                let credit_mints = DriveOperation::credit_mints(&operations);
                 self.drive
                     .apply_drive_operations(
                         operations,
@@ -704,6 +737,7 @@ where
                         Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
+                *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
                 Ok(SuccessfulFreeExecution)
             }
         }
@@ -750,6 +784,7 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 Some(&mut address_balances),
+                &mut 0,
                 platform_version,
                 &fee_versions,
             )
@@ -795,6 +830,7 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 Some(&mut address_balances),
+                &mut 0,
                 platform_version,
                 &fee_versions,
             )
@@ -837,6 +873,7 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 Some(&mut address_balances),
+                &mut 0,
                 platform_version,
                 &fee_versions,
             )

@@ -344,6 +344,7 @@ mod tests {
     #[test]
     fn display_document_with_no_properties() {
         let doc = Document::V0(DocumentV0 {
+            contract_version: None,
             id: platform_value::Identifier::new([0xAA; 32]),
             owner_id: platform_value::Identifier::new([0xBB; 32]),
             properties: Default::default(),
@@ -371,6 +372,7 @@ mod tests {
     #[test]
     fn display_document_shows_transferred_at_fields() {
         let doc = Document::V0(DocumentV0 {
+            contract_version: None,
             id: platform_value::Identifier::new([1u8; 32]),
             owner_id: platform_value::Identifier::new([2u8; 32]),
             properties: Default::default(),
@@ -409,6 +411,7 @@ mod tests {
     fn display_document_shows_creator_id() {
         let creator = platform_value::Identifier::new([0xCC; 32]);
         let doc = Document::V0(DocumentV0 {
+            contract_version: None,
             id: platform_value::Identifier::new([1u8; 32]),
             owner_id: platform_value::Identifier::new([2u8; 32]),
             properties: Default::default(),
@@ -436,6 +439,7 @@ mod tests {
     #[test]
     fn display_document_shows_block_height_fields() {
         let doc = Document::V0(DocumentV0 {
+            contract_version: None,
             id: platform_value::Identifier::new([1u8; 32]),
             owner_id: platform_value::Identifier::new([2u8; 32]),
             properties: Default::default(),
@@ -466,6 +470,7 @@ mod tests {
     #[test]
     fn increment_revision_works_on_mutable_document() {
         let mut doc = Document::V0(DocumentV0 {
+            contract_version: None,
             id: platform_value::Identifier::new([1u8; 32]),
             owner_id: platform_value::Identifier::new([2u8; 32]),
             properties: Default::default(),
@@ -490,6 +495,7 @@ mod tests {
     #[test]
     fn increment_revision_fails_when_no_revision() {
         let mut doc = Document::V0(DocumentV0 {
+            contract_version: None,
             id: platform_value::Identifier::new([1u8; 32]),
             owner_id: platform_value::Identifier::new([2u8; 32]),
             properties: Default::default(),
@@ -618,6 +624,7 @@ mod tests {
     #[test]
     fn increment_revision_errors_on_overflow() {
         let mut doc = Document::V0(DocumentV0 {
+            contract_version: None,
             id: platform_value::Identifier::new([1u8; 32]),
             owner_id: platform_value::Identifier::new([2u8; 32]),
             properties: Default::default(),
@@ -647,6 +654,7 @@ mod tests {
     #[test]
     fn from_document_v0_produces_v0_variant() {
         let v0 = DocumentV0 {
+            contract_version: None,
             id: platform_value::Identifier::new([1u8; 32]),
             owner_id: platform_value::Identifier::new([2u8; 32]),
             properties: Default::default(),
@@ -676,6 +684,7 @@ mod tests {
     #[test]
     fn document_display_has_version_prefix() {
         let doc = Document::V0(DocumentV0 {
+            contract_version: None,
             id: platform_value::Identifier::new([1u8; 32]),
             owner_id: platform_value::Identifier::new([2u8; 32]),
             properties: Default::default(),
@@ -742,6 +751,7 @@ mod json_convertible_tests {
 
     fn fixture() -> Document {
         Document::V0(DocumentV0 {
+            contract_version: None,
             id: Identifier::new([0xa1; 32]),
             owner_id: Identifier::new([0xb2; 32]),
             properties: BTreeMap::new(),

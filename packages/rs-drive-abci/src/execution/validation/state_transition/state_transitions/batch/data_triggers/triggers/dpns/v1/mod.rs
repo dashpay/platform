@@ -241,6 +241,8 @@ pub(super) fn create_domain_data_trigger_v1(
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         // Diff vs `_v0` (parent-domain query):
@@ -354,6 +356,8 @@ pub(super) fn create_domain_data_trigger_v1(
         start_at: None,
         start_at_included: false,
         block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
     };
 
     // Diff vs `_v0` (preorder query): same change as above. `_v0`

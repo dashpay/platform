@@ -22,7 +22,7 @@ export default async function createZeroSSLCertificate(
     certificate_csr: csr,
   });
 
-  const url = `https://api.zerossl.com/certificates?access_key=${apiKey}`;
+  const url = 'https://api.zerossl.com/certificates';
 
   const requestOptions = {
     method: 'POST',
@@ -32,7 +32,7 @@ export default async function createZeroSSLCertificate(
     },
   };
 
-  const data = await requestApi(url, requestOptions);
+  const data = await requestApi(apiKey, url, requestOptions);
 
   return new Certificate(data);
 }

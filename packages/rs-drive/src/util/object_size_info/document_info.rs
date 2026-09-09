@@ -304,6 +304,7 @@ mod tests {
     /// Helper: build a minimal Document (V0) with a given 32-byte id.
     fn make_document(id_bytes: [u8; 32]) -> Document {
         Document::V0(DocumentV0 {
+            contract_version: None,
             id: Identifier::new(id_bytes),
             owner_id: Identifier::new([0xAA; 32]),
             properties: BTreeMap::new(),

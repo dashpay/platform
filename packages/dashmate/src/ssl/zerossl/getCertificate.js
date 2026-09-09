@@ -10,14 +10,14 @@ import requestApi from './requestApi.js';
  * @return {Promise<Certificate>}
  */
 export default async function getCertificate(apiKey, id) {
-  const url = `https://api.zerossl.com/certificates/${id}?access_key=${apiKey}`;
+  const url = `https://api.zerossl.com/certificates/${id}`;
 
   const requestOptions = {
     method: 'GET',
     headers: { },
   };
 
-  const data = await requestApi(url, requestOptions);
+  const data = await requestApi(apiKey, url, requestOptions);
 
   return new Certificate(data);
 }

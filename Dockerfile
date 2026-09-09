@@ -415,6 +415,7 @@ COPY --parents \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
+    packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
     packages/rs-unified-sdk-ffi \
@@ -541,6 +542,7 @@ COPY --parents \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
+    packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
     packages/rs-unified-sdk-ffi \
@@ -690,6 +692,7 @@ COPY --parents \
     packages/rs-dash-platform-macros \
     packages/rs-drive \
     packages/rs-drive-proof-verifier \
+    packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-trusted-context-provider \
     # Common
@@ -962,6 +965,7 @@ COPY --parents \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
+    packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
     packages/rs-unified-sdk-ffi \

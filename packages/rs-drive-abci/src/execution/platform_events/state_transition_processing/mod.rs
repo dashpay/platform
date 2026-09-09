@@ -3,6 +3,9 @@ mod decode_raw_state_transitions;
 mod execute_event;
 mod process_raw_state_transitions;
 mod process_validation_result;
+
+#[cfg(test)]
+pub(crate) use process_raw_state_transitions::test_fault_injection;
 mod record_added_balance_outputs;
 mod store_address_balances_to_recent_block_storage;
 mod validate_fees_of_event;

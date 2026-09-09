@@ -1,6 +1,7 @@
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
@@ -57,6 +58,22 @@ pub struct SystemLimits {
     pub withdrawal_transactions_per_block_limit: u16,
     pub retry_signing_expired_withdrawal_documents_per_block_limit: u16,
     pub max_withdrawal_amount: u64,
+    /// Daily withdrawal limit as a percentage of the total credits Platform held a day ago.
+    /// From protocol version 14 Platform pools at most this share of the total credits recorded
+    /// at the latest block at least 24 hours before the current one into asset unlock
+    /// transactions per 24 hours (`daily_withdrawal_limit` method version 2; the history is
+    /// kept by `record_total_credits_history_for_withdrawals`). `None` for the protocol versions
+    /// that predate the rule: method version 0 derived the limit from the current total, method
+    /// version 1 applied a flat 2000 Dash. Versioned: see `daily_withdrawal_limit_percent` in
+    /// each `SYSTEM_LIMITS_V*`.
+    pub daily_withdrawal_limit_percent: Option<u8>,
+    /// Upper bound (in credits) of the relative daily withdrawal limit from protocol version 14:
+    /// Core's credit-pool unlock capacity per day, `LimitAmountV24` = 4000 Dash per 576-block
+    /// window (Core v24). Platform cannot usefully pool more than Core will mine — the excess
+    /// only cycles through expiry and re-signing — so the limit never exceeds this whatever the
+    /// total credits are; raise it together with Core. Must be at least `max_withdrawal_amount`.
+    /// `None` for the protocol versions that predate the relative rule.
+    pub max_daily_withdrawal_amount: Option<u64>,
     /// Minimum net amount (in credits) a withdrawal may send to Core, shared by the
     /// transparent (identity + address) and shielded withdrawal paths. The dust floor that
     /// keeps Core from rejecting the resulting `TxOut`. Versioned: see `min_withdrawal_amount`
@@ -69,6 +86,20 @@ pub struct SystemLimits {
     // do this that much
     pub max_token_redemption_cycles: u32,
     pub max_shielded_transition_actions: u16,
+    /// Maximum overlap factor (`range / step`) a `timeRange` index transform
+    /// may declare, enforced at contract registration.
+    ///
+    /// The overlap factor is the number of buckets that contain any given
+    /// timestamp — i.e. the write amplification of the index: every document
+    /// insert, delete, and (on a bucket-set change) update fans out into that
+    /// many index entries. The bound of 24 covers the natural worst case, a
+    /// day-long window sliding hourly, without letting a contract buy a
+    /// 256-entry fan-out per document.
+    ///
+    /// `None` preserves the behavior of protocol versions that predate
+    /// time-range indexes (nothing to bound: the `timeRange` keyword does not
+    /// parse there).
+    pub max_time_range_overlap_factor: Option<u64>,
 }
 
 #[cfg(test)]

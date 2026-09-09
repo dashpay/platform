@@ -1,8 +1,8 @@
 //! Helpers shared by every generation of `DocumentTypeRef::validate_update`
 //! (`v0`, `v1`, …). Only the parts of the update-validation flow that differ
 //! between generations live in the per-version modules; the config, byte-array
-//! encoding and JSON-schema compatibility checks below are generation
-//! independent.
+//! encoding and JSON-schema compatibility checks below use options selected by
+//! the versioned validator.
 
 use crate::consensus::basic::data_contract::IncompatibleDocumentTypeSchemaError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
@@ -16,6 +16,15 @@ use crate::data_contract::errors::DataContractError;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
+
+/// Per-update exceptions selected by the versioned validator. Defaults retain
+/// the original immutable-config behavior for earlier protocol versions.
+#[derive(Default)]
+pub(super) struct UpdateValidationOptions {
+    /// Allow the verified true-to-false deletion flag correction while both
+    /// the old and new document types keep history.
+    pub(super) allow_history_delete_repair: bool,
+}
 
 impl DocumentTypeRef<'_> {
     /// A byte array property whose `minItems == maxItems` is serialized as raw,
@@ -89,6 +98,16 @@ impl DocumentTypeRef<'_> {
         &self,
         new_document_type: DocumentTypeRef,
     ) -> SimpleConsensusValidationResult {
+        self.validate_config_with_options(new_document_type, &UpdateValidationOptions::default())
+    }
+
+    /// Only protocol 14's update validator permits repairing the unusable delete
+    /// flag. Earlier generations keep the original immutable-config behavior.
+    pub(super) fn validate_config_with_options(
+        &self,
+        new_document_type: DocumentTypeRef,
+        options: &UpdateValidationOptions,
+    ) -> SimpleConsensusValidationResult {
         if new_document_type.creation_restriction_mode() != self.creation_restriction_mode() {
             return SimpleConsensusValidationResult::new_with_error(
                 DocumentTypeUpdateError::new(
@@ -134,7 +153,9 @@ impl DocumentTypeRef<'_> {
             );
         }
 
-        if new_document_type.documents_can_be_deleted() != self.documents_can_be_deleted() {
+        if new_document_type.documents_can_be_deleted() != self.documents_can_be_deleted()
+            && !options.allow_history_delete_repair
+        {
             return SimpleConsensusValidationResult::new_with_error(
                 DocumentTypeUpdateError::new(
                     self.data_contract_id(),
@@ -346,6 +367,29 @@ impl DocumentTypeRef<'_> {
             );
         }
 
+        // indexOnly immutability: the flag selects the entire storage layout
+        // (no primary-key tree, index terminals are Items keyed by the
+        // terminal property). Flipping it in either direction would strand
+        // every existing entry: rows with no primary storage to dereference,
+        // or references whose primary rows were never written. The per-index
+        // `terminal` needs no separate check here — it is a field of `Index`,
+        // so `validate_index_definitions_unchanged`'s full equality
+        // comparison already rejects any change to it.
+        if new_document_type.index_only() != self.index_only() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether it is indexOnly: changing from {} to {}",
+                        self.index_only(),
+                        new_document_type.index_only()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 
@@ -354,12 +398,25 @@ impl DocumentTypeRef<'_> {
         new_document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        self.validate_schema_with_options(
+            new_document_type,
+            platform_version,
+            &UpdateValidationOptions::default(),
+        )
+    }
+
+    pub(super) fn validate_schema_with_options(
+        &self,
+        new_document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+        options: &UpdateValidationOptions,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // All good if schema is the same
         if self.schema() == new_document_type.schema() {
             return Ok(SimpleConsensusValidationResult::new());
         }
 
-        let old_document_schema_json = match self.schema().try_to_validating_json() {
+        let mut old_document_schema_json = match self.schema().try_to_validating_json() {
             Ok(json_value) => json_value,
             Err(e) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -372,7 +429,8 @@ impl DocumentTypeRef<'_> {
             }
         };
 
-        let new_document_schema_json = match new_document_type.schema().try_to_validating_json() {
+        let mut new_document_schema_json = match new_document_type.schema().try_to_validating_json()
+        {
             Ok(json_value) => json_value,
             Err(e) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -384,6 +442,18 @@ impl DocumentTypeRef<'_> {
                 ));
             }
         };
+
+        if options.allow_history_delete_repair {
+            // The parsed flags already proved this is the one permitted config
+            // correction. It changes neither property encoding nor history.
+            // Strip only the top-level flag, including the legacy omitted-key
+            // case; a property named canBeDeleted must still be validated.
+            for schema in [&mut old_document_schema_json, &mut new_document_schema_json] {
+                if let Some(map) = schema.as_object_mut() {
+                    map.remove("canBeDeleted");
+                }
+            }
+        }
 
         let compatibility_validation_result = validate_schema_compatibility(
             &old_document_schema_json,
@@ -1197,6 +1267,100 @@ mod tests {
         }
 
         #[test]
+        fn should_return_invalid_result_when_index_only_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "like";
+
+            // A minimal valid indexOnly type: one refersTo-typed property,
+            // one index over it, terminal defaulting to $ownerId.
+            let index_only_schema = platform_value!({
+                "type": "object",
+                "indexOnly": true,
+                "documentsMutable": false,
+                "properties": {
+                    "postId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "refersTo": { "type": "identity" },
+                        "position": 0,
+                    }
+                },
+                "required": ["postId"],
+                "indices": [
+                    {
+                        "name": "byPost",
+                        "properties": [{ "postId": "asc" }],
+                    }
+                ],
+                "additionalProperties": false,
+            });
+
+            // The same type without indexOnly (documentsMutable kept equal
+            // so the earlier mutability check doesn't fire first).
+            let plain_schema = platform_value!({
+                "type": "object",
+                "documentsMutable": false,
+                "properties": {
+                    "postId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "refersTo": { "type": "identity" },
+                        "position": 0,
+                    }
+                },
+                "required": ["postId"],
+                "indices": [
+                    {
+                        "name": "byPost",
+                        "properties": [{ "postId": "asc" }],
+                    }
+                ],
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let make_document_type = |schema: platform_value::Value| {
+                DocumentType::try_from_schema(
+                    data_contract_id,
+                    1,
+                    config.version(),
+                    document_type_name,
+                    schema,
+                    None,
+                    &BTreeMap::new(),
+                    &config,
+                    false,
+                    &mut Vec::new(),
+                    platform_version,
+                )
+                .expect("document type should parse")
+            };
+
+            let old_document_type = make_document_type(index_only_schema);
+            let new_document_type = make_document_type(plain_schema);
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == "document type can not change whether it is indexOnly: changing from true to false"
+            );
+        }
+
+        #[test]
         fn should_return_invalid_result_when_range_countable_is_changed() {
             // documents_countable must remain equal across old/new so that
             // validate_config reaches the range_countable check below it.
@@ -1712,7 +1876,7 @@ mod tests {
             let old = document_type_with_byte_array(old_ba, platform_version);
             let new = document_type_with_byte_array(new_ba, platform_version);
             old.as_ref()
-                .validate_update(new.as_ref(), platform_version)
+                .validate_update(new.as_ref(), 2, platform_version)
                 .expect("validate_update should not error")
         }
 

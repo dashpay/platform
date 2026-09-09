@@ -3,8 +3,10 @@ import { Listr } from 'listr2';
 import chalk from 'chalk';
 import fs from 'fs';
 import lodash from 'lodash';
+import promptOrThrow from '../../../../util/promptOrThrow.js';
 import wait from '../../../../util/wait.js';
 import { ERRORS } from '../../../../ssl/zerossl/validateZeroSslCertificateFactory.js';
+import VerificationServerUnreachableError from '../../../../ssl/errors/VerificationServerUnreachableError.js';
 
 /**
  * @param {generateCsr} generateCsr
@@ -176,7 +178,7 @@ export default function obtainZeroSSLCertificateTaskFactory(
           const isResponding = await verificationServer.waitForServerIsResponding();
 
           if (!isResponding) {
-            throw new Error(`Verification server is not responding.
+            throw new VerificationServerUnreachableError(`Verification server is not responding.
 Please ensure that port 80 on your public IP address ${ctx.externalIp} is open
 for incoming HTTP connections. You may need to configure your firewall to
 ensure this port is accessible from the public internet. If you are using
@@ -204,9 +206,13 @@ and all Dash service ports listed above.`);
                 }
               }
 
-              // If retry is disabled, throw the error
-              // or prompt the user to retry
-              if (ctx.noRetry !== true) {
+              // Prompting needs a positive opt-in from the entry point rather
+              // than the absence of noRetry. Gating on noRetry alone prompts
+              // unless a caller remembers to say otherwise, and the caller
+              // most likely to forget renews certificates unattended inside a
+              // container, where a prompt never settles and never releases the
+              // config lock it holds.
+              if (ctx.noRetry !== true && ctx.interactive === true) {
                 let errorMessage = e.message;
 
                 // Get the error message from details if it exists
@@ -217,7 +223,7 @@ and all Dash service ports listed above.`);
                   }
                 }
 
-                retry = await task.prompt({
+                retry = await promptOrThrow(task, {
                   type: 'toggle',
                   header: chalk`  An error occurred during verification: {red ${errorMessage}}
 
@@ -230,7 +236,7 @@ and all Dash service ports listed above.`);
                   enabled: 'Yes',
                   disabled: 'No',
                   initial: true,
-                });
+                }, { interactive: ctx.interactive });
               }
 
               if (!retry) {

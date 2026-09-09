@@ -115,6 +115,9 @@ rs-dapi-client:
 platform-encryption:
   - packages/rs-platform-encryption/**
 
+dash-platform-queries:
+  - packages/dash-platform-queries/**
+
 dash-sdk:
   - packages/rs-sdk/**
 

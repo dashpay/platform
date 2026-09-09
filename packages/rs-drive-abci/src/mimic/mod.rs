@@ -140,7 +140,7 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
         } = block_info;
         let time = Timestamp {
             seconds: (time_ms / 1000) as i64,
-            nanos: ((time_ms % 1000) * 1000) as i32,
+            nanos: ((time_ms % 1000) * 1_000_000) as i32,
         };
         // PREPARE (also processes internally)
 
@@ -287,7 +287,7 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             height: height as i64,
             time: Some(Timestamp {
                 seconds: (time_ms / 1000) as i64,
-                nanos: ((time_ms % 1000) * 1000) as i32,
+                nanos: ((time_ms % 1000) * 1_000_000) as i32,
             }),
             next_validators_hash: next_validators_hash.to_vec(),
             round: round as i32,

@@ -119,9 +119,32 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * document id, ownership/sale state, counterparty, document timestamps and
  * marketplace reconciliation watermark. Defaults keep every legacy label an
  * owned, unlisted row until the first native marketplace sync refreshes it.
+ *
+ * Version 11 (durable sweep holds): adds `txos.supersededByTxid`,
+ * `pending_inputs.isSweptTombstone`, `pending_inputs.winnerMinedHeight` and
+ * `wallets.lastAppliedChainLockHeight`, plus two `pending_inputs` indexes.
+ * A sweep's winner can beat a loser to an input whose funding TXO has not
+ * landed here yet, and until now the only record of that claim was the
+ * loser's own `pending_inputs` row, which cascades away with the loser it
+ * names — leaving the funding TXO's later arrival free to re-insert the
+ * outpoint as an ordinary unspent UTXO. `supersededByTxid` is the durable
+ * hold on a materialised coin (the SQLite store's `spent_in_txid`);
+ * `isSweptTombstone` marks the detached pending row that carries the same
+ * hold for a coin that has not materialised; `winnerMinedHeight` is the
+ * winner's own mined height stamped on that tombstone, the horizon the
+ * end-of-round collector compares against the chainlock finality boundary
+ * `min(chainlockHeight, syncedHeight)`; and `lastAppliedChainLockHeight`
+ * is the numeric chainlock height `onWalletChangesetChainLockHeight`
+ * delivers, the chainlock half of that boundary (the bincode chainlock
+ * blob is opaque here). The `spendingTxid` index serves the sweep's
+ * claimed-row lookup; the `(walletId, isSweptTombstone, winnerMinedHeight)`
+ * index covers the collector. All four columns are additive: every
+ * pre-migration row reads back as an ordinary, unstamped, non-tombstone
+ * entry, and a wallet with no recorded chainlock height has no boundary
+ * at all (nothing collects).
  */
 @Database(
-    version = 10,
+    version = 11,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -557,6 +580,43 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v10 → v11: the four additive sweep-hold columns and the two
+         * `pending_inputs` indexes — see the version-11 class doc above.
+         * `isSweptTombstone` is defaulted so every existing row reads as
+         * "not a tombstone"; the other three are nullable and need no
+         * default (pre-migration tombstones read back unstamped and are
+         * never collected; the chainlock height starts NULL, so no
+         * boundary exists until `onWalletChangesetChainLockHeight`
+         * records one). Column order = entity field order, and the index
+         * SQL is the exported schema's verbatim so Room's validation of a
+         * migrated database passes.
+         */
+        val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `txos` ADD COLUMN `supersededByTxid` BLOB")
+                db.execSQL(
+                    "ALTER TABLE `pending_inputs` ADD COLUMN `isSweptTombstone` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `pending_inputs` ADD COLUMN `winnerMinedHeight` INTEGER",
+                )
+                db.execSQL(
+                    "ALTER TABLE `wallets` ADD COLUMN `lastAppliedChainLockHeight` INTEGER",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_pending_inputs_spendingTxid` " +
+                        "ON `pending_inputs` (`spendingTxid`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS " +
+                        "`index_pending_inputs_walletId_isSweptTombstone_winnerMinedHeight` " +
+                        "ON `pending_inputs` (`walletId`, `isSweptTombstone`, `winnerMinedHeight`)",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -574,6 +634,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_7_8,
                     MIGRATION_8_9,
                     MIGRATION_9_10,
+                    MIGRATION_10_11,
                 )
                 .build()
 

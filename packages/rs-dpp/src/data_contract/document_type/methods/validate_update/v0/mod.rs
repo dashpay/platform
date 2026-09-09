@@ -132,7 +132,7 @@ mod tests {
 
         let early_result = old
             .as_ref()
-            .validate_update(new_early_name.as_ref(), platform_version)
+            .validate_update(new_early_name.as_ref(), 2, platform_version)
             .expect("early-name addition should produce a validation result");
 
         assert_matches!(
@@ -147,7 +147,7 @@ mod tests {
         // check ("schema keyword 'indices' ... is not supported").
         let late_error = old
             .as_ref()
-            .validate_update(new_late_name.as_ref(), platform_version)
+            .validate_update(new_late_name.as_ref(), 2, platform_version)
             .expect_err("late-name addition should error in schema compatibility");
 
         assert_matches!(

@@ -121,6 +121,15 @@ impl WasmSdkError {
     }
 }
 
+impl From<dash_sdk::dash_platform_queries::Error> for WasmSdkError {
+    fn from(err: dash_sdk::dash_platform_queries::Error) -> Self {
+        // Route through the SDK's own conversion so the transport-free query
+        // core's errors keep the exact mapping they had when they were
+        // `SdkError` variants.
+        SdkError::from(err).into()
+    }
+}
+
 impl From<SdkError> for WasmSdkError {
     fn from(err: SdkError) -> Self {
         use SdkError::*;

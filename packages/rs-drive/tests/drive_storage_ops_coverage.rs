@@ -887,6 +887,7 @@ mod document_operation_tests {
         use dpp::document::Document;
 
         let doc = Document::V0(dpp::document::DocumentV0 {
+            contract_version: None,
             id: dpp::prelude::Identifier::new([1u8; 32]),
             owner_id: dpp::prelude::Identifier::new([2u8; 32]),
             properties: Default::default(),
@@ -920,6 +921,7 @@ mod document_operation_tests {
         use dpp::document::Document;
 
         let doc = Document::V0(dpp::document::DocumentV0 {
+            contract_version: None,
             id: dpp::prelude::Identifier::new([1u8; 32]),
             owner_id: dpp::prelude::Identifier::new([2u8; 32]),
             properties: Default::default(),

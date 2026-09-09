@@ -1920,6 +1920,53 @@ struct MasternodeStorageListView: View {
     }
 }
 
+// MARK: - PersistentTrackedMasternode
+
+/// Tracked (wallet-independent) masternodes — the user-curated registry
+/// rows. Network-scoped by their own `networkRaw` column (no wallet join:
+/// they belong to no wallet), oldest-tracked first.
+struct TrackedMasternodeStorageListView: View {
+    let network: Network
+    @Query(sort: [SortDescriptor(\PersistentTrackedMasternode.addedAt)])
+    private var records: [PersistentTrackedMasternode]
+
+    private var scopedRecords: [PersistentTrackedMasternode] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List(visible) { record in
+            NavigationLink(destination: TrackedMasternodeStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(record.label ?? "Unnamed")
+                            .font(.body)
+                        Spacer()
+                        Text(Date(timeIntervalSince1970: TimeInterval(record.addedAt)),
+                             style: .date)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    Text(record.proTxHash.map { String(format: "%02x", $0) }.joined())
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("Tracked Masternodes (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView(
+                    "No Tracked Masternodes",
+                    systemImage: "eye"
+                )
+            }
+        }
+    }
+}
+
 // MARK: - PersistentWalletManagerMetadata
 
 struct WalletManagerMetadataStorageListView: View {

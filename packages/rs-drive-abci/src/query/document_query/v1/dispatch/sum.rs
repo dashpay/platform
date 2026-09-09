@@ -1,6 +1,7 @@
 //! `RoutingDecision::Sum` — the grouped sum surface.
 
 use super::super::not_yet_implemented;
+use super::super::PrefetchedContract;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -16,10 +17,10 @@ use dapi_grpc::platform::v0::get_documents_response::{
 };
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
+use drive::query::ResolvedTimeRange;
 use drive::query::{
     CountMode, DocumentSumRequest, DocumentSumResponse, OrderClause, SumEntry as DriveSumEntry,
     SumMode, WhereClause,
@@ -41,9 +42,11 @@ impl<C> Platform<C> {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::query::document_query::v1) fn dispatch_sum_v1(
         &self,
+        prefetched_contract: PrefetchedContract,
         data_contract_id: Vec<u8>,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_ranges: Vec<ResolvedTimeRange>,
         order_clauses: Vec<OrderClause>,
         limit: Option<u32>,
         start: Option<RequestV1Start>,
@@ -60,25 +63,15 @@ impl<C> Platform<C> {
             )));
         }
 
-        let contract_id: Identifier =
-            check_validation_result_with_data!(data_contract_id.try_into().map_err(|_| {
-                QueryError::InvalidArgument(
-                    "id must be a valid identifier (32 bytes long)".to_string(),
-                )
-            }));
-
-        let (_, contract_fetch_info) = self.drive.get_contract_with_fetch_info_and_fee(
-            contract_id.to_buffer(),
-            None,
-            true,
-            None,
-            platform_version,
-        )?;
-        let contract_fetch_info = check_validation_result_with_data!(contract_fetch_info.ok_or(
-            QueryError::Query(QuerySyntaxError::DataContractNotFound(
-                "contract not found when querying from value with contract info",
-            ))
-        ));
+        // The request's single contract fetch: reuse the time-range
+        // resolution's when it ran, fetch now otherwise — after the cheap
+        // shape guards above, so their rejections keep precedence.
+        let (contract_id, contract_fetch_info) = check_validation_result_with_data!(self
+            .contract_for_aggregate_dispatch(
+                prefetched_contract,
+                data_contract_id,
+                platform_version
+            )?);
         let contract_ref = &contract_fetch_info.contract;
         let document_type = check_validation_result_with_data!(contract_ref
             .document_type_for_name(document_type_name.as_str())
@@ -102,6 +95,7 @@ impl<C> Platform<C> {
             document_type,
             sum_property,
             where_clauses,
+            resolved_time_ranges,
             order_clauses,
             mode: sum_mode,
             limit,

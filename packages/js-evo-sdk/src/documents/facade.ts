@@ -23,6 +23,56 @@ export class DocumentsFacade {
     return w.getDocumentsWithProofInfo(query);
   }
 
+  /**
+   * Chained document query — a provable semi-join:
+   * `SELECT * FROM <outerDocumentType> WHERE $id IN
+   *   (SELECT <joinProperty> FROM <innerDocumentType> WHERE ...)`.
+   *
+   * "Posts I liked" in one verified round trip: inner `like` through
+   * its byLiker-style index, join `postId`, outer `post`. Both halves
+   * ride ONE merged proof — a single quorum-signed state root by
+   * construction — and the outer query is re-derived and checked
+   * against the proven inner values, so the responding node cannot
+   * steer the join. Paginate on the inner query with a range clause on
+   * the join property.
+   */
+  async chained(query: wasm.ChainedDocumentsQuery): Promise<wasm.ChainedDocumentsResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getChainedDocuments(query);
+  }
+
+  async chainedWithProof(
+    query: wasm.ChainedDocumentsQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ChainedDocumentsResult>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getChainedDocumentsWithProofInfo(query);
+  }
+
+  /**
+   * Composite document query: a page plus the sub-queries derived from
+   * it (by-id joins, indexed lookups, grouped counts, siblings), in ONE
+   * verified round trip.
+   *
+   * A feed page in a single call: the posts, their like counts, the
+   * posts they quote, their authors' profiles, and the viewer's own
+   * likes on them. Everything rides ONE merged proof under one
+   * quorum-signed state root, and every sub-query is re-derived from
+   * the proven page, so the responding node cannot substitute, omit,
+   * or inject a sub-result. Paginate with a range clause on the page's
+   * ordering property.
+   */
+  async composite(query: wasm.CompositeDocumentsQuery): Promise<wasm.CompositeDocumentsResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getCompositeDocuments(query);
+  }
+
+  async compositeWithProof(
+    query: wasm.CompositeDocumentsQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.CompositeDocumentsResult>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getCompositeDocumentsWithProofInfo(query);
+  }
+
   async history(query: wasm.DocumentHistoryQuery): Promise<Map<bigint, wasm.Document>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocumentHistory(query);
@@ -50,7 +100,13 @@ export class DocumentsFacade {
     return w.getDocumentWithProofInfo(contractId, type, documentId);
   }
 
-  async create(options: wasm.DocumentCreateOptions): Promise<void> {
+  /**
+   * Creates a document and resolves to the confirmed Document as Platform
+   * committed it, consensus-populated system fields included — keep this
+   * instance when you later intend to delete an indexOnly document whose
+   * type requires `$createdAt`.
+   */
+  async create(options: wasm.DocumentCreateOptions): Promise<wasm.Document> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentCreate(options);
   }
@@ -122,5 +178,38 @@ export class DocumentsFacade {
   ): Promise<wasm.ProofMetadataResponseTyped<Map<string, { count: bigint; sum: bigint }>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocumentsAverageWithProofInfo(query, averageProperty);
+  }
+
+  /**
+   * Rank groups by an aggregate and return the top (or bottom) `limit` of
+   * them. Requires protocol version 14 and a contract index declaring the
+   * matching ranked keyword.
+   */
+  async ranked(query: wasm.DocumentsRankedQuery): Promise<wasm.DocumentsRankedResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentsRanked(query);
+  }
+
+  async rankedWithProof(
+    query: wasm.DocumentsRankedQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.DocumentsRankedResult>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentsRankedWithProofInfo(query);
+  }
+
+  /**
+   * Return the groups whose aggregate falls inside a bound. Same ranked
+   * indexes as {@link ranked}, bounded by value rather than by position.
+   */
+  async having(query: wasm.DocumentsHavingQuery): Promise<wasm.DocumentsHavingResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentsHaving(query);
+  }
+
+  async havingWithProof(
+    query: wasm.DocumentsHavingQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.DocumentsHavingResult>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentsHavingWithProofInfo(query);
   }
 }

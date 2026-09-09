@@ -70,11 +70,43 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     }
 }
 
+/// The flat field list the v0 (protocol versions <= 13, frozen on chain)
+/// matchers run over, assembled the way `select_best_index` always has:
+/// equality fields first, then the range and `in` fields, then any
+/// order-by fields not already present. The v0 selection loops must keep
+/// receiving exactly this list for on-chain replay.
+fn flatten_query_fields<'a>(
+    equality_fields: &[&'a str],
+    range_field: Option<&'a str>,
+    in_field_name: Option<&'a str>,
+    order_by: &[&'a str],
+) -> Vec<&'a str> {
+    let mut fields = equality_fields.to_vec();
+    if let Some(range_field) = range_field {
+        fields.push(range_field);
+    }
+    if let Some(in_field_name) = in_field_name {
+        fields.push(in_field_name);
+    }
+    for field in order_by {
+        if !fields.contains(field) {
+            fields.push(field);
+        }
+    }
+    fields
+}
+
 // TODO: Some of those methods are only for tests. Hide under feature
 pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVersioned {
+    /// Best index for a query's bound fields, given by role. Version 0
+    /// (protocol versions <= 13, frozen on chain) flattens the roles into
+    /// one positionless field set; version 1 (protocol version 14+)
+    /// additionally requires the fields to cover a contiguous prefix of
+    /// the index — the shape the positional path lowering depends on.
     fn index_for_types(
         &self,
-        index_names: &[&str],
+        equality_fields: &[&str],
+        range_field: Option<&str>,
         in_field_name: Option<&str>,
         order_by: &[&str],
         platform_version: &PlatformVersion,
@@ -86,10 +118,109 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .methods
             .index_for_types
         {
-            0 => Ok(self.index_for_types_v0(index_names, in_field_name, order_by)),
+            0 => Ok(self.index_for_types_v0(
+                &flatten_query_fields(equality_fields, range_field, in_field_name, order_by),
+                in_field_name,
+                order_by,
+            )),
+            1 => Ok(self.index_for_types_v1(equality_fields, range_field, in_field_name, order_by)),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "store_ephemeral_state".to_string(),
-                known_versions: vec![0],
+                method: "index_for_types".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
+    }
+
+    /// [`Self::index_for_types`] restricted to the indexes `filter` admits.
+    ///
+    /// Candidates rejected by `filter` are skipped before they are scored, so
+    /// they can never be returned. This is the only correct way to require a
+    /// property of the selected index: because several indexes can cover the
+    /// same fields and ties are broken by the index map's name ordering,
+    /// checking the property after an unrestricted search can reject the
+    /// winner but cannot surface the index the caller actually needed.
+    ///
+    /// Shares the `index_for_types` feature-version gate — the filter narrows
+    /// the candidate set, it does not change how a candidate is scored.
+    fn index_for_types_matching(
+        &self,
+        equality_fields: &[&str],
+        range_field: Option<&str>,
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+        filter: impl Fn(&Index) -> bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<(&Index, u16)>, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .index_for_types
+        {
+            0 => Ok(self.index_for_types_matching_v0(
+                &flatten_query_fields(equality_fields, range_field, in_field_name, order_by),
+                in_field_name,
+                order_by,
+                filter,
+            )),
+            1 => Ok(self.index_for_types_matching_v1(
+                equality_fields,
+                range_field,
+                in_field_name,
+                order_by,
+                filter,
+            )),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "index_for_types_matching".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
+    }
+
+    /// [`Self::index_for_types_matching`] with terminals (an indexOnly
+    /// index's member-key property) as matchable deepest components. The
+    /// returned bool says whether the winning index consumed its terminal;
+    /// generic (non-terminal) matches always take precedence, so on any
+    /// document type without terminals this is exactly
+    /// [`Self::index_for_types_matching`]. Shares the `index_for_types`
+    /// feature-version gate: terminal participation only changes outcomes
+    /// on indexOnly document types, which cannot exist below protocol
+    /// version 14.
+    fn index_for_types_matching_including_terminal(
+        &self,
+        equality_fields: &[&str],
+        range_field: Option<&str>,
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+        filter: impl Fn(&Index) -> bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<(&Index, u16, bool)>, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .index_for_types
+        {
+            0 => Ok(self.index_for_types_matching_including_terminal_v0(
+                &flatten_query_fields(equality_fields, range_field, in_field_name, order_by),
+                in_field_name,
+                order_by,
+                filter,
+            )),
+            1 => Ok(self.index_for_types_matching_including_terminal_v1(
+                equality_fields,
+                range_field,
+                in_field_name,
+                order_by,
+                filter,
+            )),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "index_for_types_matching_including_terminal".to_string(),
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -164,9 +295,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .estimated_size
         {
             0 => self.estimated_size_v0(platform_version),
+            1 => self.estimated_size_v1(platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "estimated_size".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

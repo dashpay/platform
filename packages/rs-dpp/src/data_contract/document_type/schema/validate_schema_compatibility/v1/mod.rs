@@ -16,6 +16,14 @@
 //! diffing, so index definitions are validated in exactly one place. Only
 //! the document type's own `indices` keyword is removed; a *property* named
 //! `indices` lives under `/properties/indices` and is still validated.
+//!
+//! The top-level `required` key is stripped for the same reason: top-level
+//! requiredness changes are judged by `validate_update` v1's
+//! `validate_required_fields_update`, which admits exactly one change the
+//! differ's frozen `required` rule cannot express — a brand-new property
+//! added as required with `requiredSince` equal to the version the update
+//! creates. Nested `required` arrays (under `/properties/<name>/required`)
+//! remain frozen by the differ.
 
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
@@ -48,30 +56,41 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
     }
 });
 
-fn without_indices(schema: &JsonValue) -> Cow<'_, JsonValue> {
+/// Strips the two top-level keys whose changes are validated by dedicated
+/// checks in `validate_update` v1 instead of the JSON diff: `indices`
+/// (index definitions compared by name) and `required`
+/// (`validate_required_fields_update`, which admits new-property additions
+/// annotated with `requiredSince`). Only the document type's own top-level
+/// keys are removed; a nested object property's `required` array lives under
+/// `/properties/<name>/required` and stays governed by the differ's frozen
+/// `required` rule, as do properties named `indices` or `required`.
+fn without_top_level_validated_keys(schema: &JsonValue) -> Cow<'_, JsonValue> {
     match schema {
-        JsonValue::Object(map) if map.contains_key("indices") => {
+        JsonValue::Object(map) if map.contains_key("indices") || map.contains_key("required") => {
             let mut map = map.clone();
             map.remove("indices");
+            map.remove("required");
             Cow::Owned(JsonValue::Object(map))
         }
         _ => Cow::Borrowed(schema),
     }
 }
 
-/// Pairing invariant: stripping `indices` unconditionally is only safe
-/// because every `PlatformVersion` that selects this generation
-/// (`validate_schema_compatibility: 1`) also selects a `validate_update`
-/// generation of at least 1 (`dpp.validation.document_type.validate_update`),
-/// which rejects every real index change before this check runs. A future
-/// version table that bumps one without the other would let index changes
-/// bypass compatibility validation entirely.
+/// Pairing invariant: stripping `indices` and top-level `required`
+/// unconditionally is only safe because every `PlatformVersion` that selects
+/// this generation (`validate_schema_compatibility: 1`) also selects a
+/// `validate_update` generation of at least 1
+/// (`dpp.validation.document_type.validate_update`), which rejects every
+/// real index change and every disallowed required-set change before this
+/// check runs. A future version table that bumps one without the other
+/// would let index or required changes bypass compatibility validation
+/// entirely.
 pub(super) fn validate_schema_compatibility_v1(
     original_schema: &JsonValue,
     new_schema: &JsonValue,
 ) -> Result<SimpleValidationResult<IncompatibleJsonSchemaOperation>, ProtocolError> {
-    let original_schema = without_indices(original_schema);
-    let new_schema = without_indices(new_schema);
+    let original_schema = without_top_level_validated_keys(original_schema);
+    let new_schema = without_top_level_validated_keys(new_schema);
 
     validate_schemas_compatibility(&original_schema, &new_schema, OPTIONS.deref())
         .map(|result| {

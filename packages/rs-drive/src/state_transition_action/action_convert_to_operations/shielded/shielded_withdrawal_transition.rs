@@ -119,6 +119,7 @@ mod tests {
 
     fn make_document() -> Document {
         Document::V0(DocumentV0 {
+            contract_version: None,
             id: Identifier::from([0x11; 32]),
             owner_id: Identifier::from([0x22; 32]),
             properties: Default::default(),

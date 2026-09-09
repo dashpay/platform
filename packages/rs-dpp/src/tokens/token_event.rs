@@ -860,6 +860,7 @@ impl TokenEvent {
         };
 
         let document: Document = DocumentV0 {
+            contract_version: None,
             id: document_id,
             owner_id,
             properties,

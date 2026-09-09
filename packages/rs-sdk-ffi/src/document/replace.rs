@@ -413,6 +413,7 @@ mod tests {
         properties.insert("age".to_string(), Value::U64(25));
 
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id,
             owner_id,
             properties,

@@ -6,7 +6,7 @@ use crate::version::drive_versions::drive_group_method_versions::v1::DRIVE_GROUP
 use crate::version::drive_versions::drive_group_method_versions::DriveShieldedMethodVersions;
 use crate::version::drive_versions::drive_grove_method_versions::v1::DRIVE_GROVE_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_IDENTITY_METHOD_VERSIONS_V2;
-use crate::version::drive_versions::drive_state_transition_method_versions::v3::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V3;
+use crate::version::drive_versions::drive_state_transition_method_versions::v4::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_structure_version::v1::DRIVE_STRUCTURE_V1;
 use crate::version::drive_versions::drive_token_method_versions::v1::DRIVE_TOKEN_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_verify_method_versions::v2::DRIVE_VERIFY_METHOD_VERSIONS_V2;
@@ -98,7 +98,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             apply_batch_low_level_drive_operations: 0,
             apply_batch_grovedb_operations: 0,
         },
-        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V3, // changed in v8: DPNS domain records.identity rewrite on transfer/purchase
+        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4, // changed: document_from_action generation 1 stamps built documents with the contract version (create assigns, replace re-assigns; paired with document serialization format 3)
         batch_operations: DriveBatchOperationsMethodVersion {
             convert_drive_operations_to_grove_operations: 0,
             apply_drive_operations: 0,

@@ -1607,21 +1607,19 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
-    /// Get current epoch
+    /// Get the current (newest started) epoch — same keys as one
+    /// `getEpochsInfo` entry (`index`, `first_block_time`, …).
+    ///
+    /// Goes through `dash_sdk_system_get_current_epoch`
+    /// (`ExtendedEpochInfo::fetch_current`): the epochs-info query cannot
+    /// express "the latest epoch" — `start = nil, ascending` is epoch 0, and an
+    /// unbounded descending proved query is rejected by the proof verifier.
     public func getCurrentEpoch() async throws -> [String: Any] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-
-        // Get current epoch info by passing nil as start_epoch to get the latest
-        let result = dash_sdk_system_get_epochs_info(handle, nil, 1, true)
-        let epochs = try processJSONArrayResult(result)
-
-        guard let currentEpoch = epochs.first else {
-            throw SDKError.notFound("Current epoch not found")
-        }
-
-        return currentEpoch
+        let result = dash_sdk_system_get_current_epoch(handle)
+        return try processJSONResult(result)
     }
 
     /// Get finalized epoch infos

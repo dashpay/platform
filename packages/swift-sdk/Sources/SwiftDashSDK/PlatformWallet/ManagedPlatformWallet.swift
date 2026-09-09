@@ -173,11 +173,11 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         /// secp256k1; 48 for BLS; etc.).
         public let pubkeyBytes: Data
         public let readOnly: Bool
-        /// Optional contract-bounds restriction. Required for
-        /// Encryption / Decryption keys (Drive scopes those keys
-        /// to a specific contract / document type so a key issued
-        /// for App A cannot decrypt App B's payloads). `nil` for
-        /// every other purpose.
+        /// Optional contract-bounds restriction. Bounds are valid
+        /// for any purpose only when present and only if consensus
+        /// allows that purpose / contract / document-type shape.
+        /// `nil` is valid for every purpose, including Encryption /
+        /// Decryption keys.
         public let contractBounds: ContractBounds?
 
         public init(
@@ -210,6 +210,70 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         /// specific document type. Maps to `kind == 2` on the
         /// FFI side.
         case singleContractDocumentType(id: Data, documentTypeName: String)
+    }
+
+    /// Inspectable fields of a parsed raw `IdentityUpdateTransition`.
+    /// The keys intentionally reuse `IdentityPubkey` so callers can
+    /// validate and hand them back to `updateIdentity(...)` unchanged.
+    public struct ParsedIdentityUpdateTransition: Sendable {
+        public let identityId: Identifier
+        public let addPublicKeys: [IdentityPubkey]
+        public let disablePublicKeyIds: [UInt32]
+
+        public init(
+            identityId: Identifier,
+            addPublicKeys: [IdentityPubkey],
+            disablePublicKeyIds: [UInt32]
+        ) {
+            self.identityId = identityId
+            self.addPublicKeys = addPublicKeys
+            self.disablePublicKeyIds = disablePublicKeyIds
+        }
+    }
+
+    /// Inspectable fields of a token direct purchase parsed out of a
+    /// raw `BatchTransition`. Carries everything `tokenPurchase(...)`
+    /// needs to rebuild the purchase after user approval, plus what
+    /// the user must see before approving.
+    public struct ParsedTokenPurchaseTransition: Sendable {
+        /// The identity whose credits pay for the purchase.
+        public let ownerId: Identifier
+        /// The data contract defining the token.
+        public let dataContractId: Identifier
+        /// The token being bought.
+        public let tokenId: Identifier
+        /// Position of the token within the contract.
+        public let tokenContractPosition: UInt16
+        /// How many tokens the dApp asks to buy.
+        public let tokenCount: UInt64
+        /// Credits the owner would agree to pay in total.
+        public let totalAgreedPrice: UInt64
+
+        public init(
+            ownerId: Identifier,
+            dataContractId: Identifier,
+            tokenId: Identifier,
+            tokenContractPosition: UInt16,
+            tokenCount: UInt64,
+            totalAgreedPrice: UInt64
+        ) {
+            self.ownerId = ownerId
+            self.dataContractId = dataContractId
+            self.tokenId = tokenId
+            self.tokenContractPosition = tokenContractPosition
+            self.tokenCount = tokenCount
+            self.totalAgreedPrice = totalAgreedPrice
+        }
+    }
+
+    /// One parsed `dash-st:` state transition, discriminated by case
+    /// so callers branch on the payload instead of on thrown errors.
+    public enum ParsedStateTransition: Sendable {
+        /// DashConnect key registration (`IdentityUpdateTransition`).
+        case identityUpdate(ParsedIdentityUpdateTransition)
+        /// dApp token purchase (a `BatchTransition` carrying exactly
+        /// one `TokenDirectPurchase`).
+        case tokenPurchase(ParsedTokenPurchaseTransition)
     }
 
     /// Result of a successful identity registration.
@@ -3190,6 +3254,210 @@ extension ManagedPlatformWallet {
             }
             try result.check()
         }.value
+    }
+
+    /// Parse a raw `IdentityUpdateTransition` from DPP bytes without
+    /// signing or broadcasting it. Accepts both standard tagged bytes
+    /// and Yappr's tagless `dash-st:` framing.
+    public func parseIdentityUpdateTransition(_ bytes: Data) throws -> ParsedIdentityUpdateTransition {
+        guard !bytes.isEmpty else {
+            throw PlatformWalletError.deserialization(
+                "IdentityUpdateTransition bytes are empty"
+            )
+        }
+
+        var out = ParsedIdentityUpdateFFI(
+            identity_id: (
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            ),
+            add_public_keys: nil,
+            add_public_keys_count: 0,
+            disable_public_key_ids: nil,
+            disable_public_key_ids_count: 0
+        )
+
+        let result = bytes.withUnsafeBytes { rawBuffer -> PlatformWalletFFIResult in
+            let byteBuffer = rawBuffer.bindMemory(to: UInt8.self)
+            return platform_wallet_parse_identity_update_transition(
+                byteBuffer.baseAddress,
+                UInt(byteBuffer.count),
+                &out
+            )
+        }
+        try result.check()
+        defer { platform_wallet_parse_identity_update_transition_free(&out) }
+
+        return try Self.makeParsedIdentityUpdateTransition(from: out)
+    }
+
+    /// Parse a raw DPP state transition handed to the wallet by a dApp
+    /// (DashConnect `dash-st:` link / QR) without signing or
+    /// broadcasting it, reporting which supported kind it found.
+    /// Accepts both standard tagged bytes and Yappr's tagless framing.
+    ///
+    /// Supported kinds: an `IdentityUpdateTransition` (DashConnect key
+    /// registration) and a `BatchTransition` carrying exactly one
+    /// `TokenDirectPurchase` (a dApp token purchase). Anything else —
+    /// including multi-transition or mixed batches, which a user
+    /// cannot meaningfully approve as one prompt — throws with a
+    /// message naming what was found.
+    ///
+    /// The wallet never signs bytes a web page handed it. After the
+    /// user approves the parsed intent, rebuild and sign the
+    /// operation through the normal path: `tokenPurchase(...)` for
+    /// `.tokenPurchase`, `updateIdentity(...)` for `.identityUpdate`.
+    public func parseStateTransition(_ bytes: Data) throws -> ParsedStateTransition {
+        guard !bytes.isEmpty else {
+            throw PlatformWalletError.deserialization(
+                "State transition bytes are empty"
+            )
+        }
+
+        // Imported C structs zero-initialize, which is exactly the
+        // FFI's documented default (`kind == 0`, no owned buffers).
+        var out = ParsedStateTransitionFFI()
+
+        let result = bytes.withUnsafeBytes { rawBuffer -> PlatformWalletFFIResult in
+            let byteBuffer = rawBuffer.bindMemory(to: UInt8.self)
+            return platform_wallet_parse_state_transition(
+                byteBuffer.baseAddress,
+                UInt(byteBuffer.count),
+                &out
+            )
+        }
+        try result.check()
+        defer { platform_wallet_parse_state_transition_free(&out) }
+
+        switch out.kind {
+        case 1: // PARSED_STATE_TRANSITION_KIND_IDENTITY_UPDATE
+            return .identityUpdate(
+                try Self.makeParsedIdentityUpdateTransition(from: out.identity_update)
+            )
+        case 2: // PARSED_STATE_TRANSITION_KIND_TOKEN_DIRECT_PURCHASE
+            let purchase = out.token_direct_purchase
+            var ownerTuple = purchase.owner_id
+            var contractTuple = purchase.data_contract_id
+            var tokenTuple = purchase.token_id
+            return .tokenPurchase(
+                ParsedTokenPurchaseTransition(
+                    ownerId: Swift.withUnsafeBytes(of: &ownerTuple) { Data($0) },
+                    dataContractId: Swift.withUnsafeBytes(of: &contractTuple) { Data($0) },
+                    tokenId: Swift.withUnsafeBytes(of: &tokenTuple) { Data($0) },
+                    tokenContractPosition: purchase.token_contract_position,
+                    tokenCount: purchase.token_count,
+                    totalAgreedPrice: purchase.total_agreed_price
+                )
+            )
+        default:
+            throw PlatformWalletError.deserialization(
+                "Unknown parsed state-transition kind \(out.kind)"
+            )
+        }
+    }
+
+    private static func makeParsedIdentityUpdateTransition(
+        from ffi: ParsedIdentityUpdateFFI
+    ) throws -> ParsedIdentityUpdateTransition {
+        var identityTuple = ffi.identity_id
+        let identityId = Swift.withUnsafeBytes(of: &identityTuple) { Data($0) }
+
+        let addPublicKeys: [IdentityPubkey]
+        if let pointer = ffi.add_public_keys, ffi.add_public_keys_count > 0 {
+            let buffer = UnsafeBufferPointer(start: pointer, count: Int(ffi.add_public_keys_count))
+            addPublicKeys = try buffer.enumerated().map { index, entry in
+                try Self.makeParsedIdentityPubkey(from: entry, index: index)
+            }
+        } else {
+            addPublicKeys = []
+        }
+
+        let disablePublicKeyIds: [UInt32]
+        if let pointer = ffi.disable_public_key_ids, ffi.disable_public_key_ids_count > 0 {
+            disablePublicKeyIds = Array(
+                UnsafeBufferPointer(
+                    start: pointer,
+                    count: Int(ffi.disable_public_key_ids_count)
+                )
+            )
+        } else {
+            disablePublicKeyIds = []
+        }
+
+        return ParsedIdentityUpdateTransition(
+            identityId: identityId,
+            addPublicKeys: addPublicKeys,
+            disablePublicKeyIds: disablePublicKeyIds
+        )
+    }
+
+    private static func makeParsedIdentityPubkey(
+        from entry: ParsedIdentityUpdatePublicKeyFFI,
+        index: Int
+    ) throws -> IdentityPubkey {
+        guard let keyType = KeyType(rawValue: entry.key_type),
+              let purpose = KeyPurpose(rawValue: entry.purpose),
+              let securityLevel = SecurityLevel(rawValue: entry.security_level) else {
+            throw PlatformWalletError.deserialization(
+                "Unknown IdentityUpdateTransition public-key enum discriminant at index \(index)"
+            )
+        }
+
+        let pubkeyBytes: Data
+        if let dataPtr = entry.data_ptr {
+            pubkeyBytes = Data(bytes: dataPtr, count: Int(entry.data_len))
+        } else if entry.data_len == 0 {
+            pubkeyBytes = Data()
+        } else {
+            throw PlatformWalletError.deserialization(
+                "IdentityUpdateTransition public key \(index) had a null data pointer for \(entry.data_len) bytes"
+            )
+        }
+
+        let contractBounds = try parsedContractBounds(from: entry, index: index)
+
+        return IdentityPubkey(
+            keyId: entry.key_id,
+            keyType: keyType,
+            purpose: purpose,
+            securityLevel: securityLevel,
+            pubkeyBytes: pubkeyBytes,
+            readOnly: entry.read_only,
+            contractBounds: contractBounds
+        )
+    }
+
+    private static func parsedContractBounds(
+        from entry: ParsedIdentityUpdatePublicKeyFFI,
+        index: Int
+    ) throws -> ContractBounds? {
+        switch entry.contract_bounds_kind {
+        case 0:
+            return nil
+        case 1:
+            var idTuple = entry.contract_bounds_id
+            return .singleContract(
+                id: Swift.withUnsafeBytes(of: &idTuple) { Data($0) }
+            )
+        case 2:
+            guard let documentTypePtr = entry.contract_bounds_document_type,
+                  let documentTypeName = String(validatingCString: documentTypePtr) else {
+                throw PlatformWalletError.deserialization(
+                    "IdentityUpdateTransition contract bounds at key \(index) are missing a valid UTF-8 document type"
+                )
+            }
+            var idTuple = entry.contract_bounds_id
+            return .singleContractDocumentType(
+                id: Swift.withUnsafeBytes(of: &idTuple) { Data($0) },
+                documentTypeName: documentTypeName
+            )
+        default:
+            throw PlatformWalletError.deserialization(
+                "Unknown IdentityUpdateTransition contract-bounds kind \(entry.contract_bounds_kind) at key \(index)"
+            )
+        }
     }
 
     /// Create + broadcast a new data contract owned by

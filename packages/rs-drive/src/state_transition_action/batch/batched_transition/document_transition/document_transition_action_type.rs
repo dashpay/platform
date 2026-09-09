@@ -14,6 +14,9 @@ impl DocumentTransitionActionTypeGetter for DocumentTransitionAction {
             DocumentTransitionAction::UpdatePriceAction(_) => {
                 DocumentTransitionActionType::UpdatePrice
             }
+            DocumentTransitionAction::IndexOnlyDeleteAction(_) => {
+                DocumentTransitionActionType::IndexOnlyDelete
+            }
         }
     }
 }

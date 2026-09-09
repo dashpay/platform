@@ -14,8 +14,8 @@ impl DriveDocumentHavingQuery<'_> {
     /// [`execute_range_with_proof`](Self::execute_range_with_proof).
     /// Both sides derive the proved subtree from
     /// [`indexed_property_name_tree_path`](Self::indexed_property_name_tree_path)
-    /// and the secondary query from
-    /// [`AxisRangeBounds::merk_query`](crate::query::drive_document_having_query::AxisRangeBounds::merk_query),
+    /// and the same bounded axis `PathQuery` from
+    /// [`AxisRangeBounds::i128_bounds`](crate::query::drive_document_having_query::AxisRangeBounds::i128_bounds),
     /// so the verifier cannot drift from the prover on *which* bound over
     /// *which* tree it is checking.
     ///
@@ -41,7 +41,7 @@ impl DriveDocumentHavingQuery<'_> {
             .document_ranked
             .verify_having_range_proof
         {
-            0 => self.verify_having_range_proof_v0(proof),
+            0 => self.verify_having_range_proof_v0(proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DriveDocumentHavingQuery::verify_having_range_proof".to_string(),
                 known_versions: vec![0],

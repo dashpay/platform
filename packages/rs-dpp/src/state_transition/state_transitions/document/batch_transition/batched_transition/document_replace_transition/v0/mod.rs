@@ -234,6 +234,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
             .document_structure_version
         {
             0 => Ok(DocumentV0 {
+                contract_version: None,
                 id,
                 owner_id,
                 properties: data.clone(),
@@ -315,6 +316,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
             .document_structure_version
         {
             0 => Ok(DocumentV0 {
+                contract_version: None,
                 id,
                 owner_id,
                 properties: data,

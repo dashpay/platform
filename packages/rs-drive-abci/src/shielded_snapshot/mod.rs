@@ -322,11 +322,16 @@ pub fn dump_shielded_subtree(
     // 4. Compute `combined_root` for the header by reloading CommitmentTree
     //    from the same storage. Apply side recomputes independently and
     //    cross-validates — drift surfaces as CombinedRootMismatch.
-    let ct = CommitmentTree::<_, DashMemo>::open(total_count, chunk_power, storage_ctx)
-        .value
-        .map_err(|e| ShieldedSnapshotError::GroveDb(format!("CommitmentTree::open: {e}")))?;
+    let ct = CommitmentTree::<_, DashMemo>::open(
+        total_count,
+        chunk_power,
+        storage_ctx,
+        &platform_version.drive.grove_version,
+    )
+    .value
+    .map_err(|e| ShieldedSnapshotError::GroveDb(format!("CommitmentTree::open: {e}")))?;
     let combined_root = ct
-        .compute_current_state_root()
+        .compute_current_state_root(&platform_version.drive.grove_version)
         .map_err(|e| ShieldedSnapshotError::GroveDb(format!("compute_current_state_root: {e}")))?;
 
     // The CommitmentTree owns the storage_ctx. We need to drop it to free
@@ -559,14 +564,18 @@ pub fn apply_shielded_snapshot(
         .get_transactional_storage_context(subtree_path, None, tx_ref)
         .unwrap();
 
-    let ct =
-        CommitmentTree::<_, DashMemo>::open(header.total_count, header.chunk_power, storage_ctx)
-            .value
-            .map_err(|e| {
-                ShieldedSnapshotError::GroveDb(format!("CommitmentTree::open after ingest: {e}"))
-            })?;
+    let ct = CommitmentTree::<_, DashMemo>::open(
+        header.total_count,
+        header.chunk_power,
+        storage_ctx,
+        &platform_version.drive.grove_version,
+    )
+    .value
+    .map_err(|e| {
+        ShieldedSnapshotError::GroveDb(format!("CommitmentTree::open after ingest: {e}"))
+    })?;
     let recomputed = ct
-        .compute_current_state_root()
+        .compute_current_state_root(&platform_version.drive.grove_version)
         .map_err(|e| ShieldedSnapshotError::GroveDb(format!("compute_current_state_root: {e}")))?;
     drop(ct);
 
