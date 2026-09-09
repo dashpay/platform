@@ -55,7 +55,10 @@ fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>,
     // (headless / SSH / CI) is fail-closed by design.
     match dbus_secret_service_keyring_store::Store::new() {
         Ok(s) => Ok(s),
-        Err(_) => Err(KeyringError::NoDefaultStore),
+        Err(e) => {
+            tracing::debug!(error = %e, "secret service keyring init failed; falling back to NoDefaultStore");
+            Err(KeyringError::NoDefaultStore)
+        }
     }
 }
 
@@ -65,7 +68,10 @@ fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>,
     // `keychain` module, not the crate root like the sibling backends.
     match apple_native_keyring_store::keychain::Store::new() {
         Ok(s) => Ok(s),
-        Err(_) => Err(KeyringError::NoDefaultStore),
+        Err(e) => {
+            tracing::debug!(error = %e, "keychain keyring init failed; falling back to NoDefaultStore");
+            Err(KeyringError::NoDefaultStore)
+        }
     }
 }
 
@@ -73,7 +79,10 @@ fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>,
 fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
     match windows_native_keyring_store::Store::new() {
         Ok(s) => Ok(s),
-        Err(_) => Err(KeyringError::NoDefaultStore),
+        Err(e) => {
+            tracing::debug!(error = %e, "dpapi keyring init failed; falling back to NoDefaultStore");
+            Err(KeyringError::NoDefaultStore)
+        }
     }
 }
 

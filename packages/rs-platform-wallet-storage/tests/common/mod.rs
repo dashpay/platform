@@ -10,7 +10,7 @@ use platform_wallet::changeset::PlatformWalletPersistence;
 use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::Connection;
 
-pub use platform_wallet_storage::{FlushMode, SqlitePersister, SqlitePersisterConfig};
+pub use platform_wallet_storage::{FlushMode, LoadPolicy, SqlitePersister, SqlitePersisterConfig};
 
 /// Open an empty temp directory + persister for one test. Returns the
 /// persister, the keep-alive `tempfile::TempDir`, and the DB path.
@@ -19,11 +19,40 @@ pub fn fresh_persister() -> (SqlitePersister, tempfile::TempDir, PathBuf) {
 }
 
 pub fn fresh_persister_with_mode(mode: FlushMode) -> (SqlitePersister, tempfile::TempDir, PathBuf) {
-    let tmp = tempfile::tempdir().expect("tempdir");
+    let tmp = secure_tempdir().expect("tempdir");
     let path = tmp.path().join("wallet.db");
     let cfg = SqlitePersisterConfig::new(&path).with_flush_mode(mode);
     let p = SqlitePersister::open(cfg).expect("open persister");
     (p, tmp, path)
+}
+
+/// Seed a database through a strict persister, then reopen it in
+/// [`LoadPolicy::Recovery`].
+///
+/// The strict handle is dropped before the reopen: the process-wide
+/// open-path registry refuses a second live persister on one path.
+pub fn fresh_recovery_persister(
+    seed: impl FnOnce(&SqlitePersister),
+) -> (SqlitePersister, tempfile::TempDir, PathBuf) {
+    let tmp = secure_tempdir().expect("tempdir");
+    let path = tmp.path().join("wallet.db");
+    let strict = SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("open strict");
+    seed(&strict);
+    drop(strict);
+    let cfg = SqlitePersisterConfig::new(&path).with_load_policy(LoadPolicy::Recovery);
+    let p = SqlitePersister::open(cfg).expect("open recovery");
+    (p, tmp, path)
+}
+
+/// Create a test directory that satisfies the persister's Unix parent policy.
+pub fn secure_tempdir() -> std::io::Result<tempfile::TempDir> {
+    let tmp = tempfile::tempdir()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(tmp)
 }
 
 /// Wallet id helper.
@@ -172,6 +201,51 @@ pub fn ensure_platform_address(persister: &SqlitePersister, wallet_id: &WalletId
         params![wallet_id.as_slice(), address],
     )
     .expect("ensure platform_address");
+}
+
+/// Run `action` on another thread, released exactly at the seam
+/// between a `store()`'s buffer merge and its flush, and block that
+/// `store()` for up to `budget` waiting for `action` to return.
+///
+/// This is how the crate tests what a second actor can and cannot do
+/// inside that window without racing for it. An `Immediate` `store()`
+/// holds the write connection across the whole seam, so an `action`
+/// that needs it is parked until the `store()` returns and the wait
+/// simply expires; waiting is not the assertion, it only guarantees the
+/// action had its chance, so no outcome rides on thread scheduling.
+///
+/// The seam is ONE-SHOT: `action` may itself call `store`, and that
+/// call must not be released back into this same rendezvous.
+pub fn release_at_store_seam<T, F>(
+    persister: &std::sync::Arc<SqlitePersister>,
+    budget: std::time::Duration,
+    action: F,
+) -> std::thread::JoinHandle<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{mpsc, Arc, Mutex};
+
+    let (go_tx, go_rx) = mpsc::channel::<()>();
+    let (done_tx, done_rx) = mpsc::channel::<()>();
+    let handle = std::thread::spawn(move || {
+        go_rx.recv().expect("the seam released the action");
+        let out = action();
+        let _ = done_tx.send(());
+        out
+    });
+    let done_rx = Mutex::new(done_rx);
+    let released = AtomicBool::new(false);
+    persister.set_store_flush_seam_for_test(Arc::new(move || {
+        if released.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        go_tx.send(()).expect("the action thread is listening");
+        let _ = done_rx.lock().expect("seam channel").recv_timeout(budget);
+    }));
+    handle
 }
 
 /// Echo a simple `store` + `flush` of an arbitrary changeset.

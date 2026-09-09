@@ -1325,6 +1325,7 @@ mod tests {
                 },
                 platform_version,
             )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
             .expect("expected to verify shielded withdrawal proof");
 
             assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
@@ -1650,7 +1651,8 @@ mod tests {
                     }
                 },
                 platform_version,
-            );
+            )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()));
             assert!(
                 production_result.is_err(),
                 "production shielded withdrawal verifier must reject a padded proof, got {:?}",

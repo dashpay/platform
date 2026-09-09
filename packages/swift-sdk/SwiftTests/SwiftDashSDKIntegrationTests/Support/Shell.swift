@@ -14,6 +14,7 @@ enum Shell {
     enum Error: Swift.Error, CustomStringConvertible {
         case nonZeroExit(command: String, exitCode: Int32, stdout: String, stderr: String)
         case spawnFailed(command: String, underlying: Swift.Error)
+        case unsupportedPlatform(command: String)
 
         var description: String {
             switch self {
@@ -27,6 +28,8 @@ enum Shell {
                 """
             case let .spawnFailed(command, err):
                 return "Failed to spawn `\(command)`: \(err)"
+            case let .unsupportedPlatform(command):
+                return "Shell command `\(command)` is supported only by macOS integration tests"
             }
         }
     }
@@ -39,6 +42,7 @@ enum Shell {
         cwd: URL? = nil,
         timeout: TimeInterval? = nil
     ) throws -> Result {
+#if os(macOS)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: command)
         process.arguments = arguments
@@ -81,6 +85,13 @@ enum Shell {
             stdout: String(data: stdoutData, encoding: .utf8) ?? "",
             stderr: String(data: stderrData, encoding: .utf8) ?? ""
         )
+#else
+        _ = cwd
+        _ = timeout
+        throw Error.unsupportedPlatform(
+            command: "\(command) \(arguments.joined(separator: " "))"
+        )
+#endif
     }
 
     /// Like `run` but throws on non-zero exit.

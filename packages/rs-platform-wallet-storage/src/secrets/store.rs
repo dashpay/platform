@@ -11,8 +11,10 @@ use std::sync::Arc;
 
 use keyring_core::api::CredentialStoreApi;
 use keyring_core::{Entry, Error as KeyringError};
+use zeroize::Zeroize;
 
 use super::error::{OsKeyringErrorKind, SecretStoreError};
+use super::file::crypto::KdfParams;
 use super::secret::{SecretBytes, SecretString};
 use super::validate::WalletId;
 use super::wire::envelope;
@@ -38,7 +40,8 @@ impl SecretStore {
     /// Open (or prepare to create) a file-backed vault at `path`,
     /// unlocked by `passphrase`. `path` is the vault file itself
     /// (operator picks the filename); the parent directory is
-    /// materialized on the first write.
+    /// materialized on the first write. The trimmed passphrase must contain at
+    /// least [`MIN_PASSPHRASE_LEN`](super::MIN_PASSPHRASE_LEN) bytes.
     pub fn file(
         path: impl AsRef<std::path::Path>,
         passphrase: super::SecretString,
@@ -46,20 +49,59 @@ impl SecretStore {
         Ok(Self::File(EncryptedFileStore::open(path, passphrase)?))
     }
 
+    /// [`file`](SecretStore::file), but a fresh vault and every per-secret
+    /// Tier-2 wrap use the enforced FLOOR instead of the shipped 64 MiB target.
+    /// An existing vault still unlocks under the parameters in its header. The
+    /// floor also applies inside
+    /// [`set_secret`](SecretStore::set_secret) /
+    /// [`reprotect`](SecretStore::reprotect).
+    ///
+    /// **Test-only.** Swap this in for [`file`](SecretStore::file) at
+    /// construction and every subsequent call is transparently fast; no other
+    /// signature changes. A downstream suite driving real end-to-end flows
+    /// otherwise pays a production-strength KDF per call (#4111). The store is
+    /// REAL — same wire formats, same AAD binding, same fail-closed reads —
+    /// merely cheap to attack, so never point it at live secrets.
+    ///
+    /// Gated twice: by the `test-util` feature (or `cfg(test)`) at compile
+    /// time, and by a runtime panic outside debug builds and this crate's own
+    /// test harness.
+    /// See [`EncryptedFileStore::open_mock`] for the full rationale.
+    ///
+    /// # Panics
+    ///
+    /// See [`EncryptedFileStore::open_mock`] — panics rather than hand back a
+    /// weak-crypto store if `test-util` reaches a release build.
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn file_mock(
+        path: impl AsRef<std::path::Path>,
+        passphrase: super::SecretString,
+    ) -> Result<Self, SecretStoreError> {
+        Ok(Self::File(EncryptedFileStore::open_mock(path, passphrase)?))
+    }
+
     /// Open (or create) a **deliberately keyless** file-backed vault — the
-    /// only door that takes no passphrase. Obfuscation, not confidentiality
-    /// (the key derives from an empty passphrase under the public salt): use
-    /// it where the stored secrets carry their own Tier-2 object password,
-    /// or as a staging step before [`EncryptedFileStore::rekey`] to a real
-    /// passphrase. [`file`](SecretStore::file) rejects a blank passphrase;
-    /// this is the explicit keyless alternative.
+    /// only door that takes no passphrase. It provides neither confidentiality
+    /// nor authenticity: anyone who can write the file can derive its key,
+    /// forge a valid vault, and inject a chosen unprotected secret. Use it where
+    /// the stored secrets carry their own Tier-2 object password, or as a staging
+    /// step before [`EncryptedFileStore::rekey`] to a real passphrase.
+    /// [`file`](SecretStore::file) rejects sub-floor passphrases; this is the
+    /// explicit keyless alternative.
     pub fn file_unprotected(path: impl AsRef<std::path::Path>) -> Result<Self, SecretStoreError> {
         Ok(Self::File(EncryptedFileStore::open_unprotected(path)?))
     }
 
     /// Open the platform's default OS keyring, failing closed when none
     /// is reachable (headless / no Secret Service).
+    ///
+    /// # Errors
+    ///
+    /// [`SecretStoreError::HostPageSizeExceedsBudget`] if the host cannot
+    /// honour the locked-memory budget — this arm hands out guarded
+    /// [`SecretBytes`] exactly like the file arm does.
     pub fn os() -> Result<Self, SecretStoreError> {
+        super::guarded::verify_host_page_size()?;
         Ok(Self::Os(default_credential_store().map_err(map_spi)?))
     }
 
@@ -82,7 +124,7 @@ impl SecretStore {
     /// envelope; `Some(pw)` seals the bytes under the object password `pw`
     /// (Argon2id + XChaCha20-Poly1305) **before** they reach the backend, so
     /// a protected object stays confidential even under a full backend
-    /// compromise. A blank `pw` is rejected
+    /// compromise. A password below the minimum length is rejected
     /// ([`BlankPassphrase`](SecretStoreError::BlankPassphrase)).
     ///
     /// **No recovery (availability):** if a protected object's password is
@@ -91,8 +133,8 @@ impl SecretStore {
     ///
     /// **Entropy is the caller's:** a protected object's confidentiality
     /// rests entirely on the password's entropy against an offline Argon2id
-    /// attacker who already holds the backend. This crate enforces only
-    /// non-blank; strength estimation / policy is the caller's job.
+    /// attacker who already holds the backend. This crate enforces only the
+    /// minimum length; strength estimation and policy are the caller's job.
     ///
     /// The write is a same-slot overwrite that leaves the prior value intact
     /// on a crash: on the `File` arm via the vault's atomic replace; on the
@@ -107,8 +149,25 @@ impl SecretStore {
     ) -> Result<(), SecretStoreError> {
         // Wrap above the backend: the backend only ever stores the opaque
         // envelope (ciphertext for a protected object).
-        let blob = envelope::wrap(service, label, password, secret.expose_secret())?;
+        let blob = envelope::wrap_with_params(
+            service,
+            label,
+            password,
+            secret.expose_secret(),
+            self.tier2_params(),
+        )?;
         self.put_raw(service, label, &blob)
+    }
+
+    /// Argon2 params for the per-secret Tier-2 wrap. The shipped target
+    /// everywhere except a mock `File` store, which floors it so
+    /// `set_secret`/`reprotect` stay fast without a new public parameter
+    /// (#4111). The `Os` arm has no vault of its own, so it keeps the target.
+    fn tier2_params(&self) -> KdfParams {
+        match self {
+            Self::File(s) => s.kdf_params(),
+            Self::Os(_) => KdfParams::default_target(),
+        }
     }
 
     /// Store the already-enveloped opaque `blob` under `(service, label)`.
@@ -166,7 +225,7 @@ impl SecretStore {
             Self::Os(store) => {
                 let entry = build_os(store, service, label)?;
                 match entry.get_secret() {
-                    Ok(v) => {
+                    Ok(mut v) => {
                         // Defense-in-depth: reject an oversized backend blob
                         // before it reaches the envelope parse/derive path.
                         // The File arm's stored bytes are already capped at
@@ -176,10 +235,9 @@ impl SecretStore {
                         // headroom.
                         let cap = MAX_SECRET_LEN + envelope::MAX_ENVELOPE_OVERHEAD;
                         if v.len() > cap {
-                            return Err(SecretStoreError::SecretTooLarge {
-                                found: v.len(),
-                                max: cap,
-                            });
+                            let found = v.len();
+                            v.zeroize();
+                            return Err(SecretStoreError::SecretTooLarge { found, max: cap });
                         }
                         Ok(Some(SecretBytes::new(v)))
                     }
@@ -251,7 +309,7 @@ impl SecretStore {
     ///
     /// **Entropy is the caller's:** the `new` password's entropy is the
     /// whole confidentiality guarantee for the re-protected object; this
-    /// crate enforces only non-blank, not strength.
+    /// crate enforces only the minimum length, not strength.
     ///
     /// **Atomicity:** on the `File` arm the read → rewrap → write runs under
     /// the store's single lock, so a concurrent `set`/`delete` can't interleave
@@ -267,14 +325,28 @@ impl SecretStore {
         new: Option<&SecretString>,
     ) -> Result<(), SecretStoreError> {
         match self {
-            Self::File(s) => s.reprotect_bytes(service, label, |stored| {
-                let Some(stored) = stored else {
-                    return Err(SecretStoreError::NoEntry);
-                };
-                let secret = envelope::unwrap(service, label, current, stored.expose_secret())?;
-                envelope::wrap(service, label, new, secret.expose_secret())
-            }),
+            Self::File(s) => {
+                let params = s.kdf_params();
+                s.reprotect_bytes(service, label, |stored| {
+                    // Scoped so the old envelope's guarded pages are freed
+                    // before the rewrap allocates the new one. Holding both
+                    // live is what made this the crate's deepest
+                    // locked-memory path; see the budget at `MAX_SECRET_LEN`.
+                    let secret = {
+                        let stored = stored.ok_or(SecretStoreError::NoEntry)?;
+                        envelope::unwrap(service, label, current, stored.expose_secret())?
+                    };
+                    envelope::wrap_with_params(service, label, new, secret.expose_secret(), params)
+                })
+            }
             Self::Os(_) => {
+                // INTENTIONAL(keyring-reprotect-non-atomic): the OS keyring
+                // exposes no compare-and-swap, so this get-then-set is not
+                // atomic. Accepted residual: a crash between the two leaves
+                // the entry under the OLD passphrase (the set never landed),
+                // and a concurrent writer's value can be overwritten. The
+                // File arm gets atomicity from its own rename; there is no
+                // equivalent primitive to borrow here.
                 let Some(secret) = self.get_secret(service, label, current)? else {
                     return Err(SecretStoreError::NoEntry);
                 };
@@ -363,7 +435,17 @@ fn map_spi(e: KeyringError) -> SecretStoreError {
         KeyringError::NoDefaultStore => SecretStoreError::OsKeyring {
             kind: OsKeyringErrorKind::NoDefaultStore,
         },
-        KeyringError::Invalid(_, _) => SecretStoreError::InvalidLabel,
+        // The label rides as the keyring `user` attribute (the reverse
+        // projection maps `InvalidLabel` back to `Invalid("user", _)`), so
+        // only a rejected `user` is an invalid label. A rejected service —
+        // `SERVICE_PREFIX` + 64 hex chars, longer than some backends' caps
+        // — or any other attribute is a backend constraint, not the
+        // caller's label; mislabelling it `InvalidLabel` sends the caller to
+        // "fix" a label that was never wrong.
+        KeyringError::Invalid(attr, _) if attr == "user" => SecretStoreError::InvalidLabel,
+        KeyringError::Invalid(_, _) => SecretStoreError::OsKeyring {
+            kind: OsKeyringErrorKind::Backend,
+        },
         KeyringError::BadStoreFormat(_)
         | KeyringError::BadEncoding(_)
         | KeyringError::BadDataFormat(_, _) => SecretStoreError::OsKeyring {
@@ -397,6 +479,53 @@ mod tests {
 
     fn wid(b: u8) -> WalletId {
         WalletId::from([b; 32])
+    }
+
+    /// The locked-memory budget documented at `MAX_SECRET_LEN` is measured
+    /// against the code, not asserted in prose.
+    ///
+    /// `reprotect` on the `File` arm is the crate's deepest path: it runs a
+    /// full read and then a rewrap while the caller holds two object
+    /// passwords. Every row of the table is driven to its ceiling here.
+    /// The budget only holds because `reprotect` scopes the old envelope
+    /// away before the rewrap allocates and `wrap_with_params` scopes its
+    /// derived key away before encoding; each scope held open would add a
+    /// whole page, eating the headroom the concurrent read needs.
+    ///
+    /// Measures *accounted* bytes, not resident ones: the gauge is fed
+    /// `locked_cost`, which is denominated in `ASSUMED_PAGE_SIZE` pages.
+    /// So this reads 112 KiB on a 4 KiB-page host whose kernel is really
+    /// locking 36 KiB. That gap is the budget's deliberate conservatism,
+    /// not a leak — the figure tracks the largest supported host.
+    #[test]
+    fn file_reprotect_peak_matches_the_documented_budget() {
+        use crate::secrets::guarded::gauge;
+        use crate::secrets::{MAX_PASSPHRASE_LEN, MAX_PLAINTEXT_LEN};
+
+        let max_pw = || SecretString::new("p".repeat(MAX_PASSPHRASE_LEN));
+        let dir = tempfile::tempdir().unwrap();
+        // `file_mock` floors the Argon2 params; the buffers it allocates
+        // are the same sizes a production store's would be.
+        let store = SecretStore::file_mock(secure_vault_path(dir.path()), max_pw()).unwrap();
+        let secret = SecretBytes::from_slice(&vec![0x5Au8; MAX_PLAINTEXT_LEN]);
+        let (old_pw, new_pw) = (max_pw(), max_pw());
+        store
+            .set_secret(&wid(1), "seed", &secret, Some(&old_pw))
+            .unwrap();
+        drop(secret);
+
+        gauge::reset_peak();
+        store
+            .reprotect(&wid(1), "seed", Some(&old_pw), Some(&new_pw))
+            .unwrap();
+        let peak = gauge::peak();
+
+        assert_eq!(
+            peak,
+            112 * 1024,
+            "reprotect peaked at {} KiB; the table at MAX_SECRET_LEN says 112",
+            peak / 1024
+        );
     }
 
     #[test]
@@ -440,12 +569,35 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let s = file_store(dir.path());
         let err = s
-            .reprotect(&wid(1), "seed", None, Some(&SecretString::new("pw")))
+            .reprotect(&wid(1), "seed", None, Some(&SecretString::new("password")))
             .unwrap_err();
         assert!(
             matches!(err, SecretStoreError::NoEntry),
             "expected NoEntry on absent reprotect, got {err:?}"
         );
+    }
+
+    #[test]
+    fn reprotect_rejects_sub_minimum_object_password() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = file_store(dir.path());
+        let w = wid(2);
+        s.set(&w, "seed", &SecretBytes::from_slice(b"original"))
+            .unwrap();
+
+        let short = SecretString::new("1234567");
+        let err = s
+            .reprotect(&w, "seed", None, Some(&short))
+            .expect_err("seven-byte object password must be rejected");
+        assert!(matches!(err, SecretStoreError::BlankPassphrase));
+        assert_eq!(
+            s.get(&w, "seed").unwrap().unwrap().expose_secret(),
+            b"original"
+        );
+
+        let minimum = SecretString::new("12345678");
+        s.reprotect(&w, "seed", None, Some(&minimum))
+            .expect("eight-byte object password must be accepted");
     }
 
     #[test]
@@ -498,8 +650,8 @@ mod tests {
         // AlreadyLocked, losslessly on the public path.
         let dir = tempfile::tempdir().unwrap();
         let path = secure_vault_path(dir.path());
-        let _s1 = SecretStore::file(&path, SecretString::new("pw")).unwrap();
-        let err = SecretStore::file(&path, SecretString::new("pw")).unwrap_err();
+        let _s1 = SecretStore::file(&path, SecretString::new("password")).unwrap();
+        let err = SecretStore::file(&path, SecretString::new("password")).unwrap_err();
         assert!(
             matches!(err, SecretStoreError::AlreadyLocked),
             "got {err:?}"
@@ -574,6 +726,34 @@ mod tests {
         }
     }
 
+    /// `map_spi` only collapses a rejected `user` (label) attribute to
+    /// `InvalidLabel`; a rejected `service` (or any other attribute) is a
+    /// backend constraint, not the caller's label.
+    #[test]
+    fn map_spi_only_user_invalid_is_label() {
+        let label = map_spi(KeyringError::Invalid(
+            "user".to_string(),
+            "allowlist".to_string(),
+        ));
+        assert!(matches!(label, SecretStoreError::InvalidLabel));
+
+        for attr in ["service", "target", "something-else"] {
+            let mapped = map_spi(KeyringError::Invalid(
+                attr.to_string(),
+                "too long".to_string(),
+            ));
+            assert!(
+                matches!(
+                    mapped,
+                    SecretStoreError::OsKeyring {
+                        kind: OsKeyringErrorKind::Backend
+                    }
+                ),
+                "Invalid({attr:?}, _) must map to a backend failure, got {mapped:?}"
+            );
+        }
+    }
+
     // ===== Tier-2 strict fail-closed read =====
     //
     // Parameterised over BOTH arms. The "attacker who can write the
@@ -588,28 +768,31 @@ mod tests {
 
     use keyring_core::mock;
 
-    use crate::secrets::file::crypto::{KdfParams, ARGON2_MIN_M_KIB, ARGON2_MIN_T, ARGON2_P};
-    use crate::secrets::file::format::KDF_ID_ARGON2ID;
-
-    /// Argon2id floor params — fast enough for these tests.
-    fn floor() -> KdfParams {
-        KdfParams {
-            id: KDF_ID_ARGON2ID,
-            m_kib: ARGON2_MIN_M_KIB,
-            t: ARGON2_MIN_T,
-            p: ARGON2_P,
+    /// Pad nonblank fixture labels to the production length floor.
+    fn test_password(s: &str) -> SecretString {
+        let mut value = s.to_owned();
+        while value.trim().len() < crate::secrets::MIN_PASSPHRASE_LEN {
+            value.push('-');
         }
+        SecretString::new(value)
     }
 
     fn protected(w: &WalletId, label: &str, pw: &str, secret: &[u8]) -> Vec<u8> {
-        envelope::wrap_with_params(w, label, Some(&SecretString::new(pw)), secret, floor())
-            .unwrap()
-            .expose_secret()
-            .to_vec()
+        envelope::wrap_with_params(
+            w,
+            label,
+            Some(&test_password(pw)),
+            secret,
+            KdfParams::floor_target(),
+        )
+        .unwrap()
+        .expose_secret()
+        .to_vec()
     }
 
     fn unprotected(w: &WalletId, label: &str, secret: &[u8]) -> Vec<u8> {
-        envelope::wrap(w, label, None, secret)
+        // `params` is unused on the unprotected path.
+        envelope::wrap_with_params(w, label, None, secret, KdfParams::floor_target())
             .unwrap()
             .expose_secret()
             .to_vec()
@@ -717,7 +900,7 @@ mod tests {
         assert!(
             matches!(
                 b.store
-                    .get_secret(&w, "p1", Some(&SecretString::new("nope")))
+                    .get_secret(&w, "p1", Some(&test_password("nope")))
                     .unwrap_err(),
                 SecretStoreError::WrongPassword
             ),
@@ -847,7 +1030,7 @@ mod tests {
     /// A consumer bug alone fails closed in BOTH directions.
     fn run_both_det_bug_directions(b: &Backend) {
         let w = wid(3);
-        let pw = SecretString::new("pw");
+        let pw = test_password("pw");
         // (a) over-supply a password on a genuinely unprotected object.
         b.place_raw(&w, "u", &unprotected(&w, "u", b"x"));
         assert!(matches!(
@@ -876,7 +1059,7 @@ mod tests {
     /// byte — identical scheme-1 blobs diverge solely on the password arg.
     fn run_expectation_not_inferred(b: &Backend) {
         let w = wid(4);
-        let pw = SecretString::new("pw");
+        let pw = test_password("pw");
         let blob = protected(&w, "a", "pw", b"seed");
         b.place_raw(&w, "a", &blob);
         b.place_raw(&w, "b", &blob);
@@ -934,7 +1117,7 @@ mod tests {
         use crate::secrets::wire::envelope::{Envelope, Payload};
 
         let w = wid(6);
-        let pw = SecretString::new("pw");
+        let pw = test_password("pw");
         let blob = protected(&w, "x", "pw", b"real-seed");
         let (env, _): (Envelope, usize) = bincode::decode_from_slice(&blob, WIRE_CONFIG).unwrap();
         let flipped = match env.payload {
@@ -979,8 +1162,8 @@ mod tests {
     /// step verified through the strict read.
     fn run_pw_lifecycle(b: &Backend) {
         let w = wid(10);
-        let pw1 = SecretString::new("pw-one");
-        let pw2 = SecretString::new("pw-two");
+        let pw1 = test_password("pw-one");
+        let pw2 = test_password("pw-two");
 
         // ADD: start unprotected, enrol a password.
         b.store
@@ -1065,7 +1248,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             b.store
-                .get_secret(&w, "seed", Some(&SecretString::new("guess")))
+                .get_secret(&w, "seed", Some(&test_password("guess")))
                 .unwrap_err(),
             SecretStoreError::WrongPassword
         ));
@@ -1099,7 +1282,7 @@ mod tests {
         );
         assert!(matches!(
             b.store
-                .get_secret(&w, "seed", Some(&SecretString::new("pw")))
+                .get_secret(&w, "seed", Some(&test_password("pw")))
                 .unwrap_err(),
             SecretStoreError::ExpectedProtectedButUnsealed
         ));
@@ -1143,8 +1326,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let s = file_store(dir.path());
         let w = wid(14);
-        let old = SecretString::new("old-pw");
-        let new = SecretString::new("new-pw");
+        let old = test_password("old-pw");
+        let new = test_password("new-pw");
 
         s.set_secret(&w, "seed", &SecretBytes::from_slice(b"REAL"), Some(&old))
             .unwrap();
@@ -1183,8 +1366,8 @@ mod tests {
         let mock = mock::Store::new().unwrap();
         let store = SecretStore::Os(mock.clone());
         let w = wid(15);
-        let old = SecretString::new("old-pw");
-        let new = SecretString::new("new-pw");
+        let old = test_password("old-pw");
+        let new = test_password("new-pw");
         store
             .set_secret(&w, "seed", &SecretBytes::from_slice(b"REAL"), Some(&old))
             .unwrap();
@@ -1219,6 +1402,199 @@ mod tests {
             store.get_secret(&w, "seed", Some(&new)).unwrap_err(),
             SecretStoreError::WrongPassword
         ));
+    }
+
+    // ===== Mock store: floor-params KDF (#4111) =====
+    //
+    // No test asserts the runtime `debug_assertions` guard: under `cargo
+    // test` the guard's condition is true by construction (both `cfg!(test)`
+    // and, in the dev profile, `cfg!(debug_assertions)`), so a
+    // `#[should_panic]` test could never reach the panic — it would only
+    // assert that a branch we cannot enter was not entered. The gate is
+    // proven by the deterministic params assertions below plus the
+    // compile-time `cfg(any(test, feature = "test-util"))`.
+
+    fn mock_store(dir: &std::path::Path) -> SecretStore {
+        SecretStore::file_mock(secure_vault_path(dir), SecretString::new("pw-correct")).unwrap()
+    }
+
+    /// The KDF params a stored Tier-2 envelope actually encodes, read back
+    /// through the store's own raw seam. `None` for an unprotected blob.
+    fn stored_tier2_params(s: &SecretStore, w: &WalletId, label: &str) -> Option<KdfParams> {
+        use crate::secrets::wire::config::WIRE_CONFIG;
+        use crate::secrets::wire::envelope::{Envelope, Payload};
+
+        let blob = s.get_raw(w, label).unwrap().expect("entry present");
+        let (env, _): (Envelope, usize) =
+            bincode::decode_from_slice(blob.expose_secret(), WIRE_CONFIG).unwrap();
+        match env.payload {
+            Payload::Password { kdf, .. } => Some(KdfParams::try_from(kdf).unwrap()),
+            Payload::Unprotected(_) => None,
+        }
+    }
+
+    /// The vault header a `File` store wrote to disk.
+    fn vault_kdf_on_disk(s: &SecretStore) -> KdfParams {
+        let SecretStore::File(fs) = s else {
+            unreachable!("file store")
+        };
+        fs.test_read_vault_from_disk().unwrap().expect("vault").kdf
+    }
+
+    /// Non-vacuity anchor for every floor-vs-target assertion below: the two
+    /// params are genuinely different, and the floor is legal (it is the
+    /// weakest config `enforce_bounds` accepts, so the mock cannot be
+    /// weakened further and still open).
+    #[test]
+    fn floor_target_differs_from_default_and_is_legal() {
+        let floor = KdfParams::floor_target();
+        let target = KdfParams::default_target();
+        assert_ne!(floor, target);
+        assert!(floor.m_kib < target.m_kib && floor.t < target.t);
+        assert!(floor.enforce_bounds().is_ok());
+        // One notch below the floor on either axis is refused, so `floor` is
+        // the true minimum — not merely "some smaller value".
+        assert!(KdfParams {
+            m_kib: floor.m_kib - 1,
+            ..floor
+        }
+        .enforce_bounds()
+        .is_err());
+        assert!(KdfParams {
+            t: floor.t - 1,
+            ..floor
+        }
+        .enforce_bounds()
+        .is_err());
+    }
+
+    /// The mock's on-disk vault header encodes the FLOOR — so the unlock
+    /// derivation on every reopen is the cheap one.
+    #[test]
+    fn mock_store_vault_header_uses_floor_params() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = mock_store(dir.path());
+        assert_eq!(vault_kdf_on_disk(&s), KdfParams::floor_target());
+    }
+
+    /// The control: the ordinary constructor still ships the 64 MiB target,
+    /// so the assertion above is a real difference and not a floor that
+    /// leaked into production.
+    #[test]
+    fn default_store_vault_header_uses_default_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = file_store(dir.path());
+        assert_eq!(vault_kdf_on_disk(&s), KdfParams::default_target());
+    }
+
+    /// A password-protected secret written through the mock's PUBLIC
+    /// `set_secret` encodes the FLOOR in its Tier-2 envelope — the mock flag
+    /// reaches the per-secret wrap, not just the vault header.
+    #[test]
+    fn mock_store_tier2_envelope_uses_floor_params() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = mock_store(dir.path());
+        let w = wid(20);
+        let pw = SecretString::new("object-pw");
+
+        s.set_secret(&w, "seed", &SecretBytes::from_slice(b"SEED"), Some(&pw))
+            .unwrap();
+        assert_eq!(
+            stored_tier2_params(&s, &w, "seed"),
+            Some(KdfParams::floor_target())
+        );
+
+        // `reprotect` rewraps through the same seam, so it floors too.
+        let pw2 = SecretString::new("object-pw-2");
+        s.reprotect(&w, "seed", Some(&pw), Some(&pw2)).unwrap();
+        assert_eq!(
+            stored_tier2_params(&s, &w, "seed"),
+            Some(KdfParams::floor_target())
+        );
+    }
+
+    /// End-to-end through the mock: the full public surface behaves exactly
+    /// as on a real store — the cheap KDF changes cost, never semantics.
+    #[test]
+    fn mock_store_roundtrips_the_public_surface() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = mock_store(dir.path());
+        let w = wid(21);
+        let pw = SecretString::new("object-pw");
+        let pw2 = SecretString::new("object-pw-2");
+
+        // Unprotected set/get.
+        s.set(&w, "plain", &SecretBytes::from_slice(b"PLAIN"))
+            .unwrap();
+        assert_eq!(
+            s.get(&w, "plain").unwrap().unwrap().expose_secret(),
+            b"PLAIN"
+        );
+
+        // Protected set/get, and the strict read still fails closed.
+        s.set_secret(&w, "seed", &SecretBytes::from_slice(b"SEED"), Some(&pw))
+            .unwrap();
+        assert_eq!(
+            s.get_secret(&w, "seed", Some(&pw))
+                .unwrap()
+                .unwrap()
+                .expose_secret(),
+            b"SEED"
+        );
+        assert!(matches!(
+            s.get(&w, "seed").unwrap_err(),
+            SecretStoreError::NeedsPassword
+        ));
+        assert!(matches!(
+            s.get_secret(&w, "plain", Some(&pw)).unwrap_err(),
+            SecretStoreError::ExpectedProtectedButUnsealed
+        ));
+
+        // reprotect: change, then remove.
+        s.reprotect(&w, "seed", Some(&pw), Some(&pw2)).unwrap();
+        assert_eq!(
+            s.get_secret(&w, "seed", Some(&pw2))
+                .unwrap()
+                .unwrap()
+                .expose_secret(),
+            b"SEED"
+        );
+        assert!(matches!(
+            s.get_secret(&w, "seed", Some(&pw)).unwrap_err(),
+            SecretStoreError::WrongPassword
+        ));
+        s.reprotect(&w, "seed", Some(&pw2), None).unwrap();
+        assert_eq!(s.get(&w, "seed").unwrap().unwrap().expose_secret(), b"SEED");
+
+        assert!(s.delete(&w, "seed").unwrap());
+        assert!(s.get(&w, "seed").unwrap().is_none());
+    }
+
+    /// The vault the mock writes is a real one: the passphrase is still
+    /// verified against the header token on reopen (floor params do not
+    /// bypass the AAD-bound verify-token), and a wrong one fails closed.
+    #[test]
+    fn mock_store_still_verifies_the_passphrase_on_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = secure_vault_path(dir.path());
+        {
+            let s = mock_store(dir.path());
+            s.set(&wid(22), "seed", &SecretBytes::from_slice(b"SEED"))
+                .unwrap();
+        } // drop releases the vault lock
+
+        let err = SecretStore::file_mock(&path, SecretString::new("pw-wrong"))
+            .expect_err("wrong passphrase must fail open");
+        assert!(
+            matches!(err, SecretStoreError::WrongPassphrase),
+            "got {err:?}"
+        );
+
+        let s = SecretStore::file_mock(&path, SecretString::new("pw-correct")).unwrap();
+        assert_eq!(
+            s.get(&wid(22), "seed").unwrap().unwrap().expose_secret(),
+            b"SEED"
+        );
     }
 
     /// [Os]: the read-size guard rejects an oversized backend blob (a

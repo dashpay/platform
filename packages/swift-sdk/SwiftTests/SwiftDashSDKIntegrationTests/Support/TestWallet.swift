@@ -1,8 +1,13 @@
 import Foundation
 import SwiftDashSDK
 
-/// Wraps a `ManagedPlatformWallet` and a `ManagedCoreWallet`
-final class TestWalletWrapper {
+/// Wraps a `ManagedPlatformWallet` and a `ManagedCoreWallet`.
+///
+/// `@unchecked Sendable` on the same grounds as `IntegrationTestEnv`: the
+/// stored SDK handles are immutable `let`s and each wrapper is driven by one
+/// test task at a time, but it crosses the `makeTestWallet` async boundary,
+/// which strict-concurrency toolchains reject for non-Sendable results.
+final class TestWalletWrapper: @unchecked Sendable {
     private let core: ManagedCoreWallet
     private let wallet: ManagedPlatformWallet
 
@@ -17,6 +22,27 @@ final class TestWalletWrapper {
 
     func getPlatformWallet() -> ManagedPlatformWallet {
         wallet
+    }
+
+    /// Atomically fund, reserve, sign, and broadcast a single-output payment
+    /// from this wallet's BIP-44 account 0. Returns the display-order txid.
+    @discardableResult
+    func send(to address: String, amountDuffs: UInt64) throws -> String {
+        let builder = try CoreTransactionBuilder(network: core.network())
+        _ = try builder.addOutput(address: address, amountDuffs: amountDuffs)
+        let tx = try builder.finalizeAtomic(
+            wallet: wallet,
+            accountType: .bip44,
+            accountIndex: 0
+        )
+        switch try core.broadcastTransactionWithOutcome(tx) {
+        case .accepted(let txid):
+            return txid
+        case .rejected(_, let reason):
+            throw PlatformWalletError.transactionBroadcastRejected(reason)
+        case .unknown(_, let reason):
+            throw PlatformWalletError.transactionBroadcastUnconfirmed(reason)
+        }
     }
 
     func waitForSpendable(exactly duffs: UInt64, timeout: TimeInterval = 60) async throws {

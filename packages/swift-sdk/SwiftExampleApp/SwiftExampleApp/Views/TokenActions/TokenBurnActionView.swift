@@ -127,7 +127,7 @@ struct TokenBurnActionView: View {
     private var balanceValue: UInt64 {
         if let initialBalance { return initialBalance }
         guard let balance = matchingBalance else { return 0 }
-        return balance.balance < 0 ? 0 : UInt64(balance.balance)
+        return balance.unsignedBalance
     }
 
     private var balanceDisplay: String {

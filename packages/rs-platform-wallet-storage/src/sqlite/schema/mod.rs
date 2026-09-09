@@ -13,13 +13,48 @@ pub mod contacts;
 pub mod core_pool;
 pub mod core_state;
 pub mod dashpay;
+pub mod dpns_name_states;
 pub mod identities;
 pub mod identity_keys;
+pub mod identity_scan_states;
+pub mod invitations;
 pub mod pending_contact_crypto;
 pub mod platform_addrs;
+#[cfg(feature = "shielded")]
+pub mod shielded_viewing_keys;
 pub mod token_balances;
+pub mod tracked_masternodes;
 pub mod versions;
 pub mod wallets;
+
+/// Map a `WalletId` to a nullable `wallet_id` column: the all-zero
+/// sentinel becomes NULL, the storage spelling of "owned by no wallet".
+///
+/// Shared by `identities` and `identity_keys` so both spell the unowned
+/// scope the same way — a raw `wallet_id.as_slice()` would store 32 zero
+/// bytes, a value that looks like a wallet id, satisfies nothing, and
+/// silently fails to match the NULL the readers and guards look for.
+pub(crate) fn wallet_id_to_param(
+    wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
+) -> Option<&[u8]> {
+    if wallet_id.iter().all(|b| *b == 0) {
+        None
+    } else {
+        Some(wallet_id.as_slice())
+    }
+}
+
+pub(crate) fn id32(
+    column: &'static str,
+    bytes: &[u8],
+) -> Result<[u8; 32], crate::sqlite::error::WalletStorageError> {
+    <[u8; 32]>::try_from(bytes).map_err(|_| {
+        crate::sqlite::error::WalletStorageError::InvalidWalletIdLength {
+            column,
+            actual: bytes.len(),
+        }
+    })
+}
 
 /// Reject any `identity_id` in `touched` whose `identities` row does not
 /// belong to `wallet_id` (NULL wallet_id matches the all-zero sentinel),
@@ -77,4 +112,22 @@ pub(crate) fn assert_identities_belong_to_wallet(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::id32;
+    use crate::sqlite::error::WalletStorageError;
+
+    #[test]
+    fn id32_reports_column_and_actual_length() {
+        let error = id32("example.owner_id", &[0u8; 7]).unwrap_err();
+        assert!(matches!(
+            error,
+            WalletStorageError::InvalidWalletIdLength {
+                column: "example.owner_id",
+                actual: 7
+            }
+        ));
+    }
 }

@@ -2,6 +2,7 @@ import Config from '../Config.js';
 import ConfigIsNotPresentError from '../errors/ConfigIsNotPresentError.js';
 import GroupIsNotPresentError from '../errors/GroupIsNotPresentError.js';
 import ConfigAlreadyPresentError from '../errors/ConfigAlreadyPresentError.js';
+import generateRandomString from '../../util/generateRandomString.js';
 
 export default class ConfigFile {
   /**
@@ -186,7 +187,10 @@ export default class ConfigFile {
 
     const fromConfig = this.getConfig(fromConfigName);
 
-    this.configsMap[name] = new Config(name, fromConfig.getOptions());
+    this.configsMap[name] = new Config(name, fromConfig.getStoredOptions());
+    // A new node must not share a control password with the config it was
+    // copied from, least of all the placeholder the base config carries.
+    this.configsMap[name].set('core.tor.control.password', generateRandomString(12));
     this.configsMap[name].markAsChanged();
 
     this.changed = true;
@@ -308,7 +312,7 @@ export default class ConfigFile {
       defaultGroupName: this.getDefaultGroupName(),
       configs: this.getAllConfigs().reduce((configsMap, config) => {
         // eslint-disable-next-line no-param-reassign
-        configsMap[config.getName()] = config.getOptions();
+        configsMap[config.getName()] = config.getStoredOptions();
 
         return configsMap;
       }, {}),

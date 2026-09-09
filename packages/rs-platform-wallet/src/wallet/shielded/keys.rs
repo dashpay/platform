@@ -152,10 +152,14 @@ impl OrchardKeySet {
 ///
 /// The network-scoped shielded coordinator holds these for every
 /// bound `(walletId, accountIndex)`; it never sees a
-/// `SpendAuthorizingKey`. Spend operations are driven from the
-/// per-wallet side, which holds the full [`OrchardKeySet`] (ASK
-/// included) and passes it into the coordinator's spend methods
-/// only for the duration of that call.
+/// `SpendAuthorizingKey`. Spend operations re-derive the full
+/// [`OrchardKeySet`] (ASK included) from the wallet seed for the
+/// duration of that call only.
+///
+/// The whole struct is a pure function of the 96-byte raw FVK
+/// encoding ([`Self::to_fvk_bytes`] / [`Self::from_fvk_bytes`]),
+/// which is what hosts persist so a later launch can rebind the
+/// shielded sub-wallet without touching the wallet seed.
 #[derive(Clone)]
 pub struct AccountViewingKeys {
     pub full_viewing_key: FullViewingKey,
@@ -166,6 +170,48 @@ pub struct AccountViewingKeys {
     pub prepared_ivk: PreparedIncomingViewingKey,
     pub outgoing_viewing_key: OutgoingViewingKey,
     pub default_address: PaymentAddress,
+}
+
+impl AccountViewingKeys {
+    /// Derive the full viewing-grade set from an Orchard
+    /// `FullViewingKey`. IVK / OVK / default address are all pure
+    /// functions of the FVK (external scope, diversifier index 0 —
+    /// the same choices [`OrchardKeySet::from_seed`] makes), so a
+    /// persisted FVK alone reconstructs everything sync needs.
+    pub fn from_full_viewing_key(fvk: FullViewingKey) -> Self {
+        let ivk = fvk.to_ivk(Scope::External);
+        let ovk = fvk.to_ovk(Scope::External);
+        let default_address = fvk.address_at(0u32, Scope::External);
+        let prepared_ivk = PreparedIncomingViewingKey::new(&ivk);
+        Self {
+            full_viewing_key: fvk,
+            incoming_viewing_key: ivk,
+            prepared_ivk,
+            outgoing_viewing_key: ovk,
+            default_address,
+        }
+    }
+
+    /// The raw 96-byte FVK encoding (`ak ‖ nk ‖ rivk`) — the only
+    /// bytes a host has to persist to reconstruct this struct.
+    pub fn to_fvk_bytes(&self) -> [u8; 96] {
+        self.full_viewing_key.to_bytes()
+    }
+
+    /// Reconstruct from a persisted raw 96-byte FVK encoding.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the bytes are not a canonical FVK
+    /// encoding (any component fails its curve / field check).
+    pub fn from_fvk_bytes(bytes: &[u8; 96]) -> Result<Self, PlatformWalletError> {
+        let fvk = FullViewingKey::from_bytes(bytes).ok_or_else(|| {
+            PlatformWalletError::ShieldedKeyDerivation(
+                "persisted Orchard full viewing key bytes are not a canonical encoding".to_string(),
+            )
+        })?;
+        Ok(Self::from_full_viewing_key(fvk))
+    }
 }
 
 #[cfg(test)]
@@ -315,5 +361,49 @@ mod tests {
             "default address drifted"
         );
         assert_eq!(hex::encode(ivk), EXPECTED_IVK, "raw IVK encoding drifted");
+    }
+
+    /// The persisted-FVK round trip must reconstruct the exact
+    /// viewing-grade set the seed derived: a launch that rebinds
+    /// from the 96 persisted bytes has to trial-decrypt the same
+    /// notes, recover the same send history (OVK), and show the
+    /// same default address as the original seed bind — with no
+    /// seed in reach.
+    #[test]
+    fn viewing_keys_round_trip_through_fvk_bytes() {
+        let seed = [0x42u8; 64];
+        let ks = OrchardKeySet::from_seed(&seed, Network::Testnet, 0).expect("derivation succeeds");
+        let original = ks.viewing_keys();
+
+        let fvk_bytes = original.to_fvk_bytes();
+        let restored =
+            AccountViewingKeys::from_fvk_bytes(&fvk_bytes).expect("persisted FVK decodes");
+
+        assert_eq!(
+            restored.full_viewing_key.to_bytes(),
+            original.full_viewing_key.to_bytes(),
+            "FVK drifted through the byte round trip"
+        );
+        assert_eq!(
+            restored.incoming_viewing_key.to_bytes(),
+            original.incoming_viewing_key.to_bytes(),
+            "IVK must re-derive identically from the persisted FVK"
+        );
+        assert_eq!(
+            restored.outgoing_viewing_key.as_ref(),
+            original.outgoing_viewing_key.as_ref(),
+            "OVK must re-derive identically from the persisted FVK"
+        );
+        assert_eq!(
+            restored.default_address.to_raw_address_bytes(),
+            original.default_address.to_raw_address_bytes(),
+            "default address must re-derive identically from the persisted FVK"
+        );
+
+        // Corrupt encodings are rejected, not silently accepted.
+        assert!(
+            AccountViewingKeys::from_fvk_bytes(&[0xFFu8; 96]).is_err(),
+            "non-canonical FVK bytes must be rejected"
+        );
     }
 }

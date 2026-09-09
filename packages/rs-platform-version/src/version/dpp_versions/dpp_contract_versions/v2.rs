@@ -41,6 +41,9 @@ pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
             should_add_creator_id: 0,
             enrich_with_base_schema: 0,
             find_identifier_and_binary_paths: 0,
+            // This version predates the `refersTo` reference keyword
+            apply_property_reference: None,
+            apply_required_since: None,
             validate_max_depth: 0,
             max_depth: 256,
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {

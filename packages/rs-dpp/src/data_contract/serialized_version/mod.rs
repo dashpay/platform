@@ -12,6 +12,8 @@ use crate::data_contract::{
 };
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -96,6 +98,10 @@ impl fmt::Display for DataContractMismatch {
 #[cfg_attr(
     all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
+)]
+#[cfg_attr(
+    all(feature = "value-conversion", feature = "serde-conversion"),
+    derive(ValueConvertible)
 )]
 #[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From)]
 #[cfg_attr(
@@ -1164,5 +1170,99 @@ mod tests {
     fn latest_platform_version_uses_contract_structure_1() {
         let pv = PlatformVersion::latest();
         assert_eq!(pv.dpp.contract_versions.contract_structure_version, 1);
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::data_contract::config::v0::DataContractConfigV0;
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
+    use platform_value::Identifier;
+    use std::collections::BTreeMap;
+
+    fn fixture() -> DataContractInSerializationFormat {
+        DataContractInSerializationFormat::V0(DataContractInSerializationFormatV0 {
+            id: Identifier::new([0xa1; 32]),
+            config: DataContractConfig::V0(DataContractConfigV0::default()),
+            version: 1,
+            owner_id: Identifier::new([0xb2; 32]),
+            schema_defs: None,
+            document_schemas: BTreeMap::new(),
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Tier 3 envelope-only: `DataContractInSerializationFormat` embeds a
+        // versioned `DataContractConfig` and arbitrary `document_schemas` /
+        // `schema_defs` Values. The full inline expansion is verified for the
+        // `DataContractConfig` in its own module. We still pin the top-level
+        // envelope keys + their types here so that any silent drop / rename /
+        // re-keying at this layer would fail the test.
+        assert_eq!(json["$formatVersion"], "0");
+        assert_eq!(
+            json["id"],
+            json!("Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp")
+        );
+        assert_eq!(
+            json["ownerId"],
+            json!("D2ZcUbtpG5sKq7XLeB4YnpNnTGSptKCxTddoNeydzJQq")
+        );
+        assert_eq!(json["version"], json!(1));
+        assert_eq!(json["schemaDefs"], json!(null));
+        assert_eq!(json["documentSchemas"], json!({}));
+        assert!(json.get("config").is_some(), "config envelope present");
+        assert_eq!(json["config"]["$formatVersion"], "0");
+        let recovered = DataContractInSerializationFormat::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::Value;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // Tier 3 envelope-only: see JSON test above. Keys remain `Identifier` /
+        // `Map` / typed integers in non-HR mode (no base58 stringification).
+        let map = match &value {
+            Value::Map(m) => m,
+            other => panic!("expected Value::Map, got {:?}", other),
+        };
+        let get = |k: &str| -> &Value {
+            map.iter()
+                .find(|(key, _)| matches!(key, Value::Text(t) if t == k))
+                .map(|(_, v)| v)
+                .unwrap_or_else(|| panic!("missing key {k}"))
+        };
+        assert_eq!(get("$formatVersion"), &Value::Text("0".to_string()));
+        assert_eq!(get("id"), &Value::Identifier([0xa1; 32]));
+        assert_eq!(get("ownerId"), &Value::Identifier([0xb2; 32]));
+        assert_eq!(get("version"), &Value::U32(1));
+        assert_eq!(get("schemaDefs"), &Value::Null);
+        // documentSchemas: empty Map
+        assert!(matches!(get("documentSchemas"), Value::Map(m) if m.is_empty()));
+        // config: nested Map with its own $formatVersion="0"
+        assert!(matches!(get("config"), Value::Map(_)));
+        let recovered = DataContractInSerializationFormat::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_preserves_format_version_tag() {
+        use crate::serialization::JsonConvertible;
+        let json = fixture().to_json().expect("to_json");
+        assert_eq!(json["$formatVersion"], "0");
     }
 }

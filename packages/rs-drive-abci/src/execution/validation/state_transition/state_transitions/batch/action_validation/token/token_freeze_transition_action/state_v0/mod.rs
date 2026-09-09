@@ -132,7 +132,12 @@ impl TokenFreezeTransitionActionStateValidationV0 for TokenFreezeTransitionActio
                     ConsensusError::StateError(StateError::IdentityTokenAccountAlreadyFrozenError(
                         IdentityTokenAccountAlreadyFrozenError::new(
                             self.token_id(),
-                            owner_id,
+                            // The already-frozen account is the freeze target, not
+                            // the acting/authority identity — report the target so
+                            // the rejection names the identity that is actually
+                            // frozen (mirrors the unfreeze / destroy-frozen-funds
+                            // validators, which pass `frozen_identity_id()`).
+                            self.identity_to_freeze_id(),
                             "Freeze Identity Token Account".to_string(),
                         ),
                     )),

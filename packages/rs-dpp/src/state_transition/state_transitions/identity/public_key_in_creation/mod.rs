@@ -16,13 +16,9 @@ use serde::{Deserialize, Serialize};
 
 pub mod accessors;
 mod fields;
-#[cfg(feature = "json-conversion")]
-mod json_conversion;
 mod methods;
 mod types;
 pub mod v0;
-#[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 #[cfg_attr(
@@ -380,78 +376,11 @@ mod test {
         assert_eq!(hash.len(), 20);
     }
 
-    #[test]
-    fn test_value_conversion_roundtrip() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let key = make_master_key(0);
-        let v = StateTransitionValueConvert::to_object(&key, false).expect("to_object");
-        assert!(v.is_map());
-        let restored = <IdentityPublicKeyInCreation as StateTransitionValueConvert>::from_object(
-            v,
-            LATEST_PLATFORM_VERSION,
-        )
-        .expect("from_object");
-        assert_eq!(key, restored);
-    }
-
-    #[test]
-    fn test_value_conversion_unknown_version() {
-        use crate::state_transition::StateTransitionValueConvert;
-        use platform_value::Value;
-        let v = Value::from([("$version", Value::U16(255))]);
-        let result = <IdentityPublicKeyInCreation as StateTransitionValueConvert>::from_object(
-            v,
-            LATEST_PLATFORM_VERSION,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_clean_value_unknown_version() {
-        use crate::state_transition::StateTransitionValueConvert;
-        use platform_value::Value;
-        let mut v = Value::from([("$version", Value::U8(255))]);
-        let result =
-            <IdentityPublicKeyInCreation as StateTransitionValueConvert>::clean_value(&mut v);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_to_canonical_object_inserts_version() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let key = make_master_key(0);
-        let v = StateTransitionValueConvert::to_canonical_object(&key, false)
-            .expect("to_canonical_object");
-        let map = v
-            .into_btree_string_map()
-            .expect("canonical object should be a map");
-        assert!(map.contains_key("$version"));
-    }
-
-    #[test]
-    fn test_to_canonical_cleaned_object_inserts_version() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let key = make_master_key(0);
-        let v = StateTransitionValueConvert::to_canonical_cleaned_object(&key, false)
-            .expect("to_canonical_cleaned_object");
-        let map = v.into_btree_string_map().expect("should be a map");
-        assert!(map.contains_key("$version"));
-    }
-
-    #[test]
-    fn test_from_value_map_roundtrip() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let key = make_master_key(0);
-        let v = StateTransitionValueConvert::to_object(&key, false).expect("to_object");
-        let map = v.into_btree_string_map().expect("should be a map");
-        let restored =
-            <IdentityPublicKeyInCreation as StateTransitionValueConvert>::from_value_map(
-                map,
-                LATEST_PLATFORM_VERSION,
-            )
-            .expect("from_value_map");
-        assert_eq!(key, restored);
-    }
+    // Legacy `StateTransitionValueConvert` round-trip / canonical /
+    // unknown-version tests deleted in Phase D step 9. The canonical
+    // `JsonConvertible` / `ValueConvertible` round-trip is exercised on
+    // the outer enum derive (see `json_convertible_tests` below) — these
+    // tested methods that no longer exist.
 
     #[test]
     fn test_default_versioned_unknown() {
@@ -482,5 +411,85 @@ mod test {
             IdentityPublicKeyInCreation::duplicated_keys_witness(&keys, LATEST_PLATFORM_VERSION)
                 .expect("witness");
         assert_eq!(dup_ids.len(), 1, "one duplicate expected");
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+
+    use crate::identity::{KeyType, Purpose, SecurityLevel};
+    use platform_value::{platform_value, BinaryData};
+    use serde_json::json;
+
+    fn fixture() -> IdentityPublicKeyInCreation {
+        IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+            id: 7,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            read_only: true,
+            data: BinaryData::new(vec![0x88; 33]),
+            signature: BinaryData::new(vec![0x99; 65]),
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Sized-int fields whose JSON wire encoding loses size info:
+        // `id` (u32 KeyID), `type`/`purpose`/`securityLevel` (u8 repr enums).
+        // The value-path assertion below uses explicit suffixes for size lock-in.
+        // Note `key_type` is renamed to `"type"` in the wire shape.
+        // `securityLevel` = 2 because `SecurityLevel::HIGH as u8 == 2`.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "id": 7,
+                "type": 0,
+                "purpose": 0,
+                "securityLevel": 2,
+                "contractBounds": serde_json::Value::Null,
+                "readOnly": true,
+                "data": "iIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI",
+                "signature": "mZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZk=",
+            })
+        );
+        let recovered = IdentityPublicKeyInCreation::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // Explicit suffixes lock in sized variants: `id` u32 (KeyID),
+        // `type`/`purpose`/`securityLevel` u8 (#[repr(u8)] enums).
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "id": 7u32,
+                "type": 0u8,
+                "purpose": 0u8,
+                "securityLevel": 2u8,
+                "contractBounds": platform_value::Value::Null,
+                "readOnly": true,
+                "data": BinaryData::new(vec![0x88; 33]),
+                "signature": BinaryData::new(vec![0x99; 65]),
+            })
+        );
+        let recovered = IdentityPublicKeyInCreation::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

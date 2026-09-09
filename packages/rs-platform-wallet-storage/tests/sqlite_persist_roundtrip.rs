@@ -80,7 +80,7 @@ fn tc013_wallet_metadata_roundtrip() {
 /// `ConfigInvalid` error and the DB is not created.
 #[test]
 fn tc_code_029_1_journal_mode_memory_rejected() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let mut cfg = SqlitePersisterConfig::new(&path);
     cfg.journal_mode = JournalMode::Memory;
@@ -101,7 +101,7 @@ fn tc_code_029_1_journal_mode_memory_rejected() {
 /// error and the DB is not created.
 #[test]
 fn tc_code_029_2_journal_mode_off_rejected() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let mut cfg = SqlitePersisterConfig::new(&path);
     cfg.journal_mode = JournalMode::Off;
@@ -123,7 +123,7 @@ fn tc_code_029_2_journal_mode_off_rejected() {
 #[test]
 #[tracing_test::traced_test]
 fn tc_code_029_3_busy_timeout_zero_warns() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let mut cfg = SqlitePersisterConfig::new(&path);
     cfg.busy_timeout = std::time::Duration::ZERO;
@@ -138,7 +138,7 @@ fn tc_code_029_3_busy_timeout_zero_warns() {
 /// TC-079: synchronous=Off is rejected at open with a typed error.
 #[test]
 fn tc079_synchronous_off_rejected() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let mut cfg = SqlitePersisterConfig::new(&path);
     cfg.synchronous = Synchronous::Off;
@@ -241,8 +241,8 @@ fn tc007_identity_key_entry_roundtrip() {
 
     let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
     let conn = p2.lock_conn_for_test();
-    // Single wallet under test, so (identity_id, key_id) selects the
-    // one row; the full PK is (wallet_id, identity_id, key_id).
+    // `(identity_id, key_id)` IS the primary key, so this selects the
+    // one row outright.
     let blob_bytes: Vec<u8> = conn
         .query_row(
             "SELECT public_key_blob FROM identity_keys WHERE identity_id = ?1 AND key_id = ?2",
@@ -431,6 +431,7 @@ fn tc010_asset_lock_roundtrip() {
     let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::load_state(
         &p2.lock_conn_for_test(),
         &w,
+        &platform_wallet_storage::LoadCtx::strict(),
     )
     .unwrap();
     let by_outpoint = &bucketed[&5];
@@ -441,6 +442,210 @@ fn tc010_asset_lock_roundtrip() {
     assert_eq!(tracked.funding_type, entry.funding_type);
     assert_eq!(tracked.status, entry.status);
     assert_eq!(tracked.transaction.version, transaction.version);
+    drop(tmp);
+}
+
+/// TC-010b: a `RecoveredFromChain` lock — the restore-scan
+/// reconstruction's status, admitted by the V004 CHECK widening —
+/// round-trips through the writer's TEXT status mapping and the
+/// lifecycle blob, chain proof included.
+#[test]
+fn tc010b_recovered_from_chain_lock_roundtrip() {
+    use dashcore::hashes::Hash;
+    use dashcore::{OutPoint, Transaction, Txid};
+    use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};
+    use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
+
+    let txid = Txid::from_byte_array([0x43; 32]);
+    let outpoint = OutPoint { txid, vout: 0 };
+    let entry = AssetLockEntry {
+        out_point: outpoint,
+        transaction: Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        },
+        account_index: 0,
+        funding_type: AssetLockFundingType::AssetLockShieldedAddressTopUp,
+        identity_index: 0,
+        amount_duffs: 500_000,
+        status: AssetLockStatus::RecoveredFromChain,
+        proof: Some(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 411_495,
+            out_point: outpoint,
+        })),
+    };
+    let mut locks = AssetLockChangeSet::default();
+    locks.asset_locks.insert(outpoint, entry.clone());
+
+    let (persister, tmp, path) = fresh_persister();
+    let w = wid(0xFB);
+    ensure_wallet_meta(&persister, &w);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                asset_locks: Some(locks),
+                ..Default::default()
+            },
+        )
+        .expect("recovered_from_chain must satisfy the widened CHECK");
+    drop(persister);
+
+    let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::load_state(
+        &p2.lock_conn_for_test(),
+        &w,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .unwrap();
+    let tracked = &bucketed[&0][&outpoint];
+    assert_eq!(tracked.status, AssetLockStatus::RecoveredFromChain);
+    match &tracked.proof {
+        Some(dpp::prelude::AssetLockProof::Chain(chain)) => {
+            assert_eq!(chain.core_chain_locked_height, 411_495);
+        }
+        other => panic!("chain proof must survive the roundtrip, got {other:?}"),
+    }
+    drop(tmp);
+}
+
+/// TC-010c: the store-order race between the wallet-event adapter and
+/// the live flows, applied in the exact adversarial order. A stale
+/// reconstruction/enrichment snapshot (`RecoveredFromChain`) that the
+/// adapter's batched drain persists AFTER the live flow's synchronous
+/// `Consumed` write must NOT regress the durable row — `Consumed` is
+/// terminal and the upsert's WHERE guard rejects the late arrival.
+/// Every other direction stays last-write-wins, including `Consumed`
+/// landing over `RecoveredFromChain`.
+#[test]
+fn tc010c_stale_recovery_snapshot_cannot_regress_consumed_row() {
+    use dashcore::hashes::Hash;
+    use dashcore::{OutPoint, Transaction, Txid};
+    use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};
+    use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
+
+    let entry_with = |outpoint: OutPoint, status: AssetLockStatus| AssetLockEntry {
+        out_point: outpoint,
+        transaction: Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        },
+        account_index: 0,
+        funding_type: AssetLockFundingType::IdentityRegistration,
+        identity_index: 0,
+        amount_duffs: 1_000_000,
+        status: status.clone(),
+        proof: match status {
+            AssetLockStatus::RecoveredFromChain => {
+                Some(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+                    core_chain_locked_height: 900,
+                    out_point: outpoint,
+                }))
+            }
+            _ => None,
+        },
+    };
+    let store_one = |persister: &SqlitePersister, w, outpoint, status| {
+        let mut locks = AssetLockChangeSet::default();
+        locks
+            .asset_locks
+            .insert(outpoint, entry_with(outpoint, status));
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    asset_locks: Some(locks),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    };
+
+    let (persister, tmp, path) = fresh_persister();
+    let w = wid(0xFA);
+    ensure_wallet_meta(&persister, &w);
+
+    // Outpoint A: live lock consumed, THEN the stale recovery snapshot
+    // arrives (the adapter drained its batch after the live write).
+    let a = OutPoint {
+        txid: Txid::from_byte_array([0x51; 32]),
+        vout: 0,
+    };
+    store_one(&persister, w, a, AssetLockStatus::Broadcast);
+    store_one(&persister, w, a, AssetLockStatus::Consumed);
+    store_one(&persister, w, a, AssetLockStatus::RecoveredFromChain);
+
+    // Outpoint B: the legitimate direction — a recovered lock is
+    // explicitly resumed and consumed; the terminal write must land.
+    let b = OutPoint {
+        txid: Txid::from_byte_array([0x52; 32]),
+        vout: 0,
+    };
+    store_one(&persister, w, b, AssetLockStatus::RecoveredFromChain);
+    store_one(&persister, w, b, AssetLockStatus::Consumed);
+
+    // A stale tombstone obeys the same terminal rule: a removal landing
+    // after the Consumed write must not delete the row…
+    let store_removed = |persister: &SqlitePersister, w, outpoint| {
+        let mut locks = AssetLockChangeSet::default();
+        locks.removed.insert(outpoint);
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    asset_locks: Some(locks),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    };
+    store_removed(&persister, w, a);
+
+    // …while the legitimate removal path (a rejected Built row) still
+    // deletes.
+    let c = OutPoint {
+        txid: Txid::from_byte_array([0x53; 32]),
+        vout: 0,
+    };
+    store_one(&persister, w, c, AssetLockStatus::Built);
+    store_removed(&persister, w, c);
+
+    drop(persister);
+    let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::load_state(
+        &p2.lock_conn_for_test(),
+        &w,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .unwrap();
+    assert_eq!(
+        bucketed[&0][&a].status,
+        AssetLockStatus::Consumed,
+        "a stale RecoveredFromChain snapshot landing after Consumed must be rejected"
+    );
+    assert_eq!(
+        bucketed[&0][&b].status,
+        AssetLockStatus::Consumed,
+        "Consumed must still land over RecoveredFromChain"
+    );
+    assert!(
+        bucketed[&0][&a].status == AssetLockStatus::Consumed,
+        "a stale removal must not delete the Consumed row"
+    );
+    assert!(
+        !bucketed[&0].contains_key(&c),
+        "a legitimate removal of a rejected Built row must still delete"
+    );
     drop(tmp);
 }
 

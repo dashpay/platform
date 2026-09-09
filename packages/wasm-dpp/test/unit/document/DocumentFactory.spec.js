@@ -49,7 +49,6 @@ describe('DocumentFactory', () => {
     ownerId = documents[0].getOwnerId();
 
     ([, , , document] = documents);
-    rawDocument = document.toObject();
 
     factory = new DocumentFactory(1, { generate: () => crypto.randomBytes(32) });
   });
@@ -62,7 +61,6 @@ describe('DocumentFactory', () => {
       // the mocked DataContract validator always returned true.
       const [niceDocument] = documents;
 
-      const newRawDocument = niceDocument.toObject();
       const contractId = bs58.decode('FQco85WbwNgb5ix8QQAH6wurMcgEC5ENSCv5ixG9cj12');
       const name = 'Cutie';
 
@@ -74,13 +72,13 @@ describe('DocumentFactory', () => {
       const newDocument = factory.create(
         dataContract,
         ownerIdJs,
-        newRawDocument.$type,
+        niceDocument.getType(),
         { name },
       );
 
       expect(newDocument).to.be.an.instanceOf(ExtendedDocument);
 
-      expect(newDocument.getType()).to.equal(newRawDocument.$type);
+      expect(newDocument.getType()).to.equal(niceDocument.getType());
 
       expect(newDocument.get('name')).to.equal(name);
 

@@ -264,6 +264,7 @@ impl StateTransitionActionTransformer for StateTransition {
                     validation_mode,
                     block_info,
                     execution_context,
+                    None,
                     tx,
                 )
             }

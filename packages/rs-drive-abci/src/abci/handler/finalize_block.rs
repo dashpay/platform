@@ -69,26 +69,36 @@ where
 
     let result = app.commit_transaction(platform_version);
 
-    // We had a sequence of errors on the mainnet started since block 32326.
-    // We got RocksDB's "transaction is busy" error because of a bug (https://github.com/dashpay/platform/pull/2309).
-    // Due to another bug in Tenderdash (https://github.com/dashpay/tenderdash/pull/966),
-    // validators just proceeded to the next block partially committing the state and updating the cache.
-    // Full nodes are stuck and proceeded after re-sync.
-    // For the mainnet chain, we enable these fixes at the block when we consider the state is consistent.
+    // Mainnet's vote-cleanup incident began at 32326 (platform#2309). Tenderdash#966
+    // let validators continue after the resulting commit conflict with partially committed
+    // state and updated caches. Reproduce that outcome only for the expected Busy error.
+    // The upper bound must match Drive::remove_all_votes_given_by_identities: starting
+    // at 32329, vote deletions stay inside the block transaction again.
     let config = &app.platform().config;
-
-    if app.platform().config.network == Network::Mainnet
+    let historical_conflict = config.network == Network::Mainnet
         && config.abci.chain_id == "evo1"
-        && block_height < 33000
-    {
-        // Old behavior on mainnet below block 33000
-        result?;
+        && (32326..32329).contains(&block_height)
+        && matches!(
+            &result,
+            Err(Error::Drive(drive::error::Error::GroveDB(error)))
+                if matches!(
+                    error.as_ref(),
+                    drive::grovedb::Error::StorageError(
+                        drive::grovedb_storage::error::Error::RocksDBError(error)
+                    ) if error.kind() == rocksdb::ErrorKind::Busy
+                )
+        );
+
+    if historical_conflict {
+        tracing::warn!(
+            error = ?result.as_ref().err(),
+            block_height,
+            "historical mainnet vote-cleanup commit conflict; proceeding as the \
+             network did at the time (see platform#2309, tenderdash#966)"
+        );
     } else {
-        // In case if transaction commit failed we still have caches in memory that
-        // corresponds to the data that we weren't able to commit.
-        // The simplified solution is to restart the Drive, so all caches
-        // will be restored from the disk and try to process this block again.
-        // TODO: We need a better handling of the transaction is busy error with retry logic.
+        // A failed commit leaves caches ahead of durable state. Restart Drive so the
+        // caches are restored from disk before retrying the block.
         result.expect("commit transaction");
     }
 
@@ -108,8 +118,285 @@ where
 mod tests {
     use super::*;
     use crate::abci::app::{FullAbciApplication, TransactionalApplication};
+    use crate::config::PlatformConfig;
+    use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
+    use crate::execution::types::block_execution_context::BlockExecutionContext;
+    use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
+    use crate::platform_types::epoch_info::v0::EpochInfoV0;
+    use crate::platform_types::epoch_info::EpochInfo;
+    use crate::platform_types::platform::Platform;
+    use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
     use crate::rpc::core::MockCoreRPCLike;
-    use crate::test::helpers::setup::TestPlatformBuilder;
+    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use dpp::version::PlatformVersion;
+    use drive::grovedb::Transaction;
+    use std::sync::RwLock;
+    use tenderdash_abci::proto::abci::CommitInfo;
+    use tenderdash_abci::proto::google::protobuf::Timestamp;
+    use tenderdash_abci::proto::types::{
+        Block, BlockId, Data, EvidenceList, Header, PartSetHeader,
+    };
+    use tenderdash_abci::proto::version::Consensus;
+
+    /// An ABCI application whose `commit_transaction` always fails.
+    ///
+    /// Injects either a real RocksDB error or an unrelated execution error to verify
+    /// that only historical transaction conflicts are tolerated.
+    struct FailingCommitApplication<'a> {
+        platform: &'a Platform<MockCoreRPCLike>,
+        commit_error: RwLock<Option<Error>>,
+        transaction: RwLock<Option<Transaction<'a>>>,
+        block_execution_context: RwLock<Option<BlockExecutionContext>>,
+    }
+
+    impl PlatformApplication<MockCoreRPCLike> for FailingCommitApplication<'_> {
+        fn platform(&self) -> &Platform<MockCoreRPCLike> {
+            self.platform
+        }
+    }
+
+    impl BlockExecutionApplication for FailingCommitApplication<'_> {
+        fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
+            &self.block_execution_context
+        }
+    }
+
+    impl<'a> TransactionalApplication<'a> for FailingCommitApplication<'a> {
+        fn start_transaction(&self) {
+            let transaction = self.platform.drive.grove.start_transaction();
+            self.transaction.write().unwrap().replace(transaction);
+        }
+
+        fn transaction(&self) -> &RwLock<Option<Transaction<'a>>> {
+            &self.transaction
+        }
+
+        fn commit_transaction(&self, _platform_version: &PlatformVersion) -> Result<(), Error> {
+            // Consume the transaction like the real implementation would, then fail.
+            self.transaction.write().unwrap().take();
+            Err(self
+                .commit_error
+                .write()
+                .unwrap()
+                .take()
+                .expect("commit error"))
+        }
+    }
+
+    /// Runs `finalize_block` at `height` against a platform configured with `config`, with a
+    /// commit that is guaranteed to fail.
+    fn finalize_block_with_failing_commit(
+        config: PlatformConfig,
+        height: u64,
+        commit_error: Error,
+    ) -> Result<proto::ResponseFinalizeBlock, Error> {
+        let platform: TempPlatform<MockCoreRPCLike> = TestPlatformBuilder::new()
+            .with_config(config)
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let app = FailingCommitApplication {
+            platform: &platform.platform,
+            commit_error: RwLock::new(Some(commit_error)),
+            transaction: Default::default(),
+            block_execution_context: Default::default(),
+        };
+
+        app.start_transaction();
+
+        let platform_state = (**platform.state.load()).clone();
+        let quorum_hash: [u8; 32] = platform_state.current_validator_set_quorum_hash().into();
+
+        let block_hash = [1u8; 32];
+        let app_hash = [2u8; 32];
+        let block_time_ms = 1_700_000_000_000u64;
+
+        app.block_execution_context.write().unwrap().replace(
+            BlockExecutionContextV0 {
+                block_state_info: BlockStateInfoV0 {
+                    height,
+                    round: 0,
+                    block_time_ms,
+                    previous_block_time_ms: None,
+                    proposer_pro_tx_hash: [0u8; 32],
+                    core_chain_locked_height: 1,
+                    block_hash: Some(block_hash),
+                    app_hash: Some(app_hash),
+                }
+                .into(),
+                epoch_info: EpochInfo::V0(EpochInfoV0 {
+                    current_epoch_index: 0,
+                    previous_epoch_index: None,
+                    is_epoch_change: false,
+                }),
+                unsigned_withdrawal_transactions: UnsignedWithdrawalTxs::default(),
+                block_address_balance_changes: Default::default(),
+                block_platform_state: platform_state,
+                proposer_results: None,
+            }
+            .into(),
+        );
+
+        let request = proto::RequestFinalizeBlock {
+            commit: Some(CommitInfo {
+                round: 0,
+                quorum_hash: quorum_hash.to_vec(),
+                block_signature: vec![0u8; 96],
+                threshold_vote_extensions: vec![],
+            }),
+            misbehavior: vec![],
+            hash: block_hash.to_vec(),
+            height: height as i64,
+            round: 0,
+            block: Some(Block {
+                header: Some(Header {
+                    version: Some(Consensus { block: 0, app: 1 }),
+                    chain_id: platform.config.abci.chain_id.clone(),
+                    height: height as i64,
+                    time: Some(Timestamp {
+                        seconds: (block_time_ms / 1000) as i64,
+                        nanos: 0,
+                    }),
+                    last_block_id: None,
+                    last_commit_hash: vec![0u8; 32],
+                    data_hash: vec![0u8; 32],
+                    validators_hash: vec![0u8; 32],
+                    next_validators_hash: vec![0u8; 32],
+                    consensus_hash: vec![0u8; 32],
+                    next_consensus_hash: vec![0u8; 32],
+                    app_hash: app_hash.to_vec(),
+                    results_hash: vec![0u8; 32],
+                    evidence_hash: vec![],
+                    proposed_app_version: 1,
+                    proposer_pro_tx_hash: vec![0u8; 32],
+                    core_chain_locked_height: 1,
+                }),
+                data: Some(Data { txs: vec![] }),
+                evidence: Some(EvidenceList { evidence: vec![] }),
+                last_commit: None,
+                core_chain_lock: None,
+            }),
+            block_id: Some(BlockId {
+                hash: block_hash.to_vec(),
+                part_set_header: Some(PartSetHeader {
+                    total: 0,
+                    hash: vec![0u8; 32],
+                }),
+                state_id: vec![0u8; 32],
+            }),
+        };
+
+        finalize_block::<_, MockCoreRPCLike>(&app, request)
+    }
+
+    fn mainnet_evo1_config() -> PlatformConfig {
+        let mut config = PlatformConfig::default_mainnet();
+        config.abci.chain_id = "evo1".to_string();
+        config.testing_configs.block_commit_signature_verification = false;
+        config
+    }
+
+    /// Produce the actual RocksDB error returned when another transaction writes the same key.
+    fn busy_commit_error() -> Error {
+        let directory = tempfile::tempdir().expect("temporary database directory");
+        let db = rocksdb::OptimisticTransactionDB::<rocksdb::SingleThreaded>::open_default(
+            directory.path(),
+        )
+        .expect("open database");
+        let transaction = db.transaction();
+        transaction
+            .put(b"key", b"pending")
+            .expect("transaction write");
+        db.put(b"key", b"committed").expect("independent write");
+        let error = transaction
+            .commit()
+            .expect_err("conflicting commit must fail");
+        assert_eq!(error.kind(), rocksdb::ErrorKind::Busy);
+        drive::grovedb::Error::StorageError(drive::grovedb_storage::error::Error::RocksDBError(
+            error,
+        ))
+        .into()
+    }
+
+    #[test]
+    fn finalize_block_tolerates_busy_commit_on_mainnet_evo1_during_incident() {
+        for height in 32326..32329 {
+            let result = finalize_block_with_failing_commit(
+                mainnet_evo1_config(),
+                height,
+                busy_commit_error(),
+            );
+            assert!(
+                result.is_ok(),
+                "historical conflict at {height}: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "commit transaction")]
+    fn finalize_block_panics_on_busy_commit_before_incident() {
+        let _ =
+            finalize_block_with_failing_commit(mainnet_evo1_config(), 32325, busy_commit_error());
+    }
+
+    #[test]
+    #[should_panic(expected = "commit transaction")]
+    fn finalize_block_panics_on_busy_commit_on_mainnet_evo1_at_32329() {
+        // The second crash is prevented by keeping vote deletions inside the transaction
+        // at 32329, not by tolerating another failed commit here.
+        let _ =
+            finalize_block_with_failing_commit(mainnet_evo1_config(), 32329, busy_commit_error());
+    }
+
+    #[test]
+    #[should_panic(expected = "commit transaction")]
+    fn finalize_block_panics_on_busy_commit_outside_mainnet() {
+        let mut config = PlatformConfig::default_testnet();
+        config.abci.chain_id = "evo1".to_string();
+        config.testing_configs.block_commit_signature_verification = false;
+        let _ = finalize_block_with_failing_commit(config, 32326, busy_commit_error());
+    }
+
+    #[test]
+    #[should_panic(expected = "commit transaction")]
+    fn finalize_block_panics_on_busy_commit_with_another_mainnet_chain_id() {
+        let mut config = mainnet_evo1_config();
+        config.abci.chain_id = "another-chain".to_string();
+        let _ = finalize_block_with_failing_commit(config, 32326, busy_commit_error());
+    }
+
+    #[test]
+    #[should_panic(expected = "commit transaction")]
+    fn finalize_block_panics_on_io_error_during_incident() {
+        // A regular file cannot serve as RocksDB's write-ahead log directory.
+        let directory = tempfile::tempdir().expect("temporary database directory");
+        let file = tempfile::NamedTempFile::new().expect("temporary file");
+        let mut options = rocksdb::Options::default();
+        options.create_if_missing(true);
+        options.set_wal_dir(file.path());
+        let error = rocksdb::OptimisticTransactionDB::<rocksdb::SingleThreaded>::open(
+            &options,
+            directory.path(),
+        )
+        .expect_err("WAL path is not a directory");
+        assert_eq!(error.kind(), rocksdb::ErrorKind::IOError);
+        let error = drive::grovedb::Error::StorageError(
+            drive::grovedb_storage::error::Error::RocksDBError(error),
+        )
+        .into();
+        let _ = finalize_block_with_failing_commit(mainnet_evo1_config(), 32328, error);
+    }
+
+    #[test]
+    #[should_panic(expected = "commit transaction")]
+    fn finalize_block_panics_on_execution_error_during_incident() {
+        let error = Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "injected commit failure",
+        ));
+        let _ = finalize_block_with_failing_commit(mainnet_evo1_config(), 32326, error);
+    }
 
     #[test]
     fn finalize_block_fails_when_no_transaction() {

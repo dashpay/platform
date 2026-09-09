@@ -149,7 +149,7 @@ impl PlatformWallet {
         settings: Option<PutSettings>,
     ) -> Result<SeedPoolOutcome, PlatformWalletError>
     where
-        AS: ::key_wallet::signer::Signer + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
         F: Fn(SeedPoolProgress) + Send + Sync,
     {
         // HARD GATE: this is a devnet/testnet seeding utility. The mainnet
@@ -302,7 +302,10 @@ impl PlatformWallet {
                             "seed batch finality timed out; pausing for a core block then \
                              resuming the tracked lock"
                         );
-                        funding = AssetLockFunding::FromExistingAssetLock { out_point };
+                        funding = AssetLockFunding::FromExistingAssetLock {
+                            out_point,
+                            consume_invitation_voucher: false,
+                        };
                         tokio::time::sleep(SEED_BATCH_RETRY_PAUSE).await;
                     }
                     Err(e) => return Err(e),

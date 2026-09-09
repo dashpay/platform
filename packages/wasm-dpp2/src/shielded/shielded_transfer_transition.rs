@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
 use crate::utils::try_vec_to_fixed_bytes;
-use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
+use crate::{impl_wasm_conversions_inner, impl_wasm_type_info};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
 use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
@@ -192,8 +192,9 @@ impl ShieldedTransferTransitionWasm {
     }
 }
 
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     ShieldedTransferTransitionWasm,
+    ShieldedTransferTransition,
     ShieldedTransferTransition,
     ShieldedTransferTransitionObjectJs,
     ShieldedTransferTransitionJSONJs

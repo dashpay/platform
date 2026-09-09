@@ -94,9 +94,12 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 /// the caller retains ownership. Compressed secp256k1 pubkeys are
 /// always 33 bytes (`pubkey_len == 33`); BLS would be 48; etc.
 ///
-/// **Contract bounds** — Encryption / Decryption keys carry a
-/// reference to the contract (and optionally a document type)
-/// they're allowed to operate within. Encoded inline as:
+/// **Contract bounds** — keys may optionally carry a reference to
+/// the contract (and optionally a document type) they're allowed to
+/// operate within. Consensus accepts unbounded keys for every
+/// purpose, including Encryption / Decryption; bounds only become
+/// meaningful when the target contract or document type explicitly
+/// requires a bounded key. Encoded inline as:
 ///   - `contract_bounds_kind == 0` → no bounds.
 ///   - `contract_bounds_kind == 1` → `SingleContract`. The first
 ///     32 bytes at `contract_bounds_id` are the contract id; the
@@ -129,24 +132,24 @@ pub struct IdentityPubkeyFFI {
 /// Decode the optional `contract_bounds_*` payload off an
 /// [`IdentityPubkeyFFI`] row.
 ///
-/// Shared by the registration and update FFI paths so
-/// Encryption / Decryption keys can carry their bounds through
-/// either entry point. `kind == 0` is "no bounds"; `1` is
+/// Shared by the registration and update FFI paths so optional
+/// key bounds can flow through either entry point. `kind == 0` is
+/// "no bounds"; `1` is
 /// `SingleContract { id }`; `2` is
 /// `SingleContractDocumentType { id, document_type_name }`.
 ///
-/// **Encryption / Decryption purposes require contract bounds.**
-/// Drive scopes those purposes to a single contract (and optionally
-/// a document type), so registering or updating an identity with an
-/// unbounded encryption / decryption key produces a key that cannot
-/// be used. We reject `kind == 0` for those purposes here so the
-/// failure surfaces as a clean FFI error rather than a key Drive
-/// silently can't use.
+/// Consensus does not require bounds for Encryption / Decryption
+/// purposes: an unbounded key is valid, and bounds are only checked
+/// when the caller actually supplies them. In that bounded case,
+/// consensus then constrains which purposes may carry bounds and
+/// whether the referenced contract or document type opted in.
 ///
-/// `purpose` is the parsed `Purpose` discriminant for the row, used
-/// only for the encryption / decryption guard above. `row_index` and
-/// `field_label` only flavour error messages (different callers want
-/// different prefixes — `add_public_keys[i]` for update,
+/// `purpose` is the parsed `Purpose` discriminant for the row. It is
+/// not needed for `kind == 0`, but remains part of the shared helper
+/// signature so callers can keep their error-message context stable if
+/// future validation needs it. `row_index` and `field_label` only
+/// flavour error messages (different callers want different prefixes —
+/// `add_public_keys[i]` for update,
 /// `identity_pubkeys[i]` for registration).
 ///
 /// Returns `Err(PlatformWalletFFIResult)` carrying the FFI error the
@@ -154,24 +157,12 @@ pub struct IdentityPubkeyFFI {
 /// caller does `unwrap_result_or_return!(decode_contract_bounds(...))`.
 pub(crate) unsafe fn decode_contract_bounds(
     row: &IdentityPubkeyFFI,
-    purpose: Purpose,
+    _purpose: Purpose,
     row_index: usize,
     field_label: &str,
 ) -> Result<Option<ContractBounds>, PlatformWalletFFIResult> {
     match row.contract_bounds_kind {
-        0 => {
-            if matches!(purpose, Purpose::ENCRYPTION | Purpose::DECRYPTION) {
-                return Err(PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                    format!(
-                        "{field_label}[{row_index}].contract_bounds_kind = 0 (no bounds) but \
-                         purpose = {purpose:?} requires bounds — Drive scopes Encryption / \
-                         Decryption keys to a specific contract (use kind 1 or 2)"
-                    ),
-                ));
-            }
-            Ok(None)
-        }
+        0 => Ok(None),
         1 => {
             if row.contract_bounds_id.is_null() {
                 return Err(PlatformWalletFFIResult::err(
@@ -257,8 +248,9 @@ pub(crate) unsafe fn decode_contract_bounds(
 ///   `ErrorInvalidParameter` instead of silently coercing.
 /// - `pubkey_bytes` must be non-null and non-empty.
 /// - `contract_bounds` decoded via [`decode_contract_bounds`], which
-///   enforces that Encryption / Decryption keys carry bounds
-///   (Drive rejects unbounded ones).
+///   mirrors consensus: unbounded keys are accepted, while supplied
+///   bounds still have to decode cleanly here and satisfy chain rules
+///   later.
 ///
 /// Returns `Err(PlatformWalletFFIResult)` carrying the FFI error the
 /// caller should bubble up directly via
@@ -305,6 +297,22 @@ pub(crate) unsafe fn decode_identity_pubkeys(
         let pubkey_bytes: Vec<u8> =
             slice::from_raw_parts(row.pubkey_bytes, row.pubkey_len).to_vec();
         let contract_bounds = decode_contract_bounds(row, purpose, i, "identity_pubkeys")?;
+        // Reject duplicate key IDs explicitly. A plain `insert` into the
+        // `BTreeMap` would silently last-wins, dropping the earlier row — the
+        // surviving key is still structurally validated, but the caller asked
+        // to register two keys and only got one, which is a caller bug worth
+        // surfacing rather than hiding. All callers (the four Android
+        // registration paths and the invitation-claim path) build a distinct
+        // key set, so a collision is always a mistake.
+        if keys_map.contains_key(&row.key_id) {
+            return Err(PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!(
+                    "identity_pubkeys[{i}] has a duplicate key id {}",
+                    row.key_id
+                ),
+            ));
+        }
         keys_map.insert(
             row.key_id,
             IdentityPublicKey::V0(IdentityPublicKeyV0 {
@@ -813,5 +821,181 @@ mod tests {
         unsafe { platform_wallet_derive_identity_keys_for_index_free(&mut out) };
         assert!(out.items.is_null());
         assert_eq!(out.count, 0);
+    }
+
+    /// Build an `IdentityPubkeyFFI` borrowing `pubkey` for the caller's
+    /// lifetime. AUTHENTICATION / MASTER (discriminants 0/0/0) so no contract
+    /// bounds are required — the raw byte values match the DPP `Purpose` /
+    /// `SecurityLevel` reprs.
+    fn ffi_row(key_id: u32, pubkey: &[u8]) -> IdentityPubkeyFFI {
+        IdentityPubkeyFFI {
+            key_id,
+            key_type: 0,       // KeyType::ECDSA_SECP256K1
+            purpose: 0,        // Purpose::AUTHENTICATION
+            security_level: 0, // SecurityLevel::MASTER
+            pubkey_bytes: pubkey.as_ptr(),
+            pubkey_len: pubkey.len(),
+            read_only: false,
+            contract_bounds_kind: 0,
+            contract_bounds_id: ptr::null(),
+            contract_bounds_document_type: ptr::null(),
+        }
+    }
+
+    /// Two rows sharing a key id must be rejected, not silently collapsed to
+    /// last-wins in the `BTreeMap`. This is the exact decoder the invitation-
+    /// claim path (`platform_wallet_claim_invitation`) runs, so the guard
+    /// covers that fifth caller too — not only the four Android registration
+    /// paths.
+    #[test]
+    fn decode_identity_pubkeys_rejects_duplicate_key_ids() {
+        let pk_a = [0x02u8; 33];
+        let pk_b = [0x03u8; 33];
+        let rows = [ffi_row(0, &pk_a), ffi_row(0, &pk_b)];
+        // SAFETY: `rows` (and the pubkey arrays it borrows) outlive the call.
+        let mut err = unsafe { decode_identity_pubkeys(rows.as_ptr(), rows.len()) }
+            .expect_err("duplicate key id must be rejected");
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        unsafe { platform_wallet_ffi_result_free(&mut err) };
+    }
+
+    /// A distinct key set still decodes cleanly after the duplicate guard —
+    /// proves the refactor didn't regress the common path.
+    #[test]
+    fn decode_identity_pubkeys_accepts_distinct_key_ids() {
+        let pk_a = [0x02u8; 33];
+        let pk_b = [0x03u8; 33];
+        let rows = [ffi_row(0, &pk_a), ffi_row(1, &pk_b)];
+        // SAFETY: `rows` (and the pubkey arrays it borrows) outlive the call.
+        let map = unsafe { decode_identity_pubkeys(rows.as_ptr(), rows.len()) }
+            .expect("distinct key ids must decode");
+        assert_eq!(map.len(), 2);
+    }
+
+    /// Consensus accepts an unbounded ENCRYPTION key, so the shared FFI decoder
+    /// must do the same instead of being stricter than the chain.
+    #[test]
+    fn decode_identity_pubkeys_accepts_unbounded_encryption_key() {
+        let pk = [0x02u8; 33];
+        let mut enc = ffi_row(4, &pk);
+        enc.purpose = 1; // Purpose::ENCRYPTION
+        enc.security_level = 3; // SecurityLevel::MEDIUM
+                                // contract_bounds_kind stays 0 → unbounded → accepted.
+        let rows = [ffi_row(0, &pk), enc];
+        // SAFETY: `rows` (and the pubkey array it borrows) outlive the call.
+        let map = unsafe { decode_identity_pubkeys(rows.as_ptr(), rows.len()) }
+            .expect("unbounded encryption key must decode");
+        assert_eq!(map.len(), 2);
+    }
+
+    #[test]
+    fn decode_contract_bounds_accepts_none_for_authentication_encryption_and_decryption() {
+        let pk = [0x02u8; 33];
+
+        for purpose in [
+            Purpose::AUTHENTICATION,
+            Purpose::ENCRYPTION,
+            Purpose::DECRYPTION,
+        ] {
+            let row = ffi_row(0, &pk);
+            let bounds = unsafe { decode_contract_bounds(&row, purpose, 0, "identity_pubkeys") }
+                .expect("kind == 0 must decode to no bounds for every supported purpose");
+            assert_eq!(bounds, None);
+        }
+    }
+
+    #[test]
+    fn decode_contract_bounds_kind_1_still_decodes_and_rejects_null_id() {
+        let pk = [0x02u8; 33];
+        let contract_id = [0x11u8; 32];
+        let mut row = ffi_row(0, &pk);
+        row.contract_bounds_kind = 1;
+        row.contract_bounds_id = contract_id.as_ptr();
+
+        let bounds =
+            unsafe { decode_contract_bounds(&row, Purpose::ENCRYPTION, 0, "identity_pubkeys") }
+                .expect("kind == 1 must still decode");
+        assert_eq!(
+            bounds,
+            Some(ContractBounds::SingleContract {
+                id: Identifier::from(contract_id),
+            })
+        );
+
+        row.contract_bounds_id = ptr::null();
+        let mut err =
+            unsafe { decode_contract_bounds(&row, Purpose::ENCRYPTION, 0, "identity_pubkeys") }
+                .expect_err("kind == 1 must still reject a null contract id");
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        unsafe { platform_wallet_ffi_result_free(&mut err) };
+    }
+
+    #[test]
+    fn decode_contract_bounds_kind_2_still_decodes_and_rejects_null_payloads() {
+        let pk = [0x02u8; 33];
+        let contract_id = [0x22u8; 32];
+        let doc_type = CString::new("profile").expect("static string is valid CString");
+        let mut row = ffi_row(0, &pk);
+        row.contract_bounds_kind = 2;
+        row.contract_bounds_id = contract_id.as_ptr();
+        row.contract_bounds_document_type = doc_type.as_ptr();
+
+        let bounds =
+            unsafe { decode_contract_bounds(&row, Purpose::DECRYPTION, 0, "identity_pubkeys") }
+                .expect("kind == 2 must still decode");
+        assert_eq!(
+            bounds,
+            Some(ContractBounds::SingleContractDocumentType {
+                id: Identifier::from(contract_id),
+                document_type_name: "profile".to_string(),
+            })
+        );
+
+        row.contract_bounds_id = ptr::null();
+        let mut err =
+            unsafe { decode_contract_bounds(&row, Purpose::DECRYPTION, 0, "identity_pubkeys") }
+                .expect_err("kind == 2 must still reject a null contract id");
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        unsafe { platform_wallet_ffi_result_free(&mut err) };
+
+        row.contract_bounds_id = contract_id.as_ptr();
+        row.contract_bounds_document_type = ptr::null();
+        let mut err =
+            unsafe { decode_contract_bounds(&row, Purpose::DECRYPTION, 0, "identity_pubkeys") }
+                .expect_err("kind == 2 must still reject a null document type");
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        unsafe { platform_wallet_ffi_result_free(&mut err) };
+    }
+
+    #[test]
+    fn decode_identity_pubkeys_rejects_invalid_role_discriminants() {
+        let pk = [0x02u8; 33];
+
+        for (field, row) in [
+            ("key_type", {
+                let mut row = ffi_row(0, &pk);
+                row.key_type = u8::MAX;
+                row
+            }),
+            ("purpose", {
+                let mut row = ffi_row(0, &pk);
+                row.purpose = u8::MAX;
+                row
+            }),
+            ("security_level", {
+                let mut row = ffi_row(0, &pk);
+                row.security_level = u8::MAX;
+                row
+            }),
+        ] {
+            let mut err = unsafe { decode_identity_pubkeys(&row, 1) }
+                .expect_err("invalid role byte must be rejected");
+            assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+            let message = unsafe { CStr::from_ptr(err.message) }
+                .to_str()
+                .expect("error message is UTF-8");
+            assert!(message.contains(field), "{message}");
+            unsafe { platform_wallet_ffi_result_free(&mut err) };
+        }
     }
 }

@@ -2,51 +2,62 @@
 
 use std::sync::Arc;
 
-use key_wallet::mnemonic::{Language, Mnemonic};
+use dash_spv::chain::CheckpointManager;
+use key_wallet::mnemonic::Mnemonic;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
+#[cfg(any(feature = "bls", feature = "eddsa"))]
+use crate::changeset::ProviderKeyExtendedPubKey;
 use crate::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, PlatformWalletChangeSet,
-    PlatformWalletPersistence, WalletMetadataEntry,
+    PlatformWalletPersistence, ProviderKeyAccountEntry, WalletMetadataEntry,
 };
 use crate::error::PlatformWalletError;
-use crate::wallet::core::WalletBalance;
+use crate::wallet::core::WalletGeneration;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
 use super::PlatformWalletManager;
 
-/// Parse a BIP-39 mnemonic against every supported wordlist in turn,
-/// returning the first language that yields a valid mnemonic.
+/// Parse a BIP-39 mnemonic in any supported language.
 ///
-/// `key_wallet::Mnemonic` only exposes language-tagged constructors,
-/// so callers that take a user-supplied mnemonic must walk the
-/// language list themselves to avoid rejecting non-English phrases as
-/// "invalid English". BIP-39 wordlists are mutually exclusive per
-/// phrase, so the first match is unambiguous.
+/// Since rust-dashcore#981 `Mnemonic::from_phrase` IS the auto-detecting
+/// parse — one path, with English diagnostics kept when nothing matches —
+/// so there is no language list left for a caller to walk. What remains is
+/// the error narrowing: callers report a `&'static str`, and this is where
+/// upstream's richer error is reduced to one.
 fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
-    const LANGUAGES: [Language; 10] = [
-        Language::English,
-        Language::Spanish,
-        Language::French,
-        Language::Italian,
-        Language::Japanese,
-        Language::Korean,
-        Language::ChineseSimplified,
-        Language::ChineseTraditional,
-        Language::Czech,
-        Language::Portuguese,
-    ];
-    for lang in LANGUAGES {
-        if let Ok(m) = Mnemonic::from_phrase(phrase, lang) {
-            return Ok(m);
-        }
-    }
-    Err("phrase does not match any supported BIP-39 wordlist")
+    Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
 }
+
+/// Test-only rendezvous fired inside [`PlatformWalletManager::remove_wallet_with_teardown`],
+/// between the inner-manager removal and the public-map removal.
+///
+/// That window is exactly where a concurrent same-id `register_wallet` can
+/// publish a NEW generation into both maps — the id is free in the inner
+/// manager from the moment the removal above completes, and nothing gates
+/// registration. Reproducing it deterministically from outside is not possible:
+/// the window is bounded by two *different* synchronization domains — the
+/// inner manager's lock and the public map's `ArcSwap` publication — and a
+/// test holds no lock that could park the remover between them without also
+/// stalling the registration's own publish. A rendezvous is therefore the
+/// only way to pin this ordering without a sleep or a completion-order race.
+///
+/// Compiled under `cfg(test)` only: neither this static nor its call site
+/// exists in a production build, and it is not part of any public API.
+#[cfg(test)]
+pub(crate) type RemoveWalletMidpointHook = Box<
+    dyn Fn(&WalletId) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+        + Send
+        + Sync,
+>;
+
+#[cfg(test)]
+pub(crate) static REMOVE_WALLET_MIDPOINT_HOOK: std::sync::Mutex<Option<RemoveWalletMidpointHook>> =
+    std::sync::Mutex::new(None);
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Create a PlatformWallet from a BIP39 mnemonic phrase.
@@ -64,7 +75,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// anything funded before init is invisible — **but** when SPV is
     /// not running yet or header state is unavailable (e.g. wallet
     /// created before the SPV client is started), it falls back to
-    /// `0`, i.e. a full historical scan from genesis. `Some(0)`
+    /// the latest network checkpoint height, keeping the scan near
+    /// the chain head instead of rescanning from genesis. `Some(0)`
     /// always requests a full historical scan from genesis (use
     /// sparingly — expensive on long-lived chains, but required when
     /// an address may have received funds before the wallet was first
@@ -94,7 +106,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// See [`Self::create_wallet_from_mnemonic`] for the
     /// `birth_height_override` semantics. `None` scans from the
     /// current SPV tip forward when SPV is running, otherwise from
-    /// genesis; `Some(h)` is for callers that need to see funding
+    /// the latest network checkpoint; `Some(h)` is for callers that need to see funding
     /// deposited before the wallet was registered (e.g. a long-lived
     /// bank address pre-funded with testnet duffs).
     pub async fn create_wallet_from_seed_bytes(
@@ -143,29 +155,56 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // downstream `walletId`-keyed structure network-correct by
         // construction — no per-network disambiguation needed in the
         // persistence layer, and network-blind child tables (UTXOs,
-        // asset locks, platform addresses) can no longer cross-feed
+        // asset locks, platform addresses) cannot cross-feed
         // between a mnemonic's per-network wallets. The watch-only
         // restore path (`Wallet::new_external_signable`) reuses the
         // persisted id verbatim, so it stays self-consistent across
         // launches.
 
-        // Birth height resolution: explicit override wins; otherwise
-        // fall back to SPV's confirmed header tip (default for fresh
-        // wallets — they only need to see funding from now on); 0 if
-        // SPV isn't running yet.
+        // Birth height resolution: explicit override wins; otherwise fall back
+        // to SPV's confirmed header tip (default for fresh wallets — they only
+        // need to see funding from now on). Before SPV has synced any headers
+        // the tip is 0, so a brand-new wallet created at startup would otherwise
+        // anchor at genesis and rescan the whole chain. Fall back to the latest
+        // hardcoded checkpoint instead, keeping the scan near the chain head.
         let birth_height: u32 = match birth_height_override {
             Some(h) => h,
-            None => self
-                .spv_manager
-                .sync_progress()
-                .await
-                .and_then(|p| p.headers().ok().map(|h| h.tip_height()))
-                .unwrap_or(0),
+            None => {
+                let tip = self
+                    .spv_manager
+                    .sync_progress()
+                    .await
+                    .and_then(|p| p.headers().ok().map(|h| h.tip_height()))
+                    .unwrap_or(0);
+                if tip > 0 {
+                    tip
+                } else {
+                    CheckpointManager::for_network(self.sdk.network)
+                        .last_checkpoint()
+                        .map(|checkpoint| checkpoint.height)
+                        .unwrap_or(0)
+                }
+            }
         };
 
-        let wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
+        // `mut` so the platform-node (Ed25519) pool can be populated in
+        // place below, BEFORE the address-pool snapshot is taken.
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
 
-        let balance = Arc::new(WalletBalance::new());
+        // The id this wallet is about to occupy. Computed HERE — before
+        // `downgrade_to_external_signable` below flips the wallet type, and
+        // before `wallet` is moved into `insert_wallet` — because the
+        // generation must be born already holding this wallet's fence map.
+        //
+        // A registration under an id a previous generation held is exactly the
+        // remove-and-recreate case: that generation's pending-spend fences
+        // protect signed transactions that are still valid and still relayable,
+        // so the replacement inherits them rather than starting clean. A first
+        // registration finds no entry and gets an empty map.
+        let registration_wallet_id = wallet.compute_wallet_id();
+        let generation = Arc::new(WalletGeneration::with_fences(
+            self.in_broadcast_fences_for(&registration_wallet_id),
+        ));
 
         // Snapshot per-account xpubs and address-pool entries BEFORE
         // the wallet / managed-info are moved into insert_wallet. The
@@ -181,6 +220,78 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .iter()
             .map(|a| (a.account_type, a.account_xpub))
             .collect();
+        // Provider key-material accounts (BLS operator keys / EdDSA
+        // platform-node keys) live in dedicated `Option` fields on the
+        // `AccountCollection` that `all_accounts()` deliberately
+        // excludes, so snapshot them separately. They carry a
+        // non-secp256k1 extended public key; the persister bincode-
+        // encodes it and the restore path rebuilds them watch-only.
+        #[allow(unused_mut)]
+        let mut provider_key_account_registrations: Vec<ProviderKeyAccountEntry> = Vec::new();
+        #[cfg(feature = "bls")]
+        if let Some(bls) = wallet
+            .accounts
+            .bls_account_of_type(key_wallet::account::AccountType::ProviderOperatorKeys)
+        {
+            provider_key_account_registrations.push(ProviderKeyAccountEntry {
+                account_type: key_wallet::account::AccountType::ProviderOperatorKeys,
+                extended_public_key: ProviderKeyExtendedPubKey::Bls(bls.bls_public_key.clone()),
+            });
+        }
+        #[cfg(feature = "eddsa")]
+        if let Some(eddsa) = wallet
+            .accounts
+            .eddsa_account_of_type(key_wallet::account::AccountType::ProviderPlatformKeys)
+        {
+            // Pre-derive a fixed batch of platform-node public keys while
+            // the wallet is still seed-bearing (`downgrade_to_external_signable`
+            // hasn't run yet). Ed25519/SLIP-10 is hardened-only, so this
+            // pool can never be extended later from the watch-only restore —
+            // populating the managed pool now lets those keys ride the
+            // normal typed-address persistence pipeline (persisted as
+            // `PublicKeyType::EdDSA` core-address rows, rehydrated on load
+            // by `restore_core_address_pools`) so the Node Keys screen lists
+            // them from persistence with no keychain prompt. A derivation
+            // failure here is non-fatal: fall back to an empty batch (the UI
+            // then uses its resolver-based "Load Keys" path) rather than
+            // aborting the whole wallet registration.
+            let derived_platform_node_keys =
+                crate::wallet::provider_key_at_index::derive_platform_node_public_keys(
+                    &wallet,
+                    wallet.network,
+                    crate::wallet::provider_key_at_index::PLATFORM_NODE_KEY_PREDERIVE_COUNT,
+                )
+                .unwrap_or_else(|e| {
+                    tracing::warn!(
+                        error = %e,
+                        "failed to pre-derive platform-node keys at registration; \
+                         the Node Keys screen will fall back to the resolver path"
+                    );
+                    Vec::new()
+                });
+            // Populate the managed platform-node pool in place, BEFORE the
+            // address-pool snapshot below reads `all_managed_accounts()`, so
+            // the EdDSA keys are captured as typed core-address rows. A
+            // population failure is non-fatal for the same reason the
+            // derivation failure above is.
+            if let Err(e) = crate::wallet::provider_key_at_index::populate_platform_node_pool(
+                &mut wallet_info,
+                &derived_platform_node_keys,
+                wallet.network,
+            ) {
+                tracing::warn!(
+                    error = %e,
+                    "failed to populate the managed platform-node pool at registration; \
+                     the Node Keys screen will fall back to the resolver path"
+                );
+            }
+            provider_key_account_registrations.push(ProviderKeyAccountEntry {
+                account_type: key_wallet::account::AccountType::ProviderPlatformKeys,
+                extended_public_key: ProviderKeyExtendedPubKey::EdDSA(
+                    eddsa.ed25519_public_key.clone(),
+                ),
+            });
+        }
         // Snapshot core (BIP44/CoinJoin/identity/provider/DashPay)
         // address pools. PlatformPayment accounts live in a separate
         // collection on `ManagedWalletInfo` and are handled below.
@@ -242,10 +353,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .unwrap_or(wallet.wallet_id);
 
         let platform_info = PlatformWalletInfo {
+            observed_input_conflicts: Default::default(),
             core_wallet: wallet_info,
-            balance: Arc::clone(&balance),
+            generation: Arc::clone(&generation),
             identity_manager: crate::wallet::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
+            dpns_name_states: std::collections::BTreeMap::new(),
         };
 
         wallet.downgrade_to_external_signable();
@@ -269,6 +382,31 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 }
             })?
         };
+
+        // `insert_wallet` recomputes the id from the (now external-signable)
+        // wallet. The two agree by construction — the downgrade flips only the
+        // wallet TYPE, and the type's own branch returns the same stamped
+        // network-scoped digest — but the fence map is safety state, so a
+        // divergence must not silently key it under an id nothing will look up.
+        // Alias the same `Arc` under the authoritative id instead: one map,
+        // reachable either way.
+        debug_assert_eq!(
+            wallet_id, registration_wallet_id,
+            "the registered wallet id must match the id the fence map was keyed by"
+        );
+        if wallet_id != registration_wallet_id {
+            tracing::error!(
+                registered = %hex::encode(wallet_id),
+                fenced_as = %hex::encode(registration_wallet_id),
+                "wallet id changed across registration; aliasing the in-broadcast \
+                 fence map under both"
+            );
+            let fences = self.in_broadcast_fences_for(&registration_wallet_id);
+            self.in_broadcast_fences
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(wallet_id, fences);
+        }
 
         // Emit metadata + per-account xpubs + per-pool address
         // snapshots to the persister so the watch-only restore path
@@ -301,6 +439,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     account_xpub: *account_xpub,
                 })
                 .collect(),
+            provider_key_account_registrations,
             ..Default::default()
         };
 
@@ -355,7 +494,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&self.sdk),
             wallet_id,
             Arc::clone(&self.wallet_manager),
-            balance,
+            generation,
             Arc::clone(&self.lock_notify),
             persister_dyn,
             broadcaster,
@@ -375,7 +514,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let crate::changeset::ClientStartState {
             mut platform_addresses,
             wallets: _,
-            skipped: _,
             #[cfg(feature = "shielded")]
                 shielded: _,
         } = match platform_wallet.load_persisted() {
@@ -421,41 +559,199 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         let platform_wallet = Arc::new(platform_wallet);
 
-        // Register the PlatformWallet handle.
-        {
-            let mut wallets = self.wallets.write().await;
+        // Register the PlatformWallet handle. `rcu` publishes a new map
+        // snapshot; the closure can rerun under a concurrent-writer
+        // retry, so it must stay pure map manipulation.
+        self.wallets.rcu(|wallets| {
+            let mut wallets = std::collections::BTreeMap::clone(wallets);
             wallets.insert(wallet_id, Arc::clone(&platform_wallet));
+            wallets
+        });
+
+        // Re-seed the lock-free balance atomic from the wallet's inner
+        // balance now that the wallet is in `self.wallets`.
+        //
+        // A wallet added while SPV is already synced (e.g. importing an
+        // existing mnemonic with `birth_height = 0`) has its historical
+        // funds backfilled by the SPV rescan that `insert_wallet` above
+        // triggers. That rescan can complete — emitting the
+        // `BlockProcessed` event that carries the post-backfill balance —
+        // *before* this wallet lands in `self.wallets`, so
+        // `BalanceUpdateHandler` drops those events (the wallet isn't in
+        // the map yet) and the atomic stays at zero even though the inner
+        // `ManagedWalletInfo` balance is correct. Mirror the inner balance
+        // into the atomic here (as `manager::load` does for restored
+        // wallets); any later block events are applied normally now that
+        // the wallet is mapped.
+        //
+        // Last writer wins between this seed and the handler: if SPV
+        // processes another block between the read below and the `set`, the
+        // atomic briefly goes back to the older totals. The next
+        // balance-bearing event corrects it, and during the rescan this
+        // exists for those arrive continuously.
+        {
+            let wm = self.wallet_manager.read().await;
+            if let Some(info) = wm.get_wallet_info(&wallet_id) {
+                let b = &info.core_wallet.balance;
+                platform_wallet.balance().set(
+                    b.confirmed(),
+                    b.unconfirmed(),
+                    b.immature(),
+                    b.locked(),
+                );
+            }
         }
 
-        // Best-effort identity discovery. For a recovery flow (existing
-        // mnemonic re-typed by the user) this hydrates every identity
-        // the wallet had on Platform without the caller having to fire
-        // `discover` manually. For a fresh wallet the gap-limit miss
-        // loop bails out after a handful of empty queries (~seconds)
-        // and produces nothing — same end state, slightly slower than
-        // skipping. Failures here are logged but never block wallet
-        // registration: a sync hiccup or offline DAPI shouldn't lose
-        // the user the wallet they just imported.
-        if let Err(e) = platform_wallet.identity().sync().await {
-            tracing::warn!(
-                wallet_id = %hex::encode(wallet_id),
-                error = %e,
-                "Identity discovery failed during wallet registration; \
-                 callers can retry via PlatformWallet::identity().discover()"
-            );
-        }
-
+        // Registration deliberately runs no identity discovery. The wallet
+        // was downgraded to external-signable above, so the resident-key
+        // scan (`identity().discover(..)`) cannot derive its first auth key and
+        // fails before ever reaching Platform — all it did here was wait on
+        // the wallet-manager lock twice, spend one host persistence round
+        // and leave a spurious "scan incomplete at index 0" verdict behind
+        // (on a host whose persister commit was in flight, that wait
+        // stretched a wallet import to minutes). Discovery belongs to the
+        // host's startup sequence (`start_wallet_subsystems`: budgeted,
+        // master key resolved on demand) or to an explicit
+        // `identity().discover_from_master(..)`.
         Ok(platform_wallet)
     }
 
     /// Remove a wallet from the manager.
+    ///
+    /// Runs under the removed generation's lifecycle gate — see
+    /// [`remove_wallet_with_teardown`](Self::remove_wallet_with_teardown), of
+    /// which this is the no-extra-teardown case.
     pub async fn remove_wallet(
         &self,
         wallet_id: &WalletId,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
+        self.remove_wallet_with_teardown(wallet_id, |_| {}).await
+    }
+
+    /// Remove a wallet from the manager and run `tear_down` on the removed
+    /// wallet — both under that generation's exclusive lifecycle gate, as one
+    /// linearization point.
+    ///
+    /// # Why the gate lives here rather than in the caller
+    ///
+    /// Removing the generation and tearing down the deferred state that names it
+    /// (the [`SignedPaymentRegistry`](crate::SignedPaymentRegistry) tokens and
+    /// the FFI's finalized-transaction handles) must be indivisible. If they are
+    /// two steps, a retained handle can broadcast in the gap: the removal's own
+    /// `.await`s (shielded-coordinator and identity-sync unregistration) sit
+    /// inside it, `CoreWallet::is_same_generation` passes for a removed
+    /// generation (a removed generation matches itself), and the reservation age
+    /// guard is disabled once `last_processed_height` returns `None`. So a
+    /// payment for a wallet the host already deleted reaches the network.
+    ///
+    /// Taking the gate *inside* this method rather than leaving it to the caller
+    /// is deliberate: `PlatformWalletManager` is public and `SignedPaymentRegistry`
+    /// is re-exported, so a direct Rust embedder that never goes through the FFI
+    /// would otherwise remove wallets with no exclusion at all, and could
+    /// interleave between a payment operation's liveness check and its register
+    /// or network action. `tear_down` is the hook that lets the FFI layer sweep
+    /// its own process-global handle storages inside the same critical section
+    /// without the gate ever being optional.
+    ///
+    /// `tear_down` is synchronous by design — it runs while the gate is held, and
+    /// every sweep it needs (`remove_entries_for_wallet`,
+    /// `HandleStorage::remove_matching`) is a synchronous map retain.
+    ///
+    /// ## Lock ordering
+    ///
+    /// The generation gate is always taken BEFORE the manager locks. The lookup
+    /// that finds the gate takes `wallets` briefly and **drops it before**
+    /// awaiting the gate, so no manager lock is ever held across a gate
+    /// acquisition; payment operations likewise take the gate and only then await
+    /// the manager. The order is total, so the two cannot deadlock.
+    ///
+    /// ## Removal is by generation identity, not by key
+    ///
+    /// The gate excludes *payment operations on this generation*. It does not
+    /// exclude a fresh **registration** under the same `wallet_id`:
+    /// [`register_wallet`](Self::register_wallet) mints its own
+    /// [`WalletGeneration`] and takes no gate at all, by design — a create must
+    /// never queue behind an unrelated wallet's teardown.
+    ///
+    /// So once this method has removed generation G1 from the inner
+    /// `wallet_manager`, the id is free and a concurrent registration can publish
+    /// a *different* generation G2 into both maps before this method reaches its
+    /// own `self.wallets` removal — the two removals are separately synchronized, with
+    /// no happens-before edge between them and the registration. Removing by key
+    /// there would take G2 out of the public map (leaving it registered in the
+    /// inner manager, invisible and unremovable) and hand G2 to `tear_down`,
+    /// which would sweep G2's registry tokens and V2 handles while holding only
+    /// G1's gate — i.e. with G2's payment operations *not* excluded, which is the
+    /// exact property this gate exists to provide.
+    ///
+    /// The `Arc<PlatformWallet>` validated under the gate is therefore retained,
+    /// and the public-map entry is removed only while it still names that same
+    /// generation. Both maps, the returned handle and the `tear_down` argument
+    /// then all name that one generation. The one remaining id-keyed step is
+    /// the shielded coordinator detach below, which has no generation concept
+    /// at all; a generation that has just been registered has not run
+    /// `bind_shielded` yet, so it holds no coordinator entry to detach.
+    ///
+    /// The inner-manager removal needs no such check: G1 can only leave
+    /// `wallet_manager` through this method (which requires G1's gate, held here)
+    /// or through a registration/load rollback for an insert that could not have
+    /// happened while G1 occupied the id — so while the gate is held and before
+    /// the removal below, the inner entry is still G1 by construction.
+    pub async fn remove_wallet_with_teardown<F>(
+        &self,
+        wallet_id: &WalletId,
+        tear_down: F,
+    ) -> Result<Arc<PlatformWallet>, PlatformWalletError>
+    where
+        F: FnOnce(&Arc<PlatformWallet>),
+    {
+        // Find the generation registered under `wallet_id` and take ITS gate.
+        // Re-validated after acquisition because the wallet could have been
+        // removed and re-created under the same id while we waited: in that case
+        // we hold the OLD generation's gate, which excludes nothing relevant to
+        // the new one, so retry against the generation that is actually current.
+        //
+        // The validated handle is carried out of the loop: it is both what this
+        // call returns and tears down, and the identity every mutation below is
+        // matched against.
+        let (removed, _teardown) = loop {
+            let candidate = {
+                let wallets = self.wallets.load();
+                match wallets.get(wallet_id) {
+                    None => {
+                        return Err(PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))
+                    }
+                    Some(wallet) => Arc::clone(wallet),
+                }
+            };
+            let guard = candidate.generation().teardown_guard().await;
+            let still_current = {
+                let wallets = self.wallets.load();
+                wallets
+                    .get(wallet_id)
+                    .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), candidate.generation()))
+            };
+            if still_current {
+                break (candidate, guard);
+            }
+            // Drop this generation's guard and re-resolve.
+            drop(guard);
+        };
+        let generation = Arc::clone(removed.generation());
+
+        // Every ID-keyed side-registry teardown below runs BEFORE the inner
+        // wallet-manager removal frees `wallet_id`. The side registries
+        // (shielded coordinator, identity-sync rows) are keyed by wallet /
+        // identity id, not by generation, so an unregister that ran after the
+        // id was freed could delete state a concurrent same-id registration
+        // (G2) had just installed. The inner manager's `insert_wallet` is the
+        // create path's commit point — a same-id create fails with
+        // `WalletAlreadyExists` until the removal below — so completing all
+        // id-keyed cleanup first makes the window unreachable rather than
+        // merely narrow.
         let owned_identity_ids: Vec<dpp::prelude::Identifier> = {
-            let mut wm = self.wallet_manager.write().await;
-            let ids = match wm.get_wallet_info(wallet_id) {
+            let wm = self.wallet_manager.read().await;
+            match wm.get_wallet_info(wallet_id) {
                 Some(info) => info
                     .identity_manager
                     .wallet_identities
@@ -469,22 +765,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     })
                     .unwrap_or_default(),
                 None => Vec::new(),
-            };
-            if let Err(e) = wm.remove_wallet(wallet_id) {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    error = %e,
-                    "remove_wallet: inner wallet-manager removal failed (state may be inconsistent)"
-                );
             }
-            ids
-        };
-
-        let removed = {
-            let mut wallets = self.wallets.write().await;
-            wallets
-                .remove(wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?
         };
 
         // Detach the wallet's shielded state from the network
@@ -497,6 +778,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // resurrecting private shielded history on disk after the
         // host believed the wallet was gone. Drops the registry +
         // persister entries and the per-subwallet store state.
+        //
+        // The handle is marked detached first: a caller that resolved
+        // this wallet before the removal can still be inside a bind
+        // (the seed-backed path resolves a mnemonic through the host,
+        // so it may take arbitrarily long), and its registration would
+        // otherwise land after the unregister below and resurrect
+        // exactly the state this call exists to drop. The flag is read
+        // inside the coordinator's install transaction, which the
+        // unregister also takes, so the two cannot interleave.
+        // Unconditional: a removal with no coordinator yet has nothing
+        // to unregister, but the handle must still be barred from
+        // binding onto one a later `configure_shielded` installs.
+        #[cfg(feature = "shielded")]
+        removed.mark_shielded_detached();
         #[cfg(feature = "shielded")]
         if let Some(coordinator) = self.shielded_coordinator().await {
             coordinator.unregister_wallet(*wallet_id).await;
@@ -508,13 +803,102 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .await;
         }
 
+        // Only now free the id in the inner manager — the LAST id-keyed step.
+        // An identity registered on this wallet after the snapshot above (a
+        // host racing an identity add against its own removal) is left as a
+        // stale sync row rather than unregistered post-removal, because a
+        // post-removal unregister-by-id would reopen the very window this
+        // ordering closes for a same-id recreation's rows. Surface it instead.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let late_identity_count = wm
+                .get_wallet_info(wallet_id)
+                .and_then(|info| info.identity_manager.wallet_identities.get(wallet_id))
+                .map(|inner| inner.len())
+                .unwrap_or(0)
+                .saturating_sub(owned_identity_ids.len());
+            if late_identity_count > 0 {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    late_identity_count,
+                    "remove_wallet: identities were added while the wallet was being removed; \
+                     their identity-sync rows are left for the next launch to reconcile"
+                );
+            }
+            if let Err(e) = wm.remove_wallet(wallet_id) {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "remove_wallet: inner wallet-manager removal failed (state may be inconsistent)"
+                );
+            }
+        }
+
+        // Test-only rendezvous: the window a concurrent same-id registration can
+        // publish a new generation into. Sits AFTER every id-keyed unregister,
+        // so state a midpoint recreation installs is never torn down by this
+        // removal. See `REMOVE_WALLET_MIDPOINT_HOOK`.
+        #[cfg(test)]
+        {
+            let pending = REMOVE_WALLET_MIDPOINT_HOOK
+                .lock()
+                .expect("remove-wallet midpoint hook mutex")
+                .as_ref()
+                .map(|hook| hook(wallet_id));
+            if let Some(rendezvous) = pending {
+                rendezvous.await;
+            }
+        }
+
+        // Remove the public-map entry only while it still names the generation
+        // validated under the gate. A concurrent same-id registration could have
+        // published a NEW generation here in the window since the inner removal
+        // above freed the id (see the "Removal is by generation identity" note on
+        // this method); removing by key would evict that live wallet and hand it
+        // to `tear_down` under the wrong gate.
+        {
+            // `rcu` keeps the generation check and the removal atomic: the
+            // closure sees the map the CAS will replace, and a concurrent
+            // publication retries the whole closure against the new map.
+            // The `Cell` therefore ends up holding the verdict of the
+            // attempt that actually committed.
+            let entry_is_ours = std::cell::Cell::new(false);
+            self.wallets.rcu(|wallets| {
+                let ours = wallets
+                    .get(wallet_id)
+                    .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), &generation));
+                entry_is_ours.set(ours);
+                if ours {
+                    let mut next = std::collections::BTreeMap::clone(wallets);
+                    next.remove(wallet_id);
+                    Arc::new(next)
+                } else {
+                    // Not ours: publish the map unchanged.
+                    Arc::clone(wallets)
+                }
+            });
+            if !entry_is_ours.get() {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    "remove_wallet: a new generation was registered under this id while the \
+                     previous one was being removed; leaving the new registration in place"
+                );
+            }
+        }
+
+        // Still under the generation's teardown gate: any deferred state naming
+        // this generation is dropped in the same critical section as the removal
+        // itself, so no payment operation can observe the wallet as live and then
+        // act on it after this returns.
+        tear_down(&removed);
+
         Ok(removed)
     }
 }
 
 #[cfg(test)]
 mod scoped_wallet_id_tests {
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
@@ -525,8 +909,7 @@ mod scoped_wallet_id_tests {
          abandon abandon abandon abandon abandon about";
 
     fn wallet_id_for(network: Network) -> [u8; 32] {
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
         let wallet =
             Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
                 .expect("wallet construction");
@@ -541,8 +924,7 @@ mod scoped_wallet_id_tests {
     /// "Networks" section can group a seed's sibling-network wallets.
     /// Mirrors the `register_wallet` derivation exactly.
     fn wallet_group_id_for(network: Network) -> [u8; 32] {
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
         let wallet =
             Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
                 .expect("wallet construction");
@@ -623,9 +1005,9 @@ mod scoped_wallet_id_tests {
 
 #[cfg(test)]
 mod register_wallet_duplicate_tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
 
@@ -667,11 +1049,90 @@ mod register_wallet_duplicate_tests {
     impl EventHandler for NoopEventHandler {}
     impl PlatformEventHandler for NoopEventHandler {}
 
+    /// Persister that records every store round so a test can assert on
+    /// exactly what registration hands the host.
+    #[derive(Default)]
+    struct RecordingPersister {
+        stores: Mutex<Vec<(WalletId, PlatformWalletChangeSet)>>,
+    }
+
+    impl PlatformWalletPersistence for RecordingPersister {
+        fn store(
+            &self,
+            wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.stores.lock().unwrap().push((wallet_id, changeset));
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// Registration must not run (or record) an identity scan: the wallet
+    /// is downgraded to external-signable before it could, so the scan
+    /// never reached Platform — it only left a spurious "incomplete at
+    /// index 0" verdict and one extra host persistence round behind.
+    /// Against the pre-fix `register_wallet` both assertions fail.
+    #[tokio::test]
+    async fn register_wallet_records_no_identity_scan_verdict() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(RecordingPersister::default());
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            event_handler,
+        ));
+
+        let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid test mnemonic")
+            .to_seed("");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("create should succeed");
+
+        // Read the verdict out before the await below (no std guard across it).
+        let persisted_no_scan = persister
+            .stores
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(_, cs)| cs.identity_scan_state.is_none() && cs.identities.is_none());
+        assert!(
+            persisted_no_scan,
+            "registration must not persist an identity-scan verdict or identities"
+        );
+
+        let wm = wallet.wallet_manager().read().await;
+        let info = wm
+            .get_wallet_info(&wallet.wallet_id())
+            .expect("wallet info");
+        assert!(
+            !info
+                .identity_manager
+                .identity_scan_is_incomplete(&wallet.wallet_id()),
+            "registration must not leave an incomplete-scan verdict behind"
+        );
+    }
+
     /// Build a manager wired to a no-op persister over a mock SDK. The
-    /// duplicate-create path under test never reaches the network: the
-    /// first `create` returns `Ok` (its only network touch — best-effort
-    /// `identity().sync()` — is logged-and-ignored), and the second
-    /// fails at `WalletManager::insert_wallet` before any query.
+    /// duplicate-create path under test never reaches the network:
+    /// registration runs no identity discovery, so the first `create`
+    /// returns `Ok` without a query, and the second fails at
+    /// `WalletManager::insert_wallet` before any.
     fn make_manager() -> Arc<PlatformWalletManager<NoopPersister>> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(NoopPersister);
@@ -691,8 +1152,7 @@ mod register_wallet_duplicate_tests {
         let manager = make_manager();
 
         let network = Network::Testnet;
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
         let seed_bytes = mnemonic.to_seed("");
 
         // First registration succeeds. `Some(0)` skips the SPV-tip
@@ -723,6 +1183,407 @@ mod register_wallet_duplicate_tests {
         assert!(
             matches!(err, PlatformWalletError::WalletAlreadyExists(_)),
             "duplicate create must map to WalletAlreadyExists, got: {err:?}"
+        );
+    }
+
+    /// PENDING-SPEND PROTECTION MUST SURVIVE WALLET RECREATION.
+    ///
+    /// If the in-broadcast fence lived in the `WalletGeneration` itself, it
+    /// would be not merely process-local but *generation*-local. Removing a
+    /// wallet and re-creating it under the same id mints a fresh generation,
+    /// and the fence map would go with the old one — while the signed
+    /// transaction it protects stays perfectly valid and can still be relayed
+    /// by a DAPI endpoint or a peer that retained it. The re-created wallet
+    /// would restore the persisted UTXO with neither the fence nor key-wallet's
+    /// memory-only reservation holding it, and could sign a conflicting spend
+    /// of the very same outpoint.
+    ///
+    /// Fences are therefore keyed by WALLET, not by generation: a generation
+    /// that replaces another under the same id inherits its predecessor's
+    /// pending-spend fences, and they are retired by the same evidence as ever —
+    /// an observed spend — not by the replacement.
+    ///
+    /// Without wallet-keyed fences the re-created wallet reports no conflict
+    /// at all.
+    #[tokio::test]
+    async fn a_recreated_wallet_inherits_the_pending_fences_of_the_generation_it_replaces() {
+        use dashcore::hashes::Hash;
+        use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, Txid, Witness};
+
+        let manager = make_manager();
+        let network = Network::Testnet;
+        let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid test mnemonic")
+            .to_seed("");
+
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("first create should succeed");
+        let wallet_id = wallet.wallet_id();
+
+        // One dispatch that reached the network and has NOT been observed
+        // spent — the state that must outlive the generation holding it.
+        let funded = OutPoint {
+            txid: Txid::from_slice(&[0x7E; 32]).expect("valid txid"),
+            vout: 0,
+        };
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: funded,
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffff_ffff,
+                witness: Witness::new(),
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        wallet
+            .generation()
+            .pin_in_broadcast(&tx)
+            .settle_pending_spend();
+        assert_eq!(
+            wallet.generation().in_broadcast_conflict(&tx),
+            Some(funded),
+            "the dispatching wallet must fence its own pending spend"
+        );
+
+        // Remove and re-create under the same id — the host-visible
+        // "delete and restore this wallet" round trip.
+        manager.remove_wallet(&wallet_id).await.expect("remove");
+        let recreated = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("re-create should succeed");
+        assert_eq!(
+            recreated.wallet_id(),
+            wallet_id,
+            "the re-created wallet must occupy the same id"
+        );
+
+        assert_eq!(
+            recreated.generation().in_broadcast_conflict(&tx),
+            Some(funded),
+            "a wallet re-created under the same id must inherit the pending-spend \
+             fence of the generation it replaced — the signed transaction that \
+             fence protects is still valid and still relayable"
+        );
+    }
+
+    /// The inheritance above is per WALLET, not global: one wallet's dispatch
+    /// must never fence another wallet's inputs.
+    #[tokio::test]
+    async fn fences_do_not_leak_between_different_wallets() {
+        use dashcore::hashes::Hash;
+        use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, Txid, Witness};
+
+        let manager = make_manager();
+        let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid test mnemonic")
+            .to_seed("");
+
+        // Same seed, DIFFERENT networks — key-wallet stamps a network-scoped
+        // id, so these are two distinct wallets in one manager.
+        let first = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("testnet create");
+        let second = manager
+            .create_wallet_from_seed_bytes(
+                Network::Devnet,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("devnet create");
+        assert_ne!(first.wallet_id(), second.wallet_id());
+
+        let funded = OutPoint {
+            txid: Txid::from_slice(&[0x7F; 32]).expect("valid txid"),
+            vout: 0,
+        };
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: funded,
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffff_ffff,
+                witness: Witness::new(),
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        first
+            .generation()
+            .pin_in_broadcast(&tx)
+            .settle_pending_spend();
+
+        assert_eq!(
+            second.generation().in_broadcast_conflict(&tx),
+            None,
+            "a different wallet's fence must not block this one's builds"
+        );
+    }
+}
+
+/// Removal versus a same-id re-registration that lands *during* the removal.
+///
+/// The invariant: `remove_wallet_with_teardown` removes, returns and tears down
+/// exactly the wallet generation it validated under that generation's lifecycle
+/// gate — never a different generation that appeared under the same
+/// `wallet_id` while the removal was in progress.
+#[cfg(test)]
+mod remove_versus_recreate_tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use key_wallet::mnemonic::Mnemonic;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Network;
+
+    use super::REMOVE_WALLET_MIDPOINT_HOOK;
+    use crate::test_support::test_platform_wallet_manager;
+    use crate::wallet::core::WalletGeneration;
+    use crate::wallet::identity::state::managed_identity::ManagedIdentity;
+    use crate::wallet::PlatformWallet;
+    use dpp::identity::Identity;
+    use dpp::prelude::Identifier;
+
+    /// The identity id the scenario threads through both generations: G1 owns
+    /// it (so the removal's id-keyed unregister names it), and the midpoint
+    /// recreation re-registers it as G2's — the row the old ordering deleted.
+    const SHARED_IDENTITY_ID: [u8; 32] = [0x1D; 32];
+
+    /// The mnemonic `test_platform_wallet_manager` builds its wallet from, so
+    /// re-registering from the same seed collides on the same network-scoped
+    /// `wallet_id` — which is the whole point of the scenario.
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    /// Clears [`REMOVE_WALLET_MIDPOINT_HOOK`] on drop, including on panic, so a
+    /// failing assertion can never leave the hook armed for another test in the
+    /// same binary.
+    struct MidpointHookGuard;
+
+    impl Drop for MidpointHookGuard {
+        fn drop(&mut self) {
+            if let Ok(mut slot) = REMOVE_WALLET_MIDPOINT_HOOK.lock() {
+                *slot = None;
+            }
+        }
+    }
+
+    /// Requirement: a wallet generation registered while a removal is in flight
+    /// must survive that removal — in BOTH maps — and the removal must return
+    /// and tear down the generation it actually validated.
+    ///
+    /// Deterministic by construction: the re-registration runs from a rendezvous
+    /// fired inside the removal, in the exact window between the inner-manager
+    /// removal and the public-map removal, so there is no completion order to
+    /// race and no sleep. The registration itself is the real
+    /// `create_wallet_from_seed_bytes` → `register_wallet` path, publishing into
+    /// the inner `WalletManager` and then `self.wallets` in the production
+    /// order.
+    ///
+    /// Why that window is reachable in production: the removal frees the id in
+    /// the inner manager and only then acquires `self.wallets` — two separately
+    /// locked stages with no happens-before edge to a concurrent registration,
+    /// which takes no lifecycle gate at all (it mints its own generation). A
+    /// remover descheduled in that gap resumes into a map that already names the
+    /// new generation.
+    ///
+    /// Before the fix the removal took the public-map entry by KEY: it evicted
+    /// the freshly registered generation — leaving it registered in the inner
+    /// manager but invisible and unremovable through `self.wallets` — returned
+    /// it to the caller, and handed it to `tear_down`, which sweeps that
+    /// generation's registry tokens and V2 finalized-transaction handles while
+    /// holding only the OLD generation's gate. The new generation's in-flight
+    /// payment operations were therefore not excluded, which is the one property
+    /// the gate exists to provide.
+    #[tokio::test]
+    async fn removal_leaves_a_generation_registered_during_it_intact() {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let original = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("fixture wallet is registered");
+
+        // Give G1 an owned identity + its identity-sync row, so the removal's
+        // id-keyed unregister has a real target — the state class a same-seed
+        // recreation re-registers under the identical identity id.
+        let identity_id = Identifier::new(SHARED_IDENTITY_ID);
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("fixture wallet info");
+            let identity = Identity::new_with_id_and_keys(
+                identity_id,
+                Default::default(),
+                dpp::version::PlatformVersion::latest(),
+            )
+            .expect("bare test identity");
+            info.identity_manager
+                .wallet_identities
+                .entry(wallet_id)
+                .or_default()
+                .insert(0, ManagedIdentity::new(identity, 0));
+        }
+        manager
+            .identity_sync_manager
+            .register_identity(identity_id, [])
+            .await;
+
+        // Filled by the rendezvous with the generation the re-registration
+        // publishes, so the assertions can name it rather than infer it.
+        let recreated: Arc<Mutex<Option<Arc<PlatformWallet>>>> = Arc::new(Mutex::new(None));
+
+        let _hook_guard = MidpointHookGuard;
+        {
+            let manager_for_hook = Arc::clone(&manager);
+            let recreated_slot = Arc::clone(&recreated);
+            // One-shot: the re-registration must not recurse into a later
+            // removal, and no other test in this binary may see the hook.
+            let fired = AtomicBool::new(false);
+            *REMOVE_WALLET_MIDPOINT_HOOK
+                .lock()
+                .expect("midpoint hook mutex") = Some(Box::new(move |id| {
+                let already_fired = fired.swap(true, Ordering::SeqCst);
+                let manager = Arc::clone(&manager_for_hook);
+                let recreated_slot = Arc::clone(&recreated_slot);
+                let id = *id;
+                Box::pin(async move {
+                    if already_fired {
+                        return;
+                    }
+                    let mnemonic =
+                        Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
+                    let seed_bytes = mnemonic.to_seed("");
+                    // The real registration path: inner `WalletManager` first,
+                    // then `self.wallets`. `Some(0)` skips the SPV-tip lookup.
+                    let wallet = manager
+                        .create_wallet_from_seed_bytes(
+                            Network::Testnet,
+                            &seed_bytes,
+                            WalletAccountCreationOptions::Default,
+                            Some(0),
+                        )
+                        .await
+                        .expect(
+                            "the id is free in the inner manager at this point, so a same-seed \
+                             re-registration must succeed",
+                        );
+                    assert_eq!(wallet.wallet_id(), id, "the fixture seeds must collide");
+                    // G2 re-registers the SAME identity (same seed derives the
+                    // same identities) — the id-keyed sync row the old teardown
+                    // ordering deleted after the midpoint.
+                    manager
+                        .identity_sync_manager
+                        .register_identity(Identifier::new(SHARED_IDENTITY_ID), [])
+                        .await;
+                    *recreated_slot.lock().expect("recreated slot") = Some(wallet);
+                })
+            }));
+        }
+
+        // Capture what teardown was actually handed.
+        let torn_down: Arc<Mutex<Option<Arc<WalletGeneration>>>> = Arc::new(Mutex::new(None));
+        let torn_down_slot = Arc::clone(&torn_down);
+
+        let removed = manager
+            .remove_wallet_with_teardown(&wallet_id, move |wallet| {
+                *torn_down_slot.lock().expect("torn-down slot") =
+                    Some(Arc::clone(wallet.generation()));
+            })
+            .await
+            .expect("removal of the validated generation succeeds");
+
+        let recreated = recreated
+            .lock()
+            .expect("recreated slot")
+            .clone()
+            .expect("the rendezvous must have re-registered the wallet");
+        assert!(
+            !Arc::ptr_eq(original.generation(), recreated.generation()),
+            "the fixture must produce two distinct generations under one wallet id"
+        );
+
+        // 1. The removal returns the generation it validated under the gate.
+        assert!(
+            Arc::ptr_eq(removed.generation(), original.generation()),
+            "remove_wallet_with_teardown returned a generation it never validated — it took the \
+             public-map entry by key and got the generation registered during the removal"
+        );
+
+        // 2. …and tears down that same generation. Sweeping the other one here
+        //    would run without holding ITS gate, so its in-flight payment
+        //    operations would not be excluded.
+        let torn_down = torn_down
+            .lock()
+            .expect("torn-down slot")
+            .clone()
+            .expect("tear_down must have run");
+        assert!(
+            Arc::ptr_eq(&torn_down, original.generation()),
+            "tear_down was handed a generation whose lifecycle gate this removal does not hold"
+        );
+
+        // 3. The generation registered during the removal is still published.
+        let still_registered = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("a wallet registered during a removal must remain in the public map");
+        assert!(
+            Arc::ptr_eq(still_registered.generation(), recreated.generation()),
+            "the public map must still name the generation the registration published"
+        );
+
+        // 4. …and both maps agree about it: `is_current_generation` compares the
+        //    handle against the inner `WalletManager`, so this fails if the
+        //    removal evicted it from one map only.
+        assert!(
+            recreated.core().is_current_generation().await,
+            "the re-registered generation must be live in both the inner manager and the public \
+             map — evicting it from one leaves an invisible, unremovable wallet"
+        );
+
+        // 5. The removed generation is gone.
+        assert!(
+            !original.core().is_current_generation().await,
+            "the validated generation must be gone from the inner manager"
+        );
+
+        // 6. The id-keyed side-registry state the recreation installed
+        //    survived. Every id-keyed unregister ran BEFORE the inner removal
+        //    freed the wallet id, so it could only touch G1's rows — with the
+        //    old ordering (unregisters after the midpoint) this row was
+        //    deleted out from under the live G2.
+        assert!(
+            manager
+                .identity_sync_manager
+                .is_identity_registered(&identity_id)
+                .await,
+            "the removal's id-keyed unregister deleted the identity-sync row the recreated \
+             generation registered mid-removal"
         );
     }
 }

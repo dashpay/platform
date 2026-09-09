@@ -5,9 +5,7 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 
 use crate::ProtocolError;
 
-use crate::document::serialization_traits::{
-    DocumentCborMethodsV0, DocumentPlatformValueMethodsV0,
-};
+use crate::document::serialization_traits::DocumentCborMethodsV0;
 use crate::document::v0::DocumentV0;
 use crate::version::PlatformVersion;
 use ciborium::Value as CborValue;
@@ -60,6 +58,15 @@ pub struct DocumentForCbor {
 
     #[serde(rename = "$creatorId")]
     pub creator_id: Option<Identifier>,
+
+    /// The contract-version stamp. Skipped when absent so pre-stamp CBOR
+    /// output stays byte-identical; `default` keeps old CBOR readable.
+    #[serde(
+        rename = "$contractVersion",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub contract_version: Option<u32>,
 }
 
 #[cfg(feature = "cbor")]
@@ -82,8 +89,10 @@ impl TryFrom<DocumentV0> for DocumentForCbor {
             updated_at_core_block_height,
             transferred_at_core_block_height,
             creator_id,
+            contract_version,
         } = value;
         Ok(DocumentForCbor {
+            contract_version,
             id: id.to_buffer(),
             properties: Value::convert_to_cbor_map(properties)
                 .map_err(ProtocolError::ValueError)?,
@@ -148,8 +157,12 @@ impl DocumentV0 {
             .remove_optional_identifier(property_names::CREATOR_ID)
             .map_err(ProtocolError::ValueError)?;
 
+        let contract_version =
+            document_map.remove_optional_integer(property_names::CONTRACT_VERSION)?;
+
         // dev-note: properties is everything other than the id and owner id
         Ok(DocumentV0 {
+            contract_version,
             properties: document_map,
             owner_id: Identifier::new(owner_id),
             id: Identifier::new(id),
@@ -191,8 +204,13 @@ impl DocumentCborMethodsV0 for DocumentV0 {
     }
 
     fn to_cbor_value(&self) -> Result<CborValue, ProtocolError> {
-        self.to_object()
-            .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
+        // After Phase D step 8 slice A, the V0 trait `to_object` was
+        // deleted (1:1 canonical equivalent). Inline the body —
+        // `IdentityPublicKeyV0` doesn't derive `ValueConvertible` directly
+        // (only the outer `Document` enum does), so we go through
+        // `platform_value::to_value` directly.
+        let value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
+        value.try_into().map_err(ProtocolError::ValueError)
     }
 
     /// Serializes the Document to CBOR.
@@ -226,6 +244,7 @@ mod tests {
         properties.insert("name".to_string(), Value::Text("Alice".to_string()));
         properties.insert("age".to_string(), Value::U64(30));
         DocumentV0 {
+            contract_version: None,
             id,
             owner_id,
             properties,
@@ -246,6 +265,39 @@ mod tests {
     // ================================================================
     //  Round-trip: to_cbor -> from_cbor preserves document data
     // ================================================================
+
+    #[test]
+    fn cbor_round_trip_preserves_contract_version_stamp() {
+        use crate::document::Document;
+
+        let platform_version = PlatformVersion::latest();
+        let mut document = make_document_v0_with_timestamps();
+        document.contract_version = Some(7);
+
+        let cbor = document.to_cbor().expect("expected to serialize to cbor");
+        let restored = Document::from_cbor(&cbor, None, None, platform_version)
+            .expect("expected to deserialize from cbor");
+
+        let Document::V0(restored) = restored;
+        assert_eq!(restored.contract_version, Some(7));
+        assert_eq!(restored.id, document.id);
+        assert_eq!(restored.revision, document.revision);
+        // (full property equality is not asserted: CBOR decodes integers as
+        // I128, a pre-existing normalization of this legacy path)
+        assert_eq!(
+            restored.properties.get("name"),
+            document.properties.get("name")
+        );
+
+        // An unstamped document round-trips to no stamp (the key is skipped
+        // entirely when absent, keeping pre-stamp CBOR byte-identical)
+        let unstamped = make_document_v0_with_timestamps();
+        let unstamped_cbor = unstamped.to_cbor().expect("expected to serialize to cbor");
+        let restored_unstamped = Document::from_cbor(&unstamped_cbor, None, None, platform_version)
+            .expect("expected to deserialize from cbor");
+        let Document::V0(restored_unstamped) = restored_unstamped;
+        assert_eq!(restored_unstamped.contract_version, None);
+    }
 
     #[test]
     fn cbor_round_trip_with_random_dashpay_profile() {

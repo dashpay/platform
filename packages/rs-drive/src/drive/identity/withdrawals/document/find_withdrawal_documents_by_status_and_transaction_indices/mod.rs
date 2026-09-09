@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -34,9 +35,16 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.find_withdrawal_documents_by_status_and_transaction_indices_v1(
+                status,
+                transaction_indices,
+                limit,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "find_withdrawal_documents_by_status_and_transaction_indices".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

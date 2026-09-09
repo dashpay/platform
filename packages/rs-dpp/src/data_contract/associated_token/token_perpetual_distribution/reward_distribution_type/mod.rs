@@ -15,6 +15,7 @@ use crate::ProtocolError;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[serde(tag = "$type", rename_all = "camelCase")]
 pub enum RewardDistributionType {
     /// An amount of tokens is emitted every n blocks.
     /// The start and end are included if set.
@@ -565,5 +566,112 @@ impl fmt::Display for RewardDistributionType {
                 Ok(())
             }
         }
+    }
+}
+
+// --- canonical conversion trait impls (unification pass 1) ---
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for RewardDistributionType {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for RewardDistributionType {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    // Externally tagged enum: each variant becomes `{<VariantName>: {<fields>}}`.
+    // Inner `function: DistributionFunction` is itself externally tagged.
+    // Round-trip covers one variant per interval-type to lock in the typed
+    // sizes (`u64` for block/timestamp, `u16` for epoch).
+
+    #[test]
+    fn json_round_trip_block_based() {
+        use crate::serialization::JsonConvertible;
+        let original = RewardDistributionType::BlockBasedDistribution {
+            interval: 100,
+            function: DistributionFunction::FixedAmount { amount: 50 },
+        };
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "$type": "blockBasedDistribution",
+                "interval": 100,
+                "function": { "$type": "fixedAmount", "amount": 50 }
+            })
+        );
+        let recovered = RewardDistributionType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_epoch_based() {
+        use crate::serialization::JsonConvertible;
+        let original = RewardDistributionType::EpochBasedDistribution {
+            interval: 7,
+            function: DistributionFunction::FixedAmount { amount: 1_000 },
+        };
+        let json = original.to_json().expect("to_json");
+        // `EpochInterval` is `u16` but JSON erases the size.
+        assert_eq!(
+            json,
+            json!({
+                "$type": "epochBasedDistribution",
+                "interval": 7,
+                "function": { "$type": "fixedAmount", "amount": 1_000 }
+            })
+        );
+        let recovered = RewardDistributionType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_block_based() {
+        use crate::serialization::ValueConvertible;
+        let original = RewardDistributionType::BlockBasedDistribution {
+            interval: 100,
+            function: DistributionFunction::FixedAmount { amount: 50 },
+        };
+        let value = original.to_object().expect("to_object");
+        // `BlockHeightInterval` is `u64`. `TokenAmount` is `u64`.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$type": "blockBasedDistribution",
+                "interval": 100u64,
+                "function": { "$type": "fixedAmount", "amount": 50u64 }
+            })
+        );
+        let recovered = RewardDistributionType::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_epoch_based() {
+        use crate::serialization::ValueConvertible;
+        let original = RewardDistributionType::EpochBasedDistribution {
+            interval: 7,
+            function: DistributionFunction::FixedAmount { amount: 1_000 },
+        };
+        let value = original.to_object().expect("to_object");
+        // `EpochInterval` is `u16` → `Value::U16`.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$type": "epochBasedDistribution",
+                "interval": 7u16,
+                "function": { "$type": "fixedAmount", "amount": 1_000u64 }
+            })
+        );
+        let recovered = RewardDistributionType::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

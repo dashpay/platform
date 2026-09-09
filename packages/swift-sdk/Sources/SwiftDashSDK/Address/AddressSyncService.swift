@@ -119,7 +119,7 @@ extension SDK {
                             if var cfg = ffiConfig {
                                 return withUnsafePointer(to: &cfg) { cfgPtr in
                                     dash_sdk_sync_addresses_batch_with_result(
-                                        UnsafePointer(sdkPtr.ptr),
+                                        sdkPtr.ptr,
                                         keysBase, indicesBase, count, keySizeU32, gapLimit,
                                         kbKeysPtr, kbIndPtr, kbNonPtr, kbAmtPtr, kbCount,
                                         cfgPtr, syncHeight, syncTimestamp, recentBlock
@@ -127,7 +127,7 @@ extension SDK {
                                 }
                             } else {
                                 return dash_sdk_sync_addresses_batch_with_result(
-                                    UnsafePointer(sdkPtr.ptr),
+                                    sdkPtr.ptr,
                                     keysBase, indicesBase, count, keySizeU32, gapLimit,
                                     kbKeysPtr, kbIndPtr, kbNonPtr, kbAmtPtr, kbCount,
                                     nil, syncHeight, syncTimestamp, recentBlock
@@ -182,6 +182,6 @@ extension SDK {
 // MARK: - Private Sendable Wrapper
 
 private final class AddressSyncSendableSdkPtr: @unchecked Sendable {
-    let ptr: UnsafeMutablePointer<SDKHandle>
-    init(_ p: UnsafeMutablePointer<SDKHandle>) { self.ptr = p }
+    let ptr: OpaquePointer
+    init(_ p: OpaquePointer) { self.ptr = p }
 }

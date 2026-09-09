@@ -1,5 +1,7 @@
 pub mod v0_methods;
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::tokens::emergency_action::TokenEmergencyAction;
 use bincode::{Decode, Encode};
@@ -7,6 +9,7 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq)]
 #[cfg_attr(
     feature = "serde-conversion",

@@ -5,13 +5,16 @@ use std::sync::Arc;
 use dashcore::{OutPoint, Txid};
 use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
-use key_wallet::managed_account::address_pool::{AddressInfo, AddressPool, AddressPoolType};
+use key_wallet::managed_account::address_pool::{
+    AddressInfo, AddressPool, AddressPoolType, AddressState,
+};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::utxo::Utxo;
 use key_wallet::WalletCoreBalance;
 
-use crate::changeset::PlatformWalletPersistence;
+use crate::changeset::{PersistenceCapabilities, PlatformWalletPersistence};
 use crate::manager::dashpay_sync::DashPaySyncManager;
+use crate::manager::dpns_sync::DpnsSyncManager;
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
@@ -19,6 +22,38 @@ use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
+
+/// Result of [`PlatformWalletManager::provider_masternode_txs_blocking`]:
+/// the wallet's network (for base58 address encoding on the FFI side),
+/// its retained provider special transactions with their confirmation
+/// height and in-block position (for same-block ordering), a DML snapshot
+/// (`proTxHash -> is_valid`, `None` when the
+/// deterministic masternode list isn't available yet), and two
+/// derive-and-compare ownership maps for the key kinds that live ONLY in
+/// payloads (never as on-chain addresses):
+///
+///   * operator BLS public key (48 bytes) ⇒ derivation index, and
+///   * platform node id (SHA256[..20] Tenderdash, 20 bytes) ⇒ derivation index.
+///
+/// Owner / voting keys ARE on-chain addresses, so their ownership is
+/// resolved app-side against the persisted `PersistentCoreAddress` rows;
+/// operator / platform keys can't be, so they're derived here from the
+/// wallet's provider accounts and matched against each masternode's
+/// payload key. Operator keys derive from the account xpub with no seed;
+/// platform-node keys need the seed (resident wallets only — watch-only
+/// yields an empty map, a documented follow-up).
+pub type ProviderMasternodeTxs = (
+    dashcore::Network,
+    // Each tuple is `(block_height, in_block_position, tx)`. The position
+    // orders same-block provider updates for the aggregation's latest-wins
+    // (Core applies them in `block.vtx` order). Stamped during block
+    // processing (rust-dashcore#891); 0 for legacy rows persisted before
+    // the field existed.
+    Vec<(u32, u32, dashcore::Transaction)>,
+    Option<std::collections::HashMap<[u8; 32], bool>>,
+    std::collections::HashMap<[u8; 48], u32>,
+    std::collections::HashMap<[u8; 20], u32>,
+);
 
 use super::PlatformWalletManager;
 
@@ -126,11 +161,10 @@ pub struct TrackedAssetLockSnapshot {
 
 /// Snapshot of the per-account metadata for a single account.
 ///
-/// `is_watch_only` and `custom_name` were dropped after upstream
-/// removed both from `ManagedCoreFundsAccount` / `ManagedCoreKeysAccount`.
-/// Watch-only is now a wallet-level property (read off `Wallet.wallet_type`)
-/// and `AccountMetadata` no longer exists. Re-add fields here only if
-/// the upstream variants gain them again.
+/// Carries no `is_watch_only` or `custom_name`: upstream's
+/// `ManagedCoreFundsAccount` / `ManagedCoreKeysAccount` have neither, and
+/// watch-only is a wallet-level property (read off `Wallet.wallet_type`).
+/// Add such fields here only if the upstream variants gain them.
 #[derive(Debug, Clone, Copy)]
 pub struct AccountMetadataSnapshot {
     pub total_transactions: u64,
@@ -225,6 +259,14 @@ pub struct AddressBanInfoSnapshot {
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
+    /// Persistence contracts attested by this manager's configured backend.
+    ///
+    /// The value is safe to query before wallets are loaded or created and is
+    /// immutable for the manager lifetime because the persistence backend is.
+    pub fn persistence_capabilities(&self) -> PersistenceCapabilities {
+        self.persister.persistence_capabilities()
+    }
+
     /// The SDK instance.
     pub fn sdk(&self) -> &dash_sdk::Sdk {
         &self.sdk
@@ -258,6 +300,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Clone the `Arc<SpvRuntime>` so callers (e.g. FFI) can invoke
     /// [`SpvRuntime::spawn_run_loop`] which takes `&Arc<Self>`.
+    /// Shared handle to the Platform SDK, for work that outlives a borrow
+    /// of the manager (e.g. a locate run on a worker thread).
+    pub fn sdk_arc(&self) -> Arc<dash_sdk::Sdk> {
+        Arc::clone(&self.sdk)
+    }
+
     pub fn spv_arc(&self) -> Arc<SpvRuntime> {
         Arc::clone(&self.spv_manager)
     }
@@ -298,6 +346,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         Arc::clone(&self.dashpay_sync_manager)
     }
 
+    /// Access the recurring DPNS username-marketplace sync coordinator.
+    pub fn dpns_sync(&self) -> &DpnsSyncManager {
+        &self.dpns_sync_manager
+    }
+
+    /// Clone the `Arc<DpnsSyncManager>` so callers (e.g. FFI) can invoke
+    /// [`DpnsSyncManager::start`] which takes `&Arc<Self>`.
+    pub fn dpns_sync_arc(&self) -> Arc<DpnsSyncManager> {
+        Arc::clone(&self.dpns_sync_manager)
+    }
+
     /// Access the shielded sync coordinator.
     #[cfg(feature = "shielded")]
     pub fn shielded_sync(&self) -> &ShieldedSyncManager {
@@ -313,15 +372,31 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 
     /// Get a clone of a wallet by its ID.
+    ///
+    /// The lookup is wait-free since the map became an `ArcSwap`, so this
+    /// suspends at no point; it delegates to the synchronous twin and keeps
+    /// its `async` signature for source compatibility with existing callers.
     pub async fn get_wallet(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
-        let wallets = self.wallets.read().await;
-        wallets.get(wallet_id).cloned()
+        self.get_wallet_blocking(wallet_id)
+    }
+
+    /// Synchronous twin of [`Self::get_wallet`] for FFI entry points that
+    /// need to clone the `Arc<PlatformWallet>` out before doing network work
+    /// outside the handle-storage guard.
+    ///
+    /// Named `_blocking` for the callers it serves, not for what it does: the
+    /// wallets map is an `ArcSwap`, so this load is wait-free and cannot block
+    /// or panic inside a runtime the way the previous `blocking_read` could.
+    pub fn get_wallet_blocking(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
+        self.wallets.load().get(wallet_id).cloned()
     }
 
     /// List all wallet IDs.
+    ///
+    /// Wait-free like [`Self::get_wallet`]; delegates to the synchronous
+    /// twin and keeps its `async` signature for source compatibility.
     pub async fn wallet_ids(&self) -> Vec<WalletId> {
-        let wallets = self.wallets.read().await;
-        wallets.keys().copied().collect()
+        self.list_wallet_ids_blocking()
     }
 
     /// Read per-account balance + key-usage snapshots for a wallet.
@@ -343,6 +418,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let Some(info) = wm.get_wallet_info(wallet_id) else {
             return Vec::new();
         };
+        let last_processed_height = info.core_wallet.metadata.last_processed_height;
         info.core_wallet
             .accounts
             .all_accounts()
@@ -351,7 +427,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // Balance lives on the funds-bearing variant only;
                 // keys-only accounts (identity, asset-lock, provider)
                 // never carry UTXOs.
-                let balance = account.as_funds().map(|a| a.balance).unwrap_or_default();
+                //
+                // Computed FRESH from the account's UTXO set — NOT the cached
+                // `a.balance` field. The cache refreshes only when transaction
+                // processing runs `update_balance()`, and a self-authored
+                // asset-lock spend can leave it stale long after the UTXO set
+                // (which coin selection reads) has moved on. Deriving from the
+                // same source selection uses makes disagreement impossible;
+                // the fold is bounded by the account's UTXO count.
+                let balance = account
+                    .as_funds()
+                    .map(|a| computed_core_balance(a, last_processed_height))
+                    .unwrap_or_default();
                 // Walk every pool on the account, sum
                 // `used` + total entries. Cheap — pools are bounded by
                 // the gap limit.
@@ -360,8 +447,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .address_pools()
                     .iter()
                     .fold((0u32, 0u32), |(used, total), pool| {
-                        let pool_used =
-                            pool.addresses.values().filter(|info| info.used).count() as u32;
+                        // "used" counts only funded addresses; a `Reserved`
+                        // address is handed out but not yet used.
+                        let pool_used = pool
+                            .addresses
+                            .values()
+                            .filter(|info| matches!(info.state, AddressState::Used))
+                            .count() as u32;
                         let pool_total = pool.addresses.len() as u32;
                         (used + pool_used, total + pool_total)
                     });
@@ -380,10 +472,22 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     // -----------------------------------------------------------------
 
     /// Atomic snapshot of every wallet id currently registered on the
-    /// manager. Cheap (`Arc<RwLock>` read + `BTreeMap` key clone).
+    /// manager. Cheap (wait-free `ArcSwap` load + `BTreeMap` key clone).
     pub fn list_wallet_ids_blocking(&self) -> Vec<WalletId> {
-        let wallets = self.wallets.blocking_read();
-        wallets.keys().copied().collect()
+        self.wallets.load().keys().copied().collect()
+    }
+
+    /// Network a registered wallet belongs to, or `None` when the id is
+    /// unknown.
+    ///
+    /// Exists for FFI callers that hold a manager handle and a wallet id but
+    /// no wallet handle, and need the network before they can build the
+    /// per-call key material a wallet operation requires (resolving a master
+    /// xpriv, constructing a contact-crypto provider). Blocking and cheap: one
+    /// `RwLock` read, no I/O.
+    pub fn wallet_network_blocking(&self, wallet_id: &WalletId) -> Option<key_wallet::Network> {
+        let wm = self.wallet_manager.blocking_read();
+        Some(wm.get_wallet_info(wallet_id)?.core_wallet.network())
     }
 
     /// Snapshot of [`PlatformAddressSyncManager`] tunables and last-
@@ -391,9 +495,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// registered wallet participates in each pass since the sync
     /// manager doesn't keep a separate watch list.
     pub fn platform_address_sync_config_blocking(&self) -> PlatformAddressSyncConfigSnapshot {
-        let wallets = self.wallets.blocking_read();
-        let count = wallets.len();
-        drop(wallets);
+        let count = self.wallets.load().len();
         let interval = self.platform_address_sync_manager.interval();
         let last = self
             .platform_address_sync_manager
@@ -458,6 +560,64 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         })
     }
 
+    /// Rewind a single wallet's SPV filter-scan checkpoint
+    /// (`synced_height`) to `from_height`, arming an organic filter
+    /// rescan.
+    ///
+    /// This is the write half of the same mechanism `reconcile_dashpay_rescan`
+    /// uses for historical-contact backfill. It mutates the *shared*
+    /// `wallet_manager` (`Arc<RwLock<..>>`) that the running `DashSpvClient`
+    /// holds a clone of — so the change is observed by the live filter-sync
+    /// loop: on its next tick `FiltersManager` sees this wallet in
+    /// `wallets_behind(committed_height)`, calls `reset_for_rescan()`, rewinds
+    /// its committed height to this wallet's `synced_height`, and re-downloads /
+    /// re-matches compact filters from there.
+    ///
+    /// Unlike the `WalletInterface::update_wallet_synced_height` trait method
+    /// (which is forward-only and silently ignores a lower value), this calls
+    /// the core wallet's unconditional setter only after verifying that
+    /// `from_height` is strictly below the current checkpoint. Equal/forward
+    /// requests leave the checkpoint untouched; this API can never advance it.
+    ///
+    /// `synced_height` may regress here: that is safe because it is the
+    /// filter-scan checkpoint, decoupled from the monotonic
+    /// `last_processed_height`, and every persisted sync cursor is
+    /// monotonic-max guarded (see `reconcile_dashpay_rescan`'s note), so a
+    /// transient rewind cannot corrupt state or persist a lower cursor.
+    ///
+    /// The rewound checkpoint lives only in the in-memory `WalletManager`; this
+    /// call does not persist it. If the process dies before the rescan finishes,
+    /// the host must issue this request again after restart. Requires SPV
+    /// running for an immediate effect; otherwise it takes effect when SPV next
+    /// starts in the same process and its filter loop first ticks.
+    ///
+    /// Returns `false` when no wallet matches `wallet_id`.
+    pub fn spv_rescan_filters_blocking(&self, wallet_id: &WalletId, from_height: u32) -> bool {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let mut wm = self.wallet_manager.blocking_write();
+        let Some(info) = wm.get_wallet_info_mut(wallet_id) else {
+            return false;
+        };
+        let current_height = info.core_wallet.metadata.synced_height;
+        if from_height >= current_height {
+            tracing::debug!(
+                wallet_id = %hex::encode(wallet_id),
+                from_height,
+                current_height,
+                "SPV rescan: ignored non-rewind checkpoint request"
+            );
+            return true;
+        }
+        info.core_wallet.update_synced_height(from_height);
+        tracing::info!(
+            wallet_id = %hex::encode(wallet_id),
+            from_height,
+            "SPV rescan: rewound wallet synced_height to arm a filter rescan"
+        );
+        true
+    }
+
     /// Snapshot of identity-wallet scan state for a single wallet.
     /// See [`IdentityWalletStateSnapshot`] for the field doc and the
     /// upstream renaming history (the legacy `last_scanned_index`
@@ -498,9 +658,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         wallet_id: &WalletId,
     ) -> Option<PlatformAddressProviderStateSnapshot> {
-        let wallets = self.wallets.blocking_read();
-        let wallet = wallets.get(wallet_id)?.clone();
-        drop(wallets);
+        let wallet = self.wallets.load().get(wallet_id)?.clone();
         let provider_lock = wallet.platform().provider_for_diagnostics();
         let guard = provider_lock.blocking_read();
         let Some(provider) = guard.as_ref() else {
@@ -547,6 +705,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     AssetLockStatus::InstantSendLocked => 2,
                     AssetLockStatus::ChainLocked => 3,
                     AssetLockStatus::Consumed => 4,
+                    AssetLockStatus::RecoveredFromChain => 5,
                 };
                 let (instant_lock_present, chain_lock_height) = match &lock.proof {
                     Some(dpp::prelude::AssetLockProof::Instant(_)) => (true, 0u32),
@@ -731,6 +890,172 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         iter.take(take).map(tx_record_snapshot).collect()
     }
 
+    /// Provider special transactions (ProRegTx / ProUpServTx / ProUpRegTx
+    /// / ProUpRevTx) across all of a wallet's accounts, deduplicated by
+    /// txid, each paired with its confirmation height (0 when
+    /// unconfirmed). The source for masternode aggregation.
+    ///
+    /// rust-dashcore #876 retains provider-payload records on the
+    /// provider-key accounts (owner / voting / operator / platform) past
+    /// chainlock finalization even with `keep-finalized-transactions` off
+    /// (the mobile default), so — unlike `account_transactions_blocking`
+    /// above — this is populated in every feature configuration. Deduped
+    /// by txid because one ProRegTx matches both the owner- and
+    /// voting-key accounts, so its record is retained on each.
+    ///
+    /// Caveat: records evicted *before* the #876 bump aren't resident
+    /// until a filter rescan re-matches them, so on an existing install
+    /// the set fills in after a Rescan.
+    ///
+    /// Returns `None` only when the wallet id isn't managed (an empty vec
+    /// means "no provider txs yet"). The wallet's `Network` rides along so
+    /// the FFI can encode owner / voting key hashes to base58 addresses,
+    /// plus a DML snapshot (`proTxHash -> is_valid`, `None` when the list
+    /// isn't available yet) so the FFI can derive Active / Inactive /
+    /// Retired / Unknown status.
+    pub fn provider_masternode_txs_blocking(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Option<ProviderMasternodeTxs> {
+        use key_wallet::managed_account::address_pool::PublicKeyType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        // Default provider-key pre-derivation / scan window.
+        const PROVIDER_KEY_WINDOW: u32 = 20;
+
+        // Scope the wallet-manager read lock so it's released before we
+        // acquire the SPV client / engine locks for the DML snapshot — the
+        // two never nest. Inside this scope we also read the managed
+        // provider pools (`info.core_wallet` is a `ManagedWalletInfo`).
+        let (network, txs, operator_scan_max, platform_index) = {
+            let wm = self.wallet_manager.blocking_read();
+            let info = wm.get_wallet_info(wallet_id)?;
+            let network = info.core_wallet.network();
+
+            let mut by_txid: std::collections::BTreeMap<
+                dashcore::Txid,
+                (u32, u32, dashcore::Transaction),
+            > = std::collections::BTreeMap::new();
+
+            for account in info.core_wallet.accounts.all_accounts().iter() {
+                for record in account.transactions().values() {
+                    if record.transaction.special_transaction_payload.is_none() {
+                        continue;
+                    }
+                    let height = record.context.block_info().map(|b| b.height()).unwrap_or(0);
+                    // In-block position for same-height tie-breaking in the
+                    // aggregation (Core resolves same-block provider updates in
+                    // `block.vtx` order). Stamped by block processing since
+                    // rust-dashcore#891 and round-tripped through persistence;
+                    // `None` only for legacy rows persisted before the field
+                    // existed, which fall back to 0 (feed order).
+                    let position = record
+                        .context
+                        .block_info()
+                        .and_then(|b| b.position())
+                        .unwrap_or(0);
+                    by_txid
+                        .entry(record.txid)
+                        .or_insert_with(|| (height, position, record.transaction.clone()));
+                }
+            }
+
+            // How far the operator (BLS) pool extends — its
+            // `highest_generated` watermark, which #882 gap-extension and
+            // the pool restore can push past the default window — so the
+            // seedless derive-and-compare scan below covers beyond-window
+            // keys, not a hardcoded 20. Floored at the default window.
+            let operator_scan_max = info
+                .core_wallet
+                .accounts
+                .provider_operator_keys
+                .as_ref()
+                .and_then(|acct| {
+                    acct.managed_account_type()
+                        .address_pools()
+                        .iter()
+                        .filter_map(|p| p.highest_generated)
+                        .max()
+                })
+                .map(|h| h.saturating_add(1))
+                .unwrap_or(PROVIDER_KEY_WINDOW)
+                .max(PROVIDER_KEY_WINDOW);
+
+            // Platform-node ownership: Ed25519/SLIP-10 is hardened-only, so
+            // these keys can't be re-derived seedlessly. Read the wallet's
+            // own platform-node public keys straight from the managed
+            // pool's typed entries (populated at registration and rehydrated
+            // from the persisted batch on restore) and recompute the
+            // Tenderdash node id (SHA256[..20], rust-dashcore #884) — never
+            // trusting a persisted hash160-era id.
+            let mut platform_index: std::collections::HashMap<[u8; 20], u32> =
+                std::collections::HashMap::new();
+            if let Some(acct) = info.core_wallet.accounts.provider_platform_keys.as_ref() {
+                for pool in acct.managed_account_type().address_pools() {
+                    for entry in pool.addresses.values() {
+                        if let Some(PublicKeyType::EdDSA(pk)) = &entry.public_key {
+                            if let Ok(pk32) = <[u8; 32]>::try_from(pk.as_slice()) {
+                                let node_id =
+                                    dashcore::PlatformNodeId::from_ed25519_public_key(&pk32)
+                                        .to_byte_array();
+                                platform_index.insert(node_id, entry.index);
+                            }
+                        }
+                    }
+                }
+            }
+
+            (
+                network,
+                by_txid.into_values().collect::<Vec<_>>(),
+                operator_scan_max,
+                platform_index,
+            )
+        };
+
+        let dml = self.spv().masternode_validity_snapshot_blocking();
+
+        // Operator (BLS) ownership: derive both serializations for every
+        // index the pool covers (`0..operator_scan_max`). Operator public
+        // keys derive from the account xpub with no seed, so this works for
+        // resident and restored external-signable wallets alike. A v1
+        // ProRegTx carries the key in LEGACY serialization and a v2 in
+        // MODERN, so both forms are indexed under the same index (distinct
+        // byte strings for the same G1 point — no collision).
+        let mut operator_index: std::collections::HashMap<[u8; 48], u32> =
+            std::collections::HashMap::new();
+        // Clone the `Arc<PlatformWallet>` out of the map snapshot before
+        // deriving (the derive calls take the wallet's own state lock).
+        let platform_wallet = self.wallets.load().get(wallet_id).cloned();
+        if let Some(platform_wallet) = platform_wallet {
+            use crate::wallet::provider_key_at_index::ProviderKeyKind;
+            for index in 0..operator_scan_max {
+                match platform_wallet.derive_provider_key_at_index(
+                    ProviderKeyKind::Operator,
+                    index,
+                    None,
+                    false,
+                ) {
+                    Ok(key) => {
+                        if let Ok(bytes) = <[u8; 48]>::try_from(key.public_key_bytes.as_slice()) {
+                            operator_index.insert(bytes, index);
+                        }
+                        if let Some(legacy) = key
+                            .legacy_public_key_bytes
+                            .as_deref()
+                            .and_then(|b| <[u8; 48]>::try_from(b).ok())
+                        {
+                            operator_index.insert(legacy, index);
+                        }
+                    }
+                    // First failure ⇒ no operator account (or unavailable) ⇒ stop.
+                    Err(_) => break,
+                }
+            }
+        }
+
+        Some((network, txs, dml, operator_index, platform_index))
+    }
+
     // -----------------------------------------------------------------
     // Phase 7 — Identity manager structure
     // -----------------------------------------------------------------
@@ -845,7 +1170,7 @@ fn addr_info_snapshot(info: &AddressInfo) -> AccountAddressInfoSnapshot {
     AccountAddressInfoSnapshot {
         pubkey_hash,
         address_index: info.index,
-        is_used: info.used,
+        is_used: matches!(info.state, AddressState::Used),
         address,
         public_key_bytes,
     }
@@ -865,5 +1190,365 @@ fn tx_record_snapshot(rec: &TransactionRecord) -> AccountTransactionSnapshot {
         value_delta_duffs: rec.net_amount,
         fee_duffs: rec.fee.unwrap_or(0),
         is_coinbase: rec.transaction.is_coin_base(),
+    }
+}
+
+#[cfg(test)]
+mod spv_rescan_tests {
+    use std::sync::Arc;
+
+    use key_wallet::mnemonic::Mnemonic;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Network;
+
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::PlatformWalletManager;
+
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    pub(super) struct NoopPersister;
+
+    impl PlatformWalletPersistence for NoopPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    pub(super) struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    #[tokio::test]
+    async fn spv_rescan_only_rewinds_known_wallets() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(NoopPersister),
+            event_handler,
+        ));
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &mnemonic.to_seed(""),
+                WalletAccountCreationOptions::Default,
+                Some(100),
+            )
+            .await
+            .expect("wallet registration");
+        let wallet_id = wallet.wallet_id();
+
+        tokio::task::spawn_blocking(move || {
+            let initial_height = manager
+                .core_wallet_state_blocking(&wallet_id)
+                .expect("known wallet")
+                .synced_height;
+            let rewound_height = initial_height - 20;
+            assert!(manager.spv_rescan_filters_blocking(&wallet_id, rewound_height));
+            assert_eq!(
+                manager
+                    .core_wallet_state_blocking(&wallet_id)
+                    .expect("known wallet")
+                    .synced_height,
+                rewound_height
+            );
+
+            // Equal and forward requests are successful no-ops; neither may
+            // advance the filter checkpoint.
+            assert!(manager.spv_rescan_filters_blocking(&wallet_id, rewound_height));
+            assert!(manager.spv_rescan_filters_blocking(&wallet_id, initial_height + 20));
+            assert_eq!(
+                manager
+                    .core_wallet_state_blocking(&wallet_id)
+                    .expect("known wallet")
+                    .synced_height,
+                rewound_height
+            );
+
+            assert!(!manager.spv_rescan_filters_blocking(&[0xFF; 32], 40));
+        })
+        .await
+        .expect("blocking accessor task");
+    }
+}
+
+/// Read-only [`WalletCoreBalance`] over an account's live UTXO set, with the
+/// exact bucket rules of `ManagedCoreFundsAccount::update_balance` (which
+/// requires `&mut self` and mutates the cache, so it cannot serve a
+/// read-path): locked, else immature, else confirmed when in a block /
+/// InstantSend-locked / trusted change, else unconfirmed.
+fn computed_core_balance(
+    account: &key_wallet::managed_account::ManagedCoreFundsAccount,
+    last_processed_height: u32,
+) -> key_wallet::wallet::balance::WalletCoreBalance {
+    let mut confirmed = 0u64;
+    let mut unconfirmed = 0u64;
+    let mut immature = 0u64;
+    let mut locked = 0u64;
+    for utxo in account.utxos.values() {
+        let value = utxo.txout.value;
+        if utxo.is_locked {
+            locked += value;
+        } else if !utxo.is_mature(last_processed_height) {
+            immature += value;
+        } else if utxo.is_confirmed || utxo.is_instantlocked || utxo.is_trusted {
+            confirmed += value;
+        } else {
+            unconfirmed += value;
+        }
+    }
+    key_wallet::wallet::balance::WalletCoreBalance::new(confirmed, unconfirmed, immature, locked)
+}
+
+#[cfg(test)]
+mod computed_balance_tests {
+    use super::spv_rescan_tests::{NoopEventHandler, NoopPersister};
+    use super::*;
+    use key_wallet::account::StandardAccountType;
+    use key_wallet_manager::WalletManager;
+    use tokio::sync::RwLock;
+
+    use crate::events::PlatformEventHandler;
+    use crate::wallet::platform_wallet::PlatformWalletInfo;
+
+    /// Buckets of every account row the accessor returns, folded into one
+    /// `(confirmed, unconfirmed, immature, locked)` tuple. Only the funded
+    /// account carries UTXOs, so the fold IS that account's figure — and
+    /// it stays meaningful once the account is drained to nothing.
+    fn folded_buckets(rows: &[AccountBalanceRow]) -> (u64, u64, u64, u64) {
+        rows.iter().fold((0, 0, 0, 0), |(c, u, i, l), row| {
+            (
+                c + row.balance.confirmed(),
+                u + row.balance.unconfirmed(),
+                i + row.balance.immature(),
+                l + row.balance.locked(),
+            )
+        })
+    }
+
+    /// A manager whose wallet-manager IS the funded fixture's, so the
+    /// production accessor reads the very account the test mutates.
+    /// `account_balances_blocking` takes the manager, not a bare
+    /// `WalletManager`, and there is no constructor that adopts one — so
+    /// the fixture's value is moved into the freshly built manager's slot.
+    async fn manager_over_funded_fixture(
+        funded: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    ) -> Arc<PlatformWalletManager<NoopPersister>> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(NoopPersister),
+            event_handler,
+        ));
+        let adopted = std::mem::replace(
+            &mut *funded.write().await,
+            WalletManager::<PlatformWalletInfo>::new(key_wallet::Network::Testnet),
+        );
+        *manager.wallet_manager.write().await = adopted;
+        manager
+    }
+
+    /// `account_balances_blocking` uses `blocking_read`, so it may only be
+    /// called off the async runtime's worker.
+    async fn account_buckets(
+        manager: &Arc<PlatformWalletManager<NoopPersister>>,
+        wallet_id: WalletId,
+    ) -> (u64, u64, u64, u64) {
+        let manager = Arc::clone(manager);
+        tokio::task::spawn_blocking(move || {
+            folded_buckets(&manager.account_balances_blocking(&wallet_id))
+        })
+        .await
+        .expect("blocking accessor task")
+    }
+
+    /// The per-account figure the explorer/FFI reads must come from the
+    /// LIVE UTXO set, not the cached `balance` field: a self-authored
+    /// asset-lock spend can leave the cache stale long after selection —
+    /// which reads the UTXO set — has moved on.
+    ///
+    /// Driven through `account_balances_blocking`, the accessor production
+    /// actually calls, and in three steps because "reports the live truth"
+    /// is more than "reports zero": it must first REPRODUCE a freshly
+    /// updated non-empty balance bucket for bucket (an implementation
+    /// returning `WalletCoreBalance::default()` passes an empty-set-only
+    /// test), then track a live re-classification the cache has not seen,
+    /// then track removal.
+    #[tokio::test]
+    async fn account_balances_blocking_ignores_the_stale_cache() {
+        let (funded, wallet_id, _balance, _signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                StandardAccountType::BIP44Account,
+                &[7_000_000, 3_000_000],
+            )
+            .await;
+        let manager = manager_over_funded_fixture(funded).await;
+
+        // 1. Agreement on a funded account. The accessor's fold and the
+        //    cache are two implementations of the same bucket rules; if
+        //    they disagree here, every later assertion is meaningless.
+        let cached = {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+            let height = info.core_wallet.metadata.last_processed_height;
+            let account = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("bip44 account 0");
+            account.update_balance(height);
+            account.balance
+        };
+        assert_eq!(cached.total(), 10_000_000, "fixture must be funded");
+        assert_eq!(
+            account_buckets(&manager, wallet_id).await,
+            (
+                cached.confirmed(),
+                cached.unconfirmed(),
+                cached.immature(),
+                cached.locked()
+            ),
+            "the accessor must reproduce a freshly updated non-empty balance, bucket for bucket"
+        );
+
+        // 2. Re-classify one UTXO WITHOUT refreshing the cache. The
+        //    accessor must move its value confirmed → locked live; a
+        //    read of the cached `balance` field cannot.
+        let locked_value = {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+            let account = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("bip44 account 0");
+            let first = *account.utxos.keys().next().expect("funded utxo");
+            let utxo = account.utxos.get_mut(&first).expect("funded utxo");
+            utxo.is_locked = true;
+            assert_eq!(
+                account.balance, cached,
+                "precondition: the cache must still hold the pre-lock figure"
+            );
+            utxo.txout.value
+        };
+        assert_eq!(
+            account_buckets(&manager, wallet_id).await,
+            (
+                cached.confirmed() - locked_value,
+                cached.unconfirmed(),
+                cached.immature(),
+                locked_value
+            ),
+            "the accessor must see the live lock: value out of confirmed, into locked"
+        );
+
+        // 3. Remove every UTXO — the shape an unprocessed self-spend
+        //    (the asset-lock drain) leaves behind.
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+            let account = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("bip44 account 0");
+            account.utxos.clear();
+            assert_eq!(
+                account.balance.total(),
+                cached.total(),
+                "precondition: the cache must still hold the stale figure"
+            );
+        }
+        assert_eq!(
+            account_buckets(&manager, wallet_id).await,
+            (0, 0, 0, 0),
+            "the accessor must see the live (empty) UTXO set"
+        );
+    }
+
+    /// Bucket-policy companion to
+    /// [`account_balances_blocking_ignores_the_stale_cache`], asserted
+    /// directly on the fold: `computed_core_balance` duplicates
+    /// `ManagedCoreFundsAccount::update_balance`'s classification rules,
+    /// and nothing in the type system keeps the two in step.
+    #[tokio::test]
+    async fn computed_core_balance_matches_update_balance_bucket_for_bucket() {
+        let (wallet_manager, wallet_id, _balance, _signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                StandardAccountType::BIP44Account,
+                &[7_000_000, 3_000_000],
+            )
+            .await;
+
+        let mut wm = wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+        let height = info.core_wallet.metadata.last_processed_height;
+        let account = info
+            .core_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("bip44 account 0");
+
+        account.update_balance(height);
+        let funded = account.balance;
+        assert_eq!(funded.total(), 10_000_000, "fixture must be funded");
+        assert_eq!(
+            computed_core_balance(account, height),
+            funded,
+            "the fold must reproduce a freshly updated non-empty balance, bucket for bucket"
+        );
+
+        let first = *account.utxos.keys().next().expect("funded utxo");
+        let locked_value = {
+            let utxo = account.utxos.get_mut(&first).expect("funded utxo");
+            utxo.is_locked = true;
+            utxo.txout.value
+        };
+        let live = computed_core_balance(account, height);
+        assert_eq!(
+            live.locked(),
+            locked_value,
+            "the locked UTXO must be bucketed as locked"
+        );
+        assert_eq!(
+            live.confirmed(),
+            funded.confirmed() - locked_value,
+            "and must have left the confirmed bucket"
+        );
+        assert_eq!(
+            live.total(),
+            funded.total(),
+            "locking moves value between buckets, it does not destroy it"
+        );
+
+        account.utxos.clear();
+        assert_eq!(
+            computed_core_balance(account, height).total(),
+            0,
+            "the fold must see the live (empty) UTXO set"
+        );
     }
 }

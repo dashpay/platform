@@ -1,11 +1,15 @@
 #[cfg(test)]
 #[allow(clippy::module_inception)]
 mod tests {
+    use crate::error::execution::ExecutionError;
+    use crate::error::Error;
+    use crate::execution::check_tx::CheckTxLevel;
     use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{
         create_dummy_serialized_action, get_proving_key, process_transition,
         serialize_authorized_bundle_with_flags, setup_platform,
     };
+    use crate::platform_types::platform::PlatformRef;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use assert_matches::assert_matches;
     use dpp::consensus::basic::BasicError;
@@ -395,6 +399,53 @@ mod tests {
                     error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
                     ..
                 }]
+            );
+        }
+
+        #[test]
+        fn check_tx_rejects_when_proof_verification_capacity_is_exhausted() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let transition = create_signed_shield_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                vec![create_dummy_serialized_action()],
+                5000,
+                [42u8; 32],
+                vec![0u8; 100],
+                [0u8; 64],
+            );
+            let raw_transition = transition
+                .serialize_to_bytes()
+                .expect("transition should serialize");
+
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            let _occupied_capacity = platform
+                .check_tx_proof_verifier
+                .try_acquire(usize::MAX)
+                .expect("test should occupy all proof-verification capacity");
+
+            let result = platform.check_tx(
+                &raw_transition,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            );
+
+            assert_matches!(
+                result,
+                Err(Error::Execution(
+                    ExecutionError::CheckTxProofVerificationBusy
+                ))
             );
         }
     }
@@ -908,6 +959,7 @@ mod tests {
                 &|_| Ok(None),
                 platform_version,
             )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
             .expect("expected to verify shield_from_asset_lock proof");
 
             assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
@@ -1327,6 +1379,7 @@ mod tests {
                 &|_| Ok(None),
                 platform_version,
             )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
             .expect("expected to verify shield_from_asset_lock proof");
 
             assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");

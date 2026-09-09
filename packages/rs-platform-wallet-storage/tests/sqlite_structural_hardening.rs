@@ -117,14 +117,9 @@ fn make_utxo(addr: &Address, vout: u32, value: u64) -> Utxo {
     Utxo::new(outpoint, txout, addr.clone(), 10, false)
 }
 
-/// Every `core_utxos` row is written with the hardcoded default
-/// `account_index = 0` (the product uses only the default account; a
-/// non-default account causes `core_bridge::warn_if_non_default_account`
-/// to log a `warn!` but still persists the record under index 0 to avoid
-/// fund loss), so the per-account grouping reader buckets every unspent
-/// UTXO — at any address — under account 0.
+/// UTXOs without matching pool rows resolve to the default account.
 #[test]
-fn utxos_bucket_under_default_account_index_zero() {
+fn utxos_without_pool_rows_bucket_under_default_account() {
     use platform_wallet_storage::sqlite::schema::core_state;
 
     let (persister, _tmp, _path) = fresh_persister();
@@ -159,11 +154,9 @@ fn utxos_bucket_under_default_account_index_zero() {
     );
 }
 
-/// A spent-only placeholder UTXO (no prior unspent row to mark) persists
-/// with the hardcoded account 0 — spent rows are excluded from the unspent
-/// set, so the index is inert.
+/// A spent-only placeholder persists but remains excluded from unspent reads.
 #[test]
-fn spent_only_utxo_on_undeclared_address_uses_zero_fallback() {
+fn spent_only_utxo_on_undeclared_address_is_excluded() {
     use platform_wallet_storage::sqlite::schema::core_state;
 
     let (persister, _tmp, _path) = fresh_persister();
@@ -391,7 +384,7 @@ fn asset_lock_typed_vs_blob_mismatch_rejected() {
         status: AssetLockStatus::Built,
         proof: None,
     };
-    let lifecycle_blob = blob::encode(&entry).unwrap();
+    let lifecycle_blob = asset_locks::encode_entry_for_test(&entry).unwrap();
     let op_bytes = blob::encode_outpoint(&outpoint).unwrap();
 
     {
@@ -405,7 +398,8 @@ fn asset_lock_typed_vs_blob_mismatch_rejected() {
     }
 
     let conn = persister.lock_conn_for_test();
-    let err = asset_locks::load_state(&conn, &w).expect_err("mismatch must fail");
+    let err = asset_locks::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect_err("mismatch must fail");
     assert!(
         matches!(err, WalletStorageError::AssetLockEntryMismatch { .. }),
         "expected AssetLockEntryMismatch, got {err:?}"

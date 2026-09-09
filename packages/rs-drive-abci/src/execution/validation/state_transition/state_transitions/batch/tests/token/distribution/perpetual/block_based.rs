@@ -2888,6 +2888,7 @@ mod test_suite {
                         },
                         self.platform_version,
                     )
+                    .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
                     .map_err(|e| e.to_string())?;
 
                 let StateTransitionProofResult::VerifiedTokenActionWithDocument(document) =

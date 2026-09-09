@@ -224,6 +224,12 @@ impl ContextProvider for GrpcContextProvider {
         Ok(data_contract.map(Arc::new))
     }
 
+    fn register_data_contract(&self, contract: Arc<DataContract>) {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        self.data_contracts_cache
+            .put(contract.id(), (*contract).clone());
+    }
+
     fn get_token_configuration(
         &self,
         token_id: &Identifier,

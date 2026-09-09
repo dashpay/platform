@@ -2,14 +2,16 @@ import fs from 'fs';
 import path from 'path';
 import getShortHash from '../../util/getShortHash.js';
 import ConfigFile from './ConfigFile.js';
+import getConfigFormatVersion from './getConfigFormatVersion.js';
 import { PACKAGE_ROOT_DIR } from '../../constants.js';
 
 /**
  * @param {DefaultConfigs} defaultConfigs
  * @param {HomeDir} homeDir
+ * @param {getConfigFileMigrations} getConfigFileMigrations
  * @return {createConfigFile}
  */
-export default function createConfigFileFactory(defaultConfigs, homeDir) {
+export default function createConfigFileFactory(defaultConfigs, homeDir, getConfigFileMigrations) {
   /**
    * @typedef {function} createConfigFile
    * @returns {ConfigFile}
@@ -21,7 +23,7 @@ export default function createConfigFileFactory(defaultConfigs, homeDir) {
 
     const configFile = new ConfigFile(
       defaultConfigs.getAll(),
-      version,
+      getConfigFormatVersion(getConfigFileMigrations(), version),
       projectId,
       null,
       null,

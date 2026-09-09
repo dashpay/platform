@@ -35,8 +35,10 @@ use platform_wallet::{DashPayProfile, IdentityStatus};
 /// [`IdentityKeyEntryFFI`] alongside their derivation breadcrumb via
 /// a separate callback. Fields that don't map onto the Swift schema
 /// (block times, contested DPNS names, DashPay payments) are skipped;
-/// DashPay payment overlays already ride on the dedicated
-/// `dashpay_payments_overlay` surface on the parent changeset.
+/// DashPay payment rows travel on the dedicated
+/// `on_persist_dashpay_payments_fn` callback (which flattens the
+/// entry's `dashpay_payments` map together with any
+/// `dashpay_payments_overlay` on the parent changeset).
 ///
 /// User-visible label is no longer carried — `ManagedIdentity` doesn't
 /// have one, and Swift owns the `PersistentIdentity.alias` column
@@ -141,15 +143,15 @@ pub struct IdentityEntryFFI {
     /// [`free_identity_entry_ffi`]. Ignore unless
     /// [`Self::dashpay_profile_present`] is `true`.
     pub dashpay_profile_public_message: *const c_char,
-    /// Heap-allocated array of [`ContactProfileRowFFI`], one per
-    /// **present** cached contact profile on the underlying
-    /// [`IdentityEntry::contact_profiles`]. Confirmed-absent entries
-    /// (`profile: None`, the negative cache) are NOT projected — they
-    /// rebuild harmlessly on the next sync sweep, so persisting them
-    /// would only add write churn. Each row owns the same per-string
-    /// heap allocations the own-profile block does; every string plus
-    /// the outer boxed slice is released in [`free_identity_entry_ffi`].
-    /// `null` when [`Self::contact_profiles_count`] is 0.
+    /// Heap-allocated array of [`ContactProfileRowFFI`], one per entry
+    /// of the underlying [`IdentityEntry::contact_profiles`] map —
+    /// present profiles as full rows, confirmed-absent entries as
+    /// `is_present == false` tombstone rows instructing the consumer to
+    /// DELETE its persisted row (see [`ContactProfileRowFFI`]). Each row
+    /// owns the same per-string heap allocations the own-profile block
+    /// does; every string plus the outer boxed slice is released in
+    /// [`free_identity_entry_ffi`]. `null` when
+    /// [`Self::contact_profiles_count`] is 0.
     ///
     /// Distinct from `dashpay_profile_*` above: that block is the
     /// owner's *own* profile (one per identity); this array is the
@@ -572,14 +574,12 @@ fn allocate_dpns_arrays(
 /// Allocate the [`ContactProfileRowFFI`] array carried on
 /// [`IdentityEntryFFI`] from the source
 /// [`IdentityEntry::contact_profiles`] map. Returns `(rows, count)` —
-/// both `null`/`0` when no entry carries a **present** profile.
-///
-/// **Present profiles only.** Confirmed-absent entries
-/// (`ContactProfileEntry::profile == None`, the negative cache) are
-/// skipped: they rebuild harmlessly on the next sync sweep, so
-/// persisting them would only add write churn (the "persist only on
-/// change" discipline). The returned `count`
-/// is therefore the number of *present* profiles, not the map length.
+/// both `null`/`0` when the map is empty. Every map entry produces a
+/// row: present profiles as full rows, confirmed-absent entries
+/// (`ContactProfileEntry::profile == None`) as `is_present == false`
+/// tombstones that tell the consumer to DELETE its persisted row (a
+/// contact who removed their profile must not keep showing a stale
+/// name/avatar). `count` is therefore the map length.
 ///
 /// `rows` is a `Box<[ContactProfileRowFFI]>` (via [`Box::into_raw`]).
 /// Each row's four nullable C-strings are [`CString::into_raw`]

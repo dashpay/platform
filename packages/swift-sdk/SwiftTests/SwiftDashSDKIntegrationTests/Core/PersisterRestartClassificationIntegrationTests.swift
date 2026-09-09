@@ -1,6 +1,5 @@
 import XCTest
 import SwiftData
-import CryptoKit
 @testable import SwiftDashSDK
 
 /// This test ensures that the classification of a self-send transaction
@@ -19,10 +18,13 @@ final class PersisterRestartClassificationIntegrationTests: IntegrationTestCase 
         try await alice.waitForSpendable(exactly: fundingDuffs, timeout: 90)
 
         let aliceSecondAddr = try alice.getCoreWallet().nextReceiveAddress()
-        let sendTxData = try alice.getCoreWallet().sendToAddresses(
-            recipients: [(address: aliceSecondAddr, amountDuffs: sendAmount)]
-        )
-        let sendTxid = Self.txid(ofRawTx: sendTxData)
+        let displayedTxid = try alice.send(to: aliceSecondAddr, amountDuffs: sendAmount)
+        guard let displayedTxidBytes = Data(hexString: displayedTxid) else {
+            return XCTFail("broadcast returned invalid txid: \(displayedTxid)")
+        }
+        // Persistence stores Rust's internal byte order, while broadcast
+        // returns the conventional display-order transaction id.
+        let sendTxid = Data(displayedTxidBytes.reversed())
         try await waitForTxRow(sendTxid)
 
         // First sighting must already classify as Internal / -fee.
@@ -37,14 +39,6 @@ final class PersisterRestartClassificationIntegrationTests: IntegrationTestCase 
     }
 
     // MARK: - Helpers
-
-    /// `sha256d(tx_bytes)` in internal byte order — the identity
-    /// `PersistentTransaction.txid` stores (the persister copies Rust's
-    /// `Txid` verbatim).
-    private static func txid(ofRawTx data: Data) -> Data {
-        let first = Data(SHA256.hash(data: data))
-        return Data(SHA256.hash(data: first))
-    }
 
     private func waitForTxRow(_ txid: Data, timeout: TimeInterval = 60) async throws {
         try await Wait.until(

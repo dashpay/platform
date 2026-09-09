@@ -1,8 +1,12 @@
 mod creation;
 mod deletion;
 mod dpns;
+mod index_only;
+mod keep_history;
 mod nft;
+mod ranked_group_drain;
 mod replacement;
+mod required_since;
 mod transfer;
 
 use super::*;

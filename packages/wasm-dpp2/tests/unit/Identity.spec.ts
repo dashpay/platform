@@ -35,7 +35,9 @@ describe('Identity', () => {
     return identity;
   }
 
-  // Expected JSON representation (toJSON output - u64 fields as strings)
+  // Expected JSON representation (toJSON output - u64 fields as strings).
+  // After Phase D step 4, `disabledAt: null` is stripped at the rs-dpp layer
+  // for non-disabled keys via `#[serde(skip_serializing_if = "Option::is_none")]`.
   const expectedJSONOutput = {
     $formatVersion: '0',
     id: identifier,
@@ -49,7 +51,6 @@ describe('Identity', () => {
         type: 0,
         readOnly: false,
         data: 'A2o5QxLkDoHZKP3iveeIAHDk+pwdHZsWjacH6kaK+itI',
-        disabledAt: null,
       },
     ],
     balance: 100,
@@ -70,14 +71,15 @@ describe('Identity', () => {
         type: 0,
         readOnly: false,
         data: 'A2o5QxLkDoHZKP3iveeIAHDk+pwdHZsWjacH6kaK+itI',
-        disabledAt: null,
       },
     ],
     balance: 100,
     revision: 99111,
   };
 
-  // Expected Object representation
+  // Expected Object representation. `disabledAt` is also stripped on the
+  // value path now (same `skip_serializing_if` attribute applies to both
+  // serde_json and platform_value paths).
   const expectedObject = {
     $formatVersion: '0',
     id: Uint8Array.from(identifierBytes),
@@ -91,7 +93,6 @@ describe('Identity', () => {
         type: 0,
         readOnly: false,
         data: Buffer.from(binaryDataHex, 'hex'),
-        disabledAt: undefined,
       },
     ],
     balance: BigInt(100),

@@ -7,15 +7,15 @@ use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
-    DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError,
-    DataContractUniqueIndicesChangedError, DecimalsOverLimitError, DuplicateIndexError,
-    DuplicateIndexNameError, GroupExceedsMaxMembersError, GroupHasTooFewMembersError,
-    GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
-    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError,
-    GroupRequiredPowerIsInvalidError, GroupTotalPowerLessThanRequiredError,
-    IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError,
-    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
-    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    DataContractInvalidIndexDefinitionUpdateError, DataContractInvalidRequiredFieldsUpdateError,
+    DataContractTokenConfigurationUpdateError, DataContractUniqueIndicesChangedError,
+    DecimalsOverLimitError, DuplicateIndexError, DuplicateIndexNameError,
+    GroupExceedsMaxMembersError, GroupHasTooFewMembersError, GroupMemberHasPowerOfZeroError,
+    GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
+    GroupPositionDoesNotExistError, GroupRequiredPowerIsInvalidError,
+    GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
+    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
+    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, InvalidKeywordCharacterError,
     InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError,
@@ -696,6 +696,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     TokenPricingScheduleEmptyError(TokenPricingScheduleEmptyError),
+
+    #[error(transparent)]
+    DataContractInvalidRequiredFieldsUpdateError(DataContractInvalidRequiredFieldsUpdateError),
 }
 
 impl From<BasicError> for ConsensusError {

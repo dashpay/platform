@@ -1,17 +1,19 @@
 //! FFI bindings for PlatformWalletManager's SPV runtime.
 
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
+use dashcore::hashes::Hash;
 use dashcore::sml::llmq_type::LlmqDevnetParams;
+use dashcore::PubkeyHash;
 use platform_wallet::spv::{
-    ClientConfig, DevnetConfig, ProgressPercentage, SyncProgress, SyncState,
+    ClientConfig, DevnetConfig, ProgressPercentage, SpvPeerNodeType, SyncProgress, SyncState,
 };
 
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::{block_on_worker, runtime};
-use crate::types::FFINetwork;
+use crate::types::{FFINetwork, IdentifierArray};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
 pub const SPV_SYNC_STATE_WAIT_FOR_EVENTS: u32 = 0;
@@ -141,15 +143,205 @@ pub unsafe extern "C" fn platform_wallet_manager_sync_progress(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_progress);
 
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.spv().sync_progress())
-    });
-    let progress = unwrap_option_or_return!(option);
+    // Look the runtime up under the registry guard, but wait on it outside:
+    // the wait parks the caller (the SPV client lock is held across start,
+    // stop and block processing), and a registry read guard held across it
+    // would stall `platform_wallet_manager_destroy` (a registry write) and,
+    // through parking_lot's writer preference, every other registry reader.
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
+    let spv = unwrap_option_or_return!(option);
+    let progress = block_on_worker(async move { spv.sync_progress().await });
     *out_progress = match progress {
         Some(p) => progress_to_ffi(&p),
         None => FFISpvSyncProgress::default(),
     };
     PlatformWalletFFIResult::ok()
+}
+
+/// The proTxHashes of every masternode in the current-tip deterministic
+/// masternode list whose voting key hash matches the 20-byte `voting_key_id`.
+///
+/// Replaces dashj's `MasternodeListManager.getMasternodesByVotingKey(...)`,
+/// the lookup contested-username voting uses. On success `*out_array` owns a
+/// flat `[[u8; 32]]` of `count` proTxHashes (internal byte order), which the
+/// caller must release via [`crate::platform_wallet_identifier_array_free`].
+/// An unsynced/stopped client (or a voting key no masternode uses) returns
+/// `ok()` with the empty `(null, 0)` sentinel.
+///
+/// # Safety
+/// - `voting_key_id` must point at 20 readable bytes.
+/// - `out_array` must be a valid `*mut IdentifierArray`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_masternodes_by_voting_key(
+    handle: Handle,
+    voting_key_id: *const u8,
+    out_array: *mut IdentifierArray,
+) -> PlatformWalletFFIResult {
+    // Validate and publish the sentinel BEFORE any other guard. `check_ptr!`
+    // returns early, so validating `voting_key_id` first meant a null input
+    // pointer returned `ErrorNullPointer` with `*out_array` still holding
+    // whatever the caller's stack had — breaking this function's documented
+    // promise that the out-param is initialized on every path. A C or Swift
+    // caller that frees unconditionally would then hand
+    // `platform_wallet_identifier_array_free` an arbitrary pointer
+    // (dashpay/platform#4258 review).
+    check_ptr!(out_array);
+    *out_array = IdentifierArray::empty();
+    check_ptr!(voting_key_id);
+
+    let key_bytes: [u8; 20] = std::ptr::read(voting_key_id as *const [u8; 20]);
+    let voting_key = PubkeyHash::from_byte_array(key_bytes);
+
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager
+            .spv()
+            .masternodes_by_voting_key_blocking(&voting_key)
+    });
+    let hashes = unwrap_option_or_return!(option);
+    *out_array = IdentifierArray::from_hashes(hashes);
+    PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod masternodes_by_voting_key_tests {
+    use super::*;
+    use crate::error::platform_wallet_ffi_result_free;
+
+    /// The function documents that `*out_array` is initialized on EVERY path.
+    /// A null `voting_key_id` must therefore still leave the sentinel behind:
+    /// a C or Swift caller that frees unconditionally on error would otherwise
+    /// hand `platform_wallet_identifier_array_free` whatever its uninitialized
+    /// stack slot happened to hold (dashpay/platform#4258 review).
+    #[test]
+    fn null_input_pointer_still_initializes_the_out_param() {
+        // Pre-poison the out-param the way an uninitialized C local looks:
+        // non-null pointer, non-zero count. If the guard order regresses, this
+        // survives the call and a cleanup-on-error caller frees it.
+        let mut out = IdentifierArray {
+            items: 0xdead_beef_usize as *mut [u8; 32],
+            count: 9,
+        };
+
+        let mut result = unsafe {
+            platform_wallet_manager_masternodes_by_voting_key(0, std::ptr::null(), &mut out)
+        };
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert!(
+            out.items.is_null() && out.count == 0,
+            "the empty sentinel must be published before the input-pointer \
+             guard returns (got items={:?}, count={})",
+            out.items,
+            out.count,
+        );
+
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// A null `out_array` has nowhere to publish the sentinel, so it must be
+    /// rejected — and must not be dereferenced on the way out.
+    #[test]
+    fn null_out_param_is_rejected() {
+        let mut result = unsafe {
+            let key = [0u8; 20];
+            platform_wallet_manager_masternodes_by_voting_key(0, key.as_ptr(), std::ptr::null_mut())
+        };
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+}
+
+pub const SPV_PEER_NODE_TYPE_UNKNOWN: u32 = 0;
+pub const SPV_PEER_NODE_TYPE_NORMAL: u32 = 1;
+pub const SPV_PEER_NODE_TYPE_MASTERNODE: u32 = 2;
+pub const SPV_PEER_NODE_TYPE_EVONODE: u32 = 3;
+
+/// One connected SPV peer, classified against the masternode list.
+///
+/// `address` is a heap-owned NUL-terminated `ip:port` string, freed by
+/// the paired [`platform_wallet_manager_spv_connected_peers_free`].
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct FFISpvPeerInfo {
+    /// Heap-owned `ip:port` string. Always non-null on a successful row.
+    pub address: *mut c_char,
+    /// One of the `SPV_PEER_NODE_TYPE_*` constants.
+    pub node_type: u32,
+}
+
+fn peer_node_type_to_u32(node_type: SpvPeerNodeType) -> u32 {
+    match node_type {
+        SpvPeerNodeType::Unknown => SPV_PEER_NODE_TYPE_UNKNOWN,
+        SpvPeerNodeType::Normal => SPV_PEER_NODE_TYPE_NORMAL,
+        SpvPeerNodeType::Masternode => SPV_PEER_NODE_TYPE_MASTERNODE,
+        SpvPeerNodeType::Evonode => SPV_PEER_NODE_TYPE_EVONODE,
+    }
+}
+
+/// Snapshot of the peers the SPV client is currently connected to, each
+/// classified against the masternode list (`SPV_PEER_NODE_TYPE_UNKNOWN`
+/// while the masternode list hasn't synced yet).
+///
+/// On success `*out_entries` points at a heap-owned `[FFISpvPeerInfo]`
+/// of length `*out_count`; the caller must release it via
+/// [`platform_wallet_manager_spv_connected_peers_free`]. No connected
+/// peers (or a stopped client) returns `ok()` with
+/// `*out_entries = null`, `*out_count = 0`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_spv_connected_peers(
+    handle: Handle,
+    out_entries: *mut *const FFISpvPeerInfo,
+    out_count: *mut usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_entries);
+    check_ptr!(out_count);
+    *out_entries = std::ptr::null();
+    *out_count = 0;
+
+    // Waited on outside the registry guard — see `platform_wallet_manager_sync_progress`.
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
+    let spv = unwrap_option_or_return!(option);
+    let peers = block_on_worker(async move { spv.connected_peers().await });
+    if peers.is_empty() {
+        return PlatformWalletFFIResult::ok();
+    }
+
+    let entries: Vec<FFISpvPeerInfo> = peers
+        .into_iter()
+        .filter_map(|peer| {
+            let address = CString::new(peer.address.to_string()).ok()?;
+            Some(FFISpvPeerInfo {
+                address: address.into_raw(),
+                node_type: peer_node_type_to_u32(peer.node_type),
+            })
+        })
+        .collect();
+    let count = entries.len();
+    *out_entries = Box::into_raw(entries.into_boxed_slice()) as *const _;
+    *out_count = count;
+    PlatformWalletFFIResult::ok()
+}
+
+/// Release a peer list returned by
+/// [`platform_wallet_manager_spv_connected_peers`].
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_spv_connected_peers_free(
+    entries: *mut FFISpvPeerInfo,
+    count: usize,
+) {
+    if entries.is_null() || count == 0 {
+        return;
+    }
+    // Walk every row first to release its heap-owned `address` string
+    // before reclaiming the parent slice.
+    let slice = std::slice::from_raw_parts(entries, count);
+    for entry in slice {
+        if !entry.address.is_null() {
+            let _ = CString::from_raw(entry.address);
+        }
+    }
+    let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
 }
 
 /// Whether the SPV client is currently running.
@@ -182,10 +374,10 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_tip_unix_seconds(
     out_unix_seconds: *mut u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_unix_seconds);
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.spv().tip_block_time())
-    });
-    let tip = unwrap_option_or_return!(option);
+    // Waited on outside the registry guard — see `platform_wallet_manager_sync_progress`.
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
+    let spv = unwrap_option_or_return!(option);
+    let tip = block_on_worker(async move { spv.tip_block_time().await });
     *out_unix_seconds = tip.map(|t| t as u64).unwrap_or(0);
     PlatformWalletFFIResult::ok()
 }
@@ -358,6 +550,14 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
             config.devnet = Some(devnet);
         }
 
+        // Deliberately UNDER the registry guard, unlike the read-only
+        // exports: this one mutates the manager's runtime. Dropping the
+        // guard would let `platform_wallet_manager_destroy` remove the
+        // handle, join the workers and fire the host's `release_fn` while
+        // the start is in flight — and the run loop below would then
+        // deliver block events into released host contexts. Holding the
+        // guard makes the destroy wait, which is the whole point of the
+        // registry.
         let spv = manager.spv_arc();
         let start_result = {
             let spv = spv.clone();
@@ -383,12 +583,66 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
 pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
+    // Under the registry guard on purpose — it mutates the manager's
+    // runtime; see `platform_wallet_manager_spv_start`.
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(async {
-            let _ = manager.spv().stop().await;
+        let spv = manager.spv_arc();
+        block_on_worker(async move {
+            let _ = spv.stop().await;
         });
     });
     unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Arm an organic compact-filter rescan for one wallet by rewinding its
+/// SPV filter-scan checkpoint (`synced_height`) to `from_height`.
+///
+/// This does not itself scan; it rewinds the checkpoint on the *shared*
+/// wallet state the running `DashSpvClient` reads. On the filter-sync
+/// loop's next tick, `dash-spv`'s `FiltersManager` observes this wallet
+/// in `wallets_behind(committed_height)`, calls `reset_for_rescan()`,
+/// rewinds its committed height to this wallet's `synced_height`, and
+/// re-downloads / re-matches compact filters from there — matching any
+/// scripts (e.g. newly watched addresses) that weren't in the watch set
+/// when those blocks were first scanned.
+///
+/// `from_height` must be strictly below the wallet's current checkpoint.
+/// Equal/forward requests are successful no-ops and never advance the
+/// checkpoint.
+///
+/// Requires SPV running for an immediate effect; otherwise the rewound
+/// checkpoint takes effect when SPV next starts and its filter loop
+/// first ticks in the same process. The rewound checkpoint is in-memory
+/// only (not persisted by this call); if the process dies before the rescan
+/// finishes, the host must issue this request again after restart.
+///
+/// # Safety
+/// - `wallet_id` must point to 32 readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_spv_rescan_filters(
+    handle: Handle,
+    wallet_id: *const u8,
+    from_height: u32,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id);
+    let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
+
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager.spv_rescan_filters_blocking(&wid, from_height)
+    });
+    let found = unwrap_option_or_return!(option);
+    if !found {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::NotFound,
+            "Wallet not found".to_string(),
+        );
+    }
+    tracing::info!(
+        wallet_id = %hex::encode(wid),
+        from_height,
+        "platform_wallet_manager_spv_rescan_filters: armed filter rescan"
+    );
     PlatformWalletFFIResult::ok()
 }
 
@@ -397,8 +651,11 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
 pub unsafe extern "C" fn platform_wallet_manager_spv_clear_storage(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
+    // Under the registry guard on purpose — it mutates the manager's
+    // storage; see `platform_wallet_manager_spv_start`.
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.spv().clear_storage())
+        let spv = manager.spv_arc();
+        block_on_worker(async move { spv.clear_storage().await })
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);

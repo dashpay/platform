@@ -9,6 +9,7 @@
 #![allow(clippy::result_large_err)]
 #![allow(clippy::large_enum_variant)]
 
+pub mod address_private_key;
 pub mod asset_lock;
 pub mod asset_lock_persistence;
 pub mod contact;
@@ -28,6 +29,9 @@ pub mod derive_and_persist_callbacks;
 pub mod derive_identity_key_at_slot;
 pub mod document;
 pub mod dpns;
+pub mod dpns_marketplace;
+pub mod dpns_name_state_persistence;
+pub mod dpns_sync;
 pub mod error;
 pub mod established_contact;
 pub mod event_handler;
@@ -47,18 +51,26 @@ pub mod identity_top_up;
 pub mod identity_transfer;
 pub mod identity_update;
 pub mod identity_withdrawal;
+pub mod invitation;
+pub mod invitation_persistence;
 pub mod logging;
 pub mod managed_identity;
 pub mod manager;
 pub mod manager_diagnostics;
+pub mod masternode_locator;
+pub mod masternode_update_service;
+pub mod masternode_withdrawal;
 pub mod memory_explorer;
 pub mod mnemonic_words;
+pub mod parse_state_transition;
 pub mod persistence;
 pub mod platform_address_sync;
 pub mod platform_address_types;
 pub mod platform_addresses;
 pub mod platform_wallet_info;
+pub mod provider_key_at_index;
 mod runtime;
+pub mod secp256k1_primitives;
 #[cfg(feature = "shielded")]
 pub mod shielded_persistence;
 #[cfg(feature = "shielded")]
@@ -70,14 +82,17 @@ pub mod sign_with_mnemonic_resolver;
 pub mod spv;
 pub mod token_persistence;
 pub mod tokens;
+pub mod tracked_masternode;
 pub mod types;
 pub mod utils;
 pub mod wallet;
 pub mod wallet_registration_persistence;
 pub mod wallet_restore_types;
+pub mod wallet_startup;
 pub mod xpub_render;
 
 // Re-exports
+pub use address_private_key::*;
 pub use asset_lock::*;
 pub use asset_lock_persistence::*;
 pub use contact::*;
@@ -96,6 +111,9 @@ pub use derive_and_persist_callbacks::*;
 pub use derive_identity_key_at_slot::*;
 pub use document::*;
 pub use dpns::*;
+pub use dpns_marketplace::*;
+pub use dpns_name_state_persistence::*;
+pub use dpns_sync::*;
 pub use error::*;
 pub use established_contact::*;
 pub use event_handler::*;
@@ -115,6 +133,8 @@ pub use identity_top_up::*;
 pub use identity_transfer::*;
 pub use identity_update::*;
 pub use identity_withdrawal::*;
+pub use invitation::*;
+pub use invitation_persistence::*;
 pub use logging::*;
 pub use managed_identity::*;
 pub use manager::*;
@@ -126,6 +146,8 @@ pub use platform_address_sync::*;
 pub use platform_address_types::*;
 pub use platform_addresses::*;
 pub use platform_wallet_info::*;
+pub use provider_key_at_index::*;
+pub use secp256k1_primitives::*;
 #[cfg(feature = "shielded")]
 pub use shielded_send::*;
 #[cfg(feature = "shielded")]

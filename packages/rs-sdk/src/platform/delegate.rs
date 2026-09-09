@@ -26,6 +26,8 @@
 #[macro_export]
 macro_rules! delegate_transport_request_variant {
     ($request:ty, $response:ty, $($variant:ident),+) => {
+        impl $crate::platform::query::WireQuery for $request {}
+
         impl $crate::platform::dapi::transport::TransportRequest for $request {
 
             type Client = $crate::platform::dapi::transport::PlatformGrpcClient;

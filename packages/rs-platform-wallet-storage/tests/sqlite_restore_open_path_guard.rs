@@ -20,7 +20,7 @@ fn restore_refuses_an_in_process_open_destination() {
     ensure_wallet_meta(&persister, &wid(0xA1));
 
     // A valid wallet-storage backup to restore from.
-    let backup_dir = tempfile::tempdir().expect("backup dir");
+    let backup_dir = common::secure_tempdir().expect("backup dir");
     let backup_path = persister
         .backup_to(backup_dir.path())
         .expect("online backup");

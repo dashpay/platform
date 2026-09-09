@@ -1,6 +1,7 @@
 # Relocate the deferred-crypto queue from the wallet to the identity
 
-**Status:** reviewed (research + 4-lens spec review folded); implementing.
+**Status:** implemented (historical reviewed spec). The in-memory relocation is
+complete; durable cold-load restoration remains deferred as described in §7.
 **Scope:** `packages/rs-platform-wallet` (+ a one-line doc-comment in `rs-platform-wallet-storage`).
 Rust-only. FFI signatures, Swift, and whole-struct serialization are **unchanged**.
 

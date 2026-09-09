@@ -12,7 +12,9 @@ use dpp::identity::{Identity, KeyID};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::Identifier;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
+use dpp::serialization::{
+    JsonConvertible, PlatformDeserializable, PlatformSerializable, ValueConvertible,
+};
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -175,24 +177,37 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<IdentityObjectJs> {
-        // Use platform_value conversion which handles BigInt for balance/revision
-        // and outputs id as Uint8Array, publicKeys as plain objects
-        let value = self.0.to_object()?;
+        let value = self
+            .0
+            .to_object()
+            .map_err(|e| WasmDppError::serialization(format!("toObject: {}", e)))?;
         let js_value = serialization::platform_value_to_object(&value)?;
         Ok(js_value.into())
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<IdentityJSONJs> {
-        let js_value = serialization::to_json(&self.0)?;
+        let json = self
+            .0
+            .to_json()
+            .map_err(|e| WasmDppError::serialization(format!("toJSON: {}", e)))?;
+        let js_value = serialization::json_to_js_value(&json)?;
         Ok(js_value.into())
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(value: IdentityJSONJs) -> WasmDppResult<IdentityWasm> {
-        serialization::from_json(value.into()).map(IdentityWasm)
+        let json = serialization::js_value_to_json(&value.into())?;
+        let identity = Identity::from_json(json)
+            .map_err(|e| WasmDppError::serialization(format!("fromJSON: {}", e)))?;
+        Ok(IdentityWasm(identity))
     }
 
+    /// `fromObject` keeps the manual path because the wasm API dispatches on
+    /// the `platform_version` arg (via `try_from_platform_versioned`) rather
+    /// than the value's embedded `$formatVersion` tag — explicit version
+    /// coupling is the wasm SDK convention. The canonical
+    /// `ValueConvertible::from_object` would dispatch on the tag.
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(
         value: IdentityObjectJs,

@@ -136,6 +136,16 @@ class SendViewModel: ObservableObject {
     /// core/shielded flows are unaffected.
     @Published var platformMinOutputAmount: UInt64?
 
+    /// Consensus-pinned shielded fee estimates (credits, 2 actions) per fee
+    /// kind, resolved through the wallet manager's network-tracked platform
+    /// version and pushed in by the VIEW
+    /// (`SendTransactionView.resolveShieldedFees()`) on appear, when the
+    /// async protocol-version refresh publishes, and again from the Send
+    /// action — the view model has no wallet handle of its own, same as
+    /// `platformMinOutputAmount` above. A missing entry falls back to the
+    /// static `SendFlow.estimatedFee` placeholder in `estimateFee(for:)`.
+    @Published var shieldedFeeEstimates: [PlatformWalletManager.ShieldedFeeKind: UInt64] = [:]
+
     private let network: Network
 
     init(network: Network) {
@@ -437,16 +447,20 @@ class SendViewModel: ObservableObject {
 
     /// Resolve the estimated fee (in the flow's settlement unit) for the
     /// active flow. The shielded flows are consensus-pinned and computed
-    /// in Rust (`compute_*_shielded_fee` via the FFI estimator), so this
-    /// bridges to that rather than re-deriving the constants in Swift.
+    /// in Rust (`compute_*_shielded_fee` via the FFI estimator, at the
+    /// manager's network-tracked platform version), so this reads the
+    /// view-pushed `shieldedFeeEstimates` rather than re-deriving the
+    /// constants in Swift.
     ///
-    /// `numActions: 2` — the exact action count isn't known until the
-    /// builder selects notes; a single-note spend with change (the common
-    /// case) serializes to 2 Orchard actions. The transparent `Shield`
-    /// (`platformToShielded`) reserves the same `compute_minimum_shielded_fee(2)`
-    /// base as its structure-check minimum, so it shares the transfer kind.
-    /// On an FFI error we fall back to the static enum placeholder rather
-    /// than surfacing a fee of nil for a flow we can otherwise send.
+    /// The estimates are for 2 Orchard actions — the exact action count
+    /// isn't known until the builder selects notes; a single-note spend
+    /// with change (the common case) serializes to 2 actions. The
+    /// transparent `Shield` (`platformToShielded`) reserves the same
+    /// `compute_minimum_shielded_fee(2)` base as its structure-check
+    /// minimum, so it shares the transfer kind. When the view hasn't
+    /// resolved a fee (or the FFI errored) we fall back to the static enum
+    /// placeholder rather than surfacing a fee of nil for a flow we can
+    /// otherwise send.
     private func estimateFee(for flow: SendFlow) -> UInt64 {
         let kind: PlatformWalletManager.ShieldedFeeKind?
         switch flow {
@@ -464,8 +478,7 @@ class SendViewModel: ObservableObject {
             kind = nil
         }
         guard let kind else { return flow.estimatedFee }
-        return (try? PlatformWalletManager.estimateShieldedFee(kind: kind, numActions: 2))
-            ?? flow.estimatedFee
+        return shieldedFeeEstimates[kind] ?? flow.estimatedFee
     }
 
     // MARK: - Send Execution
@@ -519,21 +532,16 @@ class SendViewModel: ObservableObject {
                         amountDuffs: recipient.amountDuffs
                     )
                 }
-                try builder.setFunding(
+                let signedTx = try builder.finalizeAtomic(
                     wallet: platformWallet,
                     accountType: .bip44,
                     accountIndex: senderAccountIndex
                 )
-                let signedTx = try builder.buildSigned(
-                    wallet: platformWallet,
-                    accountType: .bip44,
-                    accountIndex: senderAccountIndex
-                )
-                // Broadcast lives on the core wallet; grab it locally.
-                let _ = try platformWallet.coreWallet().broadcastTransaction(signedTx)
-                successMessage = recipients.count > 1
-                    ? "Payment sent to \(recipients.count) recipients"
-                    : "Payment sent"
+                // Core acceptance, rather than a successful peer socket write,
+                // is the boundary for showing payment success.
+                let outcome = try platformWallet.coreWallet()
+                    .broadcastTransactionWithOutcome(signedTx)
+                applyCoreBroadcastOutcome(outcome, recipientCount: recipients.count)
 
             case .platformToPlatform:
                 guard let addressWallet = platformAddressWallet else {
@@ -660,8 +668,12 @@ class SendViewModel: ObservableObject {
                     return
                 }
                 let trimmedMemo = memoText.trimmingCharacters(in: .whitespacesAndNewlines)
+                // Per-operation spend authority: the resolver fires
+                // exactly for this spend (launch binds are
+                // viewing-key only and never read the mnemonic).
                 try await walletManager.shieldedTransfer(
                     walletId: wallet.walletId,
+                    resolver: MnemonicResolver(),
                     account: 0,
                     recipientRaw43: recipientRaw,
                     amount: amountCredits,
@@ -682,6 +694,7 @@ class SendViewModel: ObservableObject {
                 let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
                 try await walletManager.shieldedUnshield(
                     walletId: wallet.walletId,
+                    resolver: MnemonicResolver(),
                     account: 0,
                     toPlatformAddress: trimmed,
                     amount: amountCredits
@@ -700,6 +713,7 @@ class SendViewModel: ObservableObject {
                 let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
                 try await walletManager.shieldedWithdraw(
                     walletId: wallet.walletId,
+                    resolver: MnemonicResolver(),
                     account: 0,
                     toCoreAddress: trimmed,
                     amount: amountCredits,
@@ -725,9 +739,15 @@ class SendViewModel: ObservableObject {
                 // to self-shield only.
                 let enteredRecipient = recipientAddress
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                let ownShieldedAddress =
-                    shieldedService.addressesByAccount[0]
-                    ?? shieldedService.orchardDisplayAddress
+                // Resolve THIS wallet's own default Orchard address from
+                // the engine rather than the single-mirror
+                // `shieldedService` (which tracks `firstWallet`). Every
+                // loaded wallet is engine-bound, so `shieldedDefaultAddress`
+                // resolves for the wallet actually being sent from.
+                let ownShieldedAddress = walletManager.shieldedDisplayAddress(
+                    walletId: wallet.walletId,
+                    network: network
+                )
                 if !enteredRecipient.isEmpty,
                    enteredRecipient != ownShieldedAddress {
                     // Don't advertise "leave it blank": a blank recipient
@@ -822,6 +842,29 @@ class SendViewModel: ObservableObject {
                 + "the next shielded sync to confirm. Do not retry."
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    /// Apply the authoritative Core broadcast outcome to the send UI. Kept as
+    /// a small pure state transition so rejected/unknown can be regression
+    /// tested without constructing a live wallet or transaction.
+    func applyCoreBroadcastOutcome(
+        _ outcome: CoreTransactionBroadcastOutcome,
+        recipientCount: Int
+    ) {
+        switch outcome {
+        case .accepted:
+            error = nil
+            successMessage = recipientCount > 1
+                ? "Payment sent to \(recipientCount) recipients"
+                : "Payment sent"
+        case .rejected(_, let reason):
+            successMessage = nil
+            error = "Payment rejected by Dash Core: \(reason)"
+        case .unknown(let txid, let reason):
+            successMessage = nil
+            error = "Payment status could not be verified (\(txid)). "
+                + "It may already have been accepted; do not retry. \(reason)"
         }
     }
 }

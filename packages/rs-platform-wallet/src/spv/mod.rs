@@ -1,5 +1,7 @@
+mod peers;
 mod runtime;
 
+pub use peers::{SpvPeerInfo, SpvPeerNodeType};
 pub use runtime::SpvRuntime;
 
 // Re-exports so the FFI layer can build sync configs and read progress

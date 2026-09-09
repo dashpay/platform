@@ -7,12 +7,46 @@ use dpp::address_funds::PlatformAddress;
 
 /// The subtree key for address balances storage as u8
 const ADDRESS_BALANCES_KEY_U8: u8 = b'm';
+/// A per-block row holds one block's address change map. Mirrors the
+/// compacted verifier's semantic-object budget so proof-derived compact
+/// length prefixes cannot request attacker-selected allocations.
+const MAX_ADDRESS_BALANCE_ROW_DECODE_BYTES: usize = 1024 * 1024;
 use dpp::balances::credits::CreditOperation;
 use grovedb::{Element, GroveDb, PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 use super::VerifiedAddressBalanceChangesPerBlock;
+
+/// Bounded, exact-consumption decoding for a proof-derived per-block address
+/// balance row.
+fn decode_address_balance_row(
+    serialized_data: &[u8],
+) -> Result<BTreeMap<PlatformAddress, CreditOperation>, Error> {
+    if serialized_data.len() > MAX_ADDRESS_BALANCE_ROW_DECODE_BYTES {
+        return Err(Error::Proof(ProofError::CorruptedProof(
+            "address balance row exceeds the decoding limit".to_string(),
+        )));
+    }
+
+    let config = bincode::config::standard()
+        .with_big_endian()
+        .with_limit::<MAX_ADDRESS_BALANCE_ROW_DECODE_BYTES>();
+    let (address_balances, consumed): (BTreeMap<PlatformAddress, CreditOperation>, usize) =
+        bincode::decode_from_slice(serialized_data, config).map_err(|e| {
+            Error::Proof(ProofError::CorruptedProof(format!(
+                "cannot decode address balances: {}",
+                e
+            )))
+        })?;
+    if consumed != serialized_data.len() {
+        return Err(Error::Proof(ProofError::CorruptedProof(
+            "address balance row contains trailing bytes".to_string(),
+        )));
+    }
+
+    Ok(address_balances)
+}
 
 impl Drive {
     /// Verifies recent address balance changes proof.
@@ -30,10 +64,6 @@ impl Drive {
             vec![RootTree::SavedBlockTransactions as u8],
             vec![ADDRESS_BALANCES_KEY_U8],
         ];
-
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
 
         // Create the same range query as the prove function
         let mut query = Query::new();
@@ -69,14 +99,8 @@ impl Drive {
                 )));
             };
 
-            // Deserialize the address balance map
-            let (address_balances, _): (BTreeMap<PlatformAddress, CreditOperation>, usize) =
-                bincode::decode_from_slice(&serialized_data, config).map_err(|e| {
-                    Error::Proof(ProofError::CorruptedProof(format!(
-                        "cannot decode address balances: {}",
-                        e
-                    )))
-                })?;
+            // Deserialize the address balance map within its bounded budget
+            let address_balances = decode_address_balance_row(&serialized_data)?;
 
             address_balance_changes.push((block_height, address_balances));
         }
@@ -99,10 +123,6 @@ impl Drive {
             vec![RootTree::SavedBlockTransactions as u8],
             vec![ADDRESS_BALANCES_KEY_U8],
         ];
-
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
 
         // Create the same exclusive range query as the prove_after function
         let mut query = Query::new();
@@ -138,14 +158,8 @@ impl Drive {
                 )));
             };
 
-            // Deserialize the address balance map
-            let (address_balances, _): (BTreeMap<PlatformAddress, CreditOperation>, usize) =
-                bincode::decode_from_slice(&serialized_data, config).map_err(|e| {
-                    Error::Proof(ProofError::CorruptedProof(format!(
-                        "cannot decode address balances: {}",
-                        e
-                    )))
-                })?;
+            // Deserialize the address balance map within its bounded budget
+            let address_balances = decode_address_balance_row(&serialized_data)?;
 
             address_balance_changes.push((block_height, address_balances));
         }
@@ -162,6 +176,27 @@ mod tests {
     use dpp::balances::credits::CreditOperation;
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn address_balance_row_decoder_rejects_hostile_and_trailing_input() {
+        // A compact bincode length prefix declaring a huge map with no
+        // corresponding entries must fail within the bounded budget rather
+        // than requesting an attacker-selected allocation.
+        let hostile_row = [0xfdu8, 0xff, 0xff, 0xff, 0xff];
+        assert!(decode_address_balance_row(&hostile_row).is_err());
+
+        // A valid row followed by trailing bytes must be rejected.
+        let mut row = BTreeMap::new();
+        row.insert(
+            PlatformAddress::P2pkh([1; 20]),
+            CreditOperation::AddToCredits(1),
+        );
+        let config = bincode::config::standard().with_big_endian();
+        let mut bytes = bincode::encode_to_vec(&row, config).expect("encode row");
+        assert!(decode_address_balance_row(&bytes).is_ok());
+        bytes.push(0);
+        assert!(decode_address_balance_row(&bytes).is_err());
+    }
 
     #[test]
     fn should_prove_and_verify_recent_address_balance_changes() {

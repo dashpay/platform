@@ -41,6 +41,7 @@ use dpp::state_transition::batch_transition::document_create_transition::v0::v0_
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use crate::query::{InternalClauses, QuerySyntaxSimpleValidationResult, ValueClause, WhereOperator};
 use crate::error::query::QuerySyntaxError;
@@ -323,6 +324,29 @@ impl DriveDocumentQueryFilter<'_> {
                     TransitionCheckResult::Fail
                 }
             }
+            DocumentTransition::IndexOnlyDelete(index_only_delete) => {
+                if let DocumentActionMatchClauses::Delete {
+                    original_document_clauses,
+                } = &self.action_clauses
+                {
+                    // An indexOnly document has no stored row to fetch:
+                    // the transition carries the document's full values,
+                    // so the "original document" clauses evaluate
+                    // directly against them and no original is ever
+                    // needed.
+                    if self.evaluate_clauses(
+                        original_document_clauses,
+                        &id_value,
+                        index_only_delete.data(),
+                    ) {
+                        TransitionCheckResult::Pass
+                    } else {
+                        TransitionCheckResult::Fail
+                    }
+                } else {
+                    TransitionCheckResult::Fail
+                }
+            }
         }
     }
 
@@ -389,8 +413,8 @@ impl DriveDocumentQueryFilter<'_> {
             }
         }
 
-        // In clause
-        if let Some(in_clause) = &clauses.in_clause {
+        // In clauses
+        for in_clause in &clauses.in_clauses {
             let field_value = get_value_by_path(document_data, &in_clause.field);
             if let Some(value) = field_value {
                 if !in_clause.matches_value(value) {
@@ -770,11 +794,11 @@ mod tests {
         ];
 
         let internal_clauses = InternalClauses {
-            in_clause: Some(WhereClause {
+            in_clauses: vec![WhereClause {
                 field: "status".to_string(),
                 operator: WhereOperator::In,
                 value: Value::Array(allowed_values),
-            }),
+            }],
             ..Default::default()
         };
 
@@ -2338,11 +2362,11 @@ mod tests {
         let contract = fixture.data_contract_owned();
 
         let internal_clauses = InternalClauses {
-            in_clause: Some(WhereClause {
+            in_clauses: vec![WhereClause {
                 field: "nonexistent".to_string(),
                 operator: WhereOperator::In,
                 value: Value::Array(vec![Value::I64(1)]),
-            }),
+            }],
             ..Default::default()
         };
 

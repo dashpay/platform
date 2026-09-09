@@ -253,6 +253,22 @@ impl Drive {
             )?);
         }
 
+        // Skipping an empty keyword set is load-bearing, but it is a shield
+        // rather than a fix, and both halves matter to anyone changing it.
+        //
+        // What it prevents: the keyword update emits its deletes blind to each
+        // other in one batch, so several of them jointly emptying the shared
+        // `byContractId/<contractId>` group would leave that group tree behind
+        // with nothing in it — and emptying the group without refilling it
+        // requires exactly this empty-set case.
+        //
+        // What it costs: the previous keyword documents are not deleted either,
+        // so a contract that clears its keywords advertises none while keyword
+        // search still returns it under the old ones. Removing this guard to fix
+        // that trades a stale index for a stranded group tree; the deletes have
+        // to become sibling-aware first. Both halves are pinned —
+        // `clearing_a_contracts_keywords_leaves_the_old_ones_indexed` and
+        // `clearing_every_keyword_leaves_an_empty_by_contract_id_group_behind`.
         if !contract.keywords().is_empty() {
             batch_operations.extend(self.update_contract_keywords_operations(
                 contract.id(),
@@ -450,6 +466,126 @@ mod tests {
                 None,
             )
             .expect("update keyword delta via update_contract should succeed");
+    }
+
+    /// The keywords the keyword search index currently returns for `contract_id`.
+    fn indexed_keywords(
+        drive: &crate::drive::Drive,
+        keyword_search: &dpp::prelude::DataContract,
+        contract_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Vec<String> {
+        use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
+        use crate::query::{DriveDocumentQuery, WhereClause, WhereOperator};
+        use dpp::document::DocumentV0Getters;
+        use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+        use dpp::platform_value::Value;
+
+        let document_type = keyword_search
+            .document_type_for_name("contractKeywords")
+            .expect("contractKeywords doctype");
+        let mut query = DriveDocumentQuery::all_items_query(keyword_search, document_type, None);
+        query.internal_clauses.equal_clauses.insert(
+            "contractId".to_string(),
+            WhereClause {
+                field: "contractId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(contract_id.to_buffer()),
+            },
+        );
+        let mut keywords: Vec<String> = drive
+            .query_documents(
+                query,
+                None,
+                false,
+                None,
+                Some(platform_version.protocol_version),
+            )
+            .expect("the byContractId query must succeed")
+            .documents_owned()
+            .into_iter()
+            .map(|document| {
+                document
+                    .properties()
+                    .get_string("keyword")
+                    .expect("every keyword document carries a keyword")
+            })
+            .collect();
+        keywords.sort();
+        keywords
+    }
+
+    /// **This test asserts a defect, not the desired behaviour**, and it is the
+    /// other half of the empty-keyword-set skip above.
+    ///
+    /// Clearing a contract's keywords does not delete its keyword documents: an
+    /// empty set skips the keyword update entirely, so the previous documents
+    /// survive and stay indexed. The contract then advertises no keywords while
+    /// keyword search still returns it under the old ones, permanently.
+    ///
+    /// The skip is a shield, not a fix. It is what keeps the deletes from
+    /// jointly emptying the shared `byContractId` group and stranding it — see
+    /// `clearing_every_keyword_leaves_an_empty_by_contract_id_group_behind` —
+    /// so removing it to make this test go green trades a stale index for an
+    /// empty group tree. Making the deletes sibling-aware has to come first.
+    #[test]
+    fn clearing_a_contracts_keywords_leaves_the_old_ones_indexed() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let keyword_search =
+            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                .expect("load keyword_search");
+        drive
+            .apply_contract(
+                &keyword_search,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("apply keyword_search");
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.set_keywords(vec!["alpha".to_string(), "bravo".to_string()]);
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("initial insert with keywords");
+
+        assert_eq!(
+            indexed_keywords(&drive, &keyword_search, contract.id(), platform_version),
+            vec!["alpha".to_string(), "bravo".to_string()],
+            "baseline: both keywords are indexed"
+        );
+
+        contract.set_keywords(vec![]);
+        contract.increment_version();
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("clearing keywords via update_contract should succeed");
+
+        assert_eq!(
+            indexed_keywords(&drive, &keyword_search, contract.id(), platform_version),
+            vec!["alpha".to_string(), "bravo".to_string()],
+            "the old keyword documents are expected to survive: an empty keyword set skips \
+             the keyword update rather than performing it"
+        );
     }
 
     /// Exercises `update_contract_operations_v1`'s description-update branch:

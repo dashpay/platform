@@ -8,7 +8,7 @@ use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPu
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
 };
-use key_wallet::mnemonic::{Language, Mnemonic};
+use key_wallet::mnemonic::Mnemonic;
 use zeroize::Zeroizing;
 
 use crate::error::*;
@@ -55,24 +55,11 @@ pub(crate) unsafe fn zeroize_and_free_row(row: &mut IdentityKeyPreviewFFI) {
 
 /// Parse a BIP-39 mnemonic against every supported wordlist.
 pub(crate) fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
-    const LANGUAGES: [Language; 10] = [
-        Language::English,
-        Language::Spanish,
-        Language::French,
-        Language::Italian,
-        Language::Japanese,
-        Language::Korean,
-        Language::ChineseSimplified,
-        Language::ChineseTraditional,
-        Language::Czech,
-        Language::Portuguese,
-    ];
-    for lang in LANGUAGES {
-        if let Ok(m) = Mnemonic::from_phrase(phrase, lang) {
-            return Ok(m);
-        }
-    }
-    Err("phrase does not match any supported BIP-39 wordlist")
+    // Upstream's `from_phrase` IS the auto-detecting parse since
+    // rust-dashcore#981 — one path, English diagnostics preserved when
+    // nothing matches. This wrapper survives only to narrow the error to
+    // the `&'static str` its callers report.
+    Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
 }
 
 /// Resolve a wallet's BIP-39 mnemonic via a Swift-owned
@@ -104,6 +91,104 @@ pub(crate) unsafe fn resolve_master_from_resolver(
     wallet_id: &[u8; 32],
     network: Network,
 ) -> Result<ExtendedPrivKey, PlatformWalletFFIResult> {
+    resolve_master_from_resolver_classified(mnemonic_resolver_handle, wallet_id, network)
+        .map_err(|failure| failure.result)
+}
+
+/// Whether a resolve failure is worth asking about again.
+///
+/// The FFI result codes cannot carry this: every cause below the callback —
+/// a locked Keychain, a phrase that is not BIP-39, bytes that are not UTF-8 —
+/// lands on `ErrorWalletOperation`. The distinction exists at the point the
+/// failure is produced and is lost immediately after, so it is captured here
+/// rather than re-derived from a message downstream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ResolveFailureKind {
+    /// The mnemonic is presumed to exist; this attempt could not read it.
+    /// A locked device, a denied or cancelled Keychain read, a resolver that
+    /// was not ready. The next launch may get a different answer.
+    Unavailable,
+    /// What is stored cannot produce a key, however many times it is read:
+    /// invalid UTF-8, a phrase in no supported wordlist, a length the buffer
+    /// contract forbids, a seed no master key can be built from.
+    Permanent,
+}
+
+/// A resolve failure with its retry classification attached.
+pub(crate) struct ResolveFailure {
+    pub kind: ResolveFailureKind,
+    pub result: PlatformWalletFFIResult,
+}
+
+impl ResolveFailure {
+    fn unavailable(result: PlatformWalletFFIResult) -> Self {
+        Self {
+            kind: ResolveFailureKind::Unavailable,
+            result,
+        }
+    }
+
+    fn permanent(result: PlatformWalletFFIResult) -> Self {
+        Self {
+            kind: ResolveFailureKind::Permanent,
+            result,
+        }
+    }
+}
+
+/// [`resolve_master_from_resolver`], keeping the retry classification.
+///
+/// # Safety
+/// Same contract as [`resolve_master_from_resolver`].
+pub(crate) unsafe fn resolve_master_from_resolver_classified(
+    mnemonic_resolver_handle: *mut rs_sdk_ffi::MnemonicResolverHandle,
+    wallet_id: &[u8; 32],
+    network: Network,
+) -> Result<ExtendedPrivKey, ResolveFailure> {
+    let seed = resolve_seed_from_resolver_classified(mnemonic_resolver_handle, wallet_id)?;
+    // A seed that cannot yield a master key is the stored material being
+    // wrong, not the moment being wrong.
+    ExtendedPrivKey::new_master(network, seed.as_ref()).map_err(|e| {
+        ResolveFailure::permanent(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("failed to build master xpriv from resolved mnemonic: {e}"),
+        ))
+    })
+}
+
+/// Resolve a wallet's BIP-39 mnemonic via a Swift-owned
+/// [`MnemonicResolverHandle`] and return the **raw 64-byte BIP39 seed**
+/// (empty passphrase).
+///
+/// This is the seed the BLS operator / Ed25519 platform-node HD masters
+/// consume directly (rust-dashcore #879); unlike
+/// [`resolve_master_from_resolver`] it does **not** reduce the seed to a
+/// secp256k1 `ExtendedPrivKey` — doing so would discard the raw seed the
+/// provider-key derivation needs. The mnemonic and the returned seed are
+/// held in [`Zeroizing`] buffers; the seed is scrubbed when the returned
+/// value drops.
+///
+/// # Safety
+/// `mnemonic_resolver_handle` must be non-null, come from
+/// [`rs_sdk_ffi::dash_sdk_mnemonic_resolver_create`], and remain valid
+/// for the duration of the call.
+pub(crate) unsafe fn resolve_seed_from_resolver(
+    mnemonic_resolver_handle: *mut rs_sdk_ffi::MnemonicResolverHandle,
+    wallet_id: &[u8; 32],
+) -> Result<Zeroizing<[u8; 64]>, PlatformWalletFFIResult> {
+    resolve_seed_from_resolver_classified(mnemonic_resolver_handle, wallet_id)
+        .map_err(|failure| failure.result)
+}
+
+/// [`resolve_seed_from_resolver`], keeping the retry classification. See
+/// [`ResolveFailureKind`] for why the codes alone cannot express it.
+///
+/// # Safety
+/// Same contract as [`resolve_seed_from_resolver`].
+pub(crate) unsafe fn resolve_seed_from_resolver_classified(
+    mnemonic_resolver_handle: *mut rs_sdk_ffi::MnemonicResolverHandle,
+    wallet_id: &[u8; 32],
+) -> Result<Zeroizing<[u8; 64]>, ResolveFailure> {
     use rs_sdk_ffi::{mnemonic_resolver_result, MNEMONIC_RESOLVER_BUFFER_CAPACITY};
     use std::ffi::c_void;
 
@@ -123,55 +208,54 @@ pub(crate) unsafe fn resolve_master_from_resolver(
     match rc {
         x if x == mnemonic_resolver_result::SUCCESS => {}
         x if x == mnemonic_resolver_result::NOT_FOUND => {
-            return Err(PlatformWalletFFIResult::err(
+            // Not permanent: the host filters watch-only wallets before
+            // calling, so reaching this means the item was expected and was
+            // not readable — including the wipe/restore race.
+            return Err(ResolveFailure::unavailable(PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorWalletOperation,
                 "mnemonic resolver: no mnemonic stored for the supplied wallet_id",
-            ));
+            )));
         }
         x if x == mnemonic_resolver_result::BUFFER_TOO_SMALL => {
-            return Err(PlatformWalletFFIResult::err(
+            return Err(ResolveFailure::permanent(PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorWalletOperation,
                 "mnemonic resolver: mnemonic exceeded the FFI buffer capacity",
-            ));
+            )));
         }
         _ => {
-            return Err(PlatformWalletFFIResult::err(
+            // The Keychain bucket: locked device, denied or cancelled prompt,
+            // daemon unavailable. Retryable by nature.
+            return Err(ResolveFailure::unavailable(PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorWalletOperation,
                 "mnemonic resolver: failed (other / Keychain access error)",
-            ));
+            )));
         }
     }
     if mnemonic_len == 0 || mnemonic_len > MNEMONIC_RESOLVER_BUFFER_CAPACITY {
-        return Err(PlatformWalletFFIResult::err(
+        return Err(ResolveFailure::permanent(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             "mnemonic resolver: returned invalid length",
-        ));
+        )));
     }
 
     // Validate UTF-8 over the resolver-claimed prefix only — never
     // build a `String` (Swift's can't be zeroized; ours can).
     let mnemonic_str = std::str::from_utf8(&mnemonic_buf[..mnemonic_len]).map_err(|e| {
-        PlatformWalletFFIResult::err(
+        ResolveFailure::permanent(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorUtf8Conversion,
             format!("mnemonic resolver: returned invalid UTF-8: {e}"),
-        )
+        ))
     })?;
     let mnemonic = parse_mnemonic_any_language(mnemonic_str).map_err(|e| {
-        PlatformWalletFFIResult::err(
+        ResolveFailure::permanent(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("mnemonic resolver: returned an invalid mnemonic: {e}"),
-        )
+        ))
     })?;
 
     let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
     drop(mnemonic);
-
-    ExtendedPrivKey::new_master(network, seed.as_ref()).map_err(|e| {
-        PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("failed to build master xpriv from resolved mnemonic: {e}"),
-        )
-    })
+    Ok(seed)
 }
 
 /// Build the DIP-9 identity-authentication derivation path
@@ -495,5 +579,119 @@ mod tests {
         );
         assert!(out.items.is_null());
         assert_eq!(out.count, 0);
+    }
+}
+
+/// The classification the startup path depends on: a resolver that could not
+/// read must not look like one that read something unusable, and vice versa.
+/// Both arrive as the same FFI result code, so only [`ResolveFailureKind`]
+/// carries the difference — and getting it backwards either tells a client to
+/// stop over a locked device, or to retry forever over a corrupt phrase.
+#[cfg(test)]
+mod resolve_classification_tests {
+    use super::*;
+    use rs_sdk_ffi::{
+        mnemonic_resolver_result, MnemonicResolverHandle, MnemonicResolverVTable,
+        MNEMONIC_RESOLVER_BUFFER_CAPACITY,
+    };
+    use std::os::raw::{c_char, c_void};
+
+    /// Resolver that always reports "no mnemonic for this wallet".
+    unsafe extern "C" fn resolve_not_found(
+        _ctx: *const c_void,
+        _wallet_id: *const u8,
+        _out: *mut c_char,
+        _cap: usize,
+        _out_len: *mut usize,
+    ) -> i32 {
+        mnemonic_resolver_result::NOT_FOUND
+    }
+
+    /// Resolver standing in for a locked device / denied Keychain read.
+    unsafe extern "C" fn resolve_keychain_error(
+        _ctx: *const c_void,
+        _wallet_id: *const u8,
+        _out: *mut c_char,
+        _cap: usize,
+        _out_len: *mut usize,
+    ) -> i32 {
+        mnemonic_resolver_result::OTHER
+    }
+
+    /// Resolver that answers successfully with a phrase in no wordlist.
+    unsafe extern "C" fn resolve_garbage_phrase(
+        _ctx: *const c_void,
+        _wallet_id: *const u8,
+        out: *mut c_char,
+        cap: usize,
+        out_len: *mut usize,
+    ) -> i32 {
+        let phrase = b"not a bip39 phrase at all";
+        assert!(cap >= phrase.len());
+        std::ptr::copy_nonoverlapping(phrase.as_ptr(), out as *mut u8, phrase.len());
+        *out_len = phrase.len();
+        mnemonic_resolver_result::SUCCESS
+    }
+
+    /// Resolver that claims a length the buffer contract forbids.
+    unsafe extern "C" fn resolve_absurd_length(
+        _ctx: *const c_void,
+        _wallet_id: *const u8,
+        _out: *mut c_char,
+        _cap: usize,
+        out_len: *mut usize,
+    ) -> i32 {
+        *out_len = MNEMONIC_RESOLVER_BUFFER_CAPACITY + 1;
+        mnemonic_resolver_result::SUCCESS
+    }
+
+    unsafe extern "C" fn destroy_noop(_ctx: *mut c_void) {}
+
+    fn classify(resolve: rs_sdk_ffi::MnemonicResolveCallback) -> ResolveFailureKind {
+        let mut vtable = MnemonicResolverVTable {
+            resolve,
+            destroy: destroy_noop,
+        };
+        let mut handle = MnemonicResolverHandle {
+            ctx: std::ptr::null_mut(),
+            vtable: &mut vtable,
+        };
+        let failure = unsafe { resolve_seed_from_resolver_classified(&mut handle, &[9u8; 32]) }
+            .expect_err("this resolver never succeeds");
+        failure.kind
+    }
+
+    #[test]
+    fn a_keychain_that_would_not_answer_is_retryable() {
+        assert_eq!(
+            classify(resolve_keychain_error),
+            ResolveFailureKind::Unavailable,
+            "a locked or denied Keychain read says nothing about what is stored"
+        );
+    }
+
+    #[test]
+    fn a_missing_item_is_retryable_not_a_verdict() {
+        // The host filters watch-only wallets before calling, so reaching
+        // NOT_FOUND means the item was expected — a wipe/restore race, not
+        // proof that this wallet has no seed.
+        assert_eq!(classify(resolve_not_found), ResolveFailureKind::Unavailable);
+    }
+
+    #[test]
+    fn a_phrase_in_no_wordlist_is_permanent() {
+        assert_eq!(
+            classify(resolve_garbage_phrase),
+            ResolveFailureKind::Permanent,
+            "re-reading the same bytes cannot make them a valid mnemonic"
+        );
+    }
+
+    #[test]
+    fn an_impossible_length_is_permanent() {
+        assert_eq!(
+            classify(resolve_absurd_length),
+            ResolveFailureKind::Permanent
+        );
     }
 }

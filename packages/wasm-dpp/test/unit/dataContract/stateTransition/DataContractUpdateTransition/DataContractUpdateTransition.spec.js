@@ -20,7 +20,8 @@ describe('DataContractUpdateTransition', () => {
     stateTransition = new DataContractUpdateTransition({
       protocolVersion: 1,
       dataContract: dataContract.toObject(),
-      identityContractNonce: 1,
+      // Canonical serde wire name for the identity-contract-nonce field.
+      '$identity-contract-nonce': 1,
     });
   });
 
@@ -65,7 +66,7 @@ describe('DataContractUpdateTransition', () => {
     it('should return serialized State Transition', () => {
       const result = stateTransition.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(2359);
+      expect(result).to.have.lengthOf(2370);
     });
 
     it('should be able to restore contract config from bytes', () => {

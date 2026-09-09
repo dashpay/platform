@@ -1,11 +1,7 @@
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
-mod json_conversion;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 use crate::identity::KeyID;
@@ -177,62 +173,10 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_value_conversion_roundtrip_v0() {
-        use crate::state_transition::StateTransitionValueConvert;
-        use crate::version::LATEST_PLATFORM_VERSION;
-        let transition = make_transfer_v0();
-        let obj = transition.to_object(false).expect("to_object should work");
-        let restored =
-            IdentityCreditTransferTransitionV0::from_object(obj, LATEST_PLATFORM_VERSION)
-                .expect("from_object should work");
-        assert_eq!(transition, restored);
-    }
-
-    #[test]
-    fn test_value_conversion_skip_signature_v0() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let transition = make_transfer_v0();
-        let obj = transition.to_object(true).expect("to_object should work");
-        // The signature field should have been removed
-        let map = obj.into_btree_string_map().expect("should be a map");
-        assert!(!map.contains_key("signature"));
-    }
-
-    #[test]
-    fn test_to_cleaned_object_v0() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let transition = make_transfer_v0();
-        let obj = transition
-            .to_cleaned_object(false)
-            .expect("to_cleaned_object should work");
-        assert!(obj.is_map());
-    }
-
-    #[test]
-    fn test_to_canonical_cleaned_object_v0() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let transition = make_transfer_v0();
-        let obj = transition
-            .to_canonical_cleaned_object(false)
-            .expect("should work");
-        assert!(obj.is_map());
-    }
-
-    #[test]
-    fn test_from_value_map_v0() {
-        use crate::state_transition::StateTransitionValueConvert;
-        use crate::version::LATEST_PLATFORM_VERSION;
-        let transition = make_transfer_v0();
-        let obj = transition.to_object(false).expect("to_object should work");
-        let map = obj
-            .into_btree_string_map()
-            .expect("should convert to btree map");
-        let restored =
-            IdentityCreditTransferTransitionV0::from_value_map(map, LATEST_PLATFORM_VERSION)
-                .expect("from_value_map should work");
-        assert_eq!(transition, restored);
-    }
+    // Legacy `StateTransitionValueConvert` round-trip tests on the V0
+    // inner struct deleted in Phase D step 9. The canonical
+    // `JsonConvertible` / `ValueConvertible` round-trip is exercised via
+    // the outer enum derive — these tested methods that no longer exist.
 
     #[test]
     fn test_default_v0() {
@@ -240,24 +184,6 @@ mod test {
         assert_eq!(transition.amount, 0);
         assert_eq!(transition.nonce, 0);
         assert_eq!(transition.user_fee_increase, 0);
-    }
-
-    #[test]
-    fn test_to_cleaned_object_skip_signature_removes_signature() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let t = make_transfer_v0();
-        let obj = t.to_cleaned_object(true).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        assert!(!map.contains_key("signature"));
-    }
-
-    #[test]
-    fn test_to_canonical_cleaned_object_skip_signature_removes_signature() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let t = make_transfer_v0();
-        let obj = t.to_canonical_cleaned_object(true).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        assert!(!map.contains_key("signature"));
     }
 
     #[test]
@@ -270,25 +196,5 @@ mod test {
         assert_eq!(modified[1], t.recipient_id);
         let ids = t.unique_identifiers();
         assert_eq!(ids.len(), 1);
-    }
-
-    #[test]
-    fn test_value_conversion_preserves_fields() {
-        use crate::state_transition::StateTransitionValueConvert;
-        use crate::version::LATEST_PLATFORM_VERSION;
-        let t = make_transfer_v0();
-        let obj = t.to_object(false).expect("to_object");
-        let map = obj.clone().into_btree_string_map().expect("should be map");
-        assert!(map.contains_key("identityId"));
-        assert!(map.contains_key("recipientId"));
-        assert!(map.contains_key("amount"));
-        let restored =
-            IdentityCreditTransferTransitionV0::from_object(obj, LATEST_PLATFORM_VERSION)
-                .expect("from_object");
-        assert_eq!(t.amount, restored.amount);
-        assert_eq!(t.identity_id, restored.identity_id);
-        assert_eq!(t.recipient_id, restored.recipient_id);
-        assert_eq!(t.nonce, restored.nonce);
-        assert_eq!(t.user_fee_increase, restored.user_fee_increase);
     }
 }

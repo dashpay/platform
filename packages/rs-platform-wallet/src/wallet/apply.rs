@@ -47,7 +47,7 @@
 use key_wallet::wallet::Wallet;
 
 use crate::changeset::PlatformWalletChangeSet;
-use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Errors returned by [`PlatformWalletInfo::apply_changeset`] and the
@@ -99,6 +99,14 @@ impl PlatformWalletInfo {
             token_balances,
             dashpay_profiles,
             dashpay_payments_overlay,
+            // DashPay invitations (DIP-13) are persistence-only here: the
+            // "Sent invitations" list is the Swift SwiftData mirror, and the
+            // Rust manager holds no in-memory invitation state in v1 (reclaim
+            // is future). Drop explicitly so future readers don't expect a
+            // replay hook.
+            invitations: _,
+            dpns_name_states,
+            identity_scan_state,
             // Registration-round metadata / per-account specs /
             // per-pool snapshots are persistence-only — the
             // canonical in-memory wallet state is built up at
@@ -107,6 +115,7 @@ impl PlatformWalletInfo {
             // a replay hook here.
             wallet_metadata: _,
             account_registrations: _,
+            provider_key_account_registrations: _,
             account_address_pools: _,
             // The deferred contact-crypto queue is persistence-only here too:
             // the in-memory queue is mutated directly at the enqueue (sweep)
@@ -118,8 +127,7 @@ impl PlatformWalletInfo {
             // mutates its store directly during sync / spend); the
             // canonical in-memory state lives there and the
             // changeset is persistence-side only. Drop here.
-            #[cfg(feature = "shielded")]
-                shielded: _,
+            shielded: _,
         } = cs;
 
         // 1. Core wallet state. In the new event-bus model, a
@@ -132,7 +140,7 @@ impl PlatformWalletInfo {
         //    not through changeset replay. The core field on `cs` is
         //    therefore informational here and intentionally not
         //    applied; we drop it explicitly so future readers don't
-        //    expect a re-application path that no longer exists.
+        //    expect a re-application path that does not exist.
         drop(core);
 
         // 2. Identities.
@@ -154,17 +162,138 @@ impl PlatformWalletInfo {
             }
         }
 
-        // 2b/3. Identity keys + contacts. Keys are layered before
-        //       contacts so a contact entry never lands before its
-        //       owner's keys; orphans are logged and skipped. Single
-        //       source of truth shared with the persister rehydration
-        //       path (`load_from_persistor`).
-        if identity_keys.is_some() || contacts.is_some() {
-            self.identity_manager.apply_contacts_and_keys(
-                contacts.unwrap_or_default(),
-                identity_keys.unwrap_or_default(),
-                wallet.network,
-            );
+        // 2a'. Identity-scan verdict. Replayed rather than dropped: unlike the
+        //      registration metadata below it, this one has live in-memory
+        //      state on the identity manager, and it is read on the next
+        //      bring-up to decide whether the identity set may be treated as
+        //      settled. A verdict that survived to persistence and then got
+        //      dropped on the way back in would leave a partial scan looking
+        //      complete — the exact failure the verdict exists to prevent.
+        if let Some(scan) = identity_scan_state {
+            self.identity_manager
+                .record_identity_scan(wallet.wallet_id, scan);
+        }
+
+        // 2a. DPNS name states (username marketplace): upserts land
+        //     first, then tombstones, into the in-memory working set —
+        //     same LWW-then-remove discipline as the rest of this
+        //     function.
+        if let Some(dpns_cs) = dpns_name_states {
+            let crate::changeset::DpnsNameStateChangeSet { names, removed } = dpns_cs;
+            self.dpns_name_states.extend(names);
+            for document_id in &removed {
+                self.dpns_name_states.remove(document_id);
+            }
+        }
+
+        // 2b. Identity keys. Runs after the scalar identity pass so
+        //     the owning ManagedIdentity is guaranteed to exist before
+        //     we layer keys into it. Upserts land first, then removals,
+        //     matching the discipline used across the rest of this
+        //     function. Orphan entries (owner not in the wallet) are
+        //     logged and skipped by the per-entry apply helpers.
+        if let Some(keys_cs) = identity_keys {
+            let crate::changeset::IdentityKeysChangeSet { upserts, removed } = keys_cs;
+            // Thread the wallet network through so the key-apply
+            // path can reproduce DIP-9 derivation paths for any
+            // entry that carries `(wallet_id, derivation_indices)`.
+            let network = wallet.network;
+            for (_key, entry) in upserts {
+                self.identity_manager
+                    .apply_identity_key_entry(entry, network);
+            }
+            for (identity_id, key_id) in removed {
+                self.identity_manager
+                    .apply_identity_key_removal(&identity_id, key_id);
+            }
+        }
+
+        // 3. Contacts. Each entry routes to its owning ManagedIdentity by
+        //    `(owner, contact)` key; orphans (owner not in the wallet)
+        //    are logged and skipped. Every map mutation goes through the
+        //    `apply_*` replay methods — the relationship maps are sealed
+        //    to the state layer, and the replay methods reproduce
+        //    persisted state without re-running the live invariants
+        //    (`apply_established_contact` additionally drops both
+        //    pending sides per the contract).
+        if let Some(contact_cs) = contacts {
+            let crate::changeset::ContactChangeSet {
+                sent_requests,
+                removed_sent,
+                incoming_requests,
+                removed_incoming,
+                established,
+                ignored,
+                unignored,
+            } = contact_cs;
+
+            for (key, entry) in sent_requests {
+                match self.identity_manager.managed_identity_mut(&key.owner_id) {
+                    Some(managed) => {
+                        managed.apply_sent_contact_request(entry.request);
+                    }
+                    None => tracing::warn!(
+                        owner = %key.owner_id,
+                        "skipping sent contact request during apply: owner identity not in wallet"
+                    ),
+                }
+            }
+            for (key, entry) in incoming_requests {
+                match self.identity_manager.managed_identity_mut(&key.owner_id) {
+                    Some(managed) => {
+                        managed.apply_incoming_contact_request(entry.request);
+                    }
+                    None => tracing::warn!(
+                        owner = %key.owner_id,
+                        "skipping incoming contact request during apply: owner identity not in wallet"
+                    ),
+                }
+            }
+            for key in removed_sent {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&key.owner_id) {
+                    managed.apply_removed_sent(&key.recipient_id);
+                }
+            }
+            for key in removed_incoming {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&key.owner_id) {
+                    managed.apply_removed_incoming(&key.sender_id);
+                }
+            }
+            // Established promotions — drop any matching pending
+            // entries on both sides per the auto-establishment contract.
+            for (key, established) in established {
+                match self.identity_manager.managed_identity_mut(&key.owner_id) {
+                    Some(managed) => {
+                        managed.apply_established_contact(established);
+                    }
+                    None => tracing::warn!(
+                        owner = %key.owner_id,
+                        "skipping established contact during apply: owner identity not in wallet"
+                    ),
+                }
+            }
+            // Ignored senders (per-sender mute, local-only). Restore the
+            // in-memory suppression set so the sync ingest path won't
+            // resurrect an ignored sender's requests after a restart.
+            // `unignored` is applied AFTER `ignored` so an un-ignore in the
+            // same delta wins (the sender ends up not ignored). Orphan
+            // owners are logged and skipped.
+            for (owner_id, sender_id) in ignored {
+                match self.identity_manager.managed_identity_mut(&owner_id) {
+                    Some(managed) => {
+                        managed.apply_ignored_sender(sender_id);
+                    }
+                    None => tracing::warn!(
+                        owner = %owner_id,
+                        "skipping ignored sender during apply: owner identity not in wallet"
+                    ),
+                }
+            }
+            for (owner_id, sender_id) in unignored {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&owner_id) {
+                    managed.apply_unignored_sender(&sender_id);
+                }
+            }
         }
 
         // 3b. DashPay profile/payment overlays. Applied AFTER identities
@@ -214,35 +343,27 @@ impl PlatformWalletInfo {
         //    `Transaction` inside the entry transfers ownership
         //    directly into the wallet map with no clone.
         //
-        //    `Consumed` is the terminal post-consumption state: it
-        //    means an identity registration / top-up has burned this
-        //    asset lock. We drop the entry from the in-memory map
-        //    (the wallet has no further use for it; nothing should be
-        //    waiting on its proof) but the changeset's `asset_locks`
-        //    entry still flows through to the Swift persister so the
-        //    `PersistentAssetLock` row is upserted with `statusRaw=4`
-        //    for historical lookups (e.g. the Transactions list
-        //    rendering the original locked amount on a consumed
-        //    funding tx).
+        //    `Consumed` is a terminal tombstone. Keep it in memory so
+        //    exact-outpoint retries produce `AssetLockAlreadyConsumed`
+        //    rather than the less truthful `AssetLockNotTracked`; proof
+        //    waiters and actionable-list consumers exclude it by status.
+        //    Replaying the persisted tombstone therefore preserves the
+        //    same classification after a restart.
         if let Some(al_cs) = asset_locks {
             for (out_point, entry) in al_cs.asset_locks {
-                if entry.status == AssetLockStatus::Consumed {
-                    self.tracked_asset_locks.remove(&out_point);
-                } else {
-                    self.tracked_asset_locks.insert(
-                        out_point,
-                        TrackedAssetLock {
-                            out_point: entry.out_point,
-                            transaction: entry.transaction,
-                            account_index: entry.account_index,
-                            funding_type: entry.funding_type,
-                            identity_index: entry.identity_index,
-                            amount: entry.amount_duffs,
-                            status: entry.status,
-                            proof: entry.proof,
-                        },
-                    );
-                }
+                self.tracked_asset_locks.insert(
+                    out_point,
+                    TrackedAssetLock {
+                        out_point: entry.out_point,
+                        transaction: entry.transaction,
+                        account_index: entry.account_index,
+                        funding_type: entry.funding_type,
+                        identity_index: entry.identity_index,
+                        amount: entry.amount_duffs,
+                        status: entry.status,
+                        proof: entry.proof,
+                    },
+                );
             }
             for out_point in al_cs.removed {
                 self.tracked_asset_locks.remove(&out_point);
@@ -263,7 +384,7 @@ impl PlatformWalletInfo {
         // Mirror the recomputed balance into the lock-free Arc that the
         // UI reads.
         let core_balance = &self.core_wallet.balance;
-        self.balance.set(
+        self.generation.set(
             core_balance.confirmed(),
             core_balance.unconfirmed(),
             core_balance.immature(),
@@ -293,7 +414,7 @@ mod tests {
         ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet,
     };
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
-    use crate::wallet::core::WalletBalance;
+    use crate::wallet::core::WalletGeneration;
     use crate::wallet::identity::state::managed_identity::ManagedIdentity;
     use crate::wallet::identity::IdentityManager;
     use crate::wallet::identity::{ContactRequest, EstablishedContact};
@@ -314,9 +435,11 @@ mod tests {
     fn empty_info(wallet: &Wallet) -> PlatformWalletInfo {
         PlatformWalletInfo {
             core_wallet: ManagedWalletInfo::from_wallet(wallet, 0),
-            balance: std::sync::Arc::new(WalletBalance::new()),
+            generation: std::sync::Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
+            observed_input_conflicts: Default::default(),
+            dpns_name_states: BTreeMap::new(),
         }
     }
 
@@ -619,7 +742,27 @@ mod tests {
             .expect("lock present");
         assert_eq!(lock.amount, 5_000);
 
-        // Tombstone removes it.
+        // A restart replays the persisted Consumed upsert. Retain that
+        // terminal snapshot so an exact-outpoint retry is still classified
+        // as already consumed rather than unknown.
+        let mut consumed_entry: AssetLockEntry = lock.into();
+        consumed_entry.status = AssetLockStatus::Consumed;
+        consumed_entry.proof = None;
+        let mut al_cs = AssetLockChangeSet::default();
+        al_cs.asset_locks.insert(out_point, consumed_entry);
+        let mut cs = PlatformWalletChangeSet::default();
+        cs.asset_locks = Some(al_cs);
+        info.apply_changeset(&mut wallet, cs)
+            .expect("apply consumed replay");
+        assert_eq!(
+            info.tracked_asset_locks
+                .get(&out_point)
+                .expect("consumed tombstone restored")
+                .status,
+            AssetLockStatus::Consumed
+        );
+
+        // An explicit removal tombstone still removes it.
         let mut al_cs = AssetLockChangeSet::default();
         al_cs.removed.insert(out_point);
         let mut cs = PlatformWalletChangeSet::default();
@@ -630,7 +773,7 @@ mod tests {
 
     /// Token-balance changesets are accepted by `apply_changeset` for
     /// shape compatibility but are not replayed onto
-    /// `PlatformWalletInfo` (which no longer has token_balances /
+    /// `PlatformWalletInfo` (which has no token_balances /
     /// token_watched fields). The canonical balance cache lives on
     /// `IdentitySyncManager` and is rebuilt by the next sync pass; the
     /// FFI persister surfaces the upserts/tombstones to the Swift side
@@ -698,56 +841,6 @@ mod tests {
             contacts: Some(contact_cs),
             ..Default::default()
         }
-    }
-
-    /// TC-3692-025: a `ContactChangeSet` carrying `ignored` / `unignored`
-    /// replayed through `apply_changeset` must reach the owner's
-    /// ignored-sender set. Guards against `apply_contacts_and_keys`
-    /// destructuring `contacts` with `..` — which compiles clean but
-    /// silently drops per-sender mute state (dev-plan risk #1).
-    #[test]
-    fn apply_contacts_threads_ignored_and_unignored_through() {
-        let mut wallet = build_test_wallet();
-        let mut info = empty_info(&wallet);
-
-        // Register the owning identity so contact routing has a target.
-        let owner = Identifier::from([1u8; 32]);
-        let sender = Identifier::from([2u8; 32]);
-        let mut managed = ManagedIdentity::new(make_test_identity(1, 0), 0);
-        managed.wallet_id = Some([9u8; 32]);
-        let mut id_cs = IdentityChangeSet::default();
-        id_cs
-            .identities
-            .insert(owner, IdentityEntry::from_managed(&managed));
-        let mut cs = PlatformWalletChangeSet::default();
-        cs.identities = Some(id_cs);
-        info.apply_changeset(&mut wallet, cs).expect("seed owner");
-
-        // Replay an `ignored` delta — the sender must land in the mute set.
-        let mut contact_cs = ContactChangeSet::default();
-        contact_cs.ignored.insert((owner, sender));
-        info.apply_changeset(&mut wallet, wrap_contacts(contact_cs))
-            .expect("apply ignored");
-        assert!(info
-            .identity_manager
-            .managed_identity(&owner)
-            .expect("owner present")
-            .dashpay()
-            .ignored_senders()
-            .contains(&sender));
-
-        // Replay an `unignored` delta for the same pair — it must clear.
-        let mut contact_cs = ContactChangeSet::default();
-        contact_cs.unignored.insert((owner, sender));
-        info.apply_changeset(&mut wallet, wrap_contacts(contact_cs))
-            .expect("apply unignored");
-        assert!(!info
-            .identity_manager
-            .managed_identity(&owner)
-            .expect("owner present")
-            .dashpay()
-            .ignored_senders()
-            .contains(&sender));
     }
 
     /// Wallet id used by every wallet-owned round-trip test below.
@@ -1302,9 +1395,8 @@ mod tests {
         assert_eq!(restored.identity.revision(), 5);
     }
 
-    /// Reviewer #6d: contact tombstone for a present (non-orphan) owner
-    /// must drop the matching pending request — happy-path coverage
-    /// previously only existed via the orphan-skip test.
+    /// A contact tombstone for a present (non-orphan) owner
+    /// must drop the matching pending request.
     #[test]
     fn apply_contact_tombstone_drops_pending_for_present_owner() {
         let mut wallet = build_test_wallet();
@@ -1761,10 +1853,9 @@ mod tests {
         });
 
         // Token balance changesets are accepted for shape compat but
-        // no longer drive `PlatformWalletInfo` state — the manager
+        // do not drive `PlatformWalletInfo` state — the manager
         // owns the balance cache. Include one anyway to confirm the
-        // double-apply still works once the field has been replaced
-        // with a `drop`.
+        // double-apply still works while the field is simply dropped.
         let mut tok_cs = TokenBalanceChangeSet::default();
         let token = Identifier::from([8u8; 32]);
         tok_cs.balances.insert((identity, token), 42);

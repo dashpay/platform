@@ -165,6 +165,10 @@ public struct DataContractParser {
                 docType.documentsMutable = mutable
             }
 
+            if let indexOnly = typeDict["indexOnly"] as? Bool {
+                docType.indexOnly = indexOnly
+            }
+
             // The actual field name is just "canBeDeleted" not "documentsCanBeDeleted"
             if let canDelete = typeDict["canBeDeleted"] as? Bool {
                 docType.documentsCanBeDeleted = canDelete
@@ -276,6 +280,53 @@ public struct DataContractParser {
 
             if let nullSearchable = indexData["nullSearchable"] as? Bool {
                 index.nullSearchable = nullSearchable
+            }
+
+            // Protocol v14 index keywords, persisted VERBATIM as authored.
+            // Interpreting the spellings (countable's bool-or-string forms,
+            // the averageable desugar, the indexOnly $ownerId terminal
+            // default) is DPP protocol logic that stays out of the SDK -
+            // display layers apply it for presentation.
+            if let countableBool = indexData["countable"] as? Bool {
+                index.countable = countableBool ? "true" : "false"
+            } else if let countableString = indexData["countable"] as? String {
+                index.countable = countableString
+            }
+            if let rangeCountable = indexData["rangeCountable"] as? Bool {
+                index.rangeCountable = rangeCountable
+            }
+            if let summable = indexData["summable"] as? String {
+                index.summable = summable
+            }
+            if let rangeSummable = indexData["rangeSummable"] as? Bool {
+                index.rangeSummable = rangeSummable
+            }
+            if let averageable = indexData["averageable"] as? String {
+                index.averageable = averageable
+            }
+            if let rangeAverageable = indexData["rangeAverageable"] as? Bool {
+                index.rangeAverageable = rangeAverageable
+            }
+            if let rankedCountable = indexData["rankedCountable"] as? Bool {
+                index.rankedCountable = rankedCountable
+            }
+            if let rankedSummable = indexData["rankedSummable"] as? Bool {
+                index.rankedSummable = rankedSummable
+            }
+            if let rankedAverageable = indexData["rankedAverageable"] as? Bool {
+                index.rankedAverageable = rankedAverageable
+            }
+            if let terminal = indexData["terminal"] as? String {
+                index.terminal = terminal
+            }
+            if let preallocated = indexData["preallocated"] as? Bool {
+                index.preallocated = preallocated
+            }
+
+            // Time-range bucketing transform
+            if let timeRange = indexData["timeRange"] as? [String: Any],
+               let timeRangeData = try? JSONSerialization.data(withJSONObject: timeRange, options: []) {
+                index.timeRangeJSON = timeRangeData
             }
 
             // Handle contested - can be bool or object
@@ -407,6 +458,39 @@ public struct DataContractParser {
         return "0"
     }
 
+    /// Render a pre-programmed distribution amount to a canonical
+    /// decimal string. JSONSerialization decodes numeric JSON values as
+    /// `NSNumber` and string values as `String`; token amounts can
+    /// exceed `Int.max`, so read through `UInt64`/`NSNumber` rather than
+    /// `Int` to avoid truncating large balances. Returns `nil` for
+    /// unparseable values so the caller can skip the malformed entry.
+    private static func stringifyDistributionAmount(_ value: Any) -> String? {
+        if let string = value as? String {
+            return string
+        }
+        // `NSNumber` covers Int/UInt/Double bridged from JSON. Prefer a
+        // lossless UInt64 read; fall back to the number's own string.
+        if let number = value as? NSNumber {
+            if let unsigned = UInt64(exactly: number) {
+                return String(unsigned)
+            }
+            if let signed = Int64(exactly: number) {
+                return String(signed)
+            }
+            return number.stringValue
+        }
+        if let unsigned = value as? UInt64 {
+            return String(unsigned)
+        }
+        if let signed = value as? Int64 {
+            return String(signed)
+        }
+        if let intValue = value as? Int {
+            return String(intValue)
+        }
+        return nil
+    }
+
     private static func parseTokenConfiguration(token: PersistentToken, from tokenDict: [String: Any]) {
         // Basic properties
         let maxSupplyStr = extractTokenSupply(from: tokenDict, key: "maxSupply")
@@ -511,7 +595,41 @@ public struct DataContractParser {
             // Pre-programmed distribution
             if let preProgrammed = distributionRules["preProgrammedDistribution"] as? [String: Any] {
                 var dist = TokenPreProgrammedDistribution()
-                if let schedule = preProgrammed["distributionSchedule"] as? [[String: Any]] {
+
+                // Real contract JSON shape (rs-dpp): a `distributions`
+                // map keyed by timestamp-in-milliseconds, each value a
+                // map of recipient-base58 -> amount. Flatten it into the
+                // existing `DistributionEvent` list so downstream
+                // eligibility checks (see `resolveClaim`) can find the
+                // recipient. Amounts may be encoded as JSON numbers or
+                // strings — including large UInt64 values — so render
+                // whatever we get back to a canonical decimal string.
+                if let distributions = preProgrammed["distributions"] as? [String: Any] {
+                    var events: [DistributionEvent] = []
+                    for (timestampKey, recipientsAny) in distributions {
+                        guard let recipients = recipientsAny as? [String: Any] else { continue }
+                        let triggerTime: Date? = UInt64(timestampKey).map {
+                            Date(timeIntervalSince1970: Double($0) / 1000.0)
+                        }
+                        for (recipient, amountAny) in recipients {
+                            guard let amountString = Self.stringifyDistributionAmount(amountAny) else {
+                                continue
+                            }
+                            var event = DistributionEvent(
+                                triggerTime: triggerTime ?? Date(),
+                                amount: amountString,
+                                recipient: recipient
+                            )
+                            if triggerTime == nil {
+                                event.triggerTime = nil
+                            }
+                            events.append(event)
+                        }
+                    }
+                    dist.distributionSchedule = events
+                } else if let schedule = preProgrammed["distributionSchedule"] as? [[String: Any]] {
+                    // Backward-compat: older/synthetic shape carrying an
+                    // explicit array of pre-built event dictionaries.
                     dist.distributionSchedule = schedule.compactMap { eventDict in
                         guard let amount = eventDict["amount"] as? String else { return nil }
                         var event = DistributionEvent(

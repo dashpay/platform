@@ -19,6 +19,7 @@ impl Drive {
     /// - `start_epoch_index_included`: If `true`, includes the start epoch in the results.
     /// - `end_epoch_index`: The ending epoch index for the query range.
     /// - `end_epoch_index_included`: If `true`, includes the end epoch in the results.
+    /// - `limit`: The maximum number of epoch records the storage query may return.
     ///
     /// # Returns
     ///
@@ -40,6 +41,7 @@ impl Drive {
         start_epoch_index_included: bool,
         end_epoch_index: u16,
         end_epoch_index_included: bool,
+        limit: u16,
     ) -> Result<Option<PathQuery>, ProtocolError> {
         // Compute the start and end keys with the offset.
         let start_index = start_epoch_index
@@ -94,7 +96,21 @@ impl Drive {
         query.set_subquery_key(KEY_FINISHED_EPOCH_INFO.to_vec());
         Ok(Some(PathQuery::new(
             pools_vec_path(),
-            SizedQuery::new(query, None, None),
+            SizedQuery::new(query, Some(limit), None),
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finalized_epoch_infos_query_applies_storage_limit() {
+        let path_query = Drive::finalized_epoch_infos_query(1, true, 10, true, 7)
+            .expect("expected query construction to succeed")
+            .expect("expected a non-empty epoch range");
+
+        assert_eq!(path_query.query.limit, Some(7));
     }
 }

@@ -12,11 +12,99 @@ use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProo
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
 
-use rs_dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
+use dapi_grpc::tonic::Code;
+use rs_dapi_client::transport::TransportError;
+use rs_dapi_client::{DapiClientError, DapiRequestExecutor, IntoInner, RequestSettings};
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 
+/// A Core transaction fetched by id, plus the finality metadata needed to
+/// reconstruct an asset-lock proof from it (an InstantSend proof when the
+/// InstantLock is known, otherwise a ChainLock proof once chain-locked).
+#[derive(Clone, Debug)]
+pub struct FetchedCoreTransaction {
+    /// The decoded transaction.
+    pub transaction: Transaction,
+    /// Height of the block the transaction was mined in (0 if unconfirmed).
+    pub height: u32,
+    /// Whether the transaction's block is ChainLocked.
+    pub is_chain_locked: bool,
+    /// Whether the transaction is InstantSend-locked. Deliberately surfaced but
+    /// not required by the invitation claim: the proof carries the islock from
+    /// the link, and consensus re-verifies it — this flag is informational.
+    pub is_instant_locked: bool,
+}
+
+/// Whether an SDK error is a gRPC `NOT_FOUND` (the requested tx is unknown to
+/// the node), as opposed to a transient/transport failure. Used to distinguish
+/// "retry with a reversed txid" from "surface the error".
+fn error_is_not_found(err: &Error) -> bool {
+    match err {
+        Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status))) => {
+            status.code() == Code::NotFound
+        }
+        Error::NoAvailableAddressesToRetry(inner) => error_is_not_found(inner),
+        _ => false,
+    }
+}
+
 impl Sdk {
+    /// Fetch a Core transaction by its id via DAPI `getTransaction`.
+    ///
+    /// `txid` is the transaction id as a hex string (big-endian display form).
+    /// Returns `Ok(Some(..))` with the decoded transaction plus its
+    /// confirmation/lock metadata; `Ok(None)` when the node does not know the tx
+    /// (empty response or gRPC `NOT_FOUND`) so the caller can retry with the id
+    /// byte-reversed; and `Err` for a transient/transport failure that must not
+    /// be masked by a doomed reversed-id retry.
+    pub async fn get_transaction(
+        &self,
+        txid: &str,
+    ) -> Result<Option<FetchedCoreTransaction>, Error> {
+        let response = match self
+            .execute(
+                GetTransactionRequest {
+                    id: txid.to_string(),
+                },
+                RequestSettings::default(),
+            )
+            .await
+            .into_inner()
+        {
+            Ok(response) => response,
+            Err(e) => {
+                let err: Error = e.into();
+                return if error_is_not_found(&err) {
+                    Ok(None)
+                } else {
+                    Err(err)
+                };
+            }
+        };
+
+        let GetTransactionResponse {
+            transaction,
+            height,
+            is_chain_locked,
+            is_instant_locked,
+            ..
+        } = response;
+
+        if transaction.is_empty() {
+            return Ok(None);
+        }
+
+        let transaction = Transaction::consensus_decode(&mut transaction.as_slice())
+            .map_err(|e| Error::CoreError(e.into()))?;
+
+        Ok(Some(FetchedCoreTransaction {
+            transaction,
+            height,
+            is_chain_locked,
+            is_instant_locked,
+        }))
+    }
+
     /// Starts the stream to listen for instant send lock messages
     pub async fn start_instant_send_lock_stream(
         &self,

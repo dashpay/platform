@@ -1,5 +1,7 @@
 pub mod v0_methods;
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
@@ -10,6 +12,7 @@ use std::fmt;
 /// The Identifier fields in [`TokenUnfreezeTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq)]
 #[cfg_attr(
     feature = "serde-conversion",

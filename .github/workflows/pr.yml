@@ -52,6 +52,7 @@ jobs:
             release
             wasm-sdk
             platform-wallet
+            platform-wallet-storage
             wallet-storage
             swift-example-app
             kotlin-sdk

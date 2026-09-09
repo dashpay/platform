@@ -3,7 +3,7 @@ import DashSDKFFI
 
 /// Swift wrapper for a Dash wallet with HD key derivation
 public class Wallet {
-    internal let handle: UnsafeMutablePointer<FFIWallet>
+    internal let handle: OpaquePointer
     private let ownsHandle: Bool
 
     // MARK: - Static Methods
@@ -33,7 +33,7 @@ public class Wallet {
                 accountOptions: AccountCreationOption = .default) throws {
 
         var error = FFIError()
-        let walletPtr: UnsafeMutablePointer<FFIWallet>?
+        let walletPtr: OpaquePointer?
 
         if case .specificAccounts = accountOptions {
             // Use the with_options variant for specific accounts
@@ -84,7 +84,7 @@ public class Wallet {
         self.ownsHandle = true
 
         var error = FFIError()
-        let walletPtr: UnsafeMutablePointer<FFIWallet>? = seed.withUnsafeBytes { seedBytes in
+        let walletPtr: OpaquePointer? = seed.withUnsafeBytes { seedBytes in
             let seedPtr = seedBytes.bindMemory(to: UInt8.self).baseAddress
 
             if case .specificAccounts = accountOptions {
@@ -161,7 +161,7 @@ public class Wallet {
     public static func createRandom(network: Network = .mainnet,
                                    accountOptions: AccountCreationOption = .default) throws -> Wallet {
         var error = FFIError()
-        let walletPtr: UnsafeMutablePointer<FFIWallet>?
+        let walletPtr: OpaquePointer?
 
         if case .specificAccounts = accountOptions {
             var options = accountOptions.toFFIOptions()
@@ -186,7 +186,7 @@ public class Wallet {
     }
 
     /// Private initializer for internal use (takes ownership)
-    private init(handle: UnsafeMutablePointer<FFIWallet>, network: Network) {
+    private init(handle: OpaquePointer, network: Network) {
         self.handle = handle
         self.ownsHandle = true
     }
@@ -510,11 +510,11 @@ public class Wallet {
         return AccountCollection(handle: collectionHandle, wallet: self)
     }
 
-    internal var ffiHandle: UnsafeMutablePointer<FFIWallet> { handle }
+    internal var ffiHandle: OpaquePointer { handle }
 
     // Non-owning initializer for wallets obtained from WalletManager
     public init(nonOwningHandle handle: UnsafeRawPointer) {
-        self.handle = UnsafeMutablePointer<FFIWallet>(mutating: handle.bindMemory(to: FFIWallet.self, capacity: 1))
+        self.handle = OpaquePointer(handle)
         self.ownsHandle = false
     }
 

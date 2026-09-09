@@ -9,21 +9,23 @@ use wasm_bindgen::prelude::wasm_bindgen;
 const TS_TYPES: &str = r#"
 /**
  * ContestedDocumentVotePollWinnerInfo serialized as a plain object.
- * Simple variants serialize as strings, tuple variant as { WonByIdentity: value }.
+ *
+ * Custom Serialize emits a flat `{type, identity?}` shape — `identity`
+ * (synthesized name) carries the inner Identifier for the WonByIdentity
+ * variant.
  */
 export type ContestedDocumentVotePollWinnerInfoObject =
-    | { type: "noWinner" }
-    | { type: "locked" }
-    | { type: "wonByIdentity"; data: Uint8Array };
+    | { $type: "noWinner" }
+    | { $type: "locked" }
+    | { $type: "wonByIdentity"; identity: Uint8Array };
 
 /**
  * ContestedDocumentVotePollWinnerInfo serialized as JSON.
- * Uses adjacently tagged format with type discriminator.
  */
 export type ContestedDocumentVotePollWinnerInfoJSON =
-    | { type: "noWinner" }
-    | { type: "locked" }
-    | { type: "wonByIdentity"; data: string };
+    | { $type: "noWinner" }
+    | { $type: "locked" }
+    | { $type: "wonByIdentity"; identity: string };
 "#;
 
 #[wasm_bindgen]

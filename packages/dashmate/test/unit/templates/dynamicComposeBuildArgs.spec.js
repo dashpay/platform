@@ -11,12 +11,12 @@ const TEMPLATE_PATH = path.resolve(
   '../../../templates/dynamic-compose.yml.dot',
 );
 
-function render(buildArgsByService) {
+function render(buildArgsByService, coreCommandArgs = []) {
   dot.templateSettings.strip = false;
   const tpl = fs.readFileSync(TEMPLATE_PATH, 'utf8');
   const fn = dot.template(tpl);
   return fn({
-    core: { docker: { commandArgs: [] }, log: { filePath: null } },
+    core: { docker: { commandArgs: coreCommandArgs }, log: { filePath: null } },
     platform: {
       drive: {
         abci: {
@@ -61,6 +61,14 @@ describe('dynamic-compose buildArgs rendering', () => {
 
     const parsed = yaml.load(out);
     expect(parsed.services.drive_abci.build.args.TRICKY).to.equal(tricky);
+  });
+
+  it('escapes core command arguments as YAML strings', () => {
+    const commandArgs = ['--safe=value', '--multiline=a\nb', '--quoted="value"'];
+    const out = render({}, commandArgs);
+
+    const parsed = yaml.load(out);
+    expect(parsed.services.core.command).to.deep.equal(['dashd', ...commandArgs]);
   });
 
   it('omits the build block entirely when buildArgs is empty', () => {

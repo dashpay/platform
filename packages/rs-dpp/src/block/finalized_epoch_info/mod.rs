@@ -115,3 +115,104 @@ mod tests {
         assert_eq!(info, restored);
     }
 }
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests_finalizedepochinfo {
+    use super::*;
+    use crate::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+    use platform_value::Identifier;
+    use std::collections::BTreeMap;
+
+    fn fixture() -> FinalizedEpochInfo {
+        let mut block_proposers = BTreeMap::new();
+        block_proposers.insert(Identifier::new([0xab; 32]), 5u64);
+        FinalizedEpochInfo::V0(FinalizedEpochInfoV0 {
+            first_block_time: 1_700_000_000_000,
+            first_block_height: 100,
+            total_blocks_in_epoch: 250,
+            first_core_block_height: 50,
+            next_epoch_start_core_block_height: 75,
+            total_processing_fees: 1_000_000,
+            total_distributed_storage_fees: 200_000,
+            total_created_storage_fees: 250_000,
+            core_block_rewards: 500_000,
+            block_proposers,
+            fee_multiplier_permille: 1500,
+            protocol_version: 9,
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // `block_proposers` is `BTreeMap<Identifier, u64>` with the
+        // `json_safe_identifier_u64_map` serde adapter: in JSON HR mode, keys
+        // become base58-encoded `Identifier` strings and values stay numeric
+        // (or string for u64 above JS_MAX_SAFE_INTEGER; 5 is well below).
+        // All Credits / Heights are u64/u32 — JSON erases size; the value-path
+        // assertion uses explicit suffixes to lock the typed variants.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "firstBlockTime": 1_700_000_000_000_u64,
+                "firstBlockHeight": 100,
+                "totalBlocksInEpoch": 250,
+                "firstCoreBlockHeight": 50,
+                "nextEpochStartCoreBlockHeight": 75,
+                "totalProcessingFees": 1_000_000,
+                "totalDistributedStorageFees": 200_000,
+                "totalCreatedStorageFees": 250_000,
+                "coreBlockRewards": 500_000,
+                "blockProposers": {
+                    "CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t": 5,
+                },
+                "feeMultiplierPermille": 1500,
+                "protocolVersion": 9,
+            })
+        );
+        let recovered = FinalizedEpochInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // In non-HR mode, `block_proposers` keeps `Value::Identifier` keys (no
+        // base58 stringification). Heights/Credits are u64; core heights u32;
+        // protocol_version u32.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "firstBlockTime": 1_700_000_000_000_u64,
+                "firstBlockHeight": 100u64,
+                "totalBlocksInEpoch": 250u64,
+                "firstCoreBlockHeight": 50u32,
+                "nextEpochStartCoreBlockHeight": 75u32,
+                "totalProcessingFees": 1_000_000u64,
+                "totalDistributedStorageFees": 200_000u64,
+                "totalCreatedStorageFees": 250_000u64,
+                "coreBlockRewards": 500_000u64,
+                "blockProposers": {
+                    Identifier::new([0xab; 32]): 5u64,
+                },
+                "feeMultiplierPermille": 1500u64,
+                "protocolVersion": 9u32,
+            })
+        );
+        let recovered = FinalizedEpochInfo::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}

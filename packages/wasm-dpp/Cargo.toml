@@ -22,7 +22,7 @@ wasm-bindgen = { version = "=0.2.108" }
 js-sys = "0.3.64"
 web-sys = { version = "0.3.64", features = ["console"] }
 thiserror = { version = "2.0.17" }
-serde-wasm-bindgen = { git = "https://github.com/QuantumExplorer/serde-wasm-bindgen", branch = "feat/not_human_readable" }
+serde-wasm-bindgen = { git = "https://github.com/dashpay/serde-wasm-bindgen", branch = "fix/uint8array-to-bytes" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "json-conversion",
     "state-transitions",
@@ -49,10 +49,6 @@ anyhow = { version = "1.0.75" }
 wasm-bindgen-futures = "0.4.58"
 async-trait = "0.1.59"
 bincode = { version = "=2.0.1" }
-
-[profile.release]
-lto = true
-opt-level = 'z'
 
 [package.metadata.cargo-machete]
 ignored = ["wasm-bindgen-futures"]

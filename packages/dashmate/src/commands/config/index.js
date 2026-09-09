@@ -2,12 +2,17 @@ import { Flags } from '@oclif/core';
 import chalk from 'chalk';
 import { inspect } from 'util';
 import { OUTPUT_FORMATS } from '../../constants.js';
+import annotateDerivedDefaults from '../../config/annotateDerivedDefaults.js';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 
 export default class ConfigCommand extends ConfigBaseCommand {
   static description = 'Show default config';
 
   static flags = {
+    raw: Flags.boolean({
+      description: 'show stored values instead of effective ones',
+      default: false,
+    }),
     format: Flags.string({
       description: 'display output format',
       default: OUTPUT_FORMATS.PLAIN,
@@ -26,15 +31,19 @@ export default class ConfigCommand extends ConfigBaseCommand {
     args,
     {
       format,
+      raw,
     },
     config,
   ) {
+    const options = raw ? config.getStoredOptions() : config.getOptions();
+
     let configOptions;
     if (format === OUTPUT_FORMATS.JSON) {
-      configOptions = JSON.stringify(config.getOptions(), null, 2);
+      // Left unannotated on purpose: this output is parsed by other tools.
+      configOptions = JSON.stringify(options, null, 2);
     } else {
       configOptions = inspect(
-        config.getOptions(),
+        raw ? options : annotateDerivedDefaults(config, options),
         { depth: Infinity, colors: chalk.supportsColor },
       );
     }
@@ -44,6 +53,6 @@ export default class ConfigCommand extends ConfigBaseCommand {
     // eslint-disable-next-line no-console
     console.log(output);
 
-    return config.getOptions();
+    return options;
   }
 }

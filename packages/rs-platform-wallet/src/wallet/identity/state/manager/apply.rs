@@ -15,9 +15,10 @@
 //! [`IdentityManager::apply_identity_key_entry`].
 
 use super::{IdentityLocation, IdentityManager};
-use crate::changeset::{ContactChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet};
+use crate::changeset::{IdentityEntry, IdentityKeyEntry};
 use crate::wallet::identity::state::managed_identity::ManagedIdentity;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, KeyID};
 use dpp::prelude::Identifier;
@@ -37,7 +38,9 @@ impl IdentityManager {
     /// as applying it once. If the identity already exists in either
     /// bucket, the scalar fields are updated in place; balance/revision
     /// are gated on `entry.revision >= existing.identity.revision()`
-    /// matching the merge policy on `IdentityChangeSet`.
+    /// matching the merge policy on `IdentityChangeSet`. DPNS labels and
+    /// contested DPNS labels are complete canonical snapshots and are
+    /// assigned wholesale.
     pub(crate) fn apply_identity_entry(&mut self, entry: IdentityEntry) {
         use dpp::identity::accessors::IdentitySettersV0;
 
@@ -53,16 +56,12 @@ impl IdentityManager {
             existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
             existing.status = entry.status;
             *existing.dashpay_profile_mut() = entry.dashpay_profile;
-            for name in entry.dpns_names {
-                if !existing.dpns_names.iter().any(|n| n.label == name.label) {
-                    existing.dpns_names.push(name);
-                }
-            }
-            for label in entry.contested_dpns_names {
-                if !existing.contested_dpns_names.contains(&label) {
-                    existing.contested_dpns_names.push(label);
-                }
-            }
+            // DPNS names: wholesale assign, matching the changeset's
+            // last-write-wins merge — entries carry the complete list
+            // (snapshotted via `from_managed`), and a sold/transferred
+            // name must be able to leave it.
+            existing.dpns_names = entry.dpns_names;
+            existing.contested_dpns_names = entry.contested_dpns_names;
             existing
                 .dashpay_payments_mut()
                 .extend(entry.dashpay_payments);
@@ -166,7 +165,7 @@ impl IdentityManager {
     ///
     /// Layers the public-key record into the DPP `Identity`'s
     /// `public_keys` map (overwriting any existing slot with the same
-    /// `KeyID`). Private-key data is no longer kept on
+    /// `KeyID`). Private-key data is not kept on
     /// `ManagedIdentity` (it lives in the iOS Keychain on the client
     /// side); the `(wallet_id, derivation_indices)` breadcrumb on the
     /// entry tells the client how to re-derive the scalar.
@@ -175,10 +174,16 @@ impl IdentityManager {
     /// keys changeset was persisted without its scalar sibling, or the
     /// owner was removed since), the entry is logged and skipped.
     pub(crate) fn apply_identity_key_entry(&mut self, entry: IdentityKeyEntry, _network: Network) {
+        // `add_public_key` lives on `IdentityFactory` / V0 setter trait;
+        // bring it into scope here.
+        use dpp::identity::accessors::IdentitySettersV0;
+
         if let Some(managed) = self.locate_mut(&entry.identity_id) {
             // Insert into the DPP `Identity`'s `public_keys` map by id;
             // replay-safe (idempotent overwrite).
-            managed.identity.add_public_key(entry.public_key);
+            let mut keys = managed.identity.public_keys().clone();
+            keys.insert(entry.public_key.id(), entry.public_key.clone());
+            managed.identity.set_public_keys(keys);
         } else {
             tracing::warn!(
                 identity = %entry.identity_id,
@@ -196,91 +201,53 @@ impl IdentityManager {
             managed.identity.public_keys_mut().remove(&key_id);
         }
     }
+}
 
-    /// Layer a [`ContactChangeSet`] + [`IdentityKeysChangeSet`] onto the
-    /// already-restored managed identities, for the runtime
-    /// changeset-replay path
-    /// ([`apply_changeset`](crate::wallet::PlatformWalletInfo::apply_changeset)).
-    /// Identity keys are applied first so a contact entry never lands
-    /// before its owner's keys; orphan entries (owner not in the
-    /// wallet) are logged and skipped, never fatal. `removed_*` and
-    /// `ignored`/`unignored` are honoured.
-    pub(crate) fn apply_contacts_and_keys(
-        &mut self,
-        contacts: ContactChangeSet,
-        identity_keys: IdentityKeysChangeSet,
-        network: Network,
-    ) {
-        let IdentityKeysChangeSet { upserts, removed } = identity_keys;
-        for (_key, entry) in upserts {
-            self.apply_identity_key_entry(entry, network);
-        }
-        for (identity_id, key_id) in removed {
-            self.apply_identity_key_removal(&identity_id, key_id);
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::changeset::IdentityEntry;
+    use crate::wallet::identity::state::managed_identity::IdentityStatus;
+    use std::collections::{BTreeMap, BTreeSet};
 
-        let ContactChangeSet {
-            sent_requests,
-            removed_sent,
-            incoming_requests,
-            removed_incoming,
-            established,
-            ignored,
-            unignored,
-        } = contacts;
-        for (key, entry) in sent_requests {
-            match self.managed_identity_mut(&key.owner_id) {
-                Some(managed) => managed.apply_sent_contact_request(entry.request),
-                None => tracing::warn!(
-                    owner = %key.owner_id,
-                    "skipping sent contact request: owner identity not in wallet"
-                ),
-            }
+    fn entry(id: Identifier, labels: &[&str]) -> IdentityEntry {
+        IdentityEntry {
+            id,
+            balance: 0,
+            revision: 0,
+            identity_index: None,
+            last_updated_balance_block_time: None,
+            last_synced_keys_block_time: None,
+            dpns_names: Vec::new(),
+            contested_dpns_names: labels.iter().map(|label| (*label).to_owned()).collect(),
+            status: IdentityStatus::Unknown,
+            wallet_id: None,
+            dashpay_profile: None,
+            dashpay_payments: BTreeMap::new(),
+            contact_profiles: BTreeMap::new(),
+            ignored_senders: BTreeSet::new(),
         }
-        for (key, entry) in incoming_requests {
-            match self.managed_identity_mut(&key.owner_id) {
-                Some(managed) => managed.apply_incoming_contact_request(entry.request),
-                None => tracing::warn!(
-                    owner = %key.owner_id,
-                    "skipping incoming contact request: owner identity not in wallet"
-                ),
-            }
-        }
-        for key in removed_sent {
-            if let Some(managed) = self.managed_identity_mut(&key.owner_id) {
-                managed.apply_removed_sent(&key.recipient_id);
-            }
-        }
-        for key in removed_incoming {
-            if let Some(managed) = self.managed_identity_mut(&key.owner_id) {
-                managed.apply_removed_incoming(&key.sender_id);
-            }
-        }
-        for (key, established) in established {
-            match self.managed_identity_mut(&key.owner_id) {
-                Some(managed) => managed.apply_established_contact(established),
-                None => tracing::warn!(
-                    owner = %key.owner_id,
-                    "skipping established contact: owner identity not in wallet"
-                ),
-            }
-        }
-        // `ignored` is applied before `unignored` so a same-delta
-        // un-ignore wins (last-write-wins). Orphan owners are logged
-        // and skipped; un-ignore of an absent owner is a silent no-op.
-        for (owner_id, sender_id) in ignored {
-            match self.managed_identity_mut(&owner_id) {
-                Some(managed) => managed.apply_ignored_sender(sender_id),
-                None => tracing::warn!(
-                    owner = %owner_id,
-                    "skipping ignored sender: owner identity not in wallet"
-                ),
-            }
-        }
-        for (owner_id, sender_id) in unignored {
-            if let Some(managed) = self.managed_identity_mut(&owner_id) {
-                managed.apply_unignored_sender(&sender_id);
-            }
-        }
+    }
+
+    #[test]
+    fn contested_dpns_apply_replaces_canonical_snapshot_and_allows_empty() {
+        let id = Identifier::from([0x52; 32]);
+        let mut manager = IdentityManager::default();
+        manager.apply_identity_entry(entry(id, &["old", "retained"]));
+        manager.apply_identity_entry(entry(id, &["retained", "new"]));
+        assert_eq!(
+            manager
+                .locate_mut(&id)
+                .expect("identity must exist")
+                .contested_dpns_names,
+            ["retained", "new"]
+        );
+
+        manager.apply_identity_entry(entry(id, &[]));
+        assert!(manager
+            .locate_mut(&id)
+            .expect("identity must exist")
+            .contested_dpns_names
+            .is_empty());
     }
 }

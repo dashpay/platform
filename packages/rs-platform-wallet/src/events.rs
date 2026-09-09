@@ -16,11 +16,10 @@ use arc_swap::ArcSwap;
 pub use dash_spv::EventHandler;
 pub use key_wallet_manager::WalletEvent;
 
-use crate::manager::load_outcome::SkipReason;
+use crate::manager::dpns_sync::DpnsSyncPassSummary;
 use crate::manager::platform_address_sync::PlatformAddressSyncSummary;
 #[cfg(feature = "shielded")]
 use crate::manager::shielded_sync::ShieldedSyncPassSummary;
-use crate::wallet::platform_wallet::WalletId;
 
 /// Extension of [`EventHandler`] for platform-wallet consumers.
 ///
@@ -35,6 +34,17 @@ pub trait PlatformEventHandler: EventHandler {
     /// [`PlatformAddressSyncManager`]: crate::manager::platform_address_sync::PlatformAddressSyncManager
     fn on_platform_address_sync_completed(&self, _summary: &PlatformAddressSyncSummary) {}
 
+    /// Fired after each [`DpnsSyncManager`] marketplace pass completes,
+    /// including passes that produced no delta. Hosts refresh
+    /// marketplace UI from the mirrored rows and — when the summary
+    /// reports a name departing an identity — re-run their
+    /// main-username selection / profile display for that identity.
+    ///
+    /// Default impl is a no-op so existing handlers don't have to care.
+    ///
+    /// [`DpnsSyncManager`]: crate::manager::dpns_sync::DpnsSyncManager
+    fn on_dpns_marketplace_sync_completed(&self, _summary: &DpnsSyncPassSummary) {}
+
     /// Fired after each [`ShieldedSyncManager`] pass completes,
     /// including passes that produced no updates or skipped every
     /// wallet because none had a bound shielded sub-wallet yet.
@@ -45,13 +55,6 @@ pub trait PlatformEventHandler: EventHandler {
     /// [`ShieldedSyncManager`]: crate::manager::shielded_sync::ShieldedSyncManager
     #[cfg(feature = "shielded")]
     fn on_shielded_sync_completed(&self, _summary: &ShieldedSyncPassSummary) {}
-
-    /// Fired once per wallet that
-    /// [`load_from_persistor`](crate::PlatformWalletManager::load_from_persistor)
-    /// skipped because its persisted row was corrupt.
-    ///
-    /// Default impl is a no-op so existing handlers don't have to care.
-    fn on_wallet_skipped_on_load(&self, _wallet_id: WalletId, _reason: &SkipReason) {}
 
     /// Fired periodically during a shielded sync pass — once per
     /// completed chunk inside `sync_shielded_notes`. Carries the
@@ -139,6 +142,17 @@ impl PlatformEventManager {
         }
     }
 
+    /// Dispatch a DPNS marketplace sync completion to every handler.
+    ///
+    /// Not on the SPV hot path — called once per DPNS sync pass
+    /// (~60s by default).
+    pub fn on_dpns_marketplace_sync_completed(&self, summary: &DpnsSyncPassSummary) {
+        let handlers = self.handlers.load();
+        for h in handlers.iter() {
+            h.on_dpns_marketplace_sync_completed(summary);
+        }
+    }
+
     /// Dispatch a shielded sync completion to every handler.
     ///
     /// Not on the SPV hot path — called once per shielded sync pass
@@ -148,17 +162,6 @@ impl PlatformEventManager {
         let handlers = self.handlers.load();
         for h in handlers.iter() {
             h.on_shielded_sync_completed(summary);
-        }
-    }
-
-    /// Dispatch a wallet-skipped-on-load notification to every handler.
-    ///
-    /// Not on the SPV hot path — called at most once per wallet during
-    /// a single `load_from_persistor` pass.
-    pub fn on_wallet_skipped_on_load(&self, wallet_id: WalletId, reason: &SkipReason) {
-        let handlers = self.handlers.load();
-        for h in handlers.iter() {
-            h.on_wallet_skipped_on_load(wallet_id, reason);
         }
     }
 

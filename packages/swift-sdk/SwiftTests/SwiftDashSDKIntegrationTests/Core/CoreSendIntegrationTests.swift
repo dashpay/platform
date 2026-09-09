@@ -32,9 +32,7 @@ final class CoreSendIntegrationTests: IntegrationTestCase {
             let recipientAddress = try receiver.getCoreWallet().nextReceiveAddress()
 
             let beforeTxids = try await readTxids()
-            _ = try sender.getCoreWallet().sendToAddresses(
-                recipients: [(address: recipientAddress, amountDuffs: amount)]
-            )
+            _ = try sender.send(to: recipientAddress, amountDuffs: amount)
             guard let sendTxid = try await waitForNewTxid(notIn: beforeTxids) else {
                 XCTFail("send PersistentTransaction row never appeared on iteration \(i)")
                 return

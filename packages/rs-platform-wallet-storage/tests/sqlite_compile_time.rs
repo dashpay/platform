@@ -4,6 +4,8 @@
 //! TC-P1-003 — every writer call site uses `prepare_cached`.
 //! TC-P4-011 — `ClientStartState` keeps the base public shape.
 
+mod common;
+
 use std::sync::Arc;
 
 use platform_wallet::changeset::PlatformWalletPersistence;
@@ -16,7 +18,7 @@ assert_impl_all!(SqlitePersister: Send, Sync, PlatformWalletPersistence);
 #[test]
 fn tc078_object_safety() {
     fn accepts(_: Arc<dyn PlatformWalletPersistence>) {}
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let cfg = SqlitePersisterConfig::new(&path);
     let p = SqlitePersister::open(cfg).unwrap();
@@ -37,7 +39,12 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "wallets.rs",
         "SELECT network, birth_height FROM wallets WHERE wallet_id",
     ),
-    ("asset_locks.rs", "SELECT outpoint, account_index"),
+    // asset_locks readers (load_active / load_unconsumed / list_active) —
+    // pre-read length() gates on outpoint and lifecycle_blob.
+    (
+        "asset_locks.rs",
+        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status",
+    ),
     ("platform_addrs.rs", "SELECT account_index, address_index"),
     // Grouped bulk readers driving `load()` — fixed scans over the whole
     // table, not per-wallet fan-out.
@@ -53,29 +60,34 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     // to reflect the new `length(<col>)` column in each SELECT.
     (
         "accounts.rs",
-        "SELECT account_index, length(account_xpub_bytes), account_xpub_bytes",
+        "SELECT account_index, key_class, length(account_xpub_bytes), account_xpub_bytes",
     ),
     (
         "accounts.rs",
-        "SELECT wallet_id, account_index, length(account_xpub_bytes), account_xpub_bytes",
+        "SELECT length(wallet_id), wallet_id, account_index, key_class,",
     ),
-    // list_unspent_utxos (test-helper reader, ungated — global SQLITE_LIMIT_LENGTH covers it).
-    ("core_state.rs", "SELECT outpoint, value, script, height"),
     // load_state unspent-UTXO reader: pre-read length() gates on outpoint and script.
     (
         "core_state.rs",
-        "SELECT length(outpoint), outpoint, value, length(script), script, height",
+        "SELECT length(outpoint), outpoint, value, length(script), script",
     ),
     ("core_state.rs", "SELECT DISTINCT script FROM core_utxos"),
-    // Pool reader: verbatim used-set, a one-shot read-only scan per wallet.
+    // Pool reader: verbatim used-set with owner columns, a one-shot read-only
+    // scan per wallet.
     (
         "core_pool.rs",
-        "SELECT DISTINCT script FROM core_address_pool",
+        "SELECT script, account_type, account_index,",
+    ),
+    // Typed-pool reader: one-shot read-only scan of pre-derived platform-node
+    // keys per wallet, during `load()` rehydration.
+    (
+        "core_pool.rs",
+        "SELECT address_index, length(script), script, length(public_key), public_key",
     ),
     // Full-rehydration readers — one-shot SELECTs in `load_state`.
     (
         "accounts.rs",
-        "SELECT account_type, account_index, key_class, user_identity_id, friend_identity_id,",
+        "SELECT account_type, account_index, key_class,",
     ),
     // Manifest-integrity read paths: verify recompute + backfill NULL scan.
     (
@@ -85,11 +97,11 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ("accounts.rs", "SELECT rowid, wallet_id, account_xpub_bytes"),
     (
         "core_state.rs",
-        "SELECT length(record_blob), record_blob FROM core_transactions",
+        "SELECT length(txid), txid, height, length(record_blob), record_blob",
     ),
     (
         "core_state.rs",
-        "SELECT txid, length(islock_blob), islock_blob",
+        "SELECT length(txid), txid, length(islock_blob), islock_blob",
     ),
     (
         "core_state.rs",
@@ -106,6 +118,11 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "identities.rs",
         "length(entry_blob), entry_blob, tombstoned",
     ),
+    // load_tombstoned_ids supplies the merge's positive tombstone signal.
+    (
+        "identities.rs",
+        "SELECT identity_id FROM identities WHERE",
+    ),
     ("contacts.rs", "SELECT owner_id, contact_id, state"),
     (
         "contacts.rs",
@@ -114,6 +131,10 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     (
         "pending_contact_crypto.rs",
         "SELECT wallet_id, payload FROM pending_contact_crypto",
+    ),
+    (
+        "invitations.rs",
+        "SELECT outpoint, status, funding_index, amount_duffs",
     ),
 ];
 
@@ -128,6 +149,7 @@ fn tc_p1_003_prepare_cached_in_writers() {
         .join("sqlite")
         .join("schema");
     let mut offenders: Vec<(String, usize, String)> = Vec::new();
+    let mut allowlist_hits = vec![0usize; READ_ONLY_PREPARE_ALLOWED.len()];
     for entry in std::fs::read_dir(&schema_dir).expect("read schema dir") {
         let entry = entry.expect("schema dir entry");
         let path = entry.path();
@@ -161,8 +183,10 @@ fn tc_p1_003_prepare_cached_in_writers() {
                 .join("\n");
             let allowed = READ_ONLY_PREPARE_ALLOWED
                 .iter()
-                .any(|(f, sql)| *f == file_name && probe.contains(sql));
-            if allowed {
+                .enumerate()
+                .find(|(_, (f, sql))| *f == file_name && probe.contains(sql));
+            if let Some((allowlist_index, _)) = allowed {
+                allowlist_hits[allowlist_index] += 1;
                 continue;
             }
             offenders.push((file_name.to_string(), idx + 1, (*line).to_string()));
@@ -172,6 +196,15 @@ fn tc_p1_003_prepare_cached_in_writers() {
         offenders.is_empty(),
         "writer paths must use `prepare_cached`; offenders: {:#?}",
         offenders
+    );
+    let stale_allowlist_entries: Vec<_> = READ_ONLY_PREPARE_ALLOWED
+        .iter()
+        .zip(allowlist_hits)
+        .filter_map(|(entry, hits)| (hits == 0).then_some(entry))
+        .collect();
+    assert!(
+        stale_allowlist_entries.is_empty(),
+        "read-only prepare allowlist entries must match a call site: {stale_allowlist_entries:#?}"
     );
 }
 

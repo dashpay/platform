@@ -9,6 +9,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C>
 where
@@ -48,9 +49,14 @@ where
                 transaction,
                 platform_version,
             ),
+            1 => self.cleanup_expired_locks_of_withdrawal_amounts_v1(
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "cleanup_expired_locks_of_withdrawal_amounts".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

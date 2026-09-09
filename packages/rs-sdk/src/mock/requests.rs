@@ -714,3 +714,237 @@ impl MockResponse for drive_proof_verifier::DocumentSplitAverages {
         drive_proof_verifier::DocumentSplitAverages(entries)
     }
 }
+
+/// Wire shape for `DocumentRankedEntries` mock round-trip: the page's
+/// `starting_rank`, then `(group key, axis tag, value)` triples in list
+/// order — **order is the ranking**, so a map-shaped encoding (as used
+/// nowhere here, but as would be the obvious alternative) would destroy
+/// the answer.
+///
+/// `starting_rank` is part of the encoding rather than reconstructed as
+/// `0` on decode, because it is exactly what an offset test needs to
+/// assert: a mock that dropped it would make every expectation look
+/// like an offset-0 query and quietly pass a round-trip that lost the
+/// rank base.
+///
+/// The value is widened to `i128` across all three axes: `Count`
+/// (`u64`) and `Sum` (`i64`) both fit losslessly, and `AvgFixedPoint`
+/// is already an `i128`. One numeric column keeps the tuple flat while
+/// the tag preserves which axis produced it, so a mock expectation
+/// can't quietly turn a count into a sum.
+/// One mock-serialized ranked entry: `(key, axis tag, value, in_key)`.
+type MockRankedEntry = (Vec<u8>, u8, i128, Option<Vec<u8>>);
+type DocumentRankedPage = (u64, Vec<MockRankedEntry>);
+
+const RANKED_TAG_COUNT: u8 = 0;
+const RANKED_TAG_SUM: u8 = 1;
+const RANKED_TAG_AVG: u8 = 2;
+
+impl MockResponse for drive_proof_verifier::DocumentRankedEntries {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        let triples: Vec<MockRankedEntry> = self
+            .entries
+            .iter()
+            .map(|e| match e.value {
+                drive_proof_verifier::RankedEntryValue::Count(count) => (
+                    e.key.clone(),
+                    RANKED_TAG_COUNT,
+                    count as i128,
+                    e.in_key.clone(),
+                ),
+                drive_proof_verifier::RankedEntryValue::Sum(sum) => {
+                    (e.key.clone(), RANKED_TAG_SUM, sum as i128, e.in_key.clone())
+                }
+                drive_proof_verifier::RankedEntryValue::AvgFixedPoint(avg) => {
+                    (e.key.clone(), RANKED_TAG_AVG, avg, e.in_key.clone())
+                }
+            })
+            .collect();
+        let page: DocumentRankedPage = (self.starting_rank, triples);
+        bincode::encode_to_vec(page, bincode_config).expect("encode DocumentRankedEntries")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let ((starting_rank, triples), _): (DocumentRankedPage, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentRankedEntries");
+        let entries: Vec<drive_proof_verifier::RankedEntry> = triples
+            .into_iter()
+            .map(|(key, tag, value, in_key)| {
+                let value = match tag {
+                    RANKED_TAG_COUNT => drive_proof_verifier::RankedEntryValue::Count(
+                        u64::try_from(value).expect("a Count entry round-trips through i128"),
+                    ),
+                    RANKED_TAG_SUM => drive_proof_verifier::RankedEntryValue::Sum(
+                        i64::try_from(value).expect("a Sum entry round-trips through i128"),
+                    ),
+                    RANKED_TAG_AVG => drive_proof_verifier::RankedEntryValue::AvgFixedPoint(value),
+                    other => panic!("unknown ranked axis tag {other} in mock expectation"),
+                };
+                drive_proof_verifier::RankedEntry { in_key, key, value }
+            })
+            .collect();
+        drive_proof_verifier::DocumentRankedEntries {
+            starting_rank,
+            entries,
+        }
+    }
+}
+
+impl MockResponse for drive_proof_verifier::DocumentHavingEntries {
+    /// Rides the ranked page encoding with a starting rank of `0`: a
+    /// having page is the same ordered `(group key, axis tag, value)`
+    /// list, just addressed by value bound instead of by rank, and it
+    /// has no rank base to preserve.
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        drive_proof_verifier::DocumentRankedEntries {
+            starting_rank: 0,
+            entries: self.entries.clone(),
+        }
+        .mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let page = drive_proof_verifier::DocumentRankedEntries::mock_deserialize(sdk, buf);
+        drive_proof_verifier::DocumentHavingEntries {
+            entries: page.entries,
+        }
+    }
+}
+
+/// Wire shape for `ChainedDocuments` mock round-trip: both halves as
+/// per-document CBOR lists.
+type MockChainedHalves = (Vec<Vec<u8>>, Vec<Vec<u8>>);
+
+impl MockResponse for drive_proof_verifier::ChainedDocuments {
+    /// Both halves as per-document CBOR, bincode-framed as
+    /// `(inner, outer)` — list order IS the answer (inner-proof order,
+    /// outer by first appearance), so a map-shaped encoding would
+    /// destroy it.
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        let halves: MockChainedHalves = (
+            self.inner_documents
+                .iter()
+                .map(|d| d.to_cbor().expect("encode inner document"))
+                .collect(),
+            self.outer_documents
+                .iter()
+                .map(|d| d.to_cbor().expect("encode outer document"))
+                .collect(),
+        );
+        bincode::encode_to_vec(halves, bincode_config).expect("encode ChainedDocuments")
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let ((inner, outer), _): (MockChainedHalves, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode ChainedDocuments");
+        let decode = |bufs: Vec<Vec<u8>>| {
+            bufs.into_iter()
+                .map(|b| {
+                    Document::from_cbor(&b, None, None, sdk.version()).expect("decode document")
+                })
+                .collect()
+        };
+        drive_proof_verifier::ChainedDocuments {
+            inner_documents: decode(inner),
+            outer_documents: decode(outer),
+        }
+    }
+}
+
+/// Wire shape for one `CompositeDocuments` sub-result mock round-trip:
+/// `(is_documents, documents, count triples)`, only one side populated.
+type MockCompositeSubResult = (bool, Vec<Vec<u8>>, DocumentSplitCountTriples);
+
+/// Wire shape for `CompositeDocuments` mock round-trip: the page as a
+/// per-document CBOR list, then one entry per sub-query.
+type MockCompositeShape = (Vec<Vec<u8>>, Vec<MockCompositeSubResult>);
+
+impl MockResponse for drive_proof_verifier::CompositeDocuments {
+    /// The page and every documents sub-result as per-document CBOR,
+    /// count sub-results as `(in_key, key, count)` triples, all
+    /// bincode-framed in request order — list order IS the answer
+    /// (page order, a join's first-appearance order), so a map-shaped
+    /// encoding would destroy it.
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        let encode = |documents: &[Document]| -> Vec<Vec<u8>> {
+            documents
+                .iter()
+                .map(|d| d.to_cbor().expect("encode document"))
+                .collect()
+        };
+        let shape: MockCompositeShape = (
+            encode(&self.page_documents),
+            self.sub_results
+                .iter()
+                .map(|result| match result {
+                    drive_proof_verifier::CompositeSubQueryResult::Documents(documents) => {
+                        (true, encode(documents), Vec::new())
+                    }
+                    drive_proof_verifier::CompositeSubQueryResult::Counts(entries) => (
+                        false,
+                        Vec::new(),
+                        entries
+                            .iter()
+                            .map(|e| (e.in_key.clone(), e.key.clone(), e.count))
+                            .collect(),
+                    ),
+                })
+                .collect(),
+        );
+        bincode::encode_to_vec(shape, bincode_config).expect("encode CompositeDocuments")
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let ((page, sub_results), _): (MockCompositeShape, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode CompositeDocuments");
+        let decode = |bufs: Vec<Vec<u8>>| -> Vec<Document> {
+            bufs.into_iter()
+                .map(|b| {
+                    Document::from_cbor(&b, None, None, sdk.version()).expect("decode document")
+                })
+                .collect()
+        };
+        drive_proof_verifier::CompositeDocuments {
+            page_documents: decode(page),
+            sub_results: sub_results
+                .into_iter()
+                .map(|(is_documents, documents, triples)| {
+                    if is_documents {
+                        drive_proof_verifier::CompositeSubQueryResult::Documents(decode(documents))
+                    } else {
+                        drive_proof_verifier::CompositeSubQueryResult::Counts(
+                            triples
+                                .into_iter()
+                                .map(
+                                    |(in_key, key, count)| drive_proof_verifier::SplitCountEntry {
+                                        in_key,
+                                        key,
+                                        count,
+                                    },
+                                )
+                                .collect(),
+                        )
+                    }
+                })
+                .collect(),
+        }
+    }
+}

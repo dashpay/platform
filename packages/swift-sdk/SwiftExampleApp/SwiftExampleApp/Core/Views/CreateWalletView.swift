@@ -12,6 +12,7 @@ struct CreateWalletView: View {
     @State private var walletLabel: String = ""
     @State private var showImportOption: Bool = false
     @State private var importMnemonic: String = ""
+    @State private var importBirthHeight: String = ""
     @State private var walletPin: String = ""
     @State private var confirmPin: String = ""
     @State private var isCreating: Bool = false
@@ -195,6 +196,15 @@ struct CreateWalletView: View {
                 } footer: {
                     Text("Enter your 12-word recovery phrase separated by spaces")
                 }
+
+                Section {
+                    TextField("Birth height (optional)", text: $importBirthHeight)
+                        .keyboardType(.numberPad)
+                } header: {
+                    Text("Birth Height")
+                } footer: {
+                    Text("Block height the wallet first received funds. Sync anchors at the nearest checkpoint at or before it, avoiding a full-chain scan. Leave empty to scan from genesis.")
+                }
             }
         }
         .navigationTitle("Create Wallet")
@@ -341,7 +351,12 @@ struct CreateWalletView: View {
                 // metadata must be written under EACH freshly-created
                 // network's id, and `isImported` stamped on each id's
                 // row.
-                try await MainActor.run {
+                // An async MainActor closure (not `MainActor.run`, whose
+                // closure is synchronous): the loop below awaits the
+                // async `createWallet` overload, so each network's
+                // blocking native create runs on the SDK's dedicated
+                // queue instead of freezing the main thread.
+                let createOnMain: @MainActor () async throws -> Void = {
                     // Per-network results for networks the wallet was
                     // FRESHLY created on this pass — each carries the
                     // scoped `walletId` Rust returned, which is the
@@ -352,19 +367,33 @@ struct CreateWalletView: View {
                     // the user so a partial create isn't reported as
                     // success.
                     var failures: [(network: Network, message: String)] = []
+                    // For an imported wallet, honour a user-entered birth height:
+                    // sync anchors at the nearest checkpoint at or before it,
+                    // avoiding a full-chain scan. Left empty it falls back to
+                    // genesis (0) so a wallet of unknown age still sees all its
+                    // history. A freshly generated wallet passes nil (tip).
+                    let trimmedImportBirthHeight = importBirthHeight.trimmingCharacters(in: .whitespaces)
+                    let importBirth = UInt32(trimmedImportBirthHeight) ?? 0
+                    // Birth height is chain-local: a single value can't be
+                    // correct for more than one network, so reject a non-empty
+                    // height when importing to multiple networks. Left blank the
+                    // safe genesis (0) fallback still applies to each network.
+                    if showImportOption, !trimmedImportBirthHeight.isEmpty, selectedNetworks.count > 1 {
+                        struct MultiNetworkBirthHeightUnsupported: LocalizedError {
+                            var errorDescription: String? {
+                                "Birth height is network-specific. Select one network or leave birth height empty when importing to multiple networks."
+                            }
+                        }
+                        throw MultiNetworkBirthHeightUnsupported()
+                    }
                     for net in selectedNetworks {
                         do {
                             let mgr = try walletManagerStore.backgroundManager(for: net)
-                            // An imported mnemonic may already have on-chain
-                            // history (incl. DashPay payments) from before this
-                            // device — scan from genesis (birthHeight 0) so it
-                            // is seen. A freshly generated mnemonic has nothing
-                            // before now, so scan from the tip (nil).
-                            let managed = try mgr.createWallet(
+                            let managed = try await mgr.createWallet(
                                 mnemonic: mnemonicPhrase,
                                 network: net,
                                 name: walletLabel,
-                                birthHeight: showImportOption ? 0 : nil
+                                birthHeight: showImportOption ? importBirth : nil
                             )
                             createdWallets.append((net, managed.walletId))
                         } catch {
@@ -495,6 +524,7 @@ struct CreateWalletView: View {
 
                     dismiss()
                 }
+                try await createOnMain()
 
                 print("=== WALLET CREATION SUCCESS - networks: \(selectedNetworks.map { $0.displayName }) ===")
             } catch {

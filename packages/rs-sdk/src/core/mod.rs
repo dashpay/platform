@@ -6,3 +6,4 @@ mod dash_core_client;
 mod transaction;
 #[cfg(feature = "mocks")]
 pub use dash_core_client::LowLevelDashCoreClient;
+pub use transaction::FetchedCoreTransaction;

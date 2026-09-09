@@ -179,3 +179,68 @@ mod tests {
         assert_eq!(block_info, restored);
     }
 }
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests_blockinfo {
+    use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    // Distinct per-field values (not `default()`'s all-zeros) so the fixture
+    // catches field-name renames, field swaps, and integer-size changes.
+    fn fixture() -> BlockInfo {
+        BlockInfo {
+            time_ms: 1_700_000_000_000,
+            height: 123,
+            core_height: 456,
+            epoch: Epoch::new(7).expect("epoch"),
+        }
+    }
+
+    #[test]
+    fn json_round_trip_blockinfo_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // `#[serde(rename_all = "camelCase")]` → `timeMs` / `coreHeight`.
+        // `#[json_safe_fields]` keeps `timeMs` / `height` (u64) as numbers
+        // below 2^53. Nested `Epoch` serializes as `{"index": <u16>}` (`key`
+        // is `#[serde(skip)]`, reconstructed from `index` on deserialize).
+        assert_eq!(
+            json,
+            json!({
+                "timeMs": 1_700_000_000_000u64,
+                "height": 123,
+                "coreHeight": 456,
+                "epoch": {"index": 7},
+            })
+        );
+        let recovered = BlockInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_blockinfo_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // Non-HR `Value` keeps integers typed: `timeMs` / `height` are u64,
+        // `coreHeight` is u32, and `Epoch::index` is u16.
+        assert_eq!(
+            value,
+            platform_value!({
+                "timeMs": 1_700_000_000_000u64,
+                "height": 123u64,
+                "coreHeight": 456u32,
+                "epoch": {"index": 7u16},
+            })
+        );
+        let recovered = BlockInfo::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}

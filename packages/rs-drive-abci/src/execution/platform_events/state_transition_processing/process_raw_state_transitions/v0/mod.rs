@@ -4,32 +4,57 @@ use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Method
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
-use dpp::fee::fee_result::FeeResult;
-use std::collections::BTreeMap;
+use dpp::fee::Credits;
 
-use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::state_transition_container::v0::{
     DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
     SuccessfullyDecodedStateTransition,
 };
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::metrics::{state_transition_execution_histogram, HistogramTiming};
-use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::state_transitions_processing_result::{
     NotExecutedReason, StateTransitionExecutionResult, StateTransitionsProcessingResult,
 };
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::util::hash::hash_single;
-use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use std::time::Instant;
 
-#[derive(Debug)]
-struct StateTransitionAwareError<'t> {
-    error: Error,
-    raw_state_transition: &'t [u8],
-    state_transition_name: Option<String>,
+use super::super::StateTransitionAwareError;
+
+/// Test-only fault injection: force the next successfully executed state transition to be
+/// reported as an `InternalError` AFTER its drive operations were applied. This models the
+/// only way an `InternalError` can carry state (an `Err` surfacing after
+/// `apply_drive_operations(apply = true)`, e.g. the address-input fee coverage guard failing
+/// on an under-estimated `Shield`) without depending on any particular estimation bug.
+#[cfg(test)]
+pub(crate) mod test_fault_injection {
+    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+    use std::cell::Cell;
+
+    thread_local! {
+        pub static FAIL_NEXT_SUCCESSFUL_EXECUTION: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// If armed, consume the flag and replace a successful execution with the
+    /// `InternalError` a post-apply failure would produce; identity for every other result
+    /// and while unarmed. Kept here so the processing loop carries a single call instead of
+    /// the override logic.
+    pub(crate) fn maybe_override(
+        execution_result: StateTransitionExecutionResult,
+    ) -> StateTransitionExecutionResult {
+        if matches!(
+            execution_result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        ) && FAIL_NEXT_SUCCESSFUL_EXECUTION.with(|flag| flag.replace(false))
+        {
+            StateTransitionExecutionResult::InternalError(
+                "injected post-apply failure (test_fault_injection)".to_string(),
+            )
+        } else {
+            execution_result
+        }
+    }
 }
 
 impl<C> Platform<C>
@@ -80,7 +105,43 @@ where
         let state_transition_container =
             self.decode_raw_state_transitions(raw_state_transitions, platform_version)?;
 
+        // PROPOSER-SIDE ONLY (consensus-invisible, hence no protocol-version gate): while
+        // building a proposal, wrap each executed state transition in a savepoint and roll
+        // back if its result strips it from the block (`TxAction::Removed`). Execution can
+        // write into the shared block transaction before failing (the address-input fee flow
+        // is apply-then-check), and without the rollback the gossiped block omits the
+        // transition while the advertised app hash includes its writes — no validator can
+        // reproduce the hash, and every proposer carrying the transition burns its round
+        // (mainnet evo1 stalls of 2026-08-14/15, after heights 415652 and 415661).
+        //
+        // The validation path (`proposing_state_transitions == false`) is deliberately
+        // untouched: rolling back there would change what state a received block evaluates
+        // to, which is a consensus change needing a protocol-version gate — and one that is
+        // unnecessary, because `process_proposal` already REJECTS any block whose execution
+        // produced an `InternalError` or `UnpaidConsensusError` result (the
+        // `unexpected_execution_results` gate), so a block that carries such a transition
+        // can never commit and its writes die with the rejected round's transaction. This
+        // proposer-side rollback only changes which blocks this node BUILDS — the published
+        // block and app hash are exactly what any un-upgraded validator computes from that
+        // block, so mixed networks cannot diverge.
+        //
+        // The genesis height is excluded because its re-proposal path relies on a
+        // single-savepoint discipline: init_chain sets one savepoint, and each genesis round
+        // rewinds to it with one `rollback_to_savepoint()` (see prepare_proposal /
+        // process_proposal). Savepoints of KEPT transitions stay on the stack — RocksDB
+        // exposes no pop-without-rollback — and extra savepoints on the genesis transaction
+        // would redirect that rewind. At every other height each proposal round runs in a
+        // freshly started transaction that is either committed (leftover savepoints are inert
+        // markers) or dropped when the round ends, so the residue can affect nothing.
+        let rollback_dropped_transitions =
+            proposing_state_transitions && block_info.height != self.config.abci.genesis_height;
+
         let mut processing_result = StateTransitionsProcessingResult::default();
+
+        // Credits the block's applied operations mint into Platform (asset locks), summed
+        // across state transitions and recorded once per block as a credit inflow the net
+        // daily withdrawal limit adds to its daily maximum.
+        let mut block_credit_mints: Credits = 0;
 
         for decoded_state_transition in state_transition_container.into_iter() {
             // If we propose state transitions, we need to check if we have a time limit for processing
@@ -119,6 +180,14 @@ where
                             );
                         }
 
+                        // Mark the state we can return to if this transition's result strips
+                        // it from the block (see `rollback_dropped_transitions` above). The
+                        // mint accumulator mirrors applied state, so it rewinds with it.
+                        if rollback_dropped_transitions {
+                            transaction.set_savepoint();
+                        }
+                        let credit_mints_at_savepoint = block_credit_mints;
+
                         // Validate state transition and produce an execution event
                         let execution_result = process_state_transition(
                             &platform_ref,
@@ -127,12 +196,16 @@ where
                             Some(transaction),
                         )
                         .map(|validation_result| {
-                            self.process_validation_result_v0(
+                            // Dispatch to the versioned helper (v0 = pre-v13, v1 = records
+                            // paid-invalid balance effects). Only this helper changed at v13; the outer
+                            // loop is version-agnostic, so it must NOT be versioned.
+                            self.process_validation_result(
                                 raw_state_transition,
                                 &state_transition_name,
                                 validation_result,
                                 block_info,
                                 transaction,
+                                &mut block_credit_mints,
                                 platform_version,
                                 platform_ref.state.previous_fee_versions(),
                             )
@@ -144,6 +217,51 @@ where
                             state_transition_name: Some(state_transition_name.to_string()),
                         })
                         .unwrap_or_else(error_to_internal_error_execution_result);
+
+                        #[cfg(test)]
+                        let execution_result =
+                            test_fault_injection::maybe_override(execution_result);
+
+                        if rollback_dropped_transitions {
+                            match &execution_result {
+                                StateTransitionExecutionResult::InternalError(_)
+                                | StateTransitionExecutionResult::UnpaidConsensusError(_) => {
+                                    // This transition will be stripped from the proposal
+                                    // (`TxAction::Removed`), so none of its writes may remain
+                                    // in the state the app hash is computed over. A rollback
+                                    // failure means the proposal can no longer match the
+                                    // block — fail it rather than continue on leaked state.
+                                    transaction
+                                        .rollback_to_savepoint()
+                                        .map_err(drive::grovedb::error::Error::StorageError)?;
+                                    // The rollback discarded this transition's writes; drop
+                                    // its mints with them, or the block would record a
+                                    // credit inflow for a transition the proposal omits and
+                                    // validators re-executing it would compute other state.
+                                    block_credit_mints = credit_mints_at_savepoint;
+                                }
+                                StateTransitionExecutionResult::SuccessfulExecution { .. }
+                                | StateTransitionExecutionResult::PaidConsensusError { .. } => {
+                                    // The transition stays in the block
+                                    // (`TxAction::Unmodified`), so its writes stay. Its
+                                    // savepoint is intentionally left on the stack (see
+                                    // `rollback_dropped_transitions` above: no
+                                    // pop-without-rollback exists, and at non-genesis heights
+                                    // the residue is inert).
+                                }
+                                StateTransitionExecutionResult::NotExecuted(_) => {
+                                    // Delayed to a later block (`TxAction::Delayed`) without
+                                    // having been executed: nothing was written since the
+                                    // savepoint, so rolling back and leaving it are
+                                    // equivalent. Leave it, like the kept outcomes above.
+                                    //
+                                    // Deliberately exhaustive: a new execution result variant
+                                    // must make an explicit savepoint decision here — the
+                                    // rollback classification must match the `TxAction`
+                                    // classification in `prepare_proposal`.
+                                }
+                            }
+                        }
 
                         // Store metrics
                         let elapsed_time = start_time.elapsed() + decoding_elapsed_time;
@@ -216,269 +334,9 @@ where
             processing_result.add(execution_result)?;
         }
 
+        processing_result.set_credit_mints(block_credit_mints);
+
         Ok(processing_result)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn process_validation_result_v0<'a>(
-        &self,
-        raw_state_transition: &'a [u8], //used for errors
-        state_transition_name: &str,
-        mut validation_result: ConsensusValidationResult<ExecutionEvent>,
-        block_info: &BlockInfo,
-        transaction: &Transaction,
-        platform_version: &PlatformVersion,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
-    ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError<'a>> {
-        // State Transition is invalid
-        if !validation_result.is_valid() {
-            // To prevent spam we should deduct fees for invalid state transitions as well.
-            // There are three cases when the user can't pay fees:
-            // 1. The state transition is funded by an asset lock transactions. This transactions are
-            //    placed on the payment blockchain and they can't be partially spent.
-            // 2. We can't prove that the state transition is associated with the identity
-            // 3. The revision given by the state transition isn't allowed based on the state
-            if validation_result.data.is_none() {
-                let first_consensus_error = validation_result
-                    .errors
-                    // the first error must be present for an invalid result
-                    .remove(0);
-
-                if tracing::enabled!(tracing::Level::DEBUG) {
-                    let st_hash = hex::encode(hash_single(raw_state_transition));
-
-                    tracing::debug!(
-                        error = ?first_consensus_error,
-                        st_hash,
-                        "Invalid {} state transition without identity ({}): {}",
-                        state_transition_name,
-                        st_hash,
-                        &first_consensus_error
-                    );
-                }
-
-                // We don't have execution event, so we can't pay for processing
-                return Ok(StateTransitionExecutionResult::UnpaidConsensusError(
-                    first_consensus_error,
-                ));
-            };
-
-            let (execution_event, errors) = validation_result
-                .into_data_and_errors()
-                .expect("data must be present since we check it few lines above");
-
-            let first_consensus_error = errors
-                .first()
-                .expect("error must be present since we check it few lines above")
-                .clone();
-
-            // In this case the execution event will be to pay for the state transition processing
-            // This ONLY pays for what is needed to prevent attacks on the system
-
-            let event_execution_result = self
-                .execute_event(
-                    execution_event,
-                    errors,
-                    block_info,
-                    transaction,
-                    None, // No address balance tracking for invalid state transitions
-                    platform_version,
-                    previous_fee_versions,
-                )
-                .map_err(|error| StateTransitionAwareError {
-                    error,
-                    raw_state_transition,
-                    state_transition_name: Some(state_transition_name.to_string()),
-                })?;
-
-            let state_transition_execution_result = match event_execution_result {
-                EventExecutionResult::SuccessfulPaidExecution(estimated_fees, actual_fees)
-                | EventExecutionResult::UnsuccessfulPaidExecution(estimated_fees, actual_fees, _) =>
-                {
-                    if tracing::enabled!(tracing::Level::DEBUG) {
-                        let st_hash = hex::encode(hash_single(raw_state_transition));
-
-                        tracing::debug!(
-                            error = ?first_consensus_error,
-                            st_hash,
-                            ?estimated_fees,
-                            ?actual_fees,
-                            "Invalid {} state transition ({}): {}",
-                            state_transition_name,
-                            st_hash,
-                            &first_consensus_error
-                        );
-                    }
-
-                    StateTransitionExecutionResult::PaidConsensusError {
-                        error: first_consensus_error,
-                        actual_fees,
-                    }
-                }
-                EventExecutionResult::SuccessfulFreeExecution => {
-                    if tracing::enabled!(tracing::Level::DEBUG) {
-                        let st_hash = hex::encode(hash_single(raw_state_transition));
-
-                        tracing::debug!(
-                            error = ?first_consensus_error,
-                            st_hash,
-                            "Free invalid {} state transition ({}): {}",
-                            state_transition_name,
-                            st_hash,
-                            &first_consensus_error
-                        );
-                    }
-
-                    StateTransitionExecutionResult::UnpaidConsensusError(first_consensus_error)
-                }
-                EventExecutionResult::UnpaidConsensusExecutionError(mut payment_errors) => {
-                    let payment_consensus_error = payment_errors
-                        // the first error must be present for an invalid result
-                        .remove(0);
-
-                    if tracing::enabled!(tracing::Level::ERROR) {
-                        let st_hash = hex::encode(hash_single(raw_state_transition));
-
-                        tracing::error!(
-                            main_error = ?first_consensus_error,
-                            payment_error = ?payment_consensus_error,
-                            st_hash,
-                            "Not able to reduce balance for identity {} state transition ({}): {}",
-                            state_transition_name,
-                            st_hash,
-                            payment_consensus_error
-                        );
-                    }
-
-                    StateTransitionExecutionResult::InternalError(format!(
-                        "{first_consensus_error} {payment_consensus_error}",
-                    ))
-                }
-            };
-
-            return Ok(state_transition_execution_result);
-        }
-
-        let (execution_event, errors) =
-            validation_result.into_data_and_errors().map_err(|error| {
-                StateTransitionAwareError {
-                    error: error.into(),
-                    raw_state_transition,
-                    state_transition_name: Some(state_transition_name.to_string()),
-                }
-            })?;
-
-        let mut address_balances = BTreeMap::new();
-        let event_execution_result = self
-            .execute_event(
-                execution_event,
-                errors,
-                block_info,
-                transaction,
-                Some(&mut address_balances),
-                platform_version,
-                previous_fee_versions,
-            )
-            .map_err(|error| StateTransitionAwareError {
-                error,
-                raw_state_transition,
-                state_transition_name: Some(state_transition_name.to_string()),
-            })?;
-
-        let state_transition_execution_result = match event_execution_result {
-            EventExecutionResult::SuccessfulPaidExecution(estimated_fees, actual_fees) => {
-                if tracing::enabled!(tracing::Level::DEBUG) {
-                    let st_hash = hex::encode(hash_single(raw_state_transition));
-
-                    tracing::debug!(
-                        ?actual_fees,
-                        ?estimated_fees,
-                        st_hash,
-                        "{} state transition ({}) successfully processed",
-                        state_transition_name,
-                        st_hash,
-                    );
-                }
-
-                StateTransitionExecutionResult::SuccessfulExecution {
-                    estimated_fees,
-                    fee_result: actual_fees,
-                    address_balance_changes: address_balances,
-                }
-            }
-            EventExecutionResult::UnsuccessfulPaidExecution(
-                estimated_fees,
-                actual_fees,
-                mut errors,
-            ) => {
-                let payment_consensus_error = errors
-                    // the first error must be present for an invalid result
-                    .remove(0);
-
-                if tracing::enabled!(tracing::Level::DEBUG) {
-                    let st_hash = hex::encode(hash_single(raw_state_transition));
-
-                    tracing::debug!(
-                        ?actual_fees,
-                        ?estimated_fees,
-                        st_hash,
-                        "{} state transition ({}) processed and mark as invalid: {}",
-                        state_transition_name,
-                        st_hash,
-                        payment_consensus_error
-                    );
-                }
-
-                StateTransitionExecutionResult::PaidConsensusError {
-                    error: payment_consensus_error,
-                    actual_fees,
-                }
-            }
-            EventExecutionResult::SuccessfulFreeExecution => {
-                if tracing::enabled!(tracing::Level::DEBUG) {
-                    let st_hash = hex::encode(hash_single(raw_state_transition));
-
-                    tracing::debug!(
-                        st_hash,
-                        "Free {} state transition ({}) successfully processed",
-                        state_transition_name,
-                        st_hash,
-                    );
-                }
-
-                StateTransitionExecutionResult::SuccessfulExecution {
-                    estimated_fees: None,
-                    fee_result: FeeResult::default(),
-                    address_balance_changes: BTreeMap::new(),
-                }
-            }
-            EventExecutionResult::UnpaidConsensusExecutionError(mut errors) => {
-                // TODO: In case of balance is not enough, we need to reduce balance only for processing fees
-                //  and return paid consensus error.
-                //  Unpaid consensus error should be only if balance not enough even
-                //  to cover processing fees
-                let first_consensus_error = errors
-                    // the first error must be present for an invalid result
-                    .remove(0);
-
-                if tracing::enabled!(tracing::Level::DEBUG) {
-                    let st_hash = hex::encode(hash_single(raw_state_transition));
-
-                    tracing::debug!(
-                        error = ?first_consensus_error,
-                        st_hash,
-                        "Insufficient identity balance to process {} state transition ({}): {}",
-                        state_transition_name,
-                        st_hash,
-                        first_consensus_error
-                    );
-                }
-
-                StateTransitionExecutionResult::UnpaidConsensusError(first_consensus_error)
-            }
-        };
-
-        Ok(state_transition_execution_result)
     }
 }
 

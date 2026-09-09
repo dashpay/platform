@@ -1,4 +1,4 @@
-use crate::error::{WasmDppError, WasmDppResult};
+use crate::error::WasmDppError;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::IntoWasm;
@@ -104,31 +104,15 @@ impl TokenConfigurationLocalizationWasm {
     pub fn set_singular_form(&mut self, singular_form: String) {
         self.0.set_singular_form(singular_form);
     }
-
-    #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<TokenConfigurationLocalizationJSONJs> {
-        serialization::to_json(&self.0).map(Into::into)
-    }
-
-    #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(
-        value: TokenConfigurationLocalizationJSONJs,
-    ) -> WasmDppResult<TokenConfigurationLocalizationWasm> {
-        serialization::from_json(value.into()).map(TokenConfigurationLocalizationWasm)
-    }
-
-    #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<TokenConfigurationLocalizationObjectJs> {
-        serialization::to_object(&self.0).map(Into::into)
-    }
-
-    #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(
-        value: TokenConfigurationLocalizationObjectJs,
-    ) -> WasmDppResult<TokenConfigurationLocalizationWasm> {
-        serialization::from_object(value.into()).map(TokenConfigurationLocalizationWasm)
-    }
 }
+
+crate::impl_wasm_conversions_inner!(
+    TokenConfigurationLocalizationWasm,
+    TokenConfigurationLocalization,
+    TokenConfigurationLocalization,
+    TokenConfigurationLocalizationObjectJs,
+    TokenConfigurationLocalizationJSONJs
+);
 
 impl TryFrom<&JsValue> for TokenConfigurationLocalizationWasm {
     type Error = WasmDppError;
@@ -141,8 +125,13 @@ impl TryFrom<&JsValue> for TokenConfigurationLocalizationWasm {
             return Ok(wasm_localization.clone());
         }
 
-        // Deserialize as a versioned object (with $formatVersion)
-        serialization::from_object(value.clone()).map(TokenConfigurationLocalizationWasm)
+        // Deserialize as a versioned object (with $formatVersion) via the
+        // canonical ValueConvertible trait.
+        use dpp::serialization::ValueConvertible;
+        let pv = serialization::platform_value_from_object(value)?;
+        let inner = TokenConfigurationLocalization::from_object(pv)
+            .map_err(|e| WasmDppError::serialization(format!("from_object: {}", e)))?;
+        Ok(TokenConfigurationLocalizationWasm(inner))
     }
 }
 

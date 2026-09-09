@@ -1736,6 +1736,7 @@ mod token_unfreeze_tests {
                 &|_| Ok(Some(contract.clone().into())),
                 platform_version,
             )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
             .unwrap_or_else(|e| {
                 panic!(
                     "expect to verify state transition proof {}, error is {}",
@@ -1838,6 +1839,7 @@ mod token_unfreeze_tests {
                 &|_| Ok(Some(contract.clone().into())),
                 platform_version,
             )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
             .unwrap_or_else(|e| {
                 panic!(
                     "expect to verify state transition proof {}, error is {}",

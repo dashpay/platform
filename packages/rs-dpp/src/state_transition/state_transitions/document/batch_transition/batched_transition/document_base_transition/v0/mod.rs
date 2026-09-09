@@ -26,6 +26,10 @@ use crate::state_transition::batch_transition::document_base_transition::propert
 use crate::{data_contract::DataContract, errors::ProtocolError};
 
 #[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display)]
+// `json_safe_fields` auto-injects `crate::serialization::json_safe_u64` on
+// `identity_contract_nonce: IdentityNonce` (= u64). Large nonces serialize
+// as JSON strings to avoid JS Number precision loss; native u64 in non-HR.
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -70,6 +74,13 @@ impl DocumentBaseTransitionV0 {
     }
 }
 
+/// **KEEP-AS-EXCEPTION** in the JSON/Value canonical-trait migration — this
+/// trait is context-aware: the `from_*` constructors need a `DataContract`
+/// to type document properties, which `JsonConvertible`/`ValueConvertible`
+/// can't carry. NOTE the to-side emits a flat LEGACY shape (`$version: "0"`,
+/// no `$action`/`$baseFormatVersion` tags) that intentionally differs from
+/// canonical `JsonConvertible::to_json` on the same transition — see the
+/// wire-shape comparison tests in `document_create_transition/v0/mod.rs`.
 pub trait DocumentTransitionObjectLike {
     #[cfg(feature = "json-conversion")]
     /// Creates the Document Transition from JSON representation. The JSON representation contains

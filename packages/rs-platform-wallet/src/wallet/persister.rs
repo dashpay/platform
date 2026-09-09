@@ -10,9 +10,11 @@ use dashcore::Txid;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 use crate::changeset::{
-    ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, DpnsNameStateEntry, PersistenceCapabilities, PersistenceError,
+    PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use crate::wallet::platform_wallet::WalletId;
+use dpp::prelude::Identifier;
 
 /// Per-wallet persistence handle.
 ///
@@ -38,6 +40,15 @@ impl WalletPersister {
         self.inner.flush(self.wallet_id)
     }
 
+    pub(crate) fn store_commits_inline(&self) -> bool {
+        self.inner.store_commits_inline()
+    }
+
+    /// Feature-specific persistence contracts exposed by the backend.
+    pub(crate) fn persistence_capabilities(&self) -> PersistenceCapabilities {
+        self.inner.persistence_capabilities()
+    }
+
     pub(crate) fn load(&self) -> Result<ClientStartState, PersistenceError> {
         self.inner.load()
     }
@@ -52,12 +63,47 @@ impl WalletPersister {
     ) -> Result<Option<TransactionRecord>, PersistenceError> {
         self.inner.get_core_tx_record(self.wallet_id, txid)
     }
+
+    /// Enumerate the persisted Core transaction ids scoped to this
+    /// wallet, tagged with the host's wallet-funded verdict. Used by
+    /// DashPay sent-payment reconstruction to fetch the full records
+    /// via [`Self::get_core_tx_record`]. `None` means the backend does
+    /// not support wallet-scoped enumeration (never "empty table").
+    pub(crate) fn list_wallet_core_txids(
+        &self,
+    ) -> Result<Option<Vec<crate::changeset::traits::ListedCoreTxid>>, PersistenceError> {
+        self.inner.list_wallet_core_txids(self.wallet_id)
+    }
+
+    /// Look up the persisted DPNS marketplace row for
+    /// `(wallet_identity_id, normalized_label)` within this wallet.
+    ///
+    /// The durable fallback the DPNS marketplace sync pass uses to
+    /// recover a departed name's `document_id` once a process restart
+    /// has left the session-scoped in-memory map empty — see
+    /// [`PlatformWalletPersistence::get_dpns_name_state`] for the full
+    /// contract. `Ok(None)` means the backend does not index DPNS rows
+    /// by label (or holds no such row); it is not an error.
+    pub(crate) fn get_dpns_name_state(
+        &self,
+        wallet_identity_id: &Identifier,
+        normalized_label: &str,
+    ) -> Result<Option<DpnsNameStateEntry>, PersistenceError> {
+        self.inner
+            .get_dpns_name_state(self.wallet_id, wallet_identity_id, normalized_label)
+    }
 }
 
 /// No-op platform persistence for standalone wallets.
 pub struct NoPlatformPersistence;
 
 impl PlatformWalletPersistence for NoPlatformPersistence {
+    /// Nothing is ever written, so nothing survives a restart. (Redundant
+    /// with the trait's fail-closed default — kept explicit as documentation.)
+    fn persists_durably(&self) -> bool {
+        false
+    }
+
     fn store(
         &self,
         _wallet_id: WalletId,
@@ -72,5 +118,37 @@ impl PlatformWalletPersistence for NoPlatformPersistence {
 
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         Ok(ClientStartState::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `persists_durably` is a fail-closed security capability: an
+    /// implementation that does NOT explicitly attest durability must read as
+    /// non-durable, so a backend author who forgets the override gets a loud
+    /// "requires durable persistence" refusal from the invitation flow
+    /// instead of being silently trusted with a re-exportable bearer key.
+    #[test]
+    fn durability_attestation_defaults_to_fail_closed() {
+        struct BareMinimum;
+        impl PlatformWalletPersistence for BareMinimum {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+        assert!(!BareMinimum.persists_durably());
+        assert!(!NoPlatformPersistence.persists_durably());
     }
 }

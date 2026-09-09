@@ -5,7 +5,7 @@ use crate::identity::transitions::pooling::PoolingWasm;
 use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
 use crate::utils::try_from_options;
 use crate::utils::try_vec_to_fixed_bytes;
-use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
+use crate::{impl_wasm_conversions_inner, impl_wasm_type_info};
 use dpp::identity::core_script::CoreScript;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
@@ -242,8 +242,9 @@ impl ShieldedWithdrawalTransitionWasm {
     }
 }
 
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     ShieldedWithdrawalTransitionWasm,
+    ShieldedWithdrawalTransition,
     ShieldedWithdrawalTransition,
     ShieldedWithdrawalTransitionObjectJs,
     ShieldedWithdrawalTransitionJSONJs

@@ -30,28 +30,28 @@ export interface VotePollOptions {
 
 /**
  * VotePoll serialized as a plain object.
+ *
+ * Internally tagged with `type` (plain — no `$`-prefixed neighbors at
+ * this level). Inner ContestedDocumentResourceVotePoll fields flatten at
+ * the same level — no `data` wrapper.
  */
 export interface VotePollObject {
-    type: "contestedDocumentResourceVotePoll";
-    data: {
-        contractId: Uint8Array;
-        documentTypeName: string;
-        indexName: string;
-        indexValues: any[];
-    };
+    $type: "contestedDocumentResourceVotePoll";
+    contractId: Uint8Array;
+    documentTypeName: string;
+    indexName: string;
+    indexValues: any[];
 }
 
 /**
  * VotePoll serialized as JSON.
  */
 export interface VotePollJSON {
-    type: "contestedDocumentResourceVotePoll";
-    data: {
-        contractId: string;
-        documentTypeName: string;
-        indexName: string;
-        indexValues: any[];
-    };
+    $type: "contestedDocumentResourceVotePoll";
+    contractId: string;
+    documentTypeName: string;
+    indexName: string;
+    indexValues: any[];
 }
 "#;
 

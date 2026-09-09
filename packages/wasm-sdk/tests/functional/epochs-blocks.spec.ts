@@ -7,6 +7,7 @@ describe('Epochs and Evonode Blocks', function describeEpochs() {
 
   let client: sdk.WasmSdk;
   let evonodeProTxHash: string;
+  let epochIndex: number;
 
   before(async () => {
     await init();
@@ -17,6 +18,10 @@ describe('Epochs and Evonode Blocks', function describeEpochs() {
     // Get the proTxHash from the node status
     const status = await client.getStatus();
     evonodeProTxHash = status.node.proTxHash;
+    if (status.time.epoch === undefined) {
+      throw new Error('Platform status did not include the current epoch');
+    }
+    epochIndex = Number(status.time.epoch);
   });
 
   after(async () => {
@@ -27,10 +32,7 @@ describe('Epochs and Evonode Blocks', function describeEpochs() {
 
   describe('getEpochsInfo()', () => {
     it('should get epochs info and finalized epochs', async () => {
-      // Get current epoch info
-      const current = await client.getCurrentEpoch().catch(() => null);
-      const currentIndex = current ? Number(current.index) : 0;
-      const start = Math.max(0, currentIndex - 5);
+      const start = Math.max(0, epochIndex - 5);
 
       const infos = await client.getEpochsInfo({
         startEpoch: start,
@@ -43,10 +45,7 @@ describe('Epochs and Evonode Blocks', function describeEpochs() {
 
   describe('getFinalizedEpochInfos()', () => {
     it('should get finalized epoch infos', async () => {
-      // Get current epoch info
-      const current = await client.getCurrentEpoch().catch(() => null);
-      const currentIndex = current ? Number(current.index) : 0;
-      const start = Math.max(0, currentIndex - 5);
+      const start = Math.max(0, epochIndex - 5);
 
       const finalized = await client.getFinalizedEpochInfos({
         startEpoch: start,
@@ -58,10 +57,6 @@ describe('Epochs and Evonode Blocks', function describeEpochs() {
 
   describe('getEvonodesProposedEpochBlocksByIds()', () => {
     it('should query evonode proposed blocks by ids', async () => {
-      // Get current epoch
-      const current = await client.getCurrentEpoch().catch(() => null);
-      const epochIndex = current ? Number(current.index) : 0;
-
       // Query by specific IDs only if we have a proTxHash
       if (evonodeProTxHash) {
         const byIds = await client
@@ -73,10 +68,6 @@ describe('Epochs and Evonode Blocks', function describeEpochs() {
 
   describe('getEvonodesProposedEpochBlocksByRange()', () => {
     it('should query evonode proposed blocks by range', async () => {
-      // Get current epoch
-      const current = await client.getCurrentEpoch().catch(() => null);
-      const epochIndex = current ? Number(current.index) : 0;
-
       // Query by range (doesn't require a specific proTxHash)
       const byRange = await client.getEvonodesProposedEpochBlocksByRange({
         epoch: epochIndex,
@@ -88,9 +79,6 @@ describe('Epochs and Evonode Blocks', function describeEpochs() {
 
   describe('getEvonodesProposedEpochBlocksByIdsWithProofInfo()', () => {
     it('should query evonode proposed blocks by ids with proof', async () => {
-      const current = await client.getCurrentEpoch().catch(() => null);
-      const epochIndex = current ? Number(current.index) : 0;
-
       // Get at least one proTxHash from the range query results
       const byRange = await client.getEvonodesProposedEpochBlocksByRange({
         epoch: epochIndex,
@@ -122,9 +110,6 @@ describe('Epochs and Evonode Blocks', function describeEpochs() {
 
   describe('getEvonodesProposedEpochBlocksByRangeWithProofInfo()', () => {
     it('should query evonode proposed blocks by range with proof', async () => {
-      const current = await client.getCurrentEpoch().catch(() => null);
-      const epochIndex = current ? Number(current.index) : 0;
-
       const res = await client.getEvonodesProposedEpochBlocksByRangeWithProofInfo({
         epoch: epochIndex,
         limit: 50,

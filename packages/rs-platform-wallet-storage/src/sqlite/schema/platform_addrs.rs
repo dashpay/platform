@@ -252,7 +252,32 @@ pub fn count_per_wallet(
 /// `address_row_count` is the number of `platform_addresses` rows for the
 /// wallet — `load()` uses it (with the watermark and per_account) to
 /// decide whether the wallet carries any platform state worth surfacing.
+/// That makes a silently skipped row change a DECISION, not just data,
+/// which is half of why a failure here costs the whole wallet.
 pub type LoadAllEntry = (PlatformAddressSyncStartState, usize);
+
+/// Per-wallet scan outcome: a wallet's rows, or the first failure met in
+/// them.
+///
+/// `platform_addresses` carries `balance`, so a skipped row would quietly
+/// lower a reported balance. The unit of loss is therefore the whole wallet:
+/// either every one of its rows was read, or none of its state is offered.
+type PerWallet<T> = BTreeMap<WalletId, Result<T, WalletStorageError>>;
+
+/// Record `err` against `wallet_id`, keeping the FIRST failure — a later row
+/// cannot explain the wallet's loss better than the row that caused it.
+fn fail_wallet<T>(out: &mut PerWallet<T>, wallet_id: WalletId, err: WalletStorageError) {
+    match out.entry(wallet_id) {
+        std::collections::btree_map::Entry::Occupied(mut slot) => {
+            if slot.get().is_ok() {
+                *slot.get_mut() = Err(err);
+            }
+        }
+        std::collections::btree_map::Entry::Vacant(slot) => {
+            slot.insert(Err(err));
+        }
+    }
+}
 
 /// Bulk reader for `load()`. Cost is a fixed number of grouped scans —
 /// one over `platform_address_sync`, one over `platform_addresses`, and
@@ -264,37 +289,44 @@ pub type LoadAllEntry = (PlatformAddressSyncStartState, usize);
 /// `wallet_id` is absent from `wallet_metadata` are intentionally NOT
 /// surfaced. Native foreign keys prevent such orphans; a future re-wire
 /// that needs them must restore the id-union over the area tables.
-pub fn load_all(conn: &Connection) -> Result<BTreeMap<WalletId, LoadAllEntry>, WalletStorageError> {
-    let sync_by_wallet = all_sync_state(conn)?;
-    let addresses_by_wallet = all_address_rows(conn)?;
-    let registrations_by_wallet = accounts::all_platform_payment_registrations(conn)?;
+pub fn load_all(conn: &Connection) -> Result<PerWallet<LoadAllEntry>, WalletStorageError> {
+    let mut sync_by_wallet = all_sync_state(conn)?;
+    let mut addresses_by_wallet = all_address_rows(conn)?;
+    let mut registrations_by_wallet = accounts::all_platform_payment_registrations(conn)?;
 
-    let empty_rows: Vec<PlatformAddressRow> = Vec::new();
-    let empty_regs: Vec<accounts::PlatformPaymentRegistration> = Vec::new();
-
-    let mut out: BTreeMap<WalletId, LoadAllEntry> = BTreeMap::new();
+    let mut out: PerWallet<LoadAllEntry> = BTreeMap::new();
     for wallet_id in crate::sqlite::schema::wallets::list_ids(conn)? {
-        let (h, t, r) = sync_by_wallet.get(&wallet_id).copied().unwrap_or((0, 0, 0));
-        let address_rows = addresses_by_wallet.get(&wallet_id).unwrap_or(&empty_rows);
+        // A wallet with no rows in a table is not a failure: it maps to the
+        // same empty defaults it always did.
+        let sync = sync_by_wallet.remove(&wallet_id).unwrap_or(Ok((0, 0, 0)));
+        let address_rows = addresses_by_wallet
+            .remove(&wallet_id)
+            .unwrap_or(Ok(Vec::new()));
         let registrations = registrations_by_wallet
-            .get(&wallet_id)
-            .unwrap_or(&empty_regs);
-        let sync = PlatformAddressSyncStartState {
-            per_account: build_per_account(registrations, address_rows),
-            sync_height: h,
-            sync_timestamp: t,
-            last_known_recent_block: r,
+            .remove(&wallet_id)
+            .unwrap_or(Ok(Vec::new()));
+
+        let entry = match (sync, address_rows, registrations) {
+            (Ok((h, t, r)), Ok(address_rows), Ok(registrations)) => Ok((
+                PlatformAddressSyncStartState {
+                    per_account: build_per_account(&registrations, &address_rows),
+                    sync_height: h,
+                    sync_timestamp: t,
+                    last_known_recent_block: r,
+                },
+                address_rows.len(),
+            )),
+            // First failure across the three scans, in scan order.
+            (Err(err), _, _) | (_, Err(err), _) | (_, _, Err(err)) => Err(err),
         };
-        out.insert(wallet_id, (sync, address_rows.len()));
+        out.insert(wallet_id, entry);
     }
     Ok(out)
 }
 
 /// One grouped scan of `platform_address_sync` → `(sync_height,
 /// sync_timestamp, last_known_recent_block)` per wallet.
-fn all_sync_state(
-    conn: &Connection,
-) -> Result<BTreeMap<WalletId, (u64, u64, u64)>, WalletStorageError> {
+fn all_sync_state(conn: &Connection) -> Result<PerWallet<(u64, u64, u64)>, WalletStorageError> {
     let mut stmt = conn.prepare(
         "SELECT wallet_id, sync_height, sync_timestamp, last_known_recent_block \
          FROM platform_address_sync",
@@ -307,18 +339,25 @@ fn all_sync_state(
             row.get::<_, i64>(3)?,
         ))
     })?;
-    let mut out: BTreeMap<WalletId, (u64, u64, u64)> = BTreeMap::new();
+    let mut out: PerWallet<(u64, u64, u64)> = BTreeMap::new();
     for r in rows {
         let (wid_bytes, h, t, recent) = r?;
+        // A wallet id that is not 32 bytes belongs to no wallet, so there is
+        // nobody to attribute it to: it stays file-fatal, like `list_ids`.
         let wallet_id = wallet_id_from_bytes(&wid_bytes)?;
-        out.insert(
-            wallet_id,
-            (
+        let watermarks = (|| {
+            Ok((
                 safe_cast::i64_to_u64("platform_address_sync.sync_height", h)?,
                 safe_cast::i64_to_u64("platform_address_sync.sync_timestamp", t)?,
                 safe_cast::i64_to_u64("platform_address_sync.last_known_recent_block", recent)?,
-            ),
-        );
+            ))
+        })();
+        match watermarks {
+            Ok(watermarks) => {
+                out.insert(wallet_id, Ok(watermarks));
+            }
+            Err(err) => fail_wallet(&mut out, wallet_id, err),
+        }
     }
     Ok(out)
 }
@@ -327,7 +366,7 @@ fn all_sync_state(
 /// wallet, ordered for stable per-account grouping.
 fn all_address_rows(
     conn: &Connection,
-) -> Result<BTreeMap<WalletId, Vec<PlatformAddressRow>>, WalletStorageError> {
+) -> Result<PerWallet<Vec<PlatformAddressRow>>, WalletStorageError> {
     // length(address) is read first (O(1)) so an oversize or wrong-width
     // address blob is caught before materializing the Vec.
     let mut stmt = conn.prepare(
@@ -336,29 +375,43 @@ fn all_address_rows(
          FROM platform_addresses ORDER BY wallet_id, account_index, address_index, address",
     )?;
     let mut rows = stmt.query([])?;
-    let mut out: BTreeMap<WalletId, Vec<PlatformAddressRow>> = BTreeMap::new();
+    let mut out: PerWallet<Vec<PlatformAddressRow>> = BTreeMap::new();
     while let Some(row) = rows.next()? {
         let wid_bytes: Vec<u8> = row.get(0)?;
         let account_index: i64 = row.get(1)?;
         let address_index: i64 = row.get(2)?;
-        blob::check_fixed_width(
-            row.get::<_, i64>(3)?,
-            20,
-            "platform_addresses.address is not 20 bytes",
-        )?;
+        let address_width: i64 = row.get(3)?;
         let address_bytes: Vec<u8> = row.get(4)?;
         let balance: i64 = row.get(5)?;
         let nonce: i64 = row.get(6)?;
         let as_of_height: i64 = row.get(7)?;
+        // Same rule as the sync scan: an unattributable id stays file-fatal.
         let wallet_id = wallet_id_from_bytes(&wid_bytes)?;
-        out.entry(wallet_id).or_default().push(decode_address_row(
-            account_index,
-            address_index,
-            &address_bytes,
-            balance,
-            nonce,
-            as_of_height,
-        )?);
+        let decoded = blob::check_fixed_width(
+            address_width,
+            20,
+            "platform_addresses.address is not 20 bytes",
+        )
+        .and_then(|()| {
+            decode_address_row(
+                account_index,
+                address_index,
+                &address_bytes,
+                balance,
+                nonce,
+                as_of_height,
+            )
+        });
+        match decoded {
+            // A wallet already recorded as failed keeps its first cause;
+            // its remaining rows cannot change the outcome.
+            Ok(decoded) => {
+                if let Ok(rows) = out.entry(wallet_id).or_insert_with(|| Ok(Vec::new())) {
+                    rows.push(decoded);
+                }
+            }
+            Err(err) => fail_wallet(&mut out, wallet_id, err),
+        }
     }
     Ok(out)
 }
@@ -381,23 +434,9 @@ fn decode_address_row(
     hash160.copy_from_slice(address_bytes);
     let balance = safe_cast::i64_to_u64("platform_addresses.balance", balance)?;
     let as_of_height = safe_cast::i64_to_u64("platform_addresses.as_of_height", as_of_height)?;
-    let nonce = u32::try_from(nonce).map_err(|_| WalletStorageError::IntegerOverflow {
-        field: "platform_addresses.nonce",
-        value: nonce as u64,
-        target: safe_cast::SafeCastTarget::U64,
-    })?;
-    let account_index =
-        u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "platform_addresses.account_index",
-            value: account_index as u64,
-            target: safe_cast::SafeCastTarget::U64,
-        })?;
-    let address_index =
-        u32::try_from(address_index).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "platform_addresses.address_index",
-            value: address_index as u64,
-            target: safe_cast::SafeCastTarget::U64,
-        })?;
+    let nonce = safe_cast::i64_to_u32("platform_addresses.nonce", nonce)?;
+    let account_index = safe_cast::i64_to_u32("platform_addresses.account_index", account_index)?;
+    let address_index = safe_cast::i64_to_u32("platform_addresses.address_index", address_index)?;
     Ok(PlatformAddressRow {
         account_index,
         address_index,
@@ -411,7 +450,47 @@ fn decode_address_row(
 }
 
 fn wallet_id_from_bytes(bytes: &[u8]) -> Result<WalletId, WalletStorageError> {
-    <[u8; 32]>::try_from(bytes).map_err(|_| WalletStorageError::InvalidWalletIdLength {
-        actual: bytes.len(),
-    })
+    super::id32("platform_addresses.wallet_id", bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `decode_address_row`'s three `u32` boundary casts (nonce,
+    /// account_index, address_index) must stamp `SafeCastTarget::U32`: each
+    /// is a `u32::try_from`, so a corrupt row that overflows `u32` overflows
+    /// *that* type — the diagnostic must name it, not `u64`, or an operator
+    /// is misdirected to the wrong boundary.
+    #[test]
+    fn decode_address_row_overflow_reports_u32_target() {
+        let over = i64::from(u32::MAX) + 1;
+        let addr = [0u8; 20];
+        for (label, err) in [
+            (
+                "platform_addresses.nonce",
+                decode_address_row(0, 0, &addr, 0, over, 0).unwrap_err(),
+            ),
+            (
+                "platform_addresses.account_index",
+                decode_address_row(over, 0, &addr, 0, 0, 0).unwrap_err(),
+            ),
+            (
+                "platform_addresses.address_index",
+                decode_address_row(0, over, &addr, 0, 0, 0).unwrap_err(),
+            ),
+        ] {
+            match err {
+                WalletStorageError::IntegerOverflow { field, target, .. } => {
+                    assert_eq!(field, label, "field must name the overflowing column");
+                    assert_eq!(
+                        target,
+                        safe_cast::SafeCastTarget::U32,
+                        "{label} is a u32 cast; target must be U32, not U64"
+                    );
+                }
+                other => panic!("expected IntegerOverflow for {label}, got {other:?}"),
+            }
+        }
+    }
 }

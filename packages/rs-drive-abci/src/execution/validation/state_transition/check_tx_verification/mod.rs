@@ -3,6 +3,7 @@ pub(crate) mod v0;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
+use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::prelude::ConsensusValidationResult;
@@ -26,6 +27,7 @@ pub(in crate::execution) fn state_transition_to_execution_event_for_check_tx<'a,
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
     check_tx_level: CheckTxLevel,
+    proof_verifier: &CheckTxProofVerifier,
     platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Option<ExecutionEvent<'a>>>, Error> {
     match platform_version
@@ -37,6 +39,7 @@ pub(in crate::execution) fn state_transition_to_execution_event_for_check_tx<'a,
             platform,
             state_transition,
             check_tx_level,
+            proof_verifier,
             platform_version,
         ),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

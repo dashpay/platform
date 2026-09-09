@@ -64,6 +64,11 @@ impl ConfigurationForSystemContract for SystemDataContract {
                 config.set_sized_integer_types_enabled(true);
                 Ok(config)
             }
+            SystemDataContract::DocumentHistory => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(true);
+                Ok(config)
+            }
         }
     }
 }

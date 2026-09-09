@@ -41,11 +41,13 @@ use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
 
 /// DIP-15 child index for the `encToUserId` encryption key (2^16 —
 /// "to discount other potential derivations of this key in other
-/// applications").
-pub const ENC_TO_USER_ID_CHILD: u32 = 1 << 16;
+/// applications"). Canonical value lives in `key_wallet::dip9`; re-exposed
+/// under the local name this module's callers use.
+pub const ENC_TO_USER_ID_CHILD: u32 = key_wallet::dip9::DASHPAY_CONTACT_INFO_ENC_TO_USER_ID_CHILD;
 
 /// DIP-15 child index for the `privateData` encryption key (2^16 + 1).
-pub const PRIVATE_DATA_CHILD: u32 = (1 << 16) + 1;
+/// Canonical value lives in `key_wallet::dip9`.
+pub const PRIVATE_DATA_CHILD: u32 = key_wallet::dip9::DASHPAY_CONTACT_INFO_PRIVATE_DATA_CHILD;
 
 /// The deployed schema's `privateData` minimum length (bytes, IV included).
 const PRIVATE_DATA_MIN_LEN: usize = 48;

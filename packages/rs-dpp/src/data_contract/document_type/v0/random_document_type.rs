@@ -197,6 +197,7 @@ impl DocumentTypeV0 {
                 property_type: document_type,
                 required,
                 transient: false,
+                required_since: None,
             }
         };
 
@@ -325,7 +326,7 @@ impl DocumentTypeV0 {
                     schema.insert("byteArray".to_string(), serde_json::Value::Bool(true));
                     serde_json::Value::Object(schema)
                 },
-                DocumentPropertyType::Identifier => {
+                DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                     json!({
                         "type": "array",
                         "items": {
@@ -354,11 +355,11 @@ impl DocumentTypeV0 {
                         ArrayItemType::Integer => json!({"type": "integer"}),
                         ArrayItemType::Number => json!({"type": "number"}),
                         ArrayItemType::ByteArray(min, max) => {
-                            json!({"type": "array", "items": {"type": "byte"}, "minItems": min, "maxItems": max})
+                            json!({"type": "array", "items": {"$type": "byte"}, "minItems": min, "maxItems": max})
                         },
                         ArrayItemType::Identifier => json!({"type": "array"}),
-                        ArrayItemType::Boolean => json!({"type": "bool"}),
-                        ArrayItemType::Date => json!({"type": "date"}),
+                        ArrayItemType::Boolean => json!({"$type": "bool"}),
+                        ArrayItemType::Date => json!({"$type": "date"}),
                     };
 
                     json!({
@@ -435,6 +436,9 @@ impl DocumentTypeV0 {
             required_fields,
             transient_fields: Default::default(),
             documents_keep_history,
+            documents_keep_transfer_history: false,
+            documents_keep_purchase_history: false,
+            documents_keep_pricing_history: false,
             documents_mutable,
             documents_can_be_deleted,
             documents_transferable: Transferable::Never,
@@ -523,6 +527,7 @@ impl DocumentTypeV0 {
                 property_type: document_type,
                 required,
                 transient: false,
+                required_since: None,
             }
         };
 
@@ -610,6 +615,9 @@ impl DocumentTypeV0 {
             required_fields,
             transient_fields: Default::default(),
             documents_keep_history,
+            documents_keep_transfer_history: false,
+            documents_keep_purchase_history: false,
+            documents_keep_pricing_history: false,
             documents_mutable,
             documents_can_be_deleted,
             documents_transferable: Transferable::Never,

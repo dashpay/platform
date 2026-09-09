@@ -22,7 +22,9 @@ pub mod contested_document_resource_vote_poll;
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(tag = "type", content = "data", rename_all = "camelCase")
+    // Internally tagged with a `$type` discriminator; inner
+    // `ContestedDocumentResourceVotePoll` fields flatten at the same level.
+    serde(tag = "$type", rename_all = "camelCase")
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)]
@@ -64,5 +66,33 @@ impl VotePoll {
                 contested_document_resource_vote_poll.unique_id()
             }
         }
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests_votepoll {
+    use super::*;
+
+    #[test]
+    fn json_round_trip_votepoll() {
+        use crate::serialization::JsonConvertible;
+        let original = VotePoll::default();
+        let json = original.to_json().expect("to_json");
+        let recovered = VotePoll::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_votepoll() {
+        use crate::serialization::ValueConvertible;
+        let original = VotePoll::default();
+        let value = original.to_object().expect("to_object");
+        let recovered = VotePoll::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

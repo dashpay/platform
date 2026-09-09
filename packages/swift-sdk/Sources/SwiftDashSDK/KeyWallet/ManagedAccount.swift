@@ -3,10 +3,10 @@ import DashSDKFFI
 
 /// Swift wrapper for a managed account with address pool management
 public class ManagedAccount {
-    internal let handle: UnsafeMutablePointer<FFIManagedCoreAccount>
+    internal let handle: OpaquePointer
     private let manager: WalletManager
 
-    internal init(handle: UnsafeMutablePointer<FFIManagedCoreAccount>, manager: WalletManager) {
+    internal init(handle: OpaquePointer, manager: WalletManager) {
         self.handle = handle
         self.manager = manager
     }

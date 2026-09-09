@@ -75,7 +75,7 @@ final class SimpleTransitionTests: XCTestCase {
       }
 
       defer {
-        dash_sdk_identity_destroy(identityHandle.assumingMemoryBound(to: IdentityHandle.self))
+        dash_sdk_identity_destroy(OpaquePointer(identityHandle))
       }
 
       // Use key ID 3 (transfer key) directly
@@ -97,7 +97,7 @@ final class SimpleTransitionTests: XCTestCase {
       }
 
       defer {
-        dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
+        dash_sdk_signer_destroy(OpaquePointer(signer))
       }
 
       // `OpaquePointer` lost its retroactive `Sendable` conformance

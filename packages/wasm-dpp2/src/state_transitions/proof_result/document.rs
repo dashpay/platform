@@ -1,10 +1,9 @@
 //! `VerifiedDocuments` proof-result wrapper.
 
 use super::helpers::js_obj;
-use crate::error::{WasmDppError, WasmDppResult};
+use crate::error::WasmDppResult;
 use crate::impl_wasm_type_info;
 use js_sys::Map;
-use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
 
@@ -36,11 +35,8 @@ impl VerifiedDocumentsWasm {
 
     #[wasm_bindgen(js_name = fromObject)]
     pub fn from_object(value: JsValue) -> WasmDppResult<VerifiedDocumentsWasm> {
-        let map_val = js_sys::Reflect::get(&value, &"documents".into())
-            .map_err(|_| WasmDppError::generic("Missing property: documents"))?;
-        Ok(VerifiedDocumentsWasm {
-            documents: map_val.unchecked_into(),
-        })
+        let documents = super::helpers::read_map_property(&value, "documents")?;
+        Ok(VerifiedDocumentsWasm { documents })
     }
 
     #[wasm_bindgen(js_name = fromJSON)]

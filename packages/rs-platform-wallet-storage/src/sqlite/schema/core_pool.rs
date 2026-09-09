@@ -11,14 +11,15 @@
 //! from the `account_address_pools` changeset snapshots; the UTXO writer reads
 //! it back to attribute an outpoint to its owning account.
 
-use rusqlite::{params, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, Transaction};
 
 use platform_wallet::changeset::AccountAddressPoolEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use key_wallet::managed_account::address_pool::AddressPoolType;
+use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
 
 use crate::sqlite::error::WalletStorageError;
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::accounts;
 use crate::sqlite::schema::blob;
 
@@ -33,20 +34,71 @@ pub(crate) fn pool_type_to_i64(pool_type: AddressPoolType) -> i64 {
     }
 }
 
+// Stable `PublicKeyType` declaration-order discriminants and emitted lengths.
+const KEY_TYPE_ECDSA: i64 = 0;
+const KEY_TYPE_EDDSA: i64 = 1;
+const KEY_TYPE_BLS: i64 = 2;
+const ECDSA_PUBLIC_KEY_LEN: usize = 33;
+const EDDSA_PUBLIC_KEY_LEN: usize = 32;
+const BLS_PUBLIC_KEY_LEN: usize = 48;
+
+fn key_type_to_i64(key_type: &PublicKeyType) -> i64 {
+    match key_type {
+        PublicKeyType::ECDSA(_) => KEY_TYPE_ECDSA,
+        PublicKeyType::EdDSA(_) => KEY_TYPE_EDDSA,
+        PublicKeyType::BLS(_) => KEY_TYPE_BLS,
+    }
+}
+
+// Monotonic final usage clears reservations so a stale Reserved snapshot
+// cannot resurrect one after the row has become Used.
 const UPSERT_POOL_SQL: &str = "INSERT INTO core_address_pool \
         (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, \
-         pool_type, address_index, script, used) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+         pool_type, address_index, script, used, public_key, key_type, reserved_at) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) \
      ON CONFLICT(wallet_id, account_type, account_index, key_class, user_identity_id, \
                  friend_identity_id, pool_type, address_index) \
      DO UPDATE SET \
         script = excluded.script, \
-        used = MAX(used, excluded.used)";
+        public_key = excluded.public_key, \
+        key_type = excluded.key_type, \
+        used = MAX(used, excluded.used), \
+        reserved_at = CASE \
+            WHEN MAX(used, excluded.used) = 1 THEN NULL \
+            ELSE excluded.reserved_at \
+        END";
+
+const TYPED_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
+        SELECT 1 FROM core_address_pool \
+        WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+          AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+          AND pool_type = ?7 AND address_index = ?8 \
+          AND key_type IS NOT NULL AND public_key IS NOT NULL \
+          AND (?10 IS NULL OR public_key <> ?9 OR key_type <> ?10) \
+    )";
 
 /// Expand `account_address_pools` snapshots into per-index
 /// `core_address_pool` rows. Idempotent: `script` is derivation-stable and
 /// `used` is monotonic (`MAX`), so re-applying the same snapshot is a no-op
 /// and a used address can never revert to unused (the reuse-guard invariant).
+/// Writes reject any change or erasure of typed key material already stored.
+///
+/// # Errors
+///
+/// [`WalletStorageError::TypedPoolKeyConflict`] when incoming key material
+/// contradicts what is already stored, and
+/// [`WalletStorageError::EmptyPoolAddressScript`] when a row carries a
+/// zero-length `script`: `load()` turns every stored script back into an
+/// address, so an empty one degrades the load of the owning wallet and fails
+/// it outright under a strict policy. This is the only writer of
+/// `core_address_pool.script`, so refusing here closes the producer.
+///
+/// The script guard binds new writes only. Empty scripts already present in
+/// an existing database file remain fatal to a strict load, and are
+/// deliberately left in place rather than purged — the same posture V015
+/// took for the sibling `core_utxos.script` column, where it purged only
+/// legacy empty-script *spent* rows and left the surviving balance-bearing
+/// ones alone.
 pub fn apply_pools(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -55,7 +107,8 @@ pub fn apply_pools(
     if pools.is_empty() {
         return Ok(());
     }
-    let mut stmt = tx.prepare_cached(UPSERT_POOL_SQL)?;
+    let mut conflict_stmt = tx.prepare_cached(TYPED_POOL_CONFLICT_SQL)?;
+    let mut upsert_stmt = tx.prepare_cached(UPSERT_POOL_SQL)?;
     for entry in pools {
         // `account_type` discriminates accounts that collapse to the same
         // `(account_index, key_class)` sentinel (e.g. `IdentityRegistration`
@@ -74,7 +127,61 @@ pub fn apply_pools(
             accounts::account_dashpay_ids(&entry.account_type);
         let pool_type = pool_type_to_i64(entry.pool_type);
         for info in &entry.addresses {
-            stmt.execute(params![
+            if info.script_pubkey.as_bytes().is_empty() {
+                return Err(WalletStorageError::EmptyPoolAddressScript {
+                    account_type,
+                    address_index: info.index,
+                });
+            }
+            let key_type = info.public_key.as_ref().map(key_type_to_i64);
+            let (public_key, expected_key_len): (Option<&[u8]>, Option<usize>) =
+                match info.public_key.as_ref() {
+                    None => (None, None),
+                    Some(PublicKeyType::ECDSA(bytes)) => {
+                        (Some(bytes.as_slice()), Some(ECDSA_PUBLIC_KEY_LEN))
+                    }
+                    Some(PublicKeyType::EdDSA(bytes)) => {
+                        (Some(bytes.as_slice()), Some(EDDSA_PUBLIC_KEY_LEN))
+                    }
+                    Some(PublicKeyType::BLS(bytes)) => {
+                        (Some(bytes.as_slice()), Some(BLS_PUBLIC_KEY_LEN))
+                    }
+                };
+            if let (Some(public_key), Some(expected_key_len)) = (public_key, expected_key_len) {
+                blob::check_fixed_width(
+                    i64::try_from(public_key.len()).unwrap_or(i64::MAX),
+                    expected_key_len,
+                    "core_address_pool.public_key has the wrong length for key_type",
+                )?;
+            }
+            let conflicts = conflict_stmt.query_row(
+                params![
+                    wallet_id.as_slice(),
+                    account_type,
+                    account_index,
+                    key_class,
+                    user_identity_id.as_slice(),
+                    friend_identity_id.as_slice(),
+                    pool_type,
+                    i64::from(info.index),
+                    public_key,
+                    key_type,
+                ],
+                |row| row.get::<_, bool>(0),
+            )?;
+            if conflicts {
+                return Err(WalletStorageError::TypedPoolKeyConflict {
+                    account_type,
+                    address_index: info.index,
+                });
+            }
+            let reserved_at = info
+                .reserved_at()
+                .map(|at| {
+                    crate::sqlite::util::safe_cast::u64_to_i64("core_address_pool.reserved_at", at)
+                })
+                .transpose()?;
+            upsert_stmt.execute(params![
                 wallet_id.as_slice(),
                 account_type,
                 account_index,
@@ -84,81 +191,294 @@ pub fn apply_pools(
                 pool_type,
                 i64::from(info.index),
                 info.script_pubkey.as_bytes(),
-                info.used,
+                info.is_used(),
+                public_key,
+                key_type,
+                reserved_at,
             ])?;
         }
     }
     Ok(())
 }
 
-/// Owning account index for a UTXO, matched by its `script_pubkey` against a
-/// pool row. `None` when no pool row covers the script — the UTXO writer
-/// then falls back to account 0 (the one-way historical-attribution default,
-/// R7): funds are never dropped, only conservatively bucketed.
-pub fn account_index_for_script(
-    tx: &Transaction<'_>,
-    wallet_id: &WalletId,
-    script: &[u8],
-) -> Result<Option<u32>, WalletStorageError> {
-    // A script can appear under several pool rows (distinct account_type /
-    // key_class / identity pair / pool_type share the same `script_pubkey`
-    // for reused keys); an explicit PK-ordered tie-break makes the pick
-    // deterministic instead of relying on SQLite's arbitrary `LIMIT 1` row.
-    let idx: Option<i64> = tx
-        .prepare_cached(
-            "SELECT account_index FROM core_address_pool \
-             WHERE wallet_id = ?1 AND script = ?2 \
-             ORDER BY account_type, account_index, key_class, user_identity_id, \
-                      friend_identity_id, pool_type, address_index ASC \
-             LIMIT 1",
-        )?
-        .query_row(params![wallet_id.as_slice(), script], |row| row.get(0))
-        .optional()?;
-    idx.map(|v| crate::sqlite::util::safe_cast::i64_to_u32("core_address_pool.account_index", v))
-        .transpose()
-}
+// TODO(#4188): `reserved_at` is persisted but deliberately not consumed here;
+// restoring it requires widening `provider_accounts::insert_platform_node_pool_entry`.
+/// One restored typed-pool row: `(address_index, script_bytes, public_key, used)`.
+pub type TypedPoolEntry = (u32, Vec<u8>, PublicKeyType, bool);
 
-/// Used addresses for a wallet, read verbatim from `core_address_pool`
-/// (`used = 1`) with no re-derivation. Possibly empty. The caller **unions**
-/// this with the `core_utxos`-derived set — the reuse guard is monotonic, so
-/// a mixed store (historical UTXOs a later partial pool snapshot never
-/// enumerates) must surface both sources, never drop the historical ones.
+/// Load typed public-key rows for one account pool, ordered by address index.
 ///
-/// `network` turns each stored `script` back into an [`Address`]; a script
-/// that isn't a valid address is a hard error — corruption is never silently
-/// dropped, matching [`crate::sqlite::schema::core_state::load_used_addresses`].
-pub fn load_used_addresses(
-    conn: &rusqlite::Connection,
+/// These rows carry pre-derived hardened-only batches, such as platform-node
+/// EdDSA keys, that cannot be regenerated from a watch-only account xpub.
+/// Invalid key discriminants, missing keys, and wrong key widths are errors.
+pub fn load_typed_pool_entries(
+    conn: &Connection,
     wallet_id: &WalletId,
-    network: dashcore::Network,
-) -> Result<Vec<dashcore::Address>, WalletStorageError> {
-    // Gate the largest stored `script` with a cheap aggregate BEFORE the
-    // `DISTINCT ... ORDER BY script` read materializes or sorts any blob, so a
-    // corrupt/oversize column raises a typed `BlobTooLarge` (the crate's 16 MiB
-    // cap) rather than SQLite's own `TooBig` mid-sort, and never OOMs the host.
-    let max_script_len: Option<i64> = conn.query_row(
-        "SELECT MAX(length(script)) FROM core_address_pool \
-         WHERE wallet_id = ?1 AND used = 1",
-        params![wallet_id.as_slice()],
-        |row| row.get(0),
+    account_type: &key_wallet::account::AccountType,
+    pool_type: AddressPoolType,
+) -> Result<Vec<TypedPoolEntry>, WalletStorageError> {
+    let account_type = accounts::account_type_db_label(account_type);
+    let pool_type = pool_type_to_i64(pool_type);
+    let (max_script_len, max_public_key_len): (Option<i64>, Option<i64>) = conn.query_row(
+        "SELECT MAX(length(script)), MAX(length(public_key)) FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND pool_type = ?3 \
+           AND (public_key IS NOT NULL OR key_type IS NOT NULL)",
+        params![wallet_id.as_slice(), account_type, pool_type],
+        |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
     if let Some(len) = max_script_len {
         blob::check_size(len)?;
     }
+    if let Some(len) = max_public_key_len {
+        blob::check_size(len)?;
+    }
+
     let mut stmt = conn.prepare(
-        "SELECT DISTINCT script FROM core_address_pool \
-         WHERE wallet_id = ?1 AND used = 1 ORDER BY script",
+        "SELECT address_index, length(script), script, length(public_key), public_key, \
+                key_type, used FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND pool_type = ?3 \
+           AND (public_key IS NOT NULL OR key_type IS NOT NULL) \
+         ORDER BY address_index",
     )?;
-    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-        row.get::<_, Vec<u8>>(0)
-    })?;
+    let mut rows = stmt.query(params![wallet_id.as_slice(), account_type, pool_type,])?;
     let mut out = Vec::new();
-    for r in rows {
-        let script = dashcore::ScriptBuf::from_bytes(r?);
-        let address = dashcore::Address::from_script(&script, network).map_err(|_| {
-            WalletStorageError::blob_decode("core_address_pool.script not an address")
-        })?;
-        out.push(address);
+    while let Some(row) = rows.next()? {
+        let address_index = crate::sqlite::util::safe_cast::i64_to_u32(
+            "core_address_pool.address_index",
+            row.get::<_, i64>(0)?,
+        )?;
+        blob::check_size(row.get::<_, i64>(1)?)?;
+        let script = row.get::<_, Vec<u8>>(2)?;
+        let public_key_len = row.get::<_, Option<i64>>(3)?;
+        let key_type = row.get::<_, Option<i64>>(5)?;
+        let (public_key_len, key_type) = match (public_key_len, key_type) {
+            (Some(public_key_len), Some(key_type)) => (public_key_len, key_type),
+            _ => {
+                return Err(WalletStorageError::blob_decode(
+                    "core_address_pool.public_key and key_type nullability differ",
+                ));
+            }
+        };
+        let expected_key_len = match key_type {
+            KEY_TYPE_ECDSA => ECDSA_PUBLIC_KEY_LEN,
+            KEY_TYPE_EDDSA => EDDSA_PUBLIC_KEY_LEN,
+            KEY_TYPE_BLS => BLS_PUBLIC_KEY_LEN,
+            _ => {
+                return Err(WalletStorageError::blob_decode(
+                    "core_address_pool.key_type is outside 0..=2",
+                ));
+            }
+        };
+        blob::check_fixed_width(
+            public_key_len,
+            expected_key_len,
+            "core_address_pool.public_key has the wrong length for key_type",
+        )?;
+        let Some(public_key) = row.get::<_, Option<Vec<u8>>>(4)? else {
+            return Err(WalletStorageError::blob_decode(
+                "core_address_pool.public_key is NULL for a typed row",
+            ));
+        };
+        let public_key = match key_type {
+            KEY_TYPE_ECDSA => PublicKeyType::ECDSA(public_key),
+            KEY_TYPE_EDDSA => PublicKeyType::EdDSA(public_key),
+            KEY_TYPE_BLS => PublicKeyType::BLS(public_key),
+            _ => {
+                return Err(WalletStorageError::blob_decode(
+                    "core_address_pool.key_type is outside 0..=2",
+                ));
+            }
+        };
+        out.push((address_index, script, public_key, row.get(6)?));
+    }
+    Ok(out)
+}
+
+/// Identity of the funds account that owns an address, matched against a
+/// `core_address_pool` row. Enough to select one account among funding accounts
+/// that share a numeric `account_index` (Standard BIP44/BIP32 and CoinJoin can
+/// all sit at index 0; DashPay accounts all persist index 0 and are told apart
+/// by the identity pair).
+///
+/// Carries four of the writer's five pool-PK account discriminators
+/// (`UPSERT_POOL_SQL`); `key_class` is intentionally omitted. Every funds
+/// account maps to the `key_class = 0` sentinel — only the non-funds
+/// `PlatformPayment` account carries a real class, and it is never a funding
+/// account — so `key_class` cannot distinguish two funds accounts and adds
+/// nothing here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwningAccount {
+    /// `account_type` DB label (see [`accounts::account_type_db_label`]).
+    pub account_type: String,
+    /// Numeric account index within its type.
+    pub account_index: u32,
+    /// DashPay owner identity (all-zero for non-DashPay accounts).
+    pub user_identity_id: [u8; 32],
+    /// DashPay contact identity (all-zero for non-DashPay accounts).
+    pub friend_identity_id: [u8; 32],
+}
+
+fn validate_account_type(label: &str) -> Result<(), WalletStorageError> {
+    if accounts::ACCOUNT_TYPE_LABELS.contains(&label) || label == accounts::LEGACY_STANDARD_LABEL {
+        Ok(())
+    } else {
+        Err(WalletStorageError::blob_decode(
+            "core_address_pool.account_type is unknown",
+        ))
+    }
+}
+
+/// Full owning-account identity for a UTXO, matched by its `script_pubkey`
+/// against a pool row. `None` when no pool row covers the script.
+pub(crate) fn owning_account_for_script(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    script: &[u8],
+) -> Result<Option<OwningAccount>, WalletStorageError> {
+    // A script can appear under several pool rows (distinct account_type /
+    // key_class / identity pair / pool_type share the same `script_pubkey`
+    // for reused keys); an explicit PK-ordered tie-break makes the pick
+    // deterministic instead of relying on SQLite's arbitrary `LIMIT 1` row.
+    let mut stmt = conn.prepare_cached(
+        "SELECT account_type, account_index, length(user_identity_id), user_identity_id, \
+                length(friend_identity_id), friend_identity_id \
+         FROM core_address_pool \
+         WHERE wallet_id = ?1 AND script = ?2 \
+         ORDER BY account_type, account_index, key_class, user_identity_id, \
+                  friend_identity_id, pool_type, address_index ASC \
+         LIMIT 1",
+    )?;
+    let mut rows = stmt.query(params![wallet_id.as_slice(), script])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+    let account_type = row.get::<_, String>(0)?;
+    validate_account_type(&account_type)?;
+    let index = row.get::<_, i64>(1)?;
+    blob::check_fixed_width(
+        row.get::<_, i64>(2)?,
+        32,
+        "core_address_pool.user_identity_id",
+    )?;
+    let user = row.get::<_, Vec<u8>>(3)?;
+    blob::check_fixed_width(
+        row.get::<_, i64>(4)?,
+        32,
+        "core_address_pool.friend_identity_id",
+    )?;
+    let friend = row.get::<_, Vec<u8>>(5)?;
+    let account_index =
+        crate::sqlite::util::safe_cast::i64_to_u32("core_address_pool.account_index", index)?;
+    let user_identity_id = super::id32("core_address_pool.user_identity_id", &user)?;
+    let friend_identity_id = super::id32("core_address_pool.friend_identity_id", &friend)?;
+    Ok(Some(OwningAccount {
+        account_type,
+        account_index,
+        user_identity_id,
+        friend_identity_id,
+    }))
+}
+
+/// Used addresses for a wallet, read verbatim from `core_address_pool`
+/// (`used = 1`), each paired with its owning account. This is the
+/// *known-owner* reuse-guard source: the pool row carries the account
+/// discriminators directly, so no per-script round-trip is needed. Possibly
+/// empty. The caller **unions** this with the `core_utxos`-derived set — the
+/// reuse guard is monotonic, so a mixed store (historical UTXOs a later
+/// partial pool snapshot never enumerates) must surface both sources, never
+/// drop the historical ones.
+///
+/// A `script` reused across accounts yields several rows; this reader applies
+/// the same PK-ordered tie-break as [`owning_account_for_script`] among rows
+/// marked used. An unused row can therefore own a UTXO while a different used
+/// row supplies the reuse guard, which preserves each resolver's distinct
+/// source contract. `network` turns each stored `script` back into an
+/// [`Address`](dashcore::Address); an invalid script is fatal under Strict and
+/// skipped under Recovery, matching
+/// [`crate::sqlite::schema::core_state::load_used_addresses`].
+/// This compatibility entry point uses Strict; rehydration calls
+/// [`load_used_addresses_with_ctx`] with its policy context.
+/// Unknown account labels fail the wallet under either policy: dropping a
+/// used address would lose its reuse guard. Recovery isolates that wallet.
+pub fn load_used_addresses(
+    conn: &rusqlite::Connection,
+    wallet_id: &WalletId,
+    network: dashcore::Network,
+) -> Result<Vec<(dashcore::Address, OwningAccount)>, WalletStorageError> {
+    load_used_addresses_with_ctx(conn, wallet_id, network, &LoadCtx::strict())
+}
+
+/// [`load_used_addresses`] under an explicit load policy.
+pub fn load_used_addresses_with_ctx(
+    conn: &rusqlite::Connection,
+    wallet_id: &WalletId,
+    network: dashcore::Network,
+    ctx: &LoadCtx,
+) -> Result<Vec<(dashcore::Address, OwningAccount)>, WalletStorageError> {
+    // Gate the largest stored `script` with a cheap aggregate BEFORE the
+    // ordered read materializes or sorts any blob, so a corrupt/oversize
+    // column raises a typed `BlobTooLarge` (the crate's 16 MiB cap) rather
+    // than SQLite's own `TooBig` mid-sort, and never OOMs the host.
+    blob::check_max_column_len(
+        conn,
+        "SELECT MAX(length(script)) FROM core_address_pool \
+         WHERE wallet_id = ?1 AND used = 1",
+        wallet_id,
+    )?;
+    // Order by script then the pool PK so the first row per script is the
+    // tie-break winner; a `HashSet` on script drops the trailing duplicates.
+    let mut stmt = conn.prepare(
+        "SELECT script, account_type, account_index, \
+                length(user_identity_id), user_identity_id, \
+                length(friend_identity_id), friend_identity_id \
+         FROM core_address_pool \
+         WHERE wallet_id = ?1 AND used = 1 \
+         ORDER BY script, account_type, account_index, key_class, user_identity_id, \
+                  friend_identity_id, pool_type, address_index",
+    )?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    while let Some(row) = rows.next()? {
+        let raw_script = row.get::<_, Vec<u8>>(0)?;
+        let account_type = row.get::<_, String>(1)?;
+        validate_account_type(&account_type)?;
+        let index = row.get::<_, i64>(2)?;
+        blob::check_fixed_width(
+            row.get::<_, i64>(3)?,
+            32,
+            "core_address_pool.user_identity_id",
+        )?;
+        let user = row.get::<_, Vec<u8>>(4)?;
+        blob::check_fixed_width(
+            row.get::<_, i64>(5)?,
+            32,
+            "core_address_pool.friend_identity_id",
+        )?;
+        let friend = row.get::<_, Vec<u8>>(6)?;
+        if !seen.insert(raw_script.clone()) {
+            continue;
+        }
+        let address = match blob::decode_script_to_address(raw_script, network) {
+            Ok(address) => address,
+            Err(error) => {
+                ctx.tolerate(LoadSite::UndecodableAddressScript, error)?;
+                continue;
+            }
+        };
+        let account_index =
+            crate::sqlite::util::safe_cast::i64_to_u32("core_address_pool.account_index", index)?;
+        let user_identity_id = super::id32("core_address_pool.user_identity_id", &user)?;
+        let friend_identity_id = super::id32("core_address_pool.friend_identity_id", &friend)?;
+        out.push((
+            address,
+            OwningAccount {
+                account_type,
+                account_index,
+                user_identity_id,
+                friend_identity_id,
+            },
+        ));
     }
     Ok(out)
 }
@@ -175,12 +495,53 @@ mod tests {
         conn
     }
 
-    /// `account_index_for_script` is deterministic when several pool rows
-    /// share one script: the PK-ordered tie-break (`account_type` first) picks
-    /// the same row regardless of insert order, closing the `LIMIT 1`-without-
-    /// `ORDER BY` non-determinism.
     #[test]
-    fn account_index_for_script_is_deterministic_on_shared_script() {
+    fn should_accept_current_and_legacy_pool_account_labels() {
+        use dashcore::hashes::Hash;
+
+        let conn = migrated_conn();
+        let wallet = [0x79; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![wallet.as_slice()],
+        )
+        .unwrap();
+        let address = dashcore::Address::new(
+            dashcore::Network::Testnet,
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array([7; 20])),
+        );
+        let script = address.script_pubkey();
+        for label in accounts::ACCOUNT_TYPE_LABELS
+            .iter()
+            .copied()
+            .chain(std::iter::once(accounts::LEGACY_STANDARD_LABEL))
+        {
+            conn.execute("DELETE FROM core_address_pool", []).unwrap();
+            conn.execute(
+                "INSERT INTO core_address_pool \
+                    (wallet_id, account_type, account_index, key_class, pool_type, \
+                     address_index, script, used) \
+                 VALUES (?1, ?2, 0, 0, 0, 0, ?3, 1)",
+                params![wallet.as_slice(), label, script.as_bytes()],
+            )
+            .unwrap();
+            let owner = owning_account_for_script(&conn, &wallet, script.as_bytes())
+                .unwrap()
+                .unwrap();
+            assert_eq!(owner.account_type, label);
+            let used = load_used_addresses(&conn, &wallet, dashcore::Network::Testnet).unwrap();
+            assert_eq!(used, vec![(address.clone(), owner)]);
+        }
+    }
+
+    /// UTXO ownership considers every pool row, while the reuse guard selects
+    /// only rows explicitly marked used.
+    #[test]
+    fn shared_script_resolvers_apply_their_distinct_source_filters() {
+        use dashcore::address::Payload;
+        use dashcore::hashes::Hash;
+        use dashcore::PubkeyHash;
+
         let mut conn = migrated_conn();
         let w = [0x77u8; 32];
         conn.execute(
@@ -188,7 +549,11 @@ mod tests {
             params![&w[..]],
         )
         .unwrap();
-        let script = [0xABu8; 25];
+        let address = dashcore::Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(PubkeyHash::from_byte_array([0xAB; 20])),
+        );
+        let script = address.script_pubkey();
         let tx = conn.transaction().unwrap();
         // Same script under two account types with different account_index.
         // Insert the later-sorting `standard_bip44` FIRST so a bare `LIMIT 1`
@@ -198,33 +563,177 @@ mod tests {
                 (wallet_id, account_type, account_index, key_class, pool_type, \
                  address_index, script, used) \
              VALUES (?1, 'standard_bip44', 9, 0, 0, 0, ?2, 1)",
-            params![&w[..], &script[..]],
+            params![&w[..], script.as_bytes()],
         )
         .unwrap();
         tx.execute(
             "INSERT INTO core_address_pool \
                 (wallet_id, account_type, account_index, key_class, pool_type, \
                  address_index, script, used) \
-             VALUES (?1, 'coinjoin', 4, 0, 0, 0, ?2, 1)",
-            params![&w[..], &script[..]],
+             VALUES (?1, 'coinjoin', 4, 0, 0, 0, ?2, 0)",
+            params![&w[..], script.as_bytes()],
         )
         .unwrap();
         // ORDER BY account_type ASC: 'coinjoin' < 'standard_bip44', so the
         // coinjoin row (account_index 4) is the deterministic winner.
-        let got = account_index_for_script(&tx, &w, &script).unwrap();
-        assert_eq!(got, Some(4), "tie-break must pick the account_type-min row");
+        let got = owning_account_for_script(&tx, &w, script.as_bytes())
+            .unwrap()
+            .expect("shared script owner");
+        assert_eq!(
+            got.account_index, 4,
+            "tie-break must pick the account_type-min row"
+        );
         tx.commit().unwrap();
+
+        let used =
+            load_used_addresses_with_ctx(&conn, &w, dashcore::Network::Testnet, &LoadCtx::strict())
+                .unwrap();
+        assert_eq!(used.len(), 1);
+        assert_eq!(used[0].0, address);
+        assert_eq!(used[0].1.account_index, 9);
+    }
+
+    /// A stored `script` that parses as bytes but not as an address must
+    /// surface `AddressDecode` — carrying the upstream
+    /// `dashcore::address::Error` — not the context-free `BlobDecode` that
+    /// discards *why* the script failed.
+    #[test]
+    fn load_used_addresses_wraps_address_error_as_address_decode() {
+        let conn = migrated_conn();
+        let w = [0x88u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&w[..]],
+        )
+        .unwrap();
+        // A bare OP_RETURN script is well-formed bytes but not any address
+        // type, so `Address::from_script` returns `UnrecognizedScript`.
+        let bad_script = [0x6au8];
+        conn.execute(
+            "INSERT INTO core_address_pool \
+                (wallet_id, account_type, account_index, key_class, pool_type, \
+                 address_index, script, used) \
+             VALUES (?1, 'coinjoin', 0, 0, 0, 0, ?2, 1)",
+            params![&w[..], &bad_script[..]],
+        )
+        .unwrap();
+
+        let err =
+            load_used_addresses_with_ctx(&conn, &w, dashcore::Network::Testnet, &LoadCtx::strict())
+                .expect_err("an unparseable script must be a hard error");
+        assert!(
+            matches!(err, WalletStorageError::AddressDecode { .. }),
+            "expected AddressDecode carrying the upstream error, got {err:?}"
+        );
+    }
+
+    /// An empty `script` must be refused by the WRITER, not discovered by
+    /// the reader: `load()` turns every stored pool script back into an
+    /// address, so such a row degrades the load of the owning wallet and
+    /// fails it under a strict policy. `apply_pools` is the only writer of
+    /// `core_address_pool.script`, so guarding it closes the producer.
+    #[test]
+    fn apply_pools_refuses_an_empty_script() {
+        use dashcore::address::Payload;
+        use dashcore::hashes::Hash;
+        use key_wallet::account::{AccountType, StandardAccountType};
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::managed_account::address_pool::AddressState;
+        use key_wallet::AddressInfo;
+        use platform_wallet::changeset::AccountAddressPoolEntry;
+
+        let mut conn = migrated_conn();
+        let w = [0x99u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&w[..]],
+        )
+        .unwrap();
+        let address = dashcore::Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array([0xCD; 20])),
+        );
+        let entry = AccountAddressPoolEntry {
+            account_type: AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            pool_type: AddressPoolType::External,
+            addresses: vec![AddressInfo {
+                address,
+                script_pubkey: dashcore::ScriptBuf::from_bytes(Vec::new()),
+                public_key: None,
+                index: 7,
+                path: DerivationPath::master(),
+                state: AddressState::Available,
+                tx_count: 0,
+                total_received: 0,
+                total_sent: 0,
+                balance: 0,
+                label: None,
+                metadata: Default::default(),
+            }],
+        };
+
+        let tx = conn.transaction().unwrap();
+        let err = apply_pools(&tx, &w, std::slice::from_ref(&entry))
+            .expect_err("an empty script must be refused");
+        match err {
+            WalletStorageError::EmptyPoolAddressScript {
+                account_type,
+                address_index,
+            } => {
+                assert_eq!(account_type, "standard_bip44");
+                assert_eq!(address_index, 7, "the error must name the offending row");
+            }
+            other => panic!("expected EmptyPoolAddressScript, got {other:?}"),
+        }
+        let rows: i64 = tx
+            .query_row("SELECT COUNT(*) FROM core_address_pool", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(rows, 0, "the guard must refuse before binding the row");
     }
 
     #[test]
-    fn pool_type_discriminants_are_stable_and_distinct() {
-        let all = [
+    fn integer_discriminants_match_migration_domains() {
+        use std::collections::BTreeSet;
+
+        let pool_variants = [
             AddressPoolType::External,
             AddressPoolType::Internal,
             AddressPoolType::Absent,
             AddressPoolType::AbsentHardened,
         ];
-        let mapped: Vec<i64> = all.iter().copied().map(pool_type_to_i64).collect();
-        assert_eq!(mapped, vec![0, 1, 2, 3]);
+        for variant in pool_variants {
+            match variant {
+                AddressPoolType::External
+                | AddressPoolType::Internal
+                | AddressPoolType::Absent
+                | AddressPoolType::AbsentHardened => {}
+            }
+        }
+        let pool_discriminants: BTreeSet<_> = pool_variants
+            .iter()
+            .copied()
+            .map(pool_type_to_i64)
+            .collect();
+        assert_eq!(pool_discriminants, BTreeSet::from([0, 1, 2, 3]));
+        assert_eq!(pool_discriminants.len(), pool_variants.len());
+
+        let key_variants = [
+            PublicKeyType::ECDSA(Vec::new()),
+            PublicKeyType::EdDSA(Vec::new()),
+            PublicKeyType::BLS(Vec::new()),
+        ];
+        for variant in &key_variants {
+            match variant {
+                PublicKeyType::ECDSA(_) | PublicKeyType::EdDSA(_) | PublicKeyType::BLS(_) => {}
+            }
+        }
+        let key_discriminants: BTreeSet<_> = key_variants.iter().map(key_type_to_i64).collect();
+        assert_eq!(key_discriminants, BTreeSet::from([0, 1, 2]));
+        assert_eq!(key_discriminants.len(), key_variants.len());
     }
 }

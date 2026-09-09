@@ -124,7 +124,7 @@ A single unified gRPC endpoint exposes the feature: `GetDocumentsCount`. The res
 
 When `prove=false`, drive-abci calls into `DriveDocumentCountQuery` (in [`packages/rs-drive/src/query/drive_document_count_query/mod.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/mod.rs)). The handler picks a path based on the where clauses:
 
-**Unfiltered total (no where clauses) on a `documentsCountable: true` document type** ([`Drive::read_primary_key_count_tree`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/drive_dispatcher.rs)):
+**Unfiltered total (no where clauses) on a `documentsCountable: true` document type** ([`read_primary_key_count_tree`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/executors/total.rs)):
 
 The doctype's primary-key tree at `[contract_doc, contract_id, 1, doctype, 0]` is itself a `CountTree`. One grovedb read gives `count_value` — the total document count. O(1).
 

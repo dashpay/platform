@@ -1,6 +1,22 @@
 mod document;
 mod token;
 
+/// Sets valid DIP-33 payment addresses on a random profile document when the
+/// schema version carries the fields (dashpay v2, protocol version 14+): the
+/// generator fills them with random bytes, and the data trigger requires a
+/// valid leading type byte (0x00 P2PKH / 0x01 P2SH).
+pub(crate) fn set_valid_profile_payment_addresses(
+    document: &mut dpp::document::Document,
+    profile: dpp::data_contract::document_type::DocumentTypeRef,
+) {
+    if profile.properties().contains_key("corePaymentAddress") {
+        document.set("corePaymentAddress", vec![0u8; 21].into());
+        let mut platform_payment_address = vec![1u8];
+        platform_payment_address.extend([0u8; 20]);
+        document.set("platformPaymentAddress", platform_payment_address.into());
+    }
+}
+
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;

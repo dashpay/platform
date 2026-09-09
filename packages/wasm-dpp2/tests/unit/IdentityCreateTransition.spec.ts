@@ -57,7 +57,7 @@ describe('IdentityCreateTransition', () => {
       expect(json.publicKeys.length).to.equal(0);
       // AssetLockProof emits internally-tagged shape: { type, ...inner fields }
       expect(json.assetLockProof).to.be.an('object');
-      expect(json.assetLockProof.type).to.equal('instant');
+      expect(json.assetLockProof.$type).to.equal('instant');
       expect(json.assetLockProof.outputIndex).to.equal(0);
       expect(json.userFeeIncrease).to.equal(0);
       expect(json.signature).to.equal('');

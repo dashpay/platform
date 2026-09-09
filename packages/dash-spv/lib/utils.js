@@ -1,5 +1,4 @@
 /* eslint no-underscore-dangle: ["error", { "allow": ["_getHash"] }] */
-/* eslint-disable no-bitwise */
 const DashUtil = require('@dashevo/dash-util');
 const dashcore = require('@dashevo/dashcore-lib');
 
@@ -42,7 +41,7 @@ module.exports = {
   validProofOfWork(header) {
     const target = DashUtil.expandTarget(header.bits);
     const hash = header._getHash().reverse();
-    return hash.compare(target) === -1;
+    return hash.compare(target) <= 0;
   },
   createBlock(prev, bits) {
     let i = 0;

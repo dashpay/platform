@@ -13,7 +13,7 @@ use crate::{state_transition::StateTransitionType, version};
 pub fn identity_credit_withdrawal_transition_fixture_raw_object() -> Value {
     platform_value!({
         "protocolVersion": version::LATEST_VERSION,
-        "type": StateTransitionType::IdentityCreditWithdrawal as u8,
+        "$type": StateTransitionType::IdentityCreditWithdrawal as u8,
         "identityId": Identifier::from([1_u8; 32]),
         "amount": 1042u64,
         "coreFeePerByte": 3u32,
@@ -28,7 +28,7 @@ pub fn identity_credit_withdrawal_transition_fixture_raw_object() -> Value {
 pub fn identity_credit_withdrawal_transition_fixture_json() -> JsonValue {
     json!({
         "protocolVersion": version::LATEST_VERSION,
-        "type": StateTransitionType::IdentityCreditWithdrawal,
+        "$type": StateTransitionType::IdentityCreditWithdrawal,
         "identityId": encode(&[1_u8; 32], Encoding::Base58),
         "amount": 1042,
         "coreFeePerByte": 3,

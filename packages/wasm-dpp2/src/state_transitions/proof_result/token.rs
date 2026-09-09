@@ -5,13 +5,12 @@ use crate::DocumentWasm;
 use crate::IdentifierWasm;
 use crate::IdentityTokenInfoWasm;
 use crate::TokenStatusWasm;
-use crate::error::{WasmDppError, WasmDppResult};
+use crate::error::WasmDppResult;
 use crate::impl_wasm_conversions_serde;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_pricing_schedule::TokenPricingScheduleWasm;
 use js_sys::{BigInt, Map};
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
 
@@ -130,11 +129,8 @@ impl VerifiedTokenIdentitiesBalancesWasm {
 
     #[wasm_bindgen(js_name = fromObject)]
     pub fn from_object(value: JsValue) -> WasmDppResult<VerifiedTokenIdentitiesBalancesWasm> {
-        let map_val = js_sys::Reflect::get(&value, &"balances".into())
-            .map_err(|_| WasmDppError::generic("Missing property: balances"))?;
-        Ok(VerifiedTokenIdentitiesBalancesWasm {
-            balances: map_val.unchecked_into(),
-        })
+        let balances = super::helpers::read_map_property(&value, "balances")?;
+        Ok(VerifiedTokenIdentitiesBalancesWasm { balances })
     }
 
     #[wasm_bindgen(js_name = fromJSON)]

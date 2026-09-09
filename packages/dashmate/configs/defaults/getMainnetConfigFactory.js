@@ -87,7 +87,7 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
       },
     };
 
-    return new Config('mainnet', lodashMerge({}, getBaseConfig().getOptions(), options));
+    return new Config('mainnet', lodashMerge({}, getBaseConfig().getStoredOptions(), options));
   }
 
   return getMainnetConfig;

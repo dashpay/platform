@@ -301,7 +301,7 @@ mod tests {
     fn test_select_for_denomination_accepts_member() {
         // A member denomination with enough value selects successfully.
         let platform_version = PlatformVersion::latest();
-        let denomination = 10_000_000_000u64; // 0.1 DASH — a member of the v12 set.
+        let denomination = 10_000_000_000u64; // 0.1 DASH — a member of both the v12 and v13 sets.
         let notes = vec![test_note(denomination + 1, 0)];
         let (selected, total, _fee) =
             select_notes_for_denomination(&notes, denomination, 2, 1, platform_version)

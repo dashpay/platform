@@ -1,3 +1,6 @@
+use crate::data_contract::document_type_reference::{
+    DocumentPropertyReferenceArrayJs, DocumentPropertyReferenceMapJs, references_for_document_type,
+};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
@@ -20,6 +23,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::{
     DataContract, GroupContractPosition, TokenConfiguration, TokenContractPosition,
 };
@@ -31,7 +35,7 @@ use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
 };
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 use js_sys::{Object, Reflect};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -366,9 +370,12 @@ impl DataContractWasm {
         &self,
         #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DataContractObjectJs> {
-        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
-
-        let value = self.0.clone().to_value(&platform_version.into())?;
+        let pv: PlatformVersion = platform_version.try_into()?;
+        // Honor the caller-supplied platform version (see `to_json`).
+        let format: DataContractInSerializationFormat =
+            self.0.clone().try_into_platform_versioned(&pv)?;
+        let value =
+            dpp::platform_value::to_value(&format).map_err(dpp::ProtocolError::ValueError)?;
         let js_value = serialization::platform_value_to_object(&value)?;
         Ok(js_value.into())
     }
@@ -396,7 +403,16 @@ impl DataContractWasm {
 
     #[wasm_bindgen(getter = "config")]
     pub fn config(&self) -> WasmDppResult<DataContractConfigJs> {
-        let js_value = serialization::to_object(self.0.config())?;
+        // DataContractConfig is a versioned enum with the canonical
+        // ValueConvertible trait — route through it so any future custom
+        // impl propagates here automatically.
+        use dpp::serialization::ValueConvertible;
+        let value = self
+            .0
+            .config()
+            .to_object()
+            .map_err(|e| WasmDppError::serialization(format!("config: {}", e)))?;
+        let js_value = serialization::platform_value_to_object(&value)?;
         Ok(js_value.into())
     }
 
@@ -575,9 +591,16 @@ impl DataContractWasm {
         &self,
         platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DataContractJSONJs> {
-        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
-
-        let json = self.0.to_json(&platform_version.into())?;
+        let pv: PlatformVersion = platform_version.try_into()?;
+        // Honor the caller-supplied platform version: route through the
+        // versioned serialization format so the wire shape (V0 vs V1) is
+        // controlled by the caller, not by global thread-local state used by
+        // the canonical `serde_json::to_value(&DataContract)` path. See
+        // Critical-4 note in `data_contract/conversion/serde/mod.rs`.
+        let format: DataContractInSerializationFormat =
+            self.0.clone().try_into_platform_versioned(&pv)?;
+        let json = serde_json::to_value(&format)
+            .map_err(|e| dpp::ProtocolError::EncodingError(e.to_string()))?;
         let js_value = serialization::json_value_to_js(&json)?;
         Ok(js_value.into())
     }
@@ -589,6 +612,56 @@ impl DataContractWasm {
     ) -> WasmDppResult<IdentifierWasm> {
         let owner_id: Identifier = owner_id.try_into()?;
         Ok(DataContract::generate_data_contract_id_v0(owner_id.to_buffer(), identity_nonce).into())
+    }
+
+    /// All `refersTo` declarations of one document type, in schema property
+    /// order.
+    ///
+    /// Returns an empty array when the document type declares none. Throws
+    /// when the contract has no document type by that name — an empty array
+    /// would conflate "no such type" with "no references".
+    ///
+    /// Reference declarations are only parsed from protocol version 14
+    /// onward. A contract deserialized against an earlier platform version
+    /// reports none, which is exactly what consensus enforced at that
+    /// version — but note the trap: `DataContract.fromBytes(bytes, false, 1)`
+    /// yields `[]` even for a contract whose raw schema does carry
+    /// `refersTo`, and `toJSON()` still shows the raw keyword either way.
+    #[wasm_bindgen(js_name = "documentTypeReferences")]
+    pub fn document_type_references(
+        &self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+    ) -> WasmDppResult<DocumentPropertyReferenceArrayJs> {
+        let document_type = self
+            .0
+            .document_type_optional_for_name(document_type_name.as_str())
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument(format!(
+                    "document type '{document_type_name}' not found in contract"
+                ))
+            })?;
+
+        let references = references_for_document_type(document_type, self.0.id())?;
+        Ok(JsValue::from(references).into())
+    }
+
+    /// Every document type that declares at least one reference, keyed by
+    /// document type name.
+    ///
+    /// Document types with no declarations are omitted, so an empty `Map`
+    /// means "this contract declares no references at all".
+    #[wasm_bindgen(getter = "documentReferences")]
+    pub fn document_references(&self) -> WasmDppResult<DocumentPropertyReferenceMapJs> {
+        let map = js_sys::Map::new();
+
+        for (name, document_type) in self.0.document_types() {
+            let references = references_for_document_type(document_type.as_ref(), self.0.id())?;
+            if references.length() > 0 {
+                map.set(&JsValue::from_str(name), &references.into());
+            }
+        }
+
+        Ok(JsValue::from(map).into())
     }
 }
 

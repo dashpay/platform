@@ -58,6 +58,18 @@ pub trait DocumentTypeV0Getters {
     /// Returns the documents keep history flag of the document type.
     fn documents_keep_history(&self) -> bool;
 
+    /// Returns true if transfers of documents of this type are recorded in
+    /// the document history system contract.
+    fn documents_keep_transfer_history(&self) -> bool;
+
+    /// Returns true if purchases of documents of this type are recorded in
+    /// the document history system contract.
+    fn documents_keep_purchase_history(&self) -> bool;
+
+    /// Returns true if price updates on documents of this type are recorded
+    /// in the document history system contract.
+    fn documents_keep_pricing_history(&self) -> bool;
+
     /// Returns the documents mutable flag of the document type.
     fn documents_mutable(&self) -> bool;
 

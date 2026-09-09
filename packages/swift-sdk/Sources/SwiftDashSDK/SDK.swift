@@ -1,5 +1,6 @@
 import Foundation
 import DashSDKFFI
+import os.log
 
 // MARK: - Data Extensions
 extension Data {
@@ -49,7 +50,7 @@ extension Data {
 
 /// Swift wrapper for the Dash Platform SDK
 public final class SDK: @unchecked Sendable {
-  public private(set) var handle: UnsafeMutablePointer<SDKHandle>?
+  public private(set) var handle: OpaquePointer?
 
   /// The network this SDK instance is connected to
   public private(set) var network: Network = .testnet
@@ -363,7 +364,7 @@ public final class SDK: @unchecked Sendable {
     }
 
     // Store the handle and network
-    handle = result.data?.assumingMemoryBound(to: SDKHandle.self)
+    handle = OpaquePointer(result.data)
     self.network = network
   }
 
@@ -449,7 +450,16 @@ public final class SDK: @unchecked Sendable {
 
   deinit {
     if let handle = handle {
+      // Timed + thread-stamped: `dash_sdk_destroy` tears down the tokio
+      // runtime synchronously, and the last reference is often released on
+      // the MainActor (host stop / error unwind). This line is the data for
+      // deciding whether destruction ever needs an explicit off-main hop.
+      let started = CFAbsoluteTimeGetCurrent()
+      let offMain = !Thread.isMainThread
       dash_sdk_destroy(handle)
+      let ms = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
+      Logger(subsystem: "dashpay.SwiftDashSDK", category: "SDKLifecycle")
+        .info("dash_sdk_destroy finished in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public)")
     }
   }
 
@@ -681,12 +691,21 @@ public class Identities {
       throw SDKError.internalError("No balance data returned")
     }
 
-    // Parse the balance from result
-    let balancePtr = result.data.assumingMemoryBound(to: UInt64.self)
-    let balance = balancePtr.pointee
+    // `dash_sdk_identity_fetch_balance` returns the balance as a
+    // `success_string` — a NUL-terminated decimal C string (see
+    // rs-sdk-ffi `identity/queries/balance.rs`), NOT a binary `u64`.
+    // Read it as a C string and parse; a previous binary reinterpret
+    // read the ASCII digits as little-endian bytes (garbage balances).
+    let cStr = result.data.assumingMemoryBound(to: CChar.self)
+    let balanceStr = String(cString: cStr)
 
-    // Free the result data
-    dash_sdk_bytes_free(result.data)
+    // String-return results are freed with `dash_sdk_string_free`, like
+    // the other string-returning wrappers in this file.
+    dash_sdk_string_free(cStr)
+
+    guard let balance = UInt64(balanceStr) else {
+      throw SDKError.internalError("Unparseable balance string: \(balanceStr)")
+    }
 
     return balance
   }

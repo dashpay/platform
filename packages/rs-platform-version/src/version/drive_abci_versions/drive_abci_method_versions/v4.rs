@@ -88,6 +88,8 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V4: DriveAbciMethodVersions = DriveAbciMeth
         rebroadcast_expired_withdrawal_documents: 0,
         append_signatures_and_broadcast_withdrawal_transactions: 0,
         cleanup_expired_locks_of_withdrawal_amounts: 0,
+        record_credit_inflows_for_withdrawals: None,
+        record_total_credits_history_for_withdrawals: None,
     },
     voting: DriveAbciVotingMethodVersions {
         keep_record_of_finished_contested_resource_vote_poll: 0,
@@ -103,10 +105,12 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V4: DriveAbciMethodVersions = DriveAbciMeth
     state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
         execute_event: 0,
         process_raw_state_transitions: 0,
+        process_validation_result: 0,
         decode_raw_state_transitions: 0,
         validate_fees_of_event: 0,
         store_address_balances_to_recent_block_storage: None,
         cleanup_recent_block_storage_address_balances: None,
+        record_added_balance_outputs: 0,
     },
     epoch: DriveAbciEpochMethodVersions {
         gather_epoch_info: 0,

@@ -4,6 +4,8 @@ pub mod random;
 
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use std::collections::BTreeMap;
@@ -28,17 +30,14 @@ use bincode::{Decode, Encode};
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "identity-serialization", derive(Encode, Decode))]
 #[cfg_attr(
-    any(feature = "serde-conversion", feature = "serde-conversion"),
+    feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 pub struct IdentityV0 {
     pub id: Identifier,
-    #[cfg_attr(
-        any(feature = "serde-conversion", feature = "serde-conversion"),
-        serde(with = "public_key_serialization")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(with = "public_key_serialization"))]
     pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: u64,
     pub revision: Revision,
@@ -49,6 +48,9 @@ impl Hash for IdentityV0 {
         self.id.hash(state);
     }
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl JsonConvertible for IdentityV0 {}
 
 mod public_key_serialization {
     use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -140,5 +142,33 @@ impl TryFrom<&Value> for IdentityV0 {
 
     fn try_from(value: &Value) -> Result<Self, Self::Error> {
         platform_value::from_value(value.clone()).map_err(ProtocolError::ValueError)
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests_identityv0 {
+    use super::*;
+
+    #[test]
+    fn json_round_trip_identityv0() {
+        use crate::serialization::JsonConvertible;
+        let original = IdentityV0::default();
+        let json = original.to_json().expect("to_json");
+        let recovered = IdentityV0::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_identityv0() {
+        use crate::serialization::ValueConvertible;
+        let original = IdentityV0::default();
+        let value = original.to_object().expect("to_object");
+        let recovered = IdentityV0::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

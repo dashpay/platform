@@ -28,13 +28,13 @@ use dashcore::hashes::{sha256, Hash, HashEngine};
 use dashcore::secp256k1::{ecdsa::Signature, Message, Secp256k1, SecretKey};
 use dpp::prelude::Identifier;
 use key_wallet::bip32::{ChildNumber, DerivationPath};
+use key_wallet::dip9::{
+    DASH_COIN_TYPE, DASH_TESTNET_COIN_TYPE, FEATURE_PURPOSE, FEATURE_PURPOSE_DASHPAY_AUTO_ACCEPT,
+};
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
 use crate::error::PlatformWalletError;
-
-/// DashPay auto-accept feature index per DIP-15.
-const DASHPAY_AUTO_ACCEPT_FEATURE: u32 = 16;
 
 /// Default lifetime of a generated auto-accept QR, in seconds (1 hour).
 ///
@@ -87,13 +87,13 @@ pub fn auto_accept_derivation_path(
     expiry: u32,
 ) -> Result<DerivationPath, PlatformWalletError> {
     let coin_type: u32 = match network {
-        Network::Mainnet => 5,
-        _ => 1,
+        Network::Mainnet => DASH_COIN_TYPE,
+        _ => DASH_TESTNET_COIN_TYPE,
     };
     Ok(DerivationPath::from(vec![
-        ChildNumber::from_hardened_idx(9).expect("valid"),
+        ChildNumber::from_hardened_idx(FEATURE_PURPOSE).expect("valid"),
         ChildNumber::from_hardened_idx(coin_type).expect("valid"),
-        ChildNumber::from_hardened_idx(DASHPAY_AUTO_ACCEPT_FEATURE).expect("valid"),
+        ChildNumber::from_hardened_idx(FEATURE_PURPOSE_DASHPAY_AUTO_ACCEPT).expect("valid"),
         ChildNumber::from_hardened_idx(expiry).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("Invalid expiry index: {}", e))
         })?,

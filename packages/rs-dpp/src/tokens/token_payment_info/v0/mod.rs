@@ -9,19 +9,17 @@ use bincode::{Decode, Encode};
 use derive_more::Display;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Identifier, Value};
-#[cfg(any(
-    feature = "serde-conversion",
-    all(feature = "serde-conversion", feature = "serde-conversion"),
-))]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display)]
+// `json_safe_fields` auto-injects `json_safe_option_u64` on
+// `Option<TokenAmount>` (= `Option<u64>`) fields so JSON encodes large
+// values as strings — same convention as the rest of the wire shape.
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
-    any(
-        feature = "serde-conversion",
-        all(feature = "serde-conversion", feature = "serde-conversion"),
-    ),
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]

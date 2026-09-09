@@ -17,6 +17,7 @@ mod tests {
     use base64::engine::general_purpose::STANDARD;
     use base64::Engine;
     use platform_value::string_encoding::Encoding;
+    use platform_value::{Identifier, Value};
     use crate::bls::native_bls::NativeBlsModule;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::identity::state_transition::AssetLockProved;
@@ -32,10 +33,19 @@ mod tests {
     use crate::state_transition::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
     };
+    use crate::state_transition::batch_transition::batched_transition::document_create_transition::{
+        DocumentCreateTransition, DocumentCreateTransitionV0,
+    };
+    use crate::state_transition::batch_transition::batched_transition::document_transition::{
+        DocumentTransition, DocumentTransitionV0Methods,
+    };
     use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+    use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
     use crate::state_transition::batch_transition::{
         BatchTransition, BatchTransitionV1,
     };
+    use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
     use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
     use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
     use crate::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -410,6 +420,100 @@ mod tests {
         let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
+    }
+
+    #[test]
+    fn document_batch_rejects_excessive_value_depth_during_decode() {
+        let nested = (0..300).fold(Value::Null, |value, _| Value::Array(vec![value]));
+        let document_transition =
+            DocumentTransition::Create(DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                    id: Identifier::default(),
+                    identity_contract_nonce: 1,
+                    document_type_name: "test".to_string(),
+                    data_contract_id: Identifier::default(),
+                }),
+                entropy: [0; 32],
+                data: BTreeMap::from([("nested".to_string(), nested)]),
+                prefunded_voting_balance: None,
+            }));
+        assert_eq!(
+            document_transition.first_data_depth_exceeding(256),
+            Some(257)
+        );
+
+        let state_transition = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            transitions: vec![BatchedTransition::Document(document_transition)],
+            ..Default::default()
+        }));
+        let bytes = state_transition
+            .serialize_to_bytes()
+            .expect("the state transition should encode below the byte limit");
+        assert!(
+            bytes.len() as u64
+                <= PlatformVersion::latest()
+                    .system_limits
+                    .max_state_transition_size
+        );
+
+        // The intentionally invalid transition is no longer needed after encoding. Avoid walking
+        // its recursive data during drop so this regression test only exercises decoder behavior.
+        std::mem::forget(state_transition);
+
+        let error =
+            StateTransition::deserialize_from_bytes_in_version(&bytes, PlatformVersion::latest())
+                .expect_err("excessive nesting must be rejected during decode");
+        assert!(error
+            .to_string()
+            .contains("value nesting depth 257 exceeds maximum 256"));
+    }
+
+    #[test]
+    fn document_batch_value_depth_limits_align_between_decode_and_validation() {
+        // Every decodable document value must also satisfy the consensus depth rule, so depth
+        // violations always fail the same way: as an undecodable transition. A value at the
+        // decoder ceiling must therefore round-trip and pass the validation-side depth check.
+        let max_depth = PlatformVersion::latest()
+            .system_limits
+            .max_document_value_depth
+            .expect("latest protocol should enforce document value depth")
+            as usize;
+        let nested = (1..max_depth).fold(Value::Array(vec![Value::Null]), |value, _| {
+            Value::Array(vec![value])
+        });
+        let document_transition =
+            DocumentTransition::Create(DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                    id: Identifier::default(),
+                    identity_contract_nonce: 1,
+                    document_type_name: "test".to_string(),
+                    data_contract_id: Identifier::default(),
+                }),
+                entropy: [0; 32],
+                data: BTreeMap::from([("nested".to_string(), nested)]),
+                prefunded_voting_balance: None,
+            }));
+        assert_eq!(
+            document_transition.first_data_depth_exceeding(max_depth),
+            None
+        );
+        assert_eq!(
+            document_transition.first_data_depth_exceeding(max_depth - 1),
+            Some(max_depth)
+        );
+
+        let state_transition = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            transitions: vec![BatchedTransition::Document(document_transition)],
+            ..Default::default()
+        }));
+        let bytes = state_transition
+            .serialize_to_bytes()
+            .expect("the state transition should encode below the byte limit");
+
+        let recovered =
+            StateTransition::deserialize_from_bytes_in_version(&bytes, PlatformVersion::latest())
+                .expect("a value at the decoder ceiling must decode");
+        assert_eq!(state_transition, recovered);
     }
 
     #[test]

@@ -1,5 +1,6 @@
 //! C-compatible types for core wallet changeset FFI.
 
+use platform_wallet::masternode::{provider_payload_fields, MasternodeRecord};
 use std::os::raw::c_char;
 
 // ---------------------------------------------------------------------------
@@ -12,6 +13,32 @@ use std::os::raw::c_char;
 pub struct OutPointFFI {
     pub txid: [u8; 32],
     pub vout: u32,
+}
+
+impl OutPointFFI {
+    /// The one authority for building this value, for callers that hold a
+    /// txid and an index rather than an `OutPoint` — the additive UTXO path
+    /// (`record_utxos_ffi`) is exactly that shape.
+    ///
+    /// This value is the join key a sweep's `released_outpoints` uses to
+    /// find additive-path rows on the host side, so byte-order drift
+    /// between hand-rolled copies would silently unlink them: the release
+    /// would match nothing and the coin would stay spent. Both this and the
+    /// `From<&OutPoint>` impl below exist so no site has to spell the copy
+    /// out again.
+    pub fn new(txid: &dashcore::Txid, vout: u32) -> Self {
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(txid.as_ref());
+        Self { txid: bytes, vout }
+    }
+}
+
+impl From<&dashcore::OutPoint> for OutPointFFI {
+    /// Conversion for callers holding a whole `OutPoint`; delegates to
+    /// [`OutPointFFI::new`], which is where the byte copy lives.
+    fn from(outpoint: &dashcore::OutPoint) -> Self {
+        Self::new(&outpoint.txid, outpoint.vout)
+    }
 }
 
 /// Outpoint of a TXO that was spent, paired with the spending
@@ -83,6 +110,14 @@ pub struct TransactionRecordFFI {
     pub block_height: u32,
     pub block_hash: [u8; 32],
     pub block_timestamp: u32,
+    /// The transaction's index within its block (`block.vtx` order),
+    /// meaningful only when `has_block_position` (stamped by block
+    /// processing since rust-dashcore#891; absent on records confirmed
+    /// before the field existed and on unconfirmed contexts). Persisted
+    /// so restored provider special transactions keep Core's same-block
+    /// apply order in the masternode aggregation.
+    pub block_position: u32,
+    pub has_block_position: bool,
     /// 0=incoming, 1=outgoing, 2=internal, 3=coinJoin.
     pub direction: u32,
     /// `transaction_type` rendered as a `Debug`-formatted string for
@@ -121,6 +156,30 @@ pub struct TransactionRecordFFI {
     /// for coinbase transactions.
     pub input_outpoints: *mut OutPointFFI,
     pub input_outpoints_count: usize,
+    // --- Provider (masternode) special-transaction payload, UI only ---
+    // Parsed once here from the DIP-3 special-tx payload so the Swift
+    // side never decodes it. Populated only for ProRegTx
+    // (`transaction_type_kind == 2`) and ProUpServTx (`== 4`); for every
+    // other tx the string is null, the byte arrays are zeroed, and the
+    // `has_*` flags are false.
+    /// Masternode service endpoint rendered as `"ip:port"`, or null.
+    pub provider_service_address: *mut c_char,
+    /// ProUpServTx `pro_tx_hash` (32 bytes) linking the update to its
+    /// registration. `has_provider_pro_tx_hash == false` for ProRegTx
+    /// (whose own `txid` is the proTxHash) and for non-provider txs.
+    pub provider_pro_tx_hash: [u8; 32],
+    pub has_provider_pro_tx_hash: bool,
+    /// ProRegTx collateral outpoint (`txid` in raw wire order + `vout`),
+    /// gated by `has_provider_collateral`.
+    pub provider_collateral_txid: [u8; 32],
+    pub provider_collateral_vout: u32,
+    pub has_provider_collateral: bool,
+    /// ProRegTx owner / voting key hashes (hash160, 20 bytes each),
+    /// each gated by its `has_*` flag.
+    pub provider_owner_key_hash: [u8; 20],
+    pub has_provider_owner_key_hash: bool,
+    pub provider_voting_key_hash: [u8; 20],
+    pub has_provider_voting_key_hash: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +263,81 @@ pub struct WalletChangeSetFFI {
     /// `proof.rs` can't fire until SPV re-applies a fresh CL).
     pub last_applied_chain_lock_bytes: *mut u8,
     pub last_applied_chain_lock_bytes_len: usize,
+    // This struct's layout is FROZEN here. It crosses the C ABI by bare
+    // pointer — `on_persist_wallet_changeset_fn` carries no size or version
+    // field — so appending anything makes the pairing of a new callback
+    // with an older native producer read past the end of the producer's
+    // allocation: the callback signature and the manager-create entry
+    // points are unchanged, so nothing stops that pairing, and a capability
+    // bit gates semantics, not memory layout — it cannot make an
+    // out-of-bounds read safe. The round's sweep batches, briefly appended
+    // here, now travel through the size-tagged
+    // `PersistenceCallbacksExtension` sweep callback instead (see
+    // `persistence.rs`), whose declared `struct_size` is exactly the proof
+    // of presence this struct cannot give. New per-round payloads must take
+    // that same route.
+}
+
+/// One sweep: the transactions it removed, the transaction that beat them,
+/// and the coins its removal actually freed.
+///
+/// Delivered through `PersistenceCallbacksExtension`'s
+/// `on_persist_wallet_changeset_sweeps_fn` — deliberately NOT a field on
+/// [`WalletChangeSetFFI`], whose bare-pointer ABI cannot prove to a newer
+/// consumer that an older producer allocated the field (see the layout note
+/// there). The batches arrive in the order the wallet emitted them, and the
+/// only subtractive part of a persistence round rides here: each entry
+/// describes the wallet as that sweep saw it, and a later entry can keep a
+/// coin spent that an earlier one freed. **A persister must apply them in
+/// sequence** — folding them together lets the first answer outlive the
+/// last one that is actually true. Ignoring them leaves dead rows that are
+/// handed back at the next load and re-create a balance the wallet has
+/// already corrected.
+#[repr(C)]
+/// # Null at count 0
+///
+/// `txids` and `released_outpoints` are BOTH null when their count is zero —
+/// a batch can carry an empty release set, and (defensively) an empty txid
+/// list. A consumer must check each pointer before forming a slice from it:
+/// `slice::from_raw_parts(null, 0)` is undefined behaviour in Rust, not a
+/// harmless empty slice, and a naive host binding would dereference null.
+pub struct SweepBatchFFI {
+    /// Removed transactions, raw 32-byte txids. Delete these rows and every
+    /// UTXO they created.
+    pub txids: *const [u8; 32],
+    pub txids_count: usize,
+    /// The transaction whose arrival settled the inputs. Final, and not
+    /// necessarily wallet-relevant — it can pay entirely to outside
+    /// addresses and never reach this store at all, which is why what it
+    /// took cannot be worked out by looking it up.
+    pub superseded_by: [u8; 32],
+    /// Of the inputs the removed transactions claimed, the ones that came
+    /// free. Everything else they claimed was taken by `superseded_by` and
+    /// stays spent — a persister holds every input of what it deletes, so
+    /// this is the only thing telling it which to hand back.
+    pub released_outpoints: *const OutPointFFI,
+    pub released_outpoints_count: usize,
+    /// Whether `winner_mined_height` is meaningful. `false` means the sweep
+    /// was triggered by an InstantSend-locked winner still waiting to be
+    /// mined (upstream's only other trigger — an unlocked mempool arrival
+    /// never sweeps), and the winner has NO finality horizon: a persister
+    /// must still create a durable placeholder for a held-but-unfunded
+    /// input — under DIP-10 the lock alone settles it, and the placeholder
+    /// is the only claim that survives a restart — but must leave it
+    /// UNSTAMPED and never collect an unstamped placeholder (the winner has
+    /// no mining deadline, so no watermark proves its funding output
+    /// delivered-or-never; only funding materialisation, a later
+    /// block-context re-stamp, or a release resolves it). Re-pointing an
+    /// existing placeholder on such a sweep must keep (not clear) any
+    /// stamp it already carries.
+    pub has_winner_mined_height: bool,
+    /// Mined height of `superseded_by` when `has_winner_mined_height` —
+    /// the winner's own block, carried from the sweep event because the
+    /// winner may never appear anywhere else in this wallet's stream. A
+    /// persister stamps it onto the placeholder it writes for a
+    /// held-but-unfunded input, and collects that placeholder exactly when
+    /// `min(chainlock_height, synced_height)` reaches the stamp.
+    pub winner_mined_height: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -284,47 +418,117 @@ impl WalletChangeSetFFI {
         // order (matters for the `inserted` -> `updated` transition
         // ordering inside a single BlockProcessed event).
         //
+        // Two record sources fill each account's bucket:
+        //  - transaction rows come from `records` — wallet-level,
+        //    same-txid slices folded (dashpay/platform#4387). Each
+        //    folded row is emitted into the bucket of EVERY account
+        //    that owns a slice of its txid, not just the funding
+        //    account's: the Swift/Kotlin per-account transaction
+        //    callback is the sole writer of the tx↔account involvement
+        //    join (`involvedAccounts` / `transaction_account_
+        //    involvements`), which payload-only matches — a ProReg/
+        //    ProUp payload hitting a provider owner or voting key, no
+        //    TXO in the account — depend on for restart restoration.
+        //    Funding-bucket-only emission dropped that involvement and
+        //    provider transactions vanished from restoration until a
+        //    rescan. The row's VALUES are identical in every bucket
+        //    (the persisted row is txid-keyed and account-agnostic),
+        //    so duplicate upserts converge; only the enclosing bucket
+        //    differs, which is exactly what the involvement join
+        //    records.
+        //  - TXO deltas come from `account_records` — the raw
+        //    per-account slices — so every UTXO lands in its OWNING
+        //    account's bucket. Deriving TXOs from the folded record
+        //    filed a sibling account's change under the funding
+        //    account (`OutputDetail` carries no owning account), and
+        //    the Swift/Kotlin stores then restored it into the wrong
+        //    account's map. Changesets whose producer doesn't
+        //    populate `account_records` fall back to `records`.
+        //
         // `AccountType` doesn't implement `Ord` upstream (the
         // 256-bit `[u8; 32]` fields on the Dashpay variants would make
-        // a derived ordering arbitrary), so a `Vec<(key, bucket)>`
+        // a derived ordering arbitrary), so a `Vec<(key, rows, slices)>`
         // with a linear "find or insert" walk is the path of least
         // resistance. Wallets typically have well under a hundred
         // accounts, so the linear search is cheap.
+        let utxo_source: &Vec<key_wallet::managed_account::transaction_record::TransactionRecord> =
+            if cs.account_records.is_empty() {
+                &cs.records
+            } else {
+                &cs.account_records
+            };
+        #[allow(clippy::type_complexity)]
         let mut by_account: Vec<(
             AccountType,
             Vec<&key_wallet::managed_account::transaction_record::TransactionRecord>,
+            Vec<&key_wallet::managed_account::transaction_record::TransactionRecord>,
         )> = Vec::new();
         for rec in &cs.records {
+            // Every account with a slice of this txid is involved; the
+            // record's own account (the funder) is a target even in
+            // the no-slices fallback. Dedup keeps a bucket from
+            // receiving the same row twice if a producer ever carries
+            // a duplicate slice.
+            let mut targets: Vec<AccountType> = vec![rec.account_type];
+            for slice in utxo_source.iter().filter(|s| s.txid == rec.txid) {
+                if !targets.contains(&slice.account_type) {
+                    targets.push(slice.account_type);
+                }
+            }
+            for target in targets {
+                if let Some(bucket) = by_account.iter_mut().find(|(at, _, _)| at == &target) {
+                    bucket.1.push(rec);
+                } else {
+                    by_account.push((target, vec![rec], Vec::new()));
+                }
+            }
+        }
+        for rec in utxo_source {
             if let Some(bucket) = by_account
                 .iter_mut()
-                .find(|(at, _)| at == &rec.account_type)
+                .find(|(at, _, _)| at == &rec.account_type)
             {
-                bucket.1.push(rec);
+                bucket.2.push(rec);
             } else {
-                by_account.push((rec.account_type, vec![rec]));
+                by_account.push((rec.account_type, Vec::new(), vec![rec]));
+            }
+        }
+
+        // Watermark-only accounts still need an `AccountChangeSetFFI`
+        // row. A batch can carry a highest-used advance for an account
+        // with no record of its own this round — e.g. upstream's
+        // `confirm_transaction` returning `None` for an idempotent
+        // re-confirmation while `mark_address_used` still ran, or the
+        // bridge's re-check resolving a sibling account of the same
+        // category. Without an empty bucket the watermark would be
+        // silently dropped below.
+        for account_type in cs.account_highest_used.keys() {
+            if !by_account.iter().any(|(at, _, _)| at == account_type) {
+                by_account.push((*account_type, Vec::new(), Vec::new()));
             }
         }
 
         let mut ffi_accounts = Vec::with_capacity(by_account.len());
-        for (account_type, recs) in by_account {
+        for (account_type, tx_rows, utxo_slices) in by_account {
             let type_name = CString::new(format!("{:?}", account_type))
                 .unwrap_or_else(|_| CString::new("Unknown").unwrap());
             let account_index = account_index_of(&account_type);
 
-            // Derive UTXO add/spend lists from this account's records.
-            // Each record carries its own input_details and
+            // Derive UTXO add/spend lists from this account's SLICES.
+            // Each slice carries its own account's input_details and
             // output_details; we walk them once per record to project
             // the UTXOs the persister should add or remove.
             let mut utxos_added: Vec<UtxoEntryFFI> = Vec::new();
             let mut utxos_spent: Vec<SpentOutPointFFI> = Vec::new();
-            for rec in &recs {
+            for rec in &utxo_slices {
                 utxos_added.extend(record_new_utxos_ffi(rec));
                 utxos_spent.extend(record_spent_outpoints_ffi(rec));
             }
 
-            // Transactions for this account.
+            // Transaction rows for this account (wallet-level,
+            // folded — see the bucketing comment above).
             let transactions: Vec<TransactionRecordFFI> =
-                recs.into_iter().map(tx_record_to_ffi).collect();
+                tx_rows.into_iter().map(tx_record_to_ffi).collect();
 
             let utxos_added_count = utxos_added.len();
             let utxos_spent_count = utxos_spent.len();
@@ -338,6 +542,16 @@ impl WalletChangeSetFFI {
             // sync-path emit for the same account collapse onto a
             // single SwiftData row.
             let tags = account_type_to_tags(&account_type);
+            // Post-batch highest-used watermarks, captured by the
+            // event bridge from the authoritative in-memory pools for
+            // every account this batch marked an address used on
+            // (`CoreChangeSet::account_highest_used`). `has_* = false`
+            // means "no update this batch" — the Swift persister only
+            // overwrites its row when the flag is set, so batches
+            // without usage never regress a stored watermark.
+            let highest = cs.account_highest_used.get(&account_type);
+            let external_highest_used = highest.and_then(|h| h.external);
+            let internal_highest_used = highest.and_then(|h| h.internal);
             ffi_accounts.push(AccountChangeSetFFI {
                 account_type_name: type_name.into_raw(),
                 account_index,
@@ -357,15 +571,10 @@ impl WalletChangeSetFFI {
                 utxos_instant_locked_count: 0,
                 transactions: vec_to_ptr(transactions),
                 transactions_count,
-                // Highest-used pool indices were a feature of the
-                // deleted upstream changeset's per-account bucket.
-                // The new event-bus model doesn't surface them; the
-                // persister can derive them from monitored addresses
-                // if needed.
-                external_highest_used: -1,
-                has_external_highest_used: false,
-                internal_highest_used: -1,
-                has_internal_highest_used: false,
+                external_highest_used: external_highest_used.map_or(-1, |v| v as i32),
+                has_external_highest_used: external_highest_used.is_some(),
+                internal_highest_used: internal_highest_used.map_or(-1, |v| v as i32),
+                has_internal_highest_used: internal_highest_used.is_some(),
             });
         }
 
@@ -410,6 +619,82 @@ impl WalletChangeSetFFI {
             last_applied_chain_lock_bytes_len,
         }
     }
+}
+
+/// Backing storage for one [`SweepBatchFFI`]'s nested buffers. The C struct
+/// borrows into it, so the caller keeps this alive for the callback window —
+/// the same `(entries, storage)` discipline
+/// `build_address_pools_for_callback` uses, rather than `Box::into_raw` +
+/// a paired free: nothing outlives the call, so nothing needs a free path.
+pub(crate) struct SweepBatchStorage {
+    txids: Vec<[u8; 32]>,
+    released: Vec<OutPointFFI>,
+}
+
+/// Build the C mirrors of a changeset's sweep batches for the extension
+/// sweep callback (`on_persist_wallet_changeset_sweeps_fn`), preserving the
+/// wallet's emission order — the one property a persister cannot recover on
+/// its own, since a later batch can keep a coin spent that an earlier one
+/// freed. Sweeps travel wallet-scoped, not per account: the upstream events
+/// are wallet-scoped, and the persister deletes by txid — the row it
+/// deletes carries its own account link.
+pub(crate) fn build_sweep_batches_for_callback(
+    cs: &platform_wallet::changeset::CoreChangeSet,
+) -> (Vec<SweepBatchFFI>, Vec<SweepBatchStorage>) {
+    let storage: Vec<SweepBatchStorage> = cs
+        .sweeps
+        .iter()
+        .map(|batch| SweepBatchStorage {
+            txids: batch
+                .txids
+                .iter()
+                .map(|txid| {
+                    let mut raw = [0u8; 32];
+                    raw.copy_from_slice(txid.as_ref());
+                    raw
+                })
+                .collect(),
+            released: batch
+                .released_outpoints
+                .iter()
+                .map(OutPointFFI::from)
+                .collect(),
+        })
+        .collect();
+
+    let batches: Vec<SweepBatchFFI> = cs
+        .sweeps
+        .iter()
+        .zip(storage.iter())
+        .map(|(batch, backing)| {
+            let mut superseded_by = [0u8; 32];
+            superseded_by.copy_from_slice(batch.superseded_by.as_ref());
+            SweepBatchFFI {
+                // `*const`, built straight from `as_ptr()`: the storage is
+                // borrowed immutably here, and `Vec::as_ptr` does not permit
+                // writes through the pointer or anything derived from it.
+                // Casting to `*mut` would advertise a C ABI that a callback
+                // could take literally, breaking Rust's aliasing rules.
+                txids: if backing.txids.is_empty() {
+                    std::ptr::null()
+                } else {
+                    backing.txids.as_ptr()
+                },
+                txids_count: backing.txids.len(),
+                superseded_by,
+                released_outpoints: if backing.released.is_empty() {
+                    std::ptr::null()
+                } else {
+                    backing.released.as_ptr()
+                },
+                released_outpoints_count: backing.released.len(),
+                has_winner_mined_height: batch.winner_mined_height.is_some(),
+                winner_mined_height: batch.winner_mined_height.unwrap_or(0),
+            }
+        })
+        .collect();
+
+    (batches, storage)
 }
 
 /// Returns the account "index" the FFI surfaces in `account_index`.
@@ -784,13 +1069,10 @@ fn record_new_utxos_ffi(
             let script_bytes = txout.script_pubkey.as_bytes().to_vec();
             let script_len = script_bytes.len();
             let script_ptr = vec_to_ptr_u8(script_bytes, script_len);
-            let mut txid = [0u8; 32];
-            txid.copy_from_slice(rec.txid.as_ref());
             Some(UtxoEntryFFI {
-                outpoint: OutPointFFI {
-                    txid,
-                    vout: d.index,
-                },
+                // Through the shared authority: this is the row a sweep's
+                // release later joins against by outpoint.
+                outpoint: OutPointFFI::new(&rec.txid, d.index),
                 amount: txout.value,
                 address: address.into_raw(),
                 script_pubkey: script_ptr,
@@ -818,13 +1100,8 @@ fn record_spent_outpoints_ffi(
         .iter()
         .filter_map(|d| {
             let input = rec.transaction.input.get(d.index as usize)?;
-            let mut txid = [0u8; 32];
-            txid.copy_from_slice(input.previous_output.txid.as_ref());
             Some(SpentOutPointFFI {
-                outpoint: OutPointFFI {
-                    txid,
-                    vout: input.previous_output.vout,
-                },
+                outpoint: OutPointFFI::from(&input.previous_output),
                 spending_txid,
             })
         })
@@ -860,6 +1137,270 @@ fn transaction_type_to_u8(
     }
 }
 
+/// Flat, C-ABI masternode entity — the wire shape of one
+/// [`MasternodeRecord`], built by [`masternode_entry_ffi`] and
+/// returned by `platform_wallet_manager_list_masternodes`. Inline
+/// fixed-size hashes with `has_*` gates (mirroring `TransactionRecordFFI`)
+/// keep heap ownership to the C strings.
+///
+/// # ABI stability
+///
+/// This is the original, frozen layout returned by the unversioned
+/// `platform_wallet_manager_list_masternodes` entry point. Do not add, remove,
+/// or reorder fields. New projections belong in a versioned wrapper such as
+/// [`MasternodeEntryV2FFI`].
+#[repr(C)]
+pub struct MasternodeEntryFFI {
+    /// proTxHash (32 wire bytes) — group key; also the registration txid.
+    pub pro_tx_hash: [u8; 32],
+    /// Whether a ProRegTx was in the aggregated set (vs update-only).
+    pub has_registration: bool,
+    /// ProRegTx core height (0 when unseen).
+    pub registration_height: u32,
+    /// Stable cross-type registration-order position (sort key).
+    pub order_index: u32,
+    /// 1-based index within this masternode's type — `is_evonode`
+    /// selects the "Evonode N" vs "Masternode N" sequence.
+    pub type_index: u32,
+    /// evonode / HPMN flag.
+    pub is_evonode: bool,
+    /// A ProUpRevTx was seen ⇒ revoked (data only; NOT the displayed
+    /// status — see `status`).
+    pub revoked: bool,
+    pub revocation_reason: u16,
+    /// DML-derived status discriminant: 0 Active, 1 Inactive, 2 Retired,
+    /// 3 Unknown (DML unavailable ⇒ persist layer keeps the prior value).
+    pub status: u8,
+    /// Provider-tx count for this proTxHash.
+    pub tx_count: u32,
+    /// Collateral outpoint, gated by `has_collateral`.
+    pub collateral_txid: [u8; 32],
+    pub collateral_vout: u32,
+    pub has_collateral: bool,
+    /// Owner / voting key hashes (hash160), each gated by its `has_*`.
+    pub owner_key_hash: [u8; 20],
+    pub has_owner_key_hash: bool,
+    pub voting_key_hash: [u8; 20],
+    pub has_voting_key_hash: bool,
+    /// Service endpoint `"ip:port"`, or null.
+    pub service_address: *mut c_char,
+    /// Platform HTTP (DAPI gRPC) port from the latest ProRegTx / ProUpServTx,
+    /// gated by `has_platform_http_port` (evonodes only). Together with the
+    /// `service_address` host this addresses the node's DAPI.
+    pub platform_http_port: u16,
+    pub has_platform_http_port: bool,
+    /// Base58 owner / voting P2PKH addresses for the wallet's network
+    /// (null when the hash is absent) — the app-layer join key against a
+    /// provider-key account's persisted base58 address, so Swift never
+    /// hashes keys.
+    pub owner_address: *mut c_char,
+    pub voting_address: *mut c_char,
+    /// Operator BLS public key (48 bytes), gated by `has_operator_key`.
+    pub operator_public_key: [u8; 48],
+    pub has_operator_key: bool,
+    /// Platform node id (SHA256[..20] Tenderdash, #884, 20 bytes) — evonodes only — gated by
+    /// `has_platform_node_id`.
+    pub platform_node_id: [u8; 20],
+    pub has_platform_node_id: bool,
+    /// Base58 payout address for the network, or null (non-standard
+    /// payout script, or none seen).
+    pub payout_address: *mut c_char,
+    // --- Base58 P2PKH addresses of the operator / platform keys ---
+    // Owner / voting addresses are `owner_address` / `voting_address`
+    // above. These two complete the set so the app can join ALL FOUR key
+    // kinds against persisted `PersistentCoreAddress` rows (address ⇒
+    // account type + index) — the durable ownership source. Pure encoding,
+    // no in-wallet lookup on the Rust side.
+    /// Base58 P2PKH pseudo-address of `hash160(operator BLS key)`, or null.
+    pub operator_pseudo_address: *mut c_char,
+    /// Base58 P2PKH address of the platform node id (evonode), or null.
+    pub platform_node_address: *mut c_char,
+    // --- Operator / platform ownership (derive-and-compare) ---
+    // These key kinds live only in payloads (no on-chain address), so
+    // their ownership is derived in Rust and matched here. `*_account_type`
+    // is the AccountTypeTagFFI value (10 ProviderOperatorKeys,
+    // 11 ProviderPlatformKeys); meaningful only when `*_in_wallet`.
+    pub operator_in_wallet: bool,
+    pub operator_account_type: u8,
+    pub operator_key_index: u32,
+    pub platform_in_wallet: bool,
+    pub platform_account_type: u8,
+    pub platform_key_index: u32,
+    /// Whether the platform-node ownership check was actually *possible* for
+    /// this query: `true` when the wallet's derived platform-node index had
+    /// entries to compare against, `false` when it was empty/unavailable (no
+    /// platform pool, or a seedless restore before the persisted key batch
+    /// rehydrated it). Lets the persister distinguish a definitive
+    /// `platform_in_wallet == false` (checked, not ours — e.g. an on-chain
+    /// key rotation to an external node) from "couldn't check yet", so it
+    /// never leaves stale ownership set. See `MasternodeSync`.
+    pub platform_ownership_checked: bool,
+}
+
+/// Version 2 masternode projection. The frozen V1 entry remains the first
+/// field, preserving one canonical definition for all established fields;
+/// V2 adds record provenance and the optional tracked-node label.
+#[repr(C)]
+pub struct MasternodeEntryV2FFI {
+    pub v1: MasternodeEntryFFI,
+    /// Where this record came from: 0 = one of the wallet's own masternodes
+    /// (aggregated from its provider transactions), 1 = tracked by the user
+    /// independently of every wallet.
+    pub source: u8,
+    /// User label of a tracked masternode, or null.
+    pub label: *mut c_char,
+}
+
+/// Encode a hash160 as a network-specific base58 P2PKH address string
+/// (heap C string), or null on the (impossible-for-a-valid-hash) CString
+/// interior-nul error.
+fn masternode_p2pkh_cstring(hash: [u8; 20], network: dashcore::Network) -> *mut c_char {
+    use dashcore::address::Payload;
+    use dashcore::hashes::Hash;
+    use dashcore::PubkeyHash;
+    let address = dashcore::Address::new(
+        network,
+        Payload::PubkeyHash(PubkeyHash::from_byte_array(hash)),
+    );
+    std::ffi::CString::new(address.to_string())
+        .map(std::ffi::CString::into_raw)
+        .unwrap_or(std::ptr::null_mut())
+}
+
+/// Encode a payout `script` to its base58 address for `network`, or null
+/// when the script is non-standard (not addressable).
+fn masternode_payout_cstring(script_bytes: &[u8], network: dashcore::Network) -> *mut c_char {
+    let script = dashcore::ScriptBuf::from_bytes(script_bytes.to_vec());
+    match dashcore::Address::from_script(&script, network) {
+        Ok(address) => std::ffi::CString::new(address.to_string())
+            .map(std::ffi::CString::into_raw)
+            .unwrap_or(std::ptr::null_mut()),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Flatten one record into its C-ABI entry, encoding the owner / voting /
+/// payout / operator / platform-node base58 addresses for `network`. Pure
+/// marshalling: ordering, status and operator / platform key ownership are
+/// already resolved on the record by
+/// `PlatformWalletManager::wallet_masternodes_blocking`; owner / voting key
+/// ownership is resolved app-side (persisted-address join).
+pub(crate) fn masternode_entry_ffi(
+    mn: &MasternodeRecord,
+    network: dashcore::Network,
+) -> MasternodeEntryFFI {
+    use dashcore::hashes::{hash160, Hash};
+    use std::ffi::CString;
+
+    // Operator pseudo-address = P2PKH of hash160(BLS key); platform-node
+    // address = P2PKH of the 20-byte node id.
+    let operator_pseudo_address = mn
+        .operator_public_key
+        .map(|k| {
+            let h: [u8; 20] = hash160::Hash::hash(&k).to_byte_array();
+            masternode_p2pkh_cstring(h, network)
+        })
+        .unwrap_or(std::ptr::null_mut());
+    let platform_node_address = mn
+        .platform_node_id
+        .map(|h| masternode_p2pkh_cstring(h, network))
+        .unwrap_or(std::ptr::null_mut());
+
+    // Ownership flags from the record's resolved indexes. `*_account_type`
+    // is the AccountTypeTagFFI value (10 ProviderOperatorKeys,
+    // 11 ProviderPlatformKeys); meaningful only when `*_in_wallet`.
+    let (operator_in_wallet, operator_account_type, operator_key_index) = mn
+        .operator_key_index
+        .map(|index| (true, 10u8, index))
+        .unwrap_or((false, 0, 0));
+    let (platform_in_wallet, platform_account_type, platform_key_index) = mn
+        .platform_key_index
+        .map(|index| (true, 11u8, index))
+        .unwrap_or((false, 0, 0));
+
+    let service_address = match &mn.service_address {
+        Some(s) => CString::new(s.clone())
+            .map(CString::into_raw)
+            .unwrap_or(std::ptr::null_mut()),
+        None => std::ptr::null_mut(),
+    };
+    let (collateral_txid, collateral_vout, has_collateral) = match mn.collateral {
+        Some((txid, vout)) => (txid, vout, true),
+        None => ([0u8; 32], 0, false),
+    };
+    let owner_address = mn
+        .owner_key_hash
+        .map(|h| masternode_p2pkh_cstring(h, network))
+        .unwrap_or(std::ptr::null_mut());
+    let voting_address = mn
+        .voting_key_hash
+        .map(|h| masternode_p2pkh_cstring(h, network))
+        .unwrap_or(std::ptr::null_mut());
+    let payout_address = mn
+        .payout_script
+        .as_deref()
+        .map(|s| masternode_payout_cstring(s, network))
+        .unwrap_or(std::ptr::null_mut());
+
+    MasternodeEntryFFI {
+        pro_tx_hash: mn.pro_tx_hash,
+        has_registration: mn.has_registration,
+        registration_height: mn.registration_height,
+        order_index: mn.order_index,
+        type_index: mn.type_index,
+        is_evonode: mn.is_evonode,
+        revoked: mn.revoked,
+        revocation_reason: mn.revocation_reason,
+        status: mn.status.as_u8(),
+        tx_count: mn.tx_count,
+        collateral_txid,
+        collateral_vout,
+        has_collateral,
+        owner_key_hash: mn.owner_key_hash.unwrap_or([0u8; 20]),
+        has_owner_key_hash: mn.owner_key_hash.is_some(),
+        voting_key_hash: mn.voting_key_hash.unwrap_or([0u8; 20]),
+        has_voting_key_hash: mn.voting_key_hash.is_some(),
+        service_address,
+        platform_http_port: mn.platform_http_port.unwrap_or(0),
+        has_platform_http_port: mn.platform_http_port.is_some(),
+        owner_address,
+        voting_address,
+        operator_public_key: mn.operator_public_key.unwrap_or([0u8; 48]),
+        has_operator_key: mn.operator_public_key.is_some(),
+        platform_node_id: mn.platform_node_id.unwrap_or([0u8; 20]),
+        has_platform_node_id: mn.platform_node_id.is_some(),
+        payout_address,
+        operator_pseudo_address,
+        platform_node_address,
+        operator_in_wallet,
+        operator_account_type,
+        operator_key_index,
+        platform_in_wallet,
+        platform_account_type,
+        platform_key_index,
+        platform_ownership_checked: mn.platform_ownership_checked,
+    }
+}
+
+/// Flatten one record into the additive V2 C-ABI entry.
+pub(crate) fn masternode_entry_v2_ffi(
+    mn: &MasternodeRecord,
+    network: dashcore::Network,
+) -> MasternodeEntryV2FFI {
+    use std::ffi::CString;
+
+    MasternodeEntryV2FFI {
+        v1: masternode_entry_ffi(mn, network),
+        source: mn.source.as_u8(),
+        label: mn
+            .label
+            .clone()
+            .and_then(|label| CString::new(label).ok())
+            .map(CString::into_raw)
+            .unwrap_or(std::ptr::null_mut()),
+    }
+}
+
 fn tx_record_to_ffi(
     tr: &key_wallet::managed_account::transaction_record::TransactionRecord,
 ) -> TransactionRecordFFI {
@@ -873,21 +1414,36 @@ fn tx_record_to_ffi(
     let mut txid = [0u8; 32];
     txid.copy_from_slice(tr.txid.as_ref());
 
-    let (ctx_val, blk_height, blk_hash, blk_ts) = match &tr.context {
-        TransactionContext::Mempool => (0u32, 0u32, [0u8; 32], 0u32),
+    let (ctx_val, blk_height, blk_hash, blk_ts, blk_position, has_blk_position) = match &tr.context
+    {
+        TransactionContext::Mempool => (0u32, 0u32, [0u8; 32], 0u32, 0u32, false),
         TransactionContext::InstantSend(_is_lock) => {
             // InstantSend has no block info — treat as mempool-level with flag
-            (1u32, 0u32, [0u8; 32], 0u32)
+            (1u32, 0u32, [0u8; 32], 0u32, 0u32, false)
         }
         TransactionContext::InBlock(bi) => {
             let mut h = [0u8; 32];
             h.copy_from_slice(bi.block_hash().as_ref());
-            (2u32, bi.height(), h, bi.timestamp())
+            (
+                2u32,
+                bi.height(),
+                h,
+                bi.timestamp(),
+                bi.position().unwrap_or(0),
+                bi.position().is_some(),
+            )
         }
         TransactionContext::InChainLockedBlock(bi) => {
             let mut h = [0u8; 32];
             h.copy_from_slice(bi.block_hash().as_ref());
-            (3u32, bi.height(), h, bi.timestamp())
+            (
+                3u32,
+                bi.height(),
+                h,
+                bi.timestamp(),
+                bi.position().unwrap_or(0),
+                bi.position().is_some(),
+            )
         }
     };
 
@@ -922,18 +1478,26 @@ fn tx_record_to_ffi(
         tr.transaction
             .input
             .iter()
-            .map(|input| {
-                let mut prev_txid = [0u8; 32];
-                prev_txid.copy_from_slice(input.previous_output.txid.as_ref());
-                OutPointFFI {
-                    txid: prev_txid,
-                    vout: input.previous_output.vout,
-                }
-            })
+            .map(|input| OutPointFFI::from(&input.previous_output))
             .collect()
     };
     let input_outpoints_count = input_outpoints_vec.len();
     let input_outpoints = vec_to_ptr(input_outpoints_vec);
+
+    // Provider (masternode) payload projection. Non-provider txs yield
+    // all-`None`, i.e. null string / zeroed arrays / `has_* = false`.
+    let provider = provider_payload_fields(&tr.transaction);
+    let provider_service_address = match provider.service_address {
+        Some(s) => CString::new(s)
+            .map(CString::into_raw)
+            .unwrap_or(std::ptr::null_mut()),
+        None => std::ptr::null_mut(),
+    };
+    let (provider_collateral_txid, provider_collateral_vout, has_provider_collateral) =
+        match provider.collateral {
+            Some((txid, vout)) => (txid, vout, true),
+            None => ([0u8; 32], 0, false),
+        };
 
     TransactionRecordFFI {
         txid,
@@ -943,6 +1507,8 @@ fn tx_record_to_ffi(
         block_height: blk_height,
         block_hash: blk_hash,
         block_timestamp: blk_ts,
+        block_position: blk_position,
+        has_block_position: has_blk_position,
         direction: dir_val,
         transaction_type: type_str.into_raw(),
         transaction_type_kind: type_kind,
@@ -961,14 +1527,20 @@ fn tx_record_to_ffi(
         first_seen: blk_ts as u64,
         input_outpoints,
         input_outpoints_count,
+        provider_service_address,
+        provider_pro_tx_hash: provider.pro_tx_hash.unwrap_or([0u8; 32]),
+        has_provider_pro_tx_hash: provider.pro_tx_hash.is_some(),
+        provider_collateral_txid,
+        provider_collateral_vout,
+        has_provider_collateral,
+        provider_owner_key_hash: provider.owner_key_hash.unwrap_or([0u8; 20]),
+        has_provider_owner_key_hash: provider.owner_key_hash.is_some(),
+        provider_voting_key_hash: provider.voting_key_hash.unwrap_or([0u8; 20]),
+        has_provider_voting_key_hash: provider.voting_key_hash.is_some(),
     }
 }
 
-/// Convert a `Vec` into a raw heap pointer for a C out-array: null for
-/// empty, `Box::into_raw(boxed_slice)` otherwise. The caller owns the
-/// allocation and must free it by reconstructing the boxed slice with
-/// the ORIGINAL length.
-pub(crate) fn vec_to_ptr<T>(v: Vec<T>) -> *mut T {
+fn vec_to_ptr<T>(v: Vec<T>) -> *mut T {
     if v.is_empty() {
         std::ptr::null_mut()
     } else {
@@ -1070,6 +1642,9 @@ pub unsafe fn free_wallet_changeset_ffi(cs: &WalletChangeSetFFI) {
                 if !tx.label.is_null() {
                     let _ = CString::from_raw(tx.label);
                 }
+                if !tx.provider_service_address.is_null() {
+                    let _ = CString::from_raw(tx.provider_service_address);
+                }
                 if !tx.input_outpoints.is_null() && tx.input_outpoints_count > 0 {
                     drop(Vec::from_raw_parts(
                         tx.input_outpoints,
@@ -1090,4 +1665,422 @@ pub unsafe fn free_wallet_changeset_ffi(cs: &WalletChangeSetFFI) {
         cs.accounts_count,
         cs.accounts_count,
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use platform_wallet::changeset::{CoreChangeSet, HighestUsedIndexes};
+
+    /// A batch can carry a highest-used advance for an account with no
+    /// record of its own in the same `store()` round (idempotent
+    /// re-confirmation, sibling-account resolution). `from_changeset`
+    /// must still surface it as an (otherwise empty) account bucket —
+    /// regression for the shape where the watermark was silently
+    /// dropped because buckets were built from `cs.records` alone.
+    #[test]
+    fn watermark_only_account_survives_from_changeset() {
+        let account = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let mut cs = CoreChangeSet::default();
+        cs.account_highest_used.insert(
+            account,
+            HighestUsedIndexes {
+                external: Some(7),
+                internal: Some(3),
+            },
+        );
+
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 1, "watermark-only account must emit");
+        let bucket = unsafe { &*ffi.accounts };
+        assert!(bucket.has_external_highest_used);
+        assert_eq!(bucket.external_highest_used, 7);
+        assert!(bucket.has_internal_highest_used);
+        assert_eq!(bucket.internal_highest_used, 3);
+        assert_eq!(bucket.transactions_count, 0);
+        assert_eq!(bucket.utxos_added_count, 0);
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// The `has_*` flags stay false (values -1) for accounts with
+    /// records but no watermark update this batch, so the Swift
+    /// persister never regresses a stored value on a no-usage round.
+    #[test]
+    fn accounts_without_watermarks_emit_unset_flags() {
+        let cs = CoreChangeSet::default();
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 0);
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// A folded wallet-level record files the transaction row under the
+    /// FUNDING account while carrying the sibling account's owned
+    /// outputs (dashpay/platform#4387), and `OutputDetail` has no
+    /// owning-account field — so deriving TXOs from the folded record
+    /// persisted the sibling's change under the funding account, and
+    /// the Swift/Kotlin stores restored it into the wrong account's
+    /// map. TXO deltas must instead come from `account_records` (the
+    /// raw per-account slices), with only the transaction rows read
+    /// from the folded `records`.
+    #[test]
+    fn txos_route_to_their_owning_accounts_bucket() {
+        use dashcore::{Address, Network, OutPoint, ScriptBuf, TxIn, TxOut, Witness};
+        use key_wallet::managed_account::transaction_record::{
+            InputDetail, OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::TransactionContext;
+
+        let coinjoin = AccountType::CoinJoin { index: 0 };
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let dest = Address::dummy(Network::Testnet, 1);
+        let change_addr = Address::dummy(Network::Testnet, 2);
+        let funded_addr = Address::dummy(Network::Testnet, 3);
+        let tx = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::default(),
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: vec![
+                TxOut {
+                    value: 900_000,
+                    script_pubkey: dest.script_pubkey(),
+                },
+                TxOut {
+                    value: 99_000,
+                    script_pubkey: change_addr.script_pubkey(),
+                },
+            ],
+            special_transaction_payload: None,
+        };
+        let our_input = InputDetail {
+            index: 0,
+            value: 1_000_000,
+            address: funded_addr.clone(),
+        };
+        let sent = OutputDetail {
+            index: 0,
+            role: OutputRole::Sent,
+            address: Some(dest.clone()),
+            value: 900_000,
+        };
+        let change = OutputDetail {
+            index: 1,
+            role: OutputRole::Change,
+            address: Some(change_addr.clone()),
+            value: 99_000,
+        };
+        let rec = |account, direction, inputs: Vec<InputDetail>, outputs, net| {
+            TransactionRecord::new(
+                tx.clone(),
+                account,
+                TransactionContext::Mempool,
+                TransactionType::Standard,
+                direction,
+                inputs,
+                outputs,
+                net,
+            )
+        };
+        // The CoinJoin slice funds the spend; its account-local view of
+        // the sibling's change is `Sent`. The BIP44 slice owns the
+        // change. The folded row carries the union with the owned role.
+        let coinjoin_slice = rec(
+            coinjoin,
+            TransactionDirection::Outgoing,
+            vec![our_input.clone()],
+            vec![
+                sent.clone(),
+                OutputDetail {
+                    role: OutputRole::Sent,
+                    ..change.clone()
+                },
+            ],
+            -1_000_000,
+        );
+        let bip44_slice = rec(
+            bip44,
+            TransactionDirection::Incoming,
+            vec![],
+            vec![change.clone()],
+            99_000,
+        );
+        let folded = rec(
+            coinjoin,
+            TransactionDirection::Outgoing,
+            vec![our_input],
+            vec![sent, change],
+            -901_000,
+        );
+
+        let cs = CoreChangeSet {
+            records: vec![folded],
+            account_records: vec![coinjoin_slice, bip44_slice],
+            ..CoreChangeSet::default()
+        };
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 2, "one bucket per involved account");
+        let buckets = unsafe { std::slice::from_raw_parts(ffi.accounts, ffi.accounts_count) };
+        let coinjoin_bucket = buckets
+            .iter()
+            .find(|b| b.type_tag == account_type_to_tags(&coinjoin).type_tag)
+            .expect("coinjoin bucket");
+        let bip44_bucket = buckets
+            .iter()
+            .find(|b| b.type_tag == account_type_to_tags(&bip44).type_tag)
+            .expect("bip44 bucket");
+
+        assert_eq!(
+            coinjoin_bucket.transactions_count, 1,
+            "the folded wallet-level row files under the funding account"
+        );
+        assert_eq!(
+            coinjoin_bucket.utxos_added_count, 0,
+            "the funding slice owns no outputs — the sibling's change \
+             must NOT be derived from the folded record into this bucket"
+        );
+        assert_eq!(
+            coinjoin_bucket.utxos_spent_count, 1,
+            "the spend stays with the account that owned the coin"
+        );
+        assert_eq!(
+            bip44_bucket.transactions_count, 1,
+            "every involved account's bucket carries the folded row — the \
+             per-account transaction callback is the sole writer of the \
+             tx↔account involvement join"
+        );
+        let coinjoin_row = unsafe { &*coinjoin_bucket.transactions };
+        let bip44_row = unsafe { &*bip44_bucket.transactions };
+        assert_eq!(
+            coinjoin_row.net_amount, bip44_row.net_amount,
+            "the row's wallet-level values are identical in every bucket"
+        );
+        assert_eq!(coinjoin_row.net_amount, -901_000);
+        assert_eq!(
+            bip44_bucket.utxos_added_count, 1,
+            "the change TXO lands in its OWNING account's bucket"
+        );
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// The exact shape behind the provider-restoration P1: a ProReg-like
+    /// transaction funded by a Standard account whose payload ALSO
+    /// matches a provider owner-keys account. The provider slice is
+    /// payload-only — no TXO in the account — so the tx↔account
+    /// involvement join written by the per-bucket transaction callback
+    /// is the ONLY thing linking the tx to the provider account, and
+    /// restart restoration selects provider transactions through it.
+    /// The provider bucket must therefore receive the folded row even
+    /// though it contributes no TXO deltas.
+    #[test]
+    fn payload_only_provider_account_still_receives_the_transaction_row() {
+        use dashcore::{Address, Network, OutPoint, ScriptBuf, TxIn, TxOut, Witness};
+        use key_wallet::managed_account::transaction_record::{
+            InputDetail, OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::TransactionContext;
+
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let provider = AccountType::ProviderOwnerKeys;
+        let funded_addr = Address::dummy(Network::Testnet, 4);
+        let dest = Address::dummy(Network::Testnet, 5);
+        let tx = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::default(),
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: 100_000_000,
+                script_pubkey: dest.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let rec =
+            |account, direction, inputs: Vec<InputDetail>, outputs: Vec<OutputDetail>, net| {
+                TransactionRecord::new(
+                    tx.clone(),
+                    account,
+                    TransactionContext::Mempool,
+                    TransactionType::Standard,
+                    direction,
+                    inputs,
+                    outputs,
+                    net,
+                )
+            };
+        let funding_slice = rec(
+            bip44,
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 0,
+                value: 100_001_000,
+                address: funded_addr,
+            }],
+            vec![OutputDetail {
+                index: 0,
+                role: OutputRole::Sent,
+                address: Some(dest),
+                value: 100_000_000,
+            }],
+            -100_001_000,
+        );
+        // Payload-only provider match: no input details, no output
+        // details — the owner key appears in the special-tx payload.
+        let provider_slice = rec(provider, TransactionDirection::Outgoing, vec![], vec![], 0);
+        let folded = funding_slice.clone();
+
+        let cs = CoreChangeSet {
+            records: vec![folded],
+            account_records: vec![funding_slice, provider_slice],
+            ..CoreChangeSet::default()
+        };
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 2);
+        let buckets = unsafe { std::slice::from_raw_parts(ffi.accounts, ffi.accounts_count) };
+        let provider_bucket = buckets
+            .iter()
+            .find(|b| b.type_tag == account_type_to_tags(&provider).type_tag)
+            .expect("provider bucket");
+        assert_eq!(
+            provider_bucket.transactions_count, 1,
+            "the payload-only provider account must receive the folded row, \
+             or its involvement join is never written and the transaction \
+             disappears from provider restoration after restart"
+        );
+        assert_eq!(provider_bucket.utxos_added_count, 0);
+        assert_eq!(provider_bucket.utxos_spent_count, 0);
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// The FFI entry carries the platform HTTP port gated by
+    /// `has_platform_http_port`, and releases its heap C strings through the
+    /// public free routine.
+    #[test]
+    fn masternode_entry_gates_platform_http_port() {
+        let mut mn = MasternodeRecord::default();
+        mn.platform_http_port = Some(1443);
+        mn.service_address = Some("1.2.3.4:19999".to_string());
+        let entry = masternode_entry_ffi(&mn, dashcore::Network::Testnet);
+        assert!(entry.has_platform_http_port);
+        assert_eq!(entry.platform_http_port, 1443);
+        assert!(
+            !entry.platform_ownership_checked,
+            "default record: unchecked"
+        );
+        // Release the entry's heap C strings through the public free routine.
+        let entries = Box::into_raw(vec![entry].into_boxed_slice()) as *mut MasternodeEntryFFI;
+        unsafe { crate::wallet::platform_wallet_manager_free_masternodes(entries, 1) };
+    }
+
+    /// Pin the original array element layout used by already-built C/Swift
+    /// consumers. A field addition or reorder here is an ABI break even when
+    /// all Rust callers are recompiled together.
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn masternode_entry_v1_layout_is_frozen() {
+        assert_eq!(std::mem::size_of::<MasternodeEntryFFI>(), 296);
+        assert_eq!(std::mem::align_of::<MasternodeEntryFFI>(), 8);
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, service_address),
+            144
+        );
+        assert_eq!(std::mem::offset_of!(MasternodeEntryFFI, owner_address), 160);
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, operator_public_key),
+            176
+        );
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, payout_address),
+            248
+        );
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, platform_key_index),
+            284
+        );
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, platform_ownership_checked),
+            288
+        );
+        assert_eq!(std::mem::offset_of!(MasternodeEntryV2FFI, v1), 0);
+    }
+
+    #[test]
+    fn masternode_entry_v2_carries_additive_fields_and_frees_them() {
+        let mut mn = MasternodeRecord::default();
+        mn.source = platform_wallet::masternode::MasternodeSource::Tracked;
+        mn.label = Some("tracked label".to_string());
+        let entry = masternode_entry_v2_ffi(&mn, dashcore::Network::Testnet);
+        assert_eq!(entry.source, 1);
+        assert_eq!(
+            unsafe { std::ffi::CStr::from_ptr(entry.label) }
+                .to_str()
+                .unwrap(),
+            "tracked label"
+        );
+        let entries = Box::into_raw(vec![entry].into_boxed_slice()) as *mut MasternodeEntryV2FFI;
+        unsafe { crate::wallet::platform_wallet_manager_free_masternodes_v2(entries, 1) };
+    }
+
+    #[test]
+    fn masternode_v1_and_v2_arrays_preserve_second_element_stride() {
+        let mut first = MasternodeRecord::default();
+        first.pro_tx_hash = [1; 32];
+        first.service_address = Some("1.1.1.1:9999".to_string());
+        first.source = platform_wallet::masternode::MasternodeSource::Tracked;
+        first.label = Some("first".to_string());
+        let mut second = MasternodeRecord::default();
+        second.pro_tx_hash = [2; 32];
+        second.service_address = Some("2.2.2.2:9999".to_string());
+        second.source = platform_wallet::masternode::MasternodeSource::Tracked;
+        second.label = Some("second".to_string());
+
+        let v1 = vec![
+            masternode_entry_ffi(&first, dashcore::Network::Testnet),
+            masternode_entry_ffi(&second, dashcore::Network::Testnet),
+        ];
+        let v1 = Box::into_raw(v1.into_boxed_slice()) as *mut MasternodeEntryFFI;
+        let v1_slice = unsafe { std::slice::from_raw_parts(v1, 2) };
+        assert_eq!(v1_slice[1].pro_tx_hash, [2; 32]);
+        assert_eq!(
+            unsafe { std::ffi::CStr::from_ptr(v1_slice[1].service_address) }
+                .to_str()
+                .unwrap(),
+            "2.2.2.2:9999"
+        );
+        unsafe { crate::wallet::platform_wallet_manager_free_masternodes(v1, 2) };
+
+        let v2 = vec![
+            masternode_entry_v2_ffi(&first, dashcore::Network::Testnet),
+            masternode_entry_v2_ffi(&second, dashcore::Network::Testnet),
+        ];
+        let v2 = Box::into_raw(v2.into_boxed_slice()) as *mut MasternodeEntryV2FFI;
+        let v2_slice = unsafe { std::slice::from_raw_parts(v2, 2) };
+        assert_eq!(v2_slice[1].v1.pro_tx_hash, [2; 32]);
+        assert_eq!(
+            unsafe { std::ffi::CStr::from_ptr(v2_slice[1].label) }
+                .to_str()
+                .unwrap(),
+            "second"
+        );
+        unsafe { crate::wallet::platform_wallet_manager_free_masternodes_v2(v2, 2) };
+    }
 }

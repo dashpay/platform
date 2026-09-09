@@ -262,9 +262,9 @@ public class KeyDerivation {
 
 /// Extended private key handle
 public class ExtendedPrivateKey {
-    private let handle: UnsafeMutablePointer<FFIExtendedPrivKey>
+    private let handle: OpaquePointer
 
-    internal init(handle: UnsafeMutablePointer<FFIExtendedPrivKey>) {
+    internal init(handle: OpaquePointer) {
         self.handle = handle
     }
 
@@ -307,9 +307,9 @@ public class ExtendedPrivateKey {
 
 /// Extended public key handle
 public class ExtendedPublicKey {
-    private let handle: UnsafeMutablePointer<FFIExtendedPubKey>
+    private let handle: OpaquePointer
 
-    internal init(handle: UnsafeMutablePointer<FFIExtendedPubKey>) {
+    internal init(handle: OpaquePointer) {
         self.handle = handle
     }
 

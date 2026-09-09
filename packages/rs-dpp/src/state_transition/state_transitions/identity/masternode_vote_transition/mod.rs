@@ -1,14 +1,10 @@
 pub mod accessors;
 pub mod fields;
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
-mod json_conversion;
 pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 pub mod v0;
-#[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 #[cfg(feature = "json-conversion")]
@@ -105,7 +101,7 @@ mod test {
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::{
         StateTransitionEstimatedFeeValidation, StateTransitionLike, StateTransitionOwned,
-        StateTransitionSingleSigned, StateTransitionType, StateTransitionValueConvert,
+        StateTransitionSingleSigned, StateTransitionType,
     };
     use crate::version::LATEST_PLATFORM_VERSION;
     use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
@@ -114,7 +110,7 @@ mod test {
     use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
     use crate::voting::votes::resource_vote::ResourceVote;
     use crate::voting::votes::Vote;
-    use platform_value::{BinaryData, Identifier, Value};
+    use platform_value::{BinaryData, Identifier};
 
     fn make_vote() -> MasternodeVoteTransition {
         MasternodeVoteTransition::V0(MasternodeVoteTransitionV0 {
@@ -208,40 +204,11 @@ mod test {
         assert!(fee > 0);
     }
 
-    #[test]
-    fn test_value_conversion_roundtrip() {
-        let t = make_vote();
-        let obj = StateTransitionValueConvert::to_object(&t, false).expect("should work");
-        let restored = <MasternodeVoteTransition as StateTransitionValueConvert>::from_object(
-            obj,
-            LATEST_PLATFORM_VERSION,
-        )
-        .expect("should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_from_value_map() {
-        let t = make_vote();
-        let obj = StateTransitionValueConvert::to_object(&t, false).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        let restored = <MasternodeVoteTransition as StateTransitionValueConvert>::from_value_map(
-            map,
-            LATEST_PLATFORM_VERSION,
-        )
-        .expect("should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_from_object_unknown_version() {
-        let value = Value::from([("$stateTransitionProtocolVersion", Value::U16(255))]);
-        let result = <MasternodeVoteTransition as StateTransitionValueConvert>::from_object(
-            value,
-            LATEST_PLATFORM_VERSION,
-        );
-        assert!(result.is_err());
-    }
+    // Legacy `StateTransitionValueConvert` round-trip and
+    // unknown-version tests deleted in Phase D step 9. The canonical
+    // `JsonConvertible` / `ValueConvertible` round-trip is exercised on
+    // the outer enum derive (see `json_convertible_tests` below) — these
+    // tested methods that no longer exist.
 
     #[test]
     fn test_into_from_v0() {
@@ -250,5 +217,126 @@ mod test {
         match t {
             MasternodeVoteTransition::V0(inner) => assert_eq!(inner, v0),
         }
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
+    use super::*;
+
+    use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+    use crate::voting::vote_polls::VotePoll;
+    use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
+    use crate::voting::votes::resource_vote::ResourceVote;
+    use crate::voting::votes::Vote;
+    use platform_value::{platform_value, BinaryData, Identifier, Value};
+    use serde_json::json;
+
+    fn fixture_vote() -> Vote {
+        Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+            vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
+                ContestedDocumentResourceVotePoll {
+                    contract_id: Identifier::new([0x12; 32]),
+                    document_type_name: "domain".to_string(),
+                    index_name: "parentNameAndLabel".to_string(),
+                    index_values: vec![Value::Text("dash".to_string())],
+                },
+            ),
+            resource_vote_choice: ResourceVoteChoice::TowardsIdentity(Identifier::new([0x34; 32])),
+        }))
+    }
+
+    pub(crate) fn fixture() -> MasternodeVoteTransition {
+        MasternodeVoteTransition::V0(MasternodeVoteTransitionV0 {
+            pro_tx_hash: Identifier::new([0x66; 32]),
+            voter_identity_id: Identifier::new([0x77; 32]),
+            vote: fixture_vote(),
+            nonce: 99,
+            signature_public_key_id: 8,
+            signature: BinaryData::new(vec![0xe5; 65]),
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Sized-int fields whose JSON wire encoding loses size info:
+        // `nonce` (u64 IdentityNonce), `signaturePublicKeyId` (u32 KeyID).
+        // The `vote` field is externally tagged (`type`/`data`) at every level
+        // (Vote enum, ResourceVote `$formatVersion`, VotePoll, ResourceVoteChoice).
+        // The value-path assertion below uses explicit suffixes for size lock-in.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "proTxHash": Identifier::new([0x66; 32]),
+                "voterIdentityId": Identifier::new([0x77; 32]),
+                "vote": {
+                    "$type": "resourceVote",
+                    "$formatVersion": "0",
+                    "votePoll": {
+                        "$type": "contestedDocumentResourceVotePoll",
+                        "contractId": Identifier::new([0x12; 32]),
+                        "documentTypeName": "domain",
+                        "indexName": "parentNameAndLabel",
+                        "indexValues": ["dash"],
+                    },
+                    "resourceVoteChoice": {
+                        "$type": "towardsIdentity",
+                        "identity": Identifier::new([0x34; 32]),
+                    },
+                },
+                "nonce": 99,
+                "signaturePublicKeyId": 8,
+                "signature": "5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eU=",
+            })
+        );
+        let recovered = MasternodeVoteTransition::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // Explicit suffixes lock in sized variants: `nonce` u64 (IdentityNonce),
+        // `signaturePublicKeyId` u32 (KeyID).
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "proTxHash": Identifier::new([0x66; 32]),
+                "voterIdentityId": Identifier::new([0x77; 32]),
+                "vote": {
+                    "$type": "resourceVote",
+                    "$formatVersion": "0",
+                    "votePoll": {
+                        "$type": "contestedDocumentResourceVotePoll",
+                        "contractId": Identifier::new([0x12; 32]),
+                        "documentTypeName": "domain",
+                        "indexName": "parentNameAndLabel",
+                        "indexValues": ["dash"],
+                    },
+                    "resourceVoteChoice": {
+                        "$type": "towardsIdentity",
+                        "identity": Identifier::new([0x34; 32]),
+                    },
+                },
+                "nonce": 99u64,
+                "signaturePublicKeyId": 8u32,
+                "signature": BinaryData::new(vec![0xe5; 65]),
+            })
+        );
+        let recovered = MasternodeVoteTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

@@ -1,0 +1,206 @@
+name: Build and test Kotlin SDK
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'packages/kotlin-sdk/**'
+      - 'packages/swift-sdk/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'packages/rs-*/**'
+      - 'packages/rs-unified-sdk-jni/**'
+      - 'packages/rs-sdk-ffi/**'
+      - 'packages/rs-platform-wallet-ffi/**'
+      - 'packages/dapi-grpc/**'
+      - 'packages/data-contracts/**'
+      - 'packages/*-contract/**'
+      - 'packages/simple-signer/**'
+      - 'docs/sdk/sdk-parity-manifest.json'
+      - 'docs/sdk/KOTLIN_SWIFT_SHARED_PARITY_SPEC.md'
+      - 'packages/kotlin-sdk/PARITY_SUMMARY.md'
+      - 'scripts/check_sdk_parity_manifest.py'
+      - 'scripts/tests/**'
+      - '.github/workflows/kotlin-sdk-build.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kotlin-sdk-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kotlin-sdk-build:
+    name: Kotlin SDK build + tests (x86_64 emulator)
+    runs-on: [self-hosted, kotlin-ci]
+    # Fork PRs must not execute on a persistent runner. Keep this guard in sync
+    # with tests-rs-workspace.yml.
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+      || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Preserve target/ and other untracked build outputs between runs.
+          clean: false
+
+      - name: Ensure runner dependencies
+        run: |
+          set -euo pipefail
+
+          MISSING=()
+          for pkg in build-essential cmake curl jq libgmp-dev libpulse0 libssl-dev libx11-xcb1 pkg-config python3 unzip zip; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || MISSING+=("$pkg")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "Installing: ${MISSING[*]}"
+            sudo apt-get update -qq
+            sudo apt-get install -qq --yes "${MISSING[@]}"
+          fi
+
+          if [ ! -x "$HOME/.cargo/bin/rustup" ]; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --no-modify-path --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Validate executable SDK parity manifest
+        run: |
+          python3 scripts/check_sdk_parity_manifest.py
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+
+      - name: Verify JDK 17
+        run: |
+          JAVA_HOME_RESOLVED=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
+          JAVA_VERSION_OUTPUT=$("$JAVA_HOME_RESOLVED/bin/java" -version 2>&1)
+          printf '%s\n' "$JAVA_VERSION_OUTPUT"
+          printf '%s\n' "$JAVA_VERSION_OUTPUT" | grep -Eq 'version "17([.]|\")'
+          echo "JAVA_HOME=$JAVA_HOME_RESOLVED" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_RESOLVED/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: >-
+            platforms;android-35
+            build-tools;35.0.0
+            ndk;28.1.13356709
+            platform-tools
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-linux-android
+
+      # Pinned: this runner is persistent, so an unpinned `cargo install`
+      # leaves whatever version happened to be current on the day it first ran,
+      # and every later job silently builds with it. Assert after installing so
+      # a drifted host fails here instead of somewhere in the NDK build.
+      - name: Ensure cargo-ndk v4.1.2 is installed
+        run: |
+          set -euo pipefail
+          if ! cargo ndk --version 2>/dev/null | grep -qx 'cargo-ndk 4.1.2'; then
+            cargo install cargo-ndk --version 4.1.2 --locked --force
+          fi
+          cargo ndk --version
+          cargo ndk --version | grep -qx 'cargo-ndk 4.1.2'
+
+      - name: Ensure protoc v32.0 is installed (repo-standard; apt's 3.21 breaks tenderdash-proto)
+        run: |
+          set -euo pipefail
+          if ! protoc --version 2>/dev/null | grep -qx 'libprotoc 32.0'; then
+            curl -fsSL -o /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip
+            sudo unzip -o /tmp/protoc.zip -d /usr/local 'bin/protoc' 'include/*'
+          fi
+          protoc --version
+          # A stale protoc earlier on PATH would shadow the one just unpacked
+          # into /usr/local; catch that here rather than in a codegen failure.
+          protoc --version | grep -qx 'libprotoc 32.0'
+
+      - name: Build native library (x86_64, dev profile)
+        working-directory: packages/kotlin-sdk
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.1.13356709
+        run: ./build_android.sh --abi x86_64 --profile dev --verify
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build SDK and run unit tests
+        working-directory: packages/kotlin-sdk
+        run: ./gradlew :sdk:assembleDebug :sdk:testDebugUnitTest --stacktrace
+
+      - name: Build KotlinExampleApp and run app unit tests
+        working-directory: packages/kotlin-sdk
+        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest --stacktrace
+
+      - name: Compile instrumented test sources (incl. testnet-tagged)
+        working-directory: packages/kotlin-sdk
+        run: ./gradlew :sdk:compileDebugAndroidTestKotlin --stacktrace
+
+      - name: Verify KVM access
+        run: |
+          test -c /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+          ls -l /dev/kvm
+
+      - name: Run instrumented FFI smoke test (API 35 emulator)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-snapshot -no-window -no-audio -no-boot-anim -camera-back none -dns-server 8.8.8.8,1.1.1.1
+          working-directory: packages/kotlin-sdk
+          script: |
+            # NOTE: android-emulator-runner executes this script line by line —
+            # each line is its own `sh -c` with no shared state — so every
+            # command must be self-contained on a single line (multi-line loops
+            # or cross-line variables silently fail).
+
+            # Keep the screen on and never time out. THIS is the fix: the flake
+            # was the emulator screen turning off mid-run and RE-LOCKING the
+            # device. The mnemonic MASTER_ALIAS AES key is
+            # setUnlockedDeviceRequired(true), so once the device re-locks even
+            # an ENCRYPT throws `InvalidKeyException: Keystore operation failed`
+            # (see WalletStorage.storeMnemonic). Unlocking alone is not enough —
+            # a slower suite (more instrumented tests) crosses the screen-off
+            # deadline before its wallet tests run, which is why this branch
+            # failed where lighter ones passed. Prevent the re-lock outright.
+            adb shell settings put system screen_off_timeout 2147483647
+            adb shell svc power stayon true
+
+            # Enroll a device-wide secure lock screen (PIN) — Android Keystore
+            # refuses to generate an auth-required key
+            # (setUserAuthenticationRequired(true), used for the identity-key
+            # KEYS_ALIAS RSA pair) without one enrolled, even though nothing
+            # here ever prompts for it (private-key ENCRYPT is never auth-gated;
+            # only DECRYPT is).
+            adb shell locksettings set-pin 1234
+
+            # Unlock the keyguard. With the screen kept on above, the device now
+            # stays unlocked for the whole run instead of re-locking.
+            # Credential acceptance and keyguard dismissal can race during a
+            # cold emulator boot. Retry the complete sequence atomically, then
+            # fail loudly before tests if the device never reaches unlocked.
+            for attempt in 1 2 3; do adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard; adb shell input text 1234; adb shell input keyevent KEYCODE_ENTER; sleep 2; adb shell wm dismiss-keyguard; sleep 1; adb shell dumpsys trust | grep -q 'deviceLocked=0' && exit 0; done; echo "::error::Emulator is still locked (deviceLocked=1); Keystore-backed tests would fail spuriously."; adb shell dumpsys trust; exit 1
+
+            ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kotlin-sdk-test-reports
+          path: |
+            packages/kotlin-sdk/sdk/build/reports
+            packages/kotlin-sdk/sdk/build/outputs/androidTest-results
+            packages/kotlin-sdk/KotlinExampleApp/app/build/reports

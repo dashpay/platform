@@ -380,6 +380,14 @@ struct DPNSNameStorageListView: View {
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    HStack(spacing: 8) {
+                        Text(record.saleStatus.map(DpnsMarketplaceUI.status) ?? "Not tracked")
+                        if let price = record.listedPriceCredits {
+                            Text(DpnsMarketplaceUI.price(price))
+                        }
+                    }
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
                 }
             }
         }
@@ -591,6 +599,58 @@ struct DashpayPaymentStorageListView: View {
                 ContentUnavailableView(
                     "No Records",
                     systemImage: "arrow.left.arrow.right.circle"
+                )
+            }
+        }
+    }
+}
+
+// MARK: - PersistentInvitation
+
+struct InvitationStorageListView: View {
+    let network: Network
+    @Query(sort: [SortDescriptor(\PersistentInvitation.createdAtSecs, order: .reverse)])
+    private var records: [PersistentInvitation]
+
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
+
+    private var scopedRecords: [PersistentInvitation] {
+        let ids = walletIdsOnNetwork
+        return records.filter { ids.contains($0.walletId) }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List(visible) { record in
+            NavigationLink(destination: InvitationStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.outPointHex)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 8) {
+                        Text(invitationStatusLabel(record.statusRaw))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text(String(format: "%.8f DASH", Double(record.amountDuffs) / 100_000_000))
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Sent Invitations (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView(
+                    "No Invitations",
+                    systemImage: "paperplane"
                 )
             }
         }
@@ -1801,6 +1861,112 @@ struct AssetLockStorageListView: View {
     }
 }
 
+// MARK: - PersistentMasternode
+
+/// Masternode entities aggregated by Rust from a wallet's provider
+/// special transactions. Scoped to the active network via the
+/// `walletId`→wallet join (masternodes carry no `networkRaw` column),
+/// sorted by the stable cross-type registration order.
+struct MasternodeStorageListView: View {
+    let network: Network
+    @Query(sort: [SortDescriptor(\PersistentMasternode.orderIndex)])
+    private var records: [PersistentMasternode]
+
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
+
+    private var scopedRecords: [PersistentMasternode] {
+        let ids = walletIdsOnNetwork
+        return records.filter { ids.contains($0.walletId) }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List(visible) { record in
+            NavigationLink(destination: MasternodeStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(record.displayTitle)
+                            .font(.body)
+                        Spacer()
+                        Text(record.statusName)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    Text(record.serviceAddress ?? "—")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text(record.proTxHashShort)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("Masternodes (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView(
+                    "No Masternodes",
+                    systemImage: "server.rack"
+                )
+            }
+        }
+    }
+}
+
+// MARK: - PersistentTrackedMasternode
+
+/// Tracked (wallet-independent) masternodes — the user-curated registry
+/// rows. Network-scoped by their own `networkRaw` column (no wallet join:
+/// they belong to no wallet), oldest-tracked first.
+struct TrackedMasternodeStorageListView: View {
+    let network: Network
+    @Query(sort: [SortDescriptor(\PersistentTrackedMasternode.addedAt)])
+    private var records: [PersistentTrackedMasternode]
+
+    private var scopedRecords: [PersistentTrackedMasternode] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List(visible) { record in
+            NavigationLink(destination: TrackedMasternodeStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(record.label ?? "Unnamed")
+                            .font(.body)
+                        Spacer()
+                        Text(Date(timeIntervalSince1970: TimeInterval(record.addedAt)),
+                             style: .date)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    Text(record.proTxHash.map { String(format: "%02x", $0) }.joined())
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("Tracked Masternodes (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView(
+                    "No Tracked Masternodes",
+                    systemImage: "eye"
+                )
+            }
+        }
+    }
+}
+
 // MARK: - PersistentWalletManagerMetadata
 
 struct WalletManagerMetadataStorageListView: View {
@@ -2145,6 +2311,62 @@ struct ShieldedSyncStateStorageListView: View {
         .overlay {
             if visible.isEmpty {
                 ContentUnavailableView("No Sync States", systemImage: "arrow.triangle.2.circlepath")
+            }
+        }
+    }
+}
+
+// MARK: - PersistentShieldedViewingKey
+
+struct ShieldedViewingKeyStorageListView: View {
+    let network: Network
+
+    // Same Data-isn't-Comparable constraint as the sync-state list:
+    // sort by `accountIndex` only, wallet grouping falls out of
+    // insertion order (one row per subwallet).
+    @Query(sort: [SortDescriptor(\PersistentShieldedViewingKey.accountIndex)])
+    private var records: [PersistentShieldedViewingKey]
+
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
+
+    private var scopedRecords: [PersistentShieldedViewingKey] {
+        let ids = walletIdsOnNetwork
+        return records.filter { ids.contains($0.walletId) }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List {
+            ForEach(visible) { record in
+                NavigationLink(destination: ShieldedViewingKeyStorageDetailView(record: record)) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(
+                                record.walletId.prefix(4)
+                                    .map { String(format: "%02x", $0) }.joined()
+                            )
+                            .font(.system(.caption2, design: .monospaced))
+                            Text("acct \(record.accountIndex)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        Text("FVK: \(record.fvkBytes.count) bytes")
+                            .font(.caption)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Shielded Viewing Keys (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView("No Viewing Keys", systemImage: "eye")
             }
         }
     }

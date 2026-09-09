@@ -102,7 +102,7 @@ fn overlay_only_write_does_not_corrupt_load() {
         .get(&w)
         .expect("wallet present in loaded state");
     assert_eq!(
-        wallet.core_wallet_info.metadata.synced_height, 99,
+        wallet.wallet_info.metadata.synced_height, 99,
         "core state must rehydrate intact alongside an unread overlay"
     );
 }

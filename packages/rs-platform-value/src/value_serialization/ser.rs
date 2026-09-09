@@ -3,7 +3,7 @@ use crate::value_map::ValueMap;
 use crate::{to_value, Value};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
-use serde::ser::{Impossible, Serialize};
+use serde::ser::Serialize;
 use std::fmt::Display;
 
 // We only use our own error type; no need for From conversions provided by the
@@ -357,7 +357,7 @@ pub struct SerializeTupleVariant {
 pub enum SerializeMap {
     Map {
         map: ValueMap,
-        next_key: Option<String>,
+        next_key: Option<Value>,
     },
 }
 
@@ -463,9 +463,15 @@ impl serde::ser::SerializeMap for SerializeMap {
     where
         T: ?Sized + Serialize,
     {
+        // Route keys through the regular Serializer (HR=false) so typed keys
+        // — e.g. `Value::Bytes32` for `BTreeMap<ProTxHash, _>` — survive the
+        // round-trip. The previous design routed keys through a dedicated
+        // string-only `MapKeySerializer` (HR=true), which forced hash-typed
+        // keys to be hex strings on serialize while the deserialize side
+        // (HR=false) expected bytes — non-round-trippable.
         match self {
             SerializeMap::Map { next_key, .. } => {
-                *next_key = Some(tri!(key.serialize(MapKeySerializer)));
+                *next_key = Some(tri!(to_value(key)));
                 Ok(())
             }
         }
@@ -481,7 +487,7 @@ impl serde::ser::SerializeMap for SerializeMap {
                 // Panic because this indicates a bug in the program rather than an
                 // expected failure.
                 let key = key.expect("serialize_value called before serialize_key");
-                map.push((Value::Text(key), tri!(to_value(value))));
+                map.push((key, tri!(to_value(value))));
                 Ok(())
             }
         }
@@ -494,191 +500,13 @@ impl serde::ser::SerializeMap for SerializeMap {
     }
 }
 
-struct MapKeySerializer;
-
-fn key_must_be_a_string() -> Error {
-    Error::KeyMustBeAString
-}
-
-impl serde::Serializer for MapKeySerializer {
-    type Ok = String;
-    type Error = Error;
-
-    type SerializeSeq = Impossible<String, Error>;
-    type SerializeTuple = Impossible<String, Error>;
-    type SerializeTupleStruct = Impossible<String, Error>;
-    type SerializeTupleVariant = Impossible<String, Error>;
-    type SerializeMap = Impossible<String, Error>;
-    type SerializeStruct = Impossible<String, Error>;
-    type SerializeStructVariant = Impossible<String, Error>;
-
-    #[inline]
-    fn serialize_unit_variant(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        variant: &'static str,
-    ) -> Result<String, Error> {
-        Ok(variant.to_owned())
-    }
-
-    #[inline]
-    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<String, Error>
-    where
-        T: ?Sized + Serialize,
-    {
-        value.serialize(self)
-    }
-
-    fn serialize_bool(self, _value: bool) -> Result<String, Error> {
-        Err(key_must_be_a_string())
-    }
-
-    fn serialize_i8(self, value: i8) -> Result<String, Error> {
-        Ok(value.to_string())
-    }
-
-    fn serialize_i16(self, value: i16) -> Result<String, Error> {
-        Ok(value.to_string())
-    }
-
-    fn serialize_i32(self, value: i32) -> Result<String, Error> {
-        Ok(value.to_string())
-    }
-
-    fn serialize_i64(self, value: i64) -> Result<String, Error> {
-        Ok(value.to_string())
-    }
-
-    fn serialize_u8(self, value: u8) -> Result<String, Error> {
-        Ok(value.to_string())
-    }
-
-    fn serialize_u16(self, value: u16) -> Result<String, Error> {
-        Ok(value.to_string())
-    }
-
-    fn serialize_u32(self, value: u32) -> Result<String, Error> {
-        Ok(value.to_string())
-    }
-
-    fn serialize_u64(self, value: u64) -> Result<String, Error> {
-        Ok(value.to_string())
-    }
-
-    fn serialize_f32(self, _value: f32) -> Result<String, Error> {
-        Err(key_must_be_a_string())
-    }
-
-    fn serialize_f64(self, _value: f64) -> Result<String, Error> {
-        Err(key_must_be_a_string())
-    }
-
-    #[inline]
-    fn serialize_char(self, value: char) -> Result<String, Error> {
-        Ok({
-            let mut s = String::new();
-            s.push(value);
-            s
-        })
-    }
-
-    #[inline]
-    fn serialize_str(self, value: &str) -> Result<String, Error> {
-        Ok(value.to_owned())
-    }
-
-    fn serialize_bytes(self, _value: &[u8]) -> Result<String, Error> {
-        Err(key_must_be_a_string())
-    }
-
-    fn serialize_unit(self) -> Result<String, Error> {
-        Err(key_must_be_a_string())
-    }
-
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<String, Error> {
-        Err(key_must_be_a_string())
-    }
-
-    fn serialize_newtype_variant<T>(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        _value: &T,
-    ) -> Result<String, Error>
-    where
-        T: ?Sized + Serialize,
-    {
-        Err(key_must_be_a_string())
-    }
-
-    fn serialize_none(self) -> Result<String, Error> {
-        Err(key_must_be_a_string())
-    }
-
-    fn serialize_some<T>(self, _value: &T) -> Result<String, Error>
-    where
-        T: ?Sized + Serialize,
-    {
-        Err(key_must_be_a_string())
-    }
-
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Error> {
-        Err(key_must_be_a_string())
-    }
-
-    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Error> {
-        Err(key_must_be_a_string())
-    }
-
-    fn serialize_tuple_struct(
-        self,
-        _name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeTupleStruct, Error> {
-        Err(key_must_be_a_string())
-    }
-
-    fn serialize_tuple_variant(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeTupleVariant, Error> {
-        Err(key_must_be_a_string())
-    }
-
-    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Error> {
-        Err(key_must_be_a_string())
-    }
-
-    fn serialize_struct(
-        self,
-        _name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeStruct, Error> {
-        Err(key_must_be_a_string())
-    }
-
-    fn serialize_struct_variant(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeStructVariant, Error> {
-        Err(key_must_be_a_string())
-    }
-
-    fn collect_str<T>(self, value: &T) -> Result<String, Error>
-    where
-        T: ?Sized + Display,
-    {
-        Ok(value.to_string())
-    }
-}
+// `MapKeySerializer` was removed: keys now flow through the regular
+// `Serializer` so typed keys (e.g. `Value::Bytes32` for `BTreeMap<ProTxHash, _>`)
+// round-trip symmetrically with the deserialize side. The previous
+// string-only serializer artificially forced every key to `Value::Text`,
+// causing an HR-asymmetry with the deserialize path. The
+// `Error::KeyMustBeAString` variant is left in the error enum for SemVer
+// stability but is no longer produced by this crate.
 
 impl serde::ser::SerializeStruct for SerializeMap {
     type Ok = Value;
@@ -1146,15 +974,24 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // MapKeySerializer error cases
+    // Map key types — platform_value allows any Value variant as a key.
+    // This is unlike serde_json (which mandates string keys for JSON
+    // compatibility); platform_value's richer Value type means a
+    // `BTreeMap<ProTxHash, _>` round-trips with `Value::Bytes32` keys.
     // ---------------------------------------------------------------
 
     #[test]
-    fn map_key_bool_errors() {
+    fn map_key_bool_now_supported() {
         let mut map = std::collections::HashMap::new();
         map.insert(true, "value");
-        let result = to_value(map);
-        assert!(result.is_err());
+        let result = to_value(map).expect("bool keys are now allowed");
+        match result {
+            Value::Map(entries) => {
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].0, Value::Bool(true));
+            }
+            _ => panic!("expected Map"),
+        }
     }
 
     #[test]
@@ -1171,6 +1008,35 @@ mod tests {
         map.insert(42u32, "value");
         let result = to_value(map);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn map_key_bytes_round_trips_as_bytes32() {
+        // The motivating use case: BTreeMap<ProTxHash, _> in dashpay/platform.
+        // Hash types serialize via `serialize_bytes` (HR=false). With typed
+        // map keys, the result must be `Value::Bytes32`, not a stringified
+        // hex form — symmetric with the deserialize side which expects bytes.
+        use serde::{ser::SerializeMap as _, Serializer};
+
+        // Drive serialize_bytes directly — the cheapest way to exercise
+        // the path without pulling in a full Hash type.
+        let mut s = Serializer.serialize_map(Some(1)).unwrap();
+        struct BytesKey([u8; 32]);
+        impl serde::Serialize for BytesKey {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                s.serialize_bytes(&self.0)
+            }
+        }
+        s.serialize_entry(&BytesKey([0xab; 32]), &7u32).unwrap();
+        let val = serde::ser::SerializeMap::end(s).unwrap();
+        match val {
+            Value::Map(entries) => {
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].0, Value::Bytes32([0xab; 32]));
+                assert_eq!(entries[0].1, Value::U32(7));
+            }
+            _ => panic!("expected Value::Map"),
+        }
     }
 
     // ---------------------------------------------------------------

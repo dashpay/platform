@@ -2,7 +2,7 @@
 
 use super::common::{bootstrap_mock_sdk_to_latest, mock_data_contract, mock_document_type};
 use dash_sdk::{
-    platform::{DocumentQuery, Fetch},
+    platform::{DocumentQuery, DocumentQuerySdk, Fetch},
     Sdk, SdkBuilder,
 };
 use dpp::{

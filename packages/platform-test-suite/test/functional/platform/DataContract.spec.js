@@ -16,6 +16,24 @@ const {
   },
 } = Dash;
 
+// A published data contract carries platform-stamped metadata (createdAt,
+// updatedAt and their block-height / epoch counterparts) that a locally
+// created, never-published fixture does not. `toObject()` emits these fields
+// from the contract's native serialization format, so strip them before
+// comparing structural equality between a fixture and a fetched contract.
+const getContractObject = (dataContract) => {
+  const contractObject = dataContract.toObject();
+
+  delete contractObject.createdAt;
+  delete contractObject.updatedAt;
+  delete contractObject.createdAtBlockHeight;
+  delete contractObject.updatedAtBlockHeight;
+  delete contractObject.createdAtEpoch;
+  delete contractObject.updatedAtEpoch;
+
+  return contractObject;
+};
+
 describe('Platform', () => {
   describe('Data Contract', function main() {
     this.timeout(700000);
@@ -104,7 +122,7 @@ describe('Platform', () => {
       );
 
       expect(fetchedDataContract).to.be.not.null();
-      expect(dataContractFixture.toObject()).to.deep.equal(fetchedDataContract.toObject());
+      expect(getContractObject(dataContractFixture)).to.deep.equal(getContractObject(fetchedDataContract));
     });
 
     it('should not be able to update an existing data contract if version is incorrect', async () => {
@@ -259,13 +277,13 @@ describe('Platform', () => {
       expect(historyPairs).to.have.lengthOf(2);
 
       const [originalContractDate, originalContract] = Object.entries(contractHistory)[0];
-      expect(originalContract.toObject()).to.be.deep.equal(dataContractFixture.toObject());
+      expect(getContractObject(originalContract)).to.be.deep.equal(getContractObject(dataContractFixture));
 
       const [updatedContractDate, updatedContract] = Object.entries(contractHistory)[1];
       // Version is updated separately inside SDK on a cloned contract, so we need to update it
       //  here manually to compare
       fetchedDataContract.incrementVersion();
-      expect(updatedContract.toObject()).to.be.deep.equal(fetchedDataContract.toObject());
+      expect(getContractObject(updatedContract)).to.be.deep.equal(getContractObject(fetchedDataContract));
 
       expect(Number(updatedContractDate)).to.be.greaterThan(Number(originalContractDate));
     });

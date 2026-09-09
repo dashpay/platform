@@ -313,6 +313,7 @@ fn test_query_historical_first_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -562,6 +563,7 @@ fn test_query_historical_first_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -612,6 +614,7 @@ fn test_query_historical_first_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -658,6 +661,7 @@ fn test_query_historical_first_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -738,6 +742,7 @@ fn test_query_historical_first_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -792,6 +797,7 @@ fn test_query_historical_first_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -840,6 +846,7 @@ fn test_query_historical_first_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -882,6 +889,7 @@ fn test_query_historical_first_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -957,6 +965,7 @@ fn test_query_historical_first_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -1011,6 +1020,7 @@ fn test_query_historical_first_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -1704,6 +1714,7 @@ fn test_query_historical_latest_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -1953,6 +1964,7 @@ fn test_query_historical_latest_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -2003,6 +2015,7 @@ fn test_query_historical_latest_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -2049,6 +2062,7 @@ fn test_query_historical_latest_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -2129,6 +2143,7 @@ fn test_query_historical_latest_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -2183,6 +2198,7 @@ fn test_query_historical_latest_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -2231,6 +2247,7 @@ fn test_query_historical_latest_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -2273,6 +2290,7 @@ fn test_query_historical_latest_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -2348,6 +2366,7 @@ fn test_query_historical_latest_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query
@@ -2402,6 +2421,7 @@ fn test_query_historical_latest_platform_version() {
         &contract,
         person_document_type,
         &drive.config,
+        platform_version,
     )
     .expect("query should be built");
     let (results, _, _) = query

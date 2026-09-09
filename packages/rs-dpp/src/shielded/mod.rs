@@ -29,34 +29,6 @@ pub use sighash::{
     unshield_extra_sighash_data_v0,
 };
 
-/// Permanent storage bytes per shielded action: 344 bytes total.
-///
-/// - 312 bytes in the BulkAppendTree: 32 (`cmx`, the note commitment) + 32
-///   (`rho`) + 32 (`cv_net`, the value commitment, stored unencrypted for OVK
-///   recovery) + 216 (the encrypted note ciphertext).
-/// - 32 bytes in the nullifier tree.
-///
-/// The 216-byte encrypted note is Orchard's `TransmittedNoteCiphertext`, laid
-/// out as `epk(32) || enc_ciphertext(104) || out_ciphertext(80)`:
-///
-/// - `epk` (32): the note's ephemeral public key, published in the clear. The
-///   recipient combines it with their incoming viewing key (Diffie–Hellman) to
-///   derive the AEAD key.
-/// - `enc_ciphertext` (104): the note encrypted to the recipient (opened with
-///   the incoming viewing key) — ChaCha20-Poly1305 over the note plaintext. It
-///   holds the compact note (52 = version 1 + diversifier `d` 11 + value 8 +
-///   `rseed` 32), the memo (36), and the AEAD tag (16); the 52-byte compact
-///   prefix is what wallets trial-decrypt during sync to detect their own notes.
-/// - `out_ciphertext` (80): the note encrypted to the sender for wallet
-///   recovery (opened with the outgoing viewing key): out plaintext
-///   (64 = `pk_d` 32 + `esk` 32) + AEAD tag (16).
-///
-/// This is the standard Orchard layout except the memo is 36 bytes (`DashMemo`)
-/// instead of Zcash's 512 — the dashpay `orchard` fork makes the memo size a
-/// type parameter (`MemoSize`) — which is why each note is 216 bytes
-/// (`ENCRYPTED_NOTE_SIZE`) rather than Zcash Orchard's ~692.
-pub const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 344;
-
 /// Calibrated effective storage-byte cost of the Core withdrawal document a
 /// `ShieldedWithdrawal` creates.
 ///
@@ -194,4 +166,91 @@ pub struct SerializedAction {
     /// `rk` during batch validation. This prevents replay attacks — a valid
     /// signature from one transition cannot be reused in another.
     pub spend_auth_sig: [u8; 64],
+}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for SerializedAction {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for SerializedAction {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn fixture() -> SerializedAction {
+        SerializedAction {
+            nullifier: [0x11; 32],
+            rk: [0x22; 32],
+            cmx: [0x33; 32],
+            // Encrypted note is variable-length (216 bytes per the field doc); a
+            // shorter payload still exercises the `serde_bytes_var` path.
+            encrypted_note: vec![0x44, 0x55, 0x66, 0x77],
+            cv_net: [0x88; 32],
+            spend_auth_sig: [0x99; 64],
+        }
+    }
+
+    // `SerializedAction` is a struct with `serde(rename_all = "camelCase")`.
+    // `#[json_safe_fields]` auto-injects `#[serde(with = ...)]` on the byte
+    // fields: `[u8; N]` → `serde_bytes` (const-generic), `Vec<u8>` →
+    // `serde_bytes_var`. The wire shape is base64 strings in JSON HR and
+    // raw bytes in non-HR.
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Each byte field is base64-encoded in HR.
+        assert_eq!(
+            json,
+            json!({
+                "nullifier": STANDARD.encode([0x11; 32]),
+                "rk": STANDARD.encode([0x22; 32]),
+                "cmx": STANDARD.encode([0x33; 32]),
+                "encryptedNote": STANDARD.encode([0x44, 0x55, 0x66, 0x77]),
+                "cvNet": STANDARD.encode([0x88; 32]),
+                "spendAuthSig": STANDARD.encode([0x99; 64]),
+            })
+        );
+        let recovered = SerializedAction::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::Value;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // `[u8; 32]` → `Value::Bytes32`, `[u8; 64]` and `Vec<u8>` (via
+        // `serde_bytes_var`) → `Value::Bytes(Vec<u8>)`.
+        assert_eq!(
+            value,
+            Value::Map(vec![
+                (Value::Text("nullifier".into()), Value::Bytes32([0x11; 32])),
+                (Value::Text("rk".into()), Value::Bytes32([0x22; 32])),
+                (Value::Text("cmx".into()), Value::Bytes32([0x33; 32])),
+                (
+                    Value::Text("encryptedNote".into()),
+                    Value::Bytes(vec![0x44, 0x55, 0x66, 0x77]),
+                ),
+                (Value::Text("cvNet".into()), Value::Bytes32([0x88; 32])),
+                (
+                    Value::Text("spendAuthSig".into()),
+                    Value::Bytes(vec![0x99; 64]),
+                ),
+            ])
+        );
+        let recovered = SerializedAction::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
 }

@@ -149,7 +149,7 @@ export default function getLocalConfigFactory(getBaseConfig) {
     };
 
     return new Config('local', lodashMerge({}, getBaseConfig()
-      .getOptions(), options));
+      .getStoredOptions(), options));
   }
 
   return getLocalConfig;

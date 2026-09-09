@@ -35,6 +35,25 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
+
+    /// Same as `validate_state_v0`, but reports `reported_action_takers_on_unauthorized`
+    /// in the `UnauthorizedTokenActionError` instead of
+    /// `authorized_action_takers_for_configuration_item`, which reports `NoOne` for
+    /// `MainControlGroup` change items regardless of
+    /// `main_control_group_can_be_modified`. The v0 report must stay unchanged for
+    /// protocol versions where it is already live; newer validation versions pass the
+    /// controlling rule here.
+    #[allow(clippy::too_many_arguments)]
+    fn validate_state_v0_with_reported_action_takers(
+        &self,
+        platform: &PlatformStateRef,
+        owner_id: Identifier,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+        reported_action_takers_on_unauthorized: Option<AuthorizedActionTakers>,
+    ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 impl TokenConfigUpdateTransitionActionStateValidationV0 for TokenConfigUpdateTransitionAction {
     fn validate_state_v0(
@@ -45,6 +64,28 @@ impl TokenConfigUpdateTransitionActionStateValidationV0 for TokenConfigUpdateTra
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        self.validate_state_v0_with_reported_action_takers(
+            platform,
+            owner_id,
+            block_info,
+            execution_context,
+            transaction,
+            platform_version,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn validate_state_v0_with_reported_action_takers(
+        &self,
+        platform: &PlatformStateRef,
+        owner_id: Identifier,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+        reported_action_takers_on_unauthorized: Option<AuthorizedActionTakers>,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let validation_result = self.base().validate_state(
             platform,
@@ -119,15 +160,19 @@ impl TokenConfigUpdateTransitionActionStateValidationV0 for TokenConfigUpdateTra
             &ActionTaker::SingleIdentity(owner_id),
             goal,
         ) {
+            let reported_action_takers =
+                reported_action_takers_on_unauthorized.unwrap_or_else(|| {
+                    token_configuration.authorized_action_takers_for_configuration_item(
+                        self.update_token_configuration_item(),
+                    )
+                });
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
                     UnauthorizedTokenActionError::new(
                         self.token_id(),
                         owner_id,
                         "config_update".to_string(),
-                        token_configuration.authorized_action_takers_for_configuration_item(
-                            self.update_token_configuration_item(),
-                        ),
+                        reported_action_takers,
                     ),
                 )),
             ));

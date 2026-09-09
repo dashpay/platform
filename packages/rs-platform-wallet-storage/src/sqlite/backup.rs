@@ -10,7 +10,37 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::persister::{PruneReport, RetentionPolicy};
-use crate::sqlite::util::permissions::apply_secure_permissions;
+use crate::sqlite::util::permissions::{apply_secure_permissions, reject_symlink};
+
+struct CreatedDestinationGuard {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl CreatedDestinationGuard {
+    fn new(path: &Path) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            armed: false,
+        }
+    }
+
+    fn arm(&mut self) {
+        self.armed = true;
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for CreatedDestinationGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
 
 /// Fsync `path`'s parent dir on Unix so the rename's dentry update is
 /// durable across power loss (`persist` only fsyncs the file inode; the
@@ -43,27 +73,90 @@ fn map_source_open_err(err: WalletStorageError) -> WalletStorageError {
 }
 
 /// Distinguishes auto-backup filenames.
+///
+/// `PreMigration` and `PreRestore` carry `db_stem` — the source database's
+/// sanitized filename stem (see [`sanitize_db_stem`]). Sibling databases
+/// share one auto-backup directory by default (`<db_dir>/backups/auto/`),
+/// and the second-resolution timestamp alone cannot separate two of them
+/// backed up within the same second. `PreDelete` is discriminated by its
+/// wallet id instead.
 #[derive(Debug, Clone, Copy)]
-pub enum BackupKind {
-    PreMigration { from: i32, to: i32 },
-    PreDelete { wallet_id: WalletId },
-    PreRestore,
+pub enum BackupKind<'a> {
+    PreMigration {
+        db_stem: &'a str,
+        from: i32,
+        to: i32,
+    },
+    PreDelete {
+        wallet_id: WalletId,
+    },
+    PreRestore {
+        db_stem: &'a str,
+    },
 }
 
+/// Longest database filename stem embedded in a backup filename.
+const MAX_DB_STEM_LEN: usize = 32;
+/// Stand-in for a database path with no usable filename stem.
+const FALLBACK_DB_STEM: &str = "db";
+
 /// Filename for `backup_to(directory)`.
-pub fn manual_backup_filename() -> String {
+pub(crate) fn manual_backup_filename() -> String {
     format!("wallet-{}.db", utc_timestamp())
 }
 
-/// Filename for an auto-backup.
-pub fn auto_backup_filename(kind: BackupKind) -> String {
-    let ts = utc_timestamp();
+/// Filename for an auto-backup, stamped with the current UTC time.
+pub(crate) fn auto_backup_filename(kind: BackupKind<'_>) -> String {
+    auto_backup_filename_at(kind, &utc_timestamp())
+}
+
+/// [`auto_backup_filename`] with the timestamp supplied, so tests can pin it.
+///
+/// Every kind's discriminator precedes `ts`, keeping `ts` the last
+/// `-`-delimited token that [`backup_timestamp`] reads back.
+fn auto_backup_filename_at(kind: BackupKind<'_>, ts: &str) -> String {
     match kind {
-        BackupKind::PreMigration { from, to } => format!("pre-migration-{from}-to-{to}-{ts}.db"),
+        BackupKind::PreMigration { db_stem, from, to } => {
+            format!("pre-migration-{db_stem}-{from}-to-{to}-{ts}.db")
+        }
         BackupKind::PreDelete { wallet_id } => {
             format!("pre-delete-{}-{ts}.db", hex::encode(wallet_id))
         }
-        BackupKind::PreRestore => format!("pre-restore-{ts}.db"),
+        BackupKind::PreRestore { db_stem } => format!("pre-restore-{db_stem}-{ts}.db"),
+    }
+}
+
+/// Sanitize `db_path`'s filename stem for embedding in a backup filename.
+///
+/// Keeps `[A-Za-z0-9_-]` from `Path::file_stem` (lossy UTF-8), maps every
+/// other character to `_`, truncates to 32 characters, and falls back to
+/// `"db"` when the path has no stem. The allowlist leaves a plain ASCII
+/// filename component — no separators, no `.` (so `..` becomes `__`), no
+/// NUL, control, or non-ASCII bytes — that cannot escape the backup
+/// directory. `-` survives for readability and is parse-safe because the
+/// stem precedes the timestamp.
+///
+/// The mapping is deliberately lossy: two stems differing only outside the
+/// allowlist, or sharing their first 32 characters, yield the same token.
+/// That degrades to a refused overwrite
+/// ([`WalletStorageError::BackupDestinationExists`]), never to a silently
+/// replaced backup.
+pub(crate) fn sanitize_db_stem(db_path: &Path) -> String {
+    let sanitized: String = db_path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .chars()
+        .take(MAX_DB_STEM_LEN)
+        .map(|c| match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' => c,
+            _ => '_',
+        })
+        .collect();
+    if sanitized.is_empty() {
+        FALLBACK_DB_STEM.to_string()
+    } else {
+        sanitized
     }
 }
 
@@ -76,7 +169,7 @@ pub fn auto_backup_filename(kind: BackupKind) -> String {
 /// `persist_noclobber`-ed over `dest` only on success, so a failure never
 /// materialises a partial `.db`. A pre-existing `dest` is rejected
 /// atomically (no TOCTOU window), and the parent dir is fsynced afterward.
-pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
+pub(crate) fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
     if let Some(parent) = dest.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
             std::fs::create_dir_all(parent)?;
@@ -131,8 +224,9 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// # Atomicity
 ///
 /// Validation runs against the source and again against the STAGED bytes,
-/// under a SQLite-native `BEGIN EXCLUSIVE` on `dest_db_path` that blocks
-/// every other SQLite peer (which advisory flock could not). The
+/// under SQLite `locking_mode=EXCLUSIVE` plus `BEGIN EXCLUSIVE` on
+/// `dest_db_path`, blocking every other SQLite peer (which advisory flock
+/// could not). The
 /// store-generation token is rotated INTO the staged temp before the swap,
 /// so the single commit point brings in the restored bytes and the fresh
 /// token together — a peer never observes restored content carrying the
@@ -143,6 +237,8 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// now-stale WAL/SHM siblings are unlinked only AFTER the swap succeeds (so a
 /// leftover `-wal` can't shadow the restored DB); the parent dir is fsynced
 /// afterward. See the numbered steps in the body for the per-phase rationale.
+/// When the destination did not exist, an owner-only placeholder may remain if
+/// failure occurs before exclusion is acquired or after it is released.
 ///
 /// # Lock-release-before-rename trade-off
 ///
@@ -153,7 +249,33 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// window where a peer could write into the old inode the rename then
 /// unlinks — its own write is lost, nothing escalates. Correct file-handle
 /// semantics across the rename outweigh absolute lock coverage.
-pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), WalletStorageError> {
+///
+/// # Source trust
+///
+/// Integrity, wallet application identity, and schema compatibility do not
+/// authenticate provenance. Restore trusts a valid source as much as the live
+/// database; protect the backup directory from replacement or modification.
+pub(crate) fn restore_from(
+    dest_db_path: &Path,
+    src_backup: &Path,
+) -> Result<(), WalletStorageError> {
+    let parent = dest_db_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
+        crate::parent_permissions::ParentPermissionsError::Io(source) => {
+            WalletStorageError::Io(source)
+        }
+        crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
+            WalletStorageError::InsecureParentDir { ancestor, reason }
+        }
+    })?;
+    // Ahead of the placeholder block below: `exists()` follows a link to a
+    // live target, so a planted symlink would skip that block entirely and
+    // be opened — and restored over — directly.
+    reject_symlink(dest_db_path)?;
+
     // 1. Cheap early-out: sniff integrity + schema-history + version +
     //    wallet-identity against the source so an incompatible input fails
     //    before we stream the whole file. The authoritative, TOCTOU-safe
@@ -167,37 +289,62 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         return Err(WalletStorageError::SchemaHistoryMissing);
     }
     crate::sqlite::migrations::assert_schema_version_supported(&src)?;
-    crate::sqlite::conn::assert_wallet_application_id(&src)?;
+    crate::sqlite::conn::assert_wallet_application_id_or_legacy(&src)?;
     crate::sqlite::migrations::assert_schema_history_well_formed(&src)?;
     drop(src);
 
-    // 2. SQLite-native exclusion: `BEGIN EXCLUSIVE` on a short-lived
-    //    writer conn blocks every other SQLite peer until it drops (which
-    //    advisory flock could not — it doesn't interlock with SQLite). The
-    //    conn is dropped before `persist` (see lock-release trade-off).
-    let mut dest_lock_conn: Option<rusqlite::Connection> = if dest_db_path.exists() {
-        let conn =
-            crate::sqlite::conn::open_conn(dest_db_path, crate::sqlite::conn::Access::ReadWrite)?;
-        // The destination has no persister yet (the persister is the
-        // caller), so apply our own busy_timeout for a backoff window.
-        conn.busy_timeout(std::time::Duration::from_secs(5))?;
-        // BUSY after busy_timeout becomes `RestoreDestinationLocked` so
-        // callers keep their existing branch.
-        match conn.execute_batch("BEGIN EXCLUSIVE") {
-            Ok(()) => Some(conn),
-            Err(rusqlite::Error::SqliteFailure(err, _))
-                if matches!(
-                    err.code,
-                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
-                ) =>
-            {
-                return Err(WalletStorageError::RestoreDestinationLocked);
-            }
-            Err(other) => return Err(WalletStorageError::Sqlite(other)),
+    // 2. SQLite-native exclusion: exclusive locking mode makes readers back
+    //    off even when the destination uses WAL, where BEGIN EXCLUSIVE alone
+    //    excludes writers but normally permits readers. For a missing
+    //    destination, create an owner-only placeholder first so a peer cannot
+    //    create and write the path during staging. A failure before lock
+    //    release removes a placeholder created by this call while exclusion
+    //    is still held. The short-lived connection is dropped before
+    //    `persist` (see lock-release trade-off).
+    let mut dest_lock_conn: Option<rusqlite::Connection>;
+    let mut created_destination = None;
+    if !dest_db_path.exists() {
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true).write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
         }
-    } else {
-        None
+        match options.open(dest_db_path) {
+            Ok(file) => {
+                created_destination = Some(CreatedDestinationGuard::new(dest_db_path));
+                apply_secure_permissions(dest_db_path)?;
+                drop(file);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(WalletStorageError::Io(error)),
+        }
+    }
+
+    let conn =
+        crate::sqlite::conn::open_conn(dest_db_path, crate::sqlite::conn::Access::ReadWrite)?;
+    // The destination has no persister yet (the persister is the
+    // caller), so apply our own busy_timeout for a backoff window.
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
+    conn.pragma_update(None, "locking_mode", "EXCLUSIVE")?;
+    // BUSY after busy_timeout becomes `RestoreDestinationLocked` so
+    // callers keep their existing branch.
+    dest_lock_conn = match conn.execute_batch("BEGIN EXCLUSIVE") {
+        Ok(()) => Some(conn),
+        Err(rusqlite::Error::SqliteFailure(err, _))
+            if matches!(
+                err.code,
+                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+            ) =>
+        {
+            return Err(WalletStorageError::RestoreDestinationLocked);
+        }
+        Err(other) => return Err(WalletStorageError::Sqlite(other)),
     };
+    if let Some(guard) = created_destination.as_mut() {
+        guard.arm();
+    }
 
     // 3. Stage the source into a NamedTempFile in the destination's parent
     //    dir (unguessable name, no symlink-plant TOCTOU).
@@ -223,7 +370,7 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
             return Err(WalletStorageError::SchemaHistoryMissing);
         }
         crate::sqlite::migrations::assert_schema_version_supported(&staged)?;
-        crate::sqlite::conn::assert_wallet_application_id(&staged)?;
+        crate::sqlite::conn::assert_wallet_application_id_or_legacy(&staged)?;
         crate::sqlite::migrations::assert_schema_history_well_formed(&staged)?;
     }
 
@@ -234,9 +381,9 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     //    The staged DB is switched to DELETE journaling first so the UPDATE
     //    lands in the main file with no `-wal` frames stranded outside the
     //    rename; the reopened destination is forced back to its configured
-    //    journal mode on its next open. A pre-V003 backup has no generation
+    //    journal mode on its next open. A pre-V009 backup has no generation
     //    table; `regenerate_generation` is a no-op there and the token is
-    //    (re)seeded on its later migration to V003.
+    //    (re)seeded on its later migration to V009.
     {
         let conn =
             crate::sqlite::conn::open_conn(tmp.path(), crate::sqlite::conn::Access::ReadWrite)?;
@@ -260,7 +407,12 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     // 7. Release the EXCLUSIVE lock before the rename/unlinks: on Windows /
     //    some FUSE mounts `remove_file` on a still-open file returns
     //    `PermissionDenied`, and the rename window wants a clean close (see
-    //    lock-release trade-off above).
+    //    lock-release trade-off above). Stop failure cleanup from removing a
+    //    path after this point: a peer may legitimately acquire it once the
+    //    lock is gone. If persist then fails, the owner-only placeholder stays.
+    if let Some(guard) = created_destination.as_mut() {
+        guard.disarm();
+    }
     if let Some(conn) = dest_lock_conn.take() {
         let _ = conn.execute_batch("ROLLBACK");
         drop(conn);
@@ -281,6 +433,12 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     //    use `OsString::push` so non-UTF-8 bytes round-trip; `NotFound` is a
     //    silent no-op. The lock conn was dropped in step 7 for cross-platform
     //    unlink semantics.
+    //    INTENTIONAL(wal-shm-cleanup-race): this unlink shares the
+    //    lock-release-before-rename trade-off documented on this function. A
+    //    peer that opened the old database still holds its own descriptors,
+    //    so under POSIX these unlinks just detach the names — the peer reads
+    //    its already-open inode and nothing escalates. Accepted risk: that
+    //    peer keeps serving pre-restore state until it reopens.
     if let Some(file_name) = dest_db_path.file_name() {
         for ext in ["-wal", "-shm"] {
             let mut sibling_name = file_name.to_os_string();
@@ -302,12 +460,23 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     Ok(())
 }
 
+/// Diagnostic lines retained per integrity probe, matching SQLite's own
+/// default `PRAGMA integrity_check` cap.
+///
+/// `integrity_check` self-limits; `foreign_key_check` does not — it emits
+/// one row per violating child row across every table, so a file whose
+/// `wallets` pages were lost yields one per row in the entire database.
+/// Both walks are capped here so neither the retained report, the log
+/// record built from it, nor the CLI's stderr can grow with the damage.
+const MAX_INTEGRITY_REPORT_LINES: usize = 100;
+
 /// Run `PRAGMA integrity_check` and return `Ok(())` only on the single
 /// row `"ok"`. Any other result becomes a typed `IntegrityCheckFailed` via
 /// the caller-supplied builder; an underlying rusqlite error surfaces as
-/// `IntegrityCheckRunFailed`. SQLite returns one row per detected problem
-/// (default cap 100); all rows are `\n`-joined so the report carries every
-/// diagnostic, not just the first.
+/// `IntegrityCheckRunFailed`. Rows are `\n`-joined so the report carries
+/// every diagnostic, not just the first, up to
+/// [`MAX_INTEGRITY_REPORT_LINES`]; beyond that a trailing line states how
+/// many were suppressed.
 pub(crate) fn run_integrity_check<F>(
     conn: &Connection,
     on_failure: F,
@@ -319,13 +488,17 @@ where
         .prepare("PRAGMA integrity_check")
         .map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?;
     let mut rows: Vec<String> = Vec::new();
+    let mut suppressed = 0usize;
     let mut trailing_err: Option<rusqlite::Error> = None;
     let iter = stmt
         .query_map([], |row| row.get::<_, String>(0))
         .map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?;
     for item in iter {
         match item {
-            Ok(s) => rows.push(s),
+            Ok(s) if rows.len() < MAX_INTEGRITY_REPORT_LINES => rows.push(s),
+            // Past the cap the stream is still drained so the suppressed
+            // count is exact, but nothing further is retained.
+            Ok(_) => suppressed += 1,
             Err(e) => {
                 // SQLite can surface a `DatabaseCorrupt` partway through
                 // the stream; treat it as end-of-stream when we already
@@ -343,9 +516,25 @@ where
         return Err(on_failure(String::new()));
     }
     if rows.len() == 1 && rows[0] == "ok" && trailing_err.is_none() {
-        Ok(())
+        // `integrity_check` validates page/index structure and says nothing
+        // about referential integrity, so a file can be structurally perfect
+        // while an identity's keys point at a wallet that no longer exists.
+        // SQLite also skips FK enforcement entirely for any child key with a
+        // NULL column (MATCH SIMPLE), so violations can accumulate on the
+        // nullable-scope tables without any write ever failing.
+        let violations = foreign_key_violations(conn)?;
+        if violations.is_empty() {
+            Ok(())
+        } else {
+            Err(on_failure(violations.join("\n")))
+        }
     } else {
         let mut report = rows.join("\n");
+        if suppressed > 0 {
+            report.push_str(&format!(
+                "\n... and {suppressed} further integrity_check rows"
+            ));
+        }
         if let Some(e) = trailing_err {
             // Preserve the cut-off marker so operators see the stream
             // was truncated, not just under-reported.
@@ -353,6 +542,49 @@ where
         }
         Err(on_failure(report))
     }
+}
+
+/// One diagnostic line per `PRAGMA foreign_key_check` row, empty when the
+/// database is referentially clean.
+///
+/// Each row is `(child table, child rowid, parent table, fk index)`; the
+/// rowid is NULL for a WITHOUT ROWID child, so it renders as `-`.
+///
+/// Capped at [`MAX_INTEGRITY_REPORT_LINES`] retained lines plus a trailing
+/// count. The pragma has no cap of its own, so a broken parent table
+/// yields one row per child row in the file.
+fn foreign_key_violations(conn: &Connection) -> Result<Vec<String>, WalletStorageError> {
+    let mut stmt = conn
+        .prepare("PRAGMA foreign_key_check")
+        .map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?;
+    let rows = stmt
+        .query_map([], |row| {
+            let table: String = row.get(0)?;
+            let rowid: Option<i64> = row.get(1)?;
+            let parent: String = row.get(2)?;
+            let fkid: i64 = row.get(3)?;
+            Ok(format!(
+                "foreign_key_check: {table} row {} violates FK #{fkid} into {parent}",
+                rowid.map_or_else(|| "-".to_string(), |id| id.to_string())
+            ))
+        })
+        .map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?;
+    let mut out = Vec::new();
+    let mut suppressed = 0usize;
+    for item in rows {
+        let line = item.map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?;
+        if out.len() < MAX_INTEGRITY_REPORT_LINES {
+            out.push(line);
+        } else {
+            suppressed += 1;
+        }
+    }
+    if suppressed > 0 {
+        out.push(format!(
+            "... and {suppressed} further foreign-key violations"
+        ));
+    }
+    Ok(out)
 }
 
 /// Apply retention to a directory. Files that match the recognised
@@ -366,7 +598,10 @@ where
 /// errors (`read_dir` itself fails, an `entry?` returns Err) surface
 /// as `Err(_)` — those affect every subsequent iteration too, so
 /// continuing would just compound the failure.
-pub fn prune(dir: &Path, policy: RetentionPolicy) -> Result<PruneReport, WalletStorageError> {
+pub(crate) fn prune(
+    dir: &Path,
+    policy: RetentionPolicy,
+) -> Result<PruneReport, WalletStorageError> {
     let entries = std::fs::read_dir(dir)?;
     let mut files: Vec<(SystemTime, PathBuf)> = Vec::new();
     for entry in entries {
@@ -477,6 +712,108 @@ fn utc_timestamp() -> String {
 mod tests {
     use super::*;
 
+    /// A structurally sound file can still be referentially broken:
+    /// `integrity_check` alone reports "ok" while a child row points at a
+    /// parent that does not exist. The verification path must catch that.
+    #[test]
+    fn integrity_check_reports_foreign_key_violations() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        // Plant an orphan with enforcement off, the way a file written by an
+        // older build (or with the pragma disabled) can arrive on disk.
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+        conn.execute(
+            "INSERT INTO identities \
+             (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
+             VALUES (?1, ?2, NULL, ?3, 0)",
+            rusqlite::params![&[0x1Au8; 32][..], &[0x2Bu8; 32][..], vec![0u8; 4]],
+        )
+        .unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+
+        // `integrity_check` on its own is satisfied by this file.
+        let structural: String = conn
+            .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(structural, "ok", "the file is structurally sound");
+
+        let err = run_integrity_check(&conn, |report| WalletStorageError::IntegrityCheckFailed {
+            report,
+        })
+        .expect_err("a dangling foreign key must fail verification");
+        match err {
+            WalletStorageError::IntegrityCheckFailed { report } => {
+                assert!(
+                    report.contains("foreign_key_check") && report.contains("identities"),
+                    "report must name the check and the offending table, got: {report}"
+                );
+            }
+            other => panic!("expected IntegrityCheckFailed, got {other:?}"),
+        }
+    }
+
+    /// `foreign_key_check` has no cap of its own — a missing parent makes
+    /// EVERY child row a violation at once. The report is allocated whole,
+    /// logged whole, and printed to an operator's terminal, so it must stay
+    /// bounded by the cap rather than by the extent of the damage.
+    #[test]
+    fn integrity_report_is_capped_on_a_flood_of_foreign_key_violations() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+        let overflow = 37usize;
+        let planted = MAX_INTEGRITY_REPORT_LINES + overflow;
+        {
+            let tx = conn.transaction().unwrap();
+            for i in 0..planted {
+                let mut identity_id = [0u8; 32];
+                identity_id[..8].copy_from_slice(&(i as u64).to_le_bytes());
+                tx.execute(
+                    "INSERT INTO identities \
+                     (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
+                     VALUES (?1, ?2, NULL, ?3, 0)",
+                    rusqlite::params![&identity_id[..], &[0x2Bu8; 32][..], vec![0u8; 4]],
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+
+        let err = run_integrity_check(&conn, |report| WalletStorageError::IntegrityCheckFailed {
+            report,
+        })
+        .expect_err("a flood of dangling foreign keys must still fail verification");
+        match err {
+            WalletStorageError::IntegrityCheckFailed { report } => {
+                let lines: Vec<&str> = report.lines().collect();
+                assert_eq!(
+                    lines.len(),
+                    MAX_INTEGRITY_REPORT_LINES + 1,
+                    "report must be the cap plus one summary line, not one line per damaged row"
+                );
+                assert!(
+                    lines[MAX_INTEGRITY_REPORT_LINES]
+                        .contains(&format!("and {overflow} further foreign-key violations")),
+                    "the suppressed count must be exact, got: {}",
+                    lines[MAX_INTEGRITY_REPORT_LINES]
+                );
+            }
+            other => panic!("expected IntegrityCheckFailed, got {other:?}"),
+        }
+    }
+
+    /// A clean migrated database passes both halves of the check.
+    #[test]
+    fn integrity_check_passes_a_clean_database() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        run_integrity_check(&conn, |report| WalletStorageError::IntegrityCheckFailed {
+            report,
+        })
+        .expect("a freshly migrated database is both sound and consistent");
+    }
+
     #[test]
     fn manual_backup_filename_matches_regex() {
         let n = manual_backup_filename();
@@ -503,12 +840,12 @@ mod tests {
         let real_wallet_id = hex::encode([0xABu8; 32]);
         let names = [
             "wallet-20260101T000000Z.db".to_string(),
-            // Multiple `-` from the from/to version segments.
-            "pre-migration-1-to-2-20260101T000000Z.db".to_string(),
+            // Multiple `-` from the db stem and the from/to version segments.
+            "pre-migration-det-mainnet-1-to-2-20260101T000000Z.db".to_string(),
             // 64 lowercase hex chars: hex::encode never emits `-`, so the
             // timestamp stays the last `-`-delimited token.
             format!("pre-delete-{real_wallet_id}-20260101T000000Z.db"),
-            "pre-restore-20260101T000000Z.db".to_string(),
+            "pre-restore-det-mainnet-20260101T000000Z.db".to_string(),
         ];
         for name in names {
             let got = backup_timestamp(Path::new(&name));
@@ -531,6 +868,128 @@ mod tests {
             None,
             "a trailing non-timestamp segment must not parse as a timestamp"
         );
+    }
+
+    /// Two databases in one directory backed up within the same
+    /// second-resolution timestamp must still get distinct filenames — the
+    /// timestamp is pinned here so the collision is deterministic rather
+    /// than dependent on both calls landing in the same wall-clock second.
+    #[test]
+    fn auto_backup_filename_separates_sibling_dbs_sharing_a_timestamp() {
+        let ts = "20260101T000000Z";
+        let mainnet = sanitize_db_stem(Path::new("/data/det-mainnet.sqlite"));
+        let testnet = sanitize_db_stem(Path::new("/data/det-testnet.sqlite"));
+        let cases = [
+            (
+                auto_backup_filename_at(
+                    BackupKind::PreMigration {
+                        db_stem: &mainnet,
+                        from: 1,
+                        to: 9,
+                    },
+                    ts,
+                ),
+                auto_backup_filename_at(
+                    BackupKind::PreMigration {
+                        db_stem: &testnet,
+                        from: 1,
+                        to: 9,
+                    },
+                    ts,
+                ),
+            ),
+            (
+                auto_backup_filename_at(BackupKind::PreRestore { db_stem: &mainnet }, ts),
+                auto_backup_filename_at(BackupKind::PreRestore { db_stem: &testnet }, ts),
+            ),
+        ];
+        for (first, second) in cases {
+            assert_ne!(
+                first, second,
+                "sibling databases must not share a backup filename"
+            );
+            assert!(first.contains(&mainnet), "{first} must name its source DB");
+            assert!(
+                second.contains(&testnet),
+                "{second} must name its source DB"
+            );
+        }
+    }
+
+    /// The embedded stem must not shift the trailing timestamp token that
+    /// `prune` reads back, nor break prefix-based backup recognition —
+    /// including when the stem itself contains `-`.
+    #[test]
+    fn auto_backup_filename_with_db_stem_stays_parseable() {
+        let ts = "20260101T000000Z";
+        let want = parse_compact_timestamp(ts).unwrap();
+        let stem = sanitize_db_stem(Path::new("/data/det-mainnet.sqlite"));
+        assert_eq!(stem, "det-mainnet", "`-` survives sanitization");
+        for name in [
+            auto_backup_filename_at(
+                BackupKind::PreMigration {
+                    db_stem: &stem,
+                    from: 1,
+                    to: 9,
+                },
+                ts,
+            ),
+            auto_backup_filename_at(BackupKind::PreRestore { db_stem: &stem }, ts),
+        ] {
+            let path = Path::new(&name);
+            assert!(is_backup_file(path), "{name} must stay a recognised backup");
+            assert_eq!(
+                backup_timestamp(path),
+                Some(want),
+                "{name} must keep the timestamp as its last `-` token"
+            );
+        }
+    }
+
+    /// The stem is derived from a filesystem path, so it must never carry a
+    /// path separator, a `.` that could form `..`, or a non-ASCII byte into
+    /// the backup directory.
+    #[test]
+    fn sanitize_db_stem_maps_every_character_outside_the_allowlist() {
+        for (path, want) in [
+            ("/data/det-mainnet.sqlite", "det-mainnet"),
+            ("/data/det_app.sqlite", "det_app"),
+            // A `.` inside the stem cannot survive to form a `..` component.
+            ("/data/a.b.db", "a_b"),
+            ("/data/a b.db", "a_b"),
+            // Separators of either flavour, and a leading-dot stem.
+            ("/data/a\\b.db", "a_b"),
+            ("/data/.hidden.db", "_hidden"),
+            ("/data/wället.db", "w_llet"),
+        ] {
+            assert_eq!(sanitize_db_stem(Path::new(path)), want, "stem of {path}");
+        }
+    }
+
+    /// Non-UTF-8 filename bytes are legal on Unix; they must degrade to `_`
+    /// rather than panic or leak raw bytes into the filename.
+    #[cfg(unix)]
+    #[test]
+    fn sanitize_db_stem_handles_non_utf8_bytes() {
+        use std::os::unix::ffi::OsStrExt;
+        let raw = std::ffi::OsStr::from_bytes(b"a\xffb.db");
+        assert_eq!(sanitize_db_stem(Path::new(raw)), "a_b");
+    }
+
+    /// An absurdly long stem is truncated, and a path with no stem at all
+    /// still yields a usable, non-empty token.
+    #[test]
+    fn sanitize_db_stem_bounds_length_and_fills_in_missing_stems() {
+        let long = format!("/data/{}.db", "x".repeat(500));
+        let stem = sanitize_db_stem(Path::new(&long));
+        assert_eq!(stem.len(), MAX_DB_STEM_LEN, "stem must be bounded");
+        for path in ["..", "/", ""] {
+            assert_eq!(
+                sanitize_db_stem(Path::new(path)),
+                FALLBACK_DB_STEM,
+                "{path} has no usable stem"
+            );
+        }
     }
 
     #[test]

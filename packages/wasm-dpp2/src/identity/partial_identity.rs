@@ -9,11 +9,9 @@ use crate::utils::{
 };
 use crate::version::PlatformVersionLikeJs;
 use dpp::fee::Credits;
-use dpp::identity::identity_public_key::conversion::json::IdentityPublicKeyJsonConversionMethodsV0;
-use dpp::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
-use dpp::platform_value;
 use dpp::prelude::Revision;
+use dpp::serialization::ValueConvertible;
 use dpp::version::PlatformVersion;
 use js_sys::{Array, Object, Reflect};
 use std::collections::{BTreeMap, BTreeSet};
@@ -192,24 +190,37 @@ impl PartialIdentityWasm {
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<PartialIdentityJSONJs> {
-        // Convert to platform_value, which handles integer map keys by converting to strings
-        let value = platform_value::to_value(&self.0)
+        // Route through the canonical ValueConvertible to preserve typed
+        // map keys / bytes through the platform_value tree, then convert
+        // to a JS-friendly JSON value (Identifier -> base58, bytes -> base64).
+        let value = self
+            .0
+            .to_object()
             .map_err(|e| WasmDppError::serialization(format!("toJSON: {}", e)))?;
-        // platform_value_to_json converts Identifier to base58, bytes to base64
         let js_value = serialization::platform_value_to_json(&value)?;
         Ok(js_value.into())
     }
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<PartialIdentityObjectJs> {
-        // Convert to platform_value, which handles integer map keys by converting to strings
-        let value = platform_value::to_value(&self.0)
+        // Route through the canonical ValueConvertible. Bytes stay as
+        // Uint8Array, u64 as BigInt at the JS boundary.
+        let value = self
+            .0
+            .to_object()
             .map_err(|e| WasmDppError::serialization(format!("toObject: {}", e)))?;
-        // platform_value_to_object keeps bytes as Uint8Array, u64 as BigInt
         let js_value = serialization::platform_value_to_object(&value)?;
         Ok(js_value.into())
     }
 
+    // KEEP-AS-MANUAL: the `from*` pair reconstructs field-by-field instead of
+    // delegating to canonical `ValueConvertible::from_object` because it
+    // accepts lenient JS input shapes (`id` as Uint8Array | base58 string |
+    // Identifier instance; `balance`/`revision` as BigInt | number | string;
+    // optional fields omitted rather than null). The only structured leaf
+    // (`IdentityPublicKey`) DOES go through the canonical traits below. The
+    // `platform_version` arg is API-consistency only (see IdentityPublicKey's
+    // own docs) — not load-bearing for dispatch.
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(
         obj: PartialIdentityObjectJs,
@@ -347,7 +358,7 @@ pub fn option_array_to_not_found(
 /// Parse loaded public keys from an object (where values are plain objects from toObject)
 pub fn value_to_loaded_public_keys_from_object(
     loaded_public_keys: &JsValue,
-    platform_version: &PlatformVersion,
+    _platform_version: &PlatformVersion,
 ) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
     let mut map = BTreeMap::new();
     let pub_keys_object = try_to_object(loaded_public_keys.clone(), "loadedPublicKeys")?;
@@ -379,8 +390,15 @@ pub fn value_to_loaded_public_keys_from_object(
         })?;
 
         let platform_value = serialization::platform_value_from_object(&js_key)?;
-        let pub_key = IdentityPublicKey::from_object(platform_value, platform_version)
-            .map_err(WasmDppError::from)?;
+        // Canonical `ValueConvertible::from_object` dispatches on the
+        // value's `$formatVersion` tag (the outer `IdentityPublicKey`
+        // enum is internally tagged). The legacy version-aware form
+        // produced identical output for V0 (the only structure version
+        // currently defined).
+        let pub_key = <IdentityPublicKey as dpp::serialization::ValueConvertible>::from_object(
+            platform_value,
+        )
+        .map_err(WasmDppError::from)?;
         map.insert(key_id, pub_key);
     }
 
@@ -390,7 +408,7 @@ pub fn value_to_loaded_public_keys_from_object(
 /// Parse loaded public keys from JSON (where values are JSON objects from toJSON)
 pub fn value_to_loaded_public_keys_from_json(
     loaded_public_keys: &JsValue,
-    platform_version: &PlatformVersion,
+    _platform_version: &PlatformVersion,
 ) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
     let mut map = BTreeMap::new();
     let pub_keys_object = try_to_object(loaded_public_keys.clone(), "loadedPublicKeys")?;
@@ -425,8 +443,9 @@ pub fn value_to_loaded_public_keys_from_json(
             serde_wasm_bindgen::from_value(js_key).map_err(|e| {
                 WasmDppError::serialization(format!("IdentityPublicKey fromJSON: {}", e))
             })?;
-        let pub_key = IdentityPublicKey::from_json_object(json_value, platform_version)
-            .map_err(WasmDppError::from)?;
+        // Canonical JsonConvertible — base64 strings for binary fields.
+        use dpp::serialization::JsonConvertible;
+        let pub_key = IdentityPublicKey::from_json(json_value).map_err(WasmDppError::from)?;
         map.insert(key_id, pub_key);
     }
 

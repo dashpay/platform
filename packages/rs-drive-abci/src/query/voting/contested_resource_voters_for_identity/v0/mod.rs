@@ -89,23 +89,24 @@ impl<C> Platform<C> {
             ))));
         }
 
+        if let Err(error) = super::super::validate_serialized_index_values(
+            index_values.iter().map(Vec::as_slice),
+            index.properties.len(),
+            || "serialized index values exceed the contested index query limits".to_string(),
+        ) {
+            return Ok(QueryValidationResult::new_with_error(error));
+        }
+
         let index_values = match index_values
             .into_iter()
             .enumerate()
             .map(|(pos, serialized_value)| {
-                Ok(bincode::decode_from_slice(
-                    serialized_value.as_slice(),
-                    bincode::config::standard()
-                        .with_big_endian()
-                        .with_no_limit(),
-                )
-                .map_err(|_| {
-                    QueryError::InvalidArgument(format!(
-                        "could not convert {:?} to a value in the index values at position {}",
-                        serialized_value, pos
-                    ))
-                })?
-                .0)
+                super::super::decode_serialized_index_value(serialized_value.as_slice(), || {
+                    format!(
+                        "could not convert a value in the index values at position {}",
+                        pos
+                    )
+                })
             })
             .collect::<Result<Vec<_>, QueryError>>()
         {
@@ -389,6 +390,33 @@ mod tests {
         assert!(matches!(
             result.errors.as_slice(),
             [QueryError::Query(QuerySyntaxError::DataContractNotFound(_))]
+        ));
+    }
+
+    #[test]
+    fn test_query_voters_aggregate_index_bytes_rejected() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetContestedResourceVotersForIdentityRequestV0 {
+            contract_id: dpp::system_data_contracts::dpns_contract::ID.to_vec(),
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![vec![0xff; 5 * 1024]],
+            contestant_id: vec![0; 32],
+            start_at_identifier_info: None,
+            count: None,
+            order_ascending: true,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_voters_for_identity_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)]
+                if msg == "serialized index values exceed the contested index query limits"
         ));
     }
 }

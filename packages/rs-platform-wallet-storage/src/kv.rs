@@ -17,8 +17,7 @@
 //! yet (metadata may be attached ahead of sync); an `AFTER DELETE` trigger
 //! reaps the metadata when the object is deleted. Rows whose parent is
 //! never created, or removed via a path the trigger misses, may persist as
-//! orphans — an accepted limitation; a future GC pass is expected to reap
-//! them, so callers must not rely on orphans living forever.
+//! orphans — an accepted limitation; orphan reaping is not currently planned.
 //!
 //! This API is **independent of [`platform_wallet::changeset::PlatformWalletPersistence`]**:
 //! KV is for app metadata, not wallet domain state. Reads and writes go
@@ -106,6 +105,15 @@ pub enum KvError {
     /// Mirrors [`crate::sqlite::error::WalletStorageError::LockPoisoned`].
     #[error("persister lock poisoned")]
     LockPoisoned,
+
+    /// A `put` / `delete` was attempted while the backing store is open
+    /// read-only for recovery. Reads stay available. `operation` names the
+    /// blocked entry point.
+    #[error(
+        "`{operation}` is blocked: the backing store is open in recovery mode (read-only) — \
+         repair the database, then reopen it under the strict load policy to write again"
+    )]
+    ReadOnlyRecoveryMode { operation: &'static str },
 }
 
 /// Per-object-type key/value metadata store.

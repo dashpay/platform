@@ -45,6 +45,15 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) transient_fields: BTreeSet<String>,
     /// Should documents keep history?
     pub(in crate::data_contract) documents_keep_history: bool,
+    /// Should transfers of documents of this type be recorded in the document
+    /// history system contract?
+    pub(in crate::data_contract) documents_keep_transfer_history: bool,
+    /// Should purchases of documents of this type be recorded in the document
+    /// history system contract?
+    pub(in crate::data_contract) documents_keep_purchase_history: bool,
+    /// Should price updates on documents of this type be recorded in the
+    /// document history system contract?
+    pub(in crate::data_contract) documents_keep_pricing_history: bool,
     /// Are documents mutable?
     pub(in crate::data_contract) documents_mutable: bool,
     /// Can documents of this type be deleted?
@@ -90,6 +99,16 @@ pub struct DocumentTypeV2 {
     /// [`Self::documents_summable`] is `Some` — enforced by
     /// [`crate::data_contract::document_type::accessors::DocumentTypeV2Setters::set_range_summable`].
     pub(in crate::data_contract) range_summable: bool,
+    /// When true, documents of this type are **indexOnly**: nothing is
+    /// written to primary storage (there is no `[0]` primary-key tree at
+    /// all) — the index entries are the rows, each terminating in an `Item`
+    /// keyed by the index's `terminal` property instead of a `Reference`
+    /// keyed by the document id. Only what is in the indexes exists and is
+    /// recoverable. The parser (`apply_index_only`) enforces the structural
+    /// constraints this layout depends on: every property required and
+    /// indexed, `$ownerId` recoverable from at least one index, immutable /
+    /// non-transferable / no history, and per-index terminal typing.
+    pub(in crate::data_contract) index_only: bool,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {}
@@ -136,6 +155,9 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             required_fields: value.required_fields,
             transient_fields: value.transient_fields,
             documents_keep_history: value.documents_keep_history,
+            documents_keep_transfer_history: value.documents_keep_transfer_history,
+            documents_keep_purchase_history: value.documents_keep_purchase_history,
+            documents_keep_pricing_history: value.documents_keep_pricing_history,
             documents_mutable: value.documents_mutable,
             documents_can_be_deleted: value.documents_can_be_deleted,
             documents_transferable: value.documents_transferable,
@@ -154,6 +176,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             range_countable: false,
             documents_summable: None,
             range_summable: false,
+            index_only: false,
         }
     }
 }
@@ -172,6 +195,9 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             required_fields: value.required_fields,
             transient_fields: value.transient_fields,
             documents_keep_history: value.documents_keep_history,
+            documents_keep_transfer_history: value.documents_keep_transfer_history,
+            documents_keep_purchase_history: value.documents_keep_purchase_history,
+            documents_keep_pricing_history: value.documents_keep_pricing_history,
             documents_mutable: value.documents_mutable,
             documents_can_be_deleted: value.documents_can_be_deleted,
             documents_transferable: value.documents_transferable,
@@ -190,6 +216,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             range_countable: false,
             documents_summable: None,
             range_summable: false,
+            index_only: false,
         }
     }
 }
@@ -221,6 +248,9 @@ mod tests {
             required_fields: BTreeSet::new(),
             transient_fields: BTreeSet::new(),
             documents_keep_history: false,
+            documents_keep_transfer_history: false,
+            documents_keep_purchase_history: false,
+            documents_keep_pricing_history: false,
             documents_mutable: true,
             documents_can_be_deleted: true,
             documents_transferable: Transferable::Never,

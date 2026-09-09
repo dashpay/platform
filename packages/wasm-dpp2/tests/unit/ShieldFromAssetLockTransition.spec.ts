@@ -74,9 +74,9 @@ describe('ShieldFromAssetLockTransition', () => {
     it('toObject() emits AssetLockProof in internally-tagged Object form', () => {
       const t = createTransition();
       const obj = t.toObject();
-      // Internally-tagged: { type: "instant" | "chain", ...flattened inner fields }
+      // Internally-tagged: { $type: "instant" | "chain", ...flattened inner fields }
       expect(obj.assetLockProof).to.be.an('object');
-      expect(obj.assetLockProof.type).to.be.oneOf(['instant', 'chain']);
+      expect(obj.assetLockProof.$type).to.be.oneOf(['instant', 'chain']);
       expect(obj.actions).to.be.an('array').with.lengthOf(1);
       expect(obj.anchor).to.be.instanceOf(Uint8Array).with.lengthOf(32);
       expect(obj.bindingSignature).to.be.instanceOf(Uint8Array).with.lengthOf(64);
@@ -86,7 +86,7 @@ describe('ShieldFromAssetLockTransition', () => {
       const t = createTransition();
       const json = t.toJSON();
       expect(json.assetLockProof).to.be.an('object');
-      expect(json.assetLockProof.type).to.be.oneOf(['instant', 'chain']);
+      expect(json.assetLockProof.$type).to.be.oneOf(['instant', 'chain']);
       expect(json.actions).to.be.an('array').with.lengthOf(1);
       expect(json.anchor).to.be.a('string').with.lengthOf(44); // 32 bytes base64
       expect(json.bindingSignature).to.be.a('string').with.lengthOf(88); // 64 bytes base64

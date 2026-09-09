@@ -166,7 +166,7 @@ mod tests {
         );
 
         let mut other_denom = base.clone();
-        other_denom.denomination = 30_000_000_000;
+        other_denom.denomination = 25_000_000_000;
         assert_ne!(
             base_bytes,
             other_denom.signable_bytes().expect("signable bytes"),

@@ -88,11 +88,36 @@ public final class PersistentWallet {
     /// ChainLock has ever been observed for this wallet (fresh
     /// wallet, or pre-feature row).
     public var lastAppliedChainLockBytes: Data?
+    /// NUMERIC block height of the wallet's last applied ChainLock —
+    /// the same watermark whose bincode blob sits in
+    /// `lastAppliedChainLockBytes`, which is opaque on this side of the
+    /// FFI. Delivered separately through the persistence extension's
+    /// `on_persist_wallet_changeset_chain_lock_height_fn` and stored
+    /// with monotonic-max semantics (chain locks only move forward).
+    /// This is one half of the swept-tombstone collection boundary
+    /// `min(chainlockHeight, syncedHeight)` — see
+    /// `PersistentPendingInput.winnerMinedHeight`. `nil` (fresh wallet,
+    /// pre-feature row, or a native library too old to fill the slot)
+    /// means no finality boundary is known and no tombstone may be
+    /// collected. Optional, so existing stores lightweight-migrate.
+    public var lastAppliedChainLockHeight: UInt32?
     /// User imported this wallet from an existing mnemonic (as
     /// opposed to generating a fresh one). Cosmetic flag that
     /// drives the "📥 Imported" badge; defaulted to `false` for
     /// rows that predate the column.
     public var isImported: Bool = false
+    /// Verified seed-binding marker: the BIP44 account-0 xpub that the
+    /// Keychain-resolved seed was proven to derive, bound to the mnemonic
+    /// Keychain item's identity stamp, written after one successful
+    /// `platform_wallet_verify_seed_binds_to_wallet_cached` run. On later
+    /// launches the unlock path hands this back to Rust (with the item's
+    /// current stamp), which skips the mnemonic-resolving derivation when
+    /// it still matches — and re-verifies when the xpub OR the Keychain
+    /// item changed. Opaque to Swift — Rust decides match-vs-verify; this
+    /// column only stores and returns it. `nil` (rows predating the
+    /// column, or never verified) means the full check runs at the next
+    /// unlock.
+    public var seedBindingVerifiedMarker: String?
     /// Record timestamps.
     public var createdAt: Date
     public var lastUpdated: Date

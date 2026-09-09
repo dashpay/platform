@@ -21,8 +21,11 @@ use dpp::version::PlatformVersion;
 /// A trait for checking whether a state transition requires shielded ZK proof validation.
 pub(crate) trait StateTransitionHasShieldedProofValidationV0 {
     /// Returns true if this state transition has a ZK proof that must be verified
-    /// before any state reads.
+    /// during validation.
     fn has_shielded_proof_validation(&self) -> bool;
+
+    /// Returns the number of Orchard actions whose proof work must be admitted.
+    fn shielded_proof_action_count(&self) -> usize;
 
     /// Returns true if this state transition pays fees from the shielded pool's
     /// value_balance and requires minimum fee validation.
@@ -58,6 +61,40 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_)
         )
+    }
+
+    fn shielded_proof_action_count(&self) -> usize {
+        match self {
+            StateTransition::Shield(st) => match st {
+                dpp::state_transition::shield_transition::ShieldTransition::V0(v0) => {
+                    v0.actions.len()
+                }
+            },
+            StateTransition::ShieldedTransfer(st) => match st {
+                dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
+                    v0.actions.len()
+                }
+            },
+            StateTransition::Unshield(st) => match st {
+                dpp::state_transition::unshield_transition::UnshieldTransition::V0(v0) => {
+                    v0.actions.len()
+                }
+            },
+            StateTransition::ShieldedWithdrawal(st) => match st {
+                dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {
+                    v0.actions.len()
+                }
+            },
+            StateTransition::IdentityCreateFromShieldedPool(st) => match st {
+                IdentityCreateFromShieldedPoolTransition::V0(v0) => v0.actions.len(),
+            },
+            StateTransition::ShieldFromAssetLock(st) => match st {
+                dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition::V0(v0) => {
+                    v0.actions.len()
+                }
+            },
+            _ => 0,
+        }
     }
 
     fn has_shielded_minimum_fee_validation(&self) -> bool {

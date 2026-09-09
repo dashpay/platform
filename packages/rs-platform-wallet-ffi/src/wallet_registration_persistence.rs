@@ -67,18 +67,12 @@ unsafe impl Sync for AccountAddressPoolFFI {}
 // Expected layout on 64-bit targets (all fields in declaration
 // order under `#[repr(C)]`):
 //
-//   0..=99    account                   AccountSpecFFI (96 bytes
-//                                       + 4 bytes inline pad to align
-//                                       to the trailing 8-byte
-//                                       pointer below — see the
-//                                       layout note on AccountSpecFFI)
+//   0..=95    account                   AccountSpecFFI (96 bytes)
 //   ...
 //
-// The exact internal padding inside `AccountSpecFFI` is fixed by the
-// upstream layout guard in `wallet_restore_types`; we only pin the
-// outer struct size here. On 64-bit targets the trailing pool fields
-// add `1 + 7 (pad) + 8 (ptr) + 8 (len) = 24` bytes after a 96-byte
-// account, for a total of 120.
+// We only pin the outer struct size here. On 64-bit targets the
+// trailing pool fields add `1 + 7 (pad) + 8 (ptr) + 8 (len) = 24`
+// bytes after the 96-byte account spec, for a total of 120.
 //
 // Recompute via `std::mem::size_of` if the spec layout changes.
 const _: [u8; 120] = [0u8; std::mem::size_of::<AccountAddressPoolFFI>()];

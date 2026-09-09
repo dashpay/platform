@@ -1,11 +1,7 @@
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
-mod json_conversion;
 mod state_transition_like;
 mod types;
 mod v0_methods;
-#[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 #[cfg(feature = "json-conversion")]
@@ -57,7 +53,6 @@ mod test {
     use crate::state_transition::{
         StateTransitionHasUserFeeIncrease, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType,
-        StateTransitionValueConvert,
     };
     use platform_value::BinaryData;
 
@@ -70,20 +65,6 @@ mod test {
             output_script: Some(CoreScript::from_bytes((0..23).collect::<Vec<u8>>())),
             nonce: 10,
             user_fee_increase: 3,
-            signature_public_key_id: 2,
-            signature: [0u8; 65].to_vec().into(),
-        }
-    }
-
-    fn make_withdrawal_v1_no_script() -> IdentityCreditWithdrawalTransitionV1 {
-        IdentityCreditWithdrawalTransitionV1 {
-            identity_id: Identifier::random(),
-            amount: 200_000,
-            core_fee_per_byte: 1,
-            pooling: Pooling::Standard,
-            output_script: None,
-            nonce: 10,
-            user_fee_increase: 0,
             signature_public_key_id: 2,
             signature: [0u8; 65].to_vec().into(),
         }
@@ -159,77 +140,11 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_value_conversion_roundtrip_with_script() {
-        use crate::version::LATEST_PLATFORM_VERSION;
-        let t = make_withdrawal_v1();
-        let obj = t.to_object(false).expect("to_object should work");
-        let restored =
-            IdentityCreditWithdrawalTransitionV1::from_object(obj, LATEST_PLATFORM_VERSION)
-                .expect("from_object should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_value_conversion_roundtrip_without_script() {
-        use crate::version::LATEST_PLATFORM_VERSION;
-        let t = make_withdrawal_v1_no_script();
-        let obj = t.to_object(false).expect("to_object should work");
-        let restored =
-            IdentityCreditWithdrawalTransitionV1::from_object(obj, LATEST_PLATFORM_VERSION)
-                .expect("from_object should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_from_value_map() {
-        use crate::version::LATEST_PLATFORM_VERSION;
-        let t = make_withdrawal_v1();
-        let obj = t.to_object(false).expect("to_object should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        let restored =
-            IdentityCreditWithdrawalTransitionV1::from_value_map(map, LATEST_PLATFORM_VERSION)
-                .expect("should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_to_cleaned_object() {
-        let t = make_withdrawal_v1();
-        let obj = t.to_cleaned_object(false).expect("should work");
-        assert!(obj.is_map());
-    }
-
-    #[test]
-    fn test_to_canonical_cleaned_object() {
-        let t = make_withdrawal_v1();
-        let obj = t.to_canonical_cleaned_object(false).expect("should work");
-        assert!(obj.is_map());
-    }
-
-    #[test]
-    fn test_to_object_skip_signature() {
-        let t = make_withdrawal_v1();
-        let obj = t.to_object(true).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        assert!(!map.contains_key("signature"));
-    }
-
-    #[test]
-    fn test_to_cleaned_object_skip_signature() {
-        let t = make_withdrawal_v1();
-        let obj = t.to_cleaned_object(true).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        assert!(!map.contains_key("signature"));
-    }
-
-    #[test]
-    fn test_to_canonical_cleaned_object_skip_signature() {
-        let t = make_withdrawal_v1();
-        let obj = t.to_canonical_cleaned_object(true).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        assert!(!map.contains_key("signature"));
-    }
+    // Legacy `StateTransitionValueConvert` round-trip / cleaned-object /
+    // skip-signature tests on the V1 inner struct deleted in Phase D
+    // step 9. The canonical `JsonConvertible` / `ValueConvertible`
+    // round-trip is exercised on the outer enum derive — these tested
+    // methods that no longer exist.
 
     #[test]
     fn test_unique_identifier_includes_nonce() {
@@ -255,18 +170,5 @@ mod test {
     fn test_owner_id_v1() {
         let t = make_withdrawal_v1();
         assert_eq!(t.owner_id(), t.identity_id);
-    }
-
-    #[test]
-    fn test_value_conversion_script_none_roundtrip_map() {
-        use crate::version::LATEST_PLATFORM_VERSION;
-        let t = make_withdrawal_v1_no_script();
-        let obj = t.to_object(false).expect("to_object");
-        let map = obj.into_btree_string_map().expect("should be map");
-        let restored =
-            IdentityCreditWithdrawalTransitionV1::from_value_map(map, LATEST_PLATFORM_VERSION)
-                .expect("from_value_map");
-        assert!(restored.output_script.is_none());
-        assert_eq!(t, restored);
     }
 }

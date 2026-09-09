@@ -1,11 +1,7 @@
-#[cfg(feature = "json-conversion")]
-mod json_conversion;
 mod state_transition_like;
 mod state_transition_validation;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 use std::collections::BTreeMap;
@@ -16,12 +12,15 @@ use platform_serialization_derive::PlatformSignable;
 use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness, PlatformAddress};
 use crate::fee::Credits;
 use crate::prelude::{AddressNonce, UserFeeIncrease};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 use crate::ProtocolError;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
     feature = "serde-conversion",

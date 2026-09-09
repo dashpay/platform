@@ -11,6 +11,8 @@ use dpp::document::DocumentV0Getters;
 use dpp::prelude::Identifier;
 use std::borrow::Cow;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::document::document_event::DocumentEvent;
 use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::{DocumentTransferTransitionAction, DocumentTransferTransitionActionAccessorsV0};
@@ -95,11 +97,109 @@ impl DriveHighLevelBatchOperationConverter for DocumentTransferTransitionAction 
 
                 Ok(ops)
             }
+            1 => {
+                // PROTOCOL_VERSION_13: identical to v0 except a transferred
+                // DPNS domain document has its `records.identity` rewritten to
+                // the new owner so the username resolves to its new owner.
+                let data_contract_id = self.base().data_contract_id();
+                let document_type_name = self.base().document_type_name().clone();
+                let identity_contract_nonce = self.base().identity_contract_nonce();
+                let contract_fetch_info = self.base().data_contract_fetch_info();
+                let contract_owner_id = contract_fetch_info.contract.owner_id();
+
+                let document_transfer_token_cost = self.base().token_cost();
+                let mut document = self.document_owned();
+
+                // we are transferring the document so the new storage flags should be on the new owner
+
+                let new_document_owner_id = document.owner_id();
+
+                // If the document type subscribed to transfer history, record
+                // this transfer in the document history system contract. The
+                // history document is owned and paid for by the sender.
+                let document_history_operation = contract_fetch_info
+                    .contract
+                    .document_type_for_name(document_type_name.as_str())
+                    .ok()
+                    .filter(|document_type| document_type.documents_keep_transfer_history())
+                    .map(|_| {
+                        DocumentOperation(DocumentOperationType::DocumentHistory {
+                            source_data_contract_id: data_contract_id,
+                            source_document_type_name: document_type_name.clone(),
+                            source_document_id: document.id(),
+                            owner_id,
+                            nonce: identity_contract_nonce,
+                            event: DocumentEvent::Transfer {
+                                to_identity_id: new_document_owner_id,
+                            },
+                        })
+                    });
+
+                super::rewrite_dpns_domain_identity_record_to_new_owner(
+                    &mut document,
+                    data_contract_id,
+                    document_type_name.as_str(),
+                    new_document_owner_id,
+                )?;
+
+                let storage_flags = StorageFlags::new_single_epoch(
+                    epoch.index,
+                    Some(new_document_owner_id.to_buffer()),
+                );
+
+                let mut ops = vec![
+                    IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
+                        identity_id: owner_id.into_buffer(),
+                        contract_id: data_contract_id.into_buffer(),
+                        nonce: identity_contract_nonce,
+                    }),
+                    DocumentOperation(DocumentOperationType::UpdateDocument {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentOwnedInfo((
+                                document,
+                                Some(Cow::Owned(storage_flags)),
+                            )),
+                            owner_id: Some(new_document_owner_id.into_buffer()),
+                        },
+                        contract_info: DataContractInfo::DataContractFetchInfo(contract_fetch_info),
+                        document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
+                    }),
+                ];
+
+                if let Some(document_history_operation) = document_history_operation {
+                    ops.push(document_history_operation);
+                }
+
+                if let Some((token_id, effect, cost)) = document_transfer_token_cost {
+                    match effect {
+                        DocumentActionTokenEffect::TransferTokenToContractOwner => {
+                            // If we are the owner, no need to send anything
+                            if owner_id != contract_owner_id {
+                                ops.push(TokenOperation(TokenOperationType::TokenTransfer {
+                                    token_id,
+                                    sender_id: owner_id,
+                                    recipient_id: contract_owner_id,
+                                    amount: cost,
+                                }));
+                            }
+                        }
+                        DocumentActionTokenEffect::BurnToken => {
+                            ops.push(TokenOperation(TokenOperationType::TokenBurn {
+                                token_id,
+                                identity_balance_holder_id: owner_id,
+                                burn_amount: cost,
+                            }));
+                        }
+                    }
+                }
+
+                Ok(ops)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method:
                     "DocumentTransferTransitionAction::into_high_level_document_drive_operations"
                         .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

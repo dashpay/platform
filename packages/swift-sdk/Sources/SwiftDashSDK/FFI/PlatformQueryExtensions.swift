@@ -499,7 +499,7 @@ extension SDK {
 
         defer {
             // Clean up contract handle when done
-            let contractPtr = contractHandle.assumingMemoryBound(to: DataContractHandle.self)
+            let contractPtr = OpaquePointer(contractHandle)
             dash_sdk_data_contract_destroy(contractPtr)
         }
 
@@ -514,7 +514,7 @@ extension SDK {
                     if let orderByClause = orderByClauseCString {
                         return orderByClause.withUnsafeBufferPointer { orderByPtr in
                             var searchParams = DashSDKDocumentSearchParams()
-                            searchParams.data_contract_handle = UnsafePointer(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
+                            searchParams.data_contract_handle = OpaquePointer(contractHandle)
                             searchParams.document_type = documentTypePtr.baseAddress
                             searchParams.where_json = wherePtr.baseAddress
                             searchParams.order_by_json = orderByPtr.baseAddress
@@ -534,7 +534,7 @@ extension SDK {
                         }
                     } else {
                         var searchParams = DashSDKDocumentSearchParams()
-                        searchParams.data_contract_handle = UnsafePointer(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
+                        searchParams.data_contract_handle = OpaquePointer(contractHandle)
                         searchParams.document_type = documentTypePtr.baseAddress
                         searchParams.where_json = wherePtr.baseAddress
                         searchParams.order_by_json = nil
@@ -555,7 +555,7 @@ extension SDK {
                 }
             } else {
                 var searchParams = DashSDKDocumentSearchParams()
-                searchParams.data_contract_handle = UnsafePointer(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
+                searchParams.data_contract_handle = OpaquePointer(contractHandle)
                 searchParams.document_type = documentTypePtr.baseAddress
                 searchParams.where_json = nil
                 searchParams.order_by_json = nil
@@ -590,12 +590,12 @@ extension SDK {
 
         defer {
             // Clean up contract handle when done
-            let contractPtr = contractHandle.assumingMemoryBound(to: DataContractHandle.self)
+            let contractPtr = OpaquePointer(contractHandle)
             dash_sdk_data_contract_destroy(contractPtr)
         }
 
         // Now fetch the document
-        let documentResult = dash_sdk_document_fetch(handle, contractHandle.assumingMemoryBound(to: DataContractHandle.self), documentType, documentId)
+        let documentResult = dash_sdk_document_fetch(handle, OpaquePointer(contractHandle), documentType, documentId)
 
         if let error = documentResult.error {
             let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
@@ -609,11 +609,11 @@ extension SDK {
 
         defer {
             // Clean up document handle
-            dash_sdk_document_destroy(handle, documentHandle.assumingMemoryBound(to: DocumentHandle.self))
+            dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
         }
 
         // Get document info to convert to JSON
-        let info = dash_sdk_document_get_info(documentHandle.assumingMemoryBound(to: DocumentHandle.self))
+        let info = dash_sdk_document_get_info(OpaquePointer(documentHandle))
         defer {
             if let info = info {
                 dash_sdk_document_info_free(info)
@@ -733,7 +733,7 @@ extension SDK {
             throw SDKError.notFound("Data contract not found")
         }
         defer {
-            dash_sdk_data_contract_destroy(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
+            dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
         }
 
         // Marshal the optional JSON strings in. nil → null pointer = "none".
@@ -743,7 +743,7 @@ extension SDK {
                     withOptionalCString(groupByJSON) { groupPtr in
                         dash_sdk_document_count(
                             handle,
-                            contractHandle.assumingMemoryBound(to: DataContractHandle.self),
+                            OpaquePointer(contractHandle),
                             typePtr,
                             wherePtr,
                             orderPtr,
@@ -835,7 +835,7 @@ extension SDK {
             throw SDKError.notFound("Data contract not found")
         }
         defer {
-            dash_sdk_data_contract_destroy(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
+            dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
         }
 
         // Marshal the strings in. sumProperty is required (non-null);
@@ -847,7 +847,7 @@ extension SDK {
                         withOptionalCString(groupByJSON) { groupPtr in
                             dash_sdk_document_sum(
                                 handle,
-                                contractHandle.assumingMemoryBound(to: DataContractHandle.self),
+                                OpaquePointer(contractHandle),
                                 typePtr,
                                 sumPropPtr,
                                 wherePtr,
@@ -944,7 +944,7 @@ extension SDK {
             throw SDKError.notFound("Data contract not found")
         }
         defer {
-            dash_sdk_data_contract_destroy(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
+            dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
         }
 
         // Marshal the strings in. sumProperty is required (non-null);
@@ -956,7 +956,7 @@ extension SDK {
                         withOptionalCString(groupByJSON) { groupPtr in
                             dash_sdk_document_average(
                                 handle,
-                                contractHandle.assumingMemoryBound(to: DataContractHandle.self),
+                                OpaquePointer(contractHandle),
                                 typePtr,
                                 sumPropPtr,
                                 wherePtr,
@@ -1094,6 +1094,16 @@ extension SDK {
                             contenderDict["identifier"] = String(cString: idPtr)
                         }
                         contenderDict["votes"] = "ResourceVote { vote_choice: TowardsIdentity, strength: \(contender.vote_count) }"
+                        // The spelling this contender actually requested
+                        // ("pizza"), where the contest key is the normalized
+                        // form ("p1zza"). Absent when the FFI could not decode
+                        // their document. Prefer the typed
+                        // `dpnsActiveContests` / `dpnsContestsForIdentity`,
+                        // which also give the tally as an integer.
+                        if let labelPtr = contender.label {
+                            let label = String(cString: labelPtr)
+                            if !label.isEmpty { contenderDict["label"] = label }
+                        }
 
                         contenders.append(contenderDict)
                     }
@@ -1225,6 +1235,16 @@ extension SDK {
                             contenderDict["identifier"] = String(cString: idPtr)
                         }
                         contenderDict["votes"] = "ResourceVote { vote_choice: TowardsIdentity, strength: \(contender.vote_count) }"
+                        // The spelling this contender actually requested
+                        // ("pizza"), where the contest key is the normalized
+                        // form ("p1zza"). Absent when the FFI could not decode
+                        // their document. Prefer the typed
+                        // `dpnsActiveContests` / `dpnsContestsForIdentity`,
+                        // which also give the tally as an integer.
+                        if let labelPtr = contender.label {
+                            let label = String(cString: labelPtr)
+                            if !label.isEmpty { contenderDict["label"] = label }
+                        }
 
                         contenders.append(contenderDict)
                     }
@@ -1433,7 +1453,17 @@ extension SDK {
     ///   - indexValues: Index values identifying the contested resource
     ///     (e.g. `["dash", "alice"]`).
     ///   - choice: TowardsIdentity / Abstain / Lock.
-    ///   - proTxHash: The masternode's 32-byte pro_tx_hash.
+    ///   - proTxHash: The masternode's 32-byte pro_tx_hash in **WIRE order** — the
+    ///     orientation `Txid` stores, which is what a parsed ProRegTx yields
+    ///     (`reg.txid()`) and what a wallet holds internally. NOT the byte
+    ///     order of the hex Core displays, which is its reverse.
+    ///
+    ///     This matters and is not interchangeable: Platform identifies
+    ///     masternodes by the opposite orientation (`ProTxHash` is declared
+    ///     `#[hash_newtype(forward)]`, `Txid` is not), so the Rust side
+    ///     reverses these bytes before deriving the voter identity. Passing
+    ///     display order here asks Platform for an identity that has never
+    ///     existed, and the vote is rejected as having no voter identity.
     ///   - votingPrivateKey: The masternode's 32-byte voting private key. The
     ///     matching `ECDSA_HASH160` voting public key and the signer are
     ///     derived from this on the Rust side; the key bytes are not retained.
@@ -1577,21 +1607,19 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
-    /// Get current epoch
+    /// Get the current (newest started) epoch — same keys as one
+    /// `getEpochsInfo` entry (`index`, `first_block_time`, …).
+    ///
+    /// Goes through `dash_sdk_system_get_current_epoch`
+    /// (`ExtendedEpochInfo::fetch_current`): the epochs-info query cannot
+    /// express "the latest epoch" — `start = nil, ascending` is epoch 0, and an
+    /// unbounded descending proved query is rejected by the proof verifier.
     public func getCurrentEpoch() async throws -> [String: Any] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-
-        // Get current epoch info by passing nil as start_epoch to get the latest
-        let result = dash_sdk_system_get_epochs_info(handle, nil, 1, true)
-        let epochs = try processJSONArrayResult(result)
-
-        guard let currentEpoch = epochs.first else {
-            throw SDKError.notFound("Current epoch not found")
-        }
-
-        return currentEpoch
+        let result = dash_sdk_system_get_current_epoch(handle)
+        return try processJSONResult(result)
     }
 
     /// Get finalized epoch infos

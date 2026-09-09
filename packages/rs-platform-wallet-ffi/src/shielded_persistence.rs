@@ -144,8 +144,18 @@ pub struct ShieldedActivityFFI {
     /// `1` if `block_height` is meaningful (confirmed), `0` while pending.
     pub has_block_height: u8,
     /// Created-at time in ms since the Unix epoch (display-only;
-    /// `block_height` is the canonical sort key).
+    /// `block_height` is the canonical sort key). `0` = unknown —
+    /// scan-derived (restored) entries carry no wall-clock provenance.
     pub created_at_ms: u64,
+    /// Chain-order key when `has_min_note_position == 1`: the smallest
+    /// commitment-tree position among the entry's own received notes.
+    /// Tree positions are exact append-only chain order — hosts use
+    /// this to order otherwise-undatable restored entries. Set by the
+    /// scan deriver; live entries (which carry a real `created_at_ms`)
+    /// and outgoing-only clusters report `0`/`0`.
+    pub min_note_position: u64,
+    /// `1` if `min_note_position` is meaningful.
+    pub has_min_note_position: u8,
     /// Created identity id (only meaningful when `kind_tag == 6` /
     /// IdentityCreate); all-zero and ignored otherwise.
     pub identity_id: [u8; 32],
@@ -170,6 +180,26 @@ pub struct ShieldedActivityFFI {
     pub spent_nullifiers_ptr: *const u8,
     /// Number of 32-byte nullifiers at `spent_nullifiers_ptr`.
     pub spent_nullifiers_count: usize,
+}
+
+/// One per-subwallet Orchard viewing key for the host to persist.
+///
+/// The 96 bytes are the raw `FullViewingKey` encoding (`ak ‖ nk ‖
+/// rivk`); IVK / OVK / default address are all pure functions of it,
+/// so this row alone lets a later launch rebind the shielded
+/// sub-wallet without resolving the mnemonic. Viewing-grade only —
+/// it can decrypt and recognize notes but cannot authorize a spend.
+/// The host upserts one row keyed by `(wallet_id, account_index)`;
+/// the FVK for a subwallet never legitimately changes on a network,
+/// so a re-emit is byte-identical.
+#[repr(C)]
+pub struct ShieldedViewingKeyFFI {
+    /// 32-byte wallet identifier.
+    pub wallet_id: [u8; 32],
+    /// ZIP-32 account index.
+    pub account_index: u32,
+    /// Raw 96-byte Orchard `FullViewingKey` encoding.
+    pub fvk_bytes: [u8; 96],
 }
 
 // ── Restore (load) ──────────────────────────────────────────────────────
@@ -218,6 +248,17 @@ pub struct ShieldedSubwalletSyncStateFFI {
     pub last_synced_index: u64,
 }
 
+/// One persisted Orchard viewing key as the host hands it back at
+/// boot. Mirrors [`ShieldedViewingKeyFFI`] but lives in a
+/// Swift-allocated array, so the buffer ownership / free contract
+/// differs (see the matching `on_load_shielded_viewing_keys_free_fn`).
+#[repr(C)]
+pub struct ShieldedViewingKeyRestoreFFI {
+    pub wallet_id: [u8; 32],
+    pub account_index: u32,
+    pub fvk_bytes: [u8; 96],
+}
+
 /// One persisted activity entry as the host hands it back at boot.
 /// Mirrors [`ShieldedActivityFFI`] but lives in a Swift-allocated array,
 /// so the buffer ownership / free contract differs (see the matching
@@ -237,6 +278,8 @@ pub struct ShieldedActivityRestoreFFI {
     pub block_height: u64,
     pub has_block_height: u8,
     pub created_at_ms: u64,
+    pub min_note_position: u64,
+    pub has_min_note_position: u8,
     pub identity_id: [u8; 32],
     pub has_identity_id: u8,
     pub counterparty_ptr: *const u8,

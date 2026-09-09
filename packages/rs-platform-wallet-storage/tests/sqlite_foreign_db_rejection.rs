@@ -4,11 +4,13 @@
 //! but no `refinery_schema_history`) instead of silently grafting wallet
 //! tables onto a foreign schema.
 
+mod common;
+
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig, WalletStorageError};
 
 #[test]
 fn open_rejects_foreign_sqlite_without_refinery_history() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("foreign.db");
 
     // A plain SQLite DB with a user table but no refinery history and no

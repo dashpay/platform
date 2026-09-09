@@ -12,6 +12,10 @@ Gets a configuration option from the specified config
 `;
 
   static flags = {
+    raw: Flags.boolean({
+      description: 'show the stored value instead of the effective one',
+      default: false,
+    }),
     format: Flags.string({
       description: 'display output format',
       default: OUTPUT_FORMATS.PLAIN,
@@ -42,10 +46,14 @@ Gets a configuration option from the specified config
     },
     {
       format,
+      raw,
     },
     config,
   ) {
-    const value = config.get(optionPath);
+    // An option left unset resolves to a default when read normally; --raw shows
+    // that it is unset, which is what tells an operator they are tracking rather
+    // than pinned.
+    const value = raw ? config.getStored(optionPath) : config.get(optionPath);
 
     let output = value;
 

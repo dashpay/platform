@@ -1,0 +1,3545 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "e6ee8d39e66115eb28362b57a7b03c1d",
+    "entities": [
+      {
+        "tableName": "wallets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`walletId` BLOB NOT NULL, `walletGroupId` BLOB NOT NULL, `networkRaw` INTEGER, `name` TEXT, `walletDescription` TEXT, `birthHeight` INTEGER NOT NULL, `syncedHeight` INTEGER NOT NULL, `lastSynced` INTEGER NOT NULL, `lastAppliedChainLockBytes` BLOB, `isImported` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`walletId`))",
+        "fields": [
+          {
+            "fieldPath": "walletId",
+            "columnName": "walletId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "walletGroupId",
+            "columnName": "walletGroupId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "networkRaw",
+            "columnName": "networkRaw",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "walletDescription",
+            "columnName": "walletDescription",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "birthHeight",
+            "columnName": "birthHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncedHeight",
+            "columnName": "syncedHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSynced",
+            "columnName": "lastSynced",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastAppliedChainLockBytes",
+            "columnName": "lastAppliedChainLockBytes",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "isImported",
+            "columnName": "isImported",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "walletId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_wallets_networkRaw",
+            "unique": false,
+            "columnNames": [
+              "networkRaw"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_wallets_networkRaw` ON `${TABLE_NAME}` (`networkRaw`)"
+          },
+          {
+            "name": "index_wallets_walletGroupId",
+            "unique": false,
+            "columnNames": [
+              "walletGroupId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_wallets_walletGroupId` ON `${TABLE_NAME}` (`walletGroupId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "accounts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `walletId` BLOB NOT NULL, `accountType` INTEGER NOT NULL, `accountIndex` INTEGER NOT NULL, `accountTypeName` TEXT NOT NULL, `balanceConfirmed` INTEGER NOT NULL, `balanceUnconfirmed` INTEGER NOT NULL, `externalHighestUsed` INTEGER NOT NULL, `internalHighestUsed` INTEGER NOT NULL, `standardTag` INTEGER NOT NULL, `registrationIndex` INTEGER NOT NULL, `keyClass` INTEGER NOT NULL, `userIdentityId` BLOB NOT NULL, `friendIdentityId` BLOB NOT NULL, `accountExtendedPubKeyBytes` BLOB, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, FOREIGN KEY(`walletId`) REFERENCES `wallets`(`walletId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "walletId",
+            "columnName": "walletId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountType",
+            "columnName": "accountType",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountIndex",
+            "columnName": "accountIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountTypeName",
+            "columnName": "accountTypeName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "balanceConfirmed",
+            "columnName": "balanceConfirmed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "balanceUnconfirmed",
+            "columnName": "balanceUnconfirmed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "externalHighestUsed",
+            "columnName": "externalHighestUsed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "internalHighestUsed",
+            "columnName": "internalHighestUsed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "standardTag",
+            "columnName": "standardTag",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "registrationIndex",
+            "columnName": "registrationIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keyClass",
+            "columnName": "keyClass",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userIdentityId",
+            "columnName": "userIdentityId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "friendIdentityId",
+            "columnName": "friendIdentityId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountExtendedPubKeyBytes",
+            "columnName": "accountExtendedPubKeyBytes",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_accounts_walletId",
+            "unique": false,
+            "columnNames": [
+              "walletId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_accounts_walletId` ON `${TABLE_NAME}` (`walletId`)"
+          },
+          {
+            "name": "index_accounts_walletId_accountType_accountIndex_standardTag_registrationIndex_keyClass_userIdentityId_friendIdentityId",
+            "unique": true,
+            "columnNames": [
+              "walletId",
+              "accountType",
+              "accountIndex",
+              "standardTag",
+              "registrationIndex",
+              "keyClass",
+              "userIdentityId",
+              "friendIdentityId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_accounts_walletId_accountType_accountIndex_standardTag_registrationIndex_keyClass_userIdentityId_friendIdentityId` ON `${TABLE_NAME}` (`walletId`, `accountType`, `accountIndex`, `standardTag`, `registrationIndex`, `keyClass`, `userIdentityId`, `friendIdentityId`)"
+          },
+          {
+            "name": "index_accounts_accountExtendedPubKeyBytes",
+            "unique": true,
+            "columnNames": [
+              "accountExtendedPubKeyBytes"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_accounts_accountExtendedPubKeyBytes` ON `${TABLE_NAME}` (`accountExtendedPubKeyBytes`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "wallets",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "walletId"
+            ],
+            "referencedColumns": [
+              "walletId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "transactions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`txid` BLOB NOT NULL, `transactionData` BLOB NOT NULL, `context` INTEGER NOT NULL, `blockHeight` INTEGER NOT NULL, `blockHash` BLOB, `blockTimestamp` INTEGER NOT NULL, `direction` INTEGER NOT NULL, `transactionType` TEXT NOT NULL, `transactionTypeKind` INTEGER NOT NULL, `netAmount` INTEGER NOT NULL, `fee` INTEGER, `label` TEXT NOT NULL, `firstSeen` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`txid`))",
+        "fields": [
+          {
+            "fieldPath": "txid",
+            "columnName": "txid",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionData",
+            "columnName": "transactionData",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "context",
+            "columnName": "context",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "blockHeight",
+            "columnName": "blockHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "blockHash",
+            "columnName": "blockHash",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "blockTimestamp",
+            "columnName": "blockTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "direction",
+            "columnName": "direction",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionType",
+            "columnName": "transactionType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionTypeKind",
+            "columnName": "transactionTypeKind",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "netAmount",
+            "columnName": "netAmount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fee",
+            "columnName": "fee",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstSeen",
+            "columnName": "firstSeen",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "txid"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_transactions_firstSeen",
+            "unique": false,
+            "columnNames": [
+              "firstSeen"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_transactions_firstSeen` ON `${TABLE_NAME}` (`firstSeen`)"
+          }
+        ]
+      },
+      {
+        "tableName": "txos",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`outpoint` BLOB NOT NULL, `vout` INTEGER NOT NULL, `amount` INTEGER NOT NULL, `address` TEXT NOT NULL, `scriptPubKey` BLOB NOT NULL, `height` INTEGER NOT NULL, `isCoinbase` INTEGER NOT NULL, `isConfirmed` INTEGER NOT NULL, `isInstantLocked` INTEGER NOT NULL, `isLocked` INTEGER NOT NULL, `isSpent` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, `walletId` BLOB NOT NULL, `txid` BLOB, `spendingTxid` BLOB, `spendingInputIndex` INTEGER, `accountId` INTEGER, `coreAddressId` TEXT, PRIMARY KEY(`outpoint`), FOREIGN KEY(`txid`) REFERENCES `transactions`(`txid`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`spendingTxid`) REFERENCES `transactions`(`txid`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`coreAddressId`) REFERENCES `core_addresses`(`address`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "outpoint",
+            "columnName": "outpoint",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "vout",
+            "columnName": "vout",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amount",
+            "columnName": "amount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "address",
+            "columnName": "address",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scriptPubKey",
+            "columnName": "scriptPubKey",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "height",
+            "columnName": "height",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isCoinbase",
+            "columnName": "isCoinbase",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isConfirmed",
+            "columnName": "isConfirmed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isInstantLocked",
+            "columnName": "isInstantLocked",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isLocked",
+            "columnName": "isLocked",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isSpent",
+            "columnName": "isSpent",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "walletId",
+            "columnName": "walletId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "txid",
+            "columnName": "txid",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "spendingTxid",
+            "columnName": "spendingTxid",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "spendingInputIndex",
+            "columnName": "spendingInputIndex",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "coreAddressId",
+            "columnName": "coreAddressId",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "outpoint"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txos_walletId",
+            "unique": false,
+            "columnNames": [
+              "walletId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txos_walletId` ON `${TABLE_NAME}` (`walletId`)"
+          },
+          {
+            "name": "index_txos_txid",
+            "unique": false,
+            "columnNames": [
+              "txid"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txos_txid` ON `${TABLE_NAME}` (`txid`)"
+          },
+          {
+            "name": "index_txos_spendingTxid",
+            "unique": false,
+            "columnNames": [
+              "spendingTxid"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txos_spendingTxid` ON `${TABLE_NAME}` (`spendingTxid`)"
+          },
+          {
+            "name": "index_txos_accountId",
+            "unique": false,
+            "columnNames": [
+              "accountId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txos_accountId` ON `${TABLE_NAME}` (`accountId`)"
+          },
+          {
+            "name": "index_txos_coreAddressId",
+            "unique": false,
+            "columnNames": [
+              "coreAddressId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txos_coreAddressId` ON `${TABLE_NAME}` (`coreAddressId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "transactions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "txid"
+            ],
+            "referencedColumns": [
+              "txid"
+            ]
+          },
+          {
+            "table": "transactions",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "spendingTxid"
+            ],
+            "referencedColumns": [
+              "txid"
+            ]
+          },
+          {
+            "table": "accounts",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "accountId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "core_addresses",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "coreAddressId"
+            ],
+            "referencedColumns": [
+              "address"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "core_addresses",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`address` TEXT NOT NULL, `publicKey` BLOB NOT NULL, `poolTypeTag` INTEGER NOT NULL, `addressIndex` INTEGER NOT NULL, `derivationPath` TEXT NOT NULL, `isUsed` INTEGER NOT NULL, `firstSeenHeight` INTEGER NOT NULL, `lastSeenHeight` INTEGER NOT NULL, `balance` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, `accountId` INTEGER, PRIMARY KEY(`address`), FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "address",
+            "columnName": "address",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicKey",
+            "columnName": "publicKey",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "poolTypeTag",
+            "columnName": "poolTypeTag",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addressIndex",
+            "columnName": "addressIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "derivationPath",
+            "columnName": "derivationPath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isUsed",
+            "columnName": "isUsed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstSeenHeight",
+            "columnName": "firstSeenHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSeenHeight",
+            "columnName": "lastSeenHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "balance",
+            "columnName": "balance",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "address"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_core_addresses_accountId",
+            "unique": false,
+            "columnNames": [
+              "accountId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_core_addresses_accountId` ON `${TABLE_NAME}` (`accountId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "accounts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "accountId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "asset_locks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`outPointHex` TEXT NOT NULL, `walletId` BLOB NOT NULL, `transactionBytes` BLOB NOT NULL, `fundingTypeRaw` INTEGER NOT NULL, `identityIndexRaw` INTEGER NOT NULL, `accountIndexRaw` INTEGER NOT NULL, `amountDuffs` INTEGER NOT NULL, `statusRaw` INTEGER NOT NULL, `proofBytes` BLOB, `recipientPlatformAddressHash` BLOB, `recipientPlatformAddressType` INTEGER, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`outPointHex`))",
+        "fields": [
+          {
+            "fieldPath": "outPointHex",
+            "columnName": "outPointHex",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "walletId",
+            "columnName": "walletId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionBytes",
+            "columnName": "transactionBytes",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fundingTypeRaw",
+            "columnName": "fundingTypeRaw",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "identityIndexRaw",
+            "columnName": "identityIndexRaw",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountIndexRaw",
+            "columnName": "accountIndexRaw",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amountDuffs",
+            "columnName": "amountDuffs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "statusRaw",
+            "columnName": "statusRaw",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "proofBytes",
+            "columnName": "proofBytes",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "recipientPlatformAddressHash",
+            "columnName": "recipientPlatformAddressHash",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "recipientPlatformAddressType",
+            "columnName": "recipientPlatformAddressType",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "outPointHex"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_asset_locks_walletId",
+            "unique": false,
+            "columnNames": [
+              "walletId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_asset_locks_walletId` ON `${TABLE_NAME}` (`walletId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "identities",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`identityId` BLOB NOT NULL, `balance` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `isLocal` INTEGER NOT NULL, `alias` TEXT, `dpnsName` TEXT, `mainDpnsName` TEXT, `identityType` TEXT NOT NULL, `votingPrivateKeyIdentifier` TEXT, `ownerPrivateKeyIdentifier` TEXT, `payoutPrivateKeyIdentifier` TEXT, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, `lastSyncedAt` INTEGER, `networkRaw` INTEGER NOT NULL, `walletId` BLOB, `identityIndex` INTEGER NOT NULL, PRIMARY KEY(`identityId`), FOREIGN KEY(`walletId`) REFERENCES `wallets`(`walletId`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "identityId",
+            "columnName": "identityId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "balance",
+            "columnName": "balance",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isLocal",
+            "columnName": "isLocal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alias",
+            "columnName": "alias",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dpnsName",
+            "columnName": "dpnsName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "mainDpnsName",
+            "columnName": "mainDpnsName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "identityType",
+            "columnName": "identityType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "votingPrivateKeyIdentifier",
+            "columnName": "votingPrivateKeyIdentifier",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "ownerPrivateKeyIdentifier",
+            "columnName": "ownerPrivateKeyIdentifier",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "payoutPrivateKeyIdentifier",
+            "columnName": "payoutPrivateKeyIdentifier",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSyncedAt",
+            "columnName": "lastSyncedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "networkRaw",
+            "columnName": "networkRaw",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "walletId",
+            "columnName": "walletId",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "identityIndex",
+            "columnName": "identityIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "identityId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_identities_networkRaw",
+            "unique": false,
+            "columnNames": [
+              "networkRaw"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_identities_networkRaw` ON `${TABLE_NAME}` (`networkRaw`)"
+          },
+          {
+            "name": "index_identities_walletId",
+            "unique": false,
+            "columnNames": [
+              "walletId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_identities_walletId` ON `${TABLE_NAME}` (`walletId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "wallets",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "walletId"
+            ],
+            "referencedColumns": [
+              "walletId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "public_keys",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `keyId` INTEGER NOT NULL, `purpose` TEXT NOT NULL, `securityLevel` TEXT NOT NULL, `keyType` TEXT NOT NULL, `readOnly` INTEGER NOT NULL, `disabledAt` INTEGER, `publicKeyData` BLOB NOT NULL, `contractBoundsData` BLOB, `contractBoundsDocumentTypeName` TEXT, `privateKeyKeychainIdentifier` TEXT, `identityId` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `lastAccessed` INTEGER, `identityIdData` BLOB, FOREIGN KEY(`identityIdData`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keyId",
+            "columnName": "keyId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "purpose",
+            "columnName": "purpose",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "securityLevel",
+            "columnName": "securityLevel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keyType",
+            "columnName": "keyType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "readOnly",
+            "columnName": "readOnly",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "disabledAt",
+            "columnName": "disabledAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "publicKeyData",
+            "columnName": "publicKeyData",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contractBoundsData",
+            "columnName": "contractBoundsData",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "contractBoundsDocumentTypeName",
+            "columnName": "contractBoundsDocumentTypeName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "privateKeyKeychainIdentifier",
+            "columnName": "privateKeyKeychainIdentifier",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "identityId",
+            "columnName": "identityId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastAccessed",
+            "columnName": "lastAccessed",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "identityIdData",
+            "columnName": "identityIdData",
+            "affinity": "BLOB"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_public_keys_identityId_keyId",
+            "unique": false,
+            "columnNames": [
+              "identityId",
+              "keyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_public_keys_identityId_keyId` ON `${TABLE_NAME}` (`identityId`, `keyId`)"
+          },
+          {
+            "name": "index_public_keys_identityIdData",
+            "unique": false,
+            "columnNames": [
+              "identityIdData"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_public_keys_identityIdData` ON `${TABLE_NAME}` (`identityIdData`)"
+          },
+          {
+            "name": "index_public_keys_publicKeyData",
+            "unique": false,
+            "columnNames": [
+              "publicKeyData"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_public_keys_publicKeyData` ON `${TABLE_NAME}` (`publicKeyData`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "identities",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "identityIdData"
+            ],
+            "referencedColumns": [
+              "identityId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "dpns_names",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`networkRaw` INTEGER NOT NULL, `label` TEXT NOT NULL, `normalizedLabel` TEXT NOT NULL, `parentDomainName` TEXT NOT NULL, `normalizedParentDomainName` TEXT NOT NULL, `acquiredAt` INTEGER NOT NULL, `identityId` BLOB NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`networkRaw`, `normalizedParentDomainName`, `normalizedLabel`), FOREIGN KEY(`identityId`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "networkRaw",
+            "columnName": "networkRaw",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "normalizedLabel",
+            "columnName": "normalizedLabel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parentDomainName",
+            "columnName": "parentDomainName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "normalizedParentDomainName",
+            "columnName": "normalizedParentDomainName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "acquiredAt",
+            "columnName": "acquiredAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "identityId",
+            "columnName": "identityId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "networkRaw",
+            "normalizedParentDomainName",
+            "normalizedLabel"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dpns_names_identityId",
+            "unique": false,
+            "columnNames": [
+              "identityId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dpns_names_identityId` ON `${TABLE_NAME}` (`identityId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "identities",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "identityId"
+            ],
+            "referencedColumns": [
+              "identityId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "dashpay_profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`networkRaw` INTEGER NOT NULL, `identityId` BLOB NOT NULL, `displayName` TEXT, `publicMessage` TEXT, `bio` TEXT, `avatarUrl` TEXT, `avatarHash` BLOB, `avatarFingerprint` BLOB, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`networkRaw`, `identityId`), FOREIGN KEY(`identityId`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "networkRaw",
+            "columnName": "networkRaw",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "identityId",
+            "columnName": "identityId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "publicMessage",
+            "columnName": "publicMessage",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "bio",
+            "columnName": "bio",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "avatarUrl",
+            "columnName": "avatarUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "avatarHash",
+            "columnName": "avatarHash",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "avatarFingerprint",
+            "columnName": "avatarFingerprint",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "networkRaw",
+            "identityId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dashpay_profiles_identityId",
+            "unique": false,
+            "columnNames": [
+              "identityId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dashpay_profiles_identityId` ON `${TABLE_NAME}` (`identityId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "identities",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "identityId"
+            ],
+            "referencedColumns": [
+              "identityId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "dashpay_contact_requests",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`networkRaw` INTEGER NOT NULL, `ownerIdentityId` BLOB NOT NULL, `contactIdentityId` BLOB NOT NULL, `isOutgoing` INTEGER NOT NULL, `senderKeyIndex` INTEGER NOT NULL, `recipientKeyIndex` INTEGER NOT NULL, `accountReference` INTEGER NOT NULL, `encryptedPublicKey` BLOB NOT NULL, `encryptedAccountLabel` BLOB, `autoAcceptProof` BLOB, `coreHeightCreatedAt` INTEGER NOT NULL, `createdAtMillis` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`networkRaw`, `ownerIdentityId`, `contactIdentityId`, `isOutgoing`), FOREIGN KEY(`ownerIdentityId`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "networkRaw",
+            "columnName": "networkRaw",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerIdentityId",
+            "columnName": "ownerIdentityId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contactIdentityId",
+            "columnName": "contactIdentityId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isOutgoing",
+            "columnName": "isOutgoing",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "senderKeyIndex",
+            "columnName": "senderKeyIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recipientKeyIndex",
+            "columnName": "recipientKeyIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountReference",
+            "columnName": "accountReference",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encryptedPublicKey",
+            "columnName": "encryptedPublicKey",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encryptedAccountLabel",
+            "columnName": "encryptedAccountLabel",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "autoAcceptProof",
+            "columnName": "autoAcceptProof",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "coreHeightCreatedAt",
+            "columnName": "coreHeightCreatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMillis",
+            "columnName": "createdAtMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "networkRaw",
+            "ownerIdentityId",
+            "contactIdentityId",
+            "isOutgoing"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dashpay_contact_requests_ownerIdentityId",
+            "unique": false,
+            "columnNames": [
+              "ownerIdentityId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dashpay_contact_requests_ownerIdentityId` ON `${TABLE_NAME}` (`ownerIdentityId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "identities",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "ownerIdentityId"
+            ],
+            "referencedColumns": [
+              "identityId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "data_contracts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` BLOB NOT NULL, `name` TEXT NOT NULL, `serializedContract` BLOB NOT NULL, `createdAt` INTEGER NOT NULL, `lastAccessedAt` INTEGER NOT NULL, `binarySerialization` BLOB, `version` INTEGER, `ownerId` BLOB, `contractDescription` TEXT, `schemaData` BLOB NOT NULL, `documentTypesData` BLOB NOT NULL, `groupsData` BLOB, `networkRaw` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, `lastSyncedAt` INTEGER, `canBeDeleted` INTEGER NOT NULL, `readonly` INTEGER NOT NULL, `keepsHistory` INTEGER NOT NULL, `schemaDefs` INTEGER, `documentsKeepHistoryContractDefault` INTEGER NOT NULL, `documentsMutableContractDefault` INTEGER NOT NULL, `documentsCanBeDeletedContractDefault` INTEGER NOT NULL, `hasTokens` INTEGER NOT NULL, `tokensData` BLOB, `ownerIdentityId` BLOB, PRIMARY KEY(`id`), FOREIGN KEY(`ownerIdentityId`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serializedContract",
+            "columnName": "serializedContract",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastAccessedAt",
+            "columnName": "lastAccessedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "binarySerialization",
+            "columnName": "binarySerialization",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "ownerId",
+            "columnName": "ownerId",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "contractDescription",
+            "columnName": "contractDescription",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "schemaData",
+            "columnName": "schemaData",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentTypesData",
+            "columnName": "documentTypesData",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "groupsData",
+            "columnName": "groupsData",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "networkRaw",
+            "columnName": "networkRaw",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSyncedAt",
+            "columnName": "lastSyncedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "canBeDeleted",
+            "columnName": "canBeDeleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "readonly",
+            "columnName": "readonly",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keepsHistory",
+            "columnName": "keepsHistory",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schemaDefs",
+            "columnName": "schemaDefs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "documentsKeepHistoryContractDefault",
+            "columnName": "documentsKeepHistoryContractDefault",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentsMutableContractDefault",
+            "columnName": "documentsMutableContractDefault",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentsCanBeDeletedContractDefault",
+            "columnName": "documentsCanBeDeletedContractDefault",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hasTokens",
+            "columnName": "hasTokens",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tokensData",
+            "columnName": "tokensData",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "ownerIdentityId",
+            "columnName": "ownerIdentityId",
+            "affinity": "BLOB"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_data_contracts_networkRaw",
+            "unique": false,
+            "columnNames": [
+              "networkRaw"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_data_contracts_networkRaw` ON `${TABLE_NAME}` (`networkRaw`)"
+          },
+          {
+            "name": "index_data_contracts_ownerIdentityId",
+            "unique": false,
+            "columnNames": [
+              "ownerIdentityId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_data_contracts_ownerIdentityId` ON `${TABLE_NAME}` (`ownerIdentityId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "identities",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "ownerIdentityId"
+            ],
+            "referencedColumns": [
+              "identityId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "document_types",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` BLOB NOT NULL, `contractId` BLOB NOT NULL, `name` TEXT NOT NULL, `schemaJSON` BLOB NOT NULL, `propertiesJSON` BLOB NOT NULL, `documentsKeepHistory` INTEGER NOT NULL, `documentsMutable` INTEGER NOT NULL, `documentsCanBeDeleted` INTEGER NOT NULL, `documentsTransferable` INTEGER NOT NULL, `requiredFieldsJSON` BLOB, `securityLevel` INTEGER NOT NULL, `tradeMode` INTEGER NOT NULL, `creationRestrictionMode` INTEGER NOT NULL, `requiresIdentityEncryptionBoundedKey` INTEGER NOT NULL, `requiresIdentityDecryptionBoundedKey` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastAccessedAt` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`contractId`) REFERENCES `data_contracts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contractId",
+            "columnName": "contractId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schemaJSON",
+            "columnName": "schemaJSON",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "propertiesJSON",
+            "columnName": "propertiesJSON",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentsKeepHistory",
+            "columnName": "documentsKeepHistory",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentsMutable",
+            "columnName": "documentsMutable",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentsCanBeDeleted",
+            "columnName": "documentsCanBeDeleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentsTransferable",
+            "columnName": "documentsTransferable",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requiredFieldsJSON",
+            "columnName": "requiredFieldsJSON",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "securityLevel",
+            "columnName": "securityLevel",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tradeMode",
+            "columnName": "tradeMode",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "creationRestrictionMode",
+            "columnName": "creationRestrictionMode",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requiresIdentityEncryptionBoundedKey",
+            "columnName": "requiresIdentityEncryptionBoundedKey",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requiresIdentityDecryptionBoundedKey",
+            "columnName": "requiresIdentityDecryptionBoundedKey",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastAccessedAt",
+            "columnName": "lastAccessedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_document_types_contractId",
+            "unique": false,
+            "columnNames": [
+              "contractId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_document_types_contractId` ON `${TABLE_NAME}` (`contractId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "data_contracts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "contractId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "documents",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`documentId` TEXT NOT NULL, `documentType` TEXT NOT NULL, `revision` INTEGER NOT NULL, `data` BLOB NOT NULL, `contractId` TEXT NOT NULL, `ownerId` TEXT NOT NULL, `contractIdData` BLOB NOT NULL, `ownerIdData` BLOB NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `transferredAt` INTEGER, `createdAtBlockHeight` INTEGER, `updatedAtBlockHeight` INTEGER, `transferredAtBlockHeight` INTEGER, `createdAtCoreBlockHeight` INTEGER, `updatedAtCoreBlockHeight` INTEGER, `transferredAtCoreBlockHeight` INTEGER, `networkRaw` INTEGER NOT NULL, `isDeleted` INTEGER NOT NULL, `localCreatedAt` INTEGER NOT NULL, `localUpdatedAt` INTEGER NOT NULL, `documentTypeRelationId` BLOB, `dataContractId` BLOB, `ownerIdentityId` BLOB, PRIMARY KEY(`documentId`), FOREIGN KEY(`documentTypeRelationId`) REFERENCES `document_types`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`dataContractId`) REFERENCES `data_contracts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`ownerIdentityId`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "documentId",
+            "columnName": "documentId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentType",
+            "columnName": "documentType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "data",
+            "columnName": "data",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contractId",
+            "columnName": "contractId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerId",
+            "columnName": "ownerId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contractIdData",
+            "columnName": "contractIdData",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerIdData",
+            "columnName": "ownerIdData",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transferredAt",
+            "columnName": "transferredAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAtBlockHeight",
+            "columnName": "createdAtBlockHeight",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "updatedAtBlockHeight",
+            "columnName": "updatedAtBlockHeight",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "transferredAtBlockHeight",
+            "columnName": "transferredAtBlockHeight",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAtCoreBlockHeight",
+            "columnName": "createdAtCoreBlockHeight",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "updatedAtCoreBlockHeight",
+            "columnName": "updatedAtCoreBlockHeight",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "transferredAtCoreBlockHeight",
+            "columnName": "transferredAtCoreBlockHeight",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "networkRaw",
+            "columnName": "networkRaw",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isDeleted",
+            "columnName": "isDeleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localCreatedAt",
+            "columnName": "localCreatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localUpdatedAt",
+            "columnName": "localUpdatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentTypeRelationId",
+            "columnName": "documentTypeRelationId",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "dataContractId",
+            "columnName": "dataContractId",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "ownerIdentityId",
+            "columnName": "ownerIdentityId",
+            "affinity": "BLOB"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "documentId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_documents_networkRaw",
+            "unique": false,
+            "columnNames": [
+              "networkRaw"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_documents_networkRaw` ON `${TABLE_NAME}` (`networkRaw`)"
+          },
+          {
+            "name": "index_documents_contractId",
+            "unique": false,
+            "columnNames": [
+              "contractId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_documents_contractId` ON `${TABLE_NAME}` (`contractId`)"
+          },
+          {
+            "name": "index_documents_ownerId",
+            "unique": false,
+            "columnNames": [
+              "ownerId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_documents_ownerId` ON `${TABLE_NAME}` (`ownerId`)"
+          },
+          {
+            "name": "index_documents_documentTypeRelationId",
+            "unique": false,
+            "columnNames": [
+              "documentTypeRelationId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_documents_documentTypeRelationId` ON `${TABLE_NAME}` (`documentTypeRelationId`)"
+          },
+          {
+            "name": "index_documents_dataContractId",
+            "unique": false,
+            "columnNames": [
+              "dataContractId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_documents_dataContractId` ON `${TABLE_NAME}` (`dataContractId`)"
+          },
+          {
+            "name": "index_documents_ownerIdentityId",
+            "unique": false,
+            "columnNames": [
+              "ownerIdentityId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_documents_ownerIdentityId` ON `${TABLE_NAME}` (`ownerIdentityId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "document_types",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "documentTypeRelationId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "data_contracts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dataContractId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "identities",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "ownerIdentityId"
+            ],
+            "referencedColumns": [
+              "identityId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "indices",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` BLOB NOT NULL, `contractId` BLOB NOT NULL, `documentTypeName` TEXT NOT NULL, `name` TEXT NOT NULL, `unique` INTEGER NOT NULL, `nullSearchable` INTEGER NOT NULL, `contested` INTEGER NOT NULL, `propertiesJSON` BLOB NOT NULL, `contestedDetailsJSON` BLOB, `createdAt` INTEGER NOT NULL, `documentTypeId` BLOB, PRIMARY KEY(`id`), FOREIGN KEY(`documentTypeId`) REFERENCES `document_types`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contractId",
+            "columnName": "contractId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentTypeName",
+            "columnName": "documentTypeName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unique",
+            "columnName": "unique",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nullSearchable",
+            "columnName": "nullSearchable",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contested",
+            "columnName": "contested",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "propertiesJSON",
+            "columnName": "propertiesJSON",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contestedDetailsJSON",
+            "columnName": "contestedDetailsJSON",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentTypeId",
+            "columnName": "documentTypeId",
+            "affinity": "BLOB"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_indices_documentTypeId",
+            "unique": false,
+            "columnNames": [
+              "documentTypeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_indices_documentTypeId` ON `${TABLE_NAME}` (`documentTypeId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "document_types",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "documentTypeId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "keywords",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `keyword` TEXT NOT NULL, `contractId` TEXT NOT NULL, `dataContractId` BLOB, PRIMARY KEY(`id`), FOREIGN KEY(`dataContractId`) REFERENCES `data_contracts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keyword",
+            "columnName": "keyword",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contractId",
+            "columnName": "contractId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dataContractId",
+            "columnName": "dataContractId",
+            "affinity": "BLOB"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_keywords_contractId",
+            "unique": false,
+            "columnNames": [
+              "contractId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_keywords_contractId` ON `${TABLE_NAME}` (`contractId`)"
+          },
+          {
+            "name": "index_keywords_dataContractId",
+            "unique": false,
+            "columnNames": [
+              "dataContractId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_keywords_dataContractId` ON `${TABLE_NAME}` (`dataContractId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "data_contracts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dataContractId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "properties",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` BLOB NOT NULL, `contractId` BLOB NOT NULL, `documentTypeName` TEXT NOT NULL, `name` TEXT NOT NULL, `type` TEXT NOT NULL, `format` TEXT, `contentMediaType` TEXT, `byteArray` INTEGER NOT NULL, `minItems` INTEGER, `maxItems` INTEGER, `pattern` TEXT, `minLength` INTEGER, `maxLength` INTEGER, `minValue` INTEGER, `maxValue` INTEGER, `fieldDescription` TEXT, `transient` INTEGER NOT NULL, `isRequired` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `documentTypeId` BLOB, PRIMARY KEY(`id`), FOREIGN KEY(`documentTypeId`) REFERENCES `document_types`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contractId",
+            "columnName": "contractId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentTypeName",
+            "columnName": "documentTypeName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "format",
+            "columnName": "format",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "contentMediaType",
+            "columnName": "contentMediaType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "byteArray",
+            "columnName": "byteArray",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "minItems",
+            "columnName": "minItems",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "maxItems",
+            "columnName": "maxItems",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "pattern",
+            "columnName": "pattern",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "minLength",
+            "columnName": "minLength",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "maxLength",
+            "columnName": "maxLength",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "minValue",
+            "columnName": "minValue",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "maxValue",
+            "columnName": "maxValue",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "fieldDescription",
+            "columnName": "fieldDescription",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "transient",
+            "columnName": "transient",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isRequired",
+            "columnName": "isRequired",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentTypeId",
+            "columnName": "documentTypeId",
+            "affinity": "BLOB"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_properties_documentTypeId",
+            "unique": false,
+            "columnNames": [
+              "documentTypeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_properties_documentTypeId` ON `${TABLE_NAME}` (`documentTypeId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "document_types",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "documentTypeId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "pending_inputs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `outpoint` BLOB NOT NULL, `inputIndex` INTEGER NOT NULL, `spendingTxid` BLOB NOT NULL, `spendingTransactionTxid` BLOB, `walletId` BLOB NOT NULL, `createdAt` INTEGER NOT NULL, FOREIGN KEY(`spendingTransactionTxid`) REFERENCES `transactions`(`txid`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outpoint",
+            "columnName": "outpoint",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inputIndex",
+            "columnName": "inputIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "spendingTxid",
+            "columnName": "spendingTxid",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "spendingTransactionTxid",
+            "columnName": "spendingTransactionTxid",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "walletId",
+            "columnName": "walletId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_pending_inputs_outpoint",
+            "unique": false,
+            "columnNames": [
+              "outpoint"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_inputs_outpoint` ON `${TABLE_NAME}` (`outpoint`)"
+          },
+          {
+            "name": "index_pending_inputs_walletId",
+            "unique": false,
+            "columnNames": [
+              "walletId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_inputs_walletId` ON `${TABLE_NAME}` (`walletId`)"
+          },
+          {
+            "name": "index_pending_inputs_spendingTransactionTxid",
+            "unique": false,
+            "columnNames": [
+              "spendingTransactionTxid"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_inputs_spendingTransactionTxid` ON `${TABLE_NAME}` (`spendingTransactionTxid`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "transactions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "spendingTransactionTxid"
+            ],
+            "referencedColumns": [
+              "txid"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "tokens",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` BLOB NOT NULL, `contractId` BLOB NOT NULL, `position` INTEGER NOT NULL, `name` TEXT NOT NULL, `baseSupply` TEXT NOT NULL, `maxSupply` TEXT, `decimals` INTEGER NOT NULL, `localizations` TEXT, `isPaused` INTEGER NOT NULL, `allowTransferToFrozenBalance` INTEGER NOT NULL, `keepsTransferHistory` INTEGER NOT NULL, `keepsFreezingHistory` INTEGER NOT NULL, `keepsMintingHistory` INTEGER NOT NULL, `keepsBurningHistory` INTEGER NOT NULL, `keepsDirectPricingHistory` INTEGER NOT NULL, `keepsDirectPurchaseHistory` INTEGER NOT NULL, `conventionsChangeRules` TEXT, `maxSupplyChangeRules` TEXT, `manualMintingRules` TEXT, `manualBurningRules` TEXT, `freezeRules` TEXT, `unfreezeRules` TEXT, `destroyFrozenFundsRules` TEXT, `emergencyActionRules` TEXT, `perpetualDistribution` TEXT, `preProgrammedDistribution` TEXT, `newTokensDestinationIdentity` BLOB, `mintingAllowChoosingDestination` INTEGER NOT NULL, `distributionChangeRules` TEXT, `tradeMode` TEXT NOT NULL, `tradeModeChangeRules` TEXT, `mainControlGroupPosition` INTEGER, `mainControlGroupCanBeModified` TEXT, `tokenDescription` TEXT, `createdAt` INTEGER NOT NULL, `lastUpdatedAt` INTEGER NOT NULL, `canManuallyMint` INTEGER NOT NULL, `canManuallyBurn` INTEGER NOT NULL, `canFreeze` INTEGER NOT NULL, `canUnfreeze` INTEGER NOT NULL, `canDestroyFrozenFunds` INTEGER NOT NULL, `hasEmergencyActions` INTEGER NOT NULL, `canChangeMaxSupply` INTEGER NOT NULL, `canChangeConventions` INTEGER NOT NULL, `canChangeTradeMode` INTEGER NOT NULL, `hasDistribution` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`contractId`) REFERENCES `data_contracts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contractId",
+            "columnName": "contractId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "baseSupply",
+            "columnName": "baseSupply",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "maxSupply",
+            "columnName": "maxSupply",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "decimals",
+            "columnName": "decimals",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localizations",
+            "columnName": "localizations",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "isPaused",
+            "columnName": "isPaused",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "allowTransferToFrozenBalance",
+            "columnName": "allowTransferToFrozenBalance",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keepsTransferHistory",
+            "columnName": "keepsTransferHistory",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keepsFreezingHistory",
+            "columnName": "keepsFreezingHistory",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keepsMintingHistory",
+            "columnName": "keepsMintingHistory",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keepsBurningHistory",
+            "columnName": "keepsBurningHistory",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keepsDirectPricingHistory",
+            "columnName": "keepsDirectPricingHistory",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keepsDirectPurchaseHistory",
+            "columnName": "keepsDirectPurchaseHistory",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "conventionsChangeRules",
+            "columnName": "conventionsChangeRules",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "maxSupplyChangeRules",
+            "columnName": "maxSupplyChangeRules",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "manualMintingRules",
+            "columnName": "manualMintingRules",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "manualBurningRules",
+            "columnName": "manualBurningRules",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "freezeRules",
+            "columnName": "freezeRules",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "unfreezeRules",
+            "columnName": "unfreezeRules",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "destroyFrozenFundsRules",
+            "columnName": "destroyFrozenFundsRules",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "emergencyActionRules",
+            "columnName": "emergencyActionRules",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "perpetualDistribution",
+            "columnName": "perpetualDistribution",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "preProgrammedDistribution",
+            "columnName": "preProgrammedDistribution",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "newTokensDestinationIdentity",
+            "columnName": "newTokensDestinationIdentity",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "mintingAllowChoosingDestination",
+            "columnName": "mintingAllowChoosingDestination",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "distributionChangeRules",
+            "columnName": "distributionChangeRules",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "tradeMode",
+            "columnName": "tradeMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tradeModeChangeRules",
+            "columnName": "tradeModeChangeRules",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "mainControlGroupPosition",
+            "columnName": "mainControlGroupPosition",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "mainControlGroupCanBeModified",
+            "columnName": "mainControlGroupCanBeModified",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "tokenDescription",
+            "columnName": "tokenDescription",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdatedAt",
+            "columnName": "lastUpdatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "canManuallyMint",
+            "columnName": "canManuallyMint",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "canManuallyBurn",
+            "columnName": "canManuallyBurn",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "canFreeze",
+            "columnName": "canFreeze",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "canUnfreeze",
+            "columnName": "canUnfreeze",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "canDestroyFrozenFunds",
+            "columnName": "canDestroyFrozenFunds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hasEmergencyActions",
+            "columnName": "hasEmergencyActions",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "canChangeMaxSupply",
+            "columnName": "canChangeMaxSupply",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "canChangeConventions",
+            "columnName": "canChangeConventions",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "canChangeTradeMode",
+            "columnName": "canChangeTradeMode",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hasDistribution",
+            "columnName": "hasDistribution",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_tokens_contractId",
+            "unique": false,
+            "columnNames": [
+              "contractId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tokens_contractId` ON `${TABLE_NAME}` (`contractId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "data_contracts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "contractId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "token_balances",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `tokenId` TEXT NOT NULL, `identityId` BLOB NOT NULL, `balance` INTEGER NOT NULL, `frozen` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, `lastSyncedAt` INTEGER, `tokenName` TEXT, `tokenSymbol` TEXT, `tokenDecimals` INTEGER, `networkRaw` INTEGER NOT NULL, `identityRef` BLOB, `tokenRef` BLOB, FOREIGN KEY(`identityRef`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`tokenRef`) REFERENCES `tokens`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tokenId",
+            "columnName": "tokenId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "identityId",
+            "columnName": "identityId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "balance",
+            "columnName": "balance",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "frozen",
+            "columnName": "frozen",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSyncedAt",
+            "columnName": "lastSyncedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "tokenName",
+            "columnName": "tokenName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "tokenSymbol",
+            "columnName": "tokenSymbol",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "tokenDecimals",
+            "columnName": "tokenDecimals",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "networkRaw",
+            "columnName": "networkRaw",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "identityRef",
+            "columnName": "identityRef",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "tokenRef",
+            "columnName": "tokenRef",
+            "affinity": "BLOB"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_token_balances_networkRaw",
+            "unique": false,
+            "columnNames": [
+              "networkRaw"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_token_balances_networkRaw` ON `${TABLE_NAME}` (`networkRaw`)"
+          },
+          {
+            "name": "index_token_balances_tokenId_identityId",
+            "unique": false,
+            "columnNames": [
+              "tokenId",
+              "identityId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_token_balances_tokenId_identityId` ON `${TABLE_NAME}` (`tokenId`, `identityId`)"
+          },
+          {
+            "name": "index_token_balances_identityId",
+            "unique": false,
+            "columnNames": [
+              "identityId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_token_balances_identityId` ON `${TABLE_NAME}` (`identityId`)"
+          },
+          {
+            "name": "index_token_balances_identityRef",
+            "unique": false,
+            "columnNames": [
+              "identityRef"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_token_balances_identityRef` ON `${TABLE_NAME}` (`identityRef`)"
+          },
+          {
+            "name": "index_token_balances_tokenRef",
+            "unique": false,
+            "columnNames": [
+              "tokenRef"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_token_balances_tokenRef` ON `${TABLE_NAME}` (`tokenRef`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "identities",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "identityRef"
+            ],
+            "referencedColumns": [
+              "identityId"
+            ]
+          },
+          {
+            "table": "tokens",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "tokenRef"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "token_history_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `eventType` TEXT NOT NULL, `transactionId` BLOB, `blockHeight` INTEGER, `coreBlockHeight` INTEGER, `fromIdentity` BLOB, `toIdentity` BLOB, `performedByIdentity` BLOB NOT NULL, `amount` TEXT, `balanceBefore` TEXT, `balanceAfter` TEXT, `additionalDataJSON` BLOB, `eventDescription` TEXT, `createdAt` INTEGER NOT NULL, `eventTimestamp` INTEGER NOT NULL, `tokenRef` BLOB, PRIMARY KEY(`id`), FOREIGN KEY(`tokenRef`) REFERENCES `tokens`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventType",
+            "columnName": "eventType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionId",
+            "columnName": "transactionId",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "blockHeight",
+            "columnName": "blockHeight",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "coreBlockHeight",
+            "columnName": "coreBlockHeight",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "fromIdentity",
+            "columnName": "fromIdentity",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "toIdentity",
+            "columnName": "toIdentity",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "performedByIdentity",
+            "columnName": "performedByIdentity",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amount",
+            "columnName": "amount",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "balanceBefore",
+            "columnName": "balanceBefore",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "balanceAfter",
+            "columnName": "balanceAfter",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "additionalDataJSON",
+            "columnName": "additionalDataJSON",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "eventDescription",
+            "columnName": "eventDescription",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventTimestamp",
+            "columnName": "eventTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tokenRef",
+            "columnName": "tokenRef",
+            "affinity": "BLOB"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_token_history_events_tokenRef",
+            "unique": false,
+            "columnNames": [
+              "tokenRef"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_token_history_events_tokenRef` ON `${TABLE_NAME}` (`tokenRef`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "tokens",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "tokenRef"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "platform_addresses",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`address` TEXT NOT NULL, `addressType` INTEGER NOT NULL, `addressHash` BLOB NOT NULL, `publicKey` BLOB NOT NULL, `accountIndex` INTEGER NOT NULL, `addressIndex` INTEGER NOT NULL, `derivationPath` TEXT NOT NULL, `isUsed` INTEGER NOT NULL, `balance` INTEGER NOT NULL, `nonce` INTEGER NOT NULL, `firstSeenHeight` INTEGER NOT NULL, `lastSeenHeight` INTEGER NOT NULL, `walletId` BLOB NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, `accountId` INTEGER, PRIMARY KEY(`address`), FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "address",
+            "columnName": "address",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addressType",
+            "columnName": "addressType",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addressHash",
+            "columnName": "addressHash",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicKey",
+            "columnName": "publicKey",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountIndex",
+            "columnName": "accountIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addressIndex",
+            "columnName": "addressIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "derivationPath",
+            "columnName": "derivationPath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isUsed",
+            "columnName": "isUsed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "balance",
+            "columnName": "balance",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nonce",
+            "columnName": "nonce",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstSeenHeight",
+            "columnName": "firstSeenHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSeenHeight",
+            "columnName": "lastSeenHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "walletId",
+            "columnName": "walletId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "address"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_platform_addresses_walletId",
+            "unique": false,
+            "columnNames": [
+              "walletId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_platform_addresses_walletId` ON `${TABLE_NAME}` (`walletId`)"
+          },
+          {
+            "name": "index_platform_addresses_addressHash",
+            "unique": true,
+            "columnNames": [
+              "addressHash"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_platform_addresses_addressHash` ON `${TABLE_NAME}` (`addressHash`)"
+          },
+          {
+            "name": "index_platform_addresses_accountId",
+            "unique": false,
+            "columnNames": [
+              "accountId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_platform_addresses_accountId` ON `${TABLE_NAME}` (`accountId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "accounts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "accountId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "platform_addresses_sync_states",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`walletId` BLOB NOT NULL, `networkRaw` INTEGER NOT NULL, `syncHeight` INTEGER NOT NULL, `syncTimestamp` INTEGER NOT NULL, `lastKnownRecentBlock` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`walletId`))",
+        "fields": [
+          {
+            "fieldPath": "walletId",
+            "columnName": "walletId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "networkRaw",
+            "columnName": "networkRaw",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncHeight",
+            "columnName": "syncHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncTimestamp",
+            "columnName": "syncTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastKnownRecentBlock",
+            "columnName": "lastKnownRecentBlock",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "walletId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_platform_addresses_sync_states_networkRaw",
+            "unique": false,
+            "columnNames": [
+              "networkRaw"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_platform_addresses_sync_states_networkRaw` ON `${TABLE_NAME}` (`networkRaw`)"
+          }
+        ]
+      },
+      {
+        "tableName": "shielded_notes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`nullifier` BLOB NOT NULL, `walletId` BLOB NOT NULL, `accountIndex` INTEGER NOT NULL, `position` INTEGER NOT NULL, `cmx` BLOB NOT NULL, `blockHeight` INTEGER NOT NULL, `isSpent` INTEGER NOT NULL, `value` INTEGER NOT NULL, `noteData` BLOB NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`nullifier`))",
+        "fields": [
+          {
+            "fieldPath": "nullifier",
+            "columnName": "nullifier",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "walletId",
+            "columnName": "walletId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountIndex",
+            "columnName": "accountIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cmx",
+            "columnName": "cmx",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "blockHeight",
+            "columnName": "blockHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isSpent",
+            "columnName": "isSpent",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "noteData",
+            "columnName": "noteData",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "nullifier"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_shielded_notes_walletId_accountIndex",
+            "unique": false,
+            "columnNames": [
+              "walletId",
+              "accountIndex"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_shielded_notes_walletId_accountIndex` ON `${TABLE_NAME}` (`walletId`, `accountIndex`)"
+          }
+        ]
+      },
+      {
+        "tableName": "shielded_outgoing_notes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`walletId` BLOB NOT NULL, `accountIndex` INTEGER NOT NULL, `cmx` BLOB NOT NULL, `recipient` BLOB NOT NULL, `value` INTEGER NOT NULL, `memo` BLOB NOT NULL, `blockHeight` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`walletId`, `accountIndex`, `cmx`))",
+        "fields": [
+          {
+            "fieldPath": "walletId",
+            "columnName": "walletId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountIndex",
+            "columnName": "accountIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cmx",
+            "columnName": "cmx",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recipient",
+            "columnName": "recipient",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "memo",
+            "columnName": "memo",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "blockHeight",
+            "columnName": "blockHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "walletId",
+            "accountIndex",
+            "cmx"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_shielded_outgoing_notes_walletId_accountIndex",
+            "unique": false,
+            "columnNames": [
+              "walletId",
+              "accountIndex"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_shielded_outgoing_notes_walletId_accountIndex` ON `${TABLE_NAME}` (`walletId`, `accountIndex`)"
+          }
+        ]
+      },
+      {
+        "tableName": "shielded_activities",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`walletId` BLOB NOT NULL, `accountIndex` INTEGER NOT NULL, `entryId` BLOB NOT NULL, `kindTag` INTEGER NOT NULL, `direction` INTEGER NOT NULL, `status` INTEGER NOT NULL, `amount` INTEGER NOT NULL, `fee` INTEGER NOT NULL, `hasFee` INTEGER NOT NULL, `blockHeight` INTEGER NOT NULL, `hasBlockHeight` INTEGER NOT NULL, `createdAtMs` INTEGER NOT NULL, `identityId` BLOB NOT NULL, `counterparty` BLOB NOT NULL, `memo` BLOB NOT NULL, `noteCmxs` BLOB NOT NULL, `spentNullifiers` BLOB NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`walletId`, `accountIndex`, `entryId`))",
+        "fields": [
+          {
+            "fieldPath": "walletId",
+            "columnName": "walletId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountIndex",
+            "columnName": "accountIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entryId",
+            "columnName": "entryId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kindTag",
+            "columnName": "kindTag",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "direction",
+            "columnName": "direction",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amount",
+            "columnName": "amount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fee",
+            "columnName": "fee",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hasFee",
+            "columnName": "hasFee",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "blockHeight",
+            "columnName": "blockHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hasBlockHeight",
+            "columnName": "hasBlockHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "createdAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "identityId",
+            "columnName": "identityId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "counterparty",
+            "columnName": "counterparty",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "memo",
+            "columnName": "memo",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "noteCmxs",
+            "columnName": "noteCmxs",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "spentNullifiers",
+            "columnName": "spentNullifiers",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "walletId",
+            "accountIndex",
+            "entryId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_shielded_activities_walletId_accountIndex",
+            "unique": false,
+            "columnNames": [
+              "walletId",
+              "accountIndex"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_shielded_activities_walletId_accountIndex` ON `${TABLE_NAME}` (`walletId`, `accountIndex`)"
+          }
+        ]
+      },
+      {
+        "tableName": "shielded_sync_states",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`walletId` BLOB NOT NULL, `accountIndex` INTEGER NOT NULL, `lastSyncedIndex` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`walletId`, `accountIndex`))",
+        "fields": [
+          {
+            "fieldPath": "walletId",
+            "columnName": "walletId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountIndex",
+            "columnName": "accountIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSyncedIndex",
+            "columnName": "lastSyncedIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "walletId",
+            "accountIndex"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_shielded_sync_states_walletId",
+            "unique": false,
+            "columnNames": [
+              "walletId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_shielded_sync_states_walletId` ON `${TABLE_NAME}` (`walletId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "wallet_manager_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`networkRaw` INTEGER NOT NULL, `combinedSyncHeight` INTEGER NOT NULL, `combinedSyncBlockHash` BLOB, `walletCount` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`networkRaw`))",
+        "fields": [
+          {
+            "fieldPath": "networkRaw",
+            "columnName": "networkRaw",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "combinedSyncHeight",
+            "columnName": "combinedSyncHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "combinedSyncBlockHash",
+            "columnName": "combinedSyncBlockHash",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "walletCount",
+            "columnName": "walletCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "networkRaw"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e6ee8d39e66115eb28362b57a7b03c1d')"
+    ]
+  }
+}

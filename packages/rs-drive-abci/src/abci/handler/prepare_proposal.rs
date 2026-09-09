@@ -3,7 +3,7 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::execution::engine::consensus_params_update::consensus_params_update;
 use crate::execution::types::block_execution_context::v0::{
-    BlockExecutionContextV0Getters, BlockExecutionContextV0Setters,
+    BlockExecutionContextV0Getters, BlockExecutionContextV0Setters, ProposerResults,
 };
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal::v0::BlockProposal;
@@ -13,7 +13,6 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::Network;
 use dpp::version::TryIntoPlatformVersioned;
-use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{ExecTxResult, TxRecord};
@@ -142,7 +141,7 @@ where
         );
         if let Some(tx) = transaction_guard.as_ref() {
             tx.rollback_to_savepoint()
-                .map_err(|e| drive::grovedb::error::Error::StorageError(RocksDBError(e)))?;
+                .map_err(drive::grovedb::error::Error::StorageError)?;
             tx.set_savepoint();
         }
         transaction_guard
@@ -154,6 +153,12 @@ where
     let transaction = transaction_guard
         .as_ref()
         .expect("transaction must be started");
+
+    // Taken from the proposal execution is about to consume: process proposal needs them to
+    // tell this block apart from a competing one at the same height and round, and nothing else
+    // in the block execution context retains them.
+    let proposed_app_version = block_proposal.proposed_app_version;
+    let validator_set_quorum_hash = block_proposal.validator_set_quorum_hash;
 
     // Running the proposal executes all the state transitions for the block
     let mut run_result = app.platform().run_block_proposal(
@@ -281,7 +286,11 @@ where
         app_version: platform_version.protocol_version as u64,
     };
 
-    block_execution_context.set_proposer_results(Some(response.clone()));
+    block_execution_context.set_proposer_results(Some(ProposerResults {
+        response: response.clone(),
+        proposed_app_version,
+        validator_set_quorum_hash,
+    }));
 
     app.block_execution_context()
         .write()

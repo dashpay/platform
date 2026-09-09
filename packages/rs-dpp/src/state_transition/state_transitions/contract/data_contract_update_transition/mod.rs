@@ -16,15 +16,11 @@ use serde::{Deserialize, Serialize};
 pub mod accessors;
 mod fields;
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
-mod json_conversion;
 pub mod methods;
 mod serialize;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod v0;
-#[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 pub use fields::*;
@@ -231,140 +227,127 @@ mod test {
         assert!(!result.is_valid());
     }
 
-    #[test]
-    #[cfg(feature = "json-conversion")]
-    fn should_convert_to_json() {
-        use crate::state_transition::JsonStateTransitionSerializationOptions;
-        use crate::state_transition::StateTransitionJsonConvert;
+    // Legacy `StateTransitionValueConvert` / `StateTransitionJsonConvert`
+    // round-trip tests deleted in Phase D step 9. The canonical
+    // `JsonConvertible` / `ValueConvertible` round-trip is exercised on the
+    // outer enum derive (see `json_convertible_tests` below) — these tested
+    // methods that no longer exist.
+}
 
-        let data = get_test_data();
-        let json = <DataContractUpdateTransition as StateTransitionJsonConvert>::to_json(
-            &data.state_transition,
-            JsonStateTransitionSerializationOptions {
-                skip_signature: false,
-                into_validating_json: false,
-            },
-        )
-        .expect("to_json should succeed");
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
+    use super::*;
+    use crate::state_transition::data_contract_update_transition::v0::DataContractUpdateTransitionV0;
+    use crate::tests::fixtures::get_data_contract_fixture;
+    use platform_value::BinaryData;
+    use platform_version::version::PlatformVersion;
+    use platform_version::TryIntoPlatformVersioned;
 
-        assert!(json.is_object());
+    pub(crate) fn fixture() -> DataContractUpdateTransition {
+        let pv = PlatformVersion::latest();
+        let created = get_data_contract_fixture(None, 0, pv.protocol_version);
+        let data_contract = created.data_contract().clone();
+        let data_contract_format = data_contract
+            .try_into_platform_versioned(pv)
+            .expect("contract -> format");
+        DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
+            identity_contract_nonce: 8,
+            data_contract: data_contract_format,
+            user_fee_increase: 5,
+            signature_public_key_id: 1,
+            signature: BinaryData::new(vec![0xff; 65]),
+        })
+    }
 
-        // Verify protocol version is set
-        let version = json
-            .get(STATE_TRANSITION_PROTOCOL_VERSION)
-            .expect("should have version");
-        assert_eq!(version.as_u64(), Some(0));
+    fn assert_v0_fields(t: &DataContractUpdateTransition) {
+        let DataContractUpdateTransition::V0(rec) = t;
+        assert_eq!(rec.identity_contract_nonce, 8, "identity_contract_nonce");
+        assert_eq!(rec.user_fee_increase, 5, "user_fee_increase");
+        assert_eq!(rec.signature_public_key_id, 1, "signature_public_key_id");
+        assert_eq!(rec.signature, BinaryData::new(vec![0xff; 65]), "signature");
     }
 
     #[test]
-    #[cfg(feature = "value-conversion")]
-    fn should_deserialize_from_object() {
-        use crate::state_transition::state_transitions::common_fields::property_names::IDENTITY_CONTRACT_NONCE;
-        use crate::state_transition::StateTransitionValueConvert;
-
-        let data = get_test_data();
-
-        let mut obj = StateTransitionValueConvert::to_object(&data.state_transition, false)
-            .expect("to_object should succeed");
-
-        // The serde field name for identity_contract_nonce is "$identity-contract-nonce"
-        // but from_object expects "identityContractNonce". Fix up the field name.
-        if let Ok(nonce) = obj.remove("$identity-contract-nonce") {
-            obj.insert(IDENTITY_CONTRACT_NONCE.to_string(), nonce)
-                .expect("insert should succeed");
-        }
-
-        let restored = <DataContractUpdateTransition as StateTransitionValueConvert>::from_object(
-            obj,
-            PlatformVersion::first(),
-        )
-        .expect("from_object should succeed");
-
-        assert_eq!(data.state_transition, restored);
+    fn json_round_trip_with_per_property_assertions() {
+        // JSON's single `Number` type erases sized-int variants in the
+        // `document_schemas` tree on round-trip. Compare under normalization;
+        // see `tests::utils::normalize_integer_variants_for_json_round_trip`.
+        use crate::serialization::{JsonConvertible, ValueConvertible};
+        use crate::tests::utils::normalize_integer_variants_for_json_round_trip;
+        let original = fixture();
+        let json = JsonConvertible::to_json(&original).expect("to_json");
+        let recovered =
+            <DataContractUpdateTransition as JsonConvertible>::from_json(json).expect("from_json");
+        let mut original_canon = ValueConvertible::to_object(&original).expect("to_object");
+        let mut recovered_canon = ValueConvertible::to_object(&recovered).expect("to_object");
+        normalize_integer_variants_for_json_round_trip(&mut original_canon);
+        normalize_integer_variants_for_json_round_trip(&mut recovered_canon);
+        assert_eq!(original_canon, recovered_canon);
+        assert_v0_fields(&recovered);
     }
 
     #[test]
-    #[cfg(feature = "value-conversion")]
-    fn should_deserialize_from_value_map() {
-        use crate::state_transition::state_transitions::common_fields::property_names::IDENTITY_CONTRACT_NONCE;
-        use crate::state_transition::StateTransitionValueConvert;
+    fn json_preserves_format_version_tag() {
+        use crate::serialization::JsonConvertible;
+        let json = JsonConvertible::to_json(&fixture()).expect("to_json");
+        assert_eq!(json["$formatVersion"], "0");
+    }
 
-        let data = get_test_data();
-
-        let obj = StateTransitionValueConvert::to_object(&data.state_transition, false)
-            .expect("to_object should succeed");
-        let mut map = obj
-            .into_btree_string_map()
-            .expect("should convert to btree map");
-
-        // Fix up the serde-renamed field to the expected key for from_value_map
-        if let Some(nonce) = map.remove("$identity-contract-nonce") {
-            map.insert(IDENTITY_CONTRACT_NONCE.to_string(), nonce);
-        }
-
-        let restored =
-            <DataContractUpdateTransition as StateTransitionValueConvert>::from_value_map(
-                map,
-                PlatformVersion::first(),
+    #[test]
+    fn value_round_trip_with_envelope_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::{platform_value, Value};
+        let original = fixture();
+        let value = ValueConvertible::to_object(&original).expect("to_object");
+        // Tier 3 envelope-only: the inner `dataContract` is a fully-fledged
+        // versioned `DataContractInSerializationFormat` with embedded JSON
+        // Schemas, group / token / keyword maps, etc. — far too large to inline
+        // here. We assert the outer envelope shape (every non-`dataContract`
+        // field) with sized-int suffixes (`8u64` for `$identity-contract-nonce`
+        // u64 — yes, kebab-case-with-leading-dollar is the actual wire key,
+        // see `crate::state_transition::state_transitions::contract::property_names`,
+        // `5u16` for `userFeeIncrease` u16, `1u32` for `signaturePublicKeyId`
+        // u32, `BinaryData` -> `Value::Bytes`), and check that the
+        // `dataContract` slot is a `Value::Map` (its full shape is exercised
+        // by the round-trip-equality assertion further down + the tests living
+        // alongside `DataContractInSerializationFormat`).
+        let envelope: std::collections::BTreeMap<String, Value> = match &value {
+            Value::Map(entries) => entries
+                .iter()
+                .filter_map(|(k, v)| match k {
+                    Value::Text(s) if s != "dataContract" => Some((s.clone(), v.clone())),
+                    _ => None,
+                })
+                .collect(),
+            _ => panic!("value is not a Map"),
+        };
+        let envelope_value: Value = envelope.into();
+        // Note: assertion uses alphabetical key order — BTreeMap sorts.
+        assert_eq!(
+            envelope_value,
+            platform_value!({
+                "$formatVersion": "0",
+                "$identity-contract-nonce": 8u64,
+                "signature": Value::Bytes(vec![0xff; 65]),
+                "signaturePublicKeyId": 1u32,
+                "userFeeIncrease": 5u16,
+            })
+        );
+        let has_data_contract = matches!(
+            &value,
+            Value::Map(entries) if entries.iter().any(|(k, v)|
+                matches!(k, Value::Text(s) if s == "dataContract") &&
+                matches!(v, Value::Map(_))
             )
-            .expect("from_value_map should succeed");
-
-        assert_eq!(data.state_transition, restored);
-    }
-
-    #[test]
-    #[cfg(feature = "value-conversion")]
-    fn v0_should_deserialize_from_object() {
-        use crate::state_transition::state_transitions::common_fields::property_names::IDENTITY_CONTRACT_NONCE;
-        use crate::state_transition::StateTransitionValueConvert;
-
-        let data = get_test_data();
-        match &data.state_transition {
-            DataContractUpdateTransition::V0(v0) => {
-                let mut obj = StateTransitionValueConvert::to_object(v0, false)
-                    .expect("to_object should succeed");
-
-                // Fix up the serde-renamed field
-                if let Ok(nonce) = obj.remove("$identity-contract-nonce") {
-                    obj.insert(IDENTITY_CONTRACT_NONCE.to_string(), nonce)
-                        .expect("insert should succeed");
-                }
-
-                let restored =
-                    DataContractUpdateTransitionV0::from_object(obj, PlatformVersion::first())
-                        .expect("from_object should succeed");
-
-                assert_eq!(*v0, restored);
-            }
-        }
-    }
-
-    #[test]
-    #[cfg(feature = "value-conversion")]
-    fn v0_should_deserialize_from_value_map() {
-        use crate::state_transition::state_transitions::common_fields::property_names::IDENTITY_CONTRACT_NONCE;
-        use crate::state_transition::StateTransitionValueConvert;
-
-        let data = get_test_data();
-        match &data.state_transition {
-            DataContractUpdateTransition::V0(v0) => {
-                let obj = StateTransitionValueConvert::to_object(v0, false)
-                    .expect("to_object should succeed");
-                let mut map = obj
-                    .into_btree_string_map()
-                    .expect("should convert to btree map");
-
-                // Fix up the serde-renamed field
-                if let Some(nonce) = map.remove("$identity-contract-nonce") {
-                    map.insert(IDENTITY_CONTRACT_NONCE.to_string(), nonce);
-                }
-
-                let restored =
-                    DataContractUpdateTransitionV0::from_value_map(map, PlatformVersion::first())
-                        .expect("from_value_map should succeed");
-
-                assert_eq!(*v0, restored);
-            }
-        }
+        );
+        assert!(has_data_contract, "dataContract slot must be a Value::Map");
+        let recovered = <DataContractUpdateTransition as ValueConvertible>::from_object(value)
+            .expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

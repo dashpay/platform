@@ -8,19 +8,17 @@ use wasm_bindgen::prelude::wasm_bindgen;
 const TS_TYPES: &str = r#"
 /**
  * GroupActionEvent serialized as a plain object.
+ *
+ * Internally tagged with `$kind` (chosen over `$type` to avoid colliding with
+ * the inner TokenEvent's own `$type` discriminator). The inner TokenEvent
+ * fields flatten at the same level — both keys coexist.
  */
-export interface GroupActionEventObject {
-    type: "tokenEvent";
-    data: TokenEventObject;
-}
+export type GroupActionEventObject = { $kind: "tokenEvent" } & TokenEventObject;
 
 /**
  * GroupActionEvent serialized as JSON.
  */
-export interface GroupActionEventJSON {
-    type: "tokenEvent";
-    data: TokenEventJSON;
-}
+export type GroupActionEventJSON = { $kind: "tokenEvent" } & TokenEventJSON;
 "#;
 
 #[wasm_bindgen]

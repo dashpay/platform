@@ -3,6 +3,7 @@
 //! Output convention: stdout = data; stderr = diagnostics + error
 //! messages (lower-cased, no trailing period, single line).
 
+use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -74,7 +75,7 @@ struct RestoreArgs {
     #[arg(long)]
     yes: bool,
     /// Skip the pre-restore auto-backup of the live destination DB.
-    /// Without this, the persister writes `pre-restore-<ts>.db` to
+    /// Without this, the persister writes `pre-restore-<db>-<ts>.db` to
     /// `--auto-backup-dir` before clobbering the destination.
     #[arg(long)]
     no_auto_backup: bool,
@@ -138,12 +139,37 @@ impl CliError {
             code: ExitCode::from(1),
         }
     }
+    fn usage(msg: impl Into<String>) -> Self {
+        Self {
+            message: msg.into(),
+            code: ExitCode::from(2),
+        }
+    }
     fn validation(msg: impl Into<String>) -> Self {
         Self {
             message: msg.into(),
             code: ExitCode::from(3),
         }
     }
+}
+
+/// Render `err` and its full `#[source]` chain, joined by `": "`.
+///
+/// `WalletStorageError`'s `Display` is deliberately terse for variants that
+/// keep their detail in `#[source]` (`error.rs:1-4`) — "sqlite error",
+/// "migration error", "cannot open candidate source database" and friends
+/// carry nothing an operator can act on by themselves. The CLI is the one
+/// place all of that detail needs to reach a human, so every path here
+/// walks the chain back out instead of stopping at the head.
+fn chain_message(err: &dyn Error) -> String {
+    let mut out = err.to_string();
+    let mut cur = err.source();
+    while let Some(source) = cur {
+        out.push_str(": ");
+        out.push_str(&source.to_string());
+        cur = source.source();
+    }
+    out
 }
 
 fn run(cli: Cli) -> Result<ExitCode, CliError> {
@@ -155,9 +181,7 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
         return run_prune(args);
     }
 
-    let db = cli
-        .db
-        .ok_or_else(|| CliError::runtime("--db is required"))?;
+    let db = cli.db.ok_or_else(|| CliError::usage("--db is required"))?;
 
     // `restore` is an associated function; no persister needed beforehand.
     if let Cmd::Restore(args) = &cli.cmd {
@@ -180,10 +204,11 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
     // Migrate is done by `open`; capture pre/post versions to print
     // "applied: N". A read failure must surface, not be read as 0.
     if let Cmd::Migrate(_) = &cli.cmd {
-        let pre_version = peek_schema_version(&db).map_err(|e| CliError::runtime(e.to_string()))?;
+        let pre_version =
+            peek_schema_version(&db).map_err(|e| CliError::runtime(chain_message(&e)))?;
         let _persister = SqlitePersister::open(config.clone()).map_err(map_open_err_for_cli)?;
         let post_version =
-            peek_schema_version(&db).map_err(|e| CliError::runtime(e.to_string()))?;
+            peek_schema_version(&db).map_err(|e| CliError::runtime(chain_message(&e)))?;
         let applied = post_version
             .unwrap_or(0)
             .saturating_sub(pre_version.unwrap_or(0)) as usize;
@@ -209,8 +234,10 @@ fn map_open_err_for_cli(err: WalletStorageError) -> CliError {
                 .to_string(),
             code: ExitCode::from(1),
         },
-        WalletStorageError::Io(e) => CliError::runtime(format!("failed to open database: {e}")),
-        other => CliError::runtime(other.to_string()),
+        WalletStorageError::Io(e) => {
+            CliError::runtime(format!("failed to open database: {}", chain_message(&e)))
+        }
+        other => CliError::runtime(chain_message(&other)),
     }
 }
 
@@ -259,7 +286,7 @@ fn run_backup(persister: &SqlitePersister, args: BackupArgs) -> Result<ExitCode,
             "backup destination exists and refuses to overwrite: {}",
             path.display()
         )),
-        other => CliError::runtime(other.to_string()),
+        other => CliError::runtime(chain_message(&other)),
     })?;
     println!("{}", path.display());
     Ok(ExitCode::SUCCESS)
@@ -271,10 +298,7 @@ fn run_restore(
     auto_backup_dir: Option<&Path>,
 ) -> Result<ExitCode, CliError> {
     if !args.yes {
-        return Err(CliError {
-            message: "refusing to restore without --yes".into(),
-            code: ExitCode::from(2),
-        });
+        return Err(CliError::usage("refusing to restore without --yes"));
     }
     let result = if args.no_auto_backup {
         eprintln!("warning: auto-backup skipped (--no-auto-backup)");
@@ -293,29 +317,37 @@ fn run_restore(
         Err(WalletStorageError::IntegrityCheckFailed { report }) => Err(CliError::validation(
             format!("source backup failed integrity check: {report}"),
         )),
+        Err(err @ WalletStorageError::IntegrityCheckRunFailed { .. }) => {
+            Err(CliError::validation(chain_message(&err)))
+        }
         Err(WalletStorageError::SchemaHistoryMissing) => Err(CliError::validation(
-            "source backup failed integrity check: schema history missing".to_string(),
+            "source backup schema history missing".to_string(),
         )),
+        Err(
+            err @ (WalletStorageError::NotAWalletDb { .. }
+            | WalletStorageError::SchemaVersionUnsupported { .. }
+            | WalletStorageError::SchemaHistoryMalformed { .. }
+            | WalletStorageError::SourceOpenFailed { .. }),
+        ) => Err(CliError::validation(chain_message(&err))),
         Err(WalletStorageError::AutoBackupDisabled { .. }) => Err(CliError::runtime(
             "auto-backup directory not configured; pass --no-auto-backup to proceed",
         )),
-        Err(other) => Err(CliError::runtime(other.to_string())),
+        Err(other) => Err(CliError::runtime(chain_message(&other))),
     }
 }
 
 fn run_prune(args: &PruneArgs) -> Result<ExitCode, CliError> {
     if args.keep_last.is_none() && args.max_age.is_none() {
-        return Err(CliError {
-            message: "at least one of --keep-last or --max-age is required".into(),
-            code: ExitCode::from(2),
-        });
+        return Err(CliError::usage(
+            "at least one of --keep-last or --max-age is required",
+        ));
     }
     let policy = RetentionPolicy {
         keep_last_n: args.keep_last,
         max_age: args.max_age,
     };
-    let report = platform_wallet_storage::sqlite::backup::prune(&args.in_dir, policy)
-        .map_err(|e| CliError::runtime(e.to_string()))?;
+    let report = platform_wallet_storage::prune_backups_in(&args.in_dir, policy)
+        .map_err(|e| CliError::runtime(chain_message(&e)))?;
     for p in &report.removed {
         println!("{}", p.display());
     }
@@ -334,6 +366,59 @@ fn run_prune(args: &PruneArgs) -> Result<ExitCode, CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `chain_message` must not stop at the head of the chain — that is
+    /// the whole point of rendering it: `WalletStorageError`'s `Display` is
+    /// terse by design, so nothing this CLI prints can rely on `to_string`.
+    #[test]
+    fn chain_message_joins_the_whole_source_chain() {
+        #[derive(Debug)]
+        struct Leaf;
+        impl std::fmt::Display for Leaf {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "leaf cause")
+            }
+        }
+        impl std::error::Error for Leaf {}
+
+        #[derive(Debug)]
+        struct Mid(Leaf);
+        impl std::fmt::Display for Mid {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "mid layer")
+            }
+        }
+        impl std::error::Error for Mid {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+
+        assert_eq!(chain_message(&Mid(Leaf)), "mid layer: leaf cause");
+    }
+
+    /// End-to-end through a real crate error: `WalletStorageError::Io`'s
+    /// `Display` is the bare word "io error" (`error.rs:38`); the operator
+    /// only learns anything from the wrapped `io::Error`.
+    #[test]
+    fn chain_message_surfaces_the_io_error_wrapped_by_wallet_storage_error() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied");
+        let err = WalletStorageError::Io(io_err);
+        assert_eq!(chain_message(&err), "io error: permission denied");
+    }
+
+    /// `map_open_err_for_cli`'s `Io` special case must still route through
+    /// `chain_message`, not a bare `{e}` that happens to work only because
+    /// `io::Error` rarely nests further.
+    #[test]
+    fn map_open_err_for_cli_io_variant_keeps_the_inner_message() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied");
+        let cli_err = map_open_err_for_cli(WalletStorageError::Io(io_err));
+        assert_eq!(
+            cli_err.message,
+            "failed to open database: permission denied"
+        );
+    }
 
     /// `peek_schema_version` on a missing path must not materialise a stub
     /// file (opening READ-ONLY) that would lack the 0o600 invariant.

@@ -84,17 +84,65 @@ import SwiftData
 /// current `passUnretained` shape removes the leak at the cost
 /// of the explicit keepalive contract above.
 public final class KeychainSigner: Signer, @unchecked Sendable {
+    final class AdditionalSigningKeyEntry: @unchecked Sendable {
+        let publicKey: Data
+        private var privateKeyBytes: [UInt8]
+
+        init(publicKey: Data, privateKey: Data) {
+            self.publicKey = publicKey
+            self.privateKeyBytes = Array(privateKey)
+        }
+
+        deinit {
+            zeroPrivateKey()
+        }
+
+        func sign(data: Data, network: Network) -> Result<Data, KeychainSigner.Error> {
+            do {
+                return .success(
+                    try privateKeyBytes.withUnsafeBufferPointer { buffer in
+                        try RawKeySigner.sign(
+                            data: data,
+                            privateKeyBuffer: buffer,
+                            network: network
+                        )
+                    }
+                )
+            } catch KeyManagerError.signerCreationFailed(let message) {
+                return .failure(.ffiSignerCreationFailed(message: message))
+            } catch KeyManagerError.invalidKeyFormat(let message) {
+                return .failure(.ffiSignerCreationFailed(message: "invalid key format: \(message)"))
+            } catch KeyManagerError.signingFailed(let message) {
+                return .failure(.ffiSignFailed(message: message))
+            } catch {
+                return .failure(.ffiSignFailed(message: String(describing: error)))
+            }
+        }
+
+        func zeroPrivateKey() {
+            privateKeyBytes.withUnsafeMutableBufferPointer { ptr in
+                if let base = ptr.baseAddress {
+                    memset_s(UnsafeMutableRawPointer(base), ptr.count, 0, ptr.count)
+                }
+            }
+        }
+
+        var isZeroedForTesting: Bool {
+            privateKeyBytes.allSatisfy { $0 == 0 }
+        }
+    }
+
     // MARK: Public surface
 
     /// FFI signer handle. Pass to any `*_with_signer` entry point;
     /// the underlying pointer is the C-imported
-    /// `UnsafeMutablePointer<SignerHandle>` from `platform-wallet-ffi.h`
+    /// `OpaquePointer` from `platform-wallet-ffi.h`
     /// (and equivalently `rs-sdk-ffi.h`). Owned by this object —
     /// freed in `deinit` via `dash_sdk_signer_destroy`. Caller must
     /// keep the `KeychainSigner` alive for the duration of any FFI
     /// call that captured this pointer (see the keepalive contract
     /// above).
-    public var handle: UnsafeMutablePointer<SignerHandle> {
+    public var handle: OpaquePointer {
         handlePtr
     }
 
@@ -180,9 +228,17 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// swift-sdk/CLAUDE.md "no mnemonic round-tripping".
     private let mnemonicResolver: MnemonicResolver
 
+    /// The same `WalletStorage` handed to `mnemonicResolver`. The
+    /// `canSign` preflights consult it for `hasMnemonic` so preflight
+    /// and sign always answer from the same store — constructing a
+    /// fresh `WalletStorage()` there would desync the two when an
+    /// alternative storage is injected.
+    private let mnemonicStorage: WalletStorage
+
     /// Raw pointer to the FFI signer handle. Boxed by Rust and freed
     /// in `deinit`.
-    private var handlePtr: UnsafeMutablePointer<SignerHandle>!
+    private var handlePtr: OpaquePointer!
+    private var additionalSigningKeys: [Data: [AdditionalSigningKeyEntry]] = [:]
 
     // MARK: Init
 
@@ -194,10 +250,14 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     ///   - network: forwarded to `dash_sdk_signer_create_from_private_key`
     ///     for WIF address derivation; does not affect signature output.
     ///   - keychain: defaults to `KeychainManager.shared`.
+    ///   - storage: mnemonic source for the resolver-based signing
+    ///     paths. Defaults to a fresh `WalletStorage()` — overridable
+    ///     for tests.
     public init(
         modelContainer: ModelContainer,
         network: Network = .testnet,
-        keychain: KeychainManager = .shared
+        keychain: KeychainManager = .shared,
+        storage: WalletStorage = WalletStorage()
     ) {
         self.modelContainer = modelContainer
         self.network = network
@@ -206,7 +266,8 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         // One resolver per signer instance. Cheap to keep around —
         // it's just an opaque handle + a Swift-side `WalletStorage`
         // reference. Used by the platform-address signing branch.
-        self.mnemonicResolver = MnemonicResolver()
+        self.mnemonicStorage = storage
+        self.mnemonicResolver = MnemonicResolver(storage: storage)
 
         // Hand Rust an opaque NON-owning pointer to self. The
         // Swift owner is responsible for keeping `self` alive
@@ -233,6 +294,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     }
 
     deinit {
+        clearAdditionalSigningKeys()
         // `dash_sdk_signer_destroy` drops the Rust handle box +
         // vtable allocation. The destroy trampoline is a no-op
         // (init used `passUnretained`, so there's nothing to
@@ -244,7 +306,111 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         }
     }
 
+    /// `isolation` keeps `body` running in the caller's actor context, so a
+    /// caller isolated to an actor (e.g. `@MainActor`) does not have to send a
+    /// non-`Sendable` closure across an isolation boundary to use the scope.
+    /// `T` is `Sendable` because the result still leaves `body`'s context: the
+    /// SwiftExampleApp target compiles these sources without region-based
+    /// isolation, where returning a non-`Sendable` value is rejected outright.
+    public func withAdditionalSigningKeys<T: Sendable>(
+        _ keys: [(publicKey: Data, privateKey: Data)],
+        isolation: isolated (any Actor)? = #isolation,
+        perform body: () async throws -> T
+    ) async rethrows -> T {
+        try await withAdditionalSigningKeys(
+            makeAdditionalSigningKeyEntries(keys),
+            isolation: isolation,
+            perform: body
+        )
+    }
+
+    func withAdditionalSigningKeys<T: Sendable>(
+        _ entries: [AdditionalSigningKeyEntry],
+        isolation: isolated (any Actor)? = #isolation,
+        perform body: () async throws -> T
+    ) async rethrows -> T {
+        pushAdditionalSigningKeys(entries)
+        defer { popAdditionalSigningKeys(entries) }
+        return try await body()
+    }
+
     // MARK: Trampoline-callable internals
+
+    func makeAdditionalSigningKeyEntries(
+        _ keys: [(publicKey: Data, privateKey: Data)]
+    ) -> [AdditionalSigningKeyEntry] {
+        keys.map { AdditionalSigningKeyEntry(publicKey: $0.publicKey, privateKey: $0.privateKey) }
+    }
+
+    func pushAdditionalSigningKeys(_ entries: [AdditionalSigningKeyEntry]) {
+        queue.sync {
+            for entry in entries {
+                additionalSigningKeys[entry.publicKey, default: []].append(entry)
+            }
+        }
+    }
+
+    func popAdditionalSigningKeys(_ entries: [AdditionalSigningKeyEntry]) {
+        queue.sync {
+            for entry in entries.reversed() {
+                guard var stack = additionalSigningKeys[entry.publicKey] else {
+                    entry.zeroPrivateKey()
+                    continue
+                }
+
+                if let last = stack.last, last === entry {
+                    stack.removeLast()
+                } else {
+                    stack.removeAll { $0 === entry }
+                }
+
+                if stack.isEmpty {
+                    additionalSigningKeys.removeValue(forKey: entry.publicKey)
+                } else {
+                    additionalSigningKeys[entry.publicKey] = stack
+                }
+
+                entry.zeroPrivateKey()
+            }
+        }
+    }
+
+    func clearAdditionalSigningKeys() {
+        queue.sync {
+            for entries in additionalSigningKeys.values {
+                for entry in entries {
+                    entry.zeroPrivateKey()
+                }
+            }
+            additionalSigningKeys.removeAll()
+        }
+    }
+
+    func additionalSigningKey(publicKey: Data) -> AdditionalSigningKeyEntry? {
+        var entry: AdditionalSigningKeyEntry?
+        queue.sync {
+            // HASH160 identity keys can be requested by their 20-byte hash160
+            // rather than the 33-byte compressed secp256k1 public key. The
+            // registry is therefore keyed by the exact bytes the FFI asks for.
+            entry = additionalSigningKeys[publicKey]?.last
+        }
+        return entry
+    }
+
+    /// Looks the scoped key up and signs with it inside one critical section.
+    /// `popAdditionalSigningKeys` / `clearAdditionalSigningKeys` zero an
+    /// entry's bytes while holding `queue`, so releasing the lock between the
+    /// lookup and the signature would let a scope ending on another thread
+    /// zero the key mid-read and yield a garbage signature instead of a clean
+    /// failure. Returns `nil` when no scoped key matches.
+    func signWithScopedKey(publicKey: Data, data: Data) -> Result<Data, Error>? {
+        queue.sync {
+            guard let entry = additionalSigningKeys[publicKey]?.last else {
+                return nil
+            }
+            return entry.sign(data: data, network: network)
+        }
+    }
 
     // MARK: key_type dispatch
     //
@@ -300,7 +466,8 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// private keys are NEVER persisted; they're derived per call
     /// from `(mnemonic, path)` inside Rust.
     fileprivate func lookupIdentityPrivateKey(
-        publicKey: Data
+        publicKey: Data,
+        keyType: UInt8
     ) -> Result<Data, Error> {
         var captured: Result<Data, Error> = .failure(.publicKeyNotFound)
         queue.sync {
@@ -328,6 +495,9 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                 return
             }
 
+            print(
+                "⚠️ KEYCHAIN_SIGNER_PUBLIC_KEY_MISS keyType=\(keyType) requestedBytes=\(pubkeyHex)"
+            )
             captured = .failure(.publicKeyNotFound)
         }
         return captured
@@ -361,6 +531,10 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// derive-and-sign FFI requires. We do NOT actually derive a key
     /// here; the check is purely "are the prerequisites in place".
     func canSign(publicKey: Data, keyType: UInt8) -> Bool {
+        if additionalSigningKey(publicKey: publicKey) != nil {
+            return true
+        }
+
         if keyType == Self.platformAddressHashKeyType {
             // Resolve the address row first (synchronous lookup);
             // mnemonic check is gated on having the wallet id.
@@ -376,7 +550,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
             }
             // Existence check only — do NOT materialize the mnemonic
             // bytes on the preflight path.
-            return WalletStorage().hasMnemonic(for: resolved.walletId)
+            return mnemonicStorage.hasMnemonic(for: resolved.walletId)
         }
 
         var found = false
@@ -407,7 +581,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                     wid.count == 32,
                     let path = row.identityDerivationPath,
                     !path.isEmpty,
-                    WalletStorage().hasMnemonic(for: wid)
+                    self.mnemonicStorage.hasMnemonic(for: wid)
                 {
                     found = true
                     return
@@ -422,6 +596,53 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
             }
         }
         return found
+    }
+
+    /// Shared by the sign trampoline and tests: consult any scoped
+    /// in-memory registry first, then the existing platform-address /
+    /// breadcrumb / persisted-key paths.
+    func signOnDemand(
+        publicKey: Data,
+        keyType: UInt8,
+        data: Data
+    ) -> Result<Data, Error> {
+        if let result = signWithScopedKey(publicKey: publicKey, data: data) {
+            return result
+        }
+
+        if keyType == Self.platformAddressHashKeyType {
+            return signPlatformAddressOnDemand(
+                addressHash: publicKey,
+                keyType: keyType,
+                data: data
+            )
+        }
+
+        switch signIdentityKeyOnDemand(
+            publicKey: publicKey,
+            keyType: keyType,
+            data: data
+        ) {
+        case .success(let sig)?:
+            return .success(sig)
+        case .failure(.signWithMnemonicFailed(let tag))?
+        where tag == SignWithMnemonicResolverError.unsupportedKeyType.rawValue:
+            break
+        case .failure(let err)?:
+            print("⚠️ IDENTITY_SIGN_FALLBACK resolver-failed: \(err.localizedDescription)")
+        case nil:
+            print("⚠️ IDENTITY_SIGN_FALLBACK no-breadcrumb")
+        }
+
+        let privateKey: Data
+        switch lookupIdentityPrivateKey(publicKey: publicKey, keyType: keyType) {
+        case .failure(let err):
+            return .failure(err)
+        case .success(let priv):
+            privateKey = priv
+        }
+
+        return ffiSign(privateKey: privateKey, data: data)
     }
 
     /// Resolved context for a platform-address signing request:
@@ -706,77 +927,29 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         return .success(signature)
     }
 
-    /// v1 sign primitive. Wraps the raw 32-byte ECDSA scalar in a
-    /// throwaway FFI signer just long enough to produce a signature;
-    /// the keychain bytes are zeroed from the local copy as soon as
-    /// the FFI call returns.
+    /// v1 sign primitive. Delegates to `RawKeySigner.sign` (the shared
+    /// create-signer → sign → destroy round-trip; the key copy is zeroed
+    /// there), mapping its typed errors onto this signer's error space.
     ///
-    /// TODO(KeychainSigner v2): replace this whole function with a
-    /// native-Swift `secp256k1` invocation once we add the
+    /// TODO(KeychainSigner v2): replace `RawKeySigner`'s FFI round-trip
+    /// with a native-Swift `secp256k1` invocation once we add the
     /// `swift-secp256k1` SPM dep.
     fileprivate func ffiSign(
         privateKey: Data,
         data: Data
     ) -> Result<Data, Error> {
-        // Defensive copy into a mutable buffer we can zero on exit.
-        var keyCopy = [UInt8](privateKey)
-        defer {
-            // Best-effort scrub. Swift doesn't guarantee this won't be
-            // optimised away, but an explicit `withContiguousMutableStorageIfAvailable`
-            // pattern does keep the touch in the IR.
-            keyCopy.withUnsafeMutableBufferPointer { buf in
-                if let base = buf.baseAddress {
-                    memset_s(UnsafeMutableRawPointer(base), buf.count, 0, buf.count)
-                }
-            }
-        }
-
-        let signerResult = keyCopy.withUnsafeBufferPointer { keyBuf -> DashSDKResult in
-            dash_sdk_signer_create_from_private_key(
-                keyBuf.baseAddress!,
-                UInt(keyBuf.count),
-                self.network.ffiValue
-            )
-        }
-
-        if let errPtr = signerResult.error {
-            let message = errPtr.pointee.message.map { String(cString: $0) } ?? "unknown"
-            dash_sdk_error_free(errPtr)
+        do {
+            return .success(
+                try RawKeySigner.sign(data: data, privateKey: privateKey, network: self.network))
+        } catch KeyManagerError.signerCreationFailed(let message) {
             return .failure(.ffiSignerCreationFailed(message: message))
-        }
-        guard let rawSigner = signerResult.data else {
-            return .failure(.ffiSignerCreationFailed(message: "null handle"))
-        }
-        let signerHandle = rawSigner.assumingMemoryBound(to: SignerHandle.self)
-        defer { dash_sdk_signer_destroy(signerHandle) }
-
-        let signResult = data.withUnsafeBytes { dataBuf -> DashSDKResult in
-            dash_sdk_signer_sign(
-                signerHandle,
-                dataBuf.bindMemory(to: UInt8.self).baseAddress,
-                UInt(dataBuf.count)
-            )
-        }
-
-        if let errPtr = signResult.error {
-            let message = errPtr.pointee.message.map { String(cString: $0) } ?? "unknown"
-            dash_sdk_error_free(errPtr)
+        } catch KeyManagerError.invalidKeyFormat(let message) {
+            return .failure(.ffiSignerCreationFailed(message: "invalid key format: \(message)"))
+        } catch KeyManagerError.signingFailed(let message) {
             return .failure(.ffiSignFailed(message: message))
+        } catch {
+            return .failure(.ffiSignFailed(message: String(describing: error)))
         }
-        guard let sigPtr = signResult.data else {
-            return .failure(.ffiSignFailed(message: "null signature"))
-        }
-
-        let sigStruct = sigPtr.assumingMemoryBound(to: DashSDKSignature.self)
-        defer { dash_sdk_signature_free(sigStruct) }
-
-        let sigBytes: Data
-        if let bytes = sigStruct.pointee.signature {
-            sigBytes = Data(bytes: bytes, count: Int(sigStruct.pointee.signature_len))
-        } else {
-            sigBytes = Data()
-        }
-        return .success(sigBytes)
     }
 
     // MARK: - Signer protocol conformance (legacy)
@@ -823,85 +996,38 @@ private func keychainSignerSignAsyncTrampoline(
         dataToSign = Data()
     }
 
-    func reportError(_ message: String) {
+    func reportError(_ message: String, code: Int32 = KeychainSignerCompletionErrorCode.generic) {
         // C strings have to outlive the call. `withCString` does this
-        // for us.
+        // for us. `code` is the structured DashSDKSignerErrorCode
+        // discriminator (dashpay/platform#4060 finding 7).
         message.withCString { errPtr in
-            completion(completionCtx, nil, 0, errPtr)
+            completion(completionCtx, nil, 0, code, errPtr)
         }
     }
 
     func reportSuccess(_ sig: Data) {
         sig.withUnsafeBytes { sigBuf in
             let base = sigBuf.bindMemory(to: UInt8.self).baseAddress
-            completion(completionCtx, base, UInt(sigBuf.count), nil)
+            completion(completionCtx, base, UInt(sigBuf.count), 0, nil)
         }
     }
 
-    // Dispatch on key_type. Platform-address signing (`0xFF`) is a
-    // single-call derive-and-sign path — no separate key lookup,
-    // because the derived bytes never come back to Swift. Identity
-    // signing (`< 5`) prefers the same derive-sign-destroy path (from
-    // the key's stored breadcrumb) and falls back to the stored scalar
-    // when a key has no breadcrumb yet.
-    if keyType == KeychainSigner.platformAddressHashKeyType {
-        switch signer.signPlatformAddressOnDemand(
-            addressHash: pubkeyData,
-            keyType: keyType,
-            data: dataToSign
-        ) {
-        case .failure(let err):
-            reportError(err.localizedDescription)
-        case .success(let sig):
-            reportSuccess(sig)
-        }
-        return
-    }
-
-    // Identity signing (`keyType < 5`): derive-sign-destroy via the resolver
-    // when the key carries a derivation breadcrumb; otherwise fall back to the
-    // stored scalar. The fallback keeps already-materialized keys — and any not
-    // yet backfilled — signable, so the cutover is non-lockout by construction.
-    // Every fallback is logged so the zero-fallback acceptance gate can catch
-    // un-migrated rows or resolver failures before the stored scalar is removed.
-    //
-    // Rust owns the supported-key-type decision: we attempt the resolver for
-    // any identity key and treat its `UNSUPPORTED_KEY_TYPE` tag as the routing
-    // signal (fall through to the stored scalar silently, no fallback log —
-    // the resolver simply doesn't handle this type). This avoids mirroring the
-    // Rust ECDSA-only set in Swift, so a future Rust-derivable key type is
-    // automatically routed through the resolver without a matching Swift edit.
-    switch signer.signIdentityKeyOnDemand(
+    switch signer.signOnDemand(
         publicKey: pubkeyData,
         keyType: keyType,
         data: dataToSign
     ) {
-    case .success(let sig)?:
-        reportSuccess(sig)
-        return
-    case .failure(.signWithMnemonicFailed(let tag))?
-    where tag == SignWithMnemonicResolverError.unsupportedKeyType.rawValue:
-        // Rust does not derive-sign this key type — route to the stored
-        // scalar with no spurious fallback log.
-        break
-    case .failure(let err)?:
-        print("⚠️ IDENTITY_SIGN_FALLBACK resolver-failed: \(err.localizedDescription)")
-    case nil:
-        print("⚠️ IDENTITY_SIGN_FALLBACK no-breadcrumb")
-    }
-
-    let privateKey: Data
-    switch signer.lookupIdentityPrivateKey(publicKey: pubkeyData) {
     case .failure(let err):
-        reportError(err.localizedDescription)
-        return
-    case .success(let priv):
-        privateKey = priv
-    }
-
-    switch signer.ffiSign(privateKey: privateKey, data: dataToSign) {
-    case .failure(let err):
-        reportError(err.localizedDescription)
+        // "No stored key" outcomes carry the structured
+        // SigningKeyUnavailable code so hosts get the typed
+        // PlatformWalletError.signingKeyUnavailable without message
+        // sniffing (dashpay/platform#4060 finding 7). The lookup that
+        // raises it now lives inside `signOnDemand`, so the mapping is
+        // applied here rather than at each call site.
+        reportError(
+            err.localizedDescription,
+            code: keychainSignerCompletionErrorCode(for: err)
+        )
     case .success(let sig):
         reportSuccess(sig)
     }
@@ -931,3 +1057,24 @@ private func keychainSignerCanSignTrampoline(
 /// `dash_sdk_signer_destroy` runs from `deinit`. Kept around so
 /// the Rust vtable's `destroy` slot is always non-null.
 private func keychainSignerDestroyTrampoline(_: UnsafeMutableRawPointer?) {}
+
+/// Mirror of `rs-sdk-ffi`'s `DashSDKSignerErrorCode` — the structured
+/// completion-failure discriminator (dashpay/platform#4060 finding 7).
+/// Only `generic` and `signingKeyUnavailable` are emitted today.
+enum KeychainSignerCompletionErrorCode {
+    static let generic: Int32 = 0
+    static let signingKeyUnavailable: Int32 = 1
+}
+
+/// Classify a `KeychainSigner.Error` for the completion's structured
+/// `error_code`: the "no stored key" outcomes — missing row/scalar or a
+/// keychain entry the identifier no longer resolves — are
+/// `signingKeyUnavailable`; everything else stays `generic`.
+func keychainSignerCompletionErrorCode(for error: KeychainSigner.Error) -> Int32 {
+    switch error {
+    case .publicKeyNotFound, .privateKeyMissingFromKeychain:
+        return KeychainSignerCompletionErrorCode.signingKeyUnavailable
+    default:
+        return KeychainSignerCompletionErrorCode.generic
+    }
+}

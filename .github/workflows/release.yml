@@ -221,6 +221,29 @@ jobs:
       target: dashmate-helper
       tag: ${{ inputs.tag || github.event.release.tag_name }}
 
+  # The SDK jobs run only on a published release, not on this workflow's
+  # dispatch path: a dispatch runs at a BRANCH ref, which the maven-central
+  # environment's v* tag policy rejects, and a dispatched tag may have no
+  # published release to attach assets to. To re-run an SDK release, dispatch
+  # release-kotlin-sdk.yml / release-swift-sdk.yml directly AT THE TAG REF.
+  release-kotlin-sdk:
+    name: Release Kotlin SDK
+    if: ${{ github.event_name == 'release' }}
+    permissions:
+      contents: write # attach the AAR to the release (workflow default is read)
+    uses: ./.github/workflows/release-kotlin-sdk.yml
+    with:
+      tag: ${{ github.event.release.tag_name }}
+
+  release-swift-sdk:
+    name: Release Swift SDK FFI
+    if: ${{ github.event_name == 'release' }}
+    permissions:
+      contents: write # attach the xcframework to the release (workflow default is read)
+    uses: ./.github/workflows/release-swift-sdk.yml
+    with:
+      tag: ${{ github.event.release.tag_name }}
+
   release-dashmate-packages:
     name: Release Dashmate packages
     runs-on: ${{ matrix.os }}

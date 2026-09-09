@@ -6,11 +6,11 @@
 # Rust workspace). Fork PRs and push/schedule runs always take the full
 # `tests-rs-workspace.yml` path. In the wallet case this workflow runs in
 # place of the full one, compiling and testing only the wallet crates plus
-# their sole in-workspace dependent (`rs-unified-sdk-ffi`) instead of the
+# their in-workspace dependents (`rs-unified-sdk-ffi`, `rs-unified-sdk-jni`) instead of the
 # whole workspace.
 #
 # Safety: nothing in the workspace depends on the wallet crates except
-# `rs-unified-sdk-ffi` — an invariant enforced by the "Verify wallet
+# those dependents — an invariant enforced by the "Verify wallet
 # reverse-dependency closure" step below, so a new dependent added elsewhere
 # fails this job until the scoped package lists are updated. Scoped clippy
 # compiles that dependent, preserving the downstream compile check the full
@@ -19,11 +19,12 @@
 # through the fast path that the full path would have rejected.
 #
 # Coverage upload is intentionally omitted (codecov never gates the merge —
-# `fail_ci_if_error: false`). Known trade-offs: no Ubuntu backup jobs exist
-# here (if `UBUNTU_BACKUP_ENABLED` is turned on, wallet PRs still depend on
-# the mac runner being online), and the scoped `-p` builds feature-unify
-# shared deps differently than `--workspace` builds, so the shared target/
-# carries an extra artifact flavor.
+# `fail_ci_if_error: false`). Known trade-offs: this fast path stays pinned to
+# the macOS runners (unlike the full workspace job, which schedules onto any
+# `rust-ci` self-hosted runner), so wallet PRs depend on a mac runner being
+# online; and the scoped `-p` builds feature-unify shared deps differently
+# than `--workspace` builds, so the shared target/ carries an extra artifact
+# flavor.
 on:
   workflow_call:
     inputs:
@@ -50,14 +51,28 @@ jobs:
         with:
           clean: false
 
+      # target/llvm-cov-target is deliberately NOT pruned here: the workspace
+      # job (tests-rs-workspace.yml) keeps its coverage-instrumented build
+      # there for incremental compiles, and this job shares the same runner
+      # workspace — wiping it on a wallet-only PR would force the next
+      # workspace run into a ~2.5 min cold rebuild. The size guard below
+      # still removes the whole target/ if it outgrows the caps.
       - name: Prune macOS runner disk before tests
         run: |
-          for path in ../target-backup-before-*-clean-* target/llvm-cov-target; do
+          for path in ../target-backup-before-*-clean-*; do
             if [ -e "$path" ]; then
               echo "Removing stale runner artifact: $path"
               rm -rf "$path"
             fi
           done
+
+          # Purge per-run coverage profile data possibly left by a cancelled
+          # workspace run in the shared workspace — before measuring target/,
+          # so stale profraw cannot inflate the size check and cost the
+          # instrumented build.
+          if [ -d target/llvm-cov-target ]; then
+            find target/llvm-cov-target \( -name '*.profraw' -o -name '*.profdata' \) -delete || true
+          fi
 
           TARGET_MAX_MB=120000
           MIN_FREE_MB=60000
@@ -106,10 +121,17 @@ jobs:
 
       - name: Detect immutable structure changes
         if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          CHANGED_RS=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '[.files[].path] | map(select(test("\\.rs$"))) | .[]')
+          # Work entirely over git transport — see the same step in
+          # tests-rs-workspace.yml for why `gh pr view` (api.github.com) is
+          # avoided here.
+          BASE_PARENT=$(git cat-file commit HEAD | awk '/^parent /{print $2; exit}')
+          if [ -z "$BASE_PARENT" ]; then
+            echo "::error::Could not determine the merge commit's base parent"
+            exit 1
+          fi
+          git fetch --depth=1 origin "$BASE_PARENT"
+          CHANGED_RS=$(git diff --no-renames --name-only "$BASE_PARENT" HEAD -- '*.rs')
           if [ -z "$CHANGED_RS" ]; then
             echo "No .rs files changed — skipping"
             exit 0
@@ -132,10 +154,9 @@ jobs:
             '
           }
 
-          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
           for file in $CHANGED_RS; do
             if [ ! -f "$file" ]; then continue; fi
-            BASE_CONTENT=$(git show origin/${{ github.event.pull_request.base.ref }}:"$file" 2>/dev/null || true)
+            BASE_CONTENT=$(git show "$BASE_PARENT":"$file" 2>/dev/null || true)
             if [ -z "$BASE_CONTENT" ]; then continue; fi
 
             BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only")
@@ -163,9 +184,10 @@ jobs:
           done
           echo "No immutable/append_only structure violations found"
 
-      # Scoped clippy over the wallet crates plus `rs-unified-sdk-ffi`, the only
-      # in-workspace crate that depends on them — this preserves the downstream
-      # compile check the full `clippy --workspace` would otherwise provide.
+      # Scoped clippy over the wallet crates plus their in-workspace
+      # dependents (`rs-unified-sdk-ffi`, `rs-unified-sdk-jni`) — this preserves
+      # the downstream compile check the full `clippy --workspace` would
+      # otherwise provide.
       - name: Clippy lints (wallet crates + dependents)
         run: |
           cargo clippy \
@@ -173,13 +195,22 @@ jobs:
             --package platform-wallet-storage \
             --package platform-wallet-ffi \
             --package rs-unified-sdk-ffi \
+            --package rs-unified-sdk-jni \
+            --all-targets \
             --all-features \
             --locked \
             -- --no-deps -D warnings
 
-      # Mirrors the workspace job's non-shielded step for the wallet crates:
-      # same package subset, same `not test(~shield)` filter (shielded wallet
-      # tests are not run there either).
+      # The shielded-wallet suite (Orchard proving, viewing-key binds, note
+      # scans) is excluded by MODULE PATH, not by the word "shield". A
+      # `test(~shield)` substring match also swept up ~47 pure-logic tests
+      # across the three crates — input selection, FFI error codes, memo
+      # encoding, SQLite viewing-key rows — that cost a tenth of a second and
+      # have no compensating job anywhere.
+      #
+      # `--no-tests fail` is the zero-match guard: a filter that stops
+      # selecting anything must fail the step, not pass green. Pinned rather
+      # than left to nextest's default, which is a default and not a promise.
       - name: Run wallet tests (non-shielded)
         run: |
           cargo nextest run \
@@ -188,7 +219,8 @@ jobs:
             --package platform-wallet-ffi \
             --all-features \
             --locked \
-            -E 'not test(~shield)'
+            --no-tests fail \
+            -E 'not test(~wallet::shielded::)'
         env:
           RUST_MIN_STACK: 4194304
           CARGO_PROFILE_DEV_DEBUG: "0"
@@ -196,8 +228,7 @@ jobs:
 
       # Wallet-only PRs can only change doc examples in the wallet crates, so
       # scoped doctests are equivalent to the full job's `--workspace --doc`
-      # run for this scope. (The standalone rs-doctests job in tests.yml is
-      # only an Ubuntu backup gated on UBUNTU_BACKUP_ENABLED.)
+      # run for this scope.
       - name: Run doctests (wallet crates)
         if: ${{ inputs.doctests-changed }}
         run: |

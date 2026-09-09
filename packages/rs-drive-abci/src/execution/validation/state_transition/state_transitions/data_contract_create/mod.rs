@@ -6,6 +6,7 @@ mod state;
 use advanced_structure::v1::DataContractCreatedStateTransitionAdvancedStructureValidationV1;
 use basic_structure::v0::DataContractCreateStateTransitionBasicStructureValidationV0;
 use basic_structure::v1::DataContractCreateStateTransitionBasicStructureValidationV1;
+use basic_structure::v2::DataContractCreateStateTransitionBasicStructureValidationV2;
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
@@ -26,6 +27,7 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 
 use crate::execution::validation::state_transition::data_contract_create::advanced_structure::v0::DataContractCreatedStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::data_contract_create::state::v0::DataContractCreateStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::data_contract_create::state::v1::DataContractCreateStateTransitionStateValidationV1;
 use crate::execution::validation::state_transition::processor::advanced_structure_without_state::StateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
@@ -98,14 +100,15 @@ impl StateTransitionBasicStructureValidationV0 for DataContractCreateTransition 
         {
             Some(0) => self.validate_basic_structure_v0(network_type, platform_version),
             Some(1) => self.validate_basic_structure_v1(network_type, platform_version),
+            Some(2) => self.validate_basic_structure_v2(network_type, platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_basic_structure".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
                 method: "data contract create transition: validate_basic_structure".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
             })),
         }
     }
@@ -171,9 +174,17 @@ impl StateTransitionStateValidation for DataContractCreateTransition {
                 execution_context,
                 platform_version,
             ),
+            1 => self.validate_state_v1(
+                platform,
+                block_info,
+                validation_mode,
+                tx,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -1824,6 +1835,112 @@ mod tests {
                     )
                     .expect("expected to fetch token balance");
                 assert_eq!(token_balance, None);
+            }
+
+            #[tokio::test]
+            #[ignore = "documents missing creation-time guard: base_supply > max_supply is currently allowed (no production guard exists). Such a token is created already over its cap, base_supply is immutable, and every mint is then blocked by TokenMintPastMaxSupplyError. Remove #[ignore] once the guard is added in data_contract_create/basic_structure (alongside the base_supply > i64::MAX check)."]
+            async fn test_data_contract_creation_with_base_supply_over_max_supply_should_cause_error(
+            ) {
+                // INTENDED behavior: a contract whose base_supply exceeds its own
+                // max_supply must be REJECTED at creation. Today there is no guard
+                // comparing the two (the create validator only rejects
+                // base_supply > i64::MAX, data_contract_create/basic_structure/v0/mod.rs),
+                // so this currently FAILS: the contract is created with total supply equal
+                // to base_supply, already over the cap. This is the real validation-path
+                // analogue of the gap (it runs an actual DataContractCreateTransition
+                // through process_raw_state_transitions, not the setup_contract helper).
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/basic-token/basic-token.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                .expect("expected to get json based contract");
+
+                {
+                    let token_config = data_contract
+                        .tokens_mut()
+                        .expect("expected tokens")
+                        .get_mut(&0)
+                        .expect("expected first token");
+                    // base_supply (100_000) exceeds max_supply (50_000): inconsistent.
+                    token_config.set_base_supply(100000);
+                    token_config.set_max_supply(Some(50000));
+                }
+
+                let identity_id = identity.id();
+
+                let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        key.id(),
+                        &signer,
+                        platform_version,
+                        None,
+                    )
+                    .await
+                    .expect("expect to create data contract create transition");
+
+                let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+
+                let serialized = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected to serialize");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[serialized],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                // INTENDED: creation is rejected during basic structure validation,
+                // before paid execution can run.
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(_)
+                    )]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                // INTENDED: the token must not exist, so its supply is absent (not the
+                // over-cap value). This is non-vacuous: today the token IS created with
+                // supply Some(100000), failing this assertion.
+                let total_supply = platform
+                    .drive
+                    .fetch_token_total_supply(token_id, None, platform_version)
+                    .expect("expected to fetch total supply");
+                assert_eq!(total_supply, None);
             }
 
             #[tokio::test]
@@ -4049,7 +4166,7 @@ mod tests {
 
             // Convert the contract back to Value so we can mutate its fields
             let mut contract_value = data_contract
-                .to_value(PlatformVersion::latest())
+                .to_value(platform_version)
                 .expect("to_value failed");
 
             // Insert 21 keywords to exceed the max limit
@@ -4132,7 +4249,7 @@ mod tests {
 
             // Convert to Value to mutate fields
             let mut contract_value = data_contract
-                .to_value(PlatformVersion::latest())
+                .to_value(platform_version)
                 .expect("to_value failed");
 
             // Insert some duplicates
@@ -4217,7 +4334,7 @@ mod tests {
 
             // Convert to Value for mutation
             let mut contract_value = data_contract
-                .to_value(PlatformVersion::latest())
+                .to_value(platform_version)
                 .expect("to_value failed");
 
             // Insert a keyword with length < 3
@@ -4364,7 +4481,7 @@ mod tests {
 
             // Convert to Value so we can adjust fields if needed
             let mut contract_value = data_contract
-                .to_value(PlatformVersion::latest())
+                .to_value(platform_version)
                 .expect("to_value failed");
 
             // Insert a valid set of keywords: all distinct, fewer than 20
@@ -4619,7 +4736,7 @@ mod tests {
             .expect("expected to load contract");
 
             let mut contract_value = data_contract
-                .to_value(PlatformVersion::latest())
+                .to_value(platform_version)
                 .expect("to_value failed");
 
             // Ensure the `keywords` array is not empty so that Drive will attempt
@@ -5120,5 +5237,262 @@ mod tests {
             processing_result.execution_results().as_slice(),
             [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
+    }
+
+    mod permanent_document_reference_declarations {
+        use super::*;
+        use dpp::consensus::state::state_error::StateError;
+        use drive::util::test_helpers::setup_contract;
+
+        const FOREIGN_CONTRACT_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-foreign.json";
+
+        /// Processes a data contract create transition built from the given
+        /// fixture, with the foreign permanent-document fixture contract
+        /// already in state, and returns the execution result.
+        async fn run_contract_create(fixture_path: &str) -> StateTransitionExecutionResult {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+
+            setup_contract(
+                &platform.drive,
+                FOREIGN_CONTRACT_PATH,
+                None,
+                None,
+                None::<fn(&mut DataContract)>,
+                None,
+                None,
+            );
+
+            let mut data_contract = json_document_to_contract_with_ids(
+                fixture_path,
+                None,
+                None,
+                false, //no need to validate the data contracts in tests for drive
+                platform_version,
+            )
+            .expect("expected to get json based contract");
+
+            data_contract
+                .set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+
+            let data_contract_create_transition =
+                DataContractCreateTransition::new_from_data_contract(
+                    data_contract,
+                    1,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create data contract create transition");
+
+            let data_contract_create_serialized_transition = data_contract_create_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_create_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            processing_result
+                .execution_results()
+                .first()
+                .expect("expected one execution result")
+                .clone()
+        }
+
+        #[tokio::test]
+        async fn should_register_contract_with_valid_permanent_document_references() {
+            // A self reference (no contractId) and a reference into the
+            // registered foreign contract are both valid declarations
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-valid.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_referencing_deletable_document_type() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-deletable.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeDeletableError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_referencing_unknown_own_document_type() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-unknown-type.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotFoundError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_register_contract_with_valid_property_agreement() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-valid.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_agreement_on_missing_referenced_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-missing-property.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_agreement_between_different_value_kinds() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-kind-mismatch.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_register_contract_with_valid_identity_key_reference() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-valid.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_with_undefined_key_id_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-missing-prop.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedKeyIdPropertyInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_with_non_integer_key_id_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-non-integer.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedKeyIdPropertyInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_referencing_missing_contract() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-missing-contract.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotFoundError(_)
+                    ),
+                    ..
+                }
+            );
+        }
     }
 }

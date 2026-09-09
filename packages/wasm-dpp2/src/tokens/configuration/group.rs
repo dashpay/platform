@@ -3,7 +3,6 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_from_for_extern_type;
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
-use crate::serialization;
 use crate::utils::{JsMapExt, try_to_map};
 use dpp::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use dpp::data_contract::group::v0::GroupV0;
@@ -156,30 +155,8 @@ impl GroupWasm {
             .set_member_power(member.try_into()?, member_required_power);
         Ok(())
     }
-
-    #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<GroupJSONJs> {
-        serialization::to_json(&self.0).map(Into::into)
-    }
-
-    #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(object: GroupJSONJs) -> WasmDppResult<GroupWasm> {
-        serialization::from_json(object.into()).map(GroupWasm)
-    }
-
-    #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<GroupObjectJs> {
-        // Use toJSON for serialization because it handles BTreeMap<Identifier, u32>
-        // correctly (Identifier becomes base58 string in human-readable mode).
-        // This ensures all fields are automatically included when new versions are added.
-        serialization::to_json(&self.0).map(Into::into)
-    }
-
-    #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(value: GroupObjectJs) -> WasmDppResult<GroupWasm> {
-        serialization::from_object(value.into()).map(GroupWasm)
-    }
 }
 
+crate::impl_wasm_conversions_inner!(GroupWasm, Group, Group, GroupObjectJs, GroupJSONJs);
 impl_try_from_js_value!(GroupWasm, "Group");
 impl_wasm_type_info!(GroupWasm, Group);

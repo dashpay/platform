@@ -2,7 +2,7 @@ use crate::enums::batch::gas_fees_paid_by::{GasFeesPaidByLikeJs, GasFeesPaidByWa
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
-use crate::impl_wasm_conversions_serde;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::utils::try_from_options_optional;
 use dpp::balances::credits::TokenAmount;
@@ -187,8 +187,9 @@ impl TokenPaymentInfoWasm {
     }
 }
 
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     TokenPaymentInfoWasm,
+    TokenPaymentInfo,
     TokenPaymentInfo,
     TokenPaymentInfoObjectJs,
     TokenPaymentInfoJSONJs

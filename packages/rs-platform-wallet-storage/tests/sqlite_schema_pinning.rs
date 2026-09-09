@@ -2,38 +2,103 @@
 
 //! Content-level schema-freeze guards.
 //!
-//! TC-B-040: pin the rendered migration SQL with a golden fingerprint so an
+//! Pin the rendered migration SQL with a golden fingerprint so an
 //! in-place DDL edit (which the identity-only fingerprint is documented not
-//! to catch) breaks CI. TC-B-041: assert the retired cross-branch table
+//! to catch) breaks CI. Separately, assert the retired cross-branch table
 //! names never appear as SQL identifiers in the writer/reader/migration/
 //! backup SQL — the drift the content-blind fingerprint cannot catch.
 
 use std::path::Path;
 
-use platform_wallet_storage::sqlite::migrations as mig;
+use platform_wallet_storage::sqlite::{migrations as mig, schema::versions::Domain};
 
 /// Golden `(version, name)` fingerprint of the frozen migration set. Bump
 /// deliberately only when adding/removing/renaming a migration file.
 const EXPECTED_ID_FINGERPRINT: &str =
-    "022d2f294d2d8f5137045cb009048574fdd411242208e419d1690e091d4bddc2";
+    "52aabe7e17301afa4f1178fbc1da95cae5f08f2ac3867773b5948cfe8ec8a5ab";
 
 /// Golden content-level fingerprint over every migration's rendered SQL.
-/// Bump deliberately only when the DDL body itself changes; an accidental
-/// change (a silent table rename) must fail this test, not slip through.
+/// Bump it only when ADDING a migration file; a body change on an already
+/// applied migration is a defect, not a golden to refresh.
 const EXPECTED_SQL_FINGERPRINT: &str =
-    "fff65ac1e696380ea7953f431d980024cb4d79d88babd4d25a2e0a8e1f804555";
+    "20c14a1ce69d83414b86decd41fb374f6d8d50f6396f8fb3795a2db10ccecce9";
 
-/// Table names that lost the cross-branch reconciliation and must never
-/// resurface as SQL identifiers on this frozen (`wallets`) baseline.
+/// The migrations merged `v4.2-dev` already ships. Refinery keys
+/// `refinery_schema_history` by version and validates an applied migration's
+/// checksum against the embedded migration of the SAME version, so pointing one
+/// of these versions at different DDL stops every database that applied the
+/// original from opening. New work appends after the highest entry here.
+const MERGED_MIGRATION_VERSIONS: &[(i32, &str)] = &[
+    (1, "initial"),
+    (2, "address_height_pin"),
+    (3, "invitations"),
+    (4, "asset_lock_recovered_status"),
+    (5, "dpns_name_states"),
+    (6, "tracked_masternodes"),
+    (7, "utxo_sweep_winner_height"),
+];
+
+/// Historical table names: V008 renames wallet metadata, and its typed
+/// conversion retains the pool tables through V010 before retiring them.
+/// Only the SQL history through V008 and the versioned conversion module
+/// may name these tables; live writers and readers use their replacements.
+const FIRST_VERSION_AFTER_RENAME: i32 = 9;
+
+/// Migration files whose SQL may legitimately name a retired table: the
+/// published base set and the migration that performs the rename.
+const PRE_RENAME_MIGRATION_FILES: &[&str] = &[
+    "V001__initial.rs",
+    "V002__address_height_pin.rs",
+    "V003__invitations.rs",
+    "V004__asset_lock_recovered_status.rs",
+    "V005__dpns_name_states.rs",
+    "V006__tracked_masternodes.rs",
+    "V007__utxo_sweep_winner_height.rs",
+    "V008__rehydration_base_schema.rs",
+];
+
 const RETIRED_SQL_NAMES: &[&str] = &[
     "wallet_metadata",
     "account_address_pools",
     "core_derived_addresses",
 ];
 
-/// TC-B-040 (identity) — the migration set's identity is pinned.
 #[test]
-fn tc_b_040_identity_fingerprint_pinned() {
+fn domain_labels_are_live_sql_names() {
+    for domain in Domain::ALL {
+        assert!(
+            !RETIRED_SQL_NAMES.contains(&domain.as_str()),
+            "Domain::{domain:?} uses retired SQL name `{}`",
+            domain.as_str()
+        );
+    }
+}
+
+/// A version already merged to a base branch keeps the name it shipped with.
+///
+/// IF THIS FAILS: a migration file was renumbered onto a version some other
+/// branch already published. Give the new work the next free version instead —
+/// reusing a published one is not a naming preference, it is a database that
+/// stops opening.
+#[test]
+fn merged_migration_versions_keep_their_shipped_names() {
+    let embedded = mig::embedded_migrations();
+    for (version, name) in MERGED_MIGRATION_VERSIONS {
+        let found = embedded
+            .iter()
+            .find(|(v, _)| v == version)
+            .unwrap_or_else(|| panic!("migration version {version} is missing from the set"));
+        assert_eq!(
+            found.1.as_str(),
+            *name,
+            "version {version} must stay `{name}`; it is owned by merged history"
+        );
+    }
+}
+
+/// The migration set's identity is pinned.
+#[test]
+fn identity_fingerprint_pinned() {
     assert_eq!(
         hex::encode(mig::embedded_migrations_fingerprint()),
         EXPECTED_ID_FINGERPRINT,
@@ -42,45 +107,61 @@ fn tc_b_040_identity_fingerprint_pinned() {
     );
 }
 
-/// TC-B-040 (content) — the rendered migration SQL is pinned, closing the
+/// The rendered migration SQL is pinned, closing the
 /// content-blind gap the identity fingerprint documents.
 #[test]
-fn tc_b_040_sql_fingerprint_pinned() {
+fn sql_fingerprint_pinned() {
     assert_eq!(
         hex::encode(mig::embedded_migrations_sql_fingerprint()),
         EXPECTED_SQL_FINGERPRINT,
-        "a migration's DDL body changed. On this frozen baseline that is a \
-         schema-drift alarm (D0). If intentional, update EXPECTED_SQL_FINGERPRINT."
+        "a migration's DDL body changed. Refinery checksums rendered SQL, so \
+         editing a migration that any database has already applied stops that \
+         database opening, permanently. Widen a schema by APPENDING a migration. \
+         Update EXPECTED_SQL_FINGERPRINT only when adding a migration file."
     );
 }
 
-/// The retired names appear nowhere in the rendered migration SQL.
+/// The retired names appear nowhere as table identifiers in migration SQL.
 #[test]
-fn tc_b_041_migration_sql_has_no_retired_names() {
-    for sql in mig::embedded_migrations_sql() {
+fn migration_sql_has_no_retired_names() {
+    for (version, sql) in mig::embedded_migrations_sql_by_version() {
+        if version < FIRST_VERSION_AFTER_RENAME {
+            continue;
+        }
         for name in RETIRED_SQL_NAMES {
-            assert!(
-                !sql.contains(name),
-                "retired table name `{name}` present in migration SQL"
-            );
+            for keyword in ["FROM", "INTO", "UPDATE", "TABLE", "JOIN", "ON"] {
+                assert!(
+                    !sql.contains(&format!("{keyword} {name}")),
+                    "retired table name `{name}` present in migration SQL"
+                );
+            }
         }
     }
 }
 
-/// TC-B-041 — no writer/reader/migration/backup SQL string references a
+/// No writer/reader/migration/backup SQL string references a
 /// retired table name. `wallet_metadata` / `account_address_pools` are also
 /// legitimate Rust changeset fields, so the scan flags only SQL-keyword-led
 /// table usage (`FROM`/`INTO`/`UPDATE`/`TABLE`/`JOIN`/`ON <name>`), never a
 /// bare `cs.<field>` access.
 #[test]
-fn tc_b_041_no_retired_table_name_in_sql_strings() {
+fn no_retired_table_name_in_sql_strings() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let migrations_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
     let sql_keywords = ["FROM", "INTO", "UPDATE", "TABLE", "JOIN", "ON"];
 
     let mut offenders = Vec::new();
-    for dir in [src, migrations_dir] {
+    for dir in [src.clone(), migrations_dir] {
         visit(&dir, &mut |path, line_no, line| {
+            let file = path.file_name().unwrap_or_default().to_string_lossy();
+            // Versioned typed conversion is the sole live-code exception:
+            // it reads published state and retires it atomically after V011.
+            if path == src.join("sqlite/migrations/legacy_v008.rs") {
+                return;
+            }
+            if PRE_RENAME_MIGRATION_FILES.contains(&file.as_ref()) {
+                return;
+            }
             for name in RETIRED_SQL_NAMES {
                 for kw in sql_keywords {
                     if line.contains(&format!("{kw} {name}")) {

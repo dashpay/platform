@@ -6,6 +6,7 @@ import Config from '../../src/config/Config.js';
 import {
   NETWORK_MAINNET,
   PACKAGE_ROOT_DIR,
+  LETSENCRYPT_ACME_DIRECTORY_URL,
 } from '../../src/constants.js';
 
 const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
@@ -116,6 +117,20 @@ export default function getBaseConfigFactory() {
           host: '127.0.0.1',
           port: 29998,
         },
+        // Tor sidecar. On by default: it adds an onion service and onion
+        // peers on top of the node's IPv4 identity, it does not replace it.
+        // The masternode ProTx address stays IPv4; see docs/config/core.md.
+        tor: {
+          enabled: true,
+          docker: {
+            // Pinned to the multi-arch index digest: the tag is a third
+            // party's and can be re-pushed. Bumping Tor means updating both.
+            image: 'osminogin/tor-simple:0.4.9.11@sha256:7aef2e7d957e2236d5fac7fca8e67c15fe65e6349eb90099da1cdc26bc4caa69',
+          },
+          control: {
+            password: 'torpassword',
+          },
+        },
         spork: {
           address: null,
           privateKey: null,
@@ -179,7 +194,7 @@ export default function getBaseConfigFactory() {
         },
         gateway: {
           docker: {
-            image: 'dashpay/envoy:1.35.11-impr.1',
+            image: 'dashpay/envoy:1.39.0-impr.1',
           },
           maxConnections: 1000,
           maxHeapSizeInBytes: 125000000, // 1 Gb
@@ -255,6 +270,7 @@ export default function getBaseConfigFactory() {
               },
               letsencrypt: {
                 email: null,
+                acmeDirectoryUrl: LETSENCRYPT_ACME_DIRECTORY_URL,
               },
             },
           },
@@ -262,7 +278,7 @@ export default function getBaseConfigFactory() {
         dapi: {
           rsDapi: {
             docker: {
-              image: `dashpay/rs-dapi:${dockerImageVersion}`,
+              image: null,
               deploy: {
                 replicas: 1,
               },
@@ -291,7 +307,7 @@ export default function getBaseConfigFactory() {
         drive: {
           abci: {
             docker: {
-              image: `dashpay/drive:${dockerImageVersion}`,
+              image: null,
               build: {
                 enabled: false,
                 context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
@@ -358,7 +374,7 @@ export default function getBaseConfigFactory() {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.6.0',
+              image: 'dashpay/tenderdash:1.7',
             },
             p2p: {
               host: '0.0.0.0',
@@ -415,10 +431,6 @@ export default function getBaseConfigFactory() {
                 vote: {
                   timeout: null,
                   delta: null,
-                },
-                commit: {
-                  timeout: null,
-                  bypass: null,
                 },
               },
             },

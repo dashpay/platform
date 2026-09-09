@@ -16,8 +16,6 @@ use crate::serialization::{
     PlatformSerializableWithPlatformVersion,
 };
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
-#[cfg(feature = "value-conversion")]
-use platform_value::Value;
 use platform_version::TryIntoPlatformVersioned;
 
 /// The created data contract is a intermediate structure that can be consumed by a
@@ -189,31 +187,6 @@ impl CreatedDataContract {
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "CreatedDataContract::from_contract_and_entropy".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-        }
-    }
-
-    #[cfg(feature = "value-conversion")]
-    pub fn from_object(
-        raw_object: Value,
-        full_validation: bool,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        match platform_version
-            .dpp
-            .contract_versions
-            .created_data_contract_structure
-        {
-            0 => Ok(CreatedDataContractV0::from_object(
-                raw_object,
-                full_validation,
-                platform_version,
-            )?
-            .into()),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "CreatedDataContract::from_object".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

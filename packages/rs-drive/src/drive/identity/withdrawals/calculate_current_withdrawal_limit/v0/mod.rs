@@ -63,7 +63,8 @@ impl Drive {
             )))?;
 
         // Let's get the amount that we are allowed to get in the last 24 hours.
-        let daily_maximum = daily_withdrawal_limit(total_credits_in_platform, platform_version)?;
+        let daily_maximum =
+            daily_withdrawal_limit(Some(total_credits_in_platform), platform_version)?;
 
         let withdrawal_amount_in_last_day: u64 = self
             .grove_get_sum_tree_total_value(

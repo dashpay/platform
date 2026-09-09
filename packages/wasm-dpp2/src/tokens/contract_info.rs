@@ -1,5 +1,5 @@
 use crate::identifier::IdentifierWasm;
-use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
+use crate::{impl_wasm_conversions_inner, impl_wasm_type_info};
 use dpp::data_contract::TokenContractPosition;
 use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
@@ -9,8 +9,12 @@ use wasm_bindgen::prelude::wasm_bindgen;
 const TOKEN_CONTRACT_INFO_TYPES_TS: &str = r#"
 /**
  * TokenContractInfo serialized as a plain object.
+ *
+ * Versioned enum tagged with `$formatVersion`. V0 carries `contractId` and
+ * `tokenContractPosition` flat at the top level via internal tagging.
  */
 export interface TokenContractInfoObject {
+    $formatVersion: "0";
     contractId: Uint8Array;
     tokenContractPosition: number;
 }
@@ -19,6 +23,7 @@ export interface TokenContractInfoObject {
  * TokenContractInfo serialized as JSON (with string identifiers).
  */
 export interface TokenContractInfoJSON {
+    $formatVersion: "0";
     contractId: string;
     tokenContractPosition: number;
 }
@@ -67,8 +72,9 @@ impl TokenContractInfoWasm {
     }
 }
 
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     TokenContractInfoWasm,
+    TokenContractInfo,
     TokenContractInfo,
     TokenContractInfoObjectJs,
     TokenContractInfoJSONJs

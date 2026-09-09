@@ -50,6 +50,7 @@ impl Drive {
             start_epoch_index_included,
             end_epoch_index,
             end_epoch_index_included,
+            platform_version.drive_abci.query.max_returned_elements,
         )?
         else {
             return Err(Error::Query(QuerySyntaxError::NoQueryItems(

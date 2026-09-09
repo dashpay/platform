@@ -49,60 +49,15 @@ where
                     .withdrawal_transactions_per_block_limit,
                 "No queued withdrawal documents found to pool into transactions"
             );
-            let all_documents = self
-                .drive
-                .fetch_oldest_withdrawal_documents(transaction, platform_version)?;
-            if all_documents.is_empty() {
-                tracing::debug!(
-                    height = block_info.height,
-                    "No withdrawal documents found at all"
-                );
-            } else if tracing::enabled!(tracing::Level::DEBUG) {
-                // Count documents by status
-                let queued_count = all_documents
-                    .get(&(withdrawals_contract::WithdrawalStatus::QUEUED as u8))
-                    .map(|v| v.len())
-                    .unwrap_or(0);
-                let pooled_count = all_documents
-                    .get(&(withdrawals_contract::WithdrawalStatus::POOLED as u8))
-                    .map(|v| v.len())
-                    .unwrap_or(0);
-                let broadcasted_count = all_documents
-                    .get(&(withdrawals_contract::WithdrawalStatus::BROADCASTED as u8))
-                    .map(|v| v.len())
-                    .unwrap_or(0);
-                let complete_count = all_documents
-                    .get(&(withdrawals_contract::WithdrawalStatus::COMPLETE as u8))
-                    .map(|v| v.len())
-                    .unwrap_or(0);
-                let expired_count = all_documents
-                    .get(&(withdrawals_contract::WithdrawalStatus::EXPIRED as u8))
-                    .map(|v| v.len())
-                    .unwrap_or(0);
-                let total_documents = queued_count
-                    + pooled_count
-                    + broadcasted_count
-                    + complete_count
-                    + expired_count;
-
-                tracing::debug!(
-                    height = block_info.height,
-                    total_documents,
-                    queued_count,
-                    pooled_count,
-                    broadcasted_count,
-                    complete_count,
-                    expired_count,
-                    "Found withdrawal documents grouped by status"
-                );
-            }
             return Ok(());
         }
 
         // Only take documents up to the withdrawal amount
-        let withdrawals_info = self
-            .drive
-            .calculate_current_withdrawal_limit(transaction, platform_version)?;
+        let withdrawals_info = self.drive.calculate_current_withdrawal_limit(
+            block_info,
+            transaction,
+            platform_version,
+        )?;
 
         tracing::trace!(
             ?withdrawals_info,
@@ -199,7 +154,11 @@ where
             end_transaction_index,
         );
 
-        let withdrawals_contract = self.drive.cache.system_data_contracts.load_withdrawals();
+        let withdrawals_contract = self
+            .drive
+            .cache
+            .system_data_contracts
+            .load_withdrawals(platform_version)?;
 
         self.drive.add_update_multiple_documents_operations(
             &documents_to_process,

@@ -57,8 +57,9 @@ use crypto::{KdfParams, SALT_LEN};
 use format::{EntryBody, Vault};
 
 use super::error::SecretStoreError;
+use super::guarded::verify_host_page_size;
 
-use super::secret::{SecretBytes, SecretString, MIN_PASSPHRASE_LEN};
+use super::secret::{SecretBytes, SecretString, MAX_PASSPHRASE_LEN};
 use super::validate::{validated_label, WalletId};
 
 /// Service-prefix for vault entries: the full `service` string is
@@ -77,11 +78,119 @@ pub const MAX_VAULT_SIZE_BYTES: u64 = 128 * 1024 * 1024;
 
 /// Per-secret write-side ceiling. The vault is ONE shared document, so an
 /// uncapped oversized entry would inflate it past [`MAX_VAULT_SIZE_BYTES`]
-/// and brick every wallet on reopen. 64 KiB is far above any legitimate
-/// mnemonic / seed / xpriv. Enforced with
+/// and brick every wallet on reopen. Enforced with
 /// [`SecretStoreError::SecretTooLarge`] at the write boundary before the
 /// secret is sealed or inserted.
-pub const MAX_SECRET_LEN: usize = 64 * 1024;
+///
+/// # Why 8176
+///
+/// Secrets live in guarded, `mlock`ed pages (one allocation per secret,
+/// never shared), so this ceiling also sets the process's worst-case
+/// locked-memory demand.
+///
+/// The value is a product ceiling, not page arithmetic: 8176 bytes is
+/// ~30× the largest legitimate secret — a 24-word BIP-39 mnemonic is
+/// under 256 bytes, a BIP-32 seed is 64, an xpriv ~112 — while still
+/// costing a single guarded page. A security ceiling wants to be the
+/// smallest that comfortably covers real use, so the slack between 8176
+/// and the 16368 that would also fit one page is deliberately left
+/// unspent: on a 4 KiB-page host, where `memsec` rounds to the real page
+/// size, 16368 would cost four locked pages per secret instead of one.
+///
+/// The deepest path is a **`File`-arm [`reprotect`]**, not a read: it runs
+/// a full read and then a rewrap while the caller holds *two* object
+/// passwords. Its peak is the instant the AEAD open allocates the
+/// plaintext, with these buffers live at once:
+///
+/// | live buffer | payload | locked |
+/// |---|---|---|
+/// | stored envelope (`MAX_SECRET_LEN`) | 8176 B | 16 KiB |
+/// | derived unwrap key | 32 B | 16 KiB |
+/// | decrypted plaintext ([`MAX_PLAINTEXT_LEN`]) | 8064 B | 16 KiB |
+/// | resident vault AEAD key | 32 B | 16 KiB |
+/// | vault passphrase ([`MAX_PASSPHRASE_LEN`]) | ≤ 4080 B | 16 KiB |
+/// | `current` object password ([`MAX_PASSPHRASE_LEN`]) | ≤ 4080 B | 16 KiB |
+/// | `new` object password ([`MAX_PASSPHRASE_LEN`]) | ≤ 4080 B | 16 KiB |
+///
+/// `memsec` locks `page_round(16 + payload)`, the 16 bytes being its
+/// canary, and every ceiling above plus that canary fits inside one
+/// `ASSUMED_PAGE_SIZE` page. So the budget is a count of live secrets,
+/// not a sum of their sizes: seven pages, **112 KiB**. A concurrent
+/// max-size read adds three more (its own envelope, key and plaintext:
+/// 48 KiB), for 160 KiB against a 256 KiB budget — 96 KiB clear.
+///
+/// The rewrap half of the same call peaks lower, because [`reprotect`]
+/// scopes the old envelope away before allocating the new one and
+/// `wrap_with_params` scopes its derived key away before encoding. Both
+/// scopes remain load-bearing: each one held open would add a whole page
+/// to the peak, since at this page size every live secret costs one
+/// regardless of how few bytes it holds.
+/// `store::tests::file_reprotect_peak_matches_the_documented_budget`
+/// measures the peak rather than trusting this table.
+///
+/// Every row is enforced, not assumed: the first three by this constant
+/// and [`MAX_PLAINTEXT_LEN`], the passphrase rows by
+/// [`MAX_PASSPHRASE_LEN`] on both the enrol and the read side. Raising
+/// this constant past 16368 eats the budget two pages at a time, since
+/// the envelope and its plaintext are both live.
+///
+/// [`MAX_PLAINTEXT_LEN`]: crate::secrets::MAX_PLAINTEXT_LEN
+/// [`MAX_PASSPHRASE_LEN`]: crate::secrets::MAX_PASSPHRASE_LEN
+/// [`reprotect`]: crate::secrets::SecretStore::reprotect
+pub const MAX_SECRET_LEN: usize = 8176;
+
+/// The budget table documented at [`MAX_SECRET_LEN`], made executable.
+///
+/// A future edit to any of the three ceilings that pushes the deepest
+/// path past a constrained `RLIMIT_MEMLOCK` fails the build instead of
+/// silently degrading every secret to swappable (the failure is
+/// fail-open, so nothing else would notice).
+///
+/// This half covers the CEILINGS. The other half of the same guarantee is
+/// the host: `locked_cost` is denominated in 16 KiB pages while `memsec`
+/// rounds to the kernel's runtime page size, so
+/// [`verify_host_page_size`] rejects a larger-paged host at store
+/// construction rather than let this table quietly describe nobody.
+const _: () = {
+    use super::guarded::{locked_cost, ASSUMED_PAGE_SIZE};
+
+    /// The `RLIMIT_MEMLOCK` this crate budgets against.
+    ///
+    /// The smallest power of two that holds the derivation below with
+    /// real headroom. Deliberately far under what hosts actually grant —
+    /// systemd has defaulted `DefaultLimitMEMLOCK` to 8 MiB for years,
+    /// and a default Docker container inherits it — so the 64 KiB this
+    /// crate once budgeted against described no supported host. Nothing
+    /// reads the real limit at run time; see `SECRETS.md`.
+    const MEMLOCK_BUDGET: usize = 256 * 1024;
+    /// `File`-arm `reprotect`, at the instant the AEAD open allocates.
+    const REPROTECT_PEAK: usize = locked_cost(MAX_SECRET_LEN)
+        + locked_cost(32)
+        + locked_cost(crate::secrets::MAX_PLAINTEXT_LEN)
+        + locked_cost(32)
+        + 3 * locked_cost(crate::secrets::MAX_PASSPHRASE_LEN);
+    /// A max-size read racing it, sharing the resident rows.
+    const CONCURRENT_READ: usize = locked_cost(MAX_SECRET_LEN)
+        + locked_cost(32)
+        + locked_cost(crate::secrets::MAX_PLAINTEXT_LEN);
+
+    assert!(
+        locked_cost(MAX_SECRET_LEN) == ASSUMED_PAGE_SIZE,
+        "a max-size envelope must still fit a single guarded page"
+    );
+    assert!(
+        locked_cost(crate::secrets::MAX_PASSPHRASE_LEN) == ASSUMED_PAGE_SIZE,
+        "a max-size passphrase must still fit a single guarded page"
+    );
+    assert!(
+        REPROTECT_PEAK == 7 * ASSUMED_PAGE_SIZE,
+        "the documented seven-page peak no longer matches the constants"
+    );
+    assert!(
+        REPROTECT_PEAK + CONCURRENT_READ <= MEMLOCK_BUDGET,
+        "the deepest path plus one concurrent read must fit RLIMIT_MEMLOCK"
+    );
+};
 
 /// A passphrase-encrypted file-backed credential store.
 ///
@@ -96,6 +205,17 @@ pub struct EncryptedFileStore {
     /// Shared clone of [`EncryptedFileStoreInner::durability_uncertain`] so
     /// the pollable accessor reads it WITHOUT taking the state lock.
     durability_uncertain: Arc<AtomicU64>,
+    /// Argon2 params this store DERIVES at: the header written by a fresh
+    /// vault or a [`rekey`](Self::rekey), and the per-secret Tier-2 wrap
+    /// (via [`kdf_params`](Self::kdf_params)). Always
+    /// [`KdfParams::default_target`] except on a mock store
+    /// ([`open_mock`](Self::open_mock)), which floors it (#4111).
+    ///
+    /// Read-only after open and `Copy`, so `rekey` reads it without taking
+    /// the state lock — preserving its derive-outside-the-lock property.
+    /// It does NOT describe an already-existing vault: unlocking one always
+    /// re-derives under the params in ITS header.
+    kdf: KdfParams,
 }
 
 /// Resident store state behind a single [`Mutex`] so every mutation sees
@@ -151,54 +271,128 @@ impl EncryptedFileStore {
         path: impl AsRef<Path>,
         passphrase: SecretString,
     ) -> Result<Self, SecretStoreError> {
-        // Tier-1 baseline: reject a blank passphrase (empty / all-whitespace)
-        // BEFORE touching the filesystem. A blank passphrase derives a key
-        // from a public salt only — obfuscation, not confidentiality
-        // (obfuscation, not confidentiality). This is an INTENDED behavioural break for any caller
-        // that relied on `SecretString::empty()`; a deliberate keyless vault
-        // must use [`open_unprotected`](Self::open_unprotected). No vault
-        // file is created or altered for a blank passphrase.
-        reject_weak_passphrase(&passphrase)?;
-        Self::open_inner(path.as_ref(), passphrase)
+        // Reject an out-of-range passphrase before touching the
+        // filesystem. A deliberate keyless vault uses
+        // `open_unprotected` instead.
+        validate_passphrase(&passphrase)?;
+        Self::open_inner(path.as_ref(), passphrase, KdfParams::default_target())
+    }
+
+    /// [`open`](Self::open), but fresh-vault creation and every per-secret
+    /// Tier-2 wrap use the enforced FLOOR instead of the shipped 64 MiB target
+    /// — the fastest configuration the crate's own bounds check still accepts.
+    /// An existing vault still unlocks under the parameters in its header. The
+    /// floor also applies inside
+    /// [`SecretStore::set_secret`](crate::secrets::SecretStore::set_secret) /
+    /// [`reprotect`](crate::secrets::SecretStore::reprotect).
+    ///
+    /// **Test-only.** A downstream suite that drives real end-to-end
+    /// `SecretStore` flows otherwise pays a production-strength KDF per call
+    /// (#4111). The resulting vault is REAL — same formats, same AAD
+    /// binding, same fail-closed reads — merely cheap to attack. Never build
+    /// one over a vault that holds live secrets.
+    ///
+    /// Two independent gates keep it out of production:
+    /// 1. compile-time — the `test-util` feature (or `cfg(test)`);
+    /// 2. runtime — the panic inherited from `KdfParams::floor_target`, in
+    ///    case feature unification switches `test-util` on for a release build.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless the build has `debug_assertions` on, or is this crate's
+    /// own test harness — the guard lives on `KdfParams::floor_target`, the
+    /// single choke point for weak-but-legal params, and fires before this
+    /// constructor touches the filesystem. `cargo test --release` on a
+    /// DOWNSTREAM crate is indistinguishable from a leaked release build and
+    /// panics too; such a suite must keep `debug-assertions = true`.
+    ///
+    /// An EXISTING vault is still unlocked under the params in its own header
+    /// — a mock store cannot make a production vault cheap to open, and
+    /// [`rekey`](Self::rekey) cannot either: it derives at the stronger of the
+    /// floor and the header it opened, so the floor applies only to params it
+    /// would raise.
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn open_mock(
+        path: impl AsRef<Path>,
+        passphrase: SecretString,
+    ) -> Result<Self, SecretStoreError> {
+        // Ahead of every other check, so a rejected passphrase cannot mask the
+        // release-build panic behind a plain `Err`.
+        let kdf = KdfParams::floor_target();
+        validate_passphrase(&passphrase)?;
+        Self::open_inner(path.as_ref(), passphrase, kdf)
     }
 
     /// Open (or create) a **deliberately keyless** vault — the only door
     /// that accepts no passphrase. The vault key is derived from an empty
     /// passphrase under the public salt, so this is **obfuscation, not
-    /// confidentiality**: use it only where the stored secrets carry their
-    /// own Tier-2 object password, or as a staging step before
+    /// confidentiality or authenticity**: anyone who can write the file can
+    /// forge a valid vault and inject a chosen unprotected secret. Use it only
+    /// where the stored secrets carry their own Tier-2 object password, or as
+    /// a staging step before
     /// [`rekey`](Self::rekey) to a real passphrase. This is the explicit
-    /// keyless door, distinct from [`open`](Self::open) (which now rejects a
-    /// blank passphrase).
+    /// keyless door, distinct from [`open`](Self::open), which enforces the
+    /// passphrase length floor.
     pub fn open_unprotected(path: impl AsRef<Path>) -> Result<Self, SecretStoreError> {
-        Self::open_inner(path.as_ref(), SecretString::empty())
+        Self::open_inner(
+            path.as_ref(),
+            SecretString::empty(),
+            KdfParams::default_target(),
+        )
     }
 
-    /// Shared open/create core for [`open`](Self::open) and
-    /// [`open_unprotected`](Self::open_unprotected). Does NOT apply the
-    /// blank-passphrase guard — the public doors decide that.
-    fn open_inner(path: &Path, passphrase: SecretString) -> Result<Self, SecretStoreError> {
+    /// Shared open/create core for [`open`](Self::open),
+    /// [`open_unprotected`](Self::open_unprotected) and
+    /// [`open_mock`](Self::open_mock). Does not apply the passphrase-length
+    /// guard — the public doors decide that. `kdf` is the params a FRESH
+    /// vault is created under; an existing one keeps its own header.
+    ///
+    /// # Errors
+    ///
+    /// [`SecretStoreError::HostPageSizeExceedsBudget`] before any other
+    /// check, if the host cannot honour the locked-memory budget below.
+    fn open_inner(
+        path: &Path,
+        passphrase: SecretString,
+        kdf: KdfParams,
+    ) -> Result<Self, SecretStoreError> {
+        // Ahead of the filesystem work: a store that cannot keep the
+        // budget documented at `MAX_SECRET_LEN` must not come into
+        // existence, and must not leave a fresh vault file behind either.
+        verify_host_page_size()?;
+
         let path = path.to_path_buf();
 
         // Materialize the parent so the lock-sidecar open and vault
         // create do not fail on a not-yet-existing dir.
         let parent = normalized_parent(&path);
         create_parent_dir(parent)?;
-        // Refuse a group/other-WRITABLE parent: directory write governs
-        // rename/unlink, so a writable parent lets another local user
-        // replace the vault despite its own 0600 (the A1 guarantee).
-        check_parent_perms(parent)?;
+        // Refuse unsafe permissions or ownership anywhere above the vault:
+        // an attacker who can replace an ancestor can replace the 0600 file.
+        crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
+            crate::parent_permissions::ParentPermissionsError::Io(source) => {
+                SecretStoreError::io_at(parent, source)
+            }
+            crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
+                SecretStoreError::InsecureParentDir { ancestor, reason }
+            }
+        })?;
 
         // Lock first — every subsequent step assumes exclusive ownership.
         let lock = VaultLock::acquire(&lock_path_for(&path))?;
 
+        // Built before the create branch so the initial-create write bumps
+        // the same counter every later write does — keeping
+        // `durability_uncertain_count`'s "0 == all writes confirmed durable"
+        // contract honest for the create path too.
+        let durability_uncertain = Arc::new(AtomicU64::new(0));
+
         // NotFound → create fresh; anything else → load.
         let (vault, derived_key) = match Self::load_existing_vault(&path, &passphrase)? {
             Some(loaded) => loaded,
-            None => Self::create_new_vault(&path, &passphrase)?,
+            None => Self::create_new_vault(&path, &passphrase, kdf, &durability_uncertain)?,
         };
 
-        let durability_uncertain = Arc::new(AtomicU64::new(0));
         Ok(Self {
             inner: Arc::new(Mutex::new(EncryptedFileStoreInner {
                 path,
@@ -209,7 +403,16 @@ impl EncryptedFileStore {
                 _lock: lock,
             })),
             durability_uncertain,
+            kdf,
         })
+    }
+
+    /// The Argon2 params this store derives at — see [`kdf`](Self::kdf).
+    /// The Tier-2 wrap in [`SecretStore`](crate::secrets::SecretStore) reads
+    /// it so a mock store's per-secret seals are floored too, with no new
+    /// parameter on any public method.
+    pub(crate) fn kdf_params(&self) -> KdfParams {
+        self.kdf
     }
 
     /// Number of vault writes whose data committed but whose parent-directory
@@ -238,16 +441,16 @@ impl EncryptedFileStore {
         Ok(Some((vault, key)))
     }
 
-    /// Build a brand-new empty vault, persist it at `0600`, and return
-    /// the in-memory state + derived key.
+    /// Build a brand-new empty vault under `kdf`, persist it at `0600`, and
+    /// return the in-memory state + derived key.
     fn create_new_vault(
         path: &Path,
         passphrase: &SecretString,
+        kdf: KdfParams,
+        durability_uncertain: &AtomicU64,
     ) -> Result<(Vault, SecretBytes), SecretStoreError> {
-        let (vault, key) = build_fresh_vault(passphrase)?;
-        // Initial create: the store isn't built yet, so no durability counter
-        // to bump — a brand-new store's count starts at 0.
-        write_vault_at(path, &vault, None)?;
+        let (vault, key) = build_fresh_vault(passphrase, kdf)?;
+        write_vault_at(path, &vault, Some(durability_uncertain))?;
         Ok((vault, key))
     }
 
@@ -259,13 +462,22 @@ impl EncryptedFileStore {
     /// The Argon2 derivation runs OUTSIDE the lock — it touches only the
     /// new passphrase + fresh salt, so paying ~hundreds of ms inside the
     /// critical section would needlessly stall unrelated put/get ops.
+    ///
+    /// The vault is one shared fault domain: a corrupt entry blocks rekeying
+    /// every wallet in the vault until that entry is manually removed.
+    ///
+    /// The replacement header derives at this handle's own Argon2 target, which
+    /// for every non-test handle is [`KdfParams::default_target`] — the same
+    /// value a fresh vault gets. Rotating a passphrase therefore lands the
+    /// vault on the shipped parameters of the build doing the rotation.
     pub fn rekey(&self, new_passphrase: SecretString) -> Result<(), SecretStoreError> {
-        // Reject a blank target passphrase: `rekey` always advances to a
-        // REAL passphrase (the empty→real migration uses this). The resident
-        // vault, key, and on-disk file are untouched on rejection. To make a
-        // vault keyless, use `open_unprotected` on a fresh path instead.
-        reject_weak_passphrase(&new_passphrase)?;
-        let (new_vault, new_key) = build_fresh_vault(&new_passphrase)?;
+        // Rekey always advances to a passphrase meeting the same bounds as
+        // open. Rejection leaves the resident and on-disk vault unchanged.
+        validate_passphrase(&new_passphrase)?;
+        // Derive OUTSIDE the lock: it touches only the new passphrase and a
+        // fresh salt, so paying hundreds of ms inside the critical section
+        // would stall unrelated put/get ops for nothing.
+        let (new_vault, new_key) = build_fresh_vault(&new_passphrase, self.kdf)?;
         lock_inner(&self.inner).rekey(new_vault, new_key, new_passphrase)
     }
 
@@ -520,8 +732,12 @@ impl EncryptedFileStoreInner {
 impl Drop for EncryptedFileStoreInner {
     fn drop(&mut self) {
         // Best-effort final sync. Redundant in the success path (every
-        // mutation eager-syncs) but kept as a contract anchor.
-        if let Err(e) = self.sync_to_disk() {
+        // mutation eager-syncs) but kept as a contract anchor. Calls the
+        // non-logging `do_write_vault_at` so this drop-context `warn!` is the
+        // sole log line, not a second one behind `write_vault_at`'s own inner
+        // warn (which still fires for the put/delete/rekey paths).
+        if let Err(e) = do_write_vault_at(&self.path, &self.vault, Some(&self.durability_uncertain))
+        {
             tracing::warn!(error = %e, "drop-time vault sync failed");
         }
         // Re-assert 0600 on Unix in case a peer loosened it while we held
@@ -552,25 +768,33 @@ fn lock_path_for(path: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Reject a blank (empty / all-whitespace) or sub-floor passphrase →
-/// [`SecretStoreError::BlankPassphrase`]. The floor is the coarse
-/// [`MIN_PASSPHRASE_LEN`] (1 today = merely non-blank); the real entropy
-/// policy is the consumer's (see `SECRETS.md`). A blank check alone closes
-/// the length term keeps the floor wired for a future bump.
-fn reject_weak_passphrase(passphrase: &SecretString) -> Result<(), SecretStoreError> {
-    if passphrase.is_blank() || passphrase.trimmed().len() < MIN_PASSPHRASE_LEN {
+/// Reject a passphrase outside the accepted length range: below the
+/// post-trim floor, or past the one-guarded-page ceiling that keeps the
+/// resident passphrase a bounded row in [`MAX_SECRET_LEN`]'s budget.
+fn validate_passphrase(passphrase: &SecretString) -> Result<(), SecretStoreError> {
+    if passphrase.is_below_minimum_passphrase_len() {
         return Err(SecretStoreError::BlankPassphrase);
+    }
+    if passphrase.exceeds_maximum_passphrase_len() {
+        return Err(SecretStoreError::PassphraseTooLong {
+            found: passphrase.len(),
+            max: MAX_PASSPHRASE_LEN,
+        });
     }
     Ok(())
 }
 
-/// Build a fresh entry-less vault (random salt, default Argon2 params,
+/// Build a fresh entry-less vault (random salt, `kdf` Argon2 params,
 /// verify-token sealed under the derived key) plus that derived key, so
-/// the caller can seal entries without re-deriving.
-fn build_fresh_vault(passphrase: &SecretString) -> Result<(Vault, SecretBytes), SecretStoreError> {
+/// the caller can seal entries without re-deriving. `kdf` lands in the
+/// header AND in the verify-token's AAD, so the params stay tamper-bound
+/// whichever value the caller picked.
+fn build_fresh_vault(
+    passphrase: &SecretString,
+    kdf: KdfParams,
+) -> Result<(Vault, SecretBytes), SecretStoreError> {
     let mut salt = [0u8; SALT_LEN];
     crypto::random_bytes(&mut salt)?;
-    let kdf = KdfParams::default_target();
     let key = crypto::derive_key(passphrase, &salt, kdf)?;
     let v_aad = format::verify_aad(format::FORMAT_VERSION, &salt, &kdf);
     let (verify_nonce, verify_ct) = crypto::seal(&key, &v_aad, format::VERIFY_CONSTANT)?;
@@ -588,9 +812,26 @@ fn build_fresh_vault(passphrase: &SecretString) -> Result<(Vault, SecretBytes), 
 }
 
 /// Derive the key from `passphrase` and verify it against the vault's
-/// token *before* any entry is touched. A wrong passphrase fails the
-/// token's AEAD tag (constant-time) and yields `WrongPassphrase` with
-/// no plaintext.
+/// token *before* any entry is touched. An authentication failure means a
+/// wrong passphrase OR an edited header; both yield `WrongPassphrase` with no
+/// plaintext, because the two are cryptographically indistinguishable here —
+/// the header's `kdf` and `salt` feed both the derived key and the
+/// verify-token AAD, so tampering with either fails the tag exactly as a wrong
+/// passphrase does.
+///
+/// The header's Argon2 params are bounded by `KdfParams::enforce_bounds`,
+/// which `crypto::derive_key` runs BEFORE touching the allocator. That band
+/// (`ARGON2_MIN_M_KIB..=ARGON2_MAX_M_KIB`, 19 MiB..=1 GiB) is deliberately far
+/// wider than the shipped `default_target()`, and the width buys VERSION
+/// TOLERANCE, not tunability: every header this crate writes carries
+/// `default_target()` (or, under `test-util`, `floor_target()`), so the only
+/// headers the extra width admits are those written by a build whose default
+/// differed. Clamping reads to the current default would make those — and
+/// every vault at all, were the default ever lowered — permanently unopenable.
+///
+/// The Tier-2 envelope clamps its own reads
+/// (`KdfParams::enforce_read_ceiling`) because an envelope's cost is paid on
+/// every read by whoever holds the object password. Do not unify the two.
 fn derive_and_verify(
     vault: &Vault,
     passphrase: &SecretString,
@@ -605,7 +846,8 @@ fn derive_and_verify(
 }
 
 /// Read + parse the vault at `path`, or `None` if absent. Refuses
-/// looser-than-0600 perms and a file over [`MAX_VAULT_SIZE_BYTES`].
+/// looser-than-0600 perms, foreign ownership, and a file over
+/// [`MAX_VAULT_SIZE_BYTES`].
 /// Opens once with `O_NOFOLLOW` and derives perms/size from the same fd
 /// to avoid a metadata→read TOCTOU.
 fn read_vault_at(path: &Path) -> Result<Option<Vault>, SecretStoreError> {
@@ -617,7 +859,7 @@ fn read_vault_at(path: &Path) -> Result<Option<Vault>, SecretStoreError> {
     let meta = file
         .metadata()
         .map_err(|e| SecretStoreError::io_at(path, e))?;
-    check_perms(&meta)?;
+    check_perms(path, &meta)?;
     let len = meta.len();
     if len > MAX_VAULT_SIZE_BYTES {
         return Err(SecretStoreError::VaultTooLarge {
@@ -688,13 +930,20 @@ fn do_write_vault_at(
     // back in-memory state that already matches the on-disk vault — diverging the
     // live handle from disk. So this stays NON-FATAL: the write returns `Ok` and
     // the data is committed + visible. We surface the unconfirmed power-loss
-    // durability two ways instead of swallowing it — an `error!` log AND a bump
-    // of the pollable `durability_uncertain` counter
+    // durability two ways instead of swallowing it — a `warn!` log (the
+    // condition is degraded-but-recoverable, self-healing on the next
+    // confirmed write, NOT the fatal `error!` a propagated write failure
+    // gets) AND a bump of the pollable `durability_uncertain` counter
     // ([`EncryptedFileStore::durability_uncertain_count`]).
     #[cfg(unix)]
     {
+        // INTENTIONAL(fsync-parent-dir-tolerant): a failed parent-dir fsync
+        // warns and counts instead of failing the write. Accepted risk: the
+        // vault's own fsync+rename already put the data on disk, so only the
+        // directory entry's durability across power loss is unconfirmed —
+        // surfaced to callers via `durability_uncertain_count()`.
         let signal_unconfirmed = |e: &std::io::Error| {
-            tracing::error!(
+            tracing::warn!(
                 error = %e,
                 parent = %parent.display(),
                 "parent-dir fsync unconfirmed after vault persist; data is committed on disk \
@@ -735,13 +984,14 @@ fn create_parent_dir(parent: &Path) -> Result<(), SecretStoreError> {
         fs::DirBuilder::new()
             .mode(0o700)
             .recursive(true)
-            .create(parent)?;
+            .create(parent)
+            .map_err(|e| SecretStoreError::io_at(parent, e))?;
     }
     // INTENTIONAL: Windows parent-dir ACL hardening deferred to
     // https://github.com/dashpay/platform/issues/3754 — tighten manually.
     #[cfg(not(unix))]
     {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).map_err(|e| SecretStoreError::io_at(parent, e))?;
     }
     Ok(())
 }
@@ -782,9 +1032,15 @@ mod vault_lock {
     // member is a `File`/`RawFd`, both `Send + Sync`). The raw pointer
     // points at the heap-pinned `RwLock` this struct owns; sending the
     // struct moves ownership of the box address with it.
-    #[allow(unsafe_code)]
+    #[expect(
+        unsafe_code,
+        reason = "sole owner of the heap-pinned RwLock the raw pointer targets"
+    )]
     unsafe impl Send for VaultLock {}
-    #[allow(unsafe_code)]
+    #[expect(
+        unsafe_code,
+        reason = "sole owner of the heap-pinned RwLock the raw pointer targets"
+    )]
     unsafe impl Sync for VaultLock {}
 
     impl VaultLock {
@@ -817,7 +1073,10 @@ mod vault_lock {
             // at a valid `RwLock<File>`. No other reference exists
             // yet, so promoting it to `&'static mut` is sound for the
             // borrow we hand to `try_write`.
-            #[allow(unsafe_code)]
+            #[expect(
+                unsafe_code,
+                reason = "sole reference to a fresh Box::into_raw allocation; no aliasing"
+            )]
             let static_ref: &'static mut fd_lock::RwLock<fs::File> = unsafe { &mut *raw };
 
             let guard = match static_ref.try_write() {
@@ -827,13 +1086,16 @@ mod vault_lock {
                     // no live borrow points at the box; reclaiming
                     // here is sound and avoids leaking on the error
                     // path.
-                    #[allow(unsafe_code)]
+                    #[expect(
+                        unsafe_code,
+                        reason = "guard never created, so no live borrow; reclaim the box"
+                    )]
                     unsafe {
                         drop(Box::from_raw(raw))
                     };
                     return Err(match e.kind() {
                         std::io::ErrorKind::WouldBlock => SecretStoreError::AlreadyLocked,
-                        _ => SecretStoreError::from(e),
+                        _ => SecretStoreError::io_at(lock_path, e),
                     });
                 }
             };
@@ -854,7 +1116,10 @@ mod vault_lock {
             // the guard has just been dropped (no live borrow), and we
             // are the only owner. Reclaiming the Box runs the
             // `RwLock`'s Drop, which closes the file fd.
-            #[allow(unsafe_code)]
+            #[expect(
+                unsafe_code,
+                reason = "guard dropped first; sole owner reclaims the box"
+            )]
             unsafe {
                 drop(Box::from_raw(self.rwlock))
             };
@@ -941,7 +1206,7 @@ impl std::fmt::Debug for EncryptedFileCredential {
 
 impl CredentialApi for EncryptedFileCredential {
     fn set_secret(&self, secret: &[u8]) -> KeyringResult<()> {
-        let _ = validated_label(&self.label).map_err(SecretStoreError::from)?;
+        validated_label(&self.label).map_err(SecretStoreError::from)?;
         // Cap before wrapping so an oversized secret is never materialized.
         if secret.len() > MAX_SECRET_LEN {
             return Err(KeyringError::from(SecretStoreError::SecretTooLarge {
@@ -959,7 +1224,7 @@ impl CredentialApi for EncryptedFileCredential {
     }
 
     fn get_secret(&self) -> KeyringResult<Vec<u8>> {
-        let _ = validated_label(&self.label).map_err(SecretStoreError::from)?;
+        validated_label(&self.label).map_err(SecretStoreError::from)?;
         match self.store.get_bytes(&self.wallet_id, &self.label) {
             // SPI contract forces a bare Vec; caller owns disposal —
             // prefer SecretStore::get for a zeroizing SecretBytes.
@@ -970,7 +1235,7 @@ impl CredentialApi for EncryptedFileCredential {
     }
 
     fn delete_credential(&self) -> KeyringResult<()> {
-        let _ = validated_label(&self.label).map_err(SecretStoreError::from)?;
+        validated_label(&self.label).map_err(SecretStoreError::from)?;
         match self.store.delete_bytes(&self.wallet_id, &self.label) {
             Ok(true) => Ok(()),
             Ok(false) => Err(KeyringError::NoEntry),
@@ -1074,43 +1339,46 @@ fn entry_decrypt_or_corruption(
 }
 
 #[cfg(unix)]
-fn check_perms(meta: &fs::Metadata) -> Result<(), SecretStoreError> {
+fn check_perms(path: &Path, meta: &fs::Metadata) -> Result<(), SecretStoreError> {
+    check_perms_for_uid(path, meta, effective_uid())
+}
+
+#[cfg(unix)]
+fn check_perms_for_uid(
+    path: &Path,
+    meta: &fs::Metadata,
+    effective_uid: u32,
+) -> Result<(), SecretStoreError> {
     use std::os::unix::fs::MetadataExt;
     let mode = meta.mode() & 0o777;
     if mode & 0o077 != 0 {
-        return Err(SecretStoreError::InsecurePermissions { mode });
+        return Err(SecretStoreError::InsecurePermissions {
+            path: path.to_path_buf(),
+            mode,
+        });
+    }
+    if meta.uid() != effective_uid {
+        return Err(SecretStoreError::InsecureOwnership {
+            path: path.to_path_buf(),
+            found: meta.uid(),
+            expected: effective_uid,
+        });
     }
     Ok(())
+}
+
+#[cfg(unix)]
+#[expect(unsafe_code, reason = "libc geteuid requires an unsafe call")]
+fn effective_uid() -> u32 {
+    // SAFETY: geteuid takes no arguments, has no failure mode, and reads only
+    // the process credential maintained by the kernel.
+    unsafe { libc::geteuid() }
 }
 
 // INTENTIONAL: Windows ACL read-check (needs GetSecurityInfo) deferred to
 // https://github.com/dashpay/platform/issues/3754 — set ACLs manually.
 #[cfg(not(unix))]
-fn check_perms(_meta: &fs::Metadata) -> Result<(), SecretStoreError> {
-    Ok(())
-}
-
-/// Refuse a group/other-WRITABLE vault parent (`mode & 0o022`). The
-/// threat is rename/unlink/replace, which POSIX gates on directory WRITE,
-/// so this targets write bits only — a 0o755 read-only parent leaks
-/// filenames but not the 0600 contents and is the common layout.
-/// `DirBuilder::mode` only hardens dirs this process creates, so a
-/// pre-existing loose dir must still be checked here.
-#[cfg(unix)]
-fn check_parent_perms(parent: &Path) -> Result<(), SecretStoreError> {
-    use std::os::unix::fs::MetadataExt;
-    let meta = fs::metadata(parent).map_err(|e| SecretStoreError::io_at(parent, e))?;
-    let mode = meta.mode() & 0o777;
-    if mode & 0o022 != 0 {
-        return Err(SecretStoreError::InsecureParentDir { mode });
-    }
-    Ok(())
-}
-
-// INTENTIONAL: Windows parent-dir ACL check deferred to the same
-// follow-up as `check_perms` — https://github.com/dashpay/platform/issues/3754.
-#[cfg(not(unix))]
-fn check_parent_perms(_parent: &Path) -> Result<(), SecretStoreError> {
+fn check_perms(_path: &Path, _meta: &fs::Metadata) -> Result<(), SecretStoreError> {
     Ok(())
 }
 
@@ -1380,7 +1648,38 @@ mod tests {
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("loose perms must be refused at open");
         assert!(
-            matches!(err, SecretStoreError::InsecurePermissions { mode: 0o644 }),
+            matches!(
+                err,
+                SecretStoreError::InsecurePermissions { mode: 0o644, .. }
+            ),
+            "got {err:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn foreign_owned_preexisting_file_refused() {
+        use std::os::unix::fs::MetadataExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        {
+            let _s = store_at(&path);
+        }
+        let meta = fs::metadata(&path).unwrap();
+        let owner = meta.uid();
+        let other_uid = owner.wrapping_add(1);
+        let err = check_perms_for_uid(&path, &meta, other_uid)
+            .expect_err("a vault owned by another user must be refused");
+        assert!(
+            matches!(
+                err,
+                SecretStoreError::InsecureOwnership {
+                    path: ref error_path,
+                    found,
+                    expected,
+                } if error_path == &path && found == owner && expected == other_uid
+            ),
             "got {err:?}"
         );
     }
@@ -1393,7 +1692,7 @@ mod tests {
             let s = store_at(&path);
             entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
             let pre = fs::read(&path).unwrap();
-            s.rekey(SecretString::new("pw-new")).unwrap();
+            s.rekey(SecretString::new("password-new")).unwrap();
             assert_eq!(entry(&s, wid(1), "seed").get_secret().unwrap(), b"value");
             let new_bytes = fs::read(&path).unwrap();
             assert_ne!(pre, new_bytes);
@@ -1479,7 +1778,7 @@ mod tests {
         let original_bytes = fs::read(&path).unwrap();
 
         fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o500)).unwrap();
-        let result = s.rekey(SecretString::new("pw-new"));
+        let result = s.rekey(SecretString::new("password-new"));
         fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
 
         assert!(result.is_err(), "rekey should have failed: {result:?}");
@@ -1600,7 +1899,7 @@ mod tests {
         // Rekey re-encrypts every entry under the new key — the
         // corrupt entry fails AEAD-open under the (correct) old key,
         // and we project that as Corruption.
-        let err = s.rekey(SecretString::new("pw-new")).unwrap_err();
+        let err = s.rekey(SecretString::new("password-new")).unwrap_err();
         assert!(
             matches!(err, SecretStoreError::Corruption),
             "unexpected error: {err:?}"
@@ -1682,6 +1981,64 @@ mod tests {
         }
     }
 
+    #[test]
+    fn open_accepts_minimum_and_rejects_shorter_passphrases() {
+        let short_dir = tempfile::tempdir().unwrap();
+        let short_path = vault_path(short_dir.path());
+        let err = EncryptedFileStore::open(&short_path, SecretString::new("1234567"))
+            .expect_err("seven-byte passphrase must be rejected");
+        assert!(matches!(err, SecretStoreError::BlankPassphrase));
+        assert!(!short_path.exists(), "rejection must not create a vault");
+
+        let minimum_dir = tempfile::tempdir().unwrap();
+        let minimum_path = vault_path(minimum_dir.path());
+        EncryptedFileStore::open(&minimum_path, SecretString::new("12345678"))
+            .expect("eight-byte passphrase must be accepted");
+    }
+
+    /// The passphrase ceiling holds at `open` and at `rekey`: it is what
+    /// keeps the resident-passphrase row of `MAX_SECRET_LEN`'s
+    /// locked-memory budget a bounded one, so it cannot be assumed.
+    /// Rejection leaves no vault behind and no vault changed.
+    #[test]
+    fn open_and_rekey_accept_the_passphrase_cap_and_reject_past_it() {
+        let at_cap = || SecretString::new("p".repeat(MAX_PASSPHRASE_LEN));
+        let over = || SecretString::new("p".repeat(MAX_PASSPHRASE_LEN + 1));
+
+        let over_dir = tempfile::tempdir().unwrap();
+        let over_path = vault_path(over_dir.path());
+        let err = EncryptedFileStore::open(&over_path, over())
+            .expect_err("a passphrase past the cap must be rejected");
+        assert!(
+            matches!(
+                err,
+                SecretStoreError::PassphraseTooLong { found, max }
+                    if found == MAX_PASSPHRASE_LEN + 1 && max == MAX_PASSPHRASE_LEN
+            ),
+            "got {err:?}"
+        );
+        assert!(!over_path.exists(), "rejection must not create a vault");
+        assert!(!lock_path_for(&over_path).exists(), "nor a lock sidecar");
+
+        // The cap itself is accepted, and rekey applies the same bounds.
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let s = EncryptedFileStore::open(&path, at_cap())
+            .expect("a passphrase exactly at the cap must be accepted");
+        entry(&s, wid(1), "seed").set_secret(b"v1").unwrap();
+
+        let err = s.rekey(over()).expect_err("rekey must apply the cap too");
+        assert!(
+            matches!(err, SecretStoreError::PassphraseTooLong { .. }),
+            "got {err:?}"
+        );
+        assert_eq!(
+            entry(&s, wid(1), "seed").get_secret().unwrap(),
+            b"v1",
+            "a rejected rekey must leave the vault readable under the old passphrase"
+        );
+    }
+
     /// A blank passphrase is rejected at `rekey`; the resident
     /// vault, key, and on-disk file are UNCHANGED — the original passphrase
     /// still reads every entry, live and after reopen.
@@ -1726,7 +2083,8 @@ mod tests {
                 b"keyless-seed"
             );
         }
-        let err = EncryptedFileStore::open(&path, SecretString::new("real")).unwrap_err();
+        let err =
+            EncryptedFileStore::open(&path, SecretString::new("real-passphrase")).unwrap_err();
         assert!(
             matches!(err, SecretStoreError::WrongPassphrase),
             "real-pass open of a keyless vault must fail, got {err:?}"
@@ -1915,6 +2273,101 @@ mod tests {
         assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
     }
 
+    /// A header above the absolute DoS ceiling is refused on the read path,
+    /// before `m_kib` reaches the allocator.
+    #[test]
+    fn vault_header_read_ceiling_rejects_inflated_m_kib() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        {
+            let _s = store_at(&path);
+        }
+        let mut vault = read_vault_at(&path).unwrap().unwrap();
+        vault.kdf.m_kib = crypto::ARGON2_MAX_M_KIB + 1;
+        write_vault_at(&path, &vault, None).unwrap();
+
+        let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
+            .expect_err("a vault header above the DoS ceiling must be refused");
+        assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
+    }
+
+    /// The read path must NOT clamp to `default_target()`. `default_target` is
+    /// a write-side tunable; a read gate keyed to it orphans every vault
+    /// written under a different value the day it moves. This pins the
+    /// tolerance in the direction that is cheap to test — a header above the
+    /// current default still opens — which is the same property that keeps
+    /// vaults readable after the default is LOWERED.
+    #[test]
+    fn vault_read_path_does_not_clamp_to_the_current_default_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let target = KdfParams::default_target();
+        // Only just off the target: enough to prove the read path does not
+        // clamp, without paying a second full-size Argon2 derivation.
+        let off_target = KdfParams {
+            m_kib: target.m_kib + 1024,
+            t: target.t + 1,
+            ..target
+        };
+        assert!(
+            off_target.enforce_bounds().is_ok(),
+            "fixture must be in-band"
+        );
+        assert!(off_target.m_kib > target.m_kib && off_target.t > target.t);
+
+        let pass = SecretString::new("pw-correct");
+        let (vault, _key) = build_fresh_vault(&pass, off_target).expect("build off-target vault");
+        write_vault_at(&path, &vault, None).expect("write off-target vault");
+        EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
+            .expect("a vault whose header differs from the shipped target must still open");
+    }
+
+    /// A rotation rewrites the header to the rotating handle's own target, and
+    /// the vault stays openable under the new passphrase. A floor (mock)
+    /// handle over an off-target vault is the sharpest case: the two values
+    /// differ on both axes, so a header that came back unchanged would mean the
+    /// rotation had not rewritten it at all.
+    #[test]
+    fn rekey_rewrites_the_header_to_the_handle_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let floor = KdfParams::floor_target();
+        // Just above the floor on both axes: distinguishable from the handle's
+        // own target, cheap enough to derive under three times.
+        let off_target = KdfParams {
+            m_kib: floor.m_kib + 1024,
+            t: floor.t + 1,
+            ..floor
+        };
+        assert!(
+            off_target.enforce_bounds().is_ok(),
+            "fixture must be in-band"
+        );
+
+        let (vault, _key) = build_fresh_vault(&SecretString::new("pw-correct"), off_target)
+            .expect("build off-target vault");
+        write_vault_at(&path, &vault, None).expect("write off-target vault");
+
+        {
+            let store = EncryptedFileStore::open_mock(&path, SecretString::new("pw-correct"))
+                .expect("open off-target vault with a floor handle");
+            assert_eq!(
+                store.kdf_params(),
+                floor,
+                "mock handle derives at the floor"
+            );
+            store.rekey(SecretString::new("pw-rotated")).expect("rekey");
+        }
+
+        let after = read_vault_at(&path).unwrap().unwrap();
+        assert_eq!(
+            after.kdf, floor,
+            "rekey must rewrite the header to the rotating handle's target"
+        );
+        EncryptedFileStore::open_mock(&path, SecretString::new("pw-rotated"))
+            .expect("the rotated passphrase must open the rewritten vault");
+    }
+
     #[test]
     fn persistence_is_until_delete() {
         let dir = tempfile::tempdir().unwrap();
@@ -2003,7 +2456,7 @@ mod tests {
         let rekeyer = std::thread::spawn(move || {
             // Alternate passphrases so consecutive rekeys change the
             // resident key, keeping the race window real.
-            let passphrases = ["pw-A", "pw-B"];
+            let passphrases = ["password-A", "password-B"];
             for i in 0..REKEY_ITERS {
                 rekeyer_store
                     .rekey(SecretString::new(passphrases[i % 2]))
@@ -2083,6 +2536,7 @@ mod tests {
     fn writable_parent_dir_is_refused() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
         let sub = dir.path().join("vaultdir");
         fs::create_dir(&sub).unwrap();
         // Group-writable (0o770) trips the write-bit check. Build the path
@@ -2092,7 +2546,15 @@ mod tests {
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("writable parent dir must be refused");
         assert!(
-            matches!(err, SecretStoreError::InsecureParentDir { mode } if mode & 0o022 != 0),
+            matches!(
+                err,
+                SecretStoreError::InsecureParentDir {
+                    reason: crate::parent_permissions::InsecureAncestor::WritableWithoutSticky {
+                        mode
+                    },
+                    ..
+                } if mode & 0o022 != 0
+            ),
             "got {err:?}"
         );
         // Dropping the write bits (still group-readable at 0o750) lets the

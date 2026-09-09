@@ -163,7 +163,17 @@ async fn test_epoch_fetch_future() {
     assert!(epoch.is_none());
 }
 
-/// Fetch current epoch from Platform.
+/// Given a proved request, `fetch_current` returns the current epoch.
+///
+/// `fetch_current` issues two proved queries with request-derived ranges: a
+/// genesis-epoch probe (whose response metadata hints the current epoch index)
+/// and a two-epoch ascending fetch with an explicit start at that hint. Both
+/// pass the proof verifier's guard against descending queries without an
+/// explicit start (resolving "the last epoch" during verification would require
+/// trusting unsigned metadata, letting a malicious node pass off a stale epoch
+/// as current), and the second one *proves* the hint is the newest started
+/// epoch: it returns one epoch only because the epoch above it is an empty,
+/// not-yet-started tree.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_epoch_fetch_current() {
     setup_logs();
@@ -171,14 +181,24 @@ async fn test_epoch_fetch_current() {
     let cfg = Config::new();
     let sdk = cfg.setup_api("test_epoch_fetch_current").await;
 
-    // Given some current epoch
-    let expected_epoch = get_current_epoch(&sdk, &cfg).await;
-
-    let epoch = ExtendedEpochInfo::fetch_current(&sdk)
+    let (epoch, metadata) = ExtendedEpochInfo::fetch_current_with_metadata(&sdk)
         .await
         .expect("fetch current epoch");
 
-    assert_eq!(epoch.index(), expected_epoch);
+    // The epoch actually returned is the chain tip's, not the genesis epoch the
+    // probe fetched, nor some older epoch a deflated hint would have selected.
+    // Compared against metadata (rather than a hard-coded index) so the test
+    // survives regeneration of the recorded vectors.
+    assert_eq!(u32::from(epoch.index()), metadata.epoch);
+    assert!(epoch.index() < dpp::block::epoch::MAX_EPOCH);
 
-    tracing::info!(epoch = ?epoch, "current epoch");
+    // The next epoch has not started; that is exactly what the confirming query
+    // proved, so it must not be fetchable.
+    assert!(
+        ExtendedEpochInfo::fetch(&sdk, epoch.index() + 1)
+            .await
+            .expect("fetch epoch above current")
+            .is_none(),
+        "fetch_current returned an epoch that is not the newest started one"
+    );
 }

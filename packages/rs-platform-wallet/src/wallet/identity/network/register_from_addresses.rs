@@ -108,10 +108,18 @@ impl IdentityWallet {
             )
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to register identity from addresses: {}",
-                    e
-                ))
+                // Preserve a structured key-unavailable signer failure (from the
+                // identity signer) so the FFI boundary can still restore code 31;
+                // otherwise fall through to the existing nonce-promotion /
+                // stringifying wrapper unchanged.
+                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                    crate::error::promote_address_nonce_error(&e).unwrap_or_else(|| {
+                        PlatformWalletError::InvalidIdentityData(format!(
+                            "Failed to register identity from addresses: {}",
+                            e
+                        ))
+                    })
+                })
             })?;
 
         // The SDK return path for `put_with_address_funding_fetching_nonces`

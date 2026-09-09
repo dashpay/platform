@@ -1,11 +1,7 @@
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
-mod json_conversion;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 #[cfg(feature = "json-conversion")]
@@ -93,7 +89,6 @@ mod test {
     use crate::state_transition::{
         StateTransitionHasUserFeeIncrease, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType,
-        StateTransitionValueConvert,
     };
     use platform_value::BinaryData;
 
@@ -179,62 +174,11 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_value_conversion_roundtrip() {
-        let t = make_update_v0();
-        let obj = t.to_object(false).expect("to_object should work");
-        let restored =
-            IdentityUpdateTransitionV0::from_object(obj, crate::version::PlatformVersion::latest())
-                .expect("from_object should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_to_object_skip_signature() {
-        let t = make_update_v0();
-        let obj = t.to_object(true).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        assert!(!map.contains_key("signature"));
-    }
-
-    #[test]
-    fn test_to_cleaned_object() {
-        let t = make_update_v0();
-        let obj = t.to_cleaned_object(false).expect("should work");
-        assert!(obj.is_map());
-    }
-
-    #[test]
-    fn test_to_cleaned_object_removes_empty_arrays() {
-        let t = IdentityUpdateTransitionV0 {
-            identity_id: Identifier::random(),
-            revision: 1,
-            nonce: 1,
-            add_public_keys: vec![],
-            disable_public_keys: vec![],
-            user_fee_increase: 0,
-            signature_public_key_id: 0,
-            signature: vec![].into(),
-        };
-        let obj = t.to_cleaned_object(false).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        // Empty arrays should be removed
-        assert!(!map.contains_key("addPublicKeys"));
-        assert!(!map.contains_key("disablePublicKeys"));
-    }
-
-    #[test]
-    fn test_from_value_map() {
-        let t = make_update_v0();
-        let obj = t.to_object(false).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        let restored = IdentityUpdateTransitionV0::from_value_map(
-            map,
-            crate::version::PlatformVersion::latest(),
-        )
-        .expect("should work");
-        assert_eq!(t, restored);
-    }
+    // Legacy `StateTransitionValueConvert` round-trip / cleaned-object /
+    // skip-signature tests on the V0 inner struct deleted in Phase D
+    // step 9. The canonical `JsonConvertible` / `ValueConvertible`
+    // round-trip is exercised on the outer enum derive — these tested
+    // methods that no longer exist.
 
     #[test]
     fn test_get_list_empty() {

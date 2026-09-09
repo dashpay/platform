@@ -93,6 +93,7 @@ impl AddressCreditWithdrawalTransitionActionV0 {
         });
 
         let withdrawal_document = DocumentV0 {
+            contract_version: None,
             id: document_id,
             owner_id,
             properties: document_data.into_btree_string_map().unwrap(),

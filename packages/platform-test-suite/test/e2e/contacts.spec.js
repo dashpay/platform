@@ -157,7 +157,11 @@ describe('e2e', () => {
           { where: [['$id', '==', profile.getId()]] },
         );
 
-        expect(fetchedProfile.toObject()).to.be.deep.equal(profile.toObject());
+        const fetchedProfileObject = fetchedProfile.toObject();
+        // Drive stamps the contract version on stored documents (protocol v14+)
+        delete fetchedProfileObject.$contractVersion;
+
+        expect(fetchedProfileObject).to.be.deep.equal(profile.toObject());
       });
 
       it('should add encryption and decryption keys to the identity', async () => {
@@ -256,7 +260,11 @@ describe('e2e', () => {
           { where: [['$id', '==', aliceProfile.getId()]] },
         );
 
-        expect(fetchedProfile.toObject()).to.be.deep.equal(aliceProfile.toObject());
+        const fetchedProfileObject = fetchedProfile.toObject();
+        // Drive stamps the contract version on stored documents (protocol v14+)
+        delete fetchedProfileObject.$contractVersion;
+
+        expect(fetchedProfileObject).to.be.deep.equal(aliceProfile.toObject());
       });
 
       it('should be able to update her profile', async () => {
@@ -279,6 +287,8 @@ describe('e2e', () => {
 
         const fetchedProfileObject = fetchedProfile.toObject();
         delete fetchedProfileObject.$updatedAt;
+        // Drive stamps the contract version on stored documents (protocol v14+)
+        delete fetchedProfileObject.$contractVersion;
 
         const aliceObject = aliceProfile.toObject();
         delete aliceObject.$updatedAt;
@@ -311,7 +321,11 @@ describe('e2e', () => {
           { where: [['$id', '==', bobContactRequest.getId()]] },
         );
 
-        expect(fetchedContactRequest.toObject()).to.be.deep.equal(bobContactRequest.toObject());
+        const fetchedContactRequestObject = fetchedContactRequest.toObject();
+        // Drive stamps the contract version on stored documents (protocol v14+)
+        delete fetchedContactRequestObject.$contractVersion;
+
+        expect(fetchedContactRequestObject).to.be.deep.equal(bobContactRequest.toObject());
       });
     });
 
@@ -336,7 +350,11 @@ describe('e2e', () => {
           { where: [['$id', '==', aliceContactAcceptance.getId()]] },
         );
 
-        expect(fetchedAliceContactAcceptance.toObject()).to.be.deep.equal(
+        const fetchedAcceptanceObject = fetchedAliceContactAcceptance.toObject();
+        // Drive stamps the contract version on stored documents (protocol v14+)
+        delete fetchedAcceptanceObject.$contractVersion;
+
+        expect(fetchedAcceptanceObject).to.be.deep.equal(
           aliceContactAcceptance.toObject(),
         );
       });

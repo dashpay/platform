@@ -20,15 +20,12 @@ use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
-use dpp::identity::identity_public_key::conversion::json::IdentityPublicKeyJsonConversionMethodsV0;
-use dpp::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis};
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
-use dpp::version::PlatformVersion;
 use hex;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -391,11 +388,17 @@ impl IdentityPublicKeyWasm {
 
     /// Serialize to JS object (non-human-readable).
     ///
-    /// Uses platform_value conversion which properly handles the tagged enum
-    /// and removes None fields like disabledAt.
+    /// Uses platform_value conversion which properly handles the tagged enum.
+    /// `disabledAt: null` is stripped automatically by the
+    /// `skip_serializing_if` attribute on the rs-dpp side.
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<IdentityPublicKeyObjectJs> {
-        let value = self.0.to_cleaned_object().map_err(WasmDppError::from)?;
+        // Disambiguate: both canonical `ValueConvertible::to_object` and the
+        // legacy `IdentityPublicKeyPlatformValueConversionMethodsV0::to_object`
+        // are in scope. The canonical one produces the same shape — explicit
+        // call so we route through it.
+        use dpp::serialization::ValueConvertible;
+        let value = ValueConvertible::to_object(&self.0).map_err(WasmDppError::from)?;
         let js_value = serialization::platform_value_to_object(&value)?;
         Ok(js_value.into())
     }
@@ -403,40 +406,50 @@ impl IdentityPublicKeyWasm {
     /// Deserialize from JS object (non-human-readable).
     ///
     /// Uses platform_value conversion which properly handles the tagged enum.
+    /// `platform_version` is accepted for SDK API consistency but not
+    /// load-bearing today — canonical `ValueConvertible::from_object`
+    /// dispatches on the value's `$formatVersion` tag, which produces
+    /// identical output for the only currently-defined V0.
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(
         value: IdentityPublicKeyObjectJs,
-        platform_version: PlatformVersionLikeJs,
+        _platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<IdentityPublicKeyWasm> {
-        let platform_version: PlatformVersion = platform_version.try_into()?;
         let value: JsValue = value.into();
         let platform_value = serialization::platform_value_from_object(&value)?;
-        let key = IdentityPublicKey::from_object(platform_value, &platform_version)
-            .map_err(WasmDppError::from)?;
+        let key = <IdentityPublicKey as dpp::serialization::ValueConvertible>::from_object(
+            platform_value,
+        )
+        .map_err(WasmDppError::from)?;
         Ok(IdentityPublicKeyWasm(key))
     }
 
-    /// Serialize to JSON-compatible JS object (human-readable).
+    /// Serialize to JSON-compatible JS object (canonical wire shape).
     ///
-    /// Uses serde_json conversion which properly handles the tagged enum
-    /// and serializes binary data as base64 strings.
+    /// Binary fields render as base64 strings. Identifier fields render
+    /// as base58 strings. This matches the canonical `JsonConvertible`
+    /// path used by every other rs-dpp type's JSON conversion in this
+    /// SDK — including `IdentityWasm.toJSON`'s embedded public keys.
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<IdentityPublicKeyJSONJs> {
-        let json_value = self.0.to_json_object().map_err(WasmDppError::from)?;
-        let js_value = serialization::json_value_to_js(&json_value)?;
+        use dpp::serialization::JsonConvertible;
+        let json_value = self.0.to_json().map_err(WasmDppError::from)?;
+        let js_value = serialization::json_to_js_value(&json_value)?;
         Ok(js_value.into())
     }
 
-    /// Deserialize from JSON-compatible JS object (human-readable).
+    /// Deserialize from JSON-compatible JS object (canonical wire shape).
     ///
-    /// Uses serde_json conversion which properly handles the tagged enum
-    /// and deserializes base64 strings to binary data.
+    /// Expects base64 strings for binary fields, base58 strings for
+    /// identifiers — the canonical shape produced by `toJSON`.
+    /// `platform_version` is accepted for SDK API consistency but not
+    /// load-bearing today (canonical tag-driven dispatch handles V0).
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(
         value: IdentityPublicKeyJSONJs,
-        platform_version: PlatformVersionLikeJs,
+        _platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<IdentityPublicKeyWasm> {
-        let platform_version: PlatformVersion = platform_version.try_into()?;
+        use dpp::serialization::JsonConvertible;
         let json_value: JsonValue = serde_from_value(value.into()).map_err(|err| {
             WasmDppError::serialization(format!(
                 "IdentityPublicKey.fromJSON: unable to parse JSON: {}",
@@ -444,8 +457,7 @@ impl IdentityPublicKeyWasm {
             ))
         })?;
 
-        let key = IdentityPublicKey::from_json_object(json_value, &platform_version)
-            .map_err(WasmDppError::from)?;
+        let key = IdentityPublicKey::from_json(json_value).map_err(WasmDppError::from)?;
 
         Ok(IdentityPublicKeyWasm(key))
     }

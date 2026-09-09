@@ -3,7 +3,7 @@
 //! Pre-keyed rehydration: identities load from SQLite already carrying
 //! their own public keys + contact state, with nothing layered on
 //! afterwards. store → drop → reopen → `load()` → assert on the
-//! `ManagedIdentity` fields directly (TC-1..TC-10 of the #3968 spec).
+//! `ManagedIdentity` fields directly.
 
 mod common;
 
@@ -18,11 +18,12 @@ use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
     ContactChangeSet, ContactRequestEntry, IdentityChangeSet, IdentityEntry, IdentityKeyEntry,
-    IdentityKeysChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
+    IdentityKeysChangeSet, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
     ReceivedContactRequestKey, SentContactRequestKey,
 };
 use platform_wallet::wallet::identity::{ContactRequest, EstablishedContact, IdentityStatus};
 use platform_wallet::wallet::platform_wallet::WalletId;
+use platform_wallet_storage::WalletStorageError;
 
 fn reopen(path: &std::path::Path) -> platform_wallet_storage::SqlitePersister {
     platform_wallet_storage::SqlitePersister::open(
@@ -126,7 +127,7 @@ fn established(owner: Identifier, contact: Identifier) -> EstablishedContact {
     }
 }
 
-/// TC-1 — a freshly-loaded identity carries its persisted keys in
+/// A freshly-loaded identity carries its persisted keys in
 /// `public_keys()` immediately, bit-exact, with no sync.
 #[test]
 fn tc1_identity_keys_populate_public_keys_on_load() {
@@ -156,7 +157,7 @@ fn tc1_identity_keys_populate_public_keys_on_load() {
     assert_eq!(pks.get(&1), Some(&e1.public_key));
 }
 
-/// TC-2 (load-bearing) — the freshly-loaded AUTHENTICATION/CRITICAL key is
+/// The freshly-loaded AUTHENTICATION/CRITICAL key is
 /// immediately selectable via the exact `get_first_public_key_matching`
 /// predicate the Platform signing path uses, before any sync.
 #[test]
@@ -194,7 +195,7 @@ fn tc2_loaded_auth_key_is_selectable_for_signing() {
     assert_eq!(selected, &key.public_key);
 }
 
-/// TC-3 — an established contact restores onto the identity, bit-exact.
+/// An established contact restores onto the identity, bit-exact.
 #[test]
 fn tc3_established_contact_restores_onto_identity() {
     let (persister, _tmp, path) = fresh_persister();
@@ -237,7 +238,7 @@ fn tc3_established_contact_restores_onto_identity() {
     assert!(managed.dashpay().incoming_contact_requests().is_empty());
 }
 
-/// TC-4 — pending sent and incoming requests restore with correct
+/// Pending sent and incoming requests restore with correct
 /// directionality and map keys.
 #[test]
 fn tc4_sent_and_incoming_requests_restore_directionally() {
@@ -303,7 +304,7 @@ fn tc4_sent_and_incoming_requests_restore_directionally() {
     assert!(managed.dashpay().established_contacts().is_empty());
 }
 
-/// TC-5 — two identities in one wallet with the same numeric `KeyID` keep
+/// Two identities in one wallet with the same numeric `KeyID` keep
 /// disjoint key maps; the group-by must not misattribute.
 #[test]
 fn tc5_no_cross_identity_key_leakage() {
@@ -351,7 +352,7 @@ fn tc5_no_cross_identity_key_leakage() {
     );
 }
 
-/// TC-6 — contact state does not leak across identities in one wallet.
+/// Contact state does not leak across identities in one wallet.
 #[test]
 fn tc6_no_cross_identity_contact_leakage() {
     let (persister, _tmp, path) = fresh_persister();
@@ -409,7 +410,7 @@ fn tc6_no_cross_identity_contact_leakage() {
     assert!(managed_b.dashpay().established_contacts().is_empty());
 }
 
-/// TC-7 — an identity with zero persisted keys loads fine with an empty
+/// An identity with zero persisted keys loads fine with an empty
 /// key map and its scalar fields intact.
 #[test]
 fn tc7_identity_with_zero_keys_loads_empty() {
@@ -436,7 +437,7 @@ fn tc7_identity_with_zero_keys_loads_empty() {
     assert!(managed.dashpay().established_contacts().is_empty());
 }
 
-/// TC-8 — an out-of-wallet identity (no `identity_index`) with zero keys
+/// An out-of-wallet identity (no `identity_index`) with zero keys
 /// and contacts loads into `out_of_wallet_identities`, empty.
 ///
 /// Note: the SQLite `load_state`/`managed_identity_from_entry` path always
@@ -474,10 +475,12 @@ fn tc8_out_of_wallet_identity_loads_empty() {
     assert!(managed.dashpay().incoming_contact_requests().is_empty());
 }
 
-/// TC-9 — a tombstoned identity's orphaned key/contact rows don't crash
-/// the join; the identity is absent and its rows are silently unattributed.
+/// A tombstoned identity's orphaned key/contact rows are the one
+/// orphan class recovery mode forgives. Strict refuses them: "the owner is
+/// gone" is exactly the state that silently discards live key material, so
+/// only an operator who asked for a best-effort load gets the old skip.
 #[test]
-fn tc9_tombstoned_identity_orphan_rows_dont_crash_load() {
+fn tc9_tombstoned_identity_orphan_rows_load_only_in_recovery() {
     let (persister, _tmp, path) = fresh_persister();
     let w = wid(0xC9);
     ensure_wallet_meta(&persister, &w);
@@ -525,9 +528,38 @@ fn tc9_tombstoned_identity_orphan_rows_dont_crash_load() {
         .unwrap();
     drop(persister);
 
-    let state = reopen(&path)
+    let strict = reopen(&path)
         .load()
-        .expect("load must succeed despite orphan rows");
+        .expect_err("orphan rows of a tombstoned owner must abort a strict load");
+    let PersistenceError::Backend { source, .. } = strict else {
+        panic!("expected a typed backend error, got {strict:?}");
+    };
+    assert!(
+        matches!(
+            source.downcast_ref::<WalletStorageError>(),
+            Some(WalletStorageError::OrphanedIdentityEntry { .. })
+        ),
+        "expected OrphanedIdentityEntry, got {source:?}"
+    );
+
+    let recovery = platform_wallet_storage::SqlitePersister::open(
+        platform_wallet_storage::SqlitePersisterConfig::new(&path)
+            .with_load_policy(platform_wallet_storage::LoadPolicy::Recovery),
+    )
+    .expect("reopen in recovery mode");
+    let state = recovery
+        .load()
+        .expect("recovery must complete the load despite orphan rows");
+    assert_eq!(
+        recovery
+            .last_load_degradation()
+            .by_site
+            .get(&platform_wallet_storage::LoadSite::TombstonedIdentityOrphan)
+            .copied(),
+        // One per leftover row: the key row and the established-contact row.
+        Some(2),
+        "both leftover collections must be counted"
+    );
     let im = &state.wallets[&w].identity_manager;
     let present = im
         .wallet_identities
@@ -541,7 +573,64 @@ fn tc9_tombstoned_identity_orphan_rows_dont_crash_load() {
     );
 }
 
-/// TC-10 — cross-wallet scoping is preserved: two wallets each holding an
+/// Several leftover rows of one tombstoned owner in one collection must
+/// count several times: every other `LoadSite` counts occurrences, so a
+/// rescue operator reading `by_site` would otherwise be unable to tell
+/// three lost keys from three lost collections.
+#[test]
+fn tombstoned_identity_orphan_rows_are_counted_per_row() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xCA);
+    ensure_wallet_meta(&persister, &w);
+    let id = Identifier::from([0x9A; 32]);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(id_changeset([wallet_identity_entry(id, w, 0)])),
+                identity_keys: Some(keys_changeset([
+                    key_entry(id, 0, 0x91, SecurityLevel::HIGH),
+                    key_entry(id, 1, 0x92, SecurityLevel::HIGH),
+                    key_entry(id, 2, 0x93, SecurityLevel::HIGH),
+                ])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // Tombstone the owner; its three key rows are left behind.
+    let mut removed = IdentityChangeSet::default();
+    removed.removed.insert(id);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(removed),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let recovery = platform_wallet_storage::SqlitePersister::open(
+        platform_wallet_storage::SqlitePersisterConfig::new(&path)
+            .with_load_policy(platform_wallet_storage::LoadPolicy::Recovery),
+    )
+    .expect("reopen in recovery mode");
+    recovery
+        .load()
+        .expect("recovery must complete the load despite orphan rows");
+    assert_eq!(
+        recovery
+            .last_load_degradation()
+            .by_site
+            .get(&platform_wallet_storage::LoadSite::TombstonedIdentityOrphan)
+            .copied(),
+        Some(3),
+        "each leftover key row must be counted"
+    );
+}
+
+/// Cross-wallet scoping is preserved: two wallets each holding an
 /// identity with the same `KeyID` get only their own key.
 #[test]
 fn tc10_cross_wallet_scoping_preserved() {

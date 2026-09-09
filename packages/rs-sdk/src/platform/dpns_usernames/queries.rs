@@ -55,10 +55,13 @@ impl Sdk {
                 operator: WhereOperator::Equal,
                 value: Value::Identifier(identity_id.to_buffer()),
             }],
+            time_range_clauses: vec![],
+            sub_queries: vec![],
             group_by: vec![],
             having: vec![],
             order_by_clauses: vec![], // Remove ordering by $createdAt as it might not be indexed
             limit,
+            offset: None,
             start: None,
         };
 
@@ -141,6 +144,8 @@ impl Sdk {
                     value: Value::Text(normalized_prefix),
                 },
             ],
+            time_range_clauses: vec![],
+            sub_queries: vec![],
             group_by: vec![],
             having: vec![],
             order_by_clauses: vec![OrderClause {
@@ -148,6 +153,7 @@ impl Sdk {
                 ascending: true,
             }],
             limit: limit.unwrap_or(10),
+            offset: None,
             start: None,
         };
 

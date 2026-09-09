@@ -9,6 +9,8 @@ use crate::data_contract::config::v1::{
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -20,6 +22,7 @@ use std::collections::BTreeMap;
 use v0::{DataContractConfigGettersV0, DataContractConfigSettersV0, DataContractConfigV0};
 
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq, From)]
 #[serde(tag = "$formatVersion")]
 pub enum DataContractConfig {
@@ -76,6 +79,11 @@ impl DataContractConfig {
         }
     }
 
+    /// **KEEP-AS-EXCEPTION** in the JSON/Value canonical-trait migration —
+    /// this is a context-aware constructor, not a parallel conversion path:
+    /// it dispatches the config variant on `platform_version` (the input map
+    /// carries no `$formatVersion` tag in the contract-creation flow), so
+    /// canonical `ValueConvertible::from_object` cannot replace it.
     pub fn from_value(
         value: Value,
         platform_version: &PlatformVersion,
@@ -805,5 +813,87 @@ mod tests {
                 DataContractConfig::get_contract_configuration_properties(&m, platform_version);
             assert!(result.is_err());
         }
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::data_contract::config::v0::DataContractConfigV0;
+    use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    /// Non-default values per field so the wire-shape assertion catches any
+    /// silent zero-out / flip on round-trip.
+    fn fixture() -> DataContractConfig {
+        DataContractConfig::V0(DataContractConfigV0 {
+            can_be_deleted: true,
+            readonly: true,
+            keeps_history: true,
+            documents_keep_history_contract_default: true,
+            documents_mutable_contract_default: false,
+            documents_can_be_deleted_contract_default: false,
+            requires_identity_encryption_bounded_key: Some(StorageKeyRequirements::Unique),
+            requires_identity_decryption_bounded_key: Some(StorageKeyRequirements::Multiple),
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // `requiresIdentity{En,De}cryptionBoundedKey` are `Option<StorageKeyRequirements>`
+        // where `StorageKeyRequirements` is `#[repr(u8)]` with `Serialize_repr`
+        // (Unique = 0, Multiple = 1). JSON has only one number type, so the
+        // u8-ness of these fields is erased on the wire — the Value-path
+        // assertion below uses `0u8` / `1u8` to lock in the sized variant.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "canBeDeleted": true,
+                "readonly": true,
+                "keepsHistory": true,
+                "documentsKeepHistoryContractDefault": true,
+                "documentsMutableContractDefault": false,
+                "documentsCanBeDeletedContractDefault": false,
+                "requiresIdentityEncryptionBoundedKey": 0,
+                "requiresIdentityDecryptionBoundedKey": 1,
+            })
+        );
+        let recovered = DataContractConfig::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // `0u8` / `1u8`: `StorageKeyRequirements` is `#[repr(u8)]`, and
+        // platform_value preserves sized variants (`Value::U8`, not `Value::U64`).
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "canBeDeleted": true,
+                "readonly": true,
+                "keepsHistory": true,
+                "documentsKeepHistoryContractDefault": true,
+                "documentsMutableContractDefault": false,
+                "documentsCanBeDeletedContractDefault": false,
+                "requiresIdentityEncryptionBoundedKey": 0u8,
+                "requiresIdentityDecryptionBoundedKey": 1u8,
+            })
+        );
+        let recovered = DataContractConfig::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

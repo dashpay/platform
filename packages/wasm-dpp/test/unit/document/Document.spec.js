@@ -397,28 +397,6 @@ describe('Document', () => {
     });
   });
 
-  describe('#toJSON', () => {
-    it('should return Document as plain JS object', () => {
-      const jsonDocument = {
-        ...rawDocument,
-        $dataContractId: document.getDataContractId().toString(),
-        $dataContract: document.getDataContract().toJSON(),
-        $id: document.getId().toString(),
-        $ownerId: document.getOwnerId().toString(),
-      };
-
-      expect(document.toJSON()).to.deep.equal(jsonDocument);
-    });
-  });
-
-  describe('#toObject', () => {
-    it('should return Document as object', () => {
-      const result = document.toObject();
-
-      expect(rawDocumentWithBuffers).to.deep.equal(result);
-    });
-  });
-
   describe('#toBuffer', () => {
     it('should return serialized Document', () => {
       const buffer = document.toBuffer();

@@ -43,6 +43,8 @@ pub mod prover;
 pub mod seed_pool;
 pub mod store;
 pub mod sync;
+#[cfg(test)]
+mod viewing_key_bind_tests;
 
 pub use activity::{
     compute_activity_id, derive_activity_from_scan_data, sort_activity_for_display,

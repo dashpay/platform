@@ -238,7 +238,9 @@ async fn broadcast_and_collect_address_infos(
 ) -> Result<(AddressInfos, u64), Error> {
     ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
     let (st_result, metadata) = state_transition
-        .broadcast_and_wait_with_metadata::<StateTransitionProofResult>(sdk, settings)
+        .broadcast_and_wait_for_affected_state_with_metadata::<StateTransitionProofResult>(
+            sdk, settings,
+        )
         .await?;
     match st_result {
         StateTransitionProofResult::VerifiedAddressInfos(address_infos) => {

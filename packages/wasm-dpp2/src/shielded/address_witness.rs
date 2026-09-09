@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_js_value;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::utils::{IntoWasm, try_from_options_with, try_to_array};
 use dpp::address_funds::AddressWitness;
@@ -13,7 +14,7 @@ const ADDRESS_WITNESS_TS_TYPES: &str = r#"
  * Address witness for P2PKH spending in Object form.
  */
 export interface AddressWitnessP2pkhObject {
-    type: "p2pkh";
+    $type: "p2pkh";
     signature: Uint8Array;
 }
 
@@ -21,7 +22,7 @@ export interface AddressWitnessP2pkhObject {
  * Address witness for P2SH spending in Object form.
  */
 export interface AddressWitnessP2shObject {
-    type: "p2sh";
+    $type: "p2sh";
     signatures: Uint8Array[];
     redeemScript: Uint8Array;
 }
@@ -35,7 +36,7 @@ export type AddressWitnessObject = AddressWitnessP2pkhObject | AddressWitnessP2s
  * Address witness for P2PKH spending in JSON form.
  */
 export interface AddressWitnessP2pkhJSON {
-    type: "p2pkh";
+    $type: "p2pkh";
     signature: string;
 }
 
@@ -43,7 +44,7 @@ export interface AddressWitnessP2pkhJSON {
  * Address witness for P2SH spending in JSON form.
  */
 export interface AddressWitnessP2shJSON {
-    type: "p2sh";
+    $type: "p2sh";
     signatures: string[];
     redeemScript: string;
 }
@@ -53,6 +54,15 @@ export interface AddressWitnessP2shJSON {
  */
 export type AddressWitnessJSON = AddressWitnessP2pkhJSON | AddressWitnessP2shJSON;
 "#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "AddressWitnessObject")]
+    pub type AddressWitnessObjectJs;
+
+    #[wasm_bindgen(typescript_type = "AddressWitnessJSON")]
+    pub type AddressWitnessJSONJs;
+}
 
 /// The input witness data required to spend from a PlatformAddress.
 ///
@@ -168,6 +178,14 @@ impl AddressWitnessWasm {
 
 impl_try_from_js_value!(AddressWitnessWasm, "AddressWitness");
 impl_wasm_type_info!(AddressWitnessWasm, AddressWitness);
+
+impl_wasm_conversions_inner!(
+    AddressWitnessWasm,
+    AddressWitness,
+    AddressWitness,
+    AddressWitnessObjectJs,
+    AddressWitnessJSONJs
+);
 
 /// Extract a `Vec<AddressWitnessWasm>` from a JS options object property.
 ///

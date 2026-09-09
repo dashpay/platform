@@ -385,7 +385,7 @@ mod tests {
                 base,
                 identity_create_from_shielded_extra_sighash_data(
                     &id_a,
-                    30_000_000_000,
+                    25_000_000_000,
                     &fallback,
                     &keys
                 ),

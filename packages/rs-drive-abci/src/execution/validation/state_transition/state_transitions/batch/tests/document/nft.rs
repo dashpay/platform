@@ -92,6 +92,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -275,6 +276,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -285,6 +287,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -552,6 +555,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -562,6 +566,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -993,6 +998,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1003,6 +1009,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1553,6 +1560,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1563,6 +1571,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2459,6 +2468,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2469,6 +2479,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2713,6 +2724,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2723,6 +2735,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3091,6 +3104,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3256,6 +3270,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3266,6 +3281,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3792,6 +3808,7 @@ mod nft_tests {
             buyer_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -4006,6 +4023,7 @@ mod nft_tests {
             creator_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -4024,6 +4042,7 @@ mod nft_tests {
             creator_id_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -4625,6 +4644,7 @@ mod nft_tests {
             buyer1_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -4642,6 +4662,7 @@ mod nft_tests {
             buyer2_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 

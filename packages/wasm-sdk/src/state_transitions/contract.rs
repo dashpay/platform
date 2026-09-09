@@ -224,10 +224,15 @@ impl WasmSdk {
         .await
         .map_err(|e| WasmSdkError::generic(format!("Failed to create update transition: {}", e)))?;
 
-        // Broadcast the transition
+        // Broadcast the transition. A contract update proof authenticates
+        // the current contract body — a height-pinned snapshot — and cannot
+        // bind this update's execution, so the snapshot wait is required.
         use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
         state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
+            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
+                self.inner_sdk(),
+                settings,
+            )
             .await?;
 
         Ok(())

@@ -54,6 +54,18 @@ export const OUTPUT_FORMATS = {
   PLAIN: 'plain',
 };
 
+/**
+ * ACME directory certificates are requested from.
+ *
+ * Let's Encrypt is the only public CA that issues certificates for IP
+ * addresses over ACME, and Dashmate identifies a node by its external IP, so
+ * this is the only value that obtains a publicly trusted certificate today.
+ * It is configurable so an operator can rehearse against the staging directory
+ * without spending the production failed-validation budget, and so a test can
+ * point at a local ACME server.
+ */
+export const LETSENCRYPT_ACME_DIRECTORY_URL = 'https://acme-v02.api.letsencrypt.org/directory';
+
 export const SSL_PROVIDERS = {
   ZEROSSL: 'zerossl',
   LETSENCRYPT: 'letsencrypt',

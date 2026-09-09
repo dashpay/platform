@@ -105,7 +105,57 @@ pub fn with_serde_to_json_value(data: &JsValue) -> Result<JsonValue, JsValue> {
 }
 
 pub fn with_serde_to_platform_value(data: &JsValue) -> Result<Value, JsValue> {
-    Ok(with_serde_to_json_value(data)?.into())
+    Ok(json_value_to_platform_value_lenient(
+        with_serde_to_json_value(data)?,
+    ))
+}
+
+/// Converts a `serde_json::Value` into a `platform_value::Value`, restoring the
+/// legacy "array of u8 → `Value::Bytes`" coercion that `From<JsonValue> for Value`
+/// used to perform before the Critical-2 faithful-conversion change in
+/// rs-platform-value.
+///
+/// The JS boundary of this (deprecated) crate stringifies JS `Buffer`s into plain
+/// number arrays via [`stringify`], then relied on that coercion to reconstruct
+/// binary document fields (`byteArrayField`, identifiers, …) as `Value::Bytes`.
+/// rs-platform-value is now intentionally faithful (array → `Value::Array`), so we
+/// re-apply the heuristic here — scoped to the legacy crate's JS input only —
+/// rather than reintroduce the footgun globally.
+pub(crate) fn json_value_to_platform_value_lenient(value: JsonValue) -> Value {
+    match value {
+        JsonValue::Array(array) => {
+            let u8_max = u8::MAX as u64;
+            // Matches the pre-Critical-2 heuristic exactly: length >= 10 and every
+            // element a u64 that fits in a byte ⇒ treat as a byte array.
+            if array.len() >= 10
+                && array
+                    .iter()
+                    .all(|v| v.as_u64().map(|int| int <= u8_max).unwrap_or(false))
+            {
+                Value::Bytes(
+                    array
+                        .into_iter()
+                        .map(|v| v.as_u64().expect("checked above") as u8)
+                        .collect(),
+                )
+            } else {
+                Value::Array(
+                    array
+                        .into_iter()
+                        .map(json_value_to_platform_value_lenient)
+                        .collect(),
+                )
+            }
+        }
+        JsonValue::Object(map) => Value::Map(
+            map.into_iter()
+                .map(|(k, v)| (k.into(), json_value_to_platform_value_lenient(v)))
+                .collect(),
+        ),
+        // Null / Bool / Number / String are unaffected by the heuristic and convert
+        // identically through the canonical impl.
+        other => other.into(),
+    }
 }
 
 pub fn with_serde_into<D>(data: &JsValue) -> Result<D, JsValue>

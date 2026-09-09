@@ -72,7 +72,6 @@ describe('Identity', () => {
         purpose: KeyPurpose.AUTHENTICATION,
         securityLevel: KeySecurityLevel.HIGH,
         readOnly: false,
-        disabledAt: null,
         contractBounds: null,
       };
 
@@ -151,7 +150,6 @@ describe('Identity', () => {
             purpose: KeyPurpose.AUTHENTICATION,
             securityLevel: KeySecurityLevel.HIGH,
             readOnly: false,
-            disabledAt: null,
             contractBounds: null,
           },
         ],

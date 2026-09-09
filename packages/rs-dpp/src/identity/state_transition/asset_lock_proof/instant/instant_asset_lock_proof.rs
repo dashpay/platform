@@ -44,6 +44,10 @@ pub struct InstantAssetLockProof {
     pub output_index: u32,
 }
 
+// Manual Serialize/Deserialize via the `RawInstantLockProof` DTO bridge:
+// `InstantLock`/`Transaction` are consensus-encoded byte blobs on the wire
+// (base64 in HR JSON, bytes otherwise), not serde-shaped structs, so the
+// derive can't express the shape. Not a tagging customization.
 impl Serialize for InstantAssetLockProof {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -106,14 +110,6 @@ impl InstantAssetLockProof {
             transaction,
             output_index,
         }
-    }
-
-    pub fn to_object(&self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
-    }
-
-    pub fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        self.to_object()
     }
 
     pub fn instant_lock(&self) -> &InstantLock {
@@ -394,20 +390,14 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // to_object()
+    // to_object() — canonical ValueConvertible
     // ---------------------------------------------------------------
 
     #[test]
     fn test_to_object_succeeds() {
+        use crate::serialization::ValueConvertible;
         let proof = raw_instant_asset_lock_proof_fixture(None, None);
         let result = proof.to_object();
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_to_cleaned_object_succeeds() {
-        let proof = raw_instant_asset_lock_proof_fixture(None, None);
-        let result = proof.to_cleaned_object();
         assert!(result.is_ok());
     }
 
@@ -462,11 +452,40 @@ mod tests {
 
     #[test]
     fn test_try_from_value_round_trip() {
+        use crate::serialization::ValueConvertible;
         let proof = raw_instant_asset_lock_proof_fixture(None, None);
         let value = proof.to_object().unwrap();
         let recovered = InstantAssetLockProof::try_from(value).unwrap();
         assert_eq!(proof.output_index, recovered.output_index);
         assert_eq!(proof.instant_lock, recovered.instant_lock);
         assert_eq!(proof.transaction.txid(), recovered.transaction.txid());
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests_instantassetlockproof {
+    use super::*;
+
+    #[test]
+    fn json_round_trip_instantassetlockproof() {
+        use crate::serialization::JsonConvertible;
+        let original = InstantAssetLockProof::default();
+        let json = original.to_json().expect("to_json");
+        let recovered = InstantAssetLockProof::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_instantassetlockproof() {
+        use crate::serialization::ValueConvertible;
+        let original = InstantAssetLockProof::default();
+        let value = original.to_object().expect("to_object");
+        let recovered = InstantAssetLockProof::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }
