@@ -10,18 +10,27 @@ import XCTest
 /// process from each registered version, and stores that OLDER BUILDS
 /// actually wrote.
 ///
-/// The fixture stores under `Fixtures/SchemaStores/` were written by a build
-/// of the persistence sources as of commit 5f58417079 — the last state
-/// before V4, the state the frozen copies under `FrozenSchemas/` are
-/// generated from — through that build's own `DashSchemaV1` /
-/// `DashSchemaV2` / `DashSchemaV3`. They pin the frozen copies as that
-/// pre-V4 build defined them, not what the original V1 release wrote (see
-/// the `DashSchemaV1` doc for why those stores are expected to fail open
-/// and be rebuilt). Each carries a wallet,
-/// an account, a core address, two transactions, a TXO linked to both, a
-/// pending input, an identity, a keyword, an asset lock and (from V2) a
-/// tracked masternode — enough to exercise every relationship in the wallet
-/// graph.
+/// The fixture stores under `Fixtures/SchemaStores/` were written by the
+/// builds that shipped each version: `dash-v1` to `dash-v3` by a build of
+/// the persistence sources as of commit 5f58417079 — the last state before
+/// V4, the state the frozen copies under `FrozenSchemas/` are generated
+/// from — through that build's own `DashSchemaV1` / `DashSchemaV2` /
+/// `DashSchemaV3`, and `dash-v4` by the build that registered V4, through
+/// `DashModelContainer.create`. They pin the frozen copies as the pre-V4
+/// build defined them, not what the original V1 release wrote (see the
+/// `DashSchemaV1` doc for why those stores are expected to fail open and
+/// be rebuilt). Each carries a wallet, an account, a core address, two
+/// transactions, a TXO linked to both, a pending input, an identity, a
+/// keyword, an asset lock and (from V2) a tracked masternode — enough to
+/// exercise every relationship in the wallet graph; the rows are the ones
+/// `testWriteTheLiveSchemaFixtureStore` writes.
+///
+/// The live version has a fixture too, so a change to a live model's
+/// shape fails the hash test against that version's own store — the
+/// failure a store in the field would otherwise report as Cocoa error
+/// 134504. Changing the live shape before it ships is legitimate; doing
+/// so means regenerating the live fixture on purpose, with
+/// `testWriteTheLiveSchemaFixtureStore`, in the same change.
 ///
 /// A source store written in this process by `Schema(versionedSchema:)`
 /// cannot replace them: SwiftData binds an entity name to the first Swift
@@ -57,6 +66,9 @@ final class DashModelMigrationTests: XCTestCase {
         Fixture(
             name: "dash-v3", version: DashSchemaV3.self,
             hasTrackedMasternode: true, assetLockRecipientIsExternal: true),
+        Fixture(
+            name: "dash-v4", version: DashSchemaV4.self,
+            hasTrackedMasternode: true, assetLockRecipientIsExternal: true),
     ]
 
     /// Every schema version that has ever shipped, oldest first, as
@@ -64,8 +76,10 @@ final class DashModelMigrationTests: XCTestCase {
     /// that exist in the field, so it can never be removed from, reordered
     /// in, or replaced in the migration plan, and the plan is checked
     /// against this list rather than the other way round. Adding a version
-    /// to the plan is shipping it: append it here in the same change, and
-    /// give the version before it a fixture store in `fixtures`.
+    /// to the plan is shipping it: append it here in the same change and
+    /// give it a fixture store in `fixtures`, written by that build with
+    /// `testWriteTheLiveSchemaFixtureStore`. Every entry has a fixture,
+    /// the live one included.
     private static let shippedVersions = ["1.0.0", "2.0.0", "3.0.0", "4.0.0"]
 
     private static let fixtureWalletId = Data(repeating: 0x31, count: 32)
@@ -231,18 +245,21 @@ final class DashModelMigrationTests: XCTestCase {
     /// Its reach is exactly the fixtures: it guards a version only once a
     /// store written by a build that shipped that version is committed
     /// under `Fixtures/SchemaStores/` and listed in `fixtures`. So the first
-    /// thing checked is that `fixtures` lists every retired version in
-    /// `shippedVersions`, once each: cutting a new schema version fails this
-    /// test until the fixture written by the build that shipped the retired
-    /// version is committed. The expectation comes from the append-only
-    /// list, not from the migration plan, so a plan that dropped a version
-    /// cannot shrink it (`testShippedSchemaVersionsStayInTheMigrationPlan`).
+    /// thing checked is that `fixtures` lists every version in
+    /// `shippedVersions`, the live one included, once each: cutting a new
+    /// schema version fails this test until its fixture is committed, and
+    /// changing a live model's shape fails it against the live fixture
+    /// until that fixture is deliberately rewritten. The expectation comes
+    /// from the append-only list, not from the migration plan, so a plan
+    /// that dropped a version cannot shrink it
+    /// (`testShippedSchemaVersionsStayInTheMigrationPlan`).
     func testFrozenVersionsBuiltAfterTheLiveSchemaHashLikeTheStoresTheyShipped() throws {
         XCTAssertEqual(
             Self.fixtures.map { Self.describe($0.version.versionIdentifier) },
-            Array(Self.shippedVersions.dropLast()),
-            "every retired schema version needs a fixture store written by the build that "
-                + "shipped it, listed once in `fixtures`; without one its freeze is unguarded")
+            Self.shippedVersions,
+            "every shipped schema version, the live one included, needs a fixture store "
+                + "written by the build that shipped it, listed once in `fixtures`; without "
+                + "one its shape is unguarded")
 
         for fixture in Self.fixtures {
             let (directory, url) = try copyFixture(fixture)
@@ -280,7 +297,16 @@ final class DashModelMigrationTests: XCTestCase {
     /// `shippedVersions`, never the plan itself, so editing the plan cannot
     /// move the goalposts; a version can only enter the plan by being
     /// appended to that list in the same change.
+    ///
+    /// Versions are compared by identifier, not by enum: two enums both
+    /// declaring `4.0.0` are indistinguishable here, so the identifiers in
+    /// the list must be unique, and whether the enum behind an identifier
+    /// still has the shape that shipped is decided by that version's
+    /// fixture in the hash test.
     func testShippedSchemaVersionsStayInTheMigrationPlan() {
+        XCTAssertEqual(
+            Set(Self.shippedVersions).count, Self.shippedVersions.count,
+            "a version identifier can ship once")
         XCTAssertEqual(
             DashMigrationPlan.schemas.map { Self.describe($0.versionIdentifier) },
             Self.shippedVersions,
@@ -301,6 +327,96 @@ final class DashModelMigrationTests: XCTestCase {
             Self.describe(DashModelContainer.schema.version),
             Self.describe(last.versionIdentifier),
             "DashModelContainer.schema must be built from the migration plan's last version")
+    }
+
+    /// Writes the live version's fixture store — the rows every fixture
+    /// carries, through `DashModelContainer.create`, so the file is what
+    /// this build ships. Skipped unless `DASH_SCHEMA_FIXTURE_OUTPUT` names a
+    /// directory to write into; run it on purpose when the live shape
+    /// changes before shipping, or when a new version is cut:
+    ///
+    ///     DASH_SCHEMA_FIXTURE_OUTPUT=/some/dir swift test \
+    ///       --filter DashModelMigrationTests/testWriteTheLiveSchemaFixtureStore
+    ///
+    /// then move `dash-vN.store` into `Fixtures/SchemaStores/`. A retired
+    /// version's fixture is never rewritten: only the build that shipped it
+    /// could write it.
+    @MainActor
+    func testWriteTheLiveSchemaFixtureStore() throws {
+        guard let output = ProcessInfo.processInfo.environment["DASH_SCHEMA_FIXTURE_OUTPUT"]
+        else {
+            throw XCTSkip("set DASH_SCHEMA_FIXTURE_OUTPUT to write the live schema's fixture")
+        }
+        let version = try XCTUnwrap(DashMigrationPlan.schemas.last).versionIdentifier
+        let url = URL(fileURLWithPath: output, isDirectory: true)
+            .appendingPathComponent("dash-v\(version.major).store")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: url.path), "\(url.path) already exists")
+
+        var container: ModelContainer? = try DashModelContainer.create(url: url)
+        let context = try XCTUnwrap(container?.mainContext)
+        let wallet = PersistentWallet(
+            walletId: Self.fixtureWalletId, network: .testnet, name: "fixture wallet",
+            syncedHeight: 120)
+        context.insert(wallet)
+        let account = PersistentAccount(
+            wallet: wallet, accountType: 0, accountIndex: 0, accountTypeName: "standard")
+        context.insert(account)
+        let address = PersistentCoreAddress(
+            address: "yFixtureAddress", poolTypeTag: 0, addressIndex: 0, derivationPath: "m/0")
+        address.account = account
+        context.insert(address)
+        let funding = PersistentTransaction(
+            txid: Self.fixtureFundingTxid, transactionData: Data([3, 0]), context: 2,
+            blockHeight: 100)
+        let spend = PersistentTransaction(
+            txid: Self.fixtureSpendTxid, transactionData: Data([3, 0]), context: 2,
+            blockHeight: 110)
+        context.insert(funding)
+        context.insert(spend)
+        account.involvedTransactions = [funding, spend]
+        let txo = PersistentTxo(
+            transaction: funding, vout: 0, amount: 1_000, address: "yFixtureAddress",
+            height: 100)
+        txo.walletId = Self.fixtureWalletId
+        txo.isSpent = true
+        txo.spendingTransaction = spend
+        txo.coreAddress = address
+        txo.account = account
+        context.insert(txo)
+        context.insert(PersistentPendingInput(
+            outpoint: Data(repeating: 0x11, count: 36), inputIndex: 0,
+            spendingTxid: Self.fixtureSpendTxid, spendingTransaction: spend,
+            walletId: Self.fixtureWalletId))
+        let identity = PersistentIdentity(
+            identityId: Self.fixtureIdentityId, balance: 5, network: .testnet)
+        identity.wallet = wallet
+        context.insert(identity)
+        context.insert(PersistentKeyword(keyword: "preserved", contractId: "contract"))
+        let lock = PersistentAssetLock(
+            outPointHex: String(repeating: "ab", count: 32) + ":0",
+            walletId: Self.fixtureWalletId, transactionBytes: Data([1, 2, 3]),
+            fundingTypeRaw: 4, identityIndexRaw: -1, amountDuffs: 100_000, statusRaw: 4)
+        lock.recipientIsExternal = true
+        context.insert(lock)
+        context.insert(PersistentTrackedMasternode(
+            networkRaw: Network.testnet.rawValue, proTxHash: Data(repeating: 7, count: 32),
+            label: "fixture", addedAt: 1, snapshotJSON: "{}"))
+        try context.save()
+        container = nil
+
+        // A fixture has to be one self-contained file that opens read-only
+        // from any directory, so the write-ahead log is folded back in and
+        // the store left in rollback-journal mode, which also removes the
+        // -wal and -shm sidecars.
+        var database: OpaquePointer?
+        XCTAssertEqual(
+            sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(database, "PRAGMA journal_mode=DELETE", nil, nil, nil), SQLITE_OK)
+        sqlite3_close(database)
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: url.path + "-wal"),
+            "the store still has a write-ahead log")
     }
 
     /// The SQLite indexes of a store, one line per index: table, name and

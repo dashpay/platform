@@ -91,10 +91,12 @@ public enum DashModelContainer {
     /// the released versions must not. When the next property lands: freeze
     /// every model here into the version being retired
     /// (`scripts/freeze_schema_models.py`), add a version, add a stage, and
-    /// commit a store written by the build that shipped the retired version
-    /// under the test fixtures. `DashModelMigrationTests` proves a freeze
-    /// complete (in what the entity hash covers, plus its indexes) only
-    /// against such a store, and fails until every retired version has one.
+    /// commit a store written by this build for the new version under the
+    /// test fixtures (`DashModelMigrationTests.testWriteTheLiveSchemaFixtureStore`).
+    /// `DashModelMigrationTests` proves a version's shape (what the entity
+    /// hash covers, plus its indexes) only against such a store, for the
+    /// live version too: changing a model here before the version ships
+    /// means rewriting the live fixture on purpose in the same change.
     public static var modelTypes: [any PersistentModel.Type] {
         [
             PersistentIdentity.self,
