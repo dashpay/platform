@@ -45,7 +45,8 @@ use crate::contact_persistence::{
 };
 use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI, KeyTypeTagFFI};
 use crate::core_wallet_types::{
-    build_sweep_batches_for_callback, free_wallet_changeset_ffi, SweepBatchFFI, WalletChangeSetFFI,
+    build_sweep_batches_for_callback, build_utxo_credit_verdicts_for_callback,
+    free_wallet_changeset_ffi, SweepBatchFFI, UtxoCreditVerdictFFI, WalletChangeSetFFI,
 };
 use crate::dashpay_payment::{build_payment_persist_entries, DashpayPaymentPersistEntryFFI};
 use crate::dpns_name_state_persistence::{
@@ -219,6 +220,26 @@ pub type PersistWalletChangesetSweepsFn = unsafe extern "C" fn(
 pub type PersistWalletChangesetChainLockHeightFn =
     unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8, chain_lock_height: u32) -> i32;
 
+/// Carries the engine's credit verdicts for the round — every `Received` /
+/// `Change` output of the round's records that the engine did NOT credit
+/// to the owning account, with the reason (see [`UtxoCreditVerdictFFI`]).
+/// Fired inside the round's begin/end bracket, BEFORE
+/// `on_persist_wallet_changeset_fn`, so a persister that derives its UTXO
+/// rows from record roles can consult the verdicts while it applies the
+/// round's `utxos_added` entries — after the changeset callback would be
+/// too late, the row would already be staged as unspent. Fired only on
+/// rounds that carry at least one verdict; a round where every output was
+/// credited never fires it, so ignoring the slot is exactly today's
+/// behaviour. A non-zero return fails the round like any other per-kind
+/// callback: a verdict silently dropped leaves a phantom coin the store
+/// hands back to the engine at the next load.
+pub type PersistWalletChangesetUtxoVerdictsFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    verdicts: *const UtxoCreditVerdictFFI,
+    verdicts_count: usize,
+) -> i32;
+
 /// Size- and version-tagged additive persistence callbacks.
 ///
 /// `context` is the context in the accompanying [`PersistenceCallbacks`]
@@ -315,6 +336,21 @@ pub struct PersistenceCallbacksExtension {
             chain_lock_height: u32,
         ) -> i32,
     >,
+    /// The round's credit verdicts (see
+    /// [`PersistWalletChangesetUtxoVerdictsFn`]). Appended under the same
+    /// version for the same reason as the two slots above: `struct_size`
+    /// proves whether a host allocated it, and a host that did not simply
+    /// never has it read — which is exactly today's behaviour, since a
+    /// verdict only ever refines what the changeset callback would have
+    /// written on its own.
+    pub on_persist_wallet_changeset_utxo_verdicts_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            verdicts: *const UtxoCreditVerdictFFI,
+            verdicts_count: usize,
+        ) -> i32,
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -329,6 +365,7 @@ impl Default for PersistenceCallbacksExtension {
             on_load_tracked_masternodes_free_fn: None,
             on_persist_wallet_changeset_sweeps_fn: None,
             on_persist_wallet_changeset_chain_lock_height_fn: None,
+            on_persist_wallet_changeset_utxo_verdicts_fn: None,
         }
     }
 }
@@ -344,6 +381,7 @@ pub struct PersistenceExtensionCallbacks {
     pub load_tracked_masternodes_free: Option<FreeTrackedMasternodesFn>,
     pub wallet_changeset_sweeps: Option<PersistWalletChangesetSweepsFn>,
     pub wallet_changeset_chain_lock_height: Option<PersistWalletChangesetChainLockHeightFn>,
+    pub wallet_changeset_utxo_verdicts: Option<PersistWalletChangesetUtxoVerdictsFn>,
 }
 
 /// C callback vtable for wallet persistence.
@@ -1135,6 +1173,12 @@ pub struct FFIPersister {
     /// without it simply never collects sweep tombstones (safe — held, not
     /// leaked to the unspent set).
     wallet_changeset_chain_lock_height_callback: Option<PersistWalletChangesetChainLockHeightFn>,
+    /// `Some` only when the host's extension `struct_size` proved the slot
+    /// was allocated. Carries the engine's credit verdicts for the round's
+    /// `Received` / `Change` outputs it did not credit; a host without it
+    /// materialises those rows unspent, as every host did before the slot
+    /// existed.
+    wallet_changeset_utxo_verdicts_callback: Option<PersistWalletChangesetUtxoVerdictsFn>,
     /// Additive tracked-masternode persistence trio (persist / load /
     /// free), likewise extension-negotiated.
     tracked_masternodes_callbacks: PersistenceExtensionCallbacks,
@@ -1256,6 +1300,7 @@ impl FFIPersister {
             wallet_changeset_sweeps_callback: extensions.wallet_changeset_sweeps,
             wallet_changeset_chain_lock_height_callback: extensions
                 .wallet_changeset_chain_lock_height,
+            wallet_changeset_utxo_verdicts_callback: extensions.wallet_changeset_utxo_verdicts,
             tracked_masternodes_callbacks: extensions,
             declared_capabilities,
             round_lock: Mutex::new(RoundGuardState::default()),
@@ -1797,6 +1842,37 @@ impl PlatformWalletPersistence for FFIPersister {
                             eprintln!("Failed to encode marked-used address pool entries: {}", e);
                             round_success = false;
                         }
+                    }
+                }
+            }
+
+            // The engine's credit verdicts ride their own size-negotiated
+            // extension slot (see the layout note on `WalletChangeSetFFI`)
+            // and are fired BEFORE the changeset callback: a persister that
+            // derives its UTXO rows from record roles needs the verdicts in
+            // hand while it materialises this round's `utxos_added`
+            // entries, or it stages the very phantom row the verdict exists
+            // to prevent. Fired only when the round carries a verdict, so a
+            // host without the slot — or a round where every output was
+            // credited — behaves exactly as before.
+            if !core_cs.utxo_credit_verdicts.is_empty() {
+                if let Some(cb) = self.wallet_changeset_utxo_verdicts_callback {
+                    let verdicts = build_utxo_credit_verdicts_for_callback(core_cs);
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            verdicts.as_ptr(),
+                            verdicts.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Wallet changeset credit-verdict persistence callback returned error \
+                             code {}",
+                            result
+                        );
+                        round_success = false;
                     }
                 }
             }
@@ -7298,6 +7374,139 @@ mod tests {
         drop(persister);
     }
 
+    /// The credit verdicts reach the host through their own
+    /// size-negotiated slot, BEFORE the changeset callback of the same
+    /// round (the persister needs them while it materialises the round's
+    /// UTXO rows), with outpoint, class and height intact; a round with no
+    /// verdict never fires the slot; and a host without the slot still
+    /// succeeds — it just materialises the row unspent, as every host did
+    /// before the slot existed.
+    #[test]
+    fn store_delivers_credit_verdicts_through_the_extension_slot_before_the_changeset() {
+        use dashcore::hashes::Hash as _;
+        use platform_wallet::changeset::changeset::UtxoCreditVerdict;
+        use platform_wallet::changeset::CoreChangeSet;
+
+        #[derive(Default)]
+        struct Sink {
+            events: std::sync::Mutex<Vec<String>>,
+        }
+        unsafe extern "C" fn record_changeset(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _changeset: *const WalletChangeSetFFI,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            sink.events.lock().unwrap().push("changeset".into());
+            0
+        }
+        unsafe extern "C" fn record_verdicts(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            verdicts: *const UtxoCreditVerdictFFI,
+            verdicts_count: usize,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            let mut events = sink.events.lock().unwrap();
+            for verdict in slice::from_raw_parts(verdicts, verdicts_count) {
+                events.push(format!(
+                    "verdict txid={:02x} vout={} class={} height={}",
+                    verdict.outpoint.txid[0],
+                    verdict.outpoint.vout,
+                    verdict.verdict,
+                    verdict.spent_at_height
+                ));
+            }
+            0
+        }
+        fn outpoint(byte: u8, vout: u32) -> dashcore::OutPoint {
+            dashcore::OutPoint {
+                txid: dashcore::Txid::from_byte_array([byte; 32]),
+                vout,
+            }
+        }
+        fn verdict_round() -> PlatformWalletChangeSet {
+            let mut core = CoreChangeSet::default();
+            core.utxo_credit_verdicts.insert(
+                outpoint(0xAB, 1),
+                UtxoCreditVerdict::ObservedSpent {
+                    height: 2_402_896,
+                },
+            );
+            core.utxo_credit_verdicts
+                .insert(outpoint(0xCD, 0), UtxoCreditVerdict::Doomed);
+            core.utxo_credit_verdicts
+                .insert(outpoint(0xEF, 2), UtxoCreditVerdict::Uncredited);
+            PlatformWalletChangeSet {
+                core: Some(core),
+                ..Default::default()
+            }
+        }
+
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            callbacks,
+            PersistenceCapabilities::NONE,
+            PersistenceExtensionCallbacks {
+                wallet_changeset_utxo_verdicts: Some(record_verdicts),
+                ..Default::default()
+            },
+        );
+        // A round with no verdict: the slot stays silent.
+        persister
+            .store(
+                [1u8; 32],
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        synced_height: Some(10),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .expect("verdict-less round must succeed");
+        // A round carrying verdicts: they cross first, in outpoint order.
+        persister
+            .store([1u8; 32], verdict_round())
+            .expect("verdict round must succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec![
+                "changeset".to_string(),
+                "verdict txid=ab vout=1 class=1 height=2402896".to_string(),
+                "verdict txid=cd vout=0 class=2 height=0".to_string(),
+                "verdict txid=ef vout=2 class=3 height=0".to_string(),
+                "changeset".to_string(),
+            ],
+        );
+        drop(persister);
+
+        // Host without the slot: the same round still succeeds.
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities(
+            callbacks,
+            PersistenceCapabilities::NONE,
+        );
+        persister
+            .store([1u8; 32], verdict_round())
+            .expect("slotless-host verdict round must still succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec!["changeset".to_string()]
+        );
+        drop(persister);
+    }
+
     #[test]
     fn asset_lock_reconciliation_requires_every_callback_leg() {
         fn complete_callbacks() -> PersistenceCallbacks {
@@ -7506,6 +7715,16 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_persist_wallet_changeset_chain_lock_height_fn
             ) + std::mem::size_of::<Option<PersistWalletChangesetChainLockHeightFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_utxo_verdicts_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_utxo_verdicts_fn
+            ) + std::mem::size_of::<Option<PersistWalletChangesetUtxoVerdictsFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(

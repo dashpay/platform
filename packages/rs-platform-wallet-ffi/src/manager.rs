@@ -10,7 +10,8 @@ use crate::handle::*;
 use crate::persistence::{
     FFIPersister, FreeTrackedMasternodesFn, LoadTrackedMasternodesFn, PersistDpnsNameStatesFn,
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
-    PersistWalletChangesetSweepsFn, PersistenceCallbacks, PersistenceCallbacksExtension,
+    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn, PersistenceCallbacks,
+    PersistenceCallbacksExtension,
     PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
@@ -263,6 +264,10 @@ unsafe fn persistence_extension_callbacks(
         wallet_changeset_chain_lock_height: slot!(
             on_persist_wallet_changeset_chain_lock_height_fn,
             PersistWalletChangesetChainLockHeightFn
+        ),
+        wallet_changeset_utxo_verdicts: slot!(
+            on_persist_wallet_changeset_utxo_verdicts_fn,
+            PersistWalletChangesetUtxoVerdictsFn
         ),
     }
 }
@@ -876,6 +881,15 @@ mod tests {
         0
     }
 
+    unsafe extern "C" fn persist_wallet_changeset_utxo_verdicts(
+        _context: *mut c_void,
+        _wallet_id: *const u8,
+        _verdicts: *const crate::core_wallet_types::UtxoCreditVerdictFFI,
+        _verdicts_count: usize,
+    ) -> i32 {
+        0
+    }
+
     unsafe extern "C" fn persist_tracked_masternodes(
         _context: *mut c_void,
         _network: *const std::os::raw::c_char,
@@ -1227,11 +1241,48 @@ mod tests {
         assert!(read_short.persist_tracked_masternodes.is_none());
         assert!(read_short.wallet_changeset_sweeps.is_none());
         assert!(read_short.wallet_changeset_chain_lock_height.is_none());
+        assert!(read_short.wallet_changeset_utxo_verdicts.is_none());
         let read_unknown = unsafe { persistence_extension_callbacks(&unknown) };
         assert!(read_unknown.dpns_name_states.is_none());
         assert!(read_unknown.load_tracked_masternodes.is_none());
         assert!(read_unknown.wallet_changeset_sweeps.is_none());
         assert!(read_unknown.wallet_changeset_chain_lock_height.is_none());
+        assert!(read_unknown.wallet_changeset_utxo_verdicts.is_none());
+    }
+
+    /// A host whose `struct_size` stops right after the chainlock-height
+    /// slot (built before the credit-verdict slot existed) keeps every
+    /// earlier slot and simply never has the verdict slot read; a host
+    /// declaring the full size yields it.
+    #[test]
+    fn utxo_verdict_slot_is_gated_by_struct_size() {
+        let without = PersistenceCallbacksExtension {
+            struct_size: std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_utxo_verdicts_fn
+            ),
+            on_persist_wallet_changeset_sweeps_fn: Some(persist_wallet_changeset_sweeps),
+            on_persist_wallet_changeset_chain_lock_height_fn: Some(
+                persist_wallet_changeset_chain_lock_height,
+            ),
+            on_persist_wallet_changeset_utxo_verdicts_fn: Some(
+                persist_wallet_changeset_utxo_verdicts,
+            ),
+            ..Default::default()
+        };
+        let read = unsafe { persistence_extension_callbacks(&without) };
+        assert!(read.wallet_changeset_sweeps.is_some());
+        assert!(read.wallet_changeset_chain_lock_height.is_some());
+        assert!(read.wallet_changeset_utxo_verdicts.is_none());
+
+        let with = PersistenceCallbacksExtension {
+            on_persist_wallet_changeset_utxo_verdicts_fn: Some(
+                persist_wallet_changeset_utxo_verdicts,
+            ),
+            ..Default::default()
+        };
+        let read = unsafe { persistence_extension_callbacks(&with) };
+        assert!(read.wallet_changeset_utxo_verdicts.is_some());
     }
 
     /// A caller whose `struct_size` covers only the dpns field (an

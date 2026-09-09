@@ -263,6 +263,62 @@ pub struct CoreChangeSet {
     /// attribute makes it upgrade-safe.
     #[cfg_attr(feature = "serde", serde(default))]
     pub sweeps: Vec<SweepBatch>,
+
+    /// The engine's verdict on every `Received` / `Change` output this
+    /// batch's records carry that the engine did NOT credit to the owning
+    /// account's UTXO set, keyed by outpoint. Absence means credited — the
+    /// ordinary case, and exactly today's behaviour.
+    ///
+    /// A persister that derives its UTXO rows from record roles (the FFI
+    /// projection does: `record_new_utxos_ffi` walks `output_details`)
+    /// otherwise materialises an UNSPENT row for a coin the engine itself
+    /// never held. The engine skips a recognised output only when it has
+    /// already observed the outpoint spent in a block (#649), when the
+    /// record is a doomed mempool transaction whose input a block already
+    /// spent, or when the coin was consumed between emit and drain. In the
+    /// first shape the spender can be a transaction the wallet never
+    /// recorded at all — a coin spent by a transaction with no wallet-owned
+    /// output (a CoinJoin collateral burn: sole `OP_RETURN` output) that was
+    /// processed while the coin was not yet in `utxos` matches nothing and
+    /// is discarded (rust-dashcore#992) — so no later record, spend emit or
+    /// sweep ever corrects the row, and the store's own restore path hands
+    /// the phantom coin back to the engine on every launch. This map is the
+    /// only channel that carries the engine's decision to the store at the
+    /// moment the evidence exists: `observed_spent_outpoints` is pruned at
+    /// the finality boundary long before a scan ends.
+    ///
+    /// Merge is `extend` (newest wins per outpoint); all verdicts in one
+    /// drain are computed against the same wallet snapshot, so they agree.
+    /// `serde(default)` for the same backward-compatible reading as
+    /// [`Self::sweeps`].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub utxo_credit_verdicts: BTreeMap<OutPoint, UtxoCreditVerdict>,
+}
+
+/// Why the engine did not credit a `Received` / `Change` output of a
+/// record it emitted — see [`CoreChangeSet::utxo_credit_verdicts`].
+///
+/// A persister may treat [`Self::ObservedSpent`] and [`Self::Doomed`] as
+/// positive evidence that the coin is not spendable and store its row as
+/// spent; [`Self::Uncredited`] carries no context and only says "do not
+/// hand this coin back as unspent on a re-delivery".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum UtxoCreditVerdict {
+    /// Not in the owning account's `utxos`: the wallet observed a block at
+    /// `height` spending this outpoint before the output was recognised,
+    /// so `update_utxos` never inserted it (the #649 skip).
+    ObservedSpent {
+        /// Height of the block the wallet observed spending the outpoint.
+        height: u32,
+    },
+    /// Not in `utxos`: the record is an unconfirmed transaction one of
+    /// whose inputs a block already spent, so it can never confirm and
+    /// nothing it created was credited (`doomed_by_a_settled_spend`).
+    Doomed,
+    /// Not in `utxos` for a reason the bridge cannot name — an account-level
+    /// spent mark, a spend, an abandon or a sweep between emit and drain.
+    Uncredited,
 }
 
 /// One `TransactionsSwept` event: the transactions it removed, the
@@ -722,6 +778,11 @@ impl Merge for CoreChangeSet {
         // batch's decision to free it, and only replaying them in sequence
         // preserves that.
         self.sweeps.extend(other.sweeps);
+
+        // Credit verdicts: newest wins per outpoint. Every verdict in a
+        // drain is computed against the same wallet snapshot, so two
+        // batches folding together cannot disagree about a coin.
+        self.utxo_credit_verdicts.extend(other.utxo_credit_verdicts);
     }
 
     fn is_empty(&self) -> bool {
@@ -737,6 +798,7 @@ impl Merge for CoreChangeSet {
             && self.addresses_marked_used.is_empty()
             && self.account_highest_used.is_empty()
             && self.last_applied_chain_lock.is_none()
+            && self.utxo_credit_verdicts.is_empty()
     }
 }
 
@@ -3182,5 +3244,61 @@ mod tests {
         let merged = cs.account_highest_used[&acct];
         assert_eq!(merged.external, Some(5));
         assert_eq!(merged.internal, Some(1));
+    }
+}
+
+#[cfg(test)]
+mod utxo_credit_verdict_merge_tests {
+    use super::*;
+    use dashcore::hashes::Hash;
+
+    fn outpoint(byte: u8) -> OutPoint {
+        OutPoint {
+            txid: Txid::from_byte_array([byte; 32]),
+            vout: 0,
+        }
+    }
+
+    /// Verdicts fold by union, newest-wins per outpoint, and a changeset
+    /// carrying only verdicts is not empty — it must still reach the
+    /// persister.
+    #[test]
+    fn merge_unions_credit_verdicts_newest_wins() {
+        let mut older = CoreChangeSet::default();
+        older.utxo_credit_verdicts.insert(outpoint(1), UtxoCreditVerdict::Uncredited);
+        older.utxo_credit_verdicts.insert(
+            outpoint(2),
+            UtxoCreditVerdict::ObservedSpent {
+                height: 10,
+            },
+        );
+        let mut newer = CoreChangeSet::default();
+        newer.utxo_credit_verdicts.insert(
+            outpoint(1),
+            UtxoCreditVerdict::ObservedSpent {
+                height: 11,
+            },
+        );
+        newer.utxo_credit_verdicts.insert(outpoint(3), UtxoCreditVerdict::Doomed);
+        assert!(!Merge::is_empty(&newer));
+
+        older.merge(newer);
+        assert_eq!(older.utxo_credit_verdicts.len(), 3);
+        assert_eq!(
+            older.utxo_credit_verdicts.get(&outpoint(1)),
+            Some(&UtxoCreditVerdict::ObservedSpent {
+                height: 11
+            })
+        );
+        assert_eq!(
+            older.utxo_credit_verdicts.get(&outpoint(2)),
+            Some(&UtxoCreditVerdict::ObservedSpent {
+                height: 10
+            })
+        );
+        assert_eq!(
+            older.utxo_credit_verdicts.get(&outpoint(3)),
+            Some(&UtxoCreditVerdict::Doomed)
+        );
     }
 }
