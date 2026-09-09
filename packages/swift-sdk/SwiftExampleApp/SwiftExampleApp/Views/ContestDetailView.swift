@@ -13,16 +13,10 @@ import SwiftDashSDK
 /// `"ResourceVote { vote_choice: TowardsIdentity(...), strength: 1 }"`)
 /// and lets the view render straight off strongly-typed fields.
 ///
-/// The `contestInfo` dict is still accepted on the init to preserve
-/// the navigation-link callers, but the view no longer reads from
-/// it — fresh state comes from the wallet path on appear + on
+/// Fresh state comes from the wallet path on appear + on
 /// pull-to-refresh.
 struct ContestDetailView: View {
     let contestName: String
-    /// Legacy `[String: Any]` payload from callers that predate the
-    /// wallet-path migration. Kept for call-site compatibility but
-    /// unused — the view reads everything off `voteState`.
-    let contestInfo: [String: Any]
     /// Identity viewing the contest. Used both for "You" badging on
     /// the viewer's own contender row and for the wallet-path
     /// lookup filter.

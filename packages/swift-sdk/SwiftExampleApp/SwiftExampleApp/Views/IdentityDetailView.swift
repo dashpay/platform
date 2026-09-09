@@ -258,7 +258,6 @@ struct IdentityDetailView: View {
                         ForEach(contestedDpnsNames, id: \.self) { name in
                             NavigationLink(destination: ContestDetailView(
                                 contestName: name,
-                                contestInfo: contestedDpnsInfo[name] as? [String: Any] ?? [:],
                                 currentIdentityId: identity.identityIdBase58
                             ).environmentObject(appState)) {
                                 HStack {
