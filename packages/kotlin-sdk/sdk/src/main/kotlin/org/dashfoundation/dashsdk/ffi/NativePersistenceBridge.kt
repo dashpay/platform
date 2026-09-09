@@ -32,9 +32,27 @@ package org.dashfoundation.dashsdk.ffi
  *   [onWalletChangesetAccountBegin] / [onWalletChangesetAccountEnd].
  * - Persist slots return `Int` (0 = ok, non-zero flips the round's
  *   success flag so [onChangesetEnd] delivers the rollback).
+ * - A plain non-zero return means "failed, do not retry". A handler that
+ *   can classify its own failure may instead return one of the two
+ *   sentinels `platform-wallet-ffi` defines — [PERSIST_RC_TRANSIENT] for
+ *   a retryable failure after which nothing was applied, or
+ *   [PERSIST_RC_CONSTRAINT] for an integrity violation. The native side
+ *   forwards the classification to its caller (surfacing as
+ *   `DashSdkError.PlatformWallet.PersisterStoreTransient` and friends) and
+ *   never retries on the handler's behalf. Returning the transient
+ *   sentinel from a ROUND callback additionally asserts that a failed
+ *   round is rolled back whole — see `PersistenceCallbacks` in
+ *   `rs-platform-wallet-ffi/src/persistence.rs` for the exact contract.
  * - Load slots return flattened representations (`Array<...>` / typed
  *   holder objects) that the trampoline re-packs into Rust-owned FFI
- *   structs; Kotlin never allocates native memory.
+ *   structs; Kotlin never allocates native memory. **Only the
+ *   `Int`-returning persist slots can carry a sentinel.** A load has no
+ *   `Int` to put one in, so every load failure — a thrown exception
+ *   included — reaches Rust as a fatal, unclassified error, and no load
+ *   on this binding can report itself as transient or constraint-class.
+ *   A subclass must therefore let a failed load THROW: returning an empty
+ *   array reports a successful restore of nothing, which Rust reads as a
+ *   fresh device, turning a store fault into apparent data loss.
  *
  * ## Threading
  *
@@ -50,17 +68,29 @@ package org.dashfoundation.dashsdk.ffi
  */
 abstract class NativePersistenceBridge {
 
-    /**
-     * Versioned semantic capability declaration consumed when JNI builds the
-     * native callback vtable. Defaults are deliberately zero: a no-op subclass
-     * must never gain capabilities merely because JNI supplies trampolines for
-     * every virtual method.
-     */
-    open fun persistenceCapabilitiesVersion(): Int = 0
-
-    open fun persistenceCapabilitiesBits(): Long = 0L
-
     companion object {
+        // Both values are the ABI defined by
+        // `packages/rs-platform-wallet-ffi/src/persistence.rs` and must
+        // change only together with it.
+
+        /**
+         * A retryable failure after which nothing was applied. Returning it
+         * from a callback inside a changeset round also asserts that the
+         * failed round was rolled back whole.
+         *
+         * The round-end callback is the exception: failing it when the round
+         * had already failed means the rollback itself did not complete, so
+         * what reached the store is unknown. Rust classifies that as fatal and
+         * withholds the retry regardless of this value — re-issuing a
+         * changeset the store could neither apply nor undo risks merging it
+         * twice. This sentinel is honoured at round end only on a clean
+         * round, where the commit failed but the rollback succeeded.
+         */
+        const val PERSIST_RC_TRANSIENT: Int = -2
+
+        /** A constraint / integrity violation — the data is wrong, not the store. */
+        const val PERSIST_RC_CONSTRAINT: Int = -3
+
         /**
          * `PersistenceCapabilities::CORE_SWEEP_REMOVAL` (bit 11, `0x800`).
          * The one Kotlin home of this bit: `PlatformWalletPersistenceHandler`
@@ -70,6 +100,16 @@ abstract class NativePersistenceBridge {
          */
         const val CAPABILITY_CORE_SWEEP_REMOVAL: Long = 0x800
     }
+
+    /**
+     * Versioned semantic capability declaration consumed when JNI builds the
+     * native callback vtable. Defaults are deliberately zero: a no-op subclass
+     * must never gain capabilities merely because JNI supplies trampolines for
+     * every virtual method.
+     */
+    open fun persistenceCapabilitiesVersion(): Int = 0
+
+    open fun persistenceCapabilitiesBits(): Long = 0L
 
     // ── Transactional bracketing ──────────────────────────────────────
 
@@ -729,6 +769,10 @@ abstract class NativePersistenceBridge {
     ): Int = 0
 
     // ── Load callbacks ────────────────────────────────────────────────
+    //
+    // These return objects rather than `Int`, so [PERSIST_RC_TRANSIENT] and
+    // [PERSIST_RC_CONSTRAINT] cannot be expressed here: a failing load
+    // reaches Rust as a fatal, unclassified error however it fails.
 
     /**
      * `on_load_wallet_list_fn`. Returns the persisted wallet list as an
