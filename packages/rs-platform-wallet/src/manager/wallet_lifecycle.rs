@@ -2046,11 +2046,11 @@ mod persister_error_tests {
 
         // Structural matching must recover the concrete inner variant.
         let restore_err =
-            PlatformWalletError::from_restore_failure(PlatformWalletError::WalletLocked);
+            PlatformWalletError::from_restore_failure(PlatformWalletError::SpvAlreadyRunning);
         assert!(restore_err.source().is_some());
         match restore_err {
             PlatformWalletError::PersisterRestore(inner) => {
-                assert!(matches!(*inner, PlatformWalletError::WalletLocked));
+                assert!(matches!(*inner, PlatformWalletError::SpvAlreadyRunning));
             }
             other => panic!("expected PersisterRestore, got {other:?}"),
         }
