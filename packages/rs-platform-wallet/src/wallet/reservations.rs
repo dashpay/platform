@@ -26,13 +26,11 @@
 //! `Built` row first); those call the broadcaster directly and then
 //! [`release_reservation_after_rejected_broadcast`].
 
-use dashcore::{Transaction, Txid};
-use key_wallet::account::account_type::StandardAccountType;
+use dashcore::Transaction;
 use key_wallet::account::AccountType;
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
-use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 /// Maximum age, in `last_processed_height` blocks, of a held funding
@@ -123,55 +121,6 @@ pub(crate) fn reservation_expired(registered_height: u32, current_height: Option
     match current_height {
         Some(current) => current.saturating_sub(registered_height) >= RESERVATION_MAX_AGE_BLOCKS,
         None => false,
-    }
-}
-
-/// Broadcast `tx` and reconcile the funding account's UTXO reservation on
-/// failure.
-///
-/// On [`BroadcastError::Rejected`] — Core definitively did not accept the
-/// transaction — the inputs reserved by the preceding `build_signed` are
-/// released so an immediate retry can reselect them instead of failing with
-/// spurious insufficient funds until the reservation-TTL backstop. On
-/// [`BroadcastError::MaybeSent`] the reservation is intentionally kept:
-/// releasing inputs of a transaction that may already be propagating invites
-/// a double-spend on retry.
-///
-/// `account_type`/`account_index` identify the funding account whose
-/// `ReservationSet` holds the inputs — the same account handed to
-/// `set_funding` when the transaction was built.
-///
-/// Returns the still-typed [`BroadcastError`]; `?` converts it into
-/// [`PlatformWalletError`](crate::PlatformWalletError) at the call sites.
-pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster + ?Sized>(
-    broadcaster: &B,
-    wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
-    wallet_id: &WalletId,
-    account_type: StandardAccountType,
-    account_index: u32,
-    tx: &Transaction,
-) -> Result<Txid, BroadcastError> {
-    match broadcaster.broadcast(tx).await {
-        Ok(txid) => Ok(txid),
-        Err(e) => {
-            if matches!(e, BroadcastError::Rejected { .. }) {
-                release_reservation_after_rejected_broadcast(
-                    wallet_manager,
-                    wallet_id,
-                    &[AccountType::Standard {
-                        index: account_index,
-                        standard_account_type: account_type,
-                    }],
-                    tx,
-                    // The generic send path doesn't thread the build's
-                    // reservation token yet; keep its historical
-                    // unconditional release.
-                    None,
-                )
-                .await;
-            }
-            Err(e)
-        }
     }
 }
 

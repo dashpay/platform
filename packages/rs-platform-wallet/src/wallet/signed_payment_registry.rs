@@ -2,7 +2,7 @@
 //! lifecycle (BIP70 / BIP270 "sign now, submit on merchant ack").
 //!
 //! The regular send path
-//! ([`CoreWallet::broadcast_transaction_releasing_reservation`](crate::CoreWallet::broadcast_transaction_releasing_reservation))
+//! ([`CoreWallet::broadcast_finalized_transaction`](crate::CoreWallet::broadcast_finalized_transaction))
 //! builds, signs, and broadcasts in one uninterrupted step. BIP70-style flows
 //! must split that: sign now (reserving the funding UTXOs), hand the raw bytes
 //! to a merchant server, and broadcast **only** once the server acks — or

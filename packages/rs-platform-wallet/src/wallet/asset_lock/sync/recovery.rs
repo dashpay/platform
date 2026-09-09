@@ -1118,7 +1118,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // does with the identical signal.
                 //
                 // `MaybeSent` is however ALSO what the broadcaster reports
-                // for a genuinely rejected transaction: `DapiBroadcaster`
+                // for a genuinely rejected transaction: a gRPC-style broadcaster
                 // classifies every failure that way by construction, and the
                 // SPV broadcaster only reaches `Rejected` on `NotConnected`.
                 // So the advance above cannot be read as evidence the tx is
@@ -4472,7 +4472,7 @@ mod tests {
     /// must not hang.
     ///
     /// `MaybeSent` is the broadcaster's verdict for a genuinely rejected
-    /// transaction as much as for an accepted one — `DapiBroadcaster`
+    /// transaction as much as for an accepted one — a gRPC-style broadcaster
     /// classifies every failure that way, and the SPV broadcaster reaches
     /// `Rejected` only on `NotConnected`. So advancing to `Broadcast` and
     /// then waiting with `wait_for_proof(None)` — which is what the three

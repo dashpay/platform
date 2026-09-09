@@ -39,12 +39,9 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// Used by `wait_for_proof()` and `wait_for_chain_lock()`.
     pub(super) lock_notify: Arc<Notify>,
     /// Transaction broadcaster — pluggable so the same `AssetLockManager`
-    /// works with different broadcast backends:
-    ///
-    /// - [`DapiBroadcaster`](crate::broadcaster::DapiBroadcaster) — gRPC via
-    ///   Platform DAPI (default for standalone wallets without SPV).
-    /// - [`SpvBroadcaster`](crate::broadcaster::SpvBroadcaster) — P2P via SPV
-    ///   peers (used when managed by `PlatformWalletManager` with SPV enabled).
+    /// works with different broadcast backends. Production uses
+    /// [`SpvBroadcaster`](crate::broadcaster::SpvBroadcaster) — P2P via SPV
+    /// peers.
     ///
     /// Injected at construction by `PlatformWallet::new()`. The caller
     /// (typically `PlatformWalletManager`) decides which implementation to use.

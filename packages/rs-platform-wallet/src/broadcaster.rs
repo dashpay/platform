@@ -8,9 +8,11 @@
 //!   subset of peers while withheld from the rest, and a withheld peer
 //!   announcing the txid back, an InstantSend lock, or a confirmation proves
 //!   the network accepted it. Trustless; no DAPI involvement.
-//! - [`DapiBroadcaster`] (fallback for wallets without an SPV runtime):
-//!   submission via DAPI's gRPC endpoint, with every failure conservatively
-//!   classified as [`BroadcastError::MaybeSent`].
+//!
+//! A broadcaster whose transport returns before the transaction reaches a
+//! mempool would need every failure conservatively classified as
+//! [`BroadcastError::MaybeSent`]; the pending-spend fence below is written so
+//! such a transport stays safe.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -26,8 +28,7 @@ use crate::spv::SpvRuntime;
 /// never entered the network or its acceptance remains unknown.
 ///
 /// The classification decides whether the transaction's reserved inputs are
-/// safe to release for an immediate retry (see
-/// `wallet::reservations::broadcast_releasing_on_rejection`).
+/// safe to release for an immediate retry.
 #[derive(Debug, thiserror::Error)]
 pub enum BroadcastError {
     /// The network definitively did not take the transaction — a rejection
@@ -94,62 +95,10 @@ pub trait TransactionBroadcaster: Send + Sync + 'static {
     /// with no ceiling there is a deadlock, not a delay.
     ///
     /// The default is "always ready" — correct for any broadcaster with no
-    /// startup phase of its own, such as [`DapiBroadcaster`], whose gRPC
-    /// requests carry their own connection handling.
+    /// startup phase of its own, such as one whose requests carry their own
+    /// connection handling.
     async fn wait_until_ready(&self, _timeout: Duration) -> bool {
         true
-    }
-}
-
-/// Broadcasts transactions via Platform's DAPI gRPC endpoint.
-///
-/// Used by default when no SPV runtime is available.
-pub struct DapiBroadcaster {
-    sdk: Arc<dash_sdk::Sdk>,
-}
-
-impl DapiBroadcaster {
-    pub fn new(sdk: Arc<dash_sdk::Sdk>) -> Self {
-        Self { sdk }
-    }
-}
-
-#[async_trait]
-impl TransactionBroadcaster for DapiBroadcaster {
-    async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
-        use dash_sdk::dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
-        use dash_sdk::dapi_grpc::core::v0::BroadcastTransactionRequest;
-        use dashcore::consensus;
-
-        let tx_bytes = consensus::serialize(transaction);
-
-        let request = BroadcastTransactionRequest {
-            transaction: tx_bytes,
-            allow_high_fees: false,
-            bypass_limits: false,
-        };
-
-        // Every DAPI failure is classified `MaybeSent`: `sdk.execute` retries
-        // across nodes internally (RequestSettings::default()), so the error
-        // surfaced here is only the *last* attempt's — an earlier attempt may
-        // have delivered the transaction even though the response was lost
-        // (the classic shape being a node that accepts the tx while its gRPC
-        // response times out, followed by a retry that fails differently).
-        // Distinguishing a genuinely pre-send rejection would require
-        // disabling the internal retries and inspecting transport errors;
-        // until then the conservative classification keeps reserved inputs
-        // safe from double-spends at the cost of holding them for the
-        // reservation TTL.
-        let _response = self
-            .sdk
-            .execute(request, RequestSettings::default())
-            .await
-            .into_inner()
-            .map_err(|e| BroadcastError::MaybeSent {
-                reason: format!("DAPI broadcast failed: {}", e),
-            })?;
-
-        Ok(transaction.txid())
     }
 }
 

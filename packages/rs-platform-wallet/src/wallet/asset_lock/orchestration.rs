@@ -99,7 +99,7 @@ pub(crate) const RECONCILIATION_CHAIN_LOCK_TIMEOUT: Duration = Duration::from_se
 /// The unbounded `wait_for_proof(None)` used by the funding flows is
 /// justified by the transaction being *known* broadcast — finality is then
 /// only a matter of time. A `MaybeSent` verdict does not establish that:
-/// `DapiBroadcaster` classifies every failure as `MaybeSent`, and the SPV
+/// A gRPC-style broadcaster classifies every failure as `MaybeSent`, and the SPV
 /// broadcaster reports `Rejected` only for `NotConnected`, so a genuinely
 /// rejected transaction is indistinguishable from an accepted one. Waiting
 /// without a bound on that signal converts a ~30s broadcast failure into a

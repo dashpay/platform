@@ -107,10 +107,8 @@ pub trait PlatformEventHandler: EventHandler {
 /// Dispatches events to all registered [`PlatformEventHandler`]s.
 ///
 /// Passed to `DashSpvClient` as the `EventHandler` (via `Arc<Self>`).
-/// Supports dynamic handler registration via [`add_handler`](Self::add_handler).
 ///
 /// Read path (every event): one atomic pointer load, then iterate.
-/// Write path (add_handler): clone Vec + atomic swap — rare, not on SPV hot path.
 pub struct PlatformEventManager {
     handlers: ArcSwap<Vec<Arc<dyn PlatformEventHandler>>>,
 }
@@ -121,15 +119,6 @@ impl PlatformEventManager {
         Self {
             handlers: ArcSwap::from_pointee(handlers),
         }
-    }
-
-    /// Register an additional handler. Lock-free for readers.
-    pub fn add_handler(&self, handler: Arc<dyn PlatformEventHandler>) {
-        self.handlers.rcu(|current| {
-            let mut new = (**current).clone();
-            new.push(handler.clone());
-            new
-        });
     }
 
     /// Dispatch a platform-address sync completion to every handler.

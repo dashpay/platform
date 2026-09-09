@@ -27,7 +27,7 @@ use crate::wallet::PlatformWallet;
 /// A dispatch that returns anything but a definitive pre-send rejection leaves
 /// its inputs fenced, because the broadcaster's return says "this may be on the
 /// network", not "this wallet has seen the spend" — and on the
-/// `DapiBroadcaster` path the two are far apart, since `sdk.execute` injects
+/// gRPC-style path the two are far apart, since the submit call injects
 /// nothing into local wallet state. Something has to end that fence, and
 /// elapsed `last_processed_height` cannot be it: catch-up advances the chain
 /// clock over blocks mined *before* the transaction was submitted, so an

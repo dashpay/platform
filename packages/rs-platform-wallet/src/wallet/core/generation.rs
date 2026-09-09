@@ -97,7 +97,7 @@ pub struct WalletGeneration {
     /// The second phase exists because dispatch returning does not mean the
     /// wallet has observed the spend. `SpvBroadcaster` injects the transaction
     /// into dash-spv's local mempool pipeline, so its inputs leave this wallet's
-    /// selectable set within milliseconds — but `DapiBroadcaster::broadcast` only
+    /// selectable set within milliseconds — but a broadcaster that returns before mempool injection only
     /// awaits `sdk.execute` and performs no local injection at all, so both an
     /// accepted response and an ambiguous `MaybeSent` return with the input still
     /// selectable here while the transaction is in flight. Dropping the fence at
