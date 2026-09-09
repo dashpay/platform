@@ -637,9 +637,7 @@ impl IdentityWallet {
     /// survival across a restart, and it must not be allowed to fail the scan
     /// that just succeeded.
     ///
-    /// `store` is a single attempt, per the caller-decides persister-error
-    /// policy, so a merely busy backend (dashpay/platform#4365) costs the
-    /// verdict its durability this launch. Logged and swallowed either way.
+    /// `store` is attempted once; persistence failures are logged and swallowed.
     async fn publish_scan_verdict(
         &self,
         wallet_id: crate::wallet::platform_wallet::WalletId,

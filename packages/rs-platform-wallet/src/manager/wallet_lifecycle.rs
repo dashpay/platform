@@ -1399,8 +1399,8 @@ mod register_wallet_duplicate_tests {
 
 #[cfg(test)]
 mod persister_error_tests {
-    //! Registration-path persistence: caller-owned retry policy, typed error
-    //! propagation, and log-level policy.
+    //! Registration and discovery persistence: caller-owned retry policy,
+    //! typed error propagation, and log-level policy.
 
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
@@ -1439,16 +1439,12 @@ mod persister_error_tests {
     use crate::test_support::tracing_capture::{RecordedEvents, RecordingGuard};
 
     /// Persister with scripted `store` / `flush` / `load` outcomes.
-    ///
-    /// `store` counts registration and scan-verdict writes separately,
-    /// discriminated by the changeset: registration ends with a best-effort
-    /// `identity().sync()` that issues a SECOND `store`, and a single counter
-    /// would couple every registration-write assertion to discovery.
+    /// Registration and explicit discovery writes are counted separately.
     #[derive(Default)]
     struct FaultyPersister {
         /// Stores of the registration changeset.
         registration_store_calls: AtomicUsize,
-        /// Stores of the identity-scan verdict published by `identity().sync()`.
+        /// Stores of the verdict published by explicit identity discovery.
         scan_verdict_store_calls: AtomicUsize,
         /// Never scripted to fail: a `store` failure is never retried through
         /// it, so every assertion expects 0.
@@ -1458,6 +1454,7 @@ mod persister_error_tests {
         store_fatal: bool,
         /// Leading scan-verdict `store` calls that fail transiently.
         scan_verdict_store_transient_failures: usize,
+        scan_verdict_store_fatal: bool,
         /// Leading `load` calls that fail transiently.
         load_transient_failures: usize,
         load_fatal: bool,
@@ -1488,8 +1485,7 @@ mod persister_error_tests {
                 .is_some()
                 .then(|| self.scan_verdict_store_calls.fetch_add(1, Ordering::SeqCst));
 
-            // The registration half decides a combined round: its failure
-            // aborts registration, a verdict's is swallowed.
+            // Registration faults take precedence in a combined changeset.
             if registration.is_some() {
                 if self.store_fatal {
                     return Err(fatal());
@@ -1499,6 +1495,9 @@ mod persister_error_tests {
                 }
             }
             if let Some(n) = verdict {
+                if self.scan_verdict_store_fatal {
+                    return Err(fatal());
+                }
                 if n < self.scan_verdict_store_transient_failures {
                     return Err(transient());
                 }
@@ -1907,9 +1906,52 @@ mod persister_error_tests {
         );
     }
 
-    /// A busy backend costs the scan verdict its durability this launch
-    /// (dashpay/platform#4365) rather than failing the registration that just
-    /// succeeded: logged and swallowed, never retried.
+    /// A seedless scan fails locally, publishes its verdict, and never queries Platform.
+    async fn discover_without_resident_seed(manager: &PlatformWalletManager<FaultyPersister>) {
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed_bytes(),
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("registration succeeds without running discovery");
+        assert!(!wallet.state().await.wallet().has_seed());
+        assert_eq!(
+            manager
+                .persister
+                .scan_verdict_store_calls
+                .load(Ordering::SeqCst),
+            0
+        );
+
+        let error = wallet
+            .identity()
+            .discover(crate::wallet::identity::network::IdentityDiscoveryOptions {
+                start_index: Some(0),
+                gap_limit: 1,
+            })
+            .await
+            .expect_err("discovery requires resident key material");
+        assert!(
+            matches!(error, PlatformWalletError::InvalidIdentityData(_)),
+            "the verdict store failure must not mask the discovery failure: {error:?}"
+        );
+
+        let wm = manager.wallet_manager.read().await;
+        let wallet_id = wallet.wallet_id();
+        let verdict = wm
+            .get_wallet_info(&wallet_id)
+            .expect("wallet info")
+            .identity_manager
+            .identity_scan_state(&wallet_id)
+            .expect("failed persistence must not discard the in-memory verdict");
+        assert!(!verdict.complete);
+        assert_eq!(verdict.failed_indices, vec![0]);
+    }
+
+    /// A transient verdict-store failure is logged once, without retrying the write.
     #[tokio::test]
     async fn transient_scan_verdict_store_failure_is_logged_not_retried() {
         let persister = Arc::new(FaultyPersister {
@@ -1921,15 +1963,14 @@ mod persister_error_tests {
         let recorder = RecordedEvents::default();
         let _guard = RecordingGuard::install(recorder.clone());
 
-        register(&manager)
-            .await
-            .expect("a scan-verdict store failure must not disturb registration");
+        discover_without_resident_seed(&manager).await;
 
         assert_eq!(
             persister.scan_verdict_store_calls.load(Ordering::SeqCst),
             1,
             "the verdict store is attempted once, never retried"
         );
+        assert_eq!(persister.flush_calls.load(Ordering::SeqCst), 0);
         let events = recorder.entries();
         assert!(
             events.iter().any(|(level, msg)| *level == Level::WARN
@@ -1945,16 +1986,14 @@ mod persister_error_tests {
     }
 
     #[tokio::test]
-    async fn unpersistable_scan_verdict_does_not_fail_registration() {
+    async fn fatal_scan_verdict_store_failure_does_not_mask_discovery_failure() {
         let persister = Arc::new(FaultyPersister {
-            scan_verdict_store_transient_failures: usize::MAX,
+            scan_verdict_store_fatal: true,
             ..Default::default()
         });
         let manager = make_manager(Arc::clone(&persister));
 
-        register(&manager)
-            .await
-            .expect("an unpersistable verdict must never fail wallet registration");
+        discover_without_resident_seed(&manager).await;
 
         assert_eq!(persister.scan_verdict_store_calls.load(Ordering::SeqCst), 1);
         assert_eq!(persister.flush_calls.load(Ordering::SeqCst), 0);
