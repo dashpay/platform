@@ -237,25 +237,8 @@ public final class PersistentDataContract {
         self.lastAccessedAt = Date()
     }
 
-    public func updateVersion(_ newVersion: Int) {
-        self.version = newVersion
-        self.lastUpdated = Date()
-    }
-
     public func markAsSynced() {
         self.lastSyncedAt = Date()
-    }
-
-    public func addDocument(_ document: PersistentDocument) {
-        documents.append(document)
-        lastUpdated = Date()
-    }
-
-    public func removeDocument(withId documentId: String) {
-        if let docIdData = Data.identifier(fromBase58: documentId) {
-            documents.removeAll { $0.id == docIdData }
-        }
-        lastUpdated = Date()
     }
 }
 

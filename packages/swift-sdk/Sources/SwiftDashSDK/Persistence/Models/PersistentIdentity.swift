@@ -273,27 +273,12 @@ public final class PersistentIdentity {
         self.lastUpdated = Date()
     }
 
-    public func updateRevision(_ newRevision: Int64) {
-        self.revision = newRevision
-        self.lastUpdated = Date()
-    }
-
     public func markAsSynced() {
         self.lastSyncedAt = Date()
     }
 
-    public func updateDPNSName(_ name: String?) {
-        self.dpnsName = name
-        self.lastUpdated = Date()
-    }
-
     public func addPublicKey(_ key: PersistentPublicKey) {
         publicKeys.append(key)
-        lastUpdated = Date()
-    }
-
-    public func removePublicKey(withId keyId: Int32) {
-        publicKeys.removeAll { $0.keyId == keyId }
         lastUpdated = Date()
     }
 }

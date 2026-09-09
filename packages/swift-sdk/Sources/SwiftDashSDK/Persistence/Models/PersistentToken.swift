@@ -352,41 +352,4 @@ extension PersistentToken {
             token.contractId == contractId
         }
     }
-
-    public static func tokensWithControlRulePredicate(rule: ControlRuleType) -> Predicate<PersistentToken> {
-        switch rule {
-        case .manualMinting:
-            return #Predicate<PersistentToken> { token in
-                token.manualMintingRules != nil
-            }
-        case .manualBurning:
-            return #Predicate<PersistentToken> { token in
-                token.manualBurningRules != nil
-            }
-        case .freeze:
-            return #Predicate<PersistentToken> { token in
-                token.freezeRules != nil
-            }
-        case .unfreeze:
-            return #Predicate<PersistentToken> { token in
-                token.unfreezeRules != nil
-            }
-        case .destroyFrozenFunds:
-            return #Predicate<PersistentToken> { token in
-                token.destroyFrozenFundsRules != nil
-            }
-        case .emergencyAction:
-            return #Predicate<PersistentToken> { token in
-                token.emergencyActionRules != nil
-            }
-        case .conventions:
-            return #Predicate<PersistentToken> { token in
-                token.conventionsChangeRules != nil
-            }
-        case .maxSupply:
-            return #Predicate<PersistentToken> { token in
-                token.maxSupplyChangeRules != nil
-            }
-        }
-    }
 }

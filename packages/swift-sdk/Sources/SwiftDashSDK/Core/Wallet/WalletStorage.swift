@@ -1,5 +1,4 @@
 import Foundation
-import LocalAuthentication
 import Security
 
 // MARK: - Wallet Storage
@@ -26,9 +25,6 @@ import Security
 ///   with the original name/description after a reinstall.
 /// * Enumeration of stored wallet ids (used by the orphan-mnemonic
 ///   recovery flow in `ContentView`).
-/// * Biometric-protected seed stash at `wallet.biometric` — not yet
-///   wired to a caller but kept because it's a different category
-///   (hardware-protected rather than a legacy PIN construct).
 public class WalletStorage {
     /// Unified keychain service name for the app. Everything the
     /// SDK writes — per-wallet mnemonics (here), identity private
@@ -55,7 +51,6 @@ public class WalletStorage {
     /// user-facing wallet name and description from the keychain
     /// even though SwiftData was wiped.
     public static let metadataAccountPrefix = "wallet.metadata"
-    private let biometricKeychainAccount = "wallet.biometric"
 
     public init() {}
 
@@ -371,66 +366,6 @@ public class WalletStorage {
         return data
     }
 
-    // MARK: - Biometric Protection
-
-    public func enableBiometricProtection(for seed: Data) throws {
-        var error: Unmanaged<CFError>?
-        guard let access = SecAccessControlCreateWithFlags(
-            nil,
-            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            .biometryCurrentSet,
-            &error
-        ) else {
-            throw WalletStorageError.biometricSetupFailed
-        }
-
-        let deleteQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: biometricKeychainAccount
-        ]
-
-        let deleteStatus = SecItemDelete(deleteQuery as CFDictionary)
-        guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
-            throw WalletStorageError.keychainError(deleteStatus)
-        }
-
-        let addQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: biometricKeychainAccount,
-            kSecValueData as String: seed,
-            kSecAttrAccessControl as String: access
-        ]
-
-        let status = SecItemAdd(addQuery as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw WalletStorageError.keychainError(status)
-        }
-    }
-
-    public func retrieveSeedWithBiometric() throws -> Data {
-        let context = LAContext()
-        context.localizedReason = "Authenticate to access your wallet"
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: biometricKeychainAccount,
-            kSecReturnData as String: true,
-            kSecUseAuthenticationContext as String: context
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess,
-              let seed = result as? Data else {
-            throw WalletStorageError.biometricAuthenticationFailed
-        }
-
-        return seed
-    }
-
     // MARK: - Legacy Cleanup
 
     /// Best-effort scrub of keychain residue from prior app
@@ -574,8 +509,6 @@ public struct WalletKeychainMetadata: Codable, Equatable {
 public enum WalletStorageError: LocalizedError {
     case keychainError(OSStatus)
     case mnemonicNotFound
-    case biometricSetupFailed
-    case biometricAuthenticationFailed
 
     public var errorDescription: String? {
         switch self {
@@ -583,10 +516,6 @@ public enum WalletStorageError: LocalizedError {
             return "Keychain error: \(status)"
         case .mnemonicNotFound:
             return "Mnemonic not found"
-        case .biometricSetupFailed:
-            return "Failed to setup biometric protection"
-        case .biometricAuthenticationFailed:
-            return "Biometric authentication failed"
         }
     }
 }

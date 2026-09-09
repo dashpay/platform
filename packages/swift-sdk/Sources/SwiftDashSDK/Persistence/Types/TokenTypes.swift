@@ -172,18 +172,6 @@ public enum TokenTradeMode: String, CaseIterable, Codable, Sendable {
 
 // MARK: - Control Rule Types
 
-/// Types of control rules that can be configured on tokens
-public enum ControlRuleType: Sendable {
-    case conventions
-    case maxSupply
-    case manualMinting
-    case manualBurning
-    case freeze
-    case unfreeze
-    case destroyFrozenFunds
-    case emergencyAction
-}
-
 /// Types of change control rules for token configuration
 public enum ChangeControlRuleType: Sendable {
     case conventions

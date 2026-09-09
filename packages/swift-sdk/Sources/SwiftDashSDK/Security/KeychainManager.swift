@@ -61,7 +61,7 @@ public final class KeychainManager: Sendable {
     ///
     /// `nonisolated` so the singleton can be reached from off-actor
     /// contexts — e.g. the Rust persister callback path that writes
-    /// via `storePrivateKeyNonisolated`. Safe because
+    /// via `storePrivateKey`. Safe because
     /// `KeychainManager` is `Sendable` (all state is `let` +
     /// thread-safe Security-framework calls).
     public nonisolated static let shared = KeychainManager()
@@ -105,31 +105,14 @@ public final class KeychainManager: Sendable {
     ///   - identityId: The identity ID (32 bytes)
     ///   - keyIndex: The key index within the identity
     /// - Returns: A unique identifier for the stored key, or nil if storage failed
-    @discardableResult
-    public func storePrivateKey(_ keyData: Data, identityId: Data, keyIndex: Int32) -> String? {
-        // Delegate to the nonisolated implementation so both the
-        // main-actor path and off-actor callers (e.g. Rust-side
-        // persister callbacks) share identical Keychain semantics.
-        return storePrivateKeyNonisolated(keyData, identityId: identityId, keyIndex: keyIndex)
-    }
-
-    /// Off-actor variant of [`storePrivateKey`].
     ///
-    /// The underlying Security-framework APIs (`SecItemAdd`,
-    /// `SecItemDelete`) are thread-safe, and this class's state
-    /// (`serviceName` + `accessGroup`) is immutable (`let`), so the
-    /// write can run from any isolation domain. This is the entry
-    /// point the FFI persister callback (`persistIdentityKeys`
-    /// in `PlatformWalletPersistenceHandler`) calls when Rust
-    /// forwards a `Clear` private key — the callback runs on the
-    /// Rust persister thread, not on the main actor, so the
-    /// `@MainActor`-pinned `storePrivateKey` isn't reachable.
-    ///
-    /// Prefer the `@MainActor` wrapper when you're already in a
-    /// main-actor context; call this directly from nonisolated
-    /// contexts (background queues, detached tasks, C callbacks).
+    /// `nonisolated`: the underlying Security-framework APIs
+    /// (`SecItemAdd`, `SecItemDelete`) are thread-safe and this class's
+    /// state (`serviceName` + `accessGroup`) is immutable (`let`), so the
+    /// write can run from any isolation domain — including off-actor
+    /// callers such as C callbacks on the Rust persister thread.
     @discardableResult
-    public nonisolated func storePrivateKeyNonisolated(
+    public nonisolated func storePrivateKey(
         _ keyData: Data,
         identityId: Data,
         keyIndex: Int32
@@ -229,11 +212,6 @@ public final class KeychainManager: Sendable {
         return status == errSecSuccess || status == errSecItemNotFound
     }
 
-    /// Delete every `privkey_<identityHex>_*` keychain row for `identityId`.
-    public nonisolated func deleteAllPrivateKeys(for identityId: Data) throws {
-        try deleteItems(accountPrefixes: ["privkey_\(identityId.toHexString())_"])
-    }
-
     /// Delete every per-identity keychain row — both `privkey_*` and
     /// `specialkey_*` schemes — for `identityId`.
     public nonisolated func deleteAllKeychainItems(forIdentityId identityId: Data) throws {
@@ -299,17 +277,6 @@ public final class KeychainManager: Sendable {
         return retrieveKeyData(identifier: keyIdentifier)
     }
 
-    /// Delete a special key from the keychain
-    /// - Parameters:
-    ///   - identityId: The identity ID (32 bytes)
-    ///   - keyType: The type of special key
-    /// - Returns: true if deletion succeeded or key didn't exist
-    @discardableResult
-    public func deleteSpecialKey(identityId: Data, keyType: SpecialKeyType) -> Bool {
-        let keyIdentifier = generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType)
-        return deleteKeyData(identifier: keyIdentifier)
-    }
-
     // MARK: - Key Existence Check
 
     /// Check if a private key exists in the keychain
@@ -319,29 +286,6 @@ public final class KeychainManager: Sendable {
     /// - Returns: true if the key exists
     public func hasPrivateKey(identityId: Data, keyIndex: Int32) -> Bool {
         let keyIdentifier = generateKeyIdentifier(identityId: identityId, keyIndex: keyIndex)
-
-        var query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: keyIdentifier,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-
-        if let accessGroup = accessGroup {
-            query[kSecAttrAccessGroup as String] = accessGroup
-        }
-
-        let status = SecItemCopyMatching(query as CFDictionary, nil)
-        return status == errSecSuccess
-    }
-
-    /// Check if a special key exists in the keychain
-    /// - Parameters:
-    ///   - identityId: The identity ID (32 bytes)
-    ///   - keyType: The type of special key
-    /// - Returns: true if the key exists
-    public func hasSpecialKey(identityId: Data, keyType: SpecialKeyType) -> Bool {
-        let keyIdentifier = generateSpecialKeyIdentifier(identityId: identityId, keyType: keyType)
 
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -391,7 +335,7 @@ public final class KeychainManager: Sendable {
     /// `nonisolated` so the FFI signer trampoline (which runs from
     /// any Tokio worker, off the main actor) can call it directly.
     /// `SecItemCopyMatching` is thread-safe and this type's state is
-    /// `let` — same rationale as `storePrivateKeyNonisolated`.
+    /// `let` — same rationale as `storePrivateKey`.
     /// - Parameter identifier: The identifier for the stored data
     /// - Returns: The stored data, or nil if not found
     public nonisolated func retrieveKeyData(identifier: String) -> Data? {
@@ -454,7 +398,7 @@ public final class KeychainManager: Sendable {
     /// Nonisolated because the result only depends on the arguments
     /// — no access to actor-isolated state — and the function is
     /// shared between the `@MainActor` wrapper methods and the
-    /// off-actor `storePrivateKeyNonisolated` path.
+    /// off-actor `storePrivateKey` path.
     private nonisolated func generateKeyIdentifier(identityId: Data, keyIndex: Int32) -> String {
         return "privkey_\(identityId.toHexString())_\(keyIndex)"
     }
