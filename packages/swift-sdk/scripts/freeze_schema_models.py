@@ -21,9 +21,10 @@ The class body and the extensions declared in the model's own file are
 copied; doc comments, `public` modifiers and top-level enums are dropped.
 Extensions add no stored properties (so they are not part of the entity)
 but the class body may call into them. The stored properties, their
-optionality and defaults,
-`@Attribute`, `@Relationship`, `#Index` and `#Unique` are what the checksum
-hashes, and they are copied verbatim.
+optionality and defaults, `@Attribute`, `@Relationship` and `#Unique` are
+what the checksum hashes, and they are copied verbatim. `#Index` is copied
+verbatim too but is NOT part of the hash (Core Data leaves indexes out of
+entity version hashes), which is why index drift needs its own check.
 
 Value types a model stores inline (Codable structs and raw enums SwiftData
 expands into composite attributes, such as `ChangeControlRules` on
@@ -55,10 +56,15 @@ stored directly on a model does, an array of structs nested inside one does
 not), and a text scan of Swift source cannot know that, nor keep up with
 optionals, generics, extensions, nested types and enum payloads. Every
 reference such a scan misses is a silent failure in the field, and every
-one it wrongly flags is a false alarm. The authority for completeness is `DashModelMigrationTests.testFrozenVersionsBuiltAfterTheLiveSchemaHashLikeTheStoresTheyShipped`,
+one it wrongly flags is a false alarm. The authority for
+hash-relevant completeness (properties, relationships, `#Unique`) is
+`DashModelMigrationTests.testFrozenVersionsBuiltAfterTheLiveSchemaHashLikeTheStoresTheyShipped`,
 which builds each released version after the live schema and compares the
-hashes SwiftData computes against a store the shipping build wrote. Do not
-add static validation here; extend that test (and its fixtures) instead.
+hashes SwiftData computes against a store the shipping build wrote; its
+sibling `testFixturesAndMigratedStoresCarryTheIndexesFreshStoresHave`
+covers `#Index`, which the hash cannot see, by comparing SQLite indexes.
+Do not add static validation here; extend those tests (and their
+fixtures) instead.
 
 Usage, from anywhere inside the repository:
 

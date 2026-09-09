@@ -1,5 +1,6 @@
 import CoreData
 import Foundation
+import SQLite3
 import SwiftData
 import XCTest
 
@@ -194,30 +195,44 @@ final class DashModelMigrationTests: XCTestCase {
     /// wallet's shape the moment the live schema is built first, and the
     /// released checksum moves with it.
     ///
-    /// This test is THE authority on whether a freeze is complete. The
-    /// generator's `--check` (`scripts/freeze_schema_models.py`) only proves
-    /// the committed frozen files are the generator's byte-for-byte output;
-    /// it does not, and must not try to, decide whether the `FREEZES` table
-    /// covers every relationship target and stored value type. A static
-    /// scan of Swift source cannot: it misses whatever syntax it does not
-    /// understand, and it flags references SwiftData does not hash at all
-    /// (a struct stored directly on a model is part of the entity hash; an
-    /// array of structs nested inside it is not), so it fails silently in
-    /// both directions. Only
-    /// building the schema and reading the hash SwiftData computes, against
-    /// a store a shipping build wrote, answers the question, and that is
-    /// what this does: an omitted relationship target fails here as soon as
-    /// the live target has changed shape, an omitted stored value type
-    /// fails here on the change that would have broken the store, and a
-    /// version registering the wrong entity set fails on membership.
+    /// This test is THE authority on whether a freeze is complete in every
+    /// respect the entity hash covers: stored properties, their types,
+    /// optionality and defaults, relationships and their inverses, and
+    /// `#Unique` constraints. The generator's `--check`
+    /// (`scripts/freeze_schema_models.py`) only proves the committed frozen
+    /// files are the generator's byte-for-byte output; it does not, and
+    /// must not try to, decide whether the `FREEZES` table covers every
+    /// relationship target and stored value type. A static scan of Swift
+    /// source cannot: it misses whatever syntax it does not understand, and
+    /// it flags references SwiftData does not hash at all (a struct stored
+    /// directly on a model is part of the entity hash; an array of structs
+    /// nested inside it is not), so it fails silently in both directions.
+    /// Only building the schema and reading the hash SwiftData computes,
+    /// against a store a shipping build wrote, answers the question, and
+    /// that is what this does: an omitted relationship target fails here as
+    /// soon as the live target has changed shape, an omitted stored value
+    /// type fails here on the change that would have broken the store, and
+    /// a version registering the wrong entity set fails on membership.
+    ///
+    /// What the hash does NOT cover is `#Index`: Core Data leaves indexes
+    /// out of entity version hashes, so an index that drifted in a frozen
+    /// copy, or one a migration never created, passes here. That is what
+    /// `testFixturesAndMigratedStoresCarryTheIndexesFreshStoresHave` is for.
     ///
     /// Its reach is exactly the fixtures: it guards a version only once a
     /// store written by a build that shipped that version is committed
-    /// under `Fixtures/SchemaStores/` and listed in `fixtures`. V1, V2 and
-    /// V3 are covered. A newly cut version's freeze is unguarded until its
-    /// fixture lands, so committing that fixture is a required step of
-    /// cutting a schema version, not an optional one.
+    /// under `Fixtures/SchemaStores/` and listed in `fixtures`. So the first
+    /// thing checked is that `fixtures` lists every retired version in the
+    /// migration plan, once each: cutting a new schema version fails this
+    /// test until the fixture written by the build that shipped the retired
+    /// version is committed.
     func testFrozenVersionsBuiltAfterTheLiveSchemaHashLikeTheStoresTheyShipped() throws {
+        XCTAssertEqual(
+            Self.fixtures.map { Self.describe($0.version.versionIdentifier) },
+            DashMigrationPlan.schemas.dropLast().map { Self.describe($0.versionIdentifier) },
+            "every retired schema version needs a fixture store written by the build that "
+                + "shipped it, listed once in `fixtures`; without one its freeze is unguarded")
+
         for fixture in Self.fixtures {
             let (directory, url) = try copyFixture(fixture)
             defer { try? FileManager.default.removeItem(at: directory) }
@@ -240,6 +255,90 @@ final class DashModelMigrationTests: XCTestCase {
                 Set(builtHashes.keys), Set(shippedHashes.keys),
                 "\(fixture.name): entity membership differs from the shipped store")
             XCTAssertEqual(builtChecksum, shippedChecksum, "\(fixture.name): checksum")
+        }
+    }
+
+    private static func describe(_ version: Schema.Version) -> String {
+        "\(version.major).\(version.minor).\(version.patch)"
+    }
+
+    /// The SQLite indexes of a store, one line per index: table, name and
+    /// the statement that created it. Auto-indexes SQLite makes for its
+    /// own constraints have no statement and are listed as such.
+    private static func indexes(at url: URL) throws -> Set<String> {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            sqlite3_close(database)
+            struct StoreUnreadable: Error {}
+            XCTFail("\(url.lastPathComponent): could not be opened as SQLite")
+            throw StoreUnreadable()
+        }
+        defer { sqlite3_close(database) }
+        var statement: OpaquePointer?
+        let query = "SELECT tbl_name, name, sql FROM sqlite_master WHERE type = 'index'"
+        XCTAssertEqual(sqlite3_prepare_v2(database, query, -1, &statement, nil), SQLITE_OK)
+        defer { sqlite3_finalize(statement) }
+        var rows = Set<String>()
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let table = String(cString: sqlite3_column_text(statement, 0))
+            let name = String(cString: sqlite3_column_text(statement, 1))
+            let sql = sqlite3_column_text(statement, 2).map { String(cString: $0) } ?? "(auto)"
+            rows.insert("\(table) \(name): \(sql)")
+        }
+        return rows
+    }
+
+    /// The check the entity hash cannot give. Core Data leaves `#Index` out
+    /// of version hashes, so the test above stays green when a frozen
+    /// copy's index differs from what shipped, and a lightweight migration
+    /// whose only change is an index can complete without creating it.
+    /// Both show up in SQLite, so that is where they are checked:
+    ///
+    ///   - a fixture, as written, has exactly the indexes a store built
+    ///     fresh from its frozen version has (the frozen `#Index` is what
+    ///     shipped);
+    ///   - after migrating through `DashModelContainer.create`, a fixture
+    ///     has every index a store built fresh at the live version has (the
+    ///     migration created what the live model declares).
+    ///
+    /// The second is a superset check, not equality: a store rebuilt by a
+    /// migration can keep an index from an earlier layout, which costs a
+    /// little space and nothing else.
+    @MainActor
+    func testFixturesAndMigratedStoresCarryTheIndexesFreshStoresHave() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let freshLive = directory.appendingPathComponent("live.store")
+        _ = try DashModelContainer.create(url: freshLive)
+        let liveIndexes = try Self.indexes(at: freshLive)
+        XCTAssertFalse(liveIndexes.isEmpty)
+
+        for fixture in Self.fixtures {
+            let (fixtureDirectory, url) = try copyFixture(fixture)
+            defer { try? FileManager.default.removeItem(at: fixtureDirectory) }
+
+            let freshAtVersion = fixtureDirectory.appendingPathComponent("fresh.store")
+            let schema = Schema(versionedSchema: fixture.version)
+            _ = try ModelContainer(
+                for: schema,
+                configurations: [
+                    ModelConfiguration(
+                        "DashSchemaIndexes", schema: schema, url: freshAtVersion,
+                        allowsSave: true, cloudKitDatabase: .none)
+                ])
+            XCTAssertEqual(
+                try Self.indexes(at: url).symmetricDifference(try Self.indexes(at: freshAtVersion)),
+                [],
+                "\(fixture.name): the frozen version's indexes differ from what shipped")
+
+            _ = try DashModelContainer.create(url: url)
+            XCTAssertEqual(
+                liveIndexes.subtracting(try Self.indexes(at: url)), [],
+                "\(fixture.name): indexes a fresh live store has that the migration did not create")
         }
     }
 

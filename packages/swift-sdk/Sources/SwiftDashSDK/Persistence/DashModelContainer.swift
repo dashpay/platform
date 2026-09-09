@@ -93,8 +93,8 @@ public enum DashModelContainer {
     /// (`scripts/freeze_schema_models.py`), add a version, add a stage, and
     /// commit a store written by the build that shipped the retired version
     /// under the test fixtures. `DashModelMigrationTests` proves a freeze
-    /// complete only against such a store; until it lands the new freeze is
-    /// unguarded.
+    /// complete (in what the entity hash covers, plus its indexes) only
+    /// against such a store, and fails until every retired version has one.
     public static var modelTypes: [any PersistentModel.Type] {
         [
             PersistentIdentity.self,
