@@ -350,8 +350,13 @@ final class DashModelMigrationTests: XCTestCase {
         let version = try XCTUnwrap(DashMigrationPlan.schemas.last).versionIdentifier
         let url = URL(fileURLWithPath: output, isDirectory: true)
             .appendingPathComponent("dash-v\(version.major).store")
-        XCTAssertFalse(
-            FileManager.default.fileExists(atPath: url.path), "\(url.path) already exists")
+        // Stop before opening: creating a container over an existing store rewrites its
+        // checksum and leaves WAL sidecars behind, so a second run would silently
+        // replace the committed fixture rather than refusing to.
+        guard !FileManager.default.fileExists(atPath: url.path) else {
+            XCTFail("\(url.path) already exists; delete it to rewrite the fixture")
+            return
+        }
 
         var container: ModelContainer? = try DashModelContainer.create(url: url)
         let context = try XCTUnwrap(container?.mainContext)
