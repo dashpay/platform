@@ -1171,6 +1171,80 @@ fn seed_healthy_and_sick_wallets(strict: &SqlitePersister, healthy: WalletId, si
     .expect("plant an unspent utxo whose script is not an address");
 }
 
+#[test]
+fn unknown_pool_account_labels_fail_strict_and_isolate_the_wallet_in_recovery() {
+    // Cover the used-pool reader and both spent/unspent UTXO owner lookups.
+    for spent in [None, Some(false), Some(true)] {
+        let healthy = wid(0x61);
+        let sick = wid(0x62);
+        let (recovery, _tmp, path) = fresh_recovery_persister(|strict| {
+            seed_registered_wallet(strict, healthy, 0x61);
+            let address = seed_registered_wallet(strict, sick, 0x62);
+            let script = address.script_pubkey();
+            let conn = strict.lock_conn_for_test();
+            conn.execute(
+                "INSERT INTO core_address_pool \
+                    (wallet_id, account_type, account_index, key_class, pool_type, \
+                     address_index, script, used) \
+                 VALUES (?1, 'unknown_account', 0, 0, 0, 0, ?2, ?3)",
+                params![sick.as_slice(), script.as_bytes(), spent.is_none()],
+            )
+            .unwrap();
+            if let Some(spent) = spent {
+                let outpoint = dashcore::OutPoint::new(Txid::from_byte_array([0x62; 32]), 0);
+                conn.execute(
+                    "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+                     VALUES (?1, ?2, 5000, ?3, ?4)",
+                    params![
+                        sick.as_slice(),
+                        platform_wallet_storage::sqlite::schema::blob::encode_outpoint(&outpoint)
+                            .unwrap(),
+                        script.as_bytes(),
+                        spent,
+                    ],
+                )
+                .unwrap();
+            }
+        });
+        drop(recovery);
+
+        let strict =
+            SqlitePersister::open(platform_wallet_storage::SqlitePersisterConfig::new(&path))
+                .unwrap();
+        let err = typed(
+            strict
+                .load()
+                .expect_err("unknown pool owner must fail Strict"),
+        );
+        assert!(
+            matches!(
+                err,
+                WalletStorageError::BlobDecode {
+                    reason: "core_address_pool.account_type is unknown"
+                }
+            ),
+            "unexpected error for {spent:?}: {err:?}"
+        );
+        drop(strict);
+
+        let recovery = SqlitePersister::open(
+            platform_wallet_storage::SqlitePersisterConfig::new(&path)
+                .with_load_policy(platform_wallet_storage::LoadPolicy::Recovery),
+        )
+        .unwrap();
+        let state = recovery.load().expect("healthy sibling must survive");
+        assert!(state.wallets.contains_key(&healthy));
+        assert!(!state.wallets.contains_key(&sick));
+        assert_only_site(&recovery, LoadSite::WalletRehydration, 1);
+        let degradation = recovery.last_load_degradation();
+        assert_eq!(degradation.wallets_degraded.len(), 1);
+        assert_eq!(
+            degradation.wallets_degraded.get(&sick),
+            Some(&"blob_decode")
+        );
+    }
+}
+
 /// Recovery is a per-WALLET verdict, not a per-file one: one wallet that
 /// cannot be rebuilt degrades itself and nothing else. The loss is
 /// ATTRIBUTED, not merely counted — a wallet missing from the result is

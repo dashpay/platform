@@ -346,6 +346,12 @@ extension PlatformWalletManager {
                 "PlatformWalletManager not configured"
             )
         }
+        return try Self.readIsShieldedSyncing(handle)
+    }
+
+    /// The native read behind [`isShieldedSyncing()`] (an atomic load,
+    /// never parks); also what the progress poller runs.
+    nonisolated static func readIsShieldedSyncing(_ handle: Handle) throws -> Bool {
         var syncing = false
         try platform_wallet_manager_shielded_sync_is_syncing(handle, &syncing).check()
         return syncing

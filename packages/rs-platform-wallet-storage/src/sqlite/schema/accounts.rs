@@ -634,7 +634,6 @@ fn reconcile_legacy_standard_rows(
 /// `Standard` maps to two distinct labels by `StandardAccountType` variant
 /// (`"standard_bip44"` / `"standard_bip32"`) so BIP44 and BIP32 standard
 /// accounts with the same index never collide on their shared PK columns.
-#[cfg(test)]
 pub(crate) const ACCOUNT_TYPE_LABELS: &[&str] = &[
     "standard_bip44",
     "standard_bip32",
