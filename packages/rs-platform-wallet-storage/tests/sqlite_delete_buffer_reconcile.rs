@@ -88,7 +88,7 @@ fn buffered_only_delete_is_ok_and_no_resurrection() {
 /// whose only state lived in the buffer.
 #[test]
 fn pre_delete_backup_includes_buffered_writes() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let backup_dir = tmp.path().join("backups");
     let cfg = SqlitePersisterConfig::new(&path)
@@ -116,7 +116,7 @@ fn pre_delete_backup_includes_buffered_writes() {
         .unwrap();
     let in_backup_meta: Option<i64> = backup
         .query_row(
-            "SELECT COUNT(*) FROM wallet_metadata WHERE wallet_id = ?1",
+            "SELECT COUNT(*) FROM wallets WHERE wallet_id = ?1",
             rusqlite::params![w.as_slice()],
             |row| row.get(0),
         )
@@ -130,7 +130,7 @@ fn pre_delete_backup_includes_buffered_writes() {
     assert_eq!(
         in_backup_meta,
         Some(1),
-        "pre-delete backup must contain the flushed buffered wallet_metadata row"
+        "pre-delete backup must contain the flushed buffered wallets row"
     );
 }
 
@@ -139,7 +139,7 @@ fn pre_delete_backup_includes_buffered_writes() {
 /// `delete_wallet` surfaces the original error.
 #[test]
 fn pre_flush_failure_preserves_buffer_and_skips_backup() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let backup_dir = tmp.path().join("backups");
     let cfg = SqlitePersisterConfig::new(&path)
@@ -148,11 +148,11 @@ fn pre_flush_failure_preserves_buffer_and_skips_backup() {
     let persister = SqlitePersister::open(cfg).unwrap();
     let w = wid(0xC1);
 
-    // Seed wallet_metadata so the wallet exists in the live DB.
+    // Seed wallets so the wallet exists in the live DB.
     {
         let conn = persister.lock_conn_for_test();
         conn.execute(
-            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+            "INSERT INTO wallets (wallet_id, network, birth_height) \
              VALUES (?1, 'testnet', 0)",
             rusqlite::params![w.as_slice()],
         )
@@ -186,7 +186,7 @@ fn pre_flush_failure_preserves_buffer_and_skips_backup() {
     let meta_rows: i64 = {
         let conn = persister.lock_conn_for_test();
         conn.query_row(
-            "SELECT COUNT(*) FROM wallet_metadata WHERE wallet_id = ?1",
+            "SELECT COUNT(*) FROM wallets WHERE wallet_id = ?1",
             rusqlite::params![w.as_slice()],
             |row| row.get(0),
         )

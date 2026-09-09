@@ -578,6 +578,29 @@ fn context_rank(context: &key_wallet::transaction_checking::TransactionContext) 
 
 impl Merge for CoreChangeSet {
     fn merge(&mut self, other: Self) {
+        // A record arriving after a sweep that removed the same transaction
+        // reinstates it, and every persister writes records before replaying
+        // sweeps — so without this the sweep would delete a row the wallet
+        // has since brought back. Reachable through IS-lock precedence: an
+        // unconfirmed transaction is swept when an IS-locked conflict lands,
+        // then returns chainlocked and sweeps that conflict in turn.
+        //
+        // The release set stays as it is. It is the aggregate for every loser
+        // in the batch, so dropping it when one of them is reinstated would
+        // discard coins freed by the losers that are still going. Entries
+        // belonging to the reinstated transaction are inert on every backend:
+        // each scopes its release to the remaining losers' own inputs, or
+        // withholds any outpoint a surviving record claims — and the
+        // reinstating record is exactly such a claim.
+        if !other.records.is_empty() && !self.sweeps.is_empty() {
+            let reinstated: std::collections::HashSet<Txid> =
+                other.records.iter().map(|record| record.txid).collect();
+            for batch in &mut self.sweeps {
+                batch.txids.retain(|txid| !reinstated.contains(txid));
+            }
+            self.sweeps.retain(|batch| !batch.txids.is_empty());
+        }
+
         // Records: coalesce by txid, NEWEST-WINS.
         //
         // The event bridge already folded each event's per-account
@@ -1337,32 +1360,47 @@ impl Merge for AssetLockChangeSet {
         // swift-sdk `persistAssetLocks`), making the store order of
         // racing snapshots immaterial.
         for (out_point, entry) in other.asset_locks {
-            if entry.status == AssetLockStatus::Consumed {
-                // A Consumed write supersedes any earlier-folded
-                // tombstone for the outpoint — Consumed rows are
-                // deliberately retained for historical lookup (see the
-                // variant doc), so the terminal write wins over a stale
-                // removal exactly as it wins over a stale status.
-                self.removed.remove(&out_point);
-            } else if let Some(existing) = self.asset_locks.get(&out_point) {
-                if existing.status == AssetLockStatus::Consumed {
-                    continue;
+            if entry.status != AssetLockStatus::Consumed {
+                if let Some(existing) = self.asset_locks.get(&out_point) {
+                    if existing.status == AssetLockStatus::Consumed {
+                        continue;
+                    }
                 }
             }
+            // Every ACCEPTED upsert supersedes an earlier-folded tombstone
+            // for its outpoint, not just a Consumed one. Sweeps are a
+            // removal producer now (`remove_tracked_asset_locks_for_swept`),
+            // and a swept funding transaction can return chainlocked in the
+            // same folded drain — the reinstating record re-inserts the
+            // entry through reconstruction at a non-Consumed status, and
+            // letting the sweep's tombstone ride along would have the store
+            // delete the row it just reinstated (SQLite applies upserts
+            // before removals) while the in-memory wallet keeps it. This is
+            // the asset-lock mirror of `CoreChangeSet::merge`'s
+            // reinstated-txid retraction. For Consumed the same line also
+            // covers the historical rule: the terminal write wins over a
+            // stale removal exactly as it wins over a stale status.
+            self.removed.remove(&out_point);
             self.asset_locks.insert(out_point, entry);
         }
-        // Tombstones folded after a Consumed upsert are dropped for the
-        // same reason. The only removal emitter (`untrack_asset_lock`)
-        // fires exclusively for Built rows whose broadcast was
-        // definitively rejected, so a Consumed/removed pair for one
-        // outpoint has no legitimate producer — this is defense in
-        // depth matching the upsert guard.
+        // Tombstones folded after a Consumed upsert are dropped — Consumed
+        // rows are deliberately retained for historical lookup (see the
+        // variant doc). Any other pending upsert is dropped WITH the
+        // tombstone landing: a removal is upstream's newer word for the
+        // outpoint (a lock tracked and then swept, or a Built row rejected
+        // at broadcast, inside one fold), and carrying the dead upsert
+        // alongside the tombstone would make every store's correctness
+        // depend on applying upserts before removals. Together with the
+        // retraction above this keeps the invariant every backend relies
+        // on: a merged changeset never carries both an upsert and a
+        // tombstone for the same outpoint.
         for out_point in other.removed {
             let consumed = self
                 .asset_locks
                 .get(&out_point)
                 .is_some_and(|entry| entry.status == AssetLockStatus::Consumed);
             if !consumed {
+                self.asset_locks.remove(&out_point);
                 self.removed.insert(out_point);
             }
         }
@@ -1711,12 +1749,9 @@ pub struct ProviderPlatformNodePubKey {
 /// so they never enter the [`Self::account_xpub`](AccountRegistrationEntry)
 /// snapshot the ECDSA accounts ride. Carried on
 /// [`PlatformWalletChangeSet`] as
-/// `Vec<ProviderKeyAccountEntry>`; the FFI layer bincode-encodes the
-/// [`extended_public_key`](Self::extended_public_key) into the same
-/// `AccountSpecFFI.account_xpub_bytes` slot the ECDSA accounts use (the
-/// `type_tag` disambiguates the decode) and the restore side rebuilds a
-/// watch-only `BLSAccount` / `EdDSAAccount` from it. Append-only merge,
-/// same as [`AccountRegistrationEntry`].
+/// `Vec<ProviderKeyAccountEntry>`. Persistence backends use the account type
+/// to identify the key curve and rebuild a watch-only `BLSAccount` or
+/// `EdDSAAccount`. Append-only merge, same as [`AccountRegistrationEntry`].
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProviderKeyAccountEntry {
@@ -2021,7 +2056,13 @@ pub struct PlatformWalletChangeSet {
     /// spent marks, sync watermarks, nullifier checkpoints. The
     /// commitment tree itself is **not** in here — it lives on
     /// disk in `ClientPersistentCommitmentTree`'s SQLite file.
-    #[cfg(feature = "shielded")]
+    ///
+    /// Present in every feature combination — downstream crates cannot
+    /// `cfg` on this crate's features, so a conditional field breaks their
+    /// exhaustive destructures under Cargo feature unification. Without
+    /// `shielded` the payload is an inert stand-in that stays empty; omitting
+    /// it from serde preserves the feature-off wire shape.
+    #[cfg_attr(all(feature = "serde", not(feature = "shielded")), serde(skip))]
     pub shielded: Option<crate::changeset::ShieldedChangeSet>,
 }
 
@@ -2149,10 +2190,7 @@ impl Merge for PlatformWalletChangeSet {
             .extend(other.pending_contact_crypto_added);
         self.pending_contact_crypto_cleared
             .extend(other.pending_contact_crypto_cleared);
-        #[cfg(feature = "shielded")]
-        {
-            self.shielded.merge(other.shielded);
-        }
+        self.shielded.merge(other.shielded);
     }
 
     fn is_empty(&self) -> bool {
@@ -2177,14 +2215,7 @@ impl Merge for PlatformWalletChangeSet {
             && self.account_address_pools.is_empty()
             && self.pending_contact_crypto_added.is_empty()
             && self.pending_contact_crypto_cleared.is_empty();
-        #[cfg(feature = "shielded")]
-        {
-            core_empty && self.shielded.as_ref().is_none_or(|s| s.is_empty())
-        }
-        #[cfg(not(feature = "shielded"))]
-        {
-            core_empty
-        }
+        core_empty && self.shielded.as_ref().is_none_or(|s| s.is_empty())
     }
 }
 
@@ -2283,6 +2314,35 @@ mod tests {
         assert!(cs.is_empty());
     }
 
+    /// The `shielded` slot is a field in every feature combination, so a
+    /// downstream crate can destructure the changeset exhaustively without
+    /// being able to `cfg` on *this* crate's features. Naming the field here
+    /// stops compiling the moment someone re-gates it — far cheaper than the
+    /// E0027 that re-gating inflicts on downstream destructures.
+    #[test]
+    fn shielded_slot_exists_in_every_feature_configuration() {
+        let mut cs = PlatformWalletChangeSet {
+            shielded: Default::default(),
+            ..Default::default()
+        };
+        assert!(cs.is_empty());
+
+        cs.merge(PlatformWalletChangeSet::default());
+        assert!(cs.is_empty());
+    }
+
+    #[cfg(all(feature = "serde", not(feature = "shielded")))]
+    #[test]
+    fn feature_off_serde_omits_inert_shielded_slot() {
+        let value =
+            serde_json::to_value(PlatformWalletChangeSet::default()).expect("changeset serializes");
+
+        assert!(!value
+            .as_object()
+            .expect("changeset serializes as an object")
+            .contains_key("shielded"));
+    }
+
     /// Asset-lock merge is last-write-wins EXCEPT for the Consumed
     /// terminal: when the wallet-event adapter's batched drain folds a
     /// stale reconstruction/enrichment snapshot after (or before) the
@@ -2373,10 +2433,38 @@ mod tests {
             folded.asset_locks[&outpoint].status,
             AssetLockStatus::Consumed
         );
-        // …and a legitimate removal (rejected Built row) still folds.
+        // …and a legitimate removal (rejected Built row, or a sweep of the
+        // funding tx) still folds — taking the now-dead upsert with it, so
+        // no store ever sees an upsert/tombstone pair whose outcome would
+        // hinge on which it applies first.
         let mut folded = cs_with(AssetLockStatus::Built);
         folded.merge(removal());
         assert!(folded.removed.contains(&outpoint));
+        assert!(
+            !folded.asset_locks.contains_key(&outpoint),
+            "a tombstone folding in must not leave the dead upsert beside it"
+        );
+
+        // The coalesced sweep-then-chainlocked-reinstatement fold: the
+        // sweep removes the tracked entry and contributes a tombstone, then
+        // the reinstating record re-inserts through reconstruction at a
+        // non-Consumed status — in the SAME drain. The accepted upsert must
+        // cancel the earlier tombstone (the asset-lock mirror of
+        // `CoreChangeSet::merge`'s reinstated-txid retraction); otherwise
+        // SQLite — upserts before removals — deletes the row it just
+        // reinstated while the in-memory wallet keeps it, and the durable
+        // tracked lock is gone after restart even though its funding
+        // transaction survived.
+        let mut folded = removal();
+        folded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert!(
+            folded.removed.is_empty(),
+            "a reinstating reconstruction must cancel the folded sweep tombstone"
+        );
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::RecoveredFromChain
+        );
     }
 
     #[test]

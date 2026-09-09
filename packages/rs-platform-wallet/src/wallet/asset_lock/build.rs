@@ -1123,6 +1123,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //    inputs are re-spendable. A `MaybeSent` failure keeps both the
         //    reservation and the resumable row.
         //
+        //    A resume that has snapshotted the row but not yet recorded its
+        //    send is still `Built`, so `claim_resume_dispatch` excludes the
+        //    removal. The exclusion survives an ambiguous cancellation after
+        //    a possible send or observed proof, until the row advances.
+        //
         //    The reported error type and the in-broadcast fence both follow the
         //    cleanup, never the broadcaster's verdict alone — they are decided
         //    by the one predicate. The definite-rejection contract is reported
@@ -1148,12 +1153,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // spend can still arrive.
                 let cs_untrack = self.untrack_asset_lock(&out_point).await;
                 // Release only when the Built row was actually removed. If
-                // the untrack guard fired instead — a concurrent
-                // `resume_asset_lock` advanced the row past `Built`, positive
-                // evidence the transaction reached the network after all —
-                // the inputs must stay reserved exactly like a `MaybeSent`
-                // outcome, or the still-tracked row would be resumable while
-                // its inputs are re-spendable.
+                // an untrack guard fired instead — the row advanced past
+                // `Built`, or active/sticky resume state says this transaction
+                // may already be live or committed to dispatch — the inputs
+                // must stay reserved exactly like a `MaybeSent` outcome, or the
+                // still-tracked row would be resumable while its inputs are
+                // re-spendable.
                 let removed_built_row = cs_untrack.removed.contains(&out_point);
                 self.queue_asset_lock_changeset(cs_untrack);
                 if removed_built_row {
@@ -1181,36 +1186,46 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .await;
                     in_broadcast_pin.settle_released();
                 } else {
-                    // The untrack guard fired: a concurrent `resume_asset_lock`
-                    // advanced the row past `Built`, which is positive evidence
-                    // the transaction reached the network after all. The
-                    // reservation stays held, and so must the fence.
+                    // An untrack guard fired: the row advanced past `Built`, or
+                    // resume state says the transaction may already be live or
+                    // committed to dispatch. The reservation stays held, and
+                    // so must the fence.
                     in_broadcast_pin.settle_pending_spend();
                     // The cleanup did not run, so the definite-rejection
                     // contract does not hold either. `TransactionBroadcast`
                     // promises the caller that the row is gone, the inputs are
-                    // free, and a rebuild is safe; here the advanced row is
-                    // still tracked and resumable and its inputs are still
-                    // reserved and fenced, so a caller honouring that promise
-                    // would rebuild from other UTXOs and create a SECOND asset
-                    // lock beside a transaction the advance says reached the
-                    // network. The contract that matches what is actually true
-                    // is the unknown outcome: do not retry, the row and its
-                    // reservation are intact, resume the existing lock.
+                    // free, and a rebuild is safe; here the row is still
+                    // tracked and resumable and its inputs are still reserved
+                    // and fenced, so a caller honouring that promise would
+                    // rebuild from other UTXOs and create a SECOND asset lock
+                    // beside a transaction that has either reached the network
+                    // already or is about to. The contract that matches what is
+                    // actually true is the unknown outcome: do not retry, the
+                    // row and its reservation are intact, resume the existing
+                    // lock.
+                    //
+                    // The price is that the reservation and the fence outlive
+                    // this call: the fence ends on an observed spend, and no
+                    // second cleanup pass exists to reconsider once the
+                    // concurrent resume settles. That is the same price every
+                    // ambiguous outcome already pays, and it is the only side
+                    // that is safe to be wrong on — the row stays tracked and
+                    // resumable, so the value behind it is recovered by a
+                    // later resume rather than lost.
                     tracing::warn!(
                         %txid,
                         error = %e,
-                        "asset lock broadcast was rejected, but a concurrent resume had \
-                         already advanced the row past Built; keeping the row and its \
-                         funding reservation and reporting an unknown outcome rather than \
-                         a definite rejection"
+                        "asset lock broadcast was rejected, but resume state excludes \
+                         cleanup of the same row; keeping the row and its funding \
+                         reservation and reporting an unknown outcome rather than a \
+                         definite rejection"
                     );
                     return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
                         format!(
                             "asset lock {out_point} stays tracked and reserved: the \
-                             broadcast was rejected, but a concurrent resume had already \
-                             advanced the row past Built, so the transaction may be on \
-                             the network: {e}"
+                             broadcast was rejected, but resume state excludes cleanup \
+                             of the same row, so the transaction may be on the network \
+                             or committed to dispatch: {e}"
                         ),
                     ));
                 }
@@ -1331,9 +1346,16 @@ fn map_builder_error(e: AssetLockError, requested: u64) -> PlatformWalletError {
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     use dashcore::OutPoint;
     use key_wallet::account::account_type::StandardAccountType;
+    use key_wallet::account::AccountType;
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use key_wallet::managed_account::transaction_record::{
+        TransactionDirection, TransactionRecord,
+    };
+    use key_wallet::transaction_checking::{TransactionContext, TransactionType};
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
     use tokio::sync::Notify;
 
@@ -1846,9 +1868,12 @@ mod tests {
 
     /// Like [`funded_asset_lock_manager`] but over a caller-built persistence
     /// stub (e.g. one with `fail_flush` set).
-    async fn funded_asset_lock_manager_with_persistence<B: TransactionBroadcaster>(
+    async fn funded_asset_lock_manager_with_persistence<
+        B: TransactionBroadcaster,
+        P: PlatformWalletPersistence + 'static,
+    >(
         broadcaster: Arc<B>,
-        persistence: Arc<CapturingPersistence>,
+        persistence: Arc<P>,
     ) -> (Arc<AssetLockManager<B>>, WalletSigner) {
         let (wallet_manager, wallet_id, _balance, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
@@ -2752,6 +2777,798 @@ mod tests {
             rebuilt.input.len() >= 2,
             "the rebuild must reselect inputs from both families, got {}",
             rebuilt.input.len()
+        );
+    }
+
+    /// Broadcaster double that sequences the initial build's definite
+    /// rejection against a resume parked in the transport-readiness wait.
+    ///
+    /// The first `broadcast` call is the build's: it announces that the
+    /// `Built` row is tracked and the send is in flight, then waits for the
+    /// test before returning the rejection that triggers the cleanup. Every
+    /// later call is a resume's and receives the verdict selected by the
+    /// test. `wait_until_ready` is the resume's park: it models a transport
+    /// that comes up exactly when the test says so, which is the only way to
+    /// hold a resume inside its dispatch window for the whole of the cleanup.
+    struct RejectTheBuildAndParkTheResume {
+        calls: std::sync::atomic::AtomicUsize,
+        /// Every transaction handed to the broadcaster with the verdict it
+        /// drew, in dispatch order — so a test can tell an attempt that was
+        /// refused before dispatch from one that actually went out.
+        dispatched: Mutex<Vec<(Txid, bool)>>,
+        at_broadcast: Arc<tokio::sync::Barrier>,
+        reject_gate: Arc<tokio::sync::Barrier>,
+        resume_parked: Arc<tokio::sync::Barrier>,
+        transport_gate: Arc<tokio::sync::Barrier>,
+        resume_sent: Option<Arc<tokio::sync::Barrier>>,
+        accept_resume: bool,
+    }
+
+    impl RejectTheBuildAndParkTheResume {
+        fn dispatched(&self) -> Vec<(Txid, bool)> {
+            self.dispatched.lock().expect("dispatch log mutex").clone()
+        }
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for RejectTheBuildAndParkTheResume {
+        async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let accepted = call > 0 && self.accept_resume;
+            self.dispatched
+                .lock()
+                .expect("dispatch log mutex")
+                .push((transaction.txid(), accepted));
+            if call == 0 {
+                self.at_broadcast.wait().await;
+                self.reject_gate.wait().await;
+                return Err(BroadcastError::Rejected {
+                    reason: "bad-txns-inputs-missingorspent".to_string(),
+                });
+            }
+            if !accepted {
+                return Err(BroadcastError::Rejected {
+                    reason: "simulated pre-dispatch rejection".to_string(),
+                });
+            }
+            if let Some(resume_sent) = &self.resume_sent {
+                resume_sent.wait().await;
+            }
+            Ok(transaction.txid())
+        }
+
+        async fn wait_until_ready(&self, _timeout: Duration) -> bool {
+            self.resume_parked.wait().await;
+            self.transport_gate.wait().await;
+            true
+        }
+    }
+
+    /// Persistence double that supplies an InstantSend record from durable
+    /// storage and pauses on the validation lookup made only after the resume
+    /// has turned that record into a proof.
+    struct ObservableLocalProofPersistence {
+        stored: Mutex<Vec<PlatformWalletChangeSet>>,
+        record: Mutex<Option<TransactionRecord>>,
+        lookups: std::sync::atomic::AtomicUsize,
+        proof_observed: Notify,
+        proof_gate: std::sync::Barrier,
+    }
+
+    impl ObservableLocalProofPersistence {
+        fn new() -> Self {
+            Self {
+                stored: Mutex::new(Vec::new()),
+                record: Mutex::new(None),
+                lookups: std::sync::atomic::AtomicUsize::new(0),
+                proof_observed: Notify::new(),
+                proof_gate: std::sync::Barrier::new(2),
+            }
+        }
+
+        fn removed_outpoints(&self) -> Vec<OutPoint> {
+            self.stored
+                .lock()
+                .expect("observable persistence mutex")
+                .iter()
+                .filter_map(|cs| cs.asset_locks.as_ref())
+                .flat_map(|locks| locks.removed.iter().copied())
+                .collect()
+        }
+    }
+
+    impl PlatformWalletPersistence for ObservableLocalProofPersistence {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.stored
+                .lock()
+                .expect("observable persistence mutex")
+                .push(changeset);
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+
+        fn get_core_tx_record(
+            &self,
+            _wallet_id: WalletId,
+            _txid: &Txid,
+        ) -> Result<Option<TransactionRecord>, PersistenceError> {
+            let lookup = self
+                .lookups
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if lookup == 1 {
+                self.proof_observed.notify_one();
+                tokio::task::block_in_place(|| self.proof_gate.wait());
+            }
+            Ok(self.record.lock().expect("observable record mutex").clone())
+        }
+    }
+
+    fn instant_send_record(transaction: Transaction) -> TransactionRecord {
+        TransactionRecord::new(
+            transaction,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            TransactionContext::InstantSend(
+                dashcore::ephemerealdata::instant_lock::InstantLock::default(),
+            ),
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    }
+
+    /// The single tracked asset-lock outpoint on the fixture wallet.
+    async fn the_only_tracked_outpoint(
+        wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+    ) -> OutPoint {
+        let wm = wallet_manager.read().await;
+        let (_, info) = wm.get_wallet_and_info(&wallet_id).expect("wallet present");
+        assert_eq!(
+            info.tracked_asset_locks.len(),
+            1,
+            "the build must have tracked its Built row before broadcasting"
+        );
+        *info
+            .tracked_asset_locks
+            .keys()
+            .next()
+            .expect("one tracked lock")
+    }
+
+    /// THE FENCE VIOLATION: a definite rejection must not release an asset
+    /// lock's inputs while a resume is still on its way to broadcasting that
+    /// very transaction.
+    ///
+    /// A resume reads the tracked row, its transaction and its status out of
+    /// the map under one read guard, and only then waits for the broadcast
+    /// transport, sends, and records the send by advancing the row. The
+    /// initial build's cleanup runs against a snapshot that is already gone:
+    /// its removal guard asks whether the row is still `Built`, which a
+    /// resume that has not reached its status advance yet still is. So the
+    /// cleanup used to remove the row and release both the funding
+    /// reservation and the in-broadcast fence in the middle of the resume's
+    /// dispatch window — and the resume then put the original transaction on
+    /// the wire from inputs the definite-rejection contract had just told the
+    /// host were free to rebuild from. The result is a live asset lock
+    /// beside a replacement spending the same UTXOs.
+    ///
+    /// The interleaving is driven, not hoped for: the build suspends inside
+    /// `broadcast` with its row tracked, the resume is held inside the
+    /// transport-readiness wait, and only then is the rejection released. The
+    /// resume's send is deliberately allowed to succeed afterwards — the fix
+    /// is not to suppress it but to make sure nothing released its inputs
+    /// first, which is what the rebuild refusal below asserts.
+    ///
+    /// The resume names a one-millisecond budget purely so its downstream
+    /// proof wait cannot outlive the test; the transport wait is over long
+    /// before that, since it ends on the test's own signal.
+    #[tokio::test]
+    async fn a_rejection_cleanup_cannot_release_inputs_under_a_parked_resume() {
+        let (wallet_manager, wallet_id, _generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let broadcaster = Arc::new(RejectTheBuildAndParkTheResume {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            dispatched: Mutex::new(Vec::new()),
+            at_broadcast: Arc::new(tokio::sync::Barrier::new(2)),
+            reject_gate: Arc::new(tokio::sync::Barrier::new(2)),
+            resume_parked: Arc::new(tokio::sync::Barrier::new(2)),
+            transport_gate: Arc::new(tokio::sync::Barrier::new(2)),
+            resume_sent: None,
+            accept_resume: true,
+        });
+        let (manager, persistence) = asset_lock_manager_over(
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::clone(&broadcaster),
+        );
+
+        let build = async {
+            manager
+                .create_funded_asset_lock_proof(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityRegistration,
+                    0,
+                    &signer,
+                )
+                .await
+        };
+
+        // Every rendezvous is bounded so that a regression which stops the
+        // build or the resume from reaching its half of the interleaving
+        // fails the test with the step it never got to, instead of hanging
+        // the suite on a barrier nobody will arrive at.
+        let reach = |step: &'static str, wait| async move {
+            tokio::time::timeout(Duration::from_secs(30), wait)
+                .await
+                .unwrap_or_else(|_| panic!("the interleaving never reached: {step}"));
+        };
+
+        let coordinator = async {
+            // The build is inside `broadcast`: signed, tracked at `Built`,
+            // nothing decided yet.
+            reach("the build's broadcast", broadcaster.at_broadcast.wait()).await;
+            let out_point = the_only_tracked_outpoint(&wallet_manager, wallet_id).await;
+
+            // A resume of that same row snapshots it and parks in the
+            // transport wait, exactly as the launch catch-up does while the
+            // SPV client is still starting.
+            let resume = tokio::spawn({
+                let manager = Arc::clone(&manager);
+                async move {
+                    manager
+                        .resume_asset_lock(&out_point, Some(Duration::from_millis(1)))
+                        .await
+                }
+            });
+            reach(
+                "the resume's transport wait",
+                broadcaster.resume_parked.wait(),
+            )
+            .await;
+
+            // Only now does the build's rejection — and its whole cleanup —
+            // run.
+            reach("the build's rejection", broadcaster.reject_gate.wait()).await;
+            (out_point, resume)
+        };
+
+        let (build_result, (out_point, resume)) = tokio::join!(build, coordinator);
+
+        let Err(PlatformWalletError::TransactionBroadcastUnconfirmed(reason)) = &build_result
+        else {
+            panic!(
+                "with a resume holding the dispatch window the cleanup cannot run, so \
+                 the definite-rejection contract — row gone, inputs released, rebuild \
+                 safe — does not hold and must not be reported: {build_result:?}"
+            );
+        };
+        assert!(
+            reason.contains("resume"),
+            "the unknown outcome must name the concurrent resume that kept the row, \
+             so the verdict is not read as an ordinary ambiguous broadcast: {reason}"
+        );
+        {
+            let wm = wallet_manager.read().await;
+            let (_, info) = wm.get_wallet_and_info(&wallet_id).expect("wallet present");
+            assert_eq!(
+                info.tracked_asset_locks
+                    .get(&out_point)
+                    .map(|lock| lock.status.clone()),
+                Some(AssetLockStatus::Built),
+                "the row the parked resume is about to broadcast must survive the cleanup"
+            );
+        }
+        assert!(
+            persistence.removed_outpoints().is_empty(),
+            "and no persisted-row deletion may be queued for it either, got {:?}",
+            persistence.removed_outpoints()
+        );
+
+        // The assertion the whole test exists for: at this point the cleanup
+        // has finished and the resume has not sent yet. If the inputs were
+        // reusable here, the send that follows would land beside whatever the
+        // host rebuilt from them.
+        let rebuild = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        match rebuild {
+            Err(PlatformWalletError::AssetLockInsufficientFunds { available: 0, .. }) => {}
+            other => panic!(
+                "the rejection cleanup released the inputs of a transaction a parked \
+                 resume is still about to broadcast — a rebuild from them creates a \
+                 second asset lock beside a live one: {other:?}"
+            ),
+        }
+
+        // Bring the transport up and let the parked resume do exactly what it
+        // was always going to do.
+        tokio::time::timeout(Duration::from_secs(30), broadcaster.transport_gate.wait())
+            .await
+            .expect("the resume must still be parked in the transport wait");
+        let _ = resume.await.expect("resume task");
+        let dispatched = broadcaster.dispatched();
+        assert_eq!(
+            dispatched.len(),
+            2,
+            "the test proves nothing unless the parked resume really did reach \
+             the broadcaster after the cleanup ran: {dispatched:?}"
+        );
+        assert!(
+            dispatched[1].1,
+            "and that send has to be one the transport accepted — a second \
+             refusal would leave nothing on the wire and the interleaving \
+             would be harmless for the wrong reason: {dispatched:?}"
+        );
+        assert_eq!(
+            dispatched[0].0, dispatched[1].0,
+            "what went out is the very transaction the cleanup judged rejected"
+        );
+    }
+
+    /// A resume that proves its own attempt never left the device must
+    /// release its cleanup exclusion. If the initial build's rejection is
+    /// still waiting, that cleanup can then remove the dead row and release
+    /// its inputs under the ordinary definite-rejection contract.
+    #[tokio::test]
+    async fn should_release_cleanup_exclusion_after_a_predispatch_resume_rejection() {
+        let (wallet_manager, wallet_id, _generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let broadcaster = Arc::new(RejectTheBuildAndParkTheResume {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            dispatched: Mutex::new(Vec::new()),
+            at_broadcast: Arc::new(tokio::sync::Barrier::new(2)),
+            reject_gate: Arc::new(tokio::sync::Barrier::new(2)),
+            resume_parked: Arc::new(tokio::sync::Barrier::new(2)),
+            transport_gate: Arc::new(tokio::sync::Barrier::new(2)),
+            resume_sent: None,
+            accept_resume: false,
+        });
+        let (manager, persistence) = asset_lock_manager_over(
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::clone(&broadcaster),
+        );
+
+        let build = async {
+            manager
+                .create_funded_asset_lock_proof(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityRegistration,
+                    0,
+                    &signer,
+                )
+                .await
+        };
+        let coordinator = async {
+            tokio::time::timeout(Duration::from_secs(30), broadcaster.at_broadcast.wait())
+                .await
+                .expect("the build must reach its broadcast");
+            let out_point = the_only_tracked_outpoint(&wallet_manager, wallet_id).await;
+            let resume = tokio::spawn({
+                let manager = Arc::clone(&manager);
+                async move {
+                    manager
+                        .resume_asset_lock(&out_point, Some(Duration::from_millis(1)))
+                        .await
+                }
+            });
+            tokio::time::timeout(Duration::from_secs(30), broadcaster.resume_parked.wait())
+                .await
+                .expect("the resume must reach the transport wait");
+            tokio::time::timeout(Duration::from_secs(30), broadcaster.transport_gate.wait())
+                .await
+                .expect("the resume transport must be released");
+            let resume_result = tokio::time::timeout(Duration::from_secs(30), resume)
+                .await
+                .expect("the rejected resume must finish")
+                .expect("the resume task must not panic");
+            assert!(
+                matches!(
+                    resume_result,
+                    Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
+                ),
+                "the resume must report its pre-dispatch rejection as an unknown original \
+                 outcome: {resume_result:?}"
+            );
+
+            tokio::time::timeout(Duration::from_secs(30), broadcaster.reject_gate.wait())
+                .await
+                .expect("the initial rejection must be released after the resume exits");
+            out_point
+        };
+
+        let (build_result, out_point) = tokio::join!(build, coordinator);
+        assert!(
+            matches!(
+                build_result,
+                Err(PlatformWalletError::TransactionBroadcast(_))
+            ),
+            "once the proven-predispatch resume releases its claim, the initial rejection can \
+             restore the definite-rejection contract: {build_result:?}"
+        );
+        assert!(
+            persistence.removed_outpoints().contains(&out_point),
+            "the rejected Built row must be queued for deletion"
+        );
+        assert!(
+            !wallet_manager
+                .read()
+                .await
+                .get_wallet_and_info(&wallet_id)
+                .expect("wallet present")
+                .1
+                .tracked_asset_locks
+                .contains_key(&out_point),
+            "the rejected Built row must be removed in memory"
+        );
+        assert!(
+            manager
+                .build_asset_lock_transaction(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityRegistration,
+                    0,
+                    &signer,
+                )
+                .await
+                .is_ok(),
+            "cleanup must make the definitely rejected transaction's inputs reusable"
+        );
+        assert_eq!(
+            broadcaster
+                .dispatched()
+                .iter()
+                .map(|(_, sent)| *sent)
+                .collect::<Vec<_>>(),
+            vec![false, false],
+            "both attempts must be proven pre-dispatch for cleanup to be safe"
+        );
+    }
+
+    /// Once a resumed send is observable, cancelling the future cannot make
+    /// the original build's cleanup treat that transaction as never sent.
+    #[tokio::test]
+    async fn cancelling_after_an_observable_resume_send_keeps_cleanup_excluded() {
+        let (wallet_manager, wallet_id, _generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let broadcaster = Arc::new(RejectTheBuildAndParkTheResume {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            dispatched: Mutex::new(Vec::new()),
+            at_broadcast: Arc::new(tokio::sync::Barrier::new(2)),
+            reject_gate: Arc::new(tokio::sync::Barrier::new(2)),
+            resume_parked: Arc::new(tokio::sync::Barrier::new(2)),
+            transport_gate: Arc::new(tokio::sync::Barrier::new(2)),
+            resume_sent: Some(Arc::new(tokio::sync::Barrier::new(2))),
+            accept_resume: true,
+        });
+        let (manager, persistence) = asset_lock_manager_over(
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::clone(&broadcaster),
+        );
+
+        let build = async {
+            manager
+                .create_funded_asset_lock_proof(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityRegistration,
+                    0,
+                    &signer,
+                )
+                .await
+        };
+        let coordinator = async {
+            tokio::time::timeout(Duration::from_secs(30), broadcaster.at_broadcast.wait())
+                .await
+                .expect("the build must reach its broadcast");
+            let out_point = the_only_tracked_outpoint(&wallet_manager, wallet_id).await;
+            let resume = tokio::spawn({
+                let manager = Arc::clone(&manager);
+                async move {
+                    manager
+                        .resume_asset_lock(&out_point, Some(Duration::from_millis(1)))
+                        .await
+                }
+            });
+            tokio::time::timeout(Duration::from_secs(30), broadcaster.resume_parked.wait())
+                .await
+                .expect("the resume must reach the transport wait");
+
+            let wallet_write = wallet_manager.write().await;
+            tokio::time::timeout(Duration::from_secs(30), broadcaster.transport_gate.wait())
+                .await
+                .expect("the resume transport must be released");
+            tokio::time::timeout(
+                Duration::from_secs(30),
+                broadcaster
+                    .resume_sent
+                    .as_ref()
+                    .expect("resume send gate")
+                    .wait(),
+            )
+            .await
+            .expect("the resumed send must become observable");
+            resume.abort();
+            assert!(
+                resume
+                    .await
+                    .expect_err("the resume must be cancelled")
+                    .is_cancelled(),
+                "the resume must be aborted before it records Broadcast"
+            );
+            drop(wallet_write);
+            tokio::time::timeout(Duration::from_secs(30), broadcaster.reject_gate.wait())
+                .await
+                .expect("the build rejection must be released");
+            out_point
+        };
+
+        let (build_result, out_point) = tokio::join!(build, coordinator);
+        assert!(
+            matches!(
+                build_result,
+                Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
+            ),
+            "a cancellation after an observable send is an unknown outcome; cleanup must not \
+             report that rebuilding is safe: {build_result:?}"
+        );
+        assert!(
+            persistence.removed_outpoints().is_empty(),
+            "the possibly-live transaction must not be queued for deletion"
+        );
+        assert_eq!(
+            wallet_manager
+                .read()
+                .await
+                .get_wallet_and_info(&wallet_id)
+                .expect("wallet present")
+                .1
+                .tracked_asset_locks
+                .get(&out_point)
+                .map(|lock| lock.status.clone()),
+            Some(AssetLockStatus::Built),
+            "the cancelled resume did not record Broadcast, so the sticky exclusion must keep \
+             the Built row"
+        );
+        assert!(
+            matches!(
+                manager
+                    .build_asset_lock_transaction(
+                        1_000_000,
+                        0,
+                        AssetLockFundingType::IdentityRegistration,
+                        0,
+                        &signer,
+                    )
+                    .await,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { available: 0, .. })
+            ),
+            "the cleanup must not release inputs of a transaction whose send was observable"
+        );
+    }
+
+    /// A proof read from durable local state is equally conclusive: cancelling
+    /// before the row can record it must keep cleanup from releasing its spend.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cancelling_after_observing_local_proof_keeps_cleanup_excluded() {
+        let broadcaster = Arc::new(RejectTheBuildAndParkTheResume {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            dispatched: Mutex::new(Vec::new()),
+            at_broadcast: Arc::new(tokio::sync::Barrier::new(2)),
+            reject_gate: Arc::new(tokio::sync::Barrier::new(2)),
+            resume_parked: Arc::new(tokio::sync::Barrier::new(2)),
+            transport_gate: Arc::new(tokio::sync::Barrier::new(2)),
+            resume_sent: None,
+            accept_resume: true,
+        });
+        let persistence = Arc::new(ObservableLocalProofPersistence::new());
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::clone(&broadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+        let wallet_manager = Arc::clone(&manager.wallet_manager);
+        let wallet_id = manager.wallet_id;
+
+        let build = async {
+            manager
+                .create_funded_asset_lock_proof(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityRegistration,
+                    0,
+                    &signer,
+                )
+                .await
+        };
+        let coordinator = async {
+            tokio::time::timeout(Duration::from_secs(30), broadcaster.at_broadcast.wait())
+                .await
+                .expect("the build must reach its broadcast");
+            let (out_point, transaction) = {
+                let mut wm = wallet_manager.write().await;
+                let (_, info) = wm
+                    .get_wallet_and_info_mut(&wallet_id)
+                    .expect("wallet present");
+                let lock = info
+                    .tracked_asset_locks
+                    .values()
+                    .next()
+                    .expect("one tracked lock");
+                let out_point = lock.out_point;
+                let transaction = lock.transaction.clone();
+                info.core_wallet
+                    .accounts
+                    .standard_bip44_accounts
+                    .get_mut(&0)
+                    .expect("BIP44 account 0")
+                    .transactions_mut()
+                    .remove(&transaction.txid());
+                (out_point, transaction)
+            };
+            *persistence.record.lock().expect("observable record mutex") =
+                Some(instant_send_record(transaction));
+
+            let resume = tokio::spawn({
+                let manager = Arc::clone(&manager);
+                async move { manager.resume_asset_lock(&out_point, None).await }
+            });
+            tokio::time::timeout(
+                Duration::from_secs(30),
+                persistence.proof_observed.notified(),
+            )
+            .await
+            .expect("the resume must validate the local proof");
+            let wallet_write = wallet_manager.write().await;
+            tokio::task::block_in_place(|| persistence.proof_gate.wait());
+            resume.abort();
+            assert!(
+                resume
+                    .await
+                    .expect_err("the resume must be cancelled")
+                    .is_cancelled(),
+                "the resume must be aborted before it records the proof"
+            );
+            drop(wallet_write);
+            tokio::time::timeout(Duration::from_secs(30), broadcaster.reject_gate.wait())
+                .await
+                .expect("the build rejection must be released");
+            out_point
+        };
+
+        let (build_result, out_point) = tokio::join!(build, coordinator);
+        assert!(
+            matches!(
+                build_result,
+                Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
+            ),
+            "a cancellation after observing local finality is an unknown outcome; cleanup must \
+             not report that rebuilding is safe: {build_result:?}"
+        );
+        assert!(
+            persistence.removed_outpoints().is_empty(),
+            "the locally-final transaction must not be queued for deletion"
+        );
+        assert_eq!(
+            wallet_manager
+                .read()
+                .await
+                .get_wallet_and_info(&wallet_id)
+                .expect("wallet present")
+                .1
+                .tracked_asset_locks
+                .get(&out_point)
+                .map(|lock| lock.status.clone()),
+            Some(AssetLockStatus::Built),
+            "the cancelled resume did not record its proof, so the sticky exclusion must keep \
+             the Built row"
+        );
+        assert!(
+            matches!(
+                manager
+                    .build_asset_lock_transaction(
+                        1_000_000,
+                        0,
+                        AssetLockFundingType::IdentityRegistration,
+                        0,
+                        &signer,
+                    )
+                    .await,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { available: 0, .. })
+            ),
+            "the cleanup must not release inputs spent by a locally-final transaction"
+        );
+    }
+
+    /// A claim that has not crossed the side-effect boundary is an RAII hold.
+    ///
+    /// `untrack_asset_lock` must refuse only while a resume is actually
+    /// inside its pre-dispatch window, and must remove the row the moment the
+    /// last releasable claim goes. Two claims are taken so the count itself is
+    /// pinned: releasing one of them must not be enough.
+    #[tokio::test]
+    async fn a_released_dispatch_claim_lets_the_cleanup_remove_the_row() {
+        let (manager, signer, _persistence) =
+            funded_asset_lock_manager(Arc::new(AlwaysMaybeSentBroadcaster)).await;
+
+        // An ambiguous broadcast leaves the row tracked at `Built` — the
+        // state every rejection cleanup and every resume starts from.
+        let _ = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        let out_point = the_only_tracked_outpoint(&manager.wallet_manager, manager.wallet_id).await;
+
+        let first = manager.claim_resume_dispatch(out_point);
+        let second = manager.claim_resume_dispatch(out_point);
+        assert!(
+            manager
+                .untrack_asset_lock(&out_point)
+                .await
+                .removed
+                .is_empty(),
+            "a claimed row must survive the cleanup"
+        );
+
+        drop(first);
+        assert!(
+            manager
+                .untrack_asset_lock(&out_point)
+                .await
+                .removed
+                .is_empty(),
+            "one resume releasing its claim says nothing about the other: the \
+             row must survive while any dispatch window is still open"
+        );
+
+        drop(second);
+        assert!(
+            manager
+                .untrack_asset_lock(&out_point)
+                .await
+                .removed
+                .contains(&out_point),
+            "with the last claim gone the cleanup must be free again — a claim \
+             that outlived its resume would fence these inputs for the rest of \
+             the session"
+        );
+        let wm = manager.wallet_manager.read().await;
+        let (_, info) = wm
+            .get_wallet_and_info(&manager.wallet_id)
+            .expect("wallet present");
+        assert!(
+            !info.tracked_asset_locks.contains_key(&out_point),
+            "and the row itself is gone, not just reported as removed"
         );
     }
 }

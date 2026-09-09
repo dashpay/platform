@@ -1859,6 +1859,11 @@ impl PlatformWallet {
     }
 
     /// Load persisted state for this wallet.
+    ///
+    /// Calls the backend inline, without the `spawn_blocking` offload that
+    /// [`PlatformWalletManager::load_from_persistor`](crate::manager::PlatformWalletManager::load_from_persistor)
+    /// and wallet registration use. A slow backend blocks the calling thread —
+    /// an async caller's runtime worker included.
     pub fn load_persisted(&self) -> Result<ClientStartState, PersistenceError> {
         self.persister.load()
     }
@@ -1928,6 +1933,9 @@ impl PlatformWallet {
     /// accounts that exist at that point; a second call after
     /// account bootstrap picks up the rest without regressing
     /// anything.
+    ///
+    /// Inherits [`load_persisted`](Self::load_persisted)'s inline read with no
+    /// offload. A host that wants one must wrap this call itself.
     pub async fn load_and_apply_persisted(
         &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -2305,19 +2313,19 @@ mod shield_input_selection_tests {
         // Real account snapshot: the leading address is below the reserve, so
         // capacity must come from the usable suffix, not the account total.
         assert!(
-            297_264_780 <= reserve(),
+            197_264_780 <= reserve(),
             "regression shape requires the leading address to stay below the reserve; \
-             re-seed the balances if the versioned reserve drops under 297_264_780"
+             re-seed the balances if the versioned reserve drops under 197_264_780"
         );
         let candidates = vec![
-            (addr(1), 297_264_780),
+            (addr(1), 197_264_780),
             (addr(2), 2_000_000_000),
             (addr(3), 1_623_849_220),
         ];
         let plan = plan(candidates).unwrap();
         let expected_max = 3_623_849_220 - reserve();
 
-        assert_eq!(plan.preflight.account_balance_credits, 3_921_114_000);
+        assert_eq!(plan.preflight.account_balance_credits, 3_821_114_000);
         assert_eq!(plan.preflight.usable_balance_credits, 3_623_849_220);
         assert_eq!(plan.preflight.fee_reserve_credits, reserve());
         assert_eq!(plan.preflight.max_shieldable_credits, expected_max);

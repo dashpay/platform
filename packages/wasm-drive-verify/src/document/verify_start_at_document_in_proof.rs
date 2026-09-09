@@ -114,6 +114,7 @@ pub fn verify_start_at_document_in_proof(
         // verification fails closed. Use the SDK's FromProof path (which
         // resolves from the signed metadata time) for those proofs.
         resolved_time_ranges: vec![],
+        sub_queries: vec![],
     };
 
     let (root_hash, document_option) = query

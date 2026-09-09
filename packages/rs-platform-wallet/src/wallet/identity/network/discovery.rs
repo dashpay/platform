@@ -151,13 +151,6 @@ impl Default for IdentityDiscoveryOptions {
 }
 
 impl IdentityWallet {
-    /// Thin wrapper around [`Self::discover`] using default options —
-    /// resume from the cached scan index, stop after `IDENTITY_GAP_LIMIT`
-    /// consecutive misses. Kept for back-compat with existing callers.
-    pub async fn sync(&self) -> Result<Vec<Identity>, PlatformWalletError> {
-        self.discover(IdentityDiscoveryOptions::default()).await
-    }
-
     /// Discover identities owned by this wallet via gap-limit scanning.
     ///
     /// For each identity index starting at `opts.start_index` (or one
@@ -641,9 +634,10 @@ impl IdentityWallet {
     /// Best-effort by design, and on the persist half only: the in-memory
     /// record always lands, so a second bring-up in this process already sees
     /// an incomplete scan and rescans. A failed persist costs the verdict its
-    /// survival across a restart, which is the same exposure a host that has
-    /// no slot for the field already has — it must not be allowed to fail the
-    /// scan that just succeeded.
+    /// survival across a restart, and it must not be allowed to fail the scan
+    /// that just succeeded.
+    ///
+    /// `store` is attempted once; persistence failures are logged and swallowed.
     async fn publish_scan_verdict(
         &self,
         wallet_id: crate::wallet::platform_wallet::WalletId,
@@ -676,9 +670,11 @@ impl IdentityWallet {
         if let Err(e) = self.persister.store(changeset) {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
+                transient = e.is_transient(),
                 error = %e,
-                "failed to persist the identity-scan verdict; a partial scan may not be \
-                 retried after a restart"
+                "identity-scan verdict could not be persisted; a partial scan will not be \
+                 retried after a restart, so an identity at an unanswered index stays hidden \
+                 until a later scan publishes a verdict that lands"
             );
         }
     }
@@ -851,7 +847,7 @@ mod tests {
     use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::Identifier;
     use key_wallet::bip32::ExtendedPrivKey;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::Network;
     use std::collections::BTreeMap;
 
@@ -859,7 +855,7 @@ mod tests {
          abandon abandon abandon abandon abandon about";
 
     fn test_master() -> ExtendedPrivKey {
-        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("mnemonic");
         let seed = mnemonic.to_seed("");
         ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master xpriv")
     }

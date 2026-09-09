@@ -101,10 +101,61 @@ fn tc035_restore_roundtrip() {
     assert_eq!(h, 5);
 }
 
+/// Sibling databases restored into one shared auto-backup dir must each get
+/// their own pre-restore backup filename. Before the source stem was
+/// embedded, `pre-restore-<ts>.db` collided whenever two restores landed in
+/// the same one-second timestamp and the second one failed.
+#[test]
+fn sibling_dbs_get_distinct_pre_restore_backup_names() {
+    let tmp = common::secure_tempdir().unwrap();
+    let backup_dir = tmp.path().join("backups");
+    let source_dir = tmp.path().join("source");
+    fs::create_dir(&source_dir).unwrap();
+
+    let mut dests = Vec::new();
+    let mut restore_src = None;
+    for db_name in ["det-mainnet.sqlite", "det-testnet.sqlite"] {
+        let path = tmp.path().join(db_name);
+        let persister =
+            SqlitePersister::open(platform_wallet_storage::SqlitePersisterConfig::new(&path))
+                .unwrap();
+        seed_one_row(&persister, &wid(0xD7));
+        if restore_src.is_none() {
+            restore_src = Some(persister.backup_to(&source_dir).unwrap());
+        }
+        dests.push(path);
+    }
+    let restore_src = restore_src.expect("one destination seeded the restore source");
+
+    for dest in &dests {
+        SqlitePersister::restore_from(dest, &restore_src, Some(&backup_dir))
+            .unwrap_or_else(|e| panic!("restore into {} must not collide: {e}", dest.display()));
+    }
+
+    let mut names: Vec<String> = fs::read_dir(&backup_dir)
+        .expect("read backup dir")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("pre-restore-") && n.ends_with(".db"))
+        .collect();
+    names.sort();
+    assert_eq!(
+        names.len(),
+        2,
+        "one pre-restore backup per destination: {names:?}"
+    );
+    for stem in ["det-mainnet", "det-testnet"] {
+        assert!(
+            names.iter().any(|n| n.contains(stem)),
+            "no backup names {stem} among {names:?}"
+        );
+    }
+}
+
 /// TC-036: restore source missing schema_history is rejected.
 #[test]
 fn tc036_restore_missing_schema_history() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let fake_src = tmp.path().join("empty.db");
     rusqlite::Connection::open(&fake_src).unwrap();
     let dest = tmp.path().join("dest.db");
@@ -116,7 +167,7 @@ fn tc036_restore_missing_schema_history() {
 /// TC-037: corrupt source rejected.
 #[test]
 fn tc037_restore_corrupt_source() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let corrupt = tmp.path().join("corrupt.db");
     fs::write(&corrupt, b"not a sqlite file ABCDEF").unwrap();
     let dest = tmp.path().join("dest.db");
@@ -176,7 +227,7 @@ fn atom_004_backup_to_failure_leaves_no_junk_at_dest() {
 /// TC-038: prune retention AND-semantics.
 #[test]
 fn tc038_prune_and_semantics() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let dir = tmp.path();
     // Write 5 fake backup files with mtimes 1d/7d/14d/30d/60d ago.
     let day = std::time::Duration::from_secs(86_400);
@@ -244,7 +295,7 @@ fn atom_011_prune_report_carries_failed_removals_field() {
 #[cfg(unix)]
 fn is_root_via_probe() -> bool {
     use std::os::unix::fs::PermissionsExt;
-    let Ok(tmp) = tempfile::tempdir() else {
+    let Ok(tmp) = common::secure_tempdir() else {
         return false;
     };
     let dir = tmp.path().join("probe");
@@ -369,7 +420,7 @@ fn tc_code_019_a_failed_removal_counts_in_kept() {
         return;
     }
     use std::os::unix::fs::PermissionsExt;
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let dir = tmp.path().join("backups");
     fs::create_dir(&dir).unwrap();
     // Five eligible backups, all old enough to be removed by `max_age`.
@@ -418,4 +469,41 @@ fn tc_code_019_a_failed_removal_counts_in_kept() {
         5,
         "kept + removed must equal total eligible (5)"
     );
+}
+
+/// The persister's gated `prune_backups` and the crate-root
+/// `prune_backups_in` must be one implementation, not two: the wrapper
+/// adds the recovery gate and nothing else. The raw `sqlite::backup::prune`
+/// is `pub(crate)` so this pair is the whole public surface.
+#[test]
+fn prune_backups_in_matches_the_gated_wrapper() {
+    let (persister, tmp, _path) = fresh_persister();
+
+    // Retention selects by backup file NAME, so the fixtures are written
+    // directly — driving `backup_to` would need a sleep per file to clear
+    // the whole-second timestamp granularity.
+    let via_free_fn = tmp.path().join("free-fn");
+    let via_wrapper = tmp.path().join("wrapper");
+    for dir in [&via_free_fn, &via_wrapper] {
+        fs::create_dir_all(dir).unwrap();
+        for stamp in ["20260101T000001Z", "20260101T000002Z", "20260101T000003Z"] {
+            fs::write(dir.join(format!("wallet-{stamp}.db")), b"backup").unwrap();
+        }
+    }
+
+    let policy = RetentionPolicy::keep_last(1);
+    let free_fn_report =
+        platform_wallet_storage::prune_backups_in(&via_free_fn, policy).expect("free-fn prune");
+    let wrapper_report = persister
+        .prune_backups(&via_wrapper, policy)
+        .expect("wrapper prune in strict mode");
+
+    assert_eq!(free_fn_report.kept, wrapper_report.kept);
+    assert_eq!(
+        free_fn_report.removed.len(),
+        wrapper_report.removed.len(),
+        "both doors must apply the same retention policy"
+    );
+    assert_eq!(free_fn_report.kept, 1, "keep_last(1) must keep exactly one");
+    assert_eq!(free_fn_report.removed.len(), 2);
 }
