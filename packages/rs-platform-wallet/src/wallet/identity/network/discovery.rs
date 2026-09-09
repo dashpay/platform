@@ -151,13 +151,6 @@ impl Default for IdentityDiscoveryOptions {
 }
 
 impl IdentityWallet {
-    /// Thin wrapper around [`Self::discover`] using default options —
-    /// resume from the cached scan index, stop after `IDENTITY_GAP_LIMIT`
-    /// consecutive misses. Kept for back-compat with existing callers.
-    pub async fn sync(&self) -> Result<Vec<Identity>, PlatformWalletError> {
-        self.discover(IdentityDiscoveryOptions::default()).await
-    }
-
     /// Discover identities owned by this wallet via gap-limit scanning.
     ///
     /// For each identity index starting at `opts.start_index` (or one
