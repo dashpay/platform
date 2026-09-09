@@ -2305,19 +2305,19 @@ mod shield_input_selection_tests {
         // Real account snapshot: the leading address is below the reserve, so
         // capacity must come from the usable suffix, not the account total.
         assert!(
-            297_264_780 <= reserve(),
+            197_264_780 <= reserve(),
             "regression shape requires the leading address to stay below the reserve; \
-             re-seed the balances if the versioned reserve drops under 297_264_780"
+             re-seed the balances if the versioned reserve drops under 197_264_780"
         );
         let candidates = vec![
-            (addr(1), 297_264_780),
+            (addr(1), 197_264_780),
             (addr(2), 2_000_000_000),
             (addr(3), 1_623_849_220),
         ];
         let plan = plan(candidates).unwrap();
         let expected_max = 3_623_849_220 - reserve();
 
-        assert_eq!(plan.preflight.account_balance_credits, 3_921_114_000);
+        assert_eq!(plan.preflight.account_balance_credits, 3_821_114_000);
         assert_eq!(plan.preflight.usable_balance_credits, 3_623_849_220);
         assert_eq!(plan.preflight.fee_reserve_credits, reserve());
         assert_eq!(plan.preflight.max_shieldable_credits, expected_max);
