@@ -396,8 +396,8 @@ class ManagedPlatformWallet internal constructor(
      *
      *   Name [AccountType.BIP44] or [AccountType.BIP32] to confine the drain
      *   to one family. Those are the only single-family scopes this method
-     *   can express — its [AccountType] has no CoinJoin variant, and a
-     *   CoinJoin sweep goes through the dedicated send-all path instead.
+     *   can express: its [AccountType] has no CoinJoin variant, so a CoinJoin
+     *   account cannot be drained through this API.
      */
     suspend fun buildSignedPayment(
         recipients: List<Pair<String, Long>>,
