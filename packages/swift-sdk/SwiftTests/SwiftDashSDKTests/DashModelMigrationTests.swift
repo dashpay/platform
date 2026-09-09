@@ -193,6 +193,30 @@ final class DashModelMigrationTests: XCTestCase {
     /// from a live `PersistentAccount.wallet` is rebound to the live
     /// wallet's shape the moment the live schema is built first, and the
     /// released checksum moves with it.
+    ///
+    /// This test is THE authority on whether a freeze is complete. The
+    /// generator's `--check` (`scripts/freeze_schema_models.py`) only proves
+    /// the committed frozen files are the generator's byte-for-byte output;
+    /// it does not, and must not try to, decide whether the `FREEZES` table
+    /// covers every relationship target and stored value type. A static
+    /// scan of Swift source cannot: it misses whatever syntax it does not
+    /// understand, and it flags references SwiftData does not hash at all
+    /// (a struct stored directly on a model is part of the entity hash; an
+    /// array of structs nested inside it is not), so it fails silently in
+    /// both directions. Only
+    /// building the schema and reading the hash SwiftData computes, against
+    /// a store a shipping build wrote, answers the question, and that is
+    /// what this does: an omitted relationship target fails here as soon as
+    /// the live target has changed shape, an omitted stored value type
+    /// fails here on the change that would have broken the store, and a
+    /// version registering the wrong entity set fails on membership.
+    ///
+    /// Its reach is exactly the fixtures: it guards a version only once a
+    /// store written by a build that shipped that version is committed
+    /// under `Fixtures/SchemaStores/` and listed in `fixtures`. V1, V2 and
+    /// V3 are covered. A newly cut version's freeze is unguarded until its
+    /// fixture lands, so committing that fixture is a required step of
+    /// cutting a schema version, not an optional one.
     func testFrozenVersionsBuiltAfterTheLiveSchemaHashLikeTheStoresTheyShipped() throws {
         for fixture in Self.fixtures {
             let (directory, url) = try copyFixture(fixture)

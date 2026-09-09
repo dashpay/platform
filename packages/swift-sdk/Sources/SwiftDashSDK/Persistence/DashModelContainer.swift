@@ -90,7 +90,11 @@ public enum DashModelContainer {
     /// so it moves whenever a model gains a property — which is exactly why
     /// the released versions must not. When the next property lands: freeze
     /// every model here into the version being retired
-    /// (`scripts/freeze_schema_models.py`), add a version, add a stage.
+    /// (`scripts/freeze_schema_models.py`), add a version, add a stage, and
+    /// commit a store written by the build that shipped the retired version
+    /// under the test fixtures. `DashModelMigrationTests` proves a freeze
+    /// complete only against such a store; until it lands the new freeze is
+    /// unguarded.
     public static var modelTypes: [any PersistentModel.Type] {
         [
             PersistentIdentity.self,
