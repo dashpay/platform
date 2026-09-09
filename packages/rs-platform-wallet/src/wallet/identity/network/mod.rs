@@ -29,7 +29,6 @@ mod identity_handle;
 mod loading;
 mod register_from_addresses;
 mod registration;
-mod top_up;
 mod top_up_from_addresses;
 mod transfer;
 mod transfer_to_addresses;
