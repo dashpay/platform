@@ -14,13 +14,12 @@ pub mod record;
 pub mod tracked;
 pub mod update_service;
 
-pub use list::{find_in_summaries, MasternodeListQuery, MasternodeListSummary};
+pub use list::{MasternodeListQuery, MasternodeListSummary};
 pub use locator::{
-    locate_in_summaries, parse_locator_input, parse_secret_for_role, verify_masternode_key,
-    verify_masternode_key_text, KeyVerification, LocateOptions, LocatorMatchKind,
-    LocatorParseError, LocatorSecret, MasternodeKeyReference, MasternodeKeyRole,
-    MasternodeLocateError, MasternodeLocateMatch, MasternodeLocateResult, MasternodeLocator,
-    MasternodeLocatorInput, ParsedLocatorInput, PlatformLookup,
+    parse_secret_for_role, verify_masternode_key, verify_masternode_key_text, KeyVerification,
+    LocateOptions, LocatorMatchKind, LocatorParseError, LocatorSecret, MasternodeKeyReference,
+    MasternodeKeyRole, MasternodeLocateError, MasternodeLocateMatch, MasternodeLocateResult,
+    MasternodeLocator, MasternodeLocatorInput, ParsedLocatorInput, PlatformLookup,
 };
 pub use record::{
     aggregate_masternodes, provider_payload_fields, ListMembership, MasternodeRecord,
@@ -111,9 +110,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// proTxHash (wire) ⇒ wallet id for every loaded wallet's masternodes —
     /// the "already in wallet" index the locator marks matches with.
     /// Blocking (see [`Self::wallet_masternodes_blocking`]).
-    pub fn wallet_masternode_index_blocking(
-        &self,
-    ) -> std::collections::HashMap<[u8; 32], WalletId> {
+    fn wallet_masternode_index_blocking(&self) -> std::collections::HashMap<[u8; 32], WalletId> {
         let mut index = std::collections::HashMap::new();
         for wallet_id in self.list_wallet_ids_blocking() {
             if let Some(masternodes) = self.wallet_masternodes_blocking(&wallet_id) {

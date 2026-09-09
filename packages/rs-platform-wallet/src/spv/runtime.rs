@@ -6,14 +6,13 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
-use dashcore::sml::llmq_type::LLMQType;
 use dashcore::sml::masternode_list::MasternodeList;
-use dashcore::{PubkeyHash, QuorumHash, Transaction};
+use dashcore::{PubkeyHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
 use dash_spv::storage::{DiskStorageManager, StorageManager};
 use dash_spv::sync::SyncProgress;
-use dash_spv::{BroadcastResult, ClientConfig, DashSpvClient, EventHandler, Hash};
+use dash_spv::{BroadcastResult, ClientConfig, DashSpvClient, EventHandler};
 
 use key_wallet_manager::WalletManager;
 
@@ -273,29 +272,6 @@ impl SpvRuntime {
             .broadcast_transaction_and_wait(tx, timeout)
             .await
             .map_err(classify_spv_send_error)
-    }
-
-    /// Look up a quorum public key via the SPV masternode state.
-    pub async fn get_quorum_public_key(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32],
-        height: u32,
-    ) -> Result<[u8; 48], PlatformWalletError> {
-        let client_guard = self.client.read().await;
-        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
-            "SPV Client not started".to_string(),
-        ))?;
-
-        let llmq_type = LLMQType::from(quorum_type as u8);
-        let qh = QuorumHash::from_byte_array(quorum_hash).reverse();
-
-        let quorum = client
-            .get_quorum_at_height(height, llmq_type, qh)
-            .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-
-        Ok(*quorum.quorum_entry.quorum_public_key.as_ref())
     }
 
     /// Drive the sync loop of an already-[`start`]ed client until [`stop`]
@@ -620,21 +596,6 @@ impl SpvRuntime {
         StorageManager::shutdown(&mut storage).await;
 
         Ok(())
-    }
-
-    /// Update the running SPV client's configuration.
-    ///
-    /// The network cannot be changed on a running client.
-    pub async fn update_config(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
-        let client_guard = self.client.read().await;
-        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
-            "SPV Client not started".to_string(),
-        ))?;
-
-        client
-            .update_config(config)
-            .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))
     }
 }
 

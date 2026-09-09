@@ -1067,7 +1067,7 @@ fn p2pkh_address(hash: &[u8; 20], network: Network) -> String {
 
 /// Lift a ProRegTx into [`RegistrationDetails`]; `None` for any other
 /// transaction.
-pub fn registration_from_transaction(
+pub(crate) fn registration_from_transaction(
     tx: &dashcore::Transaction,
     height: u32,
 ) -> Option<RegistrationDetails> {
