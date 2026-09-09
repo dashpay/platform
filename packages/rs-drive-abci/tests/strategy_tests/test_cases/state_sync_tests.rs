@@ -32,6 +32,16 @@ pub(crate) mod tests {
     use tenderdash_abci::proto::abci::{response_apply_snapshot_chunk, response_offer_snapshot};
     use tenderdash_abci::Application;
 
+    /// A first-block time near the wall clock. Checkpoints are only taken for blocks
+    /// younger than ten minutes (`is_historical_block`), so a source chain that starts
+    /// at the fixed 2023 genesis time never produces a snapshot.
+    pub(crate) fn recent_start_time_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock is before the unix epoch")
+            .as_millis() as u64
+    }
+
     /// A quiet chain with a trickle of identity inserts, no masternode churn and no
     /// quorum rotation, so the target's from-scratch Core re-derivation sees exactly
     /// the same masternodes and quorums the source chain ran with.
@@ -62,6 +72,7 @@ pub(crate) mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            start_time_ms: recent_start_time_ms(),
             ..Default::default()
         }
     }
@@ -502,9 +513,10 @@ pub(crate) mod tests {
     /// Exercises the platform state reconstruction end to end without going through
     /// the grovedb chunk restore: the source chain's
     /// own grovedb IS a faithfully "restored" snapshot of itself, so reconstructing
-    /// on it must (a) not change the grovedb root hash — the proof that re-deriving
-    /// masternode identities from Core is byte-idempotent — and (b) reproduce the
-    /// source's in-memory platform state from the reduced platform state alone.
+    /// on it must (a) not change the grovedb root hash — reconstruction rebuilds the
+    /// Core-derived state in memory and writes nothing to the replicated tree — and
+    /// (b) reproduce the source's in-memory platform state from the reduced platform
+    /// state alone.
     #[tokio::test]
     async fn platform_state_reconstruction_is_idempotent_and_matches_source_state() {
         let config = state_sync_platform_config();
@@ -536,7 +548,7 @@ pub(crate) mod tests {
             .reconstruct_platform_state(&tip_app_hash, platform_version)
             .expect("platform state reconstruction must succeed");
 
-        // (a) idempotence: re-deriving masternode identities wrote nothing new
+        // (a) reconstruction wrote nothing to the replicated tree
         let root_hash_after = platform
             .drive
             .grove
