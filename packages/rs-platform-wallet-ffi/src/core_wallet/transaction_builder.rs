@@ -210,7 +210,9 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
 /// Output ORDER is deliberately irrelevant: a MAYAChain deposit carries its
 /// memo at VOUT1, while other layouts put the data carrier first.
 fn sole_deliverable_value(outputs: &[TxOut]) -> u64 {
-    let mut carriers = outputs.iter().filter(|out| !out.script_pubkey.is_op_return());
+    let mut carriers = outputs
+        .iter()
+        .filter(|out| !out.script_pubkey.is_op_return());
     match (carriers.next(), carriers.next()) {
         (Some(only), None) => only.value,
         _ => 0,
@@ -964,7 +966,6 @@ pub unsafe extern "C" fn core_wallet_transaction_free(tx: *mut FFICoreTransactio
     tx.tx_len = 0;
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::{sole_deliverable_value, CoreAccountTypeFFI};
@@ -1024,7 +1025,10 @@ mod tests {
 
     #[test]
     fn a_lone_destination_is_the_deliverable_amount() {
-        assert_eq!(sole_deliverable_value(&[destination(27_442_985)]), 27_442_985);
+        assert_eq!(
+            sole_deliverable_value(&[destination(27_442_985)]),
+            27_442_985
+        );
     }
 
     /// The MAYAChain shape: vault output plus a zero-value memo. The memo must
@@ -1049,7 +1053,10 @@ mod tests {
     /// would let a host quote a number the payment does not pay.
     #[test]
     fn two_spendable_outputs_report_zero() {
-        assert_eq!(sole_deliverable_value(&[destination(1_000), destination(2_000)]), 0);
+        assert_eq!(
+            sole_deliverable_value(&[destination(1_000), destination(2_000)]),
+            0
+        );
     }
 
     #[test]
