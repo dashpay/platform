@@ -8,7 +8,7 @@ use crate::platform_types::signature_verification_quorum_set::{
 };
 use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::extended_block_info::v0::{ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters};
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::dashcore::hashes::Hash;
@@ -38,11 +38,9 @@ where
     ///
     /// 1. restores the scalar fields (protocol versions, quorum hashes, fee versions)
     ///    directly from the reduced state;
-    /// 2. re-derives the masternode lists, masternode identities and quorums from Core
-    ///    via `update_core_info` with `start_from_scratch = true` — the identity writes
-    ///    are re-derivations of data already present in the restored state, so the
-    ///    grovedb root hash MUST NOT change (the caller's root-hash equality check is
-    ///    the proof of that idempotence);
+    /// 2. re-derives the masternode lists and quorums from Core, in memory only, via
+    ///    `rebuild_core_info_in_memory`; the restored grovedb already holds every
+    ///    masternode identity, so nothing is written and the root hash cannot change;
     /// 3. restores the validator set order recorded by the source (`quorum_positions`),
     ///    which cannot be recovered from Core RPC;
     /// 4. advances the state to the snapshot block via `update_state_cache`, which
@@ -114,49 +112,29 @@ where
                         .to_string(),
                 ))?;
 
-        // The reduced state is written before the block's root hash exists, so its app
-        // hash is normally None and the snapshot app hash fills it in. If it does carry
-        // one, it must agree with the snapshot.
-        if let Some(saved_app_hash) = saved_block_info.app_hash {
-            if saved_app_hash.to_buffer() != *app_hash {
-                return Err(AbciError::StateSyncInternalError(format!(
-                    "reconstruct_platform_state reduced platform state app hash {} does not \
-                     match snapshot app hash {}",
-                    hex::encode(saved_app_hash.to_buffer()),
-                    hex::encode(app_hash),
-                ))
-                .into());
-            }
-        }
-
         let current_block_info: ExtendedBlockInfo = ExtendedBlockInfoV0 {
             basic_info: saved_block_info.basic_info,
             app_hash: *app_hash,
             quorum_hash: saved_block_info.quorum_hash.to_buffer(),
-            // Not known during proposal processing, and not needed for consensus after
-            // a restore; restored as zeroes.
-            block_id_hash: saved_block_info
-                .block_id_hash
-                .map(|hash| hash.to_buffer())
-                .unwrap_or_default(),
             proposer_pro_tx_hash: saved_block_info.proposer_pro_tx_hash.to_buffer(),
-            // Same: unknown at store time, restored as zeroes when absent.
-            signature: saved_block_info.signature.unwrap_or([0u8; 96]),
-            round: saved_block_info.round,
+            // The block id hash, signature and round are not part of the reduced state
+            // (they are unknown while the block executes, and the round must not affect
+            // the app hash). They are zero until the next block is finalized; proofs are
+            // refused until then, see `ensure_block_proof_metadata_is_available`.
+            block_id_hash: [0u8; 32],
+            signature: [0u8; 96],
+            round: 0,
         }
         .into();
 
-        // Re-derive masternode lists, masternode identities and quorums from Core, from
-        // scratch, at the core height the snapshot block ran with. The identity writes
-        // must be byte-identical to what is already in the restored state.
-        let transaction = self.drive.grove.start_transaction();
-        self.update_core_info(
-            None,
+        // Rebuild the Core-derived state in memory only, from scratch, at the core height
+        // the snapshot block ran with. The restored grovedb already
+        // holds every masternode identity as the source chain wrote it; rewriting them
+        // here would be thousands of no-op writes at best and a root-hash mismatch at
+        // worst, and the caller compares the root hash against the snapshot afterwards.
+        self.rebuild_core_info_in_memory(
             &mut platform_state,
             saved.proposed_core_chain_locked_height,
-            true,
-            current_block_info.basic_info(),
-            &transaction,
             state_platform_version,
         )?;
 
@@ -200,8 +178,8 @@ where
             &saved.quorum_positions,
         );
 
-        // Reinstate the signature-verification quorum HISTORY. `update_core_info` above
-        // rebuilt the current sets from Core — which is exact, the quorums of a type at a
+        // Reinstate the signature-verification quorum HISTORY. The rebuild above
+        // derived the current sets from Core — which is exact, the quorums of a type at a
         // core height are whatever Core reports — but it was given `platform_state = None`
         // and so could not produce any previous set. That history is consensus-relevant:
         // `select_quorums` uses the previous set for locks signed within `SIGN_OFFSET`
@@ -217,22 +195,6 @@ where
         )?;
 
         let block_height = platform_state.last_committed_block_height();
-
-        // Commit the re-derivation BEFORE the in-memory state is published: if this
-        // commit fails, nothing has been published and the error propagates with the
-        // node's observable state unchanged. (Publishing first, as normal block
-        // finalization does, would leave the info handler reporting a snapshot height
-        // that grovedb never persisted.)
-        self.drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .map_err(|e| {
-                AbciError::StateSyncInternalError(format!(
-                    "reconstruct_platform_state unable to commit transaction: {}",
-                    e
-                ))
-            })?;
 
         // Advance the state to the snapshot block: rotates next-into-current exactly as
         // the source did on finalization, persists to aux storage and publishes the

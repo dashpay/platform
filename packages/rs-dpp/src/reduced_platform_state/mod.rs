@@ -5,56 +5,25 @@
 //! reconstruct the full Platform state. The full Platform state itself is only persisted
 //! to GroveDB aux storage, which is not replicated by GroveDB state sync.
 
-use crate::serialization::{PlatformDeserializableFromVersionedStructure, PlatformSerializable};
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
-use platform_version::version::PlatformVersion;
+use derive_more::From;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 pub mod v0;
 
 use v0::ReducedPlatformStateV0;
 
 /// Reduced Platform State (platform-versioned wrapper)
-#[derive(Clone, Debug, PartialEq, Encode, Decode, derive_more::From)]
+///
+/// The structure version is the enum discriminant, so it serializes `unversioned` (big
+/// endian, no limit) exactly like the other versioned platform types. These bytes are
+/// covered by the app hash, so the encoding is consensus-fixed.
+#[derive(Clone, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, From)]
+#[platform_serialize(unversioned)]
 pub enum ReducedPlatformState {
     /// Version 0
     V0(ReducedPlatformStateV0),
-}
-
-impl PlatformSerializable for ReducedPlatformState {
-    type Error = ProtocolError;
-
-    fn serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        let config = bincode::config::standard();
-        bincode::encode_to_vec(self, config).map_err(|e| {
-            ProtocolError::PlatformSerializationError(format!(
-                "cannot serialize ReducedPlatformState: {}",
-                e
-            ))
-        })
-    }
-}
-
-impl PlatformDeserializableFromVersionedStructure for ReducedPlatformState {
-    fn versioned_deserialize(
-        data: &[u8],
-        _platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        // The version of the structure is encoded in the enum discriminant, so the
-        // platform version is not needed to pick the variant.
-        let config = bincode::config::standard();
-        bincode::decode_from_slice(data, config)
-            .map_err(|e| {
-                ProtocolError::PlatformDeserializationError(format!(
-                    "cannot deserialize ReducedPlatformState: {}",
-                    e
-                ))
-            })
-            .map(|(object, _)| object)
-    }
 }
 
 #[cfg(test)]
@@ -65,18 +34,15 @@ mod tests {
     };
     use super::*;
     use crate::block::block_info::BlockInfo;
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 
     #[test]
     fn should_roundtrip_reduced_platform_state_serialization() {
         let state = ReducedPlatformState::V0(ReducedPlatformStateV0 {
             last_committed_block_info: Some(ReducedBlockInfoV0 {
                 basic_info: BlockInfo::default_with_time(1_700_000_000_000),
-                app_hash: None,
                 quorum_hash: [1u8; 32].into(),
-                block_id_hash: None,
                 proposer_pro_tx_hash: [2u8; 32].into(),
-                signature: None,
-                round: 3,
             }),
             current_protocol_version_in_consensus: 15,
             next_epoch_protocol_version: 15,
@@ -109,9 +75,32 @@ mod tests {
 
         let bytes = state.serialize_to_bytes().expect("should serialize");
         let restored =
-            ReducedPlatformState::versioned_deserialize(&bytes, PlatformVersion::latest())
-                .expect("should deserialize");
+            ReducedPlatformState::deserialize_from_bytes(&bytes).expect("should deserialize");
 
         assert_eq!(state, restored);
+    }
+
+    /// The reduced state is encoded like every other versioned platform type: big
+    /// endian. Pin it so the app-hash-covered encoding cannot drift silently.
+    #[test]
+    fn should_encode_big_endian_like_other_platform_types() {
+        let state = ReducedPlatformState::V0(ReducedPlatformStateV0 {
+            last_committed_block_info: None,
+            current_protocol_version_in_consensus: 0x0102_0304,
+            next_epoch_protocol_version: 0,
+            current_validator_set_quorum_hash: [0u8; 32].into(),
+            next_validator_set_quorum_hash: None,
+            previous_fee_versions: Default::default(),
+            quorum_positions: vec![],
+            proposed_core_chain_locked_height: 0,
+            previous_chain_lock_quorums: None,
+            previous_instant_lock_quorums: None,
+        });
+
+        let bytes = state.serialize_to_bytes().expect("should serialize");
+        // discriminant 0, then `None`, then the protocol version as a big-endian varint
+        // (bincode's varint marker 0xfc precedes a u32 payload)
+        assert_eq!(&bytes[..2], &[0u8, 0u8]);
+        assert_eq!(&bytes[2..7], &[0xfc, 0x01, 0x02, 0x03, 0x04]);
     }
 }

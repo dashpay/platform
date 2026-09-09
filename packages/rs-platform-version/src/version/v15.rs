@@ -44,8 +44,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///   would have no way to rebuild its in-memory state.
 /// * `consensus_params_update` 1 -> 2: the first block of v15 also emits evidence
 ///   params sized for state-synced nodes that do not hold full history (issue #2512).
-/// * `perform_events_on_first_block_of_protocol_change` writes the initial reduced state
-///   at the v15 activation block, so every snapshot taken at or after activation is
+/// * The activation block already runs `run_block_proposal` v1, so the reduced state
+///   exists from that block on and every snapshot taken at or after activation is
 ///   restorable. Snapshots from before activation lack the key and are not served.
 ///
 /// Everything else matches v14. The grovedb state sync protocol version used for

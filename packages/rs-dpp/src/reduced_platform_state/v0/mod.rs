@@ -6,26 +6,20 @@ use platform_value::Bytes32;
 
 /// Block information persisted as part of the reduced platform state.
 ///
-/// The reduced state is written while the block is still being executed, before it is
-/// signed and before the resulting app hash is known, so `app_hash`, `block_id_hash` and
-/// `signature` are `Option`s rather than zero-filled placeholders. They are `None` when
-/// stored and are filled in (where possible) during state reconstruction.
+/// Only what the block header fixes goes in here. The reduced state is written during
+/// block execution and covered by the app hash, so anything that can differ between two
+/// proposals of the same block (the consensus round, the app hash itself, the block id
+/// hash and the signature) must stay out: a re-proposal of the same header at a later
+/// round has to produce the same app hash. A state-synced node takes the app hash from
+/// the snapshot and learns the rest with the next finalized block.
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub struct ReducedBlockInfoV0 {
     /// Basic block info (height, core height, time, epoch)
     pub basic_info: BlockInfo,
-    /// The app hash resulting from this block; unknown at store time
-    pub app_hash: Option<Bytes32>,
     /// The quorum that signed (or will sign) this block
     pub quorum_hash: Bytes32,
-    /// The block id hash; unknown at store time
-    pub block_id_hash: Option<Bytes32>,
     /// The block proposer's pro tx hash
     pub proposer_pro_tx_hash: Bytes32,
-    /// The block signature; unknown at store time
-    pub signature: Option<[u8; 96]>,
-    /// The consensus round that produced this block
-    pub round: u32,
 }
 
 /// One quorum of a signature-verification quorum set, as persisted in the reduced

@@ -1046,12 +1046,8 @@ mod tests {
                 let reduced_platform_state = platform_state.to_reduced_platform_state(
                     Some(ReducedBlockInfoV0 {
                         basic_info: BlockInfo::default(),
-                        app_hash: None,
                         quorum_hash: (*qh1.as_byte_array()).into(),
-                        block_id_hash: None,
                         proposer_pro_tx_hash: proposer.into(),
-                        signature: None,
-                        round: 0,
                     }),
                     1,
                 );
