@@ -23,9 +23,9 @@ struct DocumentWithPriceView: View {
             HStack {
                 TextField("Enter document ID", text: $documentId)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .modifier(DocumentIdChangeHandler(documentId: $documentId) {
-                        handleDocumentIdChange($0)
-                    })
+                    .onChange(of: documentId) { _, newValue in
+                        handleDocumentIdChange(newValue)
+                    }
 
                 if isLoading {
                     ProgressView()
@@ -343,25 +343,5 @@ struct DocumentWithPriceView: View {
         } else {
             return String(format: "%.8f DASH", dashAmount)
         }
-    }
-}
-
-// Cross-version onChange helper for documentId
-private struct DocumentIdChangeHandler: ViewModifier {
-    @Binding var documentId: String
-    let onChange: (String) -> Void
-    func body(content: Content) -> some View {
-        if #available(iOS 17.0, *) {
-            content.onChange(of: documentId) { _, newValue in onChange(newValue) }
-        } else {
-            content.onChange(of: documentId) { newValue in onChange(newValue) }
-        }
-    }
-}
-
-// Extension to check if character is hex digit
-extension Character {
-    var isHexDigit: Bool {
-        return "0123456789abcdefABCDEF".contains(self)
     }
 }

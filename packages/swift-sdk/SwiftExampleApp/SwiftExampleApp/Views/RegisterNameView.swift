@@ -164,7 +164,7 @@ struct RegisterNameView: View {
             .textContentType(.username)
             .autocapitalization(.none)
             .autocorrectionDisabled(true)
-            .modifier(UsernameChangeHandler(username: $username) {
+            .onChange(of: username) { _, _ in
               // Cancel any existing timer
               checkTimer?.invalidate()
 
@@ -186,7 +186,7 @@ struct RegisterNameView: View {
                   }
                 }
               }
-            })
+            }
 
           if !normalizedUsername.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
@@ -469,18 +469,6 @@ struct RegisterNameView: View {
     }
   }
 
-}
-
-private struct UsernameChangeHandler: ViewModifier {
-  @Binding var username: String
-  let onChange: () -> Void
-  func body(content: Content) -> some View {
-    if #available(iOS 17.0, *) {
-      content.onChange(of: username) { _, _ in onChange() }
-    } else {
-      content.onChange(of: username) { _ in onChange() }
-    }
-  }
 }
 
 // Preview removed — constructing a sample `PersistentIdentity`
