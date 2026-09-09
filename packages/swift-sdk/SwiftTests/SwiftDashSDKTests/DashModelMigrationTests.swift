@@ -59,6 +59,15 @@ final class DashModelMigrationTests: XCTestCase {
             hasTrackedMasternode: true, assetLockRecipientIsExternal: true),
     ]
 
+    /// Every schema version that has ever shipped, oldest first, as
+    /// `major.minor.patch`. APPEND-ONLY: a version that shipped wrote stores
+    /// that exist in the field, so it can never be removed from, reordered
+    /// in, or replaced in the migration plan, and the plan is checked
+    /// against this list rather than the other way round. Adding a version
+    /// to the plan is shipping it: append it here in the same change, and
+    /// give the version before it a fixture store in `fixtures`.
+    private static let shippedVersions = ["1.0.0", "2.0.0", "3.0.0", "4.0.0"]
+
     private static let fixtureWalletId = Data(repeating: 0x31, count: 32)
     private static let fixtureSpendTxid = Data(repeating: 0x32, count: 32)
     private static let fixtureFundingTxid = Data(repeating: 0x34, count: 32)
@@ -222,14 +231,16 @@ final class DashModelMigrationTests: XCTestCase {
     /// Its reach is exactly the fixtures: it guards a version only once a
     /// store written by a build that shipped that version is committed
     /// under `Fixtures/SchemaStores/` and listed in `fixtures`. So the first
-    /// thing checked is that `fixtures` lists every retired version in the
-    /// migration plan, once each: cutting a new schema version fails this
+    /// thing checked is that `fixtures` lists every retired version in
+    /// `shippedVersions`, once each: cutting a new schema version fails this
     /// test until the fixture written by the build that shipped the retired
-    /// version is committed.
+    /// version is committed. The expectation comes from the append-only
+    /// list, not from the migration plan, so a plan that dropped a version
+    /// cannot shrink it (`testShippedSchemaVersionsStayInTheMigrationPlan`).
     func testFrozenVersionsBuiltAfterTheLiveSchemaHashLikeTheStoresTheyShipped() throws {
         XCTAssertEqual(
             Self.fixtures.map { Self.describe($0.version.versionIdentifier) },
-            DashMigrationPlan.schemas.dropLast().map { Self.describe($0.versionIdentifier) },
+            Array(Self.shippedVersions.dropLast()),
             "every retired schema version needs a fixture store written by the build that "
                 + "shipped it, listed once in `fixtures`; without one its freeze is unguarded")
 
@@ -262,6 +273,36 @@ final class DashModelMigrationTests: XCTestCase {
         "\(version.major).\(version.minor).\(version.patch)"
     }
 
+    /// The migration plan must list exactly the versions that ever shipped,
+    /// in the order they shipped, with nothing removed, reordered or
+    /// replaced: a store written by any of them is still in the field and
+    /// must be recognised. The expectation is the append-only
+    /// `shippedVersions`, never the plan itself, so editing the plan cannot
+    /// move the goalposts; a version can only enter the plan by being
+    /// appended to that list in the same change.
+    func testShippedSchemaVersionsStayInTheMigrationPlan() {
+        XCTAssertEqual(
+            DashMigrationPlan.schemas.map { Self.describe($0.versionIdentifier) },
+            Self.shippedVersions,
+            "the migration plan must list exactly the shipped versions, oldest first; a new "
+                + "version is appended to `shippedVersions` in the same change, and nothing "
+                + "that shipped is ever removed, reordered or replaced")
+    }
+
+    /// The schema the app opens stores with must be the last version of
+    /// the migration plan. Both are declared separately, and SwiftData
+    /// accepts a plan whose tail is newer than the schema it is asked to
+    /// migrate to, so a version appended to the plan but not made the
+    /// container's schema would leave the app writing the older shape while
+    /// every migration test targets it.
+    func testTheLiveSchemaIsTheMigrationPlansLastVersion() throws {
+        let last = try XCTUnwrap(DashMigrationPlan.schemas.last)
+        XCTAssertEqual(
+            Self.describe(DashModelContainer.schema.version),
+            Self.describe(last.versionIdentifier),
+            "DashModelContainer.schema must be built from the migration plan's last version")
+    }
+
     /// The SQLite indexes of a store, one line per index: table, name and
     /// the statement that created it. Auto-indexes SQLite makes for its
     /// own constraints have no statement and are listed as such.
@@ -279,11 +320,20 @@ final class DashModelMigrationTests: XCTestCase {
         XCTAssertEqual(sqlite3_prepare_v2(database, query, -1, &statement, nil), SQLITE_OK)
         defer { sqlite3_finalize(statement) }
         var rows = Set<String>()
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var step = sqlite3_step(statement)
+        while step == SQLITE_ROW {
             let table = String(cString: sqlite3_column_text(statement, 0))
             let name = String(cString: sqlite3_column_text(statement, 1))
             let sql = sqlite3_column_text(statement, 2).map { String(cString: $0) } ?? "(auto)"
             rows.insert("\(table) \(name): \(sql)")
+            step = sqlite3_step(statement)
+        }
+        // Anything but SQLITE_DONE (busy, corrupt, I/O, memory) means the
+        // listing is partial, and a partial listing must not be compared.
+        guard step == SQLITE_DONE else {
+            struct PartialListing: Error {}
+            XCTFail("\(url.lastPathComponent): index listing stopped with sqlite result \(step)")
+            throw PartialListing()
         }
         return rows
     }
@@ -301,9 +351,11 @@ final class DashModelMigrationTests: XCTestCase {
     ///     has every index a store built fresh at the live version has (the
     ///     migration created what the live model declares).
     ///
-    /// The second is a superset check, not equality: a store rebuilt by a
-    /// migration can keep an index from an earlier layout, which costs a
-    /// little space and nothing else.
+    /// The second is a superset check, not equality: a migrated store can
+    /// keep an index from an earlier layout, or one the live model no
+    /// longer declares. That is not a compatibility problem, but it is not
+    /// free either (the index takes storage and is maintained on every
+    /// write), and this check does not look for it.
     @MainActor
     func testFixturesAndMigratedStoresCarryTheIndexesFreshStoresHave() throws {
         let directory = FileManager.default.temporaryDirectory
