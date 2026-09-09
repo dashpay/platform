@@ -19,9 +19,10 @@ struct KeyDetailView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
 
     var hasPrivateKey: Bool {
-        let result = KeychainManager.shared.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(publicKey.id))
-        print("🔑 KeyDetailView: hasPrivateKey for key \(publicKey.id) = \(result)")
-        return result
+        KeychainManager.shared.hasPrivateKey(
+            identityId: identity.identityId,
+            keyIndex: Int32(publicKey.id)
+        )
     }
 
     /// Pre-flight gate for disabling this key. Evaluated against the
@@ -83,10 +84,6 @@ struct KeyDetailView: View {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(.green)
                         Text("Private key is stored securely")
-                    }
-
-                    Button(action: viewPrivateKey) {
-                        Label("View Private Key", systemImage: "eye.fill")
                     }
 
                     Button(action: { showForgetKeyAlert = true }) {
@@ -218,11 +215,6 @@ struct KeyDetailView: View {
                     .foregroundColor(.secondary)
             }
         }
-    }
-
-    private func viewPrivateKey() {
-        // This will trigger the sheet presentation through the parent view
-        // For now, we could show an alert or navigate to a secure view
     }
 
     private func validateAndStorePrivateKey() {
