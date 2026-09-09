@@ -42,7 +42,6 @@ All Week 1-8 tasks have been completed without stubs.
 - `managed_identity_destroy` - Cleanup
 
 **ContactRequest:**
-- `contact_request_create` - Create request
 - `contact_request_get_sender_id` - Get sender
 - `contact_request_get_recipient_id` - Get recipient
 - `contact_request_get_sender_key_index` - Sender key index
@@ -60,8 +59,6 @@ All Week 1-8 tasks have been completed without stubs.
 - `managed_identity_get_incoming_contact_request` - Get incoming request
 - `managed_identity_get_established_contact` - Get contact
 - `managed_identity_is_contact_established` - Check establishment
-- `managed_identity_send_contact_request` - Send new request
-- `managed_identity_accept_contact_request` - Accept request
 - `managed_identity_reject_contact_request` - Reject request
 
 **EstablishedContact (Added):**
@@ -74,8 +71,6 @@ All Week 1-8 tasks have been completed without stubs.
 
 **Utility Functions:**
 - `platform_wallet_generate_random_identifier` - Random ID generation
-- `platform_wallet_identifier_to_hex` - ID to hex string
-- `platform_wallet_identifier_from_hex` - Hex to ID
 - `platform_wallet_identifier_array_free` - Free ID array
 - `platform_wallet_string_free` - Free C strings
 - `platform_wallet_bytes_free` - Free byte arrays

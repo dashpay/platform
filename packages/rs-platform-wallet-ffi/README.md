@@ -51,9 +51,6 @@ Include the header file in your C/C++ project:
 #include "platform_wallet_ffi.h"
 
 int main() {
-    // Initialize library
-    platform_wallet_ffi_init();
-
     // Create wallet from mnemonic
     Handle wallet_handle = NULL_HANDLE;
     PlatformWalletFFIError error = {0};
@@ -147,10 +144,7 @@ int main() {
 ### Utilities
 
 - `platform_wallet_generate_random_identifier()` - Generate random ID
-- `platform_wallet_identifier_to_hex()` - Convert ID to hex string
-- `platform_wallet_identifier_from_hex()` - Parse ID from hex string
-- `platform_wallet_serialize_to_json_bytes()` - Serialize JSON to bytes
-- `platform_wallet_deserialize_from_json_bytes()` - Deserialize bytes to JSON
+- `platform_wallet_hash160()` - RIPEMD160(SHA256) of a byte buffer
 
 ### Memory Management
 
