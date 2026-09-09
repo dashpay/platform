@@ -449,19 +449,16 @@ where
         // Write the reduced platform state into the replicated grovedb state, immediately
         // before the root hash so it is covered by this block's app hash. A state-synced
         // node reads it back to reconstruct the full platform state, which otherwise only
-        // exists in non-replicated aux storage. The app hash, block id hash and signature
-        // of this block are unknown at this point and are stored as `None`.
+        // exists in non-replicated aux storage. Only header-fixed fields go in: the same
+        // block re-proposed at a later round must hash to the same app hash, so the round
+        // (and the not-yet-known app hash, block id hash and signature) stay out.
         let reduced_platform_state = block_execution_context
             .block_platform_state()
             .to_reduced_platform_state(
                 Some(ReducedBlockInfoV0 {
                     basic_info: block_info,
-                    app_hash: None,
                     quorum_hash: validator_set_quorum_hash.into(),
-                    block_id_hash: None,
                     proposer_pro_tx_hash: proposer_pro_tx_hash.into(),
-                    signature: None,
-                    round: block_proposal.round,
                 }),
                 core_chain_locked_height,
             );

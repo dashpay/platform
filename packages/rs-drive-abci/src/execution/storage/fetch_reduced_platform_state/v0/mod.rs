@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use dpp::reduced_platform_state::ReducedPlatformState;
-use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
 
@@ -15,8 +15,7 @@ impl<C> Platform<C> {
             .fetch_reduced_platform_state_bytes(transaction, platform_version)
             .map_err(Error::Drive)?
             .map(|bytes| {
-                ReducedPlatformState::versioned_deserialize(&bytes, platform_version)
-                    .map_err(Error::Protocol)
+                ReducedPlatformState::deserialize_from_bytes(&bytes).map_err(Error::Protocol)
             })
             .transpose()
     }
