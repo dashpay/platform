@@ -87,7 +87,12 @@ describe('collectSamplesTaskFactory', () => {
 
     fs.mkdirSync(sslDir, { recursive: true });
     fs.writeFileSync(path.join(sslDir, 'csr.pem'), 'csr', 'utf8');
-    fs.writeFileSync(path.join(sslDir, 'private.key'), 'private key', 'utf8');
+    // Dashmate writes the key accessible to its owner only, and doctor reports
+    // one that is not - so the fixture has to be what a healthy node has
+    fs.writeFileSync(path.join(sslDir, 'private.key'), 'private key', {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
     fs.writeFileSync(path.join(sslDir, 'bundle.crt'), 'bundle', 'utf8');
 
     getCertificate = this.sinon.stub();
@@ -356,5 +361,40 @@ describe('collectSamplesTaskFactory', () => {
     await collectSamples();
 
     expect(samples.getServiceInfo('gateway', 'metrics')).to.equal('metrics_sample 1');
+  });
+
+  describe('gateway TLS private key permissions', () => {
+    /**
+     * @return {string}
+     */
+    function keyFilePath() {
+      return homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl', 'private.key');
+    }
+
+    beforeEach(() => {
+      getCertificate.resolves(new Certificate({
+        id: 'certificate-id',
+        common_name: EXTERNAL_IP,
+        status: 'issued',
+        created: toZeroSslDate(daysFromNow(-1)),
+        expires: toZeroSslDate(daysFromNow(89)),
+      }));
+    });
+
+    it('should collect the mode of the gateway TLS private key', async () => {
+      fs.chmodSync(keyFilePath(), 0o644);
+
+      await collectSamples();
+
+      expect(samples.getServiceInfo('gateway', 'sslPrivateKeyMode')).to.equal(0o644);
+    });
+
+    it('should collect nothing when there is no private key', async () => {
+      fs.rmSync(keyFilePath());
+
+      await collectSamples();
+
+      expect(samples.getServiceInfo('gateway', 'sslPrivateKeyMode')).to.be.undefined();
+    });
   });
 });

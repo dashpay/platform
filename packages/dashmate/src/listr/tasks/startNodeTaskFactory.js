@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { Listr } from 'listr2';
 import path from 'path';
 import { Observable } from 'rxjs';
@@ -83,6 +84,30 @@ export default function startNodeTaskFactory(
           : path.resolve(homeDir.getPath(), configuredAccessLogPath);
 
         ensureFileMountExists(hostAccessLogPath, 0o666);
+      }
+
+      // The gateway TLS private key must not be readable by other users on the host.
+      // Keys obtained before this was enforced keep their original permissions until
+      // they are replaced, so they are restricted here on every start
+      const privateKeyFilePath = homeDir.joinPath(
+        config.getName(),
+        'platform',
+        'gateway',
+        'ssl',
+        'private.key',
+      );
+
+      if (fs.existsSync(privateKeyFilePath)) {
+        try {
+          // Only the group and world bits are dropped, so an owner that
+          // hardened the key further keeps what it chose
+          // eslint-disable-next-line no-bitwise
+          fs.chmodSync(privateKeyFilePath, fs.statSync(privateKeyFilePath).mode & 0o700);
+        } catch (e) {
+          // Failing to restrict the key must not prevent the node from starting
+          // eslint-disable-next-line no-console
+          console.warn(`Can't restrict access to ${privateKeyFilePath}: ${e.message}`);
+        }
       }
     }
 

@@ -310,4 +310,39 @@ describe('analyseConfigFactory', () => {
       expect(problem.getSolution()).to.contain('ssl obtain');
     });
   });
+
+  describe('gateway TLS private key permissions', () => {
+    it('should report a problem when the private key is readable by other users', () => {
+      samples.setServiceInfo('gateway', 'sslPrivateKeyMode', 0o644);
+
+      const problem = analyseConfig(samples)
+        .find((item) => item.getDescription().includes('private key'));
+
+      expect(problem).to.exist();
+      expect(problem.getDescription()).to.include('600');
+      expect(problem.getSolution()).to.include('chmod 600');
+      expect(problem.getSeverity()).to.equal(SEVERITY.HIGH);
+    });
+
+    it('should report a problem when the private key is readable by the group', () => {
+      samples.setServiceInfo('gateway', 'sslPrivateKeyMode', 0o640);
+
+      expect(analyseConfig(samples)
+        .find((item) => item.getDescription().includes('private key'))).to.exist();
+    });
+
+    it('should report nothing when the private key is accessible to its owner only', () => {
+      samples.setServiceInfo('gateway', 'sslPrivateKeyMode', 0o600);
+
+      expect(analyseConfig(samples)
+        .find((item) => item.getDescription().includes('private key'))).to.be.undefined();
+    });
+
+    // Doctor analyses archives collected by an older dashmate, which recorded
+    // no mode at all, and a node whose key has not been obtained yet has none
+    it('should report nothing when no private key mode was collected', () => {
+      expect(analyseConfig(samples)
+        .find((item) => item.getDescription().includes('private key'))).to.be.undefined();
+    });
+  });
 });

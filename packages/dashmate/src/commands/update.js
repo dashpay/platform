@@ -118,7 +118,7 @@ export default class UpdateCommand extends ConfigBaseCommand {
 
       if (!result.ok) {
         // Nothing was fetched at all - not a per-image failure, which resolves
-        // as an error row and has always exited 0. Retained so it can be
+        // as an error row and is reported further down. Retained so it can be
         // raised once the certificate has had its say: returning quietly here
         // hands `update && start` a node whose images were never downloaded,
         // with no exit code for the caller to catch.
@@ -137,16 +137,29 @@ export default class UpdateCommand extends ConfigBaseCommand {
       const colors = {
         updated: chalk.yellow,
         'up to date': chalk.green,
+        'built locally': chalk.gray,
         error: chalk.red,
       };
 
       printArrayOfObjects(result.info.map(({
-        name, title, updated, image,
+        name, title, updated, image, error,
       }) => (format === OUTPUT_FORMATS.PLAIN
         ? { Service: title, Image: image, Updated: colors[updated](updated) }
         : {
-          name, title, updated, image,
+          name, title, updated, image, error,
         })), format);
+
+      const failedServices = result.info.filter(({ updated }) => updated === 'error');
+
+      if (failedServices.length > 0) {
+        const reasons = failedServices
+          .map(({ title, image, error }) => `  ${title} (${image}): ${error}`)
+          .join('\n');
+
+        // Reported on stderr so machine-readable output on stdout stays parseable
+        // eslint-disable-next-line no-console
+        console.error(`\nFailed to update ${failedServices.length} of ${result.info.length} images:\n\n${reasons}\n`);
+      }
     };
 
     const tasks = new Listr(
@@ -260,6 +273,9 @@ export default class UpdateCommand extends ConfigBaseCommand {
       throw new MuteOneLineError(unresolved);
     }
 
-    process.exitCode = 0;
+    // An image that failed to download is reported as a row in the table rather
+    // than thrown, so the exit code is the only thing that tells a caller apart
+    // an update that fetched everything from one that fetched some of it.
+    process.exitCode = this.pullResult?.failed > 0 ? 1 : 0;
   }
 }

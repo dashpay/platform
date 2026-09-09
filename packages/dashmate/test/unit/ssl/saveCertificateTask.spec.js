@@ -146,6 +146,32 @@ describe('saveCertificateTaskFactory', () => {
     expect(mode(keyPath)).to.equal(0o600);
   });
 
+  // The replacement is written into the inode the exposed key already occupies,
+  // because the gateway's bind mount follows that inode. Tightening the mode
+  // only after the write would put the new secret behind the old permissions
+  // for the length of the write, so it has to happen first.
+  it('should restrict an exposed private key before writing the new one into it', async function it() {
+    fs.mkdirSync(certificatesDir, { recursive: true });
+    fs.writeFileSync(certificatePath, 'old-certificate');
+    fs.writeFileSync(keyPath, 'old-key');
+    fs.chmodSync(keyPath, 0o644);
+
+    const modeWhenKeyWasWritten = [];
+
+    const originalWriteFileSync = fs.writeFileSync.bind(fs);
+    this.sinon.stub(fs, 'writeFileSync').callsFake((filePath, data, options) => {
+      if (filePath === keyPath) {
+        modeWhenKeyWasWritten.push(mode(keyPath));
+      }
+
+      return originalWriteFileSync(filePath, data, options);
+    });
+
+    await savePair();
+
+    expect(modeWhenKeyWasWritten).to.deep.equal([0o600]);
+  });
+
   // Writing in place needs the owner write bit, so a key hardened to 0400 is
   // loosened for the write. A write that then fails must not leave it that way.
   it('should keep a hardened private key mode when the write fails', async function it() {
