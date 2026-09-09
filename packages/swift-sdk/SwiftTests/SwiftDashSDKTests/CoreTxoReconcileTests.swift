@@ -1,0 +1,599 @@
+import XCTest
+import SwiftData
+import DashSDKFFI
+@testable import SwiftDashSDK
+
+/// The engine reads the reconcile is built on, faked: a fixed inventory
+/// served in pages behind a cursor, and a verdict per outpoint.
+final class FakeCoreTxoEngine: CoreTxoEngineInventory, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _inventory: [CoreEngineUtxo]
+    private var _verdicts: [Data: CoreOutpointClass]
+    private var _failPages = false
+    private var _failClassify = false
+    private(set) var pageCalls = 0
+    private(set) var classifyCalls = 0
+    private(set) var classified: [CoreOutpointOwnershipQuery] = []
+
+    init(inventory: [CoreEngineUtxo] = [], verdicts: [Data: CoreOutpointClass] = [:]) {
+        _inventory = inventory
+        _verdicts = verdicts
+    }
+
+    var failPages: Bool {
+        get { lock.withLock { _failPages } }
+        set { lock.withLock { _failPages = newValue } }
+    }
+
+    var failClassify: Bool {
+        get { lock.withLock { _failClassify } }
+        set { lock.withLock { _failClassify = newValue } }
+    }
+
+    struct Failure: Error {}
+
+    func utxoPage(after: CoreEngineUtxo?, limit: Int) throws -> (rows: [CoreEngineUtxo], hasMore: Bool) {
+        try lock.withLock {
+            pageCalls += 1
+            if _failPages { throw Failure() }
+            var start = 0
+            if let after, let index = _inventory.firstIndex(where: { $0.outpoint == after.outpoint }) {
+                start = index + 1
+            }
+            let end = min(start + limit, _inventory.count)
+            let rows = start < end ? Array(_inventory[start..<end]) : []
+            return (rows, end < _inventory.count)
+        }
+    }
+
+    func classify(_ queries: [CoreOutpointOwnershipQuery]) throws -> [CoreOutpointClass] {
+        try lock.withLock {
+            classifyCalls += 1
+            if _failClassify { throw Failure() }
+            classified.append(contentsOf: queries)
+            return queries.map { _verdicts[$0.outpoint] ?? .unknown }
+        }
+    }
+}
+
+/// Coverage for the post-scan store reconcile
+/// (`PlatformWalletManager.runCoreTxoReconcile`) against a fake engine,
+/// driven exactly the way the manager drives it — engine reads on the
+/// calling thread, store steps on the persistence queue.
+///
+/// The safety properties under test: a row is marked spent only on the
+/// engine's positive `knownUncredited` verdict; a coin the store lacks is
+/// inserted only when validated, owned, and mature; absence from either
+/// side never changes a row; nothing is deleted, nothing is un-marked; the
+/// run is idempotent and wallet-scoped; and a repaired store restores
+/// nothing for the repaired coin across relaunches.
+@MainActor
+final class CoreTxoReconcileTests: XCTestCase {
+    private let walletId = Data(repeating: 0x31, count: 32)
+    private let otherWalletId = Data(repeating: 0x32, count: 32)
+    private let tipHeight: UInt32 = 2_535_898
+    private let fixtureAddress = "yReconcileFixtureAddr"
+    private let fixtureScript = Data([0x76, 0xa9, 0x14] + [UInt8](repeating: 0x5a, count: 20) + [0x88, 0xac])
+
+    private var bip44: CoreAccountKey {
+        CoreAccountKey(
+            typeTag: 0, standardTag: 0, index: 0, registrationIndex: 0, keyClass: 0,
+            userIdentityId: Data(count: 32), friendIdentityId: Data(count: 32)
+        )
+    }
+
+    private var coinJoin: CoreAccountKey {
+        CoreAccountKey(
+            typeTag: 1, standardTag: 0, index: 0, registrationIndex: 0, keyClass: 0,
+            userIdentityId: Data(count: 32), friendIdentityId: Data(count: 32)
+        )
+    }
+
+    private var watchOnlyContact: CoreAccountKey {
+        CoreAccountKey(
+            typeTag: CoreAccountKey.dashpayExternalAccountTag, standardTag: 0, index: 0,
+            registrationIndex: 0, keyClass: 0,
+            userIdentityId: Data(repeating: 0x0a, count: 32), friendIdentityId: Data(repeating: 0x0b, count: 32)
+        )
+    }
+
+    private func txid(_ byte: UInt8) -> Data { Data(repeating: byte, count: 32) }
+
+    private func makeHandler() throws -> (PlatformWalletPersistenceHandler, ModelContainer) {
+        let container = try DashModelContainer.createInMemory()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        return (handler, container)
+    }
+
+    private func makeHandler(url: URL) throws -> (PlatformWalletPersistenceHandler, ModelContainer) {
+        let configuration = ModelConfiguration(schema: DashModelContainer.schema, url: url)
+        let container = try ModelContainer(
+            for: DashModelContainer.schema,
+            migrationPlan: DashMigrationPlan.self,
+            configurations: [configuration]
+        )
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        return (handler, container)
+    }
+
+    /// A wallet row with a BIP44 account (and, when asked, a CoinJoin one).
+    @discardableResult
+    private func seedWallet(
+        in container: ModelContainer,
+        walletId: Data? = nil,
+        withCoinJoinAccount: Bool = false
+    ) throws -> PersistentWallet {
+        let walletId = walletId ?? self.walletId
+        let context = ModelContext(container)
+        let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+        context.insert(wallet)
+        let account = PersistentAccount(wallet: wallet, accountType: 0, accountIndex: 0, accountTypeName: "BIP44 Account")
+        account.userIdentityId = Data(count: 32)
+        account.friendIdentityId = Data(count: 32)
+        context.insert(account)
+        if withCoinJoinAccount {
+            let cj = PersistentAccount(wallet: wallet, accountType: 1, accountIndex: 0, accountTypeName: "CoinJoin")
+            cj.userIdentityId = Data(count: 32)
+            cj.friendIdentityId = Data(count: 32)
+            context.insert(cj)
+        }
+        try context.save()
+        return wallet
+    }
+
+    /// An unspent, confirmed TXO row of `walletId` under its BIP44 account.
+    private func seedUnspentTxo(
+        in container: ModelContainer,
+        walletId: Data? = nil,
+        txid: Data,
+        vout: UInt32 = 0,
+        amount: UInt64 = 19_549,
+        isSpent: Bool = false,
+        pendingSpender: Data? = nil
+    ) throws {
+        let walletId = walletId ?? self.walletId
+        let context = ModelContext(container)
+        let accounts = try context.fetch(FetchDescriptor<PersistentAccount>(
+            predicate: #Predicate { $0.wallet.walletId == walletId && $0.accountType == 0 }
+        ))
+        let account = try XCTUnwrap(accounts.first)
+        let tx = PersistentTransaction(
+            txid: txid,
+            transactionData: Data(repeating: 0x04, count: 10),
+            context: 3,
+            blockHeight: 2_391_743,
+            netAmount: Int64(amount)
+        )
+        context.insert(tx)
+        let txo = PersistentTxo(
+            transaction: tx,
+            vout: vout,
+            amount: amount,
+            address: fixtureAddress,
+            scriptPubKey: fixtureScript,
+            height: 2_391_743
+        )
+        txo.account = account
+        txo.walletId = walletId
+        txo.isConfirmed = true
+        txo.isSpent = isSpent
+        context.insert(txo)
+        if let pendingSpender {
+            context.insert(PersistentPendingInput(
+                outpoint: txo.outpoint,
+                inputIndex: 0,
+                spendingTxid: pendingSpender,
+                spendingTransaction: nil,
+                walletId: walletId
+            ))
+        }
+        try context.save()
+    }
+
+    private func engineUtxo(
+        account: CoreAccountKey? = nil,
+        txid: Data,
+        vout: UInt32 = 0,
+        amount: UInt64 = 19_549,
+        height: UInt32 = 2_391_743,
+        address: String? = nil,
+        script: Data? = nil
+    ) -> CoreEngineUtxo {
+        CoreEngineUtxo(
+            account: account ?? bip44,
+            txid: txid,
+            vout: vout,
+            amount: amount,
+            address: address ?? fixtureAddress,
+            scriptPubKey: script ?? fixtureScript,
+            height: height,
+            isConfirmed: true,
+            isInstantLocked: false,
+            isCoinbase: false,
+            isLocked: false
+        )
+    }
+
+    private func txo(_ container: ModelContainer, txid: Data, vout: UInt32 = 0) throws -> PersistentTxo? {
+        let outpoint = PersistentTxo.makeOutpoint(txid: txid, vout: vout)
+        return try ModelContext(container).fetch(
+            FetchDescriptor<PersistentTxo>(predicate: #Predicate { $0.outpoint == outpoint })
+        ).first
+    }
+
+    private func txoCount(_ container: ModelContainer) throws -> Int {
+        try ModelContext(container).fetchCount(FetchDescriptor<PersistentTxo>())
+    }
+
+    private func pendingCount(_ container: ModelContainer) throws -> Int {
+        try ModelContext(container).fetchCount(FetchDescriptor<PersistentPendingInput>())
+    }
+
+    private func run(
+        _ handler: PlatformWalletPersistenceHandler,
+        engine: FakeCoreTxoEngine,
+        walletId: Data? = nil,
+        pageSize: Int = 2,
+        isCancelled: @Sendable @escaping () -> Bool = { false }
+    ) -> CoreTxoReconcileReport {
+        PlatformWalletManager.runCoreTxoReconcile(
+            walletId: walletId ?? self.walletId,
+            tipHeight: tipHeight,
+            pageSize: pageSize,
+            engine: engine,
+            handler: handler,
+            isCancelled: isCancelled
+        )
+    }
+
+    /// Drives the FFI load path and returns the restored UTXO count of the
+    /// single wallet entry — what the engine would be handed at launch.
+    private func restoredUtxoCount(_ handler: PlatformWalletPersistenceHandler) throws -> Int {
+        let (entries, count, errored) = handler.loadWalletList()
+        XCTAssertFalse(errored)
+        XCTAssertEqual(count, 1)
+        let entriesPtr = try XCTUnwrap(entries)
+        defer { handler.loadWalletListFree(entries: UnsafeRawPointer(entriesPtr)) }
+        return Int(entriesPtr[0].utxos_count)
+    }
+
+    // MARK: 1. Positive engine evidence marks a local unspent row spent
+
+    func testPositiveEngineVerdictMarksALocalUnspentRowSpent() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedUnspentTxo(in: container, txid: txid(0x71), pendingSpender: txid(0x7f))
+        let outpoint = PersistentTxo.makeOutpoint(txid: txid(0x71), vout: 0)
+        let engine = FakeCoreTxoEngine(verdicts: [outpoint: .knownUncredited])
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertTrue(report.completed)
+        XCTAssertEqual(report.storeRows, 1)
+        XCTAssertEqual(report.flipped, 1)
+        XCTAssertEqual(report.flippedDuffs, 19_549)
+        XCTAssertEqual(report.inserted, 0)
+        let coin = try XCTUnwrap(txo(container, txid: txid(0x71)))
+        XCTAssertTrue(coin.isSpent)
+        XCTAssertNil(coin.spendingTransaction, "no spender is invented")
+        XCTAssertEqual(try pendingCount(container), 0, "claims on a settled coin are dropped")
+        XCTAssertEqual(try restoredUtxoCount(handler), 0)
+        // The engine was asked about exactly this coin, with the store's
+        // own account and script — the ownership it checks.
+        XCTAssertEqual(engine.classified.count, 1)
+        XCTAssertEqual(engine.classified.first?.account, bip44)
+        XCTAssertEqual(engine.classified.first?.scriptPubKey, fixtureScript)
+    }
+
+    // MARK: 2. Absence from both inventories changes nothing
+
+    func testARowAbsentFromBothInventoriesIsLeftUnchanged() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedUnspentTxo(in: container, txid: txid(0x72))
+        try seedUnspentTxo(in: container, txid: txid(0x73))
+        let notOwned = PersistentTxo.makeOutpoint(txid: txid(0x73), vout: 0)
+        let engine = FakeCoreTxoEngine(verdicts: [notOwned: .notOwned])
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertTrue(report.completed)
+        XCTAssertEqual(report.storeRows, 2)
+        XCTAssertEqual(report.unknown, 1)
+        XCTAssertEqual(report.notOwned, 1)
+        XCTAssertEqual(report.mutations, 0)
+        XCTAssertFalse(try XCTUnwrap(txo(container, txid: txid(0x72))).isSpent)
+        XCTAssertFalse(try XCTUnwrap(txo(container, txid: txid(0x73))).isSpent)
+        XCTAssertEqual(try txoCount(container), 2, "nothing is ever deleted")
+        XCTAssertEqual(try restoredUtxoCount(handler), 2)
+    }
+
+    // MARK: 3. Engine coin missing from the store is inserted, validated
+
+    func testAnEngineCoinMissingFromTheStoreIsInsertedWhenValid() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container, withCoinJoinAccount: true)
+        let valid = engineUtxo(txid: txid(0x74))
+        let coinJoinValid = engineUtxo(account: coinJoin, txid: txid(0x75), amount: 100_001)
+        let engine = FakeCoreTxoEngine(inventory: [valid, coinJoinValid])
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertTrue(report.completed)
+        XCTAssertEqual(report.engineRows, 2)
+        XCTAssertEqual(report.inserted, 2)
+        XCTAssertEqual(report.insertedDuffs, 19_549 + 100_001)
+        let coin = try XCTUnwrap(txo(container, txid: txid(0x74)))
+        XCTAssertFalse(coin.isSpent)
+        XCTAssertTrue(coin.isConfirmed)
+        XCTAssertEqual(coin.amount, 19_549)
+        XCTAssertEqual(coin.address, fixtureAddress)
+        XCTAssertEqual(coin.scriptPubKey, fixtureScript)
+        XCTAssertEqual(coin.height, 2_391_743)
+        XCTAssertEqual(coin.walletId, walletId)
+        XCTAssertEqual(coin.account?.accountType, 0)
+        XCTAssertEqual(coin.transaction?.txid, txid(0x74), "a stub parent row holds the relationship")
+        XCTAssertEqual(coin.transaction?.transactionData, Data())
+        let mixed = try XCTUnwrap(txo(container, txid: txid(0x75)))
+        XCTAssertEqual(mixed.account?.accountType, 1, "filed under the account the engine named")
+        XCTAssertEqual(try restoredUtxoCount(handler), 2)
+    }
+
+    func testTheHealPassRefusesImmatureForeignUnresolvedAndMalformedCoins() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container) // BIP44 only: no CoinJoin account row
+        let immature = engineUtxo(txid: txid(0x76), height: tipHeight - 50)
+        let atGate = engineUtxo(txid: txid(0x77), height: tipHeight - 99) // exactly 100 confirmations
+        let foreign = engineUtxo(account: watchOnlyContact, txid: txid(0x78))
+        let unresolved = engineUtxo(account: coinJoin, txid: txid(0x79))
+        let noScript = engineUtxo(txid: txid(0x7a), script: Data())
+        let noAddress = engineUtxo(txid: txid(0x7b), address: "")
+        let unconfirmed = engineUtxo(txid: txid(0x7c), height: 0)
+        let engine = FakeCoreTxoEngine(
+            inventory: [immature, atGate, foreign, unresolved, noScript, noAddress, unconfirmed]
+        )
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertTrue(report.completed)
+        XCTAssertEqual(report.engineRows, 7)
+        XCTAssertEqual(report.inserted, 1)
+        XCTAssertEqual(report.skippedImmature, 2)
+        XCTAssertEqual(report.skippedForeign, 1)
+        XCTAssertEqual(report.skippedUnresolvedAccount, 1)
+        XCTAssertEqual(report.skippedInvalid, 2)
+        XCTAssertNotNil(try txo(container, txid: txid(0x77)))
+        for byte: UInt8 in [0x76, 0x78, 0x79, 0x7a, 0x7b, 0x7c] {
+            XCTAssertNil(try txo(container, txid: txid(byte)), "coin \(byte) must not be healed")
+        }
+    }
+
+    // MARK: 4. Nothing runs before the scan is complete
+
+    func testTheSteadyStateGateRefusesAnUnfinishedScan() {
+        func progress(_ state: PlatformSpvSyncState, filters: (UInt32, UInt32)?) -> PlatformSpvSyncProgress {
+            PlatformSpvSyncProgress(
+                overallState: state,
+                overallPercentage: 0,
+                headers: PlatformSpvSubProgress(state: state, currentHeight: 2_535_898, targetHeight: 2_535_898, percentage: 1),
+                filterHeaders: nil,
+                filters: filters.map {
+                    PlatformSpvSubProgress(state: state, currentHeight: $0.0, targetHeight: $0.1, percentage: 0)
+                },
+                masternodes: nil
+            )
+        }
+        XCTAssertFalse(PlatformWalletManager.isSteadySyncState(progress(.syncing, filters: (199_999, 2_535_898))))
+        XCTAssertFalse(PlatformWalletManager.isSteadySyncState(progress(.waitingForConnections, filters: nil)))
+        XCTAssertFalse(PlatformWalletManager.isSteadySyncState(progress(.error, filters: (2_535_898, 2_535_898))))
+        XCTAssertFalse(
+            PlatformWalletManager.isSteadySyncState(progress(.waitForEvents, filters: (2_535_800, 2_535_898))),
+            "waiting for events with the filter phase behind its target is a scan still running"
+        )
+        XCTAssertFalse(
+            PlatformWalletManager.isSteadySyncState(progress(.waitForEvents, filters: nil)),
+            "no filter phase at all proves nothing"
+        )
+        XCTAssertTrue(PlatformWalletManager.isSteadySyncState(progress(.synced, filters: (2_535_898, 2_535_898))))
+        XCTAssertTrue(
+            PlatformWalletManager.isSteadySyncState(progress(.waitForEvents, filters: (2_535_898, 2_535_898))),
+            "dash-spv's fully synced steady state"
+        )
+        XCTAssertEqual(PlatformWalletManager.scanTipHeight(progress(.synced, filters: (2_535_898, 2_535_898))), 2_535_898)
+        XCTAssertEqual(
+            PlatformWalletManager.scanTipHeight(progress(.synced, filters: nil)),
+            2_535_898,
+            "falls back to the header tip"
+        )
+    }
+
+    func testTheManagerRefusesToReconcileAnUnknownOrUnconfiguredWallet() async throws {
+        let unconfigured = PlatformWalletManager()
+        let before = try await unconfigured.reconcileCoreTxoStore(for: walletId)
+        XCTAssertEqual(before, .skipped(.notConfigured))
+
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 42,
+            calls: PlatformWalletNativeTeardownCalls(
+                spvStop: { _ in PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil) },
+                platformAddressSyncStop: { _ in PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil) },
+                shieldedSyncStop: { _ in PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil) },
+                dashPaySyncStop: { _ in PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil) },
+                dpnsSyncStop: { _ in PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil) },
+                destroy: { _ in PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil) }
+            )
+        )
+        // Configured, but no persistence handler and no loaded wallet: the
+        // gate refuses before any native read.
+        let outcome = try await manager.reconcileCoreTxoStore(for: walletId)
+        XCTAssertEqual(outcome, .skipped(.notConfigured))
+        _ = await manager.shutdown()
+        PlatformWalletManager.destroyQueue.sync {}
+    }
+
+    // MARK: 5. Idempotent
+
+    func testASecondRunChangesNothing() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedUnspentTxo(in: container, txid: txid(0x81))
+        let flipped = PersistentTxo.makeOutpoint(txid: txid(0x81), vout: 0)
+        let healed = engineUtxo(txid: txid(0x82))
+        let engine = FakeCoreTxoEngine(inventory: [healed], verdicts: [flipped: .knownUncredited])
+
+        let first = run(handler, engine: engine)
+        XCTAssertEqual(first.mutations, 2)
+
+        let second = run(handler, engine: engine)
+        XCTAssertTrue(second.completed)
+        XCTAssertEqual(second.mutations, 0)
+        XCTAssertEqual(second.alreadyPresent, 1)
+        XCTAssertEqual(second.storeRows, 1, "the healed coin is the only unspent row left")
+        XCTAssertEqual(second.unknown, 1, "and the fake has no verdict for it")
+        XCTAssertEqual(try txoCount(container), 2)
+    }
+
+    // MARK: 6. Wallet- and account-scoped
+
+    func testTheReconcileTouchesOnlyTheWalletItWasAskedAbout() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedWallet(in: container, walletId: otherWalletId)
+        try seedUnspentTxo(in: container, txid: txid(0x91))
+        try seedUnspentTxo(in: container, walletId: otherWalletId, txid: txid(0x92))
+        let mine = PersistentTxo.makeOutpoint(txid: txid(0x91), vout: 0)
+        let theirs = PersistentTxo.makeOutpoint(txid: txid(0x92), vout: 0)
+        // The fake would flip both if asked; only one may be asked.
+        let engine = FakeCoreTxoEngine(verdicts: [mine: .knownUncredited, theirs: .knownUncredited])
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertEqual(report.storeRows, 1)
+        XCTAssertEqual(report.flipped, 1)
+        XCTAssertTrue(try XCTUnwrap(txo(container, txid: txid(0x91))).isSpent)
+        XCTAssertFalse(try XCTUnwrap(txo(container, txid: txid(0x92))).isSpent, "the other wallet's coin is untouched")
+        XCTAssertEqual(engine.classified.map(\.outpoint), [mine])
+    }
+
+    // MARK: 8. Repeated restart without rescan does not resurrect repaired funds
+
+    func testRepeatedRelaunchesRestoreNothingForARepairedCoin() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("txo-reconcile-\(UUID().uuidString).sqlite")
+        defer {
+            for suffix in ["", "-wal", "-shm"] {
+                try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix))
+            }
+        }
+        let outpoint = PersistentTxo.makeOutpoint(txid: txid(0xa1), vout: 0)
+        do {
+            let (handler, container) = try makeHandler(url: url)
+            try seedWallet(in: container)
+            try seedUnspentTxo(in: container, txid: txid(0xa1))
+            XCTAssertEqual(try restoredUtxoCount(handler), 1, "the phantom the engine would be handed")
+            let report = run(handler, engine: FakeCoreTxoEngine(verdicts: [outpoint: .knownUncredited]))
+            XCTAssertEqual(report.flipped, 1)
+            XCTAssertEqual(try restoredUtxoCount(handler), 0)
+        }
+        for _ in 0..<2 {
+            let (handler, container) = try makeHandler(url: url)
+            XCTAssertTrue(try XCTUnwrap(txo(container, txid: txid(0xa1))).isSpent)
+            XCTAssertEqual(try restoredUtxoCount(handler), 0, "a relaunch without a rescan restores nothing")
+        }
+    }
+
+    // MARK: 9. A correct wallet stays untouched
+
+    func testAConsistentStoreYieldsZeroMutations() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedUnspentTxo(in: container, txid: txid(0xb1))
+        try seedUnspentTxo(in: container, txid: txid(0xb2), isSpent: true)
+        let unspent = PersistentTxo.makeOutpoint(txid: txid(0xb1), vout: 0)
+        // The engine holds exactly the store's unspent coin, and says so.
+        let engine = FakeCoreTxoEngine(
+            inventory: [engineUtxo(txid: txid(0xb1))],
+            verdicts: [unspent: .unspent]
+        )
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertTrue(report.completed)
+        XCTAssertEqual(report.mutations, 0)
+        XCTAssertEqual(report.alreadyPresent, 1)
+        XCTAssertEqual(report.unspent, 1)
+        XCTAssertEqual(report.storeRows, 1, "spent rows are never even asked about")
+        XCTAssertFalse(try XCTUnwrap(txo(container, txid: txid(0xb1))).isSpent)
+        XCTAssertTrue(try XCTUnwrap(txo(container, txid: txid(0xb2))).isSpent, "never un-marked")
+        XCTAssertEqual(try txoCount(container), 2)
+    }
+
+    // MARK: Never un-mark, never delete
+
+    func testASpentRowTheEngineStillHoldsIsNeverUnmarked() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedUnspentTxo(in: container, txid: txid(0xc1), isSpent: true)
+        // The engine claims to hold the coin the store says is spent: a live
+        // spend racing the engine is indistinguishable from lost residue,
+        // and un-marking mid-payment would let the wallet double-spend.
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0xc1))])
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertEqual(report.alreadyPresent, 1)
+        XCTAssertEqual(report.mutations, 0)
+        XCTAssertTrue(try XCTUnwrap(txo(container, txid: txid(0xc1))).isSpent)
+        XCTAssertEqual(try restoredUtxoCount(handler), 0)
+    }
+
+    // MARK: Run shape
+
+    func testTheRunStopsAtTheFirstFailedEngineReadAndKeepsWhatLanded() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedUnspentTxo(in: container, txid: txid(0xd1))
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0xd2))])
+        engine.failClassify = true
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertFalse(report.completed)
+        XCTAssertEqual(report.transportFailures, 1)
+        XCTAssertEqual(report.inserted, 1, "the heal pass landed before the classify pass failed")
+        XCTAssertNotNil(try txo(container, txid: txid(0xd2)))
+        XCTAssertFalse(try XCTUnwrap(txo(container, txid: txid(0xd1))).isSpent)
+    }
+
+    func testTheHealPassWalksEveryPageOfTheInventory() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        let inventory = (0..<5).map { engineUtxo(txid: txid(0xe0 + UInt8($0))) }
+        let engine = FakeCoreTxoEngine(inventory: inventory)
+
+        let report = run(handler, engine: engine, pageSize: 2)
+
+        XCTAssertEqual(engine.pageCalls, 3)
+        XCTAssertEqual(report.engineRows, 5)
+        XCTAssertEqual(report.inserted, 5)
+        XCTAssertEqual(try txoCount(container), 5)
+    }
+
+    func testTheClassifyPassWalksEveryUnspentRowAcrossFlips() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        var verdicts: [Data: CoreOutpointClass] = [:]
+        for i in 0..<5 {
+            try seedUnspentTxo(in: container, txid: txid(0xf0 + UInt8(i)))
+            verdicts[PersistentTxo.makeOutpoint(txid: txid(0xf0 + UInt8(i)), vout: 0)] = .knownUncredited
+        }
+        let engine = FakeCoreTxoEngine(verdicts: verdicts)
+
+        let report = run(handler, engine: engine, pageSize: 2)
+
+        XCTAssertTrue(report.completed)
+        XCTAssertEqual(report.storeRows, 5)
+        XCTAssertEqual(report.flipped, 5, "flipping rows out of the page does not skip the next ones")
+        XCTAssertEqual(try restoredUtxoCount(handler), 0)
+    }
+}
