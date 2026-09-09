@@ -1,0 +1,51 @@
+[package]
+name = "dash-platform-cxx"
+version.workspace = true
+authors = ["Dash Core Group <dev@dash.org>"]
+edition = "2021"
+rust-version.workspace = true
+license = "MIT"
+description = "CXX bindings over dash-sdk for C++ embedders that supply their own trust context and signing keys"
+
+[lib]
+name = "dash_platform_cxx"
+crate-type = ["staticlib", "rlib"]
+
+[features]
+default = []
+# dash-sdk's mock transport, for tests that replay canned proved responses
+# through the same client code an embedder runs. Never enabled by embedders.
+mocks = ["dash-sdk/mocks"]
+
+[dependencies]
+cxx = "1.0"
+dash-sdk = { path = "../rs-sdk", default-features = false, features = [
+  "dpns-contract",
+  "dashpay-contract",
+] }
+dash-context-provider = { path = "../rs-context-provider", default-features = false }
+dash-platform-queries = { path = "../dash-platform-queries", default-features = false }
+dpp = { path = "../rs-dpp", default-features = false, features = [
+  "state-transitions",
+  "state-transition-signing",
+  "state-transition-validation",
+  "identity-serialization",
+  "identity-hashing",
+  "bls-signatures",
+  "dpns-contract",
+  "dashpay-contract",
+] }
+drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
+platform-version = { path = "../rs-platform-version" }
+tokio = { version = "1.40", features = ["rt-multi-thread", "net", "time"] }
+hex = "0.4"
+futures = "0.3"
+async-trait = "0.1"
+
+[build-dependencies]
+cxx-build = "1.0"
+
+[dev-dependencies]
+dash-platform-cxx = { path = ".", features = ["mocks"] }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }

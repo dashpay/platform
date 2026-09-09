@@ -47,12 +47,14 @@ You can see examples of mocking in [mock_fetch.rs](tests/fetch/mock_fetch.rs) an
 The query-building, wire-encoding, and proof-verification layers of this SDK
 live in the [`dash-platform-queries`](../dash-platform-queries) crate, which
 this crate depends on and re-exports at the historical paths. Embedders that
-bring their own transport and trust context (Dash Core's platform GUI, block
-explorers) can depend on `dash-platform-queries` + `drive-proof-verifier`
+bring their own transport and trust context (block explorers, Electrum-style
+servers) can depend on `dash-platform-queries` + `drive-proof-verifier`
 directly and get typed, proof-verified results without `rs-dapi-client` or
 tonic's native channel/TLS stack in their dependency tree. Shared generated
 types and context-provider utilities remain dependencies. See that crate's
-README for details.
+README for details. C++ applications that want the whole SDK, networking
+included, with their own trust context and signing keys use
+[`dash-platform-cxx`](../rs-platform-cxx).
 
 ## Examples
 
