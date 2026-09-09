@@ -11,24 +11,6 @@ struct DashPayContact: Identifiable {
     let displayName: String
     let identityId: Data
     let dpnsName: String?
-    let note: String?
-    let isHidden: Bool
-
-    init(
-        id: Data,
-        displayName: String,
-        identityId: Data,
-        dpnsName: String? = nil,
-        note: String? = nil,
-        isHidden: Bool = false
-    ) {
-        self.id = id
-        self.displayName = displayName
-        self.identityId = identityId
-        self.dpnsName = dpnsName
-        self.note = note
-        self.isHidden = isHidden
-    }
 }
 
 // MARK: - Send payment sheet

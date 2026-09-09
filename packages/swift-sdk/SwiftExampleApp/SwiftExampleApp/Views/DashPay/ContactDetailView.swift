@@ -514,10 +514,10 @@ struct PaymentHistoryRow: View {
 
 // MARK: - Local field editor
 
-/// Tiny Form-based editor sheet for the device-local alias / note
-/// fields — same shape as `EditAliasView` but writing to the
-/// `DashPayContactMetaStore` instead of a SwiftData row. Saving an
-/// empty value clears the field.
+/// Tiny Form-based editor sheet for the contact's alias / note
+/// fields — same shape as `EditAliasView`. Persisting is the caller's
+/// job: `onSave` routes to `saveContactInfo`. Saving an empty value
+/// clears the field.
 struct ContactLocalFieldEditor: View {
     let title: String
     let prompt: String

@@ -2,17 +2,16 @@ import Foundation
 import SwiftUI
 import SwiftDashSDK
 
-/// Device-local, per-contact metadata for the DashPay tab: alias,
-/// note, hidden flag, and a DPNS-label hint captured at add time.
+/// Device-local DPNS-label hint captured when a contact is added by
+/// username search.
 ///
-/// These are scoped to "This device only" — a later milestone replaces
-/// this store with `contactInfo` documents synced via Platform. Until
-/// then UserDefaults is the honest backing: no sync semantics exist, so
-/// none are implied.
+/// Alias, note and hidden now live on the `PersistentDashpayContactRequest`
+/// rows written through `setDashPayContactInfo`; this store keeps only the
+/// add-time hint, which has no `contactInfo` counterpart.
 ///
 /// Keys are scoped by `(network, owner identity, contact identity)`
 /// so two owner identities (or two networks) never share a contact's
-/// alias. The published `version` counter makes SwiftUI views that
+/// hint. The published `version` counter makes SwiftUI views that
 /// read through this store re-render after a write — UserDefaults
 /// alone doesn't participate in SwiftUI invalidation for computed
 /// reads.
@@ -22,37 +21,6 @@ final class DashPayContactMetaStore: ObservableObject {
     @Published private(set) var version = 0
 
     private let defaults = UserDefaults.standard
-
-    // MARK: - Alias (local display-name override)
-
-    func alias(network: Network, owner: Data, contact: Data) -> String? {
-        nonEmpty(defaults.string(forKey: key("alias", network, owner, contact)))
-    }
-
-    func setAlias(_ alias: String?, network: Network, owner: Data, contact: Data) {
-        write(nonEmpty(alias), forKey: key("alias", network, owner, contact))
-    }
-
-    // MARK: - Note
-
-    func note(network: Network, owner: Data, contact: Data) -> String? {
-        nonEmpty(defaults.string(forKey: key("note", network, owner, contact)))
-    }
-
-    func setNote(_ note: String?, network: Network, owner: Data, contact: Data) {
-        write(nonEmpty(note), forKey: key("note", network, owner, contact))
-    }
-
-    // MARK: - Hidden
-
-    func isHidden(network: Network, owner: Data, contact: Data) -> Bool {
-        defaults.bool(forKey: key("hidden", network, owner, contact))
-    }
-
-    func setHidden(_ hidden: Bool, network: Network, owner: Data, contact: Data) {
-        defaults.set(hidden, forKey: key("hidden", network, owner, contact))
-        version += 1
-    }
 
     // MARK: - DPNS hint
 

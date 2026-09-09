@@ -260,11 +260,7 @@ struct ContactRequestsView: View {
         _ = contactMeta.version
         return dashPayContactDisplayName(
             contactId: contactId,
-            alias: contactMeta.alias(
-                network: identity.network,
-                owner: identity.identityId,
-                contact: contactId
-            ),
+            alias: nil,
             profileDisplayName: cachedProfile(contactId)?.displayName,
             dpnsLabel: contactMeta.dpnsHint(
                 network: identity.network,
