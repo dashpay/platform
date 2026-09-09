@@ -258,6 +258,98 @@ fn test_setup() {
 
 #[cfg(feature = "server")]
 #[test]
+fn test_proved_primary_key_cursor_pages_over_history_in_both_directions() {
+    // The history-keeping twin of the primary-key cursor test in
+    // query_tests.rs. Here the cursor lookup lands one level below the page
+    // query (`.../0/<id>` with key `[0]`), so the merge point is the page
+    // query's own root layer: the document-id layer must keep the requested
+    // direction in the proof and the cursor must not claim a second slot.
+    use dpp::document::DocumentV0Getters;
+    use dpp::platform_value::string_encoding::Encoding;
+    use dpp::prelude::Identifier;
+    use drive::query::DriveDocumentQuery;
+
+    let platform_version = PlatformVersion::latest();
+    let (drive, contract) = setup(10, None, 73509, platform_version);
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+    let root_hash = drive
+        .grove
+        .root_hash(None, &platform_version.drive.grove_version)
+        .unwrap()
+        .expect("there is always a root hash");
+
+    let ids_of = |results: &[Vec<u8>]| -> Vec<Identifier> {
+        results
+            .iter()
+            .map(|bytes| {
+                Document::from_bytes(bytes, person_document_type, platform_version)
+                    .expect("we should be able to deserialize the document")
+                    .id()
+            })
+            .collect()
+    };
+    let build = |query_value: serde_json::Value| {
+        let cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+        DriveDocumentQuery::from_cbor(
+            cbor.as_slice(),
+            &contract,
+            person_document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built")
+    };
+
+    let (all_results, _, _) = build(json!({
+        "limit": 100,
+        "orderBy": [["$id", "asc"]],
+    }))
+    .execute_raw_results_no_proof(&drive, None, None, platform_version)
+    .expect("query should be executed");
+    let ascending_ids = ids_of(&all_results);
+    assert_eq!(ascending_ids.len(), 10);
+
+    for (ascending, included) in [(true, true), (true, false), (false, true), (false, false)] {
+        let ordered: Vec<Identifier> = if ascending {
+            ascending_ids.clone()
+        } else {
+            ascending_ids.iter().rev().cloned().collect()
+        };
+        let cursor = ordered[3];
+        let expected: Vec<Identifier> = if included {
+            ordered[3..6].to_vec()
+        } else {
+            ordered[4..7].to_vec()
+        };
+        let cursor_key = if included { "startAt" } else { "startAfter" };
+        let case = format!(
+            "history orderBy $id {} with {cursor_key}",
+            if ascending { "asc" } else { "desc" }
+        );
+
+        let query = build(json!({
+            cursor_key: cursor.to_string(Encoding::Base58),
+            "limit": 3,
+            "orderBy": [["$id", if ascending { "asc" } else { "desc" }]],
+        }));
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should be executed");
+        assert_eq!(ids_of(&results), expected, "{case}: unproved page");
+
+        let (proof_root_hash, proof_results, _) = query
+            .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+            .unwrap_or_else(|e| panic!("{case}: proved page should verify: {e}"));
+        assert_eq!(root_hash, proof_root_hash, "{case}: proof root hash");
+        assert_eq!(results, proof_results, "{case}: proved page");
+    }
+}
+
+#[cfg(feature = "server")]
+#[test]
 fn test_query_historical_first_platform_version() {
     let platform_version = PlatformVersion::first();
     let (drive, contract) = setup(10, None, 73509, platform_version);
