@@ -3490,6 +3490,53 @@ mod tests {
                 assert_eq!(voters_3, voters_3_desc);
 
                 assert_eq!(voters_3.len(), 8);
+
+                // Paged proved requests: a limit smaller than the 50 available
+                // voters and a cursor, inclusive and exclusive, in both
+                // directions. `voters_1` is the full ascending sequence, so each
+                // page must equal the matching slice of it, and the verifier
+                // must run with the request's own order, count and cursor for
+                // the proof to verify at all.
+                let cursor = |index: usize, included: bool| {
+                    Some(
+                        get_contested_resource_voters_for_identity_request_v0::StartAtIdentifierInfo {
+                            start_identifier: voters_1[index].to_vec(),
+                            start_identifier_included: included,
+                        },
+                    )
+                };
+                let page = |count: u32, order_ascending: bool, start_at| {
+                    get_proved_contestant_votes(
+                        &platform,
+                        &platform_state,
+                        dpns_contract.as_ref(),
+                        contender_1.id(),
+                        "quantum",
+                        Some(count),
+                        order_ascending,
+                        start_at,
+                        platform_version,
+                    )
+                };
+
+                assert_eq!(page(10, true, cursor(9, true)), voters_1[9..19].to_vec());
+                assert_eq!(page(10, true, cursor(9, false)), voters_1[10..20].to_vec());
+
+                let descending_from_40_inclusive: Vec<Identifier> =
+                    voters_1[31..=40].iter().rev().copied().collect();
+                assert_eq!(
+                    page(10, false, cursor(40, true)),
+                    descending_from_40_inclusive
+                );
+                let descending_from_40_exclusive: Vec<Identifier> =
+                    voters_1[30..=39].iter().rev().copied().collect();
+                assert_eq!(
+                    page(10, false, cursor(40, false)),
+                    descending_from_40_exclusive
+                );
+
+                // A short final page: the limit exceeds what remains.
+                assert_eq!(page(10, true, cursor(45, false)), voters_1[46..50].to_vec());
             }
         }
 
