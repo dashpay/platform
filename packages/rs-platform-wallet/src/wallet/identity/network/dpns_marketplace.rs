@@ -52,7 +52,7 @@ use crate::changeset::{
     DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry, PersistenceError,
 };
 use crate::error::PlatformWalletError;
-use crate::wallet::identity::types::key_storage::DpnsNameInfo;
+use crate::wallet::identity::types::identity_status::DpnsNameInfo;
 
 use super::document::allowed_signing_security_levels;
 use super::*;

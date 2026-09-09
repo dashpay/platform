@@ -937,7 +937,7 @@ mod tests {
 
     #[test]
     fn round_trip_dpns_name() {
-        use crate::wallet::identity::state::managed_identity::DpnsNameInfo;
+        use crate::wallet::identity::types::identity_status::DpnsNameInfo;
 
         let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);
@@ -991,7 +991,7 @@ mod tests {
 
     #[test]
     fn round_trip_block_time_updates() {
-        use crate::wallet::identity::state::managed_identity::BlockTime;
+        use crate::wallet::identity::types::block_time::BlockTime;
 
         let wallet_a = build_test_wallet();
         let mut info_a = empty_info(&wallet_a);

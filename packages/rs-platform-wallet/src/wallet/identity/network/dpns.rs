@@ -17,7 +17,7 @@ use dpp::address_funds::AddressWitness;
 use dpp::platform_value::BinaryData;
 
 use crate::error::PlatformWalletError;
-use crate::wallet::identity::types::key_storage::DpnsNameInfo;
+use crate::wallet::identity::types::identity_status::DpnsNameInfo;
 
 use super::*;
 

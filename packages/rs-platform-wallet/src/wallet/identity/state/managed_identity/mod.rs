@@ -11,15 +11,8 @@ mod sync;
 
 pub use dashpay::DashPayState;
 
-// `block_time` + `key_storage` moved to `crate::wallet::identity::types`.
-// Re-export so every `impl ManagedIdentity` block below keeps working
-// unchanged and external users can still reach them through the old
-// `state::managed_identity::*` path.
-pub use crate::wallet::identity::types::block_time::{self, BlockTime};
-pub use crate::wallet::identity::types::key_storage::{
-    self, DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData,
-};
-
+use crate::wallet::identity::types::block_time::BlockTime;
+use crate::wallet::identity::types::identity_status::{DpnsNameInfo, IdentityStatus};
 use dpp::identity::Identity;
 
 /// A managed identity that combines an Identity with wallet-specific metadata.

@@ -26,7 +26,7 @@ use crate::handle::*;
 use crate::types::*;
 use crate::{check_ptr, unwrap_option_or_return};
 use dpp::identity::accessors::IdentityGettersV0;
-use platform_wallet::wallet::identity::state::managed_identity::IdentityStatus;
+use platform_wallet::IdentityStatus;
 
 /// Per-wallet snapshot returned by [`platform_wallet_get_in_memory_summary`].
 #[repr(C)]

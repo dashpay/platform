@@ -207,7 +207,7 @@ impl IdentityManager {
 mod tests {
     use super::*;
     use crate::changeset::IdentityEntry;
-    use crate::wallet::identity::state::managed_identity::IdentityStatus;
+    use crate::wallet::identity::types::identity_status::IdentityStatus;
     use std::collections::{BTreeMap, BTreeSet};
 
     fn entry(id: Identifier, labels: &[&str]) -> IdentityEntry {

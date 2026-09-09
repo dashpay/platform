@@ -1,8 +1,8 @@
 //! Core identity operations for ManagedIdentity
 
-use super::key_storage::{DpnsNameInfo, IdentityStatus};
 use super::ManagedIdentity;
 use crate::changeset::{IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet};
+use crate::wallet::identity::types::identity_status::{DpnsNameInfo, IdentityStatus};
 use crate::wallet::persister::WalletPersister;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;

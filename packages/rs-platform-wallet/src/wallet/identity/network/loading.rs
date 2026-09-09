@@ -166,8 +166,8 @@ impl IdentityWallet {
         identity_index: u32,
         source: LoadKeyHashSource<'_>,
     ) -> Result<Option<Identity>, PlatformWalletError> {
-        use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
-        use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
+        use crate::wallet::identity::types::identity_status::DpnsNameInfo;
+        use crate::wallet::identity::types::identity_status::IdentityStatus;
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
 
@@ -333,7 +333,7 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
     ) -> Result<Identity, PlatformWalletError> {
-        use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
+        use crate::wallet::identity::types::identity_status::IdentityStatus;
         use dash_sdk::platform::Fetch;
 
         // Verify identity exists in the manager.
@@ -411,7 +411,7 @@ impl IdentityWallet {
     /// for its current DPNS usernames, and replaces the stored
     /// `dpns_names` list with the fresh results.
     pub async fn refresh_dpns_names(&self) -> Result<(), PlatformWalletError> {
-        use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
+        use crate::wallet::identity::types::identity_status::DpnsNameInfo;
 
         // Collect identity IDs so we don't hold the lock during network calls.
         let identity_ids: Vec<Identifier> = {

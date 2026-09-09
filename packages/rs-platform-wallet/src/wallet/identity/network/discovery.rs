@@ -335,8 +335,8 @@ impl IdentityWallet {
         enrichment_deadline: Option<std::time::Instant>,
     ) -> Result<Vec<Identity>, PlatformWalletError> {
         use super::identity_handle::{derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX};
-        use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
-        use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
+        use crate::wallet::identity::types::identity_status::DpnsNameInfo;
+        use crate::wallet::identity::types::identity_status::IdentityStatus;
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
 

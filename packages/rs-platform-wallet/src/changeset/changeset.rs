@@ -47,9 +47,9 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
 
 use crate::changeset::merge::Merge;
-use crate::wallet::identity::state::managed_identity::{
-    BlockTime, DpnsNameInfo, IdentityStatus, ManagedIdentity,
-};
+use crate::wallet::identity::state::managed_identity::ManagedIdentity;
+use crate::wallet::identity::types::block_time::BlockTime;
+use crate::wallet::identity::types::identity_status::{DpnsNameInfo, IdentityStatus};
 use crate::wallet::identity::{
     ContactProfileEntry, ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry,
 };
@@ -749,7 +749,7 @@ impl Merge for CoreChangeSet {
 ///
 /// Carries the per-identity scalars (id / balance / revision + wallet
 /// metadata) but NOT the DPP `public_keys` map or the private
-/// `KeyStorage`. Keys live in the sibling [`IdentityKeysChangeSet`]
+/// key storage. Keys live in the sibling [`IdentityKeysChangeSet`]
 /// keyed by `(identity_id, key_id)` so that a simple scalar mutation
 /// (e.g. a balance refresh) serializes only the scalar fields without
 /// re-serializing every public-key byte and private-key data blob.

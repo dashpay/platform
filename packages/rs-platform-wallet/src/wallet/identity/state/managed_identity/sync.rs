@@ -1,8 +1,8 @@
 //! Synchronization and block time management for ManagedIdentity
 
 use super::ManagedIdentity;
+use crate::wallet::identity::types::block_time::BlockTime;
 use crate::wallet::persister::WalletPersister;
-use crate::BlockTime;
 use dpp::prelude::TimestampMillis;
 
 impl ManagedIdentity {
