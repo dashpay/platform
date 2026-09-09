@@ -2313,7 +2313,6 @@ mod logarithmic {
         )
         .await
     }
-    /// f(x) = (a * log(m * (x - s + o) / n)) / d + b
     /// The tuple from the cross-architecture app-hash report. Under the pre-v14 evaluator
     /// `floor(32767 * ln(2 * m / n))` is 31403 on aarch64-musl and 31402 on x86_64-musl.
     /// The distribution starts at the contract registration step, `o = 1`, so the first
@@ -2365,6 +2364,7 @@ mod logarithmic {
         .await
     }
 
+    /// f(x) = (a * log(m * (x - s + o) / n)) / d + b
     async fn test_logarithmic(
         dist: DistributionFunction,
         steps: &[(u64, u64, bool)], // height, expected balance, expect pass
