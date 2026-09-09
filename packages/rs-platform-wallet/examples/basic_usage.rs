@@ -107,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- Asset locks ---
     let asset_locks = wallet.asset_locks();
-    let tracked = asset_locks.list_tracked_locks_blocking();
+    let tracked = asset_locks.list_tracked_locks().await;
     println!("Tracked asset locks: {}", tracked.len());
 
     Ok(())

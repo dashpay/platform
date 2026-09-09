@@ -235,18 +235,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         self.sdk.network
     }
 
-    /// List all tracked asset locks (blocking version for UI / synchronous contexts).
-    ///
-    /// Uses `tokio::sync::RwLock::blocking_read` — must NOT be called from
-    /// within a tokio async context.
-    pub fn list_tracked_locks_blocking(&self) -> Vec<TrackedAssetLock> {
-        let wm = self.wallet_manager.blocking_read();
-        wm.get_wallet_info(&self.wallet_id)
-            .map(|info| info.tracked_asset_locks.values().cloned().collect())
-            .unwrap_or_default()
-    }
-
-    /// List all tracked asset locks (async version).
+    /// List all tracked asset locks.
     pub async fn list_tracked_locks(&self) -> Vec<TrackedAssetLock> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
