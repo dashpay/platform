@@ -5,11 +5,14 @@ pub mod dashpay_sync;
 pub mod dpns_sync;
 pub mod identity_sync;
 mod load;
+mod persistence_load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 pub mod startup;
 mod wallet_lifecycle;
+
+pub(crate) use persistence_load::run_blocking_load;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -504,7 +507,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let event_adapter_cancel = CancellationToken::new();
         let event_adapter_join = spawn_wallet_event_adapter(
             Arc::clone(&wallet_manager),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             event_receiver,
             Arc::clone(&sync_fault),
             event_adapter_cancel.clone(),
@@ -882,6 +885,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// threads through the shared [`ThreadRegistry`] and finally drains the
     /// wallet-event adapter task. Idempotent.
     ///
+    /// Takes `&self`, so it cannot release the manager's own `Arc<P>`
+    /// persister — reopening the same store additionally needs the manager
+    /// dropped (see the [`Drop`] impl).
+    ///
     /// Ordering matters and is fourfold:
     /// 1. SPV is stopped and joined FIRST so it cannot dispatch more wallet
     ///    events, then payment-task admission is closed and all admitted
@@ -1051,6 +1058,36 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 }
 
+/// Stops the wallet-event adapter task, which a dirty drop would otherwise
+/// leave running against a torn-down manager.
+///
+/// Dropping the manager releases its own persister references. The idle adapter
+/// holds only a `Weak<P>`, but a drain, wallet handle, worker or in-flight read
+/// can retain a strong reference. Reopening the same storage path must wait
+/// until all such references are released; this drop does not guarantee it.
+///
+/// **Buffered events are best-effort on this path.** Cancelling is all a `Drop`
+/// can do: if dropping the fields releases the last `Arc<P>` before the adapter
+/// claims it, the adapter exits with the backlog uncommitted. Nothing
+/// durable breaks — a wallet's sync watermark rides the same `store()` as the
+/// rows it implies, so the next SPV pass re-derives both. Use
+/// [`shutdown`](PlatformWalletManager::shutdown) for a lossless drain: it holds
+/// the manager, and with it the persister, alive while it joins the task, and
+/// reports a status back.
+///
+/// Having a `Drop` at all changes teardown for every holder of this public
+/// type: a plain drop stops the adapter instead of detaching it, and the type's
+/// fields can no longer be moved out.
+impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
+    fn drop(&mut self) {
+        // Cancel and detach, never `abort`: the task observes the token at its
+        // next `recv` and exits after committing whatever its drain claimed the
+        // persister for. Aborting stops it at whatever await it is parked on,
+        // dropping a claimed batch mid-commit.
+        self.event_adapter_cancel.cancel();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1069,6 +1106,33 @@ mod tests {
             _wallet_id: WalletId,
             _changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// Records the highest `synced_height` any `store()` carried, into state
+    /// held OUTSIDE the persister — so a test can read the outcome after the
+    /// persister itself has been released.
+    struct WatermarkPersister {
+        highest_synced_height: Arc<std::sync::atomic::AtomicU32>,
+    }
+
+    impl PlatformWalletPersistence for WatermarkPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            if let Some(height) = changeset.core.as_ref().and_then(|core| core.synced_height) {
+                self.highest_synced_height
+                    .fetch_max(height, std::sync::atomic::Ordering::SeqCst);
+            }
             Ok(())
         }
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
@@ -1217,6 +1281,74 @@ mod tests {
         // reports them NotRunning and the report stays clean.
         let again = mgr.shutdown().await;
         assert!(again.all_clean(), "idempotent shutdown: {again:?}");
+    }
+
+    /// A joined `shutdown()` is the lossless drain: it keeps the manager — and
+    /// with it the persister — alive while the adapter finishes, so no
+    /// watermark buffered on the lossless channel is lost. A dirty `Drop`
+    /// promises nothing of the sort; see this type's `Drop` rustdoc.
+    ///
+    /// Drives the real manager and keeps NO strong `Arc<P>`: the outcome is
+    /// read from state that outlives the persister, so no reference the test
+    /// itself holds open can keep the drain's target alive for it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_joined_shutdown_commits_the_watermarks_a_live_manager_buffered() {
+        use key_wallet::mnemonic::Mnemonic;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet_manager::WalletInterface;
+
+        // Canonical all-`abandon` BIP-39 test vector.
+        const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon about";
+        const TIP: u32 = 64;
+
+        let highest_synced_height = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let persister = Arc::new(WatermarkPersister {
+            highest_synced_height: Arc::clone(&highest_synced_height),
+        });
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = PlatformWalletManager::new(
+            sdk,
+            persister,
+            Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
+        );
+
+        // `Some(0)` skips the SPV-tip birth-height lookup, so nothing here
+        // touches the network.
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid test mnemonic")
+            .to_seed("");
+        let wallet_id = manager
+            .create_wallet_from_seed_bytes(
+                key_wallet::Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("register the test wallet")
+            .wallet_id();
+
+        // The upstream manager is the only producer on the lossless channel;
+        // a forward watermark advance is its cheapest event.
+        {
+            let mut wallet_manager = manager.wallet_manager.write().await;
+            for height in 1..=TIP {
+                wallet_manager.update_wallet_synced_height(&wallet_id, height);
+            }
+        }
+
+        let report = manager.shutdown().await;
+        assert_eq!(
+            report.per_worker.get(&WalletWorker::EventAdapter),
+            Some(&WorkerStatus::Ok),
+            "the adapter must have been joined, not timed out: {report:?}"
+        );
+        assert_eq!(
+            highest_synced_height.load(std::sync::atomic::Ordering::SeqCst),
+            TIP,
+            "a joined shutdown must commit every watermark the manager emitted"
+        );
     }
 
     /// `reset_platform_address_sync_state` must fail closed when the
@@ -1459,5 +1591,36 @@ mod tests {
 
         release_tx.send(()).expect("writer still parked");
         writer.join().expect("writer thread completes");
+    }
+
+    /// A dirty drop CANCELS the wallet-event adapter; it must never `abort` it.
+    /// An aborted task dies at whatever await it is parked on, taking with it
+    /// the events it had already pulled off the lossless channel — the loss the
+    /// channel exists to rule out. The parked sentinel below stands in for an
+    /// adapter mid-batch: it can only finish if the drop left it running.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn dropping_the_manager_does_not_abort_the_adapter_task() {
+        let manager = make_manager();
+
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel::<()>();
+        let sentinel = tokio::spawn(async move {
+            let _ = release_rx.await;
+            let _ = done_tx.send(());
+        });
+        // Park the sentinel where the real adapter's handle lives, so the drop
+        // path acts on it. The displaced adapter has its own cancel token and
+        // exits on its own.
+        manager.event_adapter_join.lock().await.replace(sentinel);
+
+        drop(manager);
+
+        release_tx
+            .send(())
+            .expect("the adapter task was aborted on drop: its receiver is already gone");
+        tokio::time::timeout(std::time::Duration::from_secs(5), done_rx)
+            .await
+            .expect("the parked adapter task never resumed after the manager was dropped")
+            .expect("the adapter task was aborted on drop: it never finished");
     }
 }
