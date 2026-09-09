@@ -7,7 +7,6 @@ struct OptionsView: View {
     @EnvironmentObject var walletManagerStore: WalletManagerStore
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @EnvironmentObject var shieldedService: ShieldedService
-    @State private var showingDataManagement = false
     @State private var showingAbout = false
     @State private var isSwitchingNetwork = false
     @State private var isExportingLogs = false
@@ -410,10 +409,6 @@ struct OptionsView: View {
                         Label("Banned Addresses", systemImage: "nosign")
                     }
 
-                    Button(action: { showingDataManagement = true }) {
-                        Label("Manage Local Data", systemImage: "internaldrive")
-                    }
-
                     if let stats = appState.dataStatistics {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Storage Statistics")
@@ -484,7 +479,7 @@ struct OptionsView: View {
                         Label("Queries", systemImage: "magnifyingglass")
                     }
 
-                    NavigationLink(destination: PlatformStateTransitionsView()) {
+                    NavigationLink(destination: StateTransitionsView()) {
                         Label("State Transitions", systemImage: "arrow.up.arrow.down")
                     }
 
@@ -550,16 +545,9 @@ struct OptionsView: View {
                     }
 
                     HStack {
-                        Text("SDK Version")
-                        Spacer()
-                        Text("1.0.0")
-                            .foregroundColor(.secondary)
-                    }
-
-                    HStack {
                         Text("App Version")
                         Spacer()
-                        Text("1.0.0")
+                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")
                             .foregroundColor(.secondary)
                     }
                 }
@@ -568,10 +556,6 @@ struct OptionsView: View {
             .task {
                 await loadDataStatistics()
                 loadSDKStatus()
-            }
-            .sheet(isPresented: $showingDataManagement) {
-                DataManagementView()
-                    .environmentObject(appState)
             }
             .sheet(isPresented: $showingAbout) {
                 AboutView()
@@ -749,70 +733,6 @@ struct OptionsView: View {
 private struct ExportedLogsArchive: Identifiable {
     let url: URL
     var id: URL { url }
-}
-
-struct DataManagementView: View {
-    @EnvironmentObject var appState: AppState
-    @Environment(\.dismiss) var dismiss
-    @State private var showingClearConfirmation = false
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Clear Data by Type") {
-                    Button(role: .destructive, action: {
-                        // Clear identities
-                    }) {
-                        Label("Clear All Identities", systemImage: "person.crop.circle.badge.xmark")
-                    }
-
-                    Button(role: .destructive, action: {
-                        // Clear documents
-                    }) {
-                        Label("Clear All Documents", systemImage: "doc.badge.xmark")
-                    }
-
-                    Button(role: .destructive, action: {
-                        // Clear contracts
-                    }) {
-                        Label("Clear All Contracts", systemImage: "doc.plaintext.badge.xmark")
-                    }
-                }
-
-                Section("Clear All Data") {
-                    Button(role: .destructive, action: {
-                        showingClearConfirmation = true
-                    }) {
-                        Label("Clear All Data", systemImage: "trash")
-                            .foregroundColor(.red)
-                    }
-                }
-
-                Section {
-                    Text("Warning: Clearing data will remove all locally stored information for the current network. This action cannot be undone.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .navigationTitle("Manage Data")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-            .alert("Clear All Data?", isPresented: $showingClearConfirmation) {
-                Button("Cancel", role: .cancel) { }
-                Button("Clear", role: .destructive) {
-                    // Implement clear all data
-                }
-            } message: {
-                Text("This will permanently delete all data for the \(appState.currentNetwork.displayName) network. This action cannot be undone.")
-            }
-        }
-    }
 }
 
 struct AboutView: View {

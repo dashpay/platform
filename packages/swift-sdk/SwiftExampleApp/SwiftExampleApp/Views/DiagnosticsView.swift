@@ -584,12 +584,7 @@ struct DiagnosticsView: View {
         }
 
         // Copy to pasteboard
-        #if os(iOS)
         UIPasteboard.general.string = report
-        #else
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(report, forType: .string)
-        #endif
 
         showCopiedAlert = true
     }

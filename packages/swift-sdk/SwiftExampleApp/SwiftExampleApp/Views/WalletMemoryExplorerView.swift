@@ -27,8 +27,7 @@ private func fullBase58(_ id: Identifier) -> String {
     id.toBase58()
 }
 
-private func walletDisplayLabel(_ walletId: Data, fromPersistent name: String?) -> String {
-    if let name, !name.isEmpty { return name }
+private func walletDisplayLabel(_ walletId: Data) -> String {
     let hex = walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
     return hex.isEmpty ? "Unknown wallet" : "Wallet \(hex)…"
 }
@@ -335,7 +334,7 @@ struct WalletMemoryExplorerView: View {
                             WalletMemoryDetailView(
                                 wallet: wallet,
                                 walletId: walletId,
-                                walletLabel: walletDisplayLabel(walletId, fromPersistent: nil)
+                                walletLabel: walletDisplayLabel(walletId)
                             )
                         } label: {
                             walletRow(walletId: walletId, wallet: wallet)
@@ -360,7 +359,7 @@ struct WalletMemoryExplorerView: View {
         )
         let bal = try? wallet.balance()
         VStack(alignment: .leading, spacing: 4) {
-            Text(walletDisplayLabel(walletId, fromPersistent: nil))
+            Text(walletDisplayLabel(walletId))
                 .font(.headline)
             HStack(spacing: 4) {
                 Text("\(summary.identitiesCount) identities")

@@ -85,9 +85,7 @@ struct DataContractStorageListView: View {
 // MARK: - PersistentPublicKey
 
 /// Storage-explorer list of every `PersistentPublicKey`, grouped by
-/// owning wallet + identity. Keys without a parent identity land in
-/// a trailing "Unassigned" section so they stay visible but don't
-/// pollute the wallet-scoped sections above.
+/// owning wallet + identity.
 ///
 /// Grouping pivot: the `PersistentPublicKey.identity` relationship.
 /// We drive the top-level order from `PersistentIdentity` sorted by
@@ -136,15 +134,6 @@ struct PublicKeyStorageListView: View {
         List {
             ForEach(walletGroups, id: \.walletId) { group in
                 walletSection(group)
-            }
-
-            let orphans = orphanKeys
-            if !orphans.isEmpty {
-                Section("Unassigned") {
-                    ForEach(orphans) { key in
-                        keyRow(key)
-                    }
-                }
             }
         }
         .navigationTitle("Public Keys (\(scoped.count))")
@@ -214,17 +203,6 @@ struct PublicKeyStorageListView: View {
                 let r = rhs.walletLabel ?? walletShort(rhs.walletId)
                 return l.localizedCaseInsensitiveCompare(r) == .orderedAscending
             }
-    }
-
-    /// Keys whose `identity` relationship is nil — e.g. rows that
-    /// predate the changeset wiring or belong to identities since
-    /// deleted. `scopedKeys` already strips them from the
-    /// per-network view, so this collection is always empty in the
-    /// current explorer; the section render below short-circuits on
-    /// `isEmpty`. Kept as a one-liner so a future global
-    /// orphan-diagnostics surface can reuse it.
-    private var orphanKeys: [PersistentPublicKey] {
-        scopedKeys.filter { $0.identity == nil }
     }
 
     private func walletLabel(for walletId: Data) -> String? {
