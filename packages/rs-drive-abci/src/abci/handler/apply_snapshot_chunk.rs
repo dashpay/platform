@@ -215,8 +215,8 @@ where
     }
 
     // Rebuild the in-memory platform state from the reduced platform state contained in
-    // the restored snapshot. This re-derives masternode lists and quorums from Core and
-    // must leave the grovedb root hash untouched; the equality check below proves it.
+    // the restored snapshot. This re-derives masternode lists and quorums from Core in
+    // memory only; the root hash equality check below is the restore's integrity backstop.
     //
     // This is also where a snapshot taken before the reduced platform state existed
     // (pre-v15) is refused. Refusing earlier would be better, but grovedb does not expose
