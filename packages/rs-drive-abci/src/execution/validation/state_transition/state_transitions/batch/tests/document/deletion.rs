@@ -406,8 +406,10 @@ mod deletion_tests {
     }
 
     #[tokio::test]
-    async fn test_document_delete_on_document_type_that_keeps_history_replays_protocol_version_13() {
-        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(13, false).await;
+    async fn test_document_delete_on_document_type_that_keeps_history_replays_protocol_version_13()
+    {
+        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(13, false)
+            .await;
     }
 
     /// Exercises an already-deployed contradictory contract at both sides of
