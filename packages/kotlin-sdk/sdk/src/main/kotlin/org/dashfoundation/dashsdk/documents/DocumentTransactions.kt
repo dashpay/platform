@@ -214,6 +214,44 @@ class DocumentTransactions internal constructor(
     }
 
     /**
+     * Erase + broadcast a chunk of the retained revisions of the already
+     * deleted [documentId] on [contractId]'s [documentType] — signed via
+     * [signerHandle] with key [signingKeyId] of [ownerId]. Mirrors Swift
+     * `ManagedPlatformWallet.eraseDocument`. Only valid for a keep-history
+     * type whose schema sets `canBeErased`, and only after the document has
+     * been deleted; the first erase must be signed by the document's owner,
+     * later ones by any identity. One call removes a bounded chunk of
+     * revisions — read the document's history to see how many remain.
+     *
+     * @return the erased document's 32-byte id, for confirmation.
+     */
+    suspend fun erase(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        documentId: ByteArray,
+        signingKeyId: Int,
+        signerHandle: Long,
+    ): ByteArray = gate.op {
+        require(ownerId.size == 32) { "ownerId must be 32 bytes" }
+        require(contractId.size == 32) { "contractId must be 32 bytes" }
+        require(documentId.size == 32) { "documentId must be 32 bytes" }
+        require(signingKeyId >= 0) { "signingKeyId must be non-negative, got $signingKeyId" }
+        mapNativeErrors {
+            TransactionsNative.documentErase(
+                walletHandle,
+                ownerId,
+                contractId,
+                documentType,
+                documentId,
+                signingKeyId,
+                signerHandle,
+            )
+        }
+    }
+
+    /**
      * Transfer + broadcast [documentId] on [contractId]'s [documentType],
      * from [ownerId] to [recipientId] — signed via [signerHandle] with key
      * [signingKeyId]. Mirrors Swift `ManagedPlatformWallet.transferDocument`.
