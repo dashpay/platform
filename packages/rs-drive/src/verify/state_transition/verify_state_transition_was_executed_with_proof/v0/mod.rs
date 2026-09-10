@@ -3230,6 +3230,160 @@ mod tests {
         }
     }
 
+    /// An erase acts on a document that was already deleted, so the by-id
+    /// proof shows the same absence whether or not it ran. The classifier must
+    /// report that as affected state, while a delete over the very same proof
+    /// stays execution-proved: presence before and absence after do bind a
+    /// delete's execution.
+    #[test]
+    fn verify_batch_document_erase_is_affected_state_not_execution_proved() {
+        use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
+        use dpp::document::DocumentV0Setters;
+        use dpp::state_transition::batch_transition::batched_transition::document_erase_transition::{
+            DocumentEraseTransition, DocumentEraseTransitionV0,
+        };
+        use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::batch_transition::document_delete_transition::{
+            DocumentDeleteTransition, DocumentDeleteTransitionV0,
+        };
+        use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
+        use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
+
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/family/family-contract-with-history.json",
+            false,
+            platform_version,
+        )
+        .expect("expected the family history contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the contract");
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected the person type");
+        let mut document = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some([4u8; 32].into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected a person");
+        for revision in 1..=2u64 {
+            document.set_revision(Some(revision));
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    revision > 1,
+                    BlockInfo::default_with_time(1_000 + revision),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to write a revision");
+        }
+        let doc_id = document.id();
+        drive
+            .delete_document_for_contract(
+                doc_id,
+                &contract,
+                "person",
+                BlockInfo::default_with_time(5_000),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected the delete to succeed");
+
+        let path_query = SingleDocumentDriveQuery {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "person".to_string(),
+            document_type_keeps_history: true,
+            document_id: doc_id.to_buffer(),
+            block_time_ms: None,
+            contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+        }
+        .construct_path_query(platform_version)
+        .expect("expected a by-id path query");
+        let proof = drive
+            .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version.drive)
+            .expect("expected an absence proof");
+
+        let base = || {
+            DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                id: doc_id,
+                identity_contract_nonce: 1,
+                document_type_name: "person".to_string(),
+                data_contract_id: contract.id(),
+            })
+        };
+        let batch = |transition: DocumentTransition| {
+            StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+                owner_id: Default::default(),
+                transitions: vec![transition],
+                ..Default::default()
+            }))
+        };
+        let contract_arc = Arc::new(contract.clone());
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(Some(contract_arc.clone()));
+        let verify = |state_transition: StateTransition| {
+            Drive::verify_state_transition_was_executed_with_proof(
+                &state_transition,
+                &BlockInfo::default(),
+                &proof,
+                known_contracts_provider_fn,
+                platform_version,
+            )
+            .expect("expected verification to succeed")
+            .1
+        };
+
+        let erase_outcome = verify(batch(DocumentTransition::Erase(
+            DocumentEraseTransition::V0(DocumentEraseTransitionV0 { base: base() }),
+        )));
+        match erase_outcome {
+            StateTransitionProofOutcome::AffectedState(
+                StateTransitionProofResult::VerifiedDocuments(documents),
+            ) => {
+                assert_eq!(documents.len(), 1);
+                let (id, found) = documents.into_iter().next().unwrap();
+                assert_eq!(id, doc_id);
+                assert!(found.is_none(), "the document is absent by id");
+            }
+            other => panic!("an erase must be classified as affected state, got {other:?}"),
+        }
+
+        let delete_outcome = verify(batch(DocumentTransition::Delete(
+            DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 { base: base() }),
+        )));
+        assert!(
+            matches!(
+                delete_outcome,
+                StateTransitionProofOutcome::ExecutionProved(_)
+            ),
+            "a delete over the same proof stays execution-proved, got {delete_outcome:?}"
+        );
+    }
+
     // -----------------------------------------------------------------------
     // Batch: document create happy path
     // -----------------------------------------------------------------------
