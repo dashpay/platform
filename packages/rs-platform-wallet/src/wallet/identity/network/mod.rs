@@ -53,10 +53,7 @@ pub(crate) use payment_handler::DashPayPaymentHandler;
 #[cfg(test)]
 pub(crate) use payment_handler::run_dashpay_payment_hooks;
 mod payments;
-pub(crate) use payments::{
-    confirm_sent_dashpay_payment, confirm_sent_dashpay_payment_by_txid,
-    record_incoming_dashpay_payments,
-};
+pub(crate) use payments::{record_incoming_dashpay_payments, sent_payment_status_for_record};
 mod profile;
 pub(crate) mod sdk_writer;
 mod seed_binding;
