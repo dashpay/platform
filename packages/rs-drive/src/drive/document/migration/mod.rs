@@ -34,6 +34,12 @@ pub struct DocumentHistoryMigrationStats {
     pub maximum_document_revisions: u64,
     /// Document index references inspected.
     pub index_entries: u64,
+    /// Index references successfully rewritten.
+    pub rewritten_index_entries: u64,
+    /// Largest index-reference count retained for one document type.
+    pub maximum_type_index_entries: u64,
+    /// Conservative owned-buffer bound for one type index inventory, excluding allocator overhead.
+    pub maximum_type_index_buffer_bound: u64,
     /// Documents changed by this invocation.
     pub migrated_documents: u64,
     /// Applied batches, excluding reads.
@@ -49,6 +55,38 @@ mod tests;
 
 fn corrupt(message: impl Into<String>) -> Error {
     Error::Drive(DriveError::CorruptedDriveState(message.into()))
+}
+
+fn index_inventory_buffer_bound(entries: &IndexEntries) -> u64 {
+    // A B-tree node stores at most eleven key/value pairs and twelve child edges.
+    // Reserving two KiB per key plus the root bounds its inline node storage.
+    let mut bytes = 2048 * (entries.len() as u64 + 1);
+    for (id, references) in entries {
+        bytes += id.capacity() as u64;
+        bytes += (references.capacity() * std::mem::size_of::<(Vec<Vec<u8>>, Vec<u8>, Element)>())
+            as u64;
+        for (path, key, element) in references {
+            bytes += (path.capacity() * std::mem::size_of::<Vec<u8>>()) as u64;
+            bytes += path.iter().map(|part| part.capacity() as u64).sum::<u64>();
+            bytes += key.capacity() as u64;
+            if let Element::Reference(UpstreamRootHeightReference(_, target), _, flags)
+            | Element::ReferenceWithSumItem(
+                UpstreamRootHeightReference(_, target),
+                _,
+                _,
+                flags,
+            ) = element
+            {
+                bytes += (target.capacity() * std::mem::size_of::<Vec<u8>>()) as u64;
+                bytes += target
+                    .iter()
+                    .map(|part| part.capacity() as u64)
+                    .sum::<u64>();
+                bytes += flags.as_ref().map_or(0, |flags| flags.capacity() as u64);
+            }
+        }
+    }
+    bytes
 }
 
 impl Drive {
@@ -74,36 +112,12 @@ impl Drive {
         let mut stats = DocumentHistoryMigrationStats::default();
         let mut cursor: Option<[u8; 32]> = None;
         loop {
-            let mut query = Query::new();
-            if let Some(cursor) = cursor {
-                query.insert_range_after(cursor.to_vec()..);
-            } else {
-                query.insert_all();
-            }
-            let mut operations = vec![];
-            let (ids, _) = self.grove_get_raw_path_query(
-                &PathQuery::new(
-                    vec![vec![crate::drive::RootTree::DataContractDocuments as u8]],
-                    SizedQuery::new(query, Some(u16::MAX), None),
-                ),
+            let ids = self.fetch_contract_ids(
+                cursor.map(|id| (id, false)),
+                u16::MAX,
                 Some(transaction),
-                QueryResultType::QueryKeyElementPairResultType,
-                &mut operations,
-                &platform_version.drive,
+                platform_version,
             )?;
-            for operation in operations {
-                if let LowLevelDriveOperation::CalculatedCostOperation(cost) = operation {
-                    stats.cost += cost;
-                }
-            }
-            let ids = ids
-                .to_keys()
-                .into_iter()
-                .map(|id| {
-                    id.try_into()
-                        .map_err(|_| corrupt("contract id must be thirty-two bytes"))
-                })
-                .collect::<Result<Vec<[u8; 32]>, Error>>()?;
             if ids.is_empty() {
                 break;
             }
@@ -132,22 +146,45 @@ impl Drive {
                     )?;
                     let mut index_entries = BTreeMap::new();
                     for (key, element) in &type_entries {
-                        if key
-                            .first()
-                            .is_some_and(|byte| *byte > DOCUMENT_HISTORY_TREE_KEY)
-                            && element.is_any_tree()
-                        {
-                            let mut path = type_path.clone();
-                            path.push(key.clone());
-                            self.history_migration_index_entries(
-                                path,
-                                transaction,
-                                platform_version,
-                                &mut stats,
-                                &mut index_entries,
-                            )?;
+                        match key.as_slice() {
+                            [0] | [DOCUMENT_HISTORY_TREE_KEY] if element.is_any_tree() => {}
+                            [0] | [1] | [DOCUMENT_HISTORY_TREE_KEY] => {
+                                return Err(corrupt("unexpected reserved document type child"))
+                            }
+                            _ => {
+                                if !element.is_any_tree()
+                                    || !document_type
+                                        .as_ref()
+                                        .index_structure()
+                                        .sub_levels()
+                                        .keys()
+                                        .any(|name| name.as_bytes() == key)
+                                {
+                                    return Err(corrupt(
+                                        "unrecognised document type child during history inventory",
+                                    ));
+                                }
+                                let mut path = type_path.clone();
+                                path.push(key.clone());
+                                self.history_migration_index_entries(
+                                    path,
+                                    transaction,
+                                    platform_version,
+                                    &mut stats,
+                                    &mut index_entries,
+                                )?;
+                            }
                         }
                     }
+                    stats.maximum_type_index_entries = stats.maximum_type_index_entries.max(
+                        index_entries
+                            .values()
+                            .map(|entries| entries.len() as u64)
+                            .sum(),
+                    );
+                    stats.maximum_type_index_buffer_bound = stats
+                        .maximum_type_index_buffer_bound
+                        .max(index_inventory_buffer_bound(&index_entries));
                     if !type_entries
                         .iter()
                         .any(|(key, _)| key == &[DOCUMENT_HISTORY_TREE_KEY])
@@ -288,7 +325,8 @@ impl Drive {
                             &mut stats,
                         )?;
                         if let Some(references) = index_entries.remove(&document_id) {
-                            let rewrites = references
+                            let collected = references.len();
+                            let rewrites: Vec<_> = references
                                 .into_iter()
                                 .map(|(path, key, mut element)| {
                                     match &mut element {
@@ -305,12 +343,18 @@ impl Drive {
                                     QualifiedGroveDbOp::insert_or_replace_op(path, key, element)
                                 })
                                 .collect();
+                            if rewrites.len() != collected {
+                                return Err(corrupt(
+                                    "history index rewrite count differs from its inventory",
+                                ));
+                            }
                             self.history_migration_batch(
                                 rewrites,
                                 transaction,
                                 platform_version,
                                 &mut stats,
                             )?;
+                            stats.rewritten_index_entries += collected as u64;
                         }
                         stats.migrated_documents += 1;
                     }
