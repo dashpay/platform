@@ -713,9 +713,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// which a record-only finality never advances. Holding one guard makes
     /// the three answers describe the same instant.
     ///
-    /// Every suppression leaves the caller's error alone rather than
-    /// replacing it: the row is left where it was, so the next resume
-    /// returns the proof from the record on `wait_for_proof`'s first pass.
+    /// A suppression tells the caller only that the conflict must not replace
+    /// its current outcome. The row is left where it was, so the caller can
+    /// read a newly-arrived proof immediately or the next resume can return it
+    /// from the record on `wait_for_proof`'s first pass.
     async fn input_conflict_verdict(&self, out_point: &OutPoint) -> Option<PlatformWalletError> {
         if self
             .wait_for_proof(out_point, Some(Duration::ZERO))
@@ -724,9 +725,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         {
             tracing::info!(
                 outpoint = %out_point,
-                "resume_asset_lock: the proof wait expired, but the local record \
-                 already holds finality — the input conflict is not the \
-                 explanation and no contested verdict is reported"
+                "resume_asset_lock: local finality is present before the input \
+                 conflict verdict — the conflict is not the explanation and no \
+                 contested verdict is reported"
             );
             return None;
         }
@@ -777,10 +778,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             {
                 tracing::info!(
                     outpoint = %out_point,
-                    "resume_asset_lock: the proof wait expired, but the funding \
-                     transaction reached finality while it was being read — the \
-                     input conflict is not the explanation and no contested \
-                     verdict is reported"
+                    "resume_asset_lock: the funding transaction reached finality \
+                     while the input conflict verdict was being read — the \
+                     conflict is not the explanation and no contested verdict \
+                     is reported"
                 );
                 return None;
             }
@@ -799,8 +800,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 outpoint = %out_point,
                 status = ?lock.status,
                 has_proof = lock.proof.is_some(),
-                "resume_asset_lock: the proof wait expired, but the tracked lock \
-                 has since been settled — no contested verdict is reported"
+                "resume_asset_lock: the tracked lock was settled before the input \
+                 conflict verdict — no contested verdict is reported"
             );
             return None;
         }
@@ -810,8 +811,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             %input,
             %spent_by,
             ?height,
-            "resume_asset_lock: the proof wait expired with the input conflict \
-             still standing; reporting it as the provisional verdict"
+            "resume_asset_lock: the input conflict is still standing on the \
+             verdict's fresh read; reporting it as the provisional verdict"
         );
         Some(PlatformWalletError::AssetLockInputContested {
             out_point: *out_point,
@@ -884,12 +885,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// attempt. When the transport was ready, it caps the proof wait at the
     /// policy's own bound — a caller's longer budget only delays a verdict a
     /// lock no peer will relay cannot escape — and the verdict is re-read
-    /// afterwards by [`Self::input_conflict_verdict`]. When readiness was
-    /// missed and the send was rejected before dispatch, no live transport
-    /// can deliver a proof, so the contested verdict returns immediately and
-    /// the readiness-deferred retry owns the next proof wait. A proof already
-    /// present locally settles the lock before either path. Blocking the send
-    /// attempt outright is what this evidence does NOT support:
+    /// afterwards by [`Self::input_conflict_verdict`]. In the `Broadcast` arm,
+    /// when readiness was missed and the send was rejected before dispatch,
+    /// no live transport can deliver a new proof, so a freshly re-checked
+    /// conflict returns immediately and the readiness-deferred retry owns the
+    /// next proof wait. The conflict verdict is coherent as of the snapshot
+    /// read by [`Self::input_conflict_verdict`]: a recoverable proof settles
+    /// the lock, while finality evidence without a recoverable proof can only
+    /// suppress the contested verdict and returns
+    /// [`PlatformWalletError::TransactionBroadcastUnconfirmed`]. Any contested
+    /// verdict is provisional as of that refreshed snapshot; a proof arriving
+    /// afterwards is reported by the next resume. Blocking the send attempt
+    /// outright is what this evidence does NOT support:
     /// the screen also reads records the load path rebuilt from persisted
     /// rows, which no event can demote once their block has been
     /// reorganized out behind an offline wallet, so a pre-emptive refusal
@@ -1424,9 +1431,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // through to the bounded proof wait when transport readiness
                 // succeeded; after a readiness miss there is no live source
                 // for a new proof, so the deferred retry owns that wait. The
-                // row's RECORD may already hold the answer. A lock can sit at
-                // `Broadcast` while its transaction record carries an IS lock
-                // or a chain-locked context, because
+                // local finality and conflict reads are refreshed before the
+                // fast verdict, because already-queued finality can still land
+                // while the transport is down. A lock can sit at `Broadcast`
+                // while its transaction record carries an IS lock or a
+                // chain-locked context, because
                 // finality that arrives with no waiter active enriches the
                 // record without advancing the tracked status
                 // (`LockNotifyHandler` only wakes waiters, and
@@ -1494,37 +1503,84 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                                 local_proof = Some(proof);
                             }
                             Err(probe_err) => {
-                                if let Some((input, spent_by, height)) = input_conflict {
+                                if input_conflict.is_some() {
                                     if transport_missed.load(Ordering::Relaxed) {
+                                        if let Some(contested) =
+                                            self.input_conflict_verdict(out_point).await
+                                        {
+                                            tracing::warn!(
+                                                outpoint = %out_point,
+                                                error = %e,
+                                                probe = %probe_err,
+                                                "resume_asset_lock: defensive re-broadcast was \
+                                                 rejected after transport readiness was missed; \
+                                                 the refreshed conflict still stands, so returning \
+                                                 it immediately and leaving the next proof wait to \
+                                                 the deferred retry"
+                                            );
+                                            return Err(contested);
+                                        }
+
+                                        // `input_conflict_verdict` suppresses code 48 when
+                                        // finality or a settled row became visible during its
+                                        // fresh read. Prefer the proof already attached to the
+                                        // row, then repeat the zero-duration local probe: a
+                                        // record can become final inside the verdict's own
+                                        // persister fallback, after that probe missed it.
+                                        let attached_proof = {
+                                            let wm = self.wallet_manager.read().await;
+                                            wm.get_wallet_info(&self.wallet_id)
+                                                .and_then(|info| {
+                                                    info.tracked_asset_locks.get(out_point)
+                                                })
+                                                .and_then(|lock| lock.proof.clone())
+                                        };
+                                        match attached_proof {
+                                            Some(proof) => local_proof = Some(proof),
+                                            None => match self
+                                                .wait_for_proof(out_point, Some(Duration::ZERO))
+                                                .await
+                                            {
+                                                Ok(proof) => local_proof = Some(proof),
+                                                Err(
+                                                    refresh_err
+                                                    @ PlatformWalletError::FinalityTimeout(_),
+                                                ) => {
+                                                    tracing::warn!(
+                                                        outpoint = %out_point,
+                                                        error = %e,
+                                                        probe = %probe_err,
+                                                        refresh = %refresh_err,
+                                                        "resume_asset_lock: defensive re-broadcast \
+                                                         was rejected after transport readiness was \
+                                                         missed, but the refreshed conflict no longer \
+                                                         stands and no reportable local proof is \
+                                                         available; preserving the Broadcast row and \
+                                                         returning an unknown outcome"
+                                                    );
+                                                    return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                                                        format!(
+                                                            "asset lock {out_point} remains tracked after the \
+                                                             defensive re-broadcast was rejected before dispatch; \
+                                                             an earlier attempt may still be on the network: {e}"
+                                                        ),
+                                                    ));
+                                                }
+                                                Err(refresh_err) => return Err(refresh_err),
+                                            },
+                                        }
+                                    } else {
                                         tracing::warn!(
                                             outpoint = %out_point,
-                                            %input,
-                                            %spent_by,
-                                            ?height,
                                             error = %e,
                                             probe = %probe_err,
-                                            "resume_asset_lock: defensive re-broadcast was \
-                                             rejected after transport readiness was missed; \
-                                             returning the standing conflict immediately and \
-                                             leaving the next proof wait to the deferred retry"
+                                            "resume_asset_lock: defensive re-broadcast of a \
+                                             Broadcast-status lock was rejected before dispatch \
+                                             with an input conflict sighted over a ready transport; \
+                                             entering the bounded proof wait so live synchronization \
+                                             can settle the lock before the conflict verdict is re-read"
                                         );
-                                        return Err(PlatformWalletError::AssetLockInputContested {
-                                            out_point: *out_point,
-                                            input,
-                                            spent_by,
-                                            height,
-                                        });
                                     }
-                                    tracing::warn!(
-                                        outpoint = %out_point,
-                                        error = %e,
-                                        probe = %probe_err,
-                                        "resume_asset_lock: defensive re-broadcast of a \
-                                         Broadcast-status lock was rejected before dispatch \
-                                         with an input conflict sighted over a ready transport; \
-                                         entering the bounded proof wait so live synchronization \
-                                         can settle the lock before the conflict verdict is re-read"
-                                    );
                                 } else {
                                     tracing::warn!(
                                         outpoint = %out_point,
@@ -1976,7 +2032,7 @@ mod tests {
         }
     }
 
-    /// Persistence stub that mutates the wallet from inside the N-th
+    /// Persistence stub that mutates the wallet manager from inside the N-th
     /// persister-backed record lookup, placing a change at an interleaving
     /// no test can otherwise reach.
     ///
@@ -1996,7 +2052,8 @@ mod tests {
         target_lookup: usize,
         lookups: std::sync::atomic::AtomicUsize,
         #[allow(clippy::type_complexity)]
-        mutate: Mutex<Option<Box<dyn FnOnce(&mut PlatformWalletInfo) + Send>>>,
+        mutate:
+            Mutex<Option<Box<dyn FnOnce(&mut WalletManager<PlatformWalletInfo>, WalletId) + Send>>>,
     }
 
     impl InterleavedPersistence {
@@ -2004,7 +2061,7 @@ mod tests {
             wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
             wallet_id: WalletId,
             target_lookup: usize,
-            mutate: impl FnOnce(&mut PlatformWalletInfo) + Send + 'static,
+            mutate: impl FnOnce(&mut WalletManager<PlatformWalletInfo>, WalletId) + Send + 'static,
         ) -> Self {
             Self {
                 wallet_manager,
@@ -2053,10 +2110,7 @@ mod tests {
                         }
                         std::thread::yield_now();
                     };
-                    mutate(
-                        wm.get_wallet_info_mut(&self.wallet_id)
-                            .expect("wallet must remain registered"),
-                    );
+                    mutate(&mut wm, self.wallet_id);
                 }
             }
             // This backend keeps no records of its own; the mutation above is
@@ -3236,12 +3290,15 @@ mod tests {
                     // miss and lookup 1 is the expiring proof wait's own;
                     // lookup 2 is the verdict's probe, the gap under test.
                     2,
-                    move |info| {
+                    move |wm, wallet_id| {
                         let transaction = handle
                             .lock()
                             .expect("built transaction slot")
                             .clone()
                             .expect("fixture files the transaction before resuming");
+                        let info = wm
+                            .get_wallet_info_mut(&wallet_id)
+                            .expect("wallet must remain registered");
                         insert_record(info, record_for(transaction, chain_locked_at(1_500)));
                     },
                 ));
@@ -3330,12 +3387,15 @@ mod tests {
                     // miss and lookup 1 is the expiring proof wait's own;
                     // lookup 2 is the verdict's probe, the gap under test.
                     2,
-                    move |info| {
+                    move |wm, wallet_id| {
                         let transaction = handle
                             .lock()
                             .expect("built transaction slot")
                             .clone()
                             .expect("fixture files the transaction before resuming");
+                        let info = wm
+                            .get_wallet_info_mut(&wallet_id)
+                            .expect("wallet must remain registered");
                         insert_record(info, record_for(transaction, confirmed_at(1_200)));
                         info.apply_chain_lock(ChainLock {
                             block_height: 1_220,
@@ -3446,7 +3506,10 @@ mod tests {
                     // lookup 2 is the verdict's probe, the gap the settling
                     // has to land in.
                     2,
-                    |info| {
+                    |wm, wallet_id| {
+                        let info = wm
+                            .get_wallet_info_mut(&wallet_id)
+                            .expect("wallet must remain registered");
                         let (out_point, lock) = info
                             .tracked_asset_locks
                             .iter_mut()
@@ -3525,12 +3588,15 @@ mod tests {
                     // lookup 2 the expiring wait, lookup 3 the verdict's
                     // probe — the gap the retraction has to land in.
                     3,
-                    move |info| {
+                    move |wm, wallet_id| {
                         let transaction = handle
                             .lock()
                             .expect("spender slot")
                             .clone()
                             .expect("fixture files the spender before resuming");
+                        let info = wm
+                            .get_wallet_info_mut(&wallet_id)
+                            .expect("wallet must remain registered");
                         // A reorg drops the block; the record survives,
                         // demoted, which retracts the remembered sighting.
                         insert_record(info, record_for(transaction, TransactionContext::Mempool));
@@ -5229,9 +5295,9 @@ mod tests {
     }
 
     /// Regression: an offline `Broadcast` resume with a standing conflict
-    /// must return after the transport-readiness wait and rejected send. No
-    /// proof can arrive through the transport that just missed readiness, so
-    /// the deferred retry owns the next wait for connectivity.
+    /// must return after the transport-readiness wait, rejected send, and
+    /// fresh local verdict reads. The unavailable transport cannot deliver a
+    /// new proof, so the deferred retry owns the next wait for connectivity.
     ///
     /// A 10ms caller timeout cannot catch this delay: both the immediate path
     /// and an accidental proof wait finish inside that short explicit bound.
@@ -5304,6 +5370,221 @@ mod tests {
         assert!(
             !attempts[0].1,
             "the send is rejected before dispatch because readiness was missed"
+        );
+    }
+
+    /// Finality that lands while the post-rejection local probe is reading
+    /// must outrank the conflict seen before the transport wait. The probe's
+    /// persister fallback creates the narrow interleaving: it installs the
+    /// chain-locked record after the probe's in-memory miss, then returns no
+    /// record itself, so only a fresh read can observe the proof.
+    ///
+    /// The exact elapsed-time assertion also keeps this finality refresh from
+    /// restoring the default proof wait to an offline `Broadcast` resume.
+    #[tokio::test(start_paused = true)]
+    async fn offline_broadcast_resume_refreshes_finality_before_reporting_a_conflict() {
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let transaction_slot = Arc::new(Mutex::new(None::<Transaction>));
+        let mutation_slot = Arc::clone(&transaction_slot);
+        let persistence = Arc::new(InterleavedPersistence::new(
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            // Lookup 0 is the pre-transport proof probe. Lookup 1 injects
+            // finality during the post-rejection probe, before the refreshed
+            // conflict verdict is chosen.
+            1,
+            move |wm, wallet_id| {
+                let transaction = mutation_slot
+                    .lock()
+                    .expect("transaction slot")
+                    .clone()
+                    .expect("asset-lock transaction was built");
+                let info = wm
+                    .get_wallet_info_mut(&wallet_id)
+                    .expect("wallet must remain registered");
+                insert_record(info, record_for(transaction, chain_locked_at(1_500)));
+            },
+        ));
+        let broadcaster = Arc::new(StartingUpBroadcaster::never_comes_up());
+        let manager = AssetLockManager::new(
+            Arc::new(
+                dash_sdk::SdkBuilder::new_mock()
+                    .with_network(Network::Testnet)
+                    .build()
+                    .expect("mock SDK"),
+            ),
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            broadcaster.clone(),
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        );
+        let (transaction, _path) = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                4,
+                &signer,
+            )
+            .await
+            .expect("build asset-lock transaction");
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        *transaction_slot.lock().expect("transaction slot") = Some(transaction.clone());
+
+        {
+            let mut wm = wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("wallet must remain registered");
+            insert_record(
+                info,
+                record_for(
+                    transaction_spending(transaction.input[0].previous_output),
+                    confirmed_at(1_234),
+                ),
+            );
+            info.tracked_asset_locks.insert(
+                out_point,
+                TrackedAssetLock {
+                    out_point,
+                    transaction,
+                    account_index: 0,
+                    funding_type: AssetLockFundingType::IdentityRegistration,
+                    identity_index: 4,
+                    amount: 1_000_000,
+                    status: AssetLockStatus::Broadcast,
+                    proof: None,
+                },
+            );
+        }
+
+        let started = tokio::time::Instant::now();
+        let (proof, _path) = manager
+            .resume_asset_lock(&out_point, None)
+            .await
+            .expect("fresh local finality must outrank the stale conflict snapshot");
+        let elapsed = started.elapsed();
+
+        assert!(
+            persistence.fired(),
+            "finality must land during the post-rejection proof probe"
+        );
+        match proof {
+            dpp::prelude::AssetLockProof::Chain(chain) => {
+                assert_eq!(chain.out_point, out_point);
+                assert_eq!(chain.core_chain_locked_height, 1_500);
+            }
+            other => panic!("expected a ChainAssetLockProof, got {other:?}"),
+        }
+        assert_eq!(
+            broadcaster.readiness_budgets(),
+            vec![BROADCAST_TRANSPORT_READY_WAIT],
+            "the foreground attempt gets exactly one bounded readiness wait"
+        );
+        assert_eq!(
+            elapsed, BROADCAST_TRANSPORT_READY_WAIT,
+            "refreshing finality must not restore the default proof wait"
+        );
+    }
+
+    /// Removing a wallet while an offline resume is suspended invalidates
+    /// every claim about its tracked row. The post-rejection refresh must
+    /// preserve that lookup error instead of reporting an unknown broadcast
+    /// outcome whose contract says the row and reservation still exist.
+    #[tokio::test(start_paused = true)]
+    async fn offline_broadcast_resume_preserves_wallet_removal_during_refresh() {
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let persistence = Arc::new(InterleavedPersistence::new(
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            // Lookup 0 is the pre-transport proof probe. Lookup 1 removes the
+            // wallet during the post-rejection probe.
+            1,
+            move |wm, wallet_id| {
+                wm.remove_wallet(&wallet_id)
+                    .expect("wallet removal must win the interleaving");
+            },
+        ));
+        let broadcaster = Arc::new(StartingUpBroadcaster::never_comes_up());
+        let manager = AssetLockManager::new(
+            Arc::new(
+                dash_sdk::SdkBuilder::new_mock()
+                    .with_network(Network::Testnet)
+                    .build()
+                    .expect("mock SDK"),
+            ),
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            broadcaster.clone(),
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        );
+        let (transaction, _path) = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                4,
+                &signer,
+            )
+            .await
+            .expect("build asset-lock transaction");
+        let out_point = OutPoint::new(transaction.txid(), 0);
+
+        {
+            let mut wm = wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("wallet must remain registered");
+            insert_record(
+                info,
+                record_for(
+                    transaction_spending(transaction.input[0].previous_output),
+                    confirmed_at(1_234),
+                ),
+            );
+            info.tracked_asset_locks.insert(
+                out_point,
+                TrackedAssetLock {
+                    out_point,
+                    transaction,
+                    account_index: 0,
+                    funding_type: AssetLockFundingType::IdentityRegistration,
+                    identity_index: 4,
+                    amount: 1_000_000,
+                    status: AssetLockStatus::Broadcast,
+                    proof: None,
+                },
+            );
+        }
+
+        let started = tokio::time::Instant::now();
+        let error = manager
+            .resume_asset_lock(&out_point, None)
+            .await
+            .expect_err("a removed wallet must stop the resume");
+        let elapsed = started.elapsed();
+
+        assert!(
+            persistence.fired(),
+            "the wallet-removal interleaving must run"
+        );
+        assert!(
+            matches!(error, PlatformWalletError::WalletNotFound(_)),
+            "a removed wallet must report WalletNotFound, got {error:?}"
+        );
+        assert_eq!(
+            elapsed, BROADCAST_TRANSPORT_READY_WAIT,
+            "wallet removal must not restore the default proof wait"
         );
     }
 

@@ -168,10 +168,12 @@ sealed class DashSdkError(
          * confirm while that spender stands and an unbounded proof wait would
          * hang. The resume still attempts recovery. With a ready transport,
          * the sighting bounds the proof wait and this is what that wait
-         * expired with. After a readiness miss and pre-dispatch rejection,
-         * the verdict returns immediately and the readiness-deferred retry
-         * owns the next proof wait. A `Broadcast`-status lock may also
-         * represent an earlier attempt that sent the transaction.
+         * expired with. In the `Broadcast` arm, after a readiness miss and
+         * pre-dispatch rejection, a still-standing conflict returns
+         * immediately after refreshing local finality, and the
+         * readiness-deferred retry owns the next proof wait. A
+         * `Broadcast`-status lock may also represent an earlier attempt that
+         * sent the transaction.
          *
          * The ONLY double-spend verdict the native side emits, and it is
          * PROVISIONAL. NO discard licence: keep the tracked lock and retry

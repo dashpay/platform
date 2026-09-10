@@ -205,11 +205,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// such a double spend without replying, so the lock cannot confirm while
     /// that spender stands and an unbounded proof wait would hang. The resume
     /// still attempts recovery. With a ready transport, the sighting bounds
-    /// the proof wait and this is what that wait expired with. After a
-    /// readiness miss and pre-dispatch rejection, the verdict returns
-    /// immediately and the readiness-deferred retry owns the next proof wait.
-    /// A `Broadcast`-status lock may also represent an earlier attempt that
-    /// sent the transaction. This is the ONLY double-spend code the SDK emits,
+    /// the proof wait and this is what that wait expired with. In the
+    /// `Broadcast` arm, after a readiness miss and pre-dispatch rejection, a
+    /// still-standing conflict returns immediately after refreshing local
+    /// finality, and the readiness-deferred retry owns the next proof wait. A
+    /// `Broadcast`-status lock may also represent an earlier attempt that sent
+    /// the transaction. This is the ONLY double-spend code the SDK emits,
     /// and it is PROVISIONAL: no discard licence, keep the lock tracked and
     /// retry later. A later chainlock does not upgrade it to 47 today; what a
     /// retry can resolve is a reorg dropping the sibling. Repetition licenses
@@ -583,10 +584,12 @@ public enum PlatformWalletError: LocalizedError {
     /// already-confirmed transaction of this wallet spent first, so no peer
     /// will relay it while that spender stands. The resume still attempts
     /// recovery. With a ready transport, this is what the bounded proof wait
-    /// expired with. After a readiness miss and pre-dispatch rejection, it
-    /// returns immediately and leaves that wait to the readiness-deferred
-    /// retry. A `Broadcast`-status lock may also represent an earlier attempt
-    /// that sent it, so this is not a claim that nothing reached the network.
+    /// expired with. In the `Broadcast` arm, after a readiness miss and
+    /// pre-dispatch rejection, a still-standing conflict returns immediately
+    /// after refreshing local finality and leaves that wait to the
+    /// readiness-deferred retry. A `Broadcast`-status lock may also represent
+    /// an earlier attempt that sent it, so this is not a claim that nothing
+    /// reached the network.
     ///
     /// The only double-spend verdict the SDK emits, and PROVISIONAL: the
     /// tracked lock must NOT be discarded on this error. A conflict that

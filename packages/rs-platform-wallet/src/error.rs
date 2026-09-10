@@ -494,8 +494,9 @@ pub enum PlatformWalletError {
     /// `reject` by default in 0.17, so the drop is silent and looks
     /// exactly like a slow network). The resume still attempts recovery. If
     /// the transport is ready, the sighting bounds the proof wait and this is
-    /// what that wait expired with. If readiness was missed and the send was
-    /// rejected before dispatch, the verdict returns immediately and the
+    /// what that wait expired with. In the `Broadcast` arm, if readiness was
+    /// missed and the send was rejected before dispatch, a still-standing
+    /// conflict returns immediately after refreshing local finality, and the
     /// readiness-deferred retry owns the next proof wait. A `Broadcast`-status
     /// lock may also represent an earlier attempt that sent the transaction.
     ///

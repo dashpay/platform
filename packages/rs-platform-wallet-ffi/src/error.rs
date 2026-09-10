@@ -474,9 +474,10 @@ pub enum PlatformWalletFFIResultCode {
     /// screen's ONLY verdict: a confirmed transaction of this wallet
     /// already spent one of the tracked lock's inputs. The resume still
     /// attempts recovery. With a ready transport the sighting bounds the
-    /// proof wait and this is what that wait expired with; after a readiness
-    /// miss and pre-dispatch rejection, it returns immediately and leaves the
-    /// next proof wait to the readiness-deferred retry. PROVISIONAL — the
+    /// proof wait and this is what that wait expired with; in the `Broadcast`
+    /// arm, after a readiness miss and pre-dispatch rejection, a still-standing
+    /// conflict returns immediately after refreshing local finality and leaves
+    /// the next proof wait to the readiness-deferred retry. PROVISIONAL — the
     /// wallet cannot prove the spender's block is on the finalized branch (see
     /// [`Self::ErrorAssetLockInputConflict`] (47), the reserved terminal
     /// form), so this is what a chainlocked-looking spender reports too.
