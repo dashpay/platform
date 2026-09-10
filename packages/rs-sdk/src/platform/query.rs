@@ -293,10 +293,11 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
             get_document_history_request_v1::{Cursor, Selector},
             GetDocumentHistoryRequestV1,
         };
-        let limit =
-            self.limit.map(u16::try_from).transpose().map_err(|_| {
-                Error::InvalidProvedResponse("history limit out of bounds".to_owned())
-            })?;
+        let limit = self
+            .limit
+            .map(u16::try_from)
+            .transpose()
+            .map_err(|_| Error::Generic("history limit out of bounds".to_owned()))?;
         DocumentHistoryQueryV1 {
             contract_id: self.data_contract_id.to_buffer(),
             document_type_name: self.document_type_name.clone(),
@@ -1481,6 +1482,29 @@ mod history_query_tests {
             .unwrap();
         let result = DocumentHistory::fetch(&sdk, query).await.unwrap().unwrap();
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn should_report_oversized_history_limits_as_request_errors() {
+        let request_settings = Default::default();
+        let settings = QuerySettings {
+            request_settings: &request_settings,
+            protocol_version: PlatformVersion::get(14).unwrap(),
+            prove: true,
+        };
+        for limit in [u16::MAX as u32 + 1, u32::MAX] {
+            let query = DocumentHistoryQuery {
+                data_contract_id: [1; 32].into(),
+                document_type_name: "note".into(),
+                document_id: [2; 32].into(),
+                selector: DocumentHistorySelector::StartAtTime(0),
+                limit: Some(limit),
+            };
+            assert!(
+                matches!(query.query(&settings), Err(Error::Generic(message))
+                if message == "history limit out of bounds")
+            );
+        }
     }
 
     #[test]
