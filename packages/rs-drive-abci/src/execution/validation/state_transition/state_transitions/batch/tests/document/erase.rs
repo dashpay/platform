@@ -833,3 +833,47 @@ async fn should_delete_and_erase_in_one_block() {
     );
     assert_matches!(fixture.lifecycle("note"), DocumentLifecycleState::Absent);
 }
+
+/// The balance updates an erase's refunds cause land outside its own fee
+/// result, against identities that had nothing to do with it. The chunk bound
+/// limits how many there can be; this pins that the submitter pays for them,
+/// in the estimate that admits the transition and in the fee actually charged.
+#[tokio::test]
+async fn should_charge_an_erase_for_the_refund_recipients_it_can_credit() {
+    use dpp::block::epoch::Epoch;
+
+    let mut fixture = Fixture::new("note").await;
+    assert_successful(&fixture.delete_as_owner("note").await, "the delete");
+
+    let platform_version = PlatformVersion::get(14).unwrap();
+    let recipient_cost = fixture
+        .platform
+        .drive
+        .erase_refund_recipient_cost(&Epoch::new(0).unwrap(), platform_version)
+        .expect("expected the recipient work to be priced");
+    assert!(recipient_cost.processing_fee > 0);
+
+    let result = fixture.erase("note", true, None).await;
+    let StateTransitionExecutionResult::SuccessfulExecution {
+        estimated_fees,
+        fee_result,
+        ..
+    } = result
+    else {
+        panic!("expected the erase to succeed, got {result:?}");
+    };
+    let estimated_fees = estimated_fees.expect("an erase is admitted against an estimate");
+
+    assert!(
+        fee_result.processing_fee >= recipient_cost.processing_fee,
+        "the charged fee must include the recipient work: {} is below {}",
+        fee_result.processing_fee,
+        recipient_cost.processing_fee
+    );
+    assert!(
+        estimated_fees.processing_fee >= recipient_cost.processing_fee,
+        "so must the estimate that admits it: {} is below {}",
+        estimated_fees.processing_fee,
+        recipient_cost.processing_fee
+    );
+}
