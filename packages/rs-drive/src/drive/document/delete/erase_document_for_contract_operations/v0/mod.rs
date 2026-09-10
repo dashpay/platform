@@ -27,9 +27,7 @@ use crate::util::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,
 };
 use crate::util::grove_operations::{DirectQueryType, QueryTarget};
-use crate::util::object_size_info::PathKeyElementInfo::{
-    PathKeyElement, PathKeyUnknownElementSize,
-};
+use crate::util::object_size_info::PathKeyElementInfo::{PathKeyElement, PathKeyElementSize};
 use crate::util::storage_flags::StorageFlags;
 
 /// Length of a revision key: a block timestamp followed by a history sequence.
@@ -351,16 +349,18 @@ impl Drive {
             batch_operations.append(&mut single_operation);
         }
 
-        let flags_len = StorageFlags::approximate_size(true, None);
+        // A record of the right shape rather than the real one: the dry run
+        // cannot know the deletion time it carries or the identity it is
+        // flagged to, only that both are there and how many bytes they take.
+        let flags_len = StorageFlags::approximate_size(true, None) as usize;
         self.batch_insert::<0>(
-            PathKeyUnknownElementSize((
+            PathKeyElementSize((
                 KeyInfoPath::from_known_owned_path(lifecycle_path.to_vec()),
                 KeyInfo::KnownKey(document_id.to_vec()),
-                Element::required_item_space(
-                    DOCUMENT_LIFECYCLE_RECORD_SIZE,
-                    flags_len,
-                    &platform_version.drive.grove_version,
-                )?,
+                Element::Item(
+                    vec![0u8; DOCUMENT_LIFECYCLE_RECORD_SIZE as usize],
+                    Some(vec![0u8; flags_len]),
+                ),
             )),
             &mut batch_operations,
             &platform_version.drive,

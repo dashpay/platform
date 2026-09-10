@@ -5,6 +5,9 @@ mod deletion_tests {
     use crate::execution::validation::state_transition::tests::create_card_game_internal_token_contract_with_owner_identity_burn_tokens;
     use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
+    use drive::drive::document::lifecycle::DocumentLifecycleState;
+    use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+    use drive::query::DriveDocumentQuery;
 
     #[tokio::test]
     async fn test_document_delete_on_document_type_that_is_mutable_and_can_be_deleted() {
@@ -388,16 +391,16 @@ mod deletion_tests {
         assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
     }
 
-    /// PROTOCOL_VERSION_14 rejects deletes against contradictory keep-history
-    /// document types as invalid-paid consensus errors.
+    /// Protocol 14 carries the delete out: the document leaves every ordinary
+    /// read and its retained revisions stay readable.
     #[tokio::test]
-    async fn test_document_delete_on_document_type_that_keeps_history_is_rejected_protocol_version_14(
-    ) {
+    async fn test_document_delete_on_document_type_that_keeps_history_succeeds_protocol_version_14()
+    {
         run_document_delete_on_document_type_that_keeps_history_at_protocol_version(14, true).await;
     }
 
     /// PROTOCOL_VERSION_12 preserves the historical InternalError result for
-    /// replay compatibility. The keep-history structure guard must not run.
+    /// replay compatibility. The keep-history delete path must not run.
     #[tokio::test]
     async fn test_document_delete_on_document_type_that_keeps_history_replays_protocol_version_12()
     {
@@ -406,16 +409,18 @@ mod deletion_tests {
     }
 
     #[tokio::test]
-    async fn test_document_delete_on_document_type_that_keeps_history_replays_protocol_version_13() {
-        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(13, false).await;
+    async fn test_document_delete_on_document_type_that_keeps_history_replays_protocol_version_13()
+    {
+        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(13, false)
+            .await;
     }
 
-    /// Exercises an already-deployed contradictory contract at both sides of
-    /// the v14 validation-version boundary. Loading with `full_validation:
-    /// false` is intentional: reparsing deployed contracts must remain allowed.
+    /// Exercises an already-deployed keep-history contract at both sides of the
+    /// v14 validation-version boundary. Loading with `full_validation: false`
+    /// is intentional: reparsing deployed contracts must remain allowed.
     async fn run_document_delete_on_document_type_that_keeps_history_at_protocol_version(
         protocol_version: dpp::version::ProtocolVersion,
-        expect_invalid_paid: bool,
+        expect_success: bool,
     ) {
         let platform_version = PlatformVersion::get(protocol_version)
             .expect("expected platform version for the requested protocol_version");
@@ -426,9 +431,9 @@ mod deletion_tests {
 
         let contract_path = "tests/supporting_files/contract/note/note-contract-keep-history-and-can-be-deleted.json";
 
-        // `full_validation: false` bypasses the DPP cross-flag check so the
-        // intentionally-contradictory fixture loads — mirrors the
-        // already-deployed-contract scenario this guard is meant to handle.
+        // `full_validation: false` so the same fixture loads at every protocol
+        // version under test, including the released ones whose parser
+        // generation predates the keep-history grammar this contract uses.
         let note_contract = json_document_to_contract(contract_path, false, platform_version)
             .expect("expected to get data contract");
         platform
@@ -459,7 +464,7 @@ mod deletion_tests {
         );
         assert!(
             note_document_type.documents_can_be_deleted(),
-            "fixture sanity: doctype must advertise canBeDeleted"
+            "fixture sanity: doctype must allow deletion"
         );
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -477,9 +482,9 @@ mod deletion_tests {
 
         let mut altered_document = document.clone();
         altered_document.set_revision(Some(1));
+        let deleted_document_id = altered_document.id();
 
-        // Create the document (must succeed — keep-history doctypes accept
-        // creates, the contradiction only bites at delete time).
+        // Create the document.
         let documents_batch_create_transition =
             BatchTransition::new_document_creation_transition_from_document(
                 document,
@@ -524,8 +529,8 @@ mod deletion_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        // V14 rejects during structure validation; v12 and v13 retain the
-        // historical InternalError classification for replay.
+        // V14 deletes; v12 and v13 retain the historical InternalError
+        // classification for replay.
         let documents_batch_deletion_transition =
             BatchTransition::new_document_deletion_transition_from_document(
                 altered_document,
@@ -567,13 +572,13 @@ mod deletion_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(
-            processing_result.invalid_paid_count(),
-            usize::from(expect_invalid_paid),
-            "unexpected invalid-paid classification at protocol version {protocol_version}"
-        );
+        assert_eq!(processing_result.invalid_paid_count(), 0);
         assert_eq!(processing_result.invalid_unpaid_count(), 0);
-        assert_eq!(processing_result.valid_count(), 0);
+        assert_eq!(
+            processing_result.valid_count(),
+            usize::from(expect_success),
+            "unexpected success classification at protocol version {protocol_version}"
+        );
         let internal_error_count = processing_result
             .execution_results()
             .iter()
@@ -581,19 +586,41 @@ mod deletion_tests {
             .count();
         assert_eq!(
             internal_error_count,
-            usize::from(!expect_invalid_paid),
+            usize::from(!expect_success),
             "unexpected InternalError classification at protocol version {protocol_version}"
         );
-        if expect_invalid_paid {
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError {
-                    error: ConsensusError::BasicError(
-                        dpp::consensus::basic::BasicError::InvalidDocumentTransitionActionError(error)
-                    ),
-                    ..
-                }] if error.action() == "documents of type note can not be deleted"
+
+        if expect_success {
+            // The document is gone from ordinary reads, and its retained
+            // revisions are not.
+            let documents = platform
+                .drive
+                .query_documents(
+                    DriveDocumentQuery::all_items_query(&note_contract, note_document_type, None),
+                    None,
+                    false,
+                    None,
+                    Some(protocol_version),
+                )
+                .expect("expected to query documents")
+                .documents_owned();
+            assert!(
+                documents.is_empty(),
+                "the deleted document is still visible"
             );
+
+            let (lifecycle, _) = platform
+                .drive
+                .fetch_document_lifecycle(
+                    &note_contract,
+                    note_document_type,
+                    deleted_document_id,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to read the lifecycle");
+            assert_matches!(lifecycle, DocumentLifecycleState::Deleted(_));
         }
     }
 

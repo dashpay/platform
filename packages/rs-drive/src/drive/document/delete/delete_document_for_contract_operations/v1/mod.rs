@@ -6,7 +6,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use std::collections::HashMap;
 
 use crate::drive::constants::DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE;
-use crate::drive::document::lifecycle::{DocumentLifecycleRecord, DOCUMENT_LIFECYCLE_RECORD_SIZE};
+use crate::drive::document::lifecycle::DocumentLifecycleRecord;
 use crate::drive::document::paths::{
     contract_documents_primary_key_path, document_lifecycle_path, DOCUMENT_LIFECYCLE_TREE_KEY,
 };
@@ -23,9 +23,7 @@ use dpp::document::Document;
 use crate::drive::Drive;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{BatchInsertTreeApplyType, QueryType};
-use crate::util::object_size_info::PathKeyElementInfo::{
-    PathKeyElement, PathKeyUnknownElementSize,
-};
+use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::util::object_size_info::PathKeyInfo::PathKey;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
@@ -41,7 +39,6 @@ use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::identifier::Identifier;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::key_info::KeyInfo;
 
 impl Drive {
     /// Prepares the operations for deleting a document.
@@ -290,30 +287,17 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        if estimated_costs_only_with_layer_info.is_some() {
-            self.batch_insert::<0>(
-                PathKeyUnknownElementSize((
-                    KeyInfoPath::from_known_owned_path(lifecycle_path),
-                    KeyInfo::KnownKey(document_id.to_vec()),
-                    Element::required_item_space(
-                        DOCUMENT_LIFECYCLE_RECORD_SIZE,
-                        flags_len,
-                        &platform_version.drive.grove_version,
-                    )?,
-                )),
-                batch_operations,
-                &platform_version.drive,
-            )
-        } else {
-            self.batch_insert::<0>(
-                PathKeyElement((
-                    lifecycle_path,
-                    document_id.to_vec(),
-                    Element::Item(record.serialize(), element_flags),
-                )),
-                batch_operations,
-                &platform_version.drive,
-            )
-        }
+        // The record's content is fully known whether or not this is a dry
+        // run: it is a fixed-width encoding of the deletion time, and the
+        // deleter it is flagged to is an input to the delete.
+        self.batch_insert::<0>(
+            PathKeyElement((
+                lifecycle_path,
+                document_id.to_vec(),
+                Element::Item(record.serialize(), element_flags),
+            )),
+            batch_operations,
+            &platform_version.drive,
+        )
     }
 }
