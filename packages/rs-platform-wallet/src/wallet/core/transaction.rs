@@ -551,7 +551,34 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         }
 
         let selected: u64 = values.iter().sum();
-        let fee = checked_fee(fee_rate, estimate_tx_size(values.len(), 1, false))?;
+        // Priced the way the default BranchAndBound selector prices it: one
+        // rounding per input plus one for the rest of the transaction, never a
+        // single rounding over the whole thing.
+        //
+        // `ceil(a) + n*ceil(b) >= ceil(a + n*b)`, so the selector always needs
+        // at least as much as whole-transaction arithmetic suggests. Reporting
+        // the cheaper figure names an amount those inputs cannot fund under the
+        // selector's own acceptance test, and it closes the gap by reaching for
+        // one more UTXO — the input a pool sitting on the cap has no room for,
+        // so the build fails with "too many inputs" on the very amount this
+        // getter promised. At a whole number of duffs per byte the two agree;
+        // a fractional rate is where they part.
+        let inputs_fee = input_cost.checked_mul(values.len() as u64).ok_or_else(|| {
+            PlatformWalletError::TransactionBuild(format!(
+                "fee rate {} sat/kb overflows for {} inputs",
+                fee_rate.as_sat_per_kb(),
+                values.len()
+            ))
+        })?;
+        let fee = checked_fee(fee_rate, empty)?
+            .checked_add(inputs_fee)
+            .ok_or_else(|| {
+                PlatformWalletError::TransactionBuild(format!(
+                    "fee rate {} sat/kb overflows for a {}-input transaction",
+                    fee_rate.as_sat_per_kb(),
+                    values.len()
+                ))
+            })?;
         let net = selected.saturating_sub(fee);
 
         // Covering the fee is not enough: an output below the modeled script's
@@ -1332,6 +1359,59 @@ mod tests {
                 .expect("max sendable"),
             baseline,
             "a UTXO that cannot pay for its own input must not move the maximum"
+        );
+    }
+
+    /// The same cap promise at a rate that is not a whole number of duffs per
+    /// byte, where the selector's per-input rounding and a single rounding over
+    /// the whole transaction disagree.
+    ///
+    /// The extra 575-duff UTXO is the trap: it survives the profitability
+    /// filter, is too small to make the top-500 cut, and is therefore invisible
+    /// to the estimate — but a maximum priced with whole-transaction rounding
+    /// leaves the selector a few duffs short of its own acceptance test, and it
+    /// closes that gap by taking this input as the 501st.
+    #[tokio::test]
+    async fn pooled_max_sendable_is_buildable_at_a_fractional_fee_rate() {
+        let mut outputs = vec![10_000u64; MAX_STANDARD_TX_INPUTS];
+        outputs.push(575);
+        let (manager, wallet_id, generation, signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                StandardAccountType::BIP44Account,
+                &outputs,
+            )
+            .await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+
+        let sources = &[AccountTypePreference::BIP44][..];
+        let rate = FeeRate::new(1001);
+        let max = core
+            .pooled_max_sendable(sources, 0, Some(rate))
+            .await
+            .expect("max sendable");
+        assert!(max > 0, "the pool is well above dust");
+
+        let built = core
+            .finalize_transaction(
+                TransactionBuilder::new()
+                    .set_fee_rate(rate)
+                    .add_output(&DashAddress::dummy(Network::Testnet, 81), max),
+                sources,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            built.is_ok(),
+            "the reported maximum must build at the rate it was priced for: {:?}",
+            built.err()
         );
     }
 
