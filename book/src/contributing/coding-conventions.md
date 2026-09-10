@@ -222,15 +222,31 @@ chapter walks the stages in order; this table is the placement guide.
 | Pure-data invariants | `rs-dpp` (`validate_basic_structure`, document type and contract self-validation) | The value itself and `PlatformVersion` | `BasicError` |
 | Basic structure | `drive-abci` `<transition>/basic_structure/vN/` | `Network` and `PlatformVersion` only | `BasicError` |
 | Signature and nonces | `drive-abci` processor traits | The signing identity, nonces | `SignatureError`, unpaid rejection |
-| Advanced structure | `drive-abci` `<transition>/advanced_structure/vN/` | The fetched `PartialIdentity`, still no Drive | `BasicError`, paid |
+| Advanced structure without state | `drive-abci` `<transition>/advanced_structure/vN/` (`validate_advanced_structure`) | The transition, the fetched `PartialIdentity`, and `PlatformVersion`; no Drive reads | `ConsensusError`, paid |
+| Advanced structure with state | `drive-abci` `batch/advanced_structure/vN/` and the per-action validators under `batch/action_validation/*/advanced_structure_vN/` (`validate_advanced_structure_from_state`) | The action produced by `transform_into_action`, including the contracts it fetched, plus block, network, and identity context; no further Drive reads in the validator | `ConsensusError`, paid |
 | State | `drive-abci` `<transition>/state/vN/` | Drive through `PlatformRef` and the transaction | `StateError`, paid |
 | Execution | `drive` operations | GroveDB | Internal `Error` only |
 
 Rules that fall out of the table:
 
 - Basic structure runs inside `check_tx` on every mempool entry. Keep it cheap
-  and stateless. If a check needs the identity, it is advanced structure; if it
-  needs anything else from Drive, it is state.
+  and stateless.
+- Advanced structure without state uses the transition and the already fetched
+  signing identity. Advanced structure with state uses data fetched by
+  `transform_into_action`, such as the contract schema carried by a document
+  action: the transformer performs the Drive reads, and the advanced validator
+  consumes the resulting action. A transition opts into the second variant
+  through `has_advanced_structure_validation_with_state`; today only `Batch`
+  does.
+- Checks that require additional Drive queries, such as uniqueness checks,
+  belong in state validation. Needing a fetched contract does not by itself
+  make a structural check a state-validation check.
+- Preserve mempool coverage. `Batch` runs advanced structure with state during
+  `check_tx`, while full state validation is skipped there
+  (`validates_full_state_on_check_tx` defaults to `false`; masternode votes
+  are the one transition that opts in, because they are unpaid). Moving a
+  contract-dependent structural check into state validation would remove that
+  rejection from mempool admission.
 - Validation outcomes are `ConsensusValidationResult`, returned as `Ok`. A
   `Result::Err` from a validation function means the node is broken, not that
   the transition is invalid. The block loop converts it into an internal-error
