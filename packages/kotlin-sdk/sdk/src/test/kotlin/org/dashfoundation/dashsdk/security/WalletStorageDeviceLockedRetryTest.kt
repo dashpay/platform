@@ -297,6 +297,91 @@ class WalletStorageDeviceLockedRetryTest {
         assertEquals(2, fake.masterDecryptCalls) // now routed to unbound
     }
 
+    // ── retrieveMnemonicUtf8's false-locked ladder ───────────────────────
+
+    @Test
+    fun shouldFailFastWhenMnemonicReadIsDeniedOnGenuinelyLockedDevice() {
+        runBlocking { storage.storeMnemonic(walletId, mnemonic) }
+        fake.masterDecryptCalls = 0
+        // Genuinely locked: the denial is CORRECT. Retrying cannot unlock a
+        // phone, and the device is not defective — nothing may be recorded.
+        fake.lockState = DeviceLockState(isDeviceLocked = true, isKeyguardLocked = true)
+
+        val thrown = assertThrows(KeystoreDeviceLockedException::class.java) {
+            runBlocking { storage.retrieveMnemonicUtf8(walletId) }
+        }
+        assertTrue(thrown.deviceReportsLocked)
+        assertEquals("decrypt", thrown.operation)
+        assertEquals(1, fake.masterDecryptCalls)
+        assertFalse(runBlocking { storage.isMasterKeyLockBindingDefectObserved() })
+    }
+
+    @Test
+    fun shouldRetryFalseLockedMnemonicReadAndSucceedOnSecondAttempt() = runBlocking {
+        storage.storeMnemonic(walletId, mnemonic)
+        fake.masterDecryptCalls = 0
+        // One denial while KeyguardManager reports UNLOCKED — the transient
+        // Keystore2 blip the schedule exists to outwait.
+        fake.failMasterDecrypts = 1
+
+        assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
+        assertEquals(2, fake.masterDecryptCalls)
+        // A retry that SUCCEEDS is a blip, not the persistent defect: the
+        // device must not be branded, or every healthy phone that ever
+        // blipped would downgrade itself permanently.
+        assertFalse(storage.isMasterKeyLockBindingDefectObserved())
+    }
+
+    @Test
+    fun shouldRecordDefectWhenFalseLockedMnemonicReadRetriesExhaust() = runBlocking {
+        storage.storeMnemonic(walletId, mnemonic)
+        fake.masterDecryptCalls = 0
+        fake.failMasterDecrypts = Int.MAX_VALUE
+
+        // The read itself still fails — a refused decrypt never obtained the
+        // plaintext, so unlike storeMnemonic it cannot heal in place.
+        assertThrows(KeystoreDeviceLockedException::class.java) {
+            runBlocking { storage.retrieveMnemonicUtf8(walletId) }
+        }
+        // One initial attempt plus the full DEVICE_FALSE_LOCKED_RETRY_DELAYS_MS
+        // schedule (3 delays).
+        assertEquals(4, fake.masterDecryptCalls)
+        // What it CAN do — and must — is put the device on record.
+        assertTrue(storage.isMasterKeyLockBindingDefectObserved())
+    }
+
+    @Test
+    fun shouldRewrapOffTheDefectiveGateAfterOnlyReadsEverObservedIt() = runBlocking {
+        // The field shape (MO-972's sibling): a wallet created before the
+        // degradation existed. Its blob sits under the lock-bound alias and
+        // no mnemonic is EVER written again, so the write ladder never runs
+        // and only a read can discover the defect.
+        storage.storeMnemonic(walletId, mnemonic)
+        fake.masterDecryptCalls = 0
+        fake.unboundEncryptCalls = 0
+
+        // Session 1 — the gate is jammed. The read fails, but registers.
+        fake.failMasterDecrypts = Int.MAX_VALUE
+        assertThrows(KeystoreDeviceLockedException::class.java) {
+            runBlocking { storage.retrieveMnemonicUtf8(walletId) }
+        }
+        assertTrue(storage.isMasterKeyLockBindingDefectObserved())
+        assertEquals(0, fake.unboundEncryptCalls)
+
+        // Session 2 — the gate lets a read through (e.g. after a credential
+        // unlock). The record armed the re-wrap, which now fires.
+        fake.failMasterDecrypts = 0
+        assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
+        assertEquals(1, fake.unboundEncryptCalls)
+
+        // The lock-bound key is never consulted again, so a future jam
+        // cannot strand this wallet.
+        val masterDecryptsBefore = fake.masterDecryptCalls
+        assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
+        assertEquals(masterDecryptsBefore, fake.masterDecryptCalls)
+        assertTrue(fake.unboundDecryptCalls >= 1)
+    }
+
     // ── storeMnemonic plaintext-buffer scrubbing ─────────────────────────
 
     @Test
@@ -394,6 +479,14 @@ private class FalseLockedFakeKeystoreManager : KeystoreManager() {
     var lockState = DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false)
     var failMasterEncrypts = 0
     var masterEncryptCalls = 0
+
+    /**
+     * Scripted device-locked denials for MASTER_ALIAS **decrypts** — the
+     * read-side mirror of [failMasterEncrypts]. `Int.MAX_VALUE` models the
+     * persistent defect (the gate stays jammed for the whole session);
+     * a small count models the transient Keystore2 blip.
+     */
+    var failMasterDecrypts = 0
     var failUnboundEncrypts = 0
     var unboundEncryptCalls = 0
     var masterDecryptCalls = 0
@@ -448,6 +541,15 @@ private class FalseLockedFakeKeystoreManager : KeystoreManager() {
         val expectedMarker = when (alias) {
             MASTER_ALIAS -> {
                 masterDecryptCalls++
+                val scriptedDenial = failMasterDecrypts > 0
+                if (scriptedDenial) failMasterDecrypts--
+                if (scriptedDenial || (masterKeyLockBound && lockState.isDeviceLocked)) {
+                    throw KeystoreDeviceLockedException(
+                        alias = alias,
+                        operation = "decrypt",
+                        lockState = sampleDeviceLockState(),
+                    )
+                }
                 MASTER_IV_MARKER
             }
             MASTER_ALIAS_UNBOUND -> {
