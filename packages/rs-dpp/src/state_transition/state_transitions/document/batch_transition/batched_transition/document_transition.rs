@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use bincode::{Encode, Decode};
 use crate::prelude::{IdentityNonce, Revision};
 use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenUnfreezeTransition, TokenDirectPurchaseTransition, TokenSetPriceForDirectPurchaseTransition};
-use crate::state_transition::batch_transition::batched_transition::{DocumentIndexOnlyDeleteTransition, DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
+use crate::state_transition::batch_transition::batched_transition::{DocumentEraseTransition, DocumentIndexOnlyDeleteTransition, DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
 use crate::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
@@ -28,7 +28,7 @@ use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionRes
     // `document_type_name` as `$type` in JSON (the long-standing DPP
     // document-type field). The variant names (`create`, `replace`,
     // `delete`, `transfer`, `updatePrice`, `purchase`,
-    // `indexOnlyDelete`) read naturally as
+    // `indexOnlyDelete`, `erase`) read naturally as
     // actions, matching the existing `PROPERTY_ACTION = "$action"`
     // constant on the parent batch transition.
     serde(tag = "$action", rename_all = "camelCase")
@@ -57,6 +57,13 @@ pub enum DocumentTransition {
     /// PV14+ (see the wire gate in `validate_base_structure_v0`).
     #[display("IndexOnlyDeleteDocumentTransition({})", "_0")]
     IndexOnlyDelete(DocumentIndexOnlyDeleteTransition),
+
+    /// The erase kind, which purges the retained revisions of a deleted
+    /// keep-history document — appended at the end so every existing variant
+    /// keeps its bincode discriminant. Only exists at protocol version 14 and
+    /// later (see the wire gate in `validate_base_structure_v0`).
+    #[display("EraseDocumentTransition({})", "_0")]
+    Erase(DocumentEraseTransition),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -74,7 +81,7 @@ impl crate::serialization::ValueConvertible for DocumentTransition {}
 pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::batched_transition::{
-        document_create_transition, document_delete_transition,
+        document_create_transition, document_delete_transition, document_erase_transition,
         document_index_only_delete_transition, document_purchase_transition,
         document_replace_transition, document_transfer_transition,
         document_update_price_transition,
@@ -181,6 +188,14 @@ pub(crate) mod json_convertible_tests {
                 document_index_only_delete_transition::json_convertible_tests::fixture(),
             ),
             "indexOnlyDelete",
+        );
+    }
+
+    #[test]
+    fn umbrella_erase() {
+        assert_umbrella_round_trip(
+            DocumentTransition::Erase(document_erase_transition::json_convertible_tests::fixture()),
+            "erase",
         );
     }
 }
@@ -325,6 +340,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(t) => t.base(),
             DocumentTransition::Purchase(t) => t.base(),
             DocumentTransition::IndexOnlyDelete(t) => t.base(),
+            DocumentTransition::Erase(t) => t.base(),
         }
     }
 
@@ -337,6 +353,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
             DocumentTransition::IndexOnlyDelete(t) => t.data().get(path),
+            DocumentTransition::Erase(_) => None,
         }
     }
 
@@ -357,6 +374,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
             DocumentTransition::IndexOnlyDelete(_) => None,
+            DocumentTransition::Erase(_) => None,
         }
     }
 
@@ -373,6 +391,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
             DocumentTransition::IndexOnlyDelete(t) => Some(t.data()),
+            DocumentTransition::Erase(_) => None,
         }
     }
 
@@ -391,6 +410,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(t) => Some(t.revision()),
             DocumentTransition::Purchase(t) => Some(t.revision()),
             DocumentTransition::IndexOnlyDelete(_) => None,
+            DocumentTransition::Erase(_) => None,
         }
     }
 
@@ -403,6 +423,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(t) => t.base().identity_contract_nonce(),
             DocumentTransition::Purchase(t) => t.base().identity_contract_nonce(),
             DocumentTransition::IndexOnlyDelete(t) => t.base().identity_contract_nonce(),
+            DocumentTransition::Erase(t) => t.base().identity_contract_nonce(),
         }
     }
 
@@ -426,6 +447,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::IndexOnlyDelete(t) => {
                 t.data_mut().insert(property_name, value);
             }
+            DocumentTransition::Erase(_) => {}
         }
     }
 
@@ -442,6 +464,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(t) => t.base_mut(),
             DocumentTransition::Purchase(t) => t.base_mut(),
             DocumentTransition::IndexOnlyDelete(t) => t.base_mut(),
+            DocumentTransition::Erase(t) => t.base_mut(),
         }
     }
 
@@ -454,6 +477,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
             DocumentTransition::IndexOnlyDelete(t) => Some(t.data_mut()),
+            DocumentTransition::Erase(_) => None,
         }
     }
 
@@ -466,6 +490,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(ref mut t) => t.set_revision(revision),
             DocumentTransition::Purchase(ref mut t) => t.set_revision(revision),
             DocumentTransition::IndexOnlyDelete(_) => {}
+            DocumentTransition::Erase(_) => {}
         }
     }
 
@@ -480,6 +505,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::IndexOnlyDelete(t) => {
                 t.base_mut().set_identity_contract_nonce(nonce)
             }
+            DocumentTransition::Erase(t) => t.base_mut().set_identity_contract_nonce(nonce),
         }
     }
 }
