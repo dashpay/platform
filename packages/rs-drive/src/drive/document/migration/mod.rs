@@ -51,6 +51,8 @@ pub struct DocumentHistoryMigrationStats {
 type IndexEntries = BTreeMap<Vec<u8>, Vec<(Vec<Vec<u8>>, Vec<u8>, Element)>>;
 
 #[cfg(test)]
+mod index_tests;
+#[cfg(test)]
 mod tests;
 
 fn corrupt(message: impl Into<String>) -> Error {

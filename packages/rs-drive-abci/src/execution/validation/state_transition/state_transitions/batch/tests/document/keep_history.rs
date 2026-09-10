@@ -251,27 +251,44 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
 
 #[tokio::test]
 async fn should_retain_replacements_transfers_prices_and_purchases_at_one_timestamp() {
+    run_history_write_sequence(false).await;
+}
+
+#[tokio::test]
+async fn should_replace_and_transfer_migrated_history_through_signed_transitions() {
+    run_history_write_sequence(true).await;
+}
+
+async fn run_history_write_sequence(migrated: bool) {
     use dpp::data_contract::DataContractFactory;
     use drive::drive::document::history::{DocumentHistoryQueryV1, DocumentHistorySelector};
     let version = PlatformVersion::get(14).unwrap();
+    let initial_version = PlatformVersion::get(if migrated { 13 } else { 14 }).unwrap();
     let mut platform = TestPlatformBuilder::new()
-        .with_initial_protocol_version(14)
+        .with_initial_protocol_version(initial_version.protocol_version)
         .build_with_mock_rpc()
         .set_initial_state_structure();
     let (owner, owner_signer, owner_key) = setup_identity(&mut platform, 958, dash_to_credits!(1));
     let (buyer, buyer_signer, buyer_key) = setup_identity(&mut platform, 450, dash_to_credits!(1));
-    let contract = DataContractFactory::new(14).unwrap().create_with_value_config(owner.id(), 0, platform_value!({
+    let contract = DataContractFactory::new(initial_version.protocol_version).unwrap().create_with_value_config(owner.id(), 0, platform_value!({
         "note": {
             "type": "object", "documentsKeepHistory": true, "documentsMutable": true,
-            "canBeDeleted": false, "transferable": 1, "tradeMode": 1,
-            "properties": { "message": { "type": "string", "maxLength": 256, "position": 0 } },
-            "required": ["message"], "additionalProperties": false,
+            "canBeDeleted": false, "transferable": 1, "tradeMode": 1, "documentsCountable": true, "documentsSummable": "amount",
+            "properties": { "message": { "type": "string", "maxLength": 256, "position": 0 }, "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295i64, "position": 1} },
+            "required": ["message", "amount"], "additionalProperties": false,
             "indices": [{"name": "owner", "properties": [{"$ownerId": "asc"}]}]
         }
     }), None, None).unwrap().data_contract_owned();
     platform
         .drive
-        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            None,
+            initial_version,
+        )
         .unwrap();
     let document_type = contract.document_type_for_name("note").unwrap();
     let mut rng = StdRng::seed_from_u64(937);
@@ -286,6 +303,7 @@ async fn should_retain_replacements_transfers_prices_and_purchases_at_one_timest
             version,
         )
         .unwrap();
+    document.set("amount", 100u64.into());
     let query = DocumentHistoryQueryV1 {
         contract_id: contract.id().to_buffer(),
         document_type_name: "note".into(),
@@ -294,6 +312,11 @@ async fn should_retain_replacements_transfers_prices_and_purchases_at_one_timest
         limit: None,
     };
     for revision in 1..=5 {
+        let write_version = if revision == 1 {
+            initial_version
+        } else {
+            version
+        };
         document.set_revision(Some(revision));
         let transition = match revision {
             1 => {
@@ -306,13 +329,14 @@ async fn should_retain_replacements_transfers_prices_and_purchases_at_one_timest
                     0,
                     None,
                     &owner_signer,
-                    version,
+                    write_version,
                     None,
                 )
                 .await
             }
             2 => {
                 document.set("message", "replaced".into());
+                document.set("amount", 250u64.into());
                 BatchTransition::new_document_replacement_transition_from_document(
                     document.clone(),
                     document_type,
@@ -321,7 +345,7 @@ async fn should_retain_replacements_transfers_prices_and_purchases_at_one_timest
                     0,
                     None,
                     &owner_signer,
-                    version,
+                    write_version,
                     None,
                 )
                 .await
@@ -336,7 +360,7 @@ async fn should_retain_replacements_transfers_prices_and_purchases_at_one_timest
                     0,
                     None,
                     &owner_signer,
-                    version,
+                    write_version,
                     None,
                 )
                 .await
@@ -351,7 +375,7 @@ async fn should_retain_replacements_transfers_prices_and_purchases_at_one_timest
                     0,
                     None,
                     &buyer_signer,
-                    version,
+                    write_version,
                     None,
                 )
                 .await
@@ -367,7 +391,7 @@ async fn should_retain_replacements_transfers_prices_and_purchases_at_one_timest
                     0,
                     None,
                     &owner_signer,
-                    version,
+                    write_version,
                     None,
                 )
                 .await
@@ -379,6 +403,46 @@ async fn should_retain_replacements_transfers_prices_and_purchases_at_one_timest
             process_and_commit(&mut platform, transition.serialize_to_bytes().unwrap()),
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
+        if migrated && revision == 1 {
+            let mut upgraded = platform.state.load().as_ref().clone();
+            upgraded.set_current_protocol_version_in_consensus(14);
+            upgraded.set_next_epoch_protocol_version(14);
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .perform_events_on_first_block_of_protocol_change(
+                    &upgraded,
+                    &BlockInfo::default(),
+                    &transaction,
+                    13,
+                    version,
+                )
+                .unwrap();
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .value
+                .unwrap();
+            platform.state.store(std::sync::Arc::new(upgraded));
+        }
+        let type_path = vec![
+            vec![drive::drive::RootTree::DataContractDocuments as u8],
+            contract.id().to_vec(),
+            vec![1],
+            b"note".to_vec(),
+        ];
+        let primary = platform
+            .drive
+            .grove
+            .get_raw(
+                type_path.as_slice().into(),
+                &[0],
+                None,
+                &version.drive.grove_version,
+            )
+            .value
+            .unwrap();
+        assert!(matches!(primary, drive::grovedb::Element::CountSumTree(_, 1, sum, _) if sum == if revision == 1 {100} else {250}), "one live document contributes its current amount after each signed action: {primary:?}");
         let (history, proof) = platform
             .drive
             .prove_document_history_v1(&query, document_type, None, version)
