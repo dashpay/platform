@@ -511,18 +511,18 @@ class WalletStorage(
      * suppressed and the denial still wins.
      */
     private suspend fun recordLockBindingDefectFromDeniedRead(
+        operation: String,
         denial: KeystoreDeviceLockedException,
     ): Nothing {
         Log.w(
             TAG,
-            "retrieveMnemonicUtf8: Keystore still denied the lock-bound master-alias " +
-                "decrypt as device-locked after the full false-locked retry schedule, " +
-                "with KeyguardManager reporting UNLOCKED (${denial.lockState}) — recording " +
-                "this device's UNLOCKED_DEVICE_REQUIRED implementation as defective so the " +
-                "next read that gets through re-wraps the blob under the never-lock-bound " +
-                "'${KeystoreManager.MASTER_ALIAS_UNBOUND}' (cf. Google Issue Tracker " +
-                "506989112). This read still fails — a refused decrypt has no plaintext " +
-                "to re-encrypt.",
+            "$operation: Keystore still denied the lock-bound '${denial.alias}' decrypt as " +
+                "device-locked after the full false-locked retry schedule, with " +
+                "KeyguardManager reporting UNLOCKED (${denial.lockState}) — recording this " +
+                "device's UNLOCKED_DEVICE_REQUIRED implementation as defective so the next " +
+                "read that gets through re-wraps the blob under the matching " +
+                "never-lock-bound alias (cf. Google Issue Tracker 506989112). This read " +
+                "still fails — a refused decrypt has no plaintext to re-encrypt.",
             denial,
         )
         try {
@@ -585,7 +585,9 @@ class WalletStorage(
             operation = "retrieveMnemonicUtf8",
             denied = "decrypt",
             attempt = { keystore.decrypt(blob, alias) },
-            onExhausted = { denial -> recordLockBindingDefectFromDeniedRead(denial) },
+            onExhausted = { denial ->
+                recordLockBindingDefectFromDeniedRead("retrieveMnemonicUtf8", denial)
+            },
         )
         // Deliberately the PRE-decrypt snapshot: this is the hot resolver
         // path (Rust calls it synchronously for every derivation), so it must
@@ -854,7 +856,7 @@ class WalletStorage(
         privateKey: ByteArray,
         ownerWalletId: ByteArray?,
     ) {
-        val encrypted = keystore.encryptForIdentityKeys(privateKey)
+        val encrypted = encryptIdentityKeyOffDefectiveGate(privateKey)
         val blob = encrypted.blob
         val fingerprint = encrypted.keyFingerprint
         val alias = encrypted.alias
@@ -868,6 +870,45 @@ class WalletStorage(
             }
         }
     }
+
+    /**
+     * Encrypt identity-key material, routing AROUND the lock-bound alias on a
+     * device that has demonstrated the false-locked Keystore defect.
+     *
+     * Normally this is just [KeystoreManager.encryptForIdentityKeys] — the
+     * policy alias, chosen by [KeySecurityPolicy]. Once the defect is on
+     * record, a [KeySecurityPolicy.DEVICE_BOUND] write goes to
+     * [KeystoreManager.KEYS_ALIAS_DEVICE_BOUND_UNBOUND] instead, because the
+     * policy alias carries `setUnlockedDeviceRequired` and this device's
+     * Keystore denies that gate for stretches of every unlock session —
+     * which at signing time surfaces as MO-972 ("User not authenticated" on
+     * a key with no auth window). The unbound alias keeps everything
+     * DEVICE_BOUND actually promises: hardware-backed where the device
+     * provides it, non-exportable, and never auth-gated.
+     *
+     * [KeySecurityPolicy.AUTH_GATED] is deliberately NOT redirected — see
+     * [KeystoreManager.KEYS_ALIAS_DEVICE_BOUND_UNBOUND]. Its authentication
+     * gate is the real control, and there is no evidence of a defective
+     * device on that alias; it keeps failing honestly instead of quietly
+     * shedding a gate.
+     *
+     * The producing alias rides back on the blob and is persisted per entry
+     * (`privkeyalias.<pubkeyHex>`), so reads route to whichever alias
+     * actually wrote each one and nothing already stored is invalidated.
+     */
+    private suspend fun encryptIdentityKeyOffDefectiveGate(
+        privateKey: ByteArray,
+    ): KeystoreManager.KeysAliasEncryptedBlob =
+        if (keystore.keySecurityPolicy == KeySecurityPolicy.DEVICE_BOUND &&
+            isMasterKeyLockBindingDefectObserved()
+        ) {
+            keystore.encryptForIdentityKeysAlias(
+                KeystoreManager.KEYS_ALIAS_DEVICE_BOUND_UNBOUND,
+                privateKey,
+            )
+        } else {
+            keystore.encryptForIdentityKeys(privateKey)
+        }
 
     /**
      * The RSA identity-keys alias recorded as having written [pubkeyHex]'s
@@ -991,7 +1032,32 @@ class WalletStorage(
             // former key opens it — a re-derive signal) — never stale
             // plaintext, and never an uncaught crypto exception.
             return try {
-                keystore.decrypt(blob, alias = recordedAlias)
+                val plain = retryingFalseLockedDenial(
+                    operation = "retrievePrivateKey",
+                    denied = "decrypt",
+                    attempt = { keystore.decrypt(blob, alias = recordedAlias) },
+                    onExhausted = { denial ->
+                        recordLockBindingDefectFromDeniedRead("retrievePrivateKey", denial)
+                    },
+                )
+                // A device that just proved its lock gate is defective must
+                // stop keeping THIS key behind it. Re-encrypting under the
+                // effective write alias (now the never-lock-bound one) is the
+                // same best-effort, conditional rewrite the legacy migration
+                // uses, so a failure simply retries on the next read.
+                if (recordedAlias == KeystoreManager.KEYS_ALIAS_DEVICE_BOUND &&
+                    isMasterKeyLockBindingDefectObserved()
+                ) {
+                    migrateToPolicyAlias(pubkeyHex, plain, encoded)
+                }
+                plain
+            } catch (e: KeystoreDeviceLockedException) {
+                // Retryable lock denial, NOT a wrong-key signal. It is a
+                // GeneralSecurityException, so without this clause it would
+                // fall into the recovery ladder below and end as `null` — a
+                // spurious "re-derive this key" for a key that is perfectly
+                // intact and readable as soon as the gate lets go.
+                throw e
             } catch (e: UserNotAuthenticatedException) {
                 throw e // closed auth window — prompt and retry, never recovery
             } catch (e: KeyPermanentlyInvalidatedException) {
@@ -1047,6 +1113,10 @@ class WalletStorage(
     private fun tryFormerRsaRecovery(blob: KeystoreManager.EncryptedBlob): ByteArray? =
         try {
             keystore.decryptLegacyRsaKeysBlob(blob)
+        } catch (e: KeystoreDeviceLockedException) {
+            // "The device is locked", never "not this key" — absorbing it to
+            // null would report an intact blob unrecoverable.
+            throw e
         } catch (e: UserNotAuthenticatedException) {
             throw e
         } catch (e: KeyPermanentlyInvalidatedException) {
@@ -1083,7 +1153,12 @@ class WalletStorage(
         sourceEncoded: String,
     ) {
         try {
-            val migrated = keystore.encryptForIdentityKeys(plain)
+            // The EFFECTIVE write alias, not blindly the policy alias: on a
+            // device with the false-locked defect on record that is the
+            // never-lock-bound alias, which is what makes this the re-wrap
+            // that gets a stranded key off the defective gate as well as the
+            // forward-migration for a recovered legacy blob.
+            val migrated = encryptIdentityKeyOffDefectiveGate(plain)
             store.edit {
                 val key = privateKeyKey(pubkeyHex)
                 if (it[key] == sourceEncoded) {
@@ -1307,6 +1382,16 @@ class WalletStorage(
             } else {
                 false
             }
+        } catch (e: KeystoreDeviceLockedException) {
+            // The device's lock gate is shut (genuinely, or the false-locked
+            // defect). The blob and its key are intact and open as soon as
+            // the gate lets go, so this is RECOVERABLE — unconditionally,
+            // unlike UNAE. The [unaeProvesRecoverable] caveat exists because
+            // a closed AUTH gate hides WHICH key was asked; a device-locked
+            // denial carries its alias and proves nothing about ownership
+            // either way, so reporting "strandable" here would offer a
+            // re-derive for a perfectly good key.
+            true
         } catch (e: UserNotAuthenticatedException) {
             unaeProvesRecoverable
         } catch (e: GeneralSecurityException) {
