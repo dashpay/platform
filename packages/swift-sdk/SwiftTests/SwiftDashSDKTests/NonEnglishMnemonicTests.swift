@@ -21,9 +21,14 @@ import XCTest
 final class NonEnglishMnemonicTests: XCTestCase {
 
     // French mnemonic for entropy 000102030405060708090a0b0c0d0e0f, words
-    // from the official BIP-39 French wordlist (NFKD-encoded, as published).
+    // from the official BIP-39 French wordlist, which publishes its non-ASCII
+    // words compatibility-decomposed. Decompose explicitly rather than relying
+    // on the literal: a source file carries whichever form its editor saved,
+    // and a precomposed one silently makes this fixture and the NFC fixture
+    // below the same bytes, which is the only thing that tells them apart.
     private static let frenchPhrase =
         "abaisser agréable inductif agréable éligible achat bolide boucle amateur exister dérober bloquer"
+            .decomposedStringWithCompatibilityMapping
 
     // The same phrase with precomposed accents (NFC) — what an iOS keyboard
     // actually produces. Seed derivation must treat both forms identically.
@@ -54,6 +59,25 @@ final class NonEnglishMnemonicTests: XCTestCase {
 
     private func hex(_ data: Data) -> String {
         data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    // MARK: - The two French fixtures must stay distinct encodings
+
+    func testFrenchFixturesAreDistinctEncodingsOfTheSamePhrase() {
+        let decomposed = Array(Self.frenchPhrase.utf8)
+        let precomposed = Array(Self.frenchPhraseNFC.utf8)
+
+        // Swift compares Strings by canonical equivalence, so the two fixtures
+        // are `==` and only their encoded bytes distinguish them. Those bytes
+        // are what the wrappers hand to the FFI, so every test below that
+        // claims to cover both forms covers only one if they ever coincide.
+        XCTAssertNotEqual(decomposed, precomposed)
+        XCTAssertEqual(
+            decomposed,
+            Array(Self.frenchPhrase.decomposedStringWithCompatibilityMapping.utf8))
+        XCTAssertEqual(
+            precomposed,
+            Array(Self.frenchPhraseNFC.precomposedStringWithCanonicalMapping.utf8))
     }
 
     // MARK: - Baseline: validation already accepts non-English phrases
