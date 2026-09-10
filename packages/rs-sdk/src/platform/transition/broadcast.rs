@@ -196,9 +196,7 @@ impl BroadcastStateTransition for StateTransition {
         settings: Option<PutSettings>,
     ) -> Result<(T, ResponseMetadata), Error> {
         let (outcome, metadata) = self.wait_for_outcome_with_metadata(sdk, settings).await?;
-        // An execution-proved outcome carries a strictly stronger guarantee
-        // than the requested snapshot, so both tags are accepted here.
-        convert_proof_result::<T>(outcome.into_result()).map(|converted| (converted, metadata))
+        convert_proof_result::<T>(accept_affected_state(outcome)).map(|c| (c, metadata))
     }
 
     async fn broadcast_and_wait_for_affected_state<
@@ -275,6 +273,12 @@ fn require_execution_proved(
             ),
         )),
     }
+}
+
+/// Accept either tag for the affected-state wait APIs: an execution-proved
+/// outcome carries a strictly stronger guarantee than the snapshot requested.
+fn accept_affected_state(outcome: StateTransitionProofOutcome) -> StateTransitionProofResult {
+    outcome.into_result()
 }
 
 /// Convert the verified inner result into the caller's expected type.
@@ -475,5 +479,30 @@ mod tests {
             StateTransitionProofResult::VerifiedTokenBalanceAbsence(Identifier::from([1u8; 32]));
         require_execution_proved(StateTransitionProofOutcome::ExecutionProved(proved))
             .expect("execution-proved outcomes must pass the strict wait");
+    }
+
+    /// The outcome an erase produces, run through both gates. A transition
+    /// family the classifier reports as affected state cannot use the strict
+    /// wait: its own valid proof would come back as an error.
+    #[test]
+    fn affected_state_wait_accepts_what_the_strict_wait_refuses() {
+        use std::collections::BTreeMap;
+
+        let erased = || {
+            StateTransitionProofResult::VerifiedDocuments(BTreeMap::from([(
+                Identifier::from([9u8; 32]),
+                None,
+            )]))
+        };
+
+        let err = require_execution_proved(StateTransitionProofOutcome::AffectedState(erased()))
+            .expect_err("the strict wait must refuse an erase's own outcome");
+        assert!(matches!(err, Error::ExecutionNotProved(_)));
+
+        assert_eq!(
+            accept_affected_state(StateTransitionProofOutcome::AffectedState(erased())),
+            erased(),
+            "the affected-state wait must return the erase's observation unchanged"
+        );
     }
 }
