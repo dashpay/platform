@@ -1,5 +1,8 @@
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use crate::execution::validation::state_transition::batch::action_validation::document::document_base_transaction_action::DocumentBaseTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::fetch_keep_history_document_lifecycle;
 use crate::platform_types::platform::PlatformStateRef;
@@ -86,6 +89,20 @@ impl DocumentEraseTransitionActionStateValidationV0 for DocumentEraseTransitionA
             transaction,
             platform_version,
         )?;
+
+        // Removing revisions credits whoever paid for each of them, and those
+        // balance updates are applied after this transition's fee result is
+        // formed, against identities that had nothing to do with it. The chunk
+        // bound limits how many there can be; this is what pays for them. It is
+        // billed on every path the erase can take, including the refusals,
+        // because the estimate that admits the transition is formed before the
+        // lifecycle is known.
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+            platform
+                .drive
+                .erase_refund_recipient_cost(&block_info.epoch, platform_version)
+                .map_err(Error::Drive)?,
+        ));
 
         match lifecycle {
             DocumentLifecycleState::Active(_) => {
