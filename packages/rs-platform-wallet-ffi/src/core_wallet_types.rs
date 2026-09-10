@@ -41,6 +41,20 @@ impl From<&dashcore::OutPoint> for OutPointFFI {
     }
 }
 
+impl From<&OutPointFFI> for dashcore::OutPoint {
+    /// The inverse of the conversion above, and the one authority for it.
+    /// Hosts hand outpoints BACK across the boundary when they ask the
+    /// engine about rows they already hold (the store-reconcile
+    /// classification batch), so the round trip has to land on exactly the
+    /// bytes that went out.
+    fn from(ffi: &OutPointFFI) -> Self {
+        dashcore::OutPoint {
+            txid: <dashcore::Txid as dashcore::hashes::Hash>::from_byte_array(ffi.txid),
+            vout: ffi.vout,
+        }
+    }
+}
+
 /// Outpoint of a TXO that was spent, paired with the spending
 /// transaction's txid. Replaces the bare `OutPointFFI` on
 /// `AccountChangeSetFFI.utxos_spent` so the Swift persister can
@@ -870,6 +884,32 @@ pub struct AccountAddressPoolEntryFFI {
 /// heap-owned and freed by the paired free fn.
 #[repr(C)]
 pub struct AccountUtxoEntryFFI {
+    pub outpoint_txid: [u8; 32],
+    pub outpoint_vout: u32,
+    pub value_duffs: u64,
+    pub script_pubkey: *mut u8,
+    pub script_pubkey_len: usize,
+    pub height: u32,
+    pub is_locked: bool,
+}
+
+/// One row of a WALLET-wide UTXO inventory page
+/// (`platform_wallet_wallet_utxos_page`): the coin plus the complete account
+/// tuple that owns it — the same tag layout as [`AccountBalanceEntryFFI`] /
+/// `AccountSpecFFI`, so a host can resolve the owning account row and stamp
+/// ownership on a healed mirror row without an address projection. The last
+/// row's tuple + outpoint is also the resume cursor for the next page.
+/// `script_pubkey` is heap-owned and freed by
+/// `platform_wallet_wallet_utxos_free`.
+#[repr(C)]
+pub struct WalletUtxoEntryFFI {
+    pub type_tag: crate::wallet_restore_types::AccountTypeTagFFI,
+    pub standard_tag: crate::wallet_restore_types::StandardAccountTypeTagFFI,
+    pub index: u32,
+    pub registration_index: u32,
+    pub key_class: u32,
+    pub user_identity_id: [u8; 32],
+    pub friend_identity_id: [u8; 32],
     pub outpoint_txid: [u8; 32],
     pub outpoint_vout: u32,
     pub value_duffs: u64,

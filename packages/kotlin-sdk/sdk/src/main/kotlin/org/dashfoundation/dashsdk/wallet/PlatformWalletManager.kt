@@ -1244,6 +1244,81 @@ class PlatformWalletManager(
     }
 
     /**
+     * Reconcile the Room `txos` mirror against the engine's live UTXO
+     * inventory, healing rows a changeset failed to deliver. The mirror is
+     * write-behind with no other feedback loop, and the engine is REBUILT
+     * from it on restart — an unhealed hole becomes a fund-loss on the next
+     * launch (the job-flower 106.43→86.33 restart drop: rescan
+     * nondeterministically drops the change outputs of sends funded from
+     * CoinJoin-account outputs). Insert-only; never flips spent state or
+     * deletes.
+     *
+     * Both directions of the sweep are paged, so neither this process nor
+     * the engine ever holds a whole wallet's inventory: UTXO counts are
+     * chain-controlled, and a periodic full-inventory read would let anyone
+     * who knows a watched address decide how much a phone allocates. See
+     * [PlatformWalletPersistenceHandler.reconcileTxos].
+     *
+     * Call it after the L1 scan settles and again on a slow cadence;
+     * [tipHeight] is the synced chain height — only outputs at least
+     * [minConfirmations] deep are healed (immature holes age into the next
+     * sweep). Returns null when the engine inventory read failed at the
+     * FIRST page: there is nothing to reconcile against, so there is no
+     * report to make. A page or classification batch failing later
+     * truncates the sweep instead, which the report's `transportFailures`
+     * records. Native failures surface through [mapNativeErrors] as
+     * exceptions; both transport lambdas turn them into the null the
+     * handler's truncate-and-report contract is written against (and log
+     * them), so a mid-sweep fault yields a partial report rather than
+     * discarding the sweep. A malformed page is NOT absorbed: the handler's
+     * strict decode throws, and that propagates.
+     */
+    suspend fun reconcileTxoStore(
+        walletId: ByteArray,
+        tipHeight: Int,
+        minConfirmations: Int = 100,
+    ): PlatformWalletPersistenceHandler.TxoReconcileReport? =
+        persistenceHandler.reconcileTxos(
+            walletId = walletId,
+            tipHeight = tipHeight,
+            minConfirmations = minConfirmations,
+            engineUtxoPage = { cursor, limit ->
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        mapNativeErrors {
+                            WalletManagerNative.walletManagerUtxosPageJson(
+                                managerHandle, walletId, network.ffiValue, cursor, limit,
+                            )
+                        }
+                    }.onFailure { t ->
+                        android.util.Log.w(
+                            "PlatformWalletManager",
+                            "txos reconcile: engine inventory page failed (cursor=$cursor)",
+                            t,
+                        )
+                    }.getOrNull()
+                }
+            },
+            classifyOutpoints = { outpoints ->
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        mapNativeErrors {
+                            WalletManagerNative.walletManagerClassifyOutpoints(
+                                managerHandle, walletId, outpoints,
+                            )
+                        }
+                    }.onFailure { t ->
+                        android.util.Log.w(
+                            "PlatformWalletManager",
+                            "txos reconcile: outpoint classification failed",
+                            t,
+                        )
+                    }.getOrNull()
+                }
+            },
+        )
+
+    /**
      * Refresh the persisted DashPay payment history for one identity:
      * one FFI read (`managed_identity_get_dashpay_payments`) + one Room
      * pass upserting [DashpayPaymentEntity] rows so the UI can observe
@@ -2020,6 +2095,7 @@ class PlatformWalletManager(
                 if (running) {
                     runCatching { spvSyncProgress() }.getOrNull()?.let { next ->
                         if (next != _spvProgress.value) _spvProgress.value = next
+                        maybeReconcileTxoStores(next)
                     }
                     runCatching { spvTipUnixSeconds() }.getOrNull()?.let { tip ->
                         if (tip != _spvTipUnixSeconds.value) _spvTipUnixSeconds.value = tip
@@ -2029,6 +2105,61 @@ class PlatformWalletManager(
                     _spvProgress.value = SpvSyncProgressData.EMPTY
                 }
                 delay(POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    private var lastTxoReconcileAtMs = 0L
+    private var txoReconcileWasSynced = false
+
+    /**
+     * SDK-internal trigger for [reconcileTxoStore] — runs on the SYNCED
+     * transition of the SPV progress poll and again every
+     * [TXO_RECONCILE_INTERVAL_MS] while synced, for every loaded wallet.
+     * Lives here rather than in the host apps so Android and iOS-parity
+     * hosts both get the heal without wiring anything: the mirror hole it
+     * repairs (rescan dropping change outputs of CoinJoin-funded sends)
+     * becomes a fund-loss on the next engine reload if any host forgets
+     * to call it. Failures are logged and re-tried on the next cadence
+     * tick — never allowed to kill the progress poll.
+     */
+    private fun maybeReconcileTxoStores(progress: SpvSyncProgressData) {
+        val synced = progress.overallState == SpvSyncState.SYNCED
+        val transitioned = synced && !txoReconcileWasSynced
+        txoReconcileWasSynced = synced
+        if (!synced) return
+        val now = System.currentTimeMillis()
+        if (!transitioned && now - lastTxoReconcileAtMs < TXO_RECONCILE_INTERVAL_MS) return
+        // The filter sub-phase is the wallet-relevant height; if dash-spv
+        // reports SYNCED without one (filter sync disabled, or the phase
+        // dropped after completion) fall back to the header tip rather than
+        // silently skipping the heal this exists to deliver.
+        val tipHeight = (
+            progress.filters?.currentHeight?.takeIf { it > 0L }
+                ?: progress.headers?.currentHeight
+                ?: 0L
+            ).toInt()
+        if (tipHeight <= 0) {
+            android.util.Log.w(
+                "PlatformWalletManager",
+                "txos reconcile skipped: SYNCED progress carries no tip height " +
+                    "(filters=${progress.filters?.currentHeight} headers=${progress.headers?.currentHeight})",
+            )
+            return
+        }
+        val walletIds = wallets.value.values.map { it.walletId }
+        if (walletIds.isEmpty()) return
+        lastTxoReconcileAtMs = now
+        scope.launch {
+            for (walletId in walletIds) {
+                runCatching { reconcileTxoStore(walletId, tipHeight) }
+                    .onFailure { t ->
+                        android.util.Log.w(
+                            "PlatformWalletManager",
+                            "txos reconcile failed for wallet ${walletId.toHex()}",
+                            t,
+                        )
+                    }
             }
         }
     }
@@ -2445,6 +2576,14 @@ class PlatformWalletManager(
     private companion object {
         /** SPV progress poll cadence — matches Swift's 1 Hz `startProgressPolling`. */
         const val POLL_INTERVAL_MS = 1_000L
+
+        /**
+         * Cadence of the steady-state TXO-store reconcile
+         * ([maybeReconcileTxoStores]) while SPV reports SYNCED. The
+         * SYNCED transition itself always triggers a pass regardless of
+         * this interval.
+         */
+        const val TXO_RECONCILE_INTERVAL_MS = 30 * 60 * 1_000L
 
         /** De-offset `PlatformWalletFFIResultCode::ErrorInvalidParameter`. */
         const val PWFFI_INVALID_PARAMETER = 2

@@ -4429,6 +4429,7 @@ unsafe fn restore_core_address_pools(
     pool_entries: &[AccountAddressPoolFFI],
     network: Network,
     wallet_id: &[u8; 32],
+    signing_wallet: Option<&Wallet>,
 ) -> Result<PoolRestoreStats, PersistenceError> {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     let mut pools_routed = 0usize;
@@ -4615,11 +4616,94 @@ unsafe fn restore_core_address_pools(
                 }
             }
         }
+        // Resolve the pool's key source BEFORE taking the mutable pool
+        // borrow, for the hole-repair pass below. Degrades to NoKeySource
+        // for anything unresolvable (no signing wallet handle, provider
+        // pools without public derivation, etc.) — repair is then skipped.
+        let key_source = signing_wallet
+            .and_then(|wallet| {
+                key_wallet::transaction_checking::transaction_router::AccountTypeToCheck::try_from(
+                    &*managed_type,
+                )
+                .ok()
+                .map(|check_type| {
+                    let account_index = match &account_type {
+                        AccountType::Standard { index, .. }
+                        | AccountType::CoinJoin { index }
+                        | AccountType::DashpayReceivingFunds { index, .. }
+                        | AccountType::DashpayExternalAccount { index, .. } => Some(*index),
+                        AccountType::IdentityTopUp { registration_index } => {
+                            Some(*registration_index)
+                        }
+                        _ => None,
+                    };
+                    wallet.key_source_for_account_type(&check_type, account_index)
+                })
+            })
+            .unwrap_or(key_wallet::KeySource::NoKeySource);
+
         let mut managed_pools = managed_type.address_pools_mut();
         match managed_pools.iter_mut().find(|p| p.pool_type == pool_type) {
             Some(pool) => {
                 pools_routed += infos.len();
                 restore_address_pool(pool, infos);
+                // Hole repair: mirrors have been observed dropping address
+                // rows (2026-08-19 field wallet: BIP44-change rows 875..=890
+                // absent between surviving rows), and ingesting the sparse
+                // list as-is makes outputs paying the missing addresses
+                // permanently unrecognizable — a rescan-proof fund loss —
+                // while the row-derived `highest_generated` suppresses the
+                // gap-limit re-derivation that would repair it. Derivation
+                // is pure key arithmetic, so re-derive every missing index
+                // up to the persisted watermark. Never fatal: a failed
+                // repair restores exactly what the rows carried (the
+                // pre-repair behavior).
+                let repairable = !matches!(key_source, key_wallet::KeySource::NoKeySource)
+                    && !matches!(pool_type, AddressPoolType::AbsentHardened);
+                if !repairable {
+                    // Announce the skip instead of silently claiming full
+                    // coverage. DashPay contact pools land here by design —
+                    // `key_source_for_account_type` returns NoKeySource for
+                    // both DashPay variants (their keys derive from identity
+                    // material, not an account xpub) — and their pools are
+                    // re-derived by DashPay contact sync at runtime, so a
+                    // sparse restore self-heals through that path instead.
+                    // Hardened pools cannot be publicly derived at all. An
+                    // expected condition on every contact pool of every load,
+                    // so it is a debug line, not an info line per pool.
+                    tracing::debug!(
+                        wallet_id = %hex::encode(wallet_id),
+                        ?account_type,
+                        ?pool_type,
+                        "load: address-pool hole repair skipped (no public key source); \
+                         pool restored as persisted"
+                    );
+                } else if let Some(max_idx) = pool.highest_generated {
+                    match pool.ensure_contiguous_to(max_idx, &key_source) {
+                        Ok(0) => {}
+                        Ok(filled) => {
+                            tracing::warn!(
+                                wallet_id = %hex::encode(wallet_id),
+                                ?account_type,
+                                ?pool_type,
+                                filled,
+                                "load: repaired address-pool holes left by dropped \
+                                 persisted rows; outputs paying these addresses are \
+                                 recognizable again"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                wallet_id = %hex::encode(wallet_id),
+                                ?account_type,
+                                ?pool_type,
+                                error = %e,
+                                "load: address-pool hole repair failed; pool restored \
+                                 as persisted (sparse)"
+                            );
+                        }
+                    }
+                }
             }
             None => {
                 pools_dropped += 1;
@@ -5089,7 +5173,13 @@ fn build_wallet_start_state(
         // SAFETY: `pool_entries` is a valid slice (checked above) and each
         // row's `addresses_ptr` follows the load-callback contract.
         unsafe {
-            restore_core_address_pools(&mut wallet_info, pool_entries, network, &entry.wallet_id)?;
+            restore_core_address_pools(
+                &mut wallet_info,
+                pool_entries,
+                network,
+                &entry.wallet_id,
+                Some(&wallet),
+            )?;
         }
     }
 
@@ -8353,7 +8443,7 @@ mod tests {
 
         // SAFETY: `row` / `addr_c` / `path_c` outlive the call below.
         let stats = unsafe {
-            restore_core_address_pools(&mut wallet_info, &pools, Network::Testnet, &[0u8; 32])
+            restore_core_address_pools(&mut wallet_info, &pools, Network::Testnet, &[0u8; 32], None)
         }
         .expect("restore must succeed for a well-formed provider pool");
         assert_eq!(

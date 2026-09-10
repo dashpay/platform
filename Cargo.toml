@@ -53,14 +53,14 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+dashcore = { git = "https://github.com/HashEngineering/rust-dashcore", rev = "e5cbb13bea811a65f3a3193defc7168a9054c951" }
+dash-network-seeds = { git = "https://github.com/HashEngineering/rust-dashcore", rev = "e5cbb13bea811a65f3a3193defc7168a9054c951" }
+dash-spv = { git = "https://github.com/HashEngineering/rust-dashcore", rev = "e5cbb13bea811a65f3a3193defc7168a9054c951" }
+key-wallet = { git = "https://github.com/HashEngineering/rust-dashcore", rev = "e5cbb13bea811a65f3a3193defc7168a9054c951" }
+key-wallet-ffi = { git = "https://github.com/HashEngineering/rust-dashcore", rev = "e5cbb13bea811a65f3a3193defc7168a9054c951" }
+key-wallet-manager = { git = "https://github.com/HashEngineering/rust-dashcore", rev = "e5cbb13bea811a65f3a3193defc7168a9054c951" }
+dash-network = { git = "https://github.com/HashEngineering/rust-dashcore", rev = "e5cbb13bea811a65f3a3193defc7168a9054c951" }
+dashcore-rpc = { git = "https://github.com/HashEngineering/rust-dashcore", rev = "e5cbb13bea811a65f3a3193defc7168a9054c951" }
 tokio-metrics = "0.5"
 
 # Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which

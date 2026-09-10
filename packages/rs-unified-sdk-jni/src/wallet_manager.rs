@@ -3218,6 +3218,391 @@ fn core_selection_strategy(
     }
 }
 
+/// Default page size for `walletManagerUtxosPageJson` when the caller
+/// passes a non-positive `limit`, and the hard cap it clamps to. The
+/// point of the paged transport is that neither side ever holds a whole
+/// wallet's inventory, so the cap is enforced here rather than trusted
+/// from the host.
+const UTXO_PAGE_DEFAULT: usize = 512;
+const UTXO_PAGE_MAX: usize = 4096;
+
+/// The account tuple that owns one inventory row — `AccountSpecFFI` minus
+/// the xpub, in the field names the Kotlin `EngineUtxoRow` /
+/// `PlatformWalletPersistenceHandler.fetchAccount` resolve a Room account
+/// by. The DashPay identity halves are emitted only when set (all-zero on
+/// every non-DashPay account); the Kotlin side defaults them.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UtxoAccountTuple {
+    type_tag: u8,
+    standard_tag: u8,
+    index: u32,
+    registration_index: u32,
+    key_class: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    user_identity_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    friend_identity_id: Option<String>,
+}
+
+impl UtxoAccountTuple {
+    fn from_entry(e: &platform_wallet_ffi::WalletUtxoEntryFFI) -> Self {
+        let identity = |id: &[u8; 32]| (*id != [0u8; 32]).then(|| hex::encode(id));
+        UtxoAccountTuple {
+            type_tag: e.type_tag as u8,
+            standard_tag: e.standard_tag as u8,
+            index: e.index,
+            registration_index: e.registration_index,
+            key_class: e.key_class,
+            user_identity_id: identity(&e.user_identity_id),
+            friend_identity_id: identity(&e.friend_identity_id),
+        }
+    }
+
+    /// Back to the FFI spec for the resume cursor. `None` when an identity
+    /// hex is malformed — a cursor the host did not get from us.
+    fn to_spec(&self) -> Option<platform_wallet_ffi::AccountSpecFFI> {
+        fn id32(hex_id: &Option<String>) -> Option<[u8; 32]> {
+            match hex_id {
+                None => Some([0u8; 32]),
+                Some(h) => hex::decode(h).ok()?.try_into().ok(),
+            }
+        }
+        Some(platform_wallet_ffi::AccountSpecFFI {
+            type_tag: self.type_tag,
+            standard_tag: self.standard_tag,
+            index: self.index,
+            registration_index: self.registration_index,
+            key_class: self.key_class,
+            user_identity_id: id32(&self.user_identity_id)?,
+            friend_identity_id: id32(&self.friend_identity_id)?,
+            account_xpub_bytes: ptr::null(),
+            account_xpub_bytes_len: 0,
+        })
+    }
+}
+
+/// One row of an inventory page — the typed contract the Kotlin
+/// `EngineUtxoRow` decodes. `txid` is lower hex in the same byte order the
+/// changeset path hands Kotlin, so hex→bytes reproduces the `txos.txid`
+/// blob; `address` is empty when the script has no address form.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UtxoPageRow {
+    #[serde(flatten)]
+    account: UtxoAccountTuple,
+    txid: String,
+    vout: u32,
+    amount: u64,
+    address: String,
+    script_hex: String,
+    height: u32,
+    is_locked: bool,
+}
+
+/// One page: the rows, the opaque resume cursor (absent on the last page)
+/// and whether more pages follow.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UtxoPage {
+    utxos: Vec<UtxoPageRow>,
+    cursor: Option<String>,
+    has_more: bool,
+}
+
+/// Where a paged inventory sweep left off — the last row's account tuple
+/// and outpoint, exactly what `platform_wallet_wallet_utxos_page` resumes
+/// from. Serialized as JSON and handed to the host as an opaque string; the
+/// host only ever gives back what a previous page returned.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UtxoPageCursor {
+    #[serde(flatten)]
+    account: UtxoAccountTuple,
+    txid: String,
+    vout: u32,
+}
+
+/// One bounded page of the engine's UTXO inventory across every account of
+/// one wallet — the source of truth `PlatformWalletManager.reconcileTxoStore`
+/// diffs against the Room `txos` mirror (dropped change outputs of
+/// CoinJoin-funded sends leave the mirror short; the engine reloads from
+/// that mirror on restart, so an un-reconciled hole becomes a fund-loss).
+///
+/// Paged rather than swept whole because inventory size is
+/// chain-controlled: anyone who knows a watched address can keep sending
+/// dust outputs to it, and a periodic full-inventory read would let them
+/// decide how much a phone allocates at every SYNCED transition and every
+/// 30-minute pass. Nothing bigger than one page is ever formatted, copied
+/// across JNI, or parsed.
+///
+/// This export is a thin shim over ONE Rust call
+/// (`platform_wallet_wallet_utxos_page`): the account ordering, the cursor
+/// semantics and the page bound all live in `platform-wallet`, so the Swift
+/// host walks the identical inventory. Here the rows are only serialized —
+/// with serde, against the same field names the Kotlin `EngineUtxoPage`
+/// deserializes, so a renamed key fails the Kotlin decode loudly instead of
+/// healing a defaulted row.
+///
+/// Returns a JSON object `{"utxos":[...],"cursor":<string|null>,"hasMore":<bool>}`.
+/// `cursor` is opaque: hand it back verbatim on the next call (`null`/absent
+/// starts from the beginning) and keep going while `hasMore` is true. A
+/// cursor this export did not produce is rejected with an SDK exception
+/// rather than silently restarting the sweep. `limit` caps the rows in one
+/// page — non-positive means the default, and anything larger than the cap
+/// is clamped.
+///
+/// `network` follows `Network.ffiValue` (0 mainnet, 2 devnet, 3 regtest,
+/// else testnet) and selects the address encoding.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerUtxosPageJson(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    network: jni::sys::jint,
+    cursor: JString,
+    limit: jni::sys::jint,
+) -> jni::sys::jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return ptr::null_mut();
+        };
+        let net = match network {
+            0 => dashcore::Network::Mainnet,
+            2 => dashcore::Network::Devnet,
+            3 => dashcore::Network::Regtest,
+            _ => dashcore::Network::Testnet,
+        };
+        let page_limit = if limit <= 0 {
+            UTXO_PAGE_DEFAULT
+        } else {
+            (limit as usize).min(UTXO_PAGE_MAX)
+        };
+        // Resume point, decoded from the opaque cursor. Kept alive across
+        // the FFI call — the spec and txid are passed by pointer.
+        let resume: Option<(platform_wallet_ffi::AccountSpecFFI, [u8; 32], u32)> = if cursor
+            .is_null()
+        {
+            None
+        } else {
+            let raw = match env.get_string(&cursor) {
+                Ok(s) => String::from(s),
+                Err(_) => {
+                    throw_sdk_exception(env, 1, "inventory cursor must be a String");
+                    return ptr::null_mut();
+                }
+            };
+            let parsed = serde_json::from_str::<UtxoPageCursor>(&raw)
+                .ok()
+                .and_then(|c| {
+                    let spec = c.account.to_spec()?;
+                    let txid: [u8; 32] = hex::decode(&c.txid).ok()?.try_into().ok()?;
+                    Some((spec, txid, c.vout))
+                });
+            match parsed {
+                Some(r) => Some(r),
+                None => {
+                    throw_sdk_exception(
+                        env,
+                        1,
+                        "malformed inventory cursor: only a cursor returned by a previous page may be handed back",
+                    );
+                    return ptr::null_mut();
+                }
+            }
+        };
+
+        let mut entries: *const platform_wallet_ffi::WalletUtxoEntryFFI = ptr::null();
+        let mut count: usize = 0;
+        let mut has_more = false;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_wallet_utxos_page(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                resume
+                    .as_ref()
+                    .map_or(ptr::null(), |(spec, _, _)| spec as *const _),
+                resume
+                    .as_ref()
+                    .map_or(ptr::null(), |(_, txid, _)| txid.as_ptr()),
+                resume.as_ref().map_or(0, |(_, _, vout)| *vout),
+                page_limit,
+                &mut entries,
+                &mut count,
+                &mut has_more,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let mut rows: Vec<UtxoPageRow> = Vec::with_capacity(count);
+        if !entries.is_null() && count > 0 {
+            let items = unsafe { std::slice::from_raw_parts(entries, count) };
+            for e in items {
+                let script: &[u8] = if e.script_pubkey.is_null() || e.script_pubkey_len == 0 {
+                    &[]
+                } else {
+                    unsafe { std::slice::from_raw_parts(e.script_pubkey, e.script_pubkey_len) }
+                };
+                let script_buf = dashcore::ScriptBuf::from(script.to_vec());
+                let address = dashcore::Address::from_script(&script_buf, net)
+                    .map(|a| a.to_string())
+                    .unwrap_or_default();
+                rows.push(UtxoPageRow {
+                    account: UtxoAccountTuple::from_entry(e),
+                    txid: hex::encode(e.outpoint_txid),
+                    vout: e.outpoint_vout,
+                    amount: e.value_duffs,
+                    address,
+                    script_hex: hex::encode(script),
+                    height: e.height,
+                    is_locked: e.is_locked,
+                });
+            }
+            unsafe {
+                platform_wallet_ffi::platform_wallet_wallet_utxos_free(
+                    entries as *mut platform_wallet_ffi::WalletUtxoEntryFFI,
+                    count,
+                )
+            };
+        }
+        // The cursor is the last row itself; a page with no rows has nowhere
+        // to resume from and the accessor reports no more in that case.
+        let next_cursor = if has_more {
+            rows.last().map(|last| UtxoPageCursor {
+                account: UtxoAccountTuple {
+                    type_tag: last.account.type_tag,
+                    standard_tag: last.account.standard_tag,
+                    index: last.account.index,
+                    registration_index: last.account.registration_index,
+                    key_class: last.account.key_class,
+                    user_identity_id: last.account.user_identity_id.clone(),
+                    friend_identity_id: last.account.friend_identity_id.clone(),
+                },
+                txid: last.txid.clone(),
+                vout: last.vout,
+            })
+        } else {
+            None
+        };
+        let cursor_json = match next_cursor.as_ref().map(serde_json::to_string) {
+            Some(Ok(c)) => Some(c),
+            Some(Err(e)) => {
+                throw_sdk_exception(env, 1, &format!("inventory cursor encode failed: {e}"));
+                return ptr::null_mut();
+            }
+            None => None,
+        };
+        let page = UtxoPage {
+            utxos: rows,
+            cursor: cursor_json,
+            has_more: has_more && next_cursor.is_some(),
+        };
+        match serde_json::to_string(&page) {
+            Ok(json) => env
+                .new_string(json)
+                .map(|s| s.into_raw())
+                .unwrap_or(ptr::null_mut()),
+            Err(e) => {
+                throw_sdk_exception(env, 1, &format!("inventory page encode failed: {e}"));
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+/// Classify a batch of outpoints against the engine's live state — the
+/// reverse half of the reconcile transport, and the reason
+/// `walletManagerUtxosPageJson` no longer exports a spent-outpoint list.
+/// The host pages its OWN mirror rows and asks about them a batch at a
+/// time, so neither side builds a set over the whole engine inventory.
+///
+/// `outpoints` is a flat `n * 36` byte blob in the store's own outpoint
+/// encoding — 32-byte txid in wire order followed by the vout as
+/// little-endian `u32`, which is exactly the `txos.outpoint` primary key,
+/// so a caller concatenates the column and reads the answers back
+/// positionally. Returns `n` bytes: 0 unknown, 1 unspent, 2 spent.
+///
+/// A 2 means some recorded transaction spends the outpoint — possibly one
+/// still in the mempool. It is not proof of a settled spend, and the
+/// reconcile treats it as a signal to log, never to write.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerClassifyOutpoints(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    outpoints: JByteArray,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return ptr::null_mut();
+        };
+        let blob = match env.convert_byte_array(&outpoints) {
+            Ok(b) => b,
+            Err(_) => {
+                throw_sdk_exception(env, 1, "outpoints must be a byte[]");
+                return ptr::null_mut();
+            }
+        };
+        if !blob.len().is_multiple_of(36) {
+            throw_sdk_exception(
+                env,
+                1,
+                "outpoints must be a multiple of 36 bytes (txid || vout LE)",
+            );
+            return ptr::null_mut();
+        }
+        let requested: Vec<platform_wallet_ffi::OutPointFFI> = blob
+            .chunks_exact(36)
+            .map(|chunk| {
+                let mut txid = [0u8; 32];
+                txid.copy_from_slice(&chunk[..32]);
+                platform_wallet_ffi::OutPointFFI {
+                    txid,
+                    vout: u32::from_le_bytes([chunk[32], chunk[33], chunk[34], chunk[35]]),
+                }
+            })
+            .collect();
+        if requested.is_empty() {
+            return env
+                .byte_array_from_slice(&[])
+                .map(|a| a.into_raw())
+                .unwrap_or(ptr::null_mut());
+        }
+        let mut classes: *const u8 = ptr::null();
+        let mut class_count: usize = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_classify_outpoints(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                requested.as_ptr(),
+                requested.len(),
+                &mut classes,
+                &mut class_count,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let verdicts: Vec<u8> = if classes.is_null() || class_count == 0 {
+            Vec::new()
+        } else {
+            unsafe { std::slice::from_raw_parts(classes, class_count) }.to_vec()
+        };
+        unsafe {
+            platform_wallet_ffi::platform_wallet_classify_outpoints_free(
+                classes as *mut u8,
+                class_count,
+            )
+        };
+        env.byte_array_from_slice(&verdicts)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
 /// Read a 32-byte id from a Java `byte[]`; throws + returns None on the
 /// wrong length or a JNI error.
 fn read_id32(env: &mut JNIEnv, arr: &JByteArray) -> Option<[u8; 32]> {
