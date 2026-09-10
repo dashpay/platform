@@ -134,9 +134,15 @@ impl<C> Platform<C> {
                 lifecycle: Some(Lifecycle {
                     state: match history.lifecycle.state {
                         DocumentHistoryState::Active => State::Active,
+                        DocumentHistoryState::Deleted => State::Deleted,
+                        DocumentHistoryState::Erasing => State::Erasing,
                         DocumentHistoryState::Absent => State::Absent,
                     } as i32,
                     remaining_revisions: history.lifecycle.remaining_revisions,
+                    deleted_at_ms: history.lifecycle.times.deleted_at_ms,
+                    erasing_started_at_ms: history.lifecycle.times.erasing_started_at_ms,
+                    erasing_from_time_ms: history.lifecycle.times.erasing_from_time_ms,
+                    erasing_from_revision: history.lifecycle.times.erasing_from_revision,
                 }),
                 entries_proof,
                 metadata_proof,

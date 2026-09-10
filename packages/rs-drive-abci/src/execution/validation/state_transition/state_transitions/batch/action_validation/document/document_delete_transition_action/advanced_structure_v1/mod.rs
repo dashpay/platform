@@ -12,10 +12,15 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
     fn validate_structure_v1(&self) -> Result<SimpleConsensusValidationResult, Error>;
 }
 impl DocumentDeleteTransitionActionStructureValidationV1 for DocumentDeleteTransitionAction {
-    /// Protocol 14 checks both deletion permission and history retention before
-    /// executing a delete. Legacy history-bearing types may advertise deletion,
-    /// but Drive refuses it; return the usual paid consensus rejection here.
-    /// V0 retains the historical InternalError outcome for protocol 13 and earlier.
+    /// From protocol 14 a keep-history type takes part in the document
+    /// lifecycle: a delete removes the document from ordinary reads and leaves
+    /// its revisions readable. What v1 adds over v0 is the refusal of a
+    /// keep-history type that carries a contested index, which the parser
+    /// rejects for new contracts but which a contract stored before protocol 14
+    /// could still declare. A contested resource is awarded outside transition
+    /// validation, at an id derived from the winner rather than from the
+    /// contested values, so that award can land on an id whose retained history
+    /// already exists.
     fn validate_structure_v1(&self) -> Result<SimpleConsensusValidationResult, Error> {
         let contract_fetch_info = self.base().data_contract_fetch_info();
         let data_contract = &contract_fetch_info.contract;
@@ -30,12 +35,26 @@ impl DocumentDeleteTransitionActionStructureValidationV1 for DocumentDeleteTrans
             ));
         };
 
-        // A legacy contract may enable both flags, but retaining history always
-        // prevents deletion, regardless of the advertised canBeDeleted value.
-        if !document_type.documents_can_be_deleted() || document_type.documents_keep_history() {
+        if !document_type.documents_can_be_deleted() {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTransitionActionError::new(format!(
                     "documents of type {} can not be deleted",
+                    document_type_name
+                ))
+                .into(),
+            ));
+        }
+
+        if document_type.documents_keep_history()
+            && document_type
+                .indexes()
+                .values()
+                .any(|index| index.contested_index.is_some())
+        {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidDocumentTransitionActionError::new(format!(
+                    "documents of keep-history type {} carry a contested index and can not take \
+                     part in the document lifecycle",
                     document_type_name
                 ))
                 .into(),

@@ -1,24 +1,20 @@
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_erase_transition_action::advanced_structure_v0::DocumentEraseTransitionActionStructureValidationV0;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_erase_transition_action::state_v0::DocumentEraseTransitionActionStateValidationV0;
+use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
-use crate::error::Error;
-use crate::error::execution::ExecutionError;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::state_v0::DocumentDeleteTransitionActionStateValidationV0;
-use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::state_v1::DocumentDeleteTransitionActionStateValidationV1;
-use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::advanced_structure_v0::DocumentDeleteTransitionActionStructureValidationV0;
-use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::advanced_structure_v1::DocumentDeleteTransitionActionStructureValidationV1;
-use crate::platform_types::platform::PlatformStateRef;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::DocumentEraseTransitionAction;
 
 mod advanced_structure_v0;
-mod advanced_structure_v1;
 mod state_v0;
-mod state_v1;
 
-pub trait DocumentDeleteTransitionActionValidation {
+pub trait DocumentEraseTransitionActionValidation {
     fn validate_structure(
         &self,
         platform_version: &PlatformVersion,
@@ -35,7 +31,7 @@ pub trait DocumentDeleteTransitionActionValidation {
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl DocumentDeleteTransitionActionValidation for DocumentDeleteTransitionAction {
+impl DocumentEraseTransitionActionValidation for DocumentEraseTransitionAction {
     fn validate_structure(
         &self,
         platform_version: &PlatformVersion,
@@ -45,13 +41,12 @@ impl DocumentDeleteTransitionActionValidation for DocumentDeleteTransitionAction
             .validation_and_processing
             .state_transitions
             .batch_state_transition
-            .document_delete_transition_structure_validation
+            .document_erase_transition_structure_validation
         {
             0 => self.validate_structure_v0(),
-            1 => self.validate_structure_v1(),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "DocumentDeleteTransitionAction::validate_structure".to_string(),
-                known_versions: vec![0, 1],
+                method: "DocumentEraseTransitionAction::validate_structure".to_string(),
+                known_versions: vec![0],
                 received: version,
             })),
         }
@@ -71,7 +66,7 @@ impl DocumentDeleteTransitionActionValidation for DocumentDeleteTransitionAction
             .validation_and_processing
             .state_transitions
             .batch_state_transition
-            .document_delete_transition_state_validation
+            .document_erase_transition_state_validation
         {
             0 => self.validate_state_v0(
                 platform,
@@ -81,17 +76,9 @@ impl DocumentDeleteTransitionActionValidation for DocumentDeleteTransitionAction
                 transaction,
                 platform_version,
             ),
-            1 => self.validate_state_v1(
-                platform,
-                owner_id,
-                block_info,
-                execution_context,
-                transaction,
-                platform_version,
-            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "DocumentDeleteTransitionAction::validate_state".to_string(),
-                known_versions: vec![0, 1],
+                method: "DocumentEraseTransitionAction::validate_state".to_string(),
+                known_versions: vec![0],
                 received: version,
             })),
         }
