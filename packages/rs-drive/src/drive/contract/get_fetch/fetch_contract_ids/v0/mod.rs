@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fees::op::LowLevelDriveOperation;
 use crate::query::QueryResultType;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
@@ -11,6 +12,7 @@ impl Drive {
         start_at: Option<([u8; 32], bool)>,
         limit: u16,
         transaction: TransactionArg,
+        operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<Vec<[u8; 32]>, Error> {
         // The same path query the prover and verifier use for the ids-only page of
@@ -21,7 +23,7 @@ impl Drive {
             &path_query,
             transaction,
             QueryResultType::QueryKeyElementPairResultType,
-            &mut vec![],
+            operations,
             drive_version,
         )?;
 
