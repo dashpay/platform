@@ -24,11 +24,8 @@ fn id32(byte: u8) -> [u8; 32] {
     [byte; 32]
 }
 
-// ---------------------------------------------------------------------
-// 001..006 — per-scope roundtrip (get→None, put, get, overwrite,
-// delete, get→None). Parent rows seeded first.
-// ---------------------------------------------------------------------
-
+/// Full per-scope roundtrip: get→None, put, get, overwrite, delete,
+/// get→None. Parent rows must be seeded first by the caller.
 fn roundtrip(p: &impl KvStore, scope: &ObjectId) {
     assert_eq!(p.get(scope, "k").unwrap(), None);
     p.put(scope, "k", b"v1").unwrap();
@@ -111,12 +108,6 @@ fn tc_md_006_roundtrip_platform_address() {
     );
 }
 
-// ---------------------------------------------------------------------
-// 007..011 — parentless `put` SUCCEEDS for the five typed scopes
-// (no parent row seeded) and the value reads back. — Global
-// put on empty DB → Ok.
-// ---------------------------------------------------------------------
-
 /// Put `(scope, "k") = b"v"` with NO parent row present, then read it
 /// back. Asserts the soft-cascade model: writes don't require a parent.
 fn assert_parentless_put_roundtrips(p: &impl KvStore, scope: &ObjectId) {
@@ -183,11 +174,8 @@ fn tc_md_012_put_global_on_empty_db_is_ok() {
     );
 }
 
-// ---------------------------------------------------------------------
-// delete of a never-existing key is idempotent (returns Ok),
-// for the Global scope and a typed scope.
-// ---------------------------------------------------------------------
-
+/// delete of a never-existing key is idempotent for both the Global
+/// scope and a typed scope.
 #[test]
 fn delete_missing_key_is_idempotent() {
     let (p, _tmp, _path) = fresh_persister();
@@ -196,11 +184,6 @@ fn delete_missing_key_is_idempotent() {
     ensure_wallet_meta(&p, &w);
     p.delete(&ObjectId::Wallet(w), "never-existed").unwrap();
 }
-
-// ---------------------------------------------------------------------
-// list_keys returns keys in ascending order regardless of
-// insertion order.
-// ---------------------------------------------------------------------
 
 #[test]
 fn list_keys_is_ascending_regardless_of_insert_order() {
@@ -214,10 +197,8 @@ fn list_keys_is_ascending_regardless_of_insert_order() {
     );
 }
 
-// ---------------------------------------------------------------------
-// 013..016 — soft cascade via AFTER DELETE trigger: seed+put,
-// DELETE FROM the direct parent table, assert the meta row is gone.
-// ---------------------------------------------------------------------
+// Soft cascade via AFTER DELETE trigger: seed+put, DELETE FROM the
+// direct parent table, assert the meta row is gone.
 
 #[test]
 fn tc_md_013_cascade_identity() {
@@ -313,9 +294,7 @@ fn tc_md_016_cascade_platform_address() {
     assert_eq!(p.get(&scope, "k").unwrap(), None);
 }
 
-// ---------------------------------------------------------------------
-// 017 / 017b — wallet cascade (direct + transitive via identities).
-// ---------------------------------------------------------------------
+// Wallet cascade: direct, plus transitive via identities.
 
 #[test]
 fn tc_md_017_cascade_wallet() {
@@ -328,10 +307,10 @@ fn tc_md_017_cascade_wallet() {
     {
         let conn = p.lock_conn_for_test();
         conn.execute(
-            "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
+            "DELETE FROM wallets WHERE wallet_id = ?1",
             params![w.as_slice()],
         )
-        .expect("delete wallet_metadata");
+        .expect("delete wallets");
     }
     assert_eq!(p.get(&scope, "k").unwrap(), None);
 }
@@ -349,20 +328,18 @@ fn tc_md_017b_cascade_identity_via_wallet() {
     {
         let conn = p.lock_conn_for_test();
         conn.execute(
-            "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
+            "DELETE FROM wallets WHERE wallet_id = ?1",
             params![w.as_slice()],
         )
-        .expect("delete wallet_metadata");
+        .expect("delete wallets");
     }
-    // wallet_metadata delete → identities FK cascade → meta_identity
+    // wallets delete → identities FK cascade → meta_identity
     // trigger (SQLite fires it for FK-cascade-deleted rows natively).
     assert_eq!(p.get(&scope, "k").unwrap(), None);
 }
 
-// ---------------------------------------------------------------------
-// 018 / 019 — delete_wallet purges every meta_* for the wallet;
-// Global + other wallet's meta_wallet survive; report wiring.
-// ---------------------------------------------------------------------
+// delete_wallet purges every meta_* for the wallet; Global and another
+// wallet's meta_wallet survive.
 
 #[test]
 fn tc_md_018_delete_wallet_purges_all_meta_for_wallet() {
@@ -513,12 +490,9 @@ fn tc_md_019_delete_wallet_report_counts_meta_tables() {
     assert_eq!(global, 1, "meta_global must survive the per-wallet delete");
 }
 
-// ---------------------------------------------------------------------
-// DET scenario — write metadata before the parent exists, read it back,
-// then create the parent (metadata still present), then delete the
-// parent (the AFTER DELETE trigger removes the metadata).
-// ---------------------------------------------------------------------
-
+/// Write metadata before the parent exists, read it back, create the
+/// parent (metadata persists), then delete it (the AFTER DELETE trigger
+/// removes the metadata).
 #[test]
 fn det_write_before_parent_then_create_then_delete() {
     use rusqlite::params;
@@ -552,13 +526,8 @@ fn det_write_before_parent_then_create_then_delete() {
     assert_eq!(p.get(&scope, "alias").unwrap(), None);
 }
 
-// ---------------------------------------------------------------------
-// The meta_* triggers coexist with the pre-existing
-// `setnull_core_utxos_on_tx_delete` trigger during delete_wallet: a
-// wallet with core_transactions + core_utxos (a UTXO spent_in that tx)
-// deletes cleanly and leaves nothing behind.
-// ---------------------------------------------------------------------
-
+/// Wallet deletion cascades through core transactions and UTXOs alongside
+/// the metadata cleanup triggers.
 #[test]
 fn delete_wallet_with_core_tx_and_utxo_stays_consistent() {
     use rusqlite::params;
@@ -579,9 +548,9 @@ fn delete_wallet_with_core_tx_and_utxo_stays_consistent() {
         .expect("seed core_transactions");
         conn.execute(
             "INSERT INTO core_utxos \
-                (wallet_id, outpoint, value, script, account_index, spent, spent_in_txid) \
-             VALUES (?1, ?2, 1000, X'00', 0, 1, ?3)",
-            params![w.as_slice(), outpoint.as_slice(), txid.as_slice()],
+                (wallet_id, outpoint, value, script, spent) \
+             VALUES (?1, ?2, 1000, X'00', 1)",
+            params![w.as_slice(), outpoint.as_slice()],
         )
         .expect("seed core_utxos");
     }
@@ -612,19 +581,15 @@ fn delete_wallet_with_core_tx_and_utxo_stays_consistent() {
     assert_eq!(p.get(&ObjectId::Wallet(w), "k").unwrap(), None);
 }
 
-// ---------------------------------------------------------------------
-// Trigger-on-FK-cascade proof at SQLite defaults. SQLite fires an AFTER
-// DELETE trigger for a row removed by an FK ON DELETE CASCADE natively —
-// `recursive_triggers` (off by default) does not gate this. On a RAW
-// connection at defaults, the one-hop chain wallet_metadata delete →
-// identities FK cascade → meta_identity trigger cleans up.
-// ---------------------------------------------------------------------
-
+/// SQLite fires an AFTER DELETE trigger for a row removed by FK ON DELETE
+/// CASCADE natively — `recursive_triggers` (off by default) does not gate
+/// this. On a raw connection at defaults, the one-hop chain wallets
+/// delete → identities FK cascade → meta_identity trigger cleans up.
 #[test]
 fn meta_identity_cleanup_fires_on_wallet_cascade() {
     use rusqlite::{params, Connection};
 
-    let tmp = tempfile::tempdir().expect("tempdir");
+    let tmp = common::secure_tempdir().expect("tempdir");
     let path = tmp.path().join("raw.db");
     let mut conn = Connection::open(&path).expect("open raw conn");
     platform_wallet_storage::sqlite::migrations::run(&mut conn).expect("apply migration");
@@ -642,13 +607,13 @@ fn meta_identity_cleanup_fires_on_wallet_cascade() {
     let w = [0x90u8; 32];
     let idy = [0x91u8; 32];
     conn.execute(
-        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+        "INSERT INTO wallets (wallet_id, network, birth_height) \
          VALUES (?1, 'testnet', 0)",
         params![&w[..]],
     )
     .unwrap();
     conn.execute(
-        "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
          VALUES (?1, ?2, NULL, X'00', 0)",
         params![&idy[..], &w[..]],
     )
@@ -659,12 +624,9 @@ fn meta_identity_cleanup_fires_on_wallet_cascade() {
     )
     .unwrap();
 
-    // wallet_metadata delete → identities FK cascade → meta_identity trigger.
-    conn.execute(
-        "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
-        params![&w[..]],
-    )
-    .unwrap();
+    // wallets delete → identities FK cascade → meta_identity trigger.
+    conn.execute("DELETE FROM wallets WHERE wallet_id = ?1", params![&w[..]])
+        .unwrap();
 
     let identity_rows: i64 = conn
         .query_row(
@@ -688,18 +650,14 @@ fn meta_identity_cleanup_fires_on_wallet_cascade() {
     );
 }
 
-// ---------------------------------------------------------------------
-// Two-hop trigger-on-FK-cascade proof at SQLite defaults. The meta_token
-// chain spans two FK cascades: wallet_metadata delete → identities (FK
-// cascade) → token_balances (FK cascade) → meta_token trigger. This
-// fires natively without recursive_triggers.
-// ---------------------------------------------------------------------
-
+/// The meta_token chain spans two FK cascades: wallets delete →
+/// identities → token_balances → meta_token trigger, firing natively
+/// without recursive_triggers.
 #[test]
 fn meta_token_cleanup_fires_on_wallet_cascade_two_hops() {
     use rusqlite::{params, Connection};
 
-    let tmp = tempfile::tempdir().expect("tempdir");
+    let tmp = common::secure_tempdir().expect("tempdir");
     let path = tmp.path().join("raw.db");
     let mut conn = Connection::open(&path).expect("open raw conn");
     platform_wallet_storage::sqlite::migrations::run(&mut conn).expect("apply migration");
@@ -718,13 +676,13 @@ fn meta_token_cleanup_fires_on_wallet_cascade_two_hops() {
     let idy = [0xA1u8; 32];
     let token = [0xA2u8; 32];
     conn.execute(
-        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+        "INSERT INTO wallets (wallet_id, network, birth_height) \
          VALUES (?1, 'testnet', 0)",
         params![&w[..]],
     )
     .unwrap();
     conn.execute(
-        "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
          VALUES (?1, ?2, NULL, X'00', 0)",
         params![&idy[..], &w[..]],
     )
@@ -743,11 +701,8 @@ fn meta_token_cleanup_fires_on_wallet_cascade_two_hops() {
     .unwrap();
 
     // Two-hop cascade: wallet → identities → token_balances → trigger.
-    conn.execute(
-        "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
-        params![&w[..]],
-    )
-    .unwrap();
+    conn.execute("DELETE FROM wallets WHERE wallet_id = ?1", params![&w[..]])
+        .unwrap();
 
     let token_rows: i64 = conn
         .query_row(
@@ -773,10 +728,6 @@ fn meta_token_cleanup_fires_on_wallet_cascade_two_hops() {
         "the meta_token trigger fires across the two-hop FK cascade"
     );
 }
-
-// ---------------------------------------------------------------------
-// 020..022 — key bounds.
-// ---------------------------------------------------------------------
 
 #[test]
 fn tc_md_020_empty_key_rejected() {
@@ -820,11 +771,8 @@ fn tc_md_022_max_length_key_accepted() {
     );
 }
 
-// ---------------------------------------------------------------------
-// oversized value planted directly is rejected on `get`
-// before materialisation, across every meta_* table.
-// ---------------------------------------------------------------------
-
+/// An oversized value planted directly is rejected on `get` before
+/// materialisation, across every meta_* table.
 #[test]
 fn tc_md_023_oversized_value_rejected_before_materialising() {
     use rusqlite::params;
@@ -942,10 +890,8 @@ fn tc_md_023_oversized_value_rejected_before_materialising() {
     }
 }
 
-// ---------------------------------------------------------------------
-// list_keys prefix with literal `%`/`_`/`\` (not wildcards).
-// ---------------------------------------------------------------------
-
+/// list_keys treats `%`/`_`/`\` in the prefix as literals, not LIKE
+/// wildcards.
 #[test]
 fn tc_md_024_list_keys_escapes_like_metacharacters() {
     let (p, _tmp, _path) = fresh_persister();
@@ -977,11 +923,8 @@ fn tc_md_024_list_keys_escapes_like_metacharacters() {
     );
 }
 
-// ---------------------------------------------------------------------
-// scope isolation: same key string across Wallet(A)/Wallet(B)
-// and Global/Wallet(A) stays independent.
-// ---------------------------------------------------------------------
-
+/// The same key string across Wallet(A)/Wallet(B) and Global/Wallet(A)
+/// stays scope-independent.
 #[test]
 fn tc_md_025_scope_isolation() {
     let (p, _tmp, _path) = fresh_persister();
@@ -1072,14 +1015,12 @@ fn delete_wallet_leaves_no_surviving_rows() {
         let txid = vec![0x01u8; 32];
         let outpoint = vec![0x02u8; 36];
         let stmts: &[(&str, &[&dyn rusqlite::ToSql])] = &[
-            ("INSERT INTO account_registrations (wallet_id, account_type, account_index, account_xpub_bytes) VALUES (?1, 'standard', 0, X'00')", &[&a.as_slice()]),
-            ("INSERT INTO account_address_pools (wallet_id, account_type, account_index, pool_type, snapshot_blob) VALUES (?1, 'standard', 0, 'external', X'00')", &[&a.as_slice()]),
+            ("INSERT INTO account_registrations (wallet_id, account_type, account_index, account_xpub_bytes) VALUES (?1, 'standard_bip44', 0, X'00')", &[&a.as_slice()]),
             ("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, X'00')", &[&a.as_slice(), &txid]),
-            ("INSERT INTO core_utxos (wallet_id, outpoint, value, script, account_index, spent) VALUES (?1, ?2, 0, X'00', 0, 0)", &[&a.as_slice(), &outpoint]),
+            ("INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) VALUES (?1, ?2, 0, X'00', 0)", &[&a.as_slice(), &outpoint]),
             ("INSERT INTO core_instant_locks (wallet_id, txid, islock_blob) VALUES (?1, ?2, X'00')", &[&a.as_slice(), &txid]),
-            ("INSERT INTO core_derived_addresses (wallet_id, account_type, account_index, address, derivation_path, used) VALUES (?1, 'standard', 0, 'addr', '', 0)", &[&a.as_slice()]),
             ("INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) VALUES (?1, 1, 1)", &[&a.as_slice()]),
-            ("INSERT INTO identity_keys (identity_id, key_id, public_key_blob, public_key_hash) VALUES (?1, 0, X'00', X'00')", &[&idy.as_slice()]),
+            ("INSERT INTO identity_keys (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) VALUES (?1, ?2, 0, X'00', X'00', NULL)", &[&a.as_slice(), &idy.as_slice()]),
             ("INSERT INTO platform_address_sync (wallet_id, sync_height, sync_timestamp, last_known_recent_block) VALUES (?1, 0, 0, 0)", &[&a.as_slice()]),
             ("INSERT INTO asset_locks (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) VALUES (?1, ?2, 'built', 0, 0, 0, X'00')", &[&a.as_slice(), &outpoint]),
             ("INSERT INTO dashpay_profiles (identity_id, profile_blob) VALUES (?1, X'00')", &[&idy.as_slice()]),
@@ -1242,13 +1183,11 @@ fn delete_wallet_leaves_no_surviving_rows() {
     // survive. Scoping each count by `wallet_id` catches an over-broad
     // cascade that an unscoped whole-table COUNT(*) would miss.
     let wallet_scoped = [
-        "wallet_metadata",
+        "wallets",
         "account_registrations",
-        "account_address_pools",
         "core_transactions",
         "core_utxos",
         "core_instant_locks",
-        "core_derived_addresses",
         "core_sync_state",
         "identities",
         "contacts",
@@ -1295,7 +1234,7 @@ fn delete_wallet_leaves_no_surviving_rows() {
     // rows. (b is seeded in a representative subset of the scoped tables,
     // not all of them, so we check exactly the tables it was given.)
     let b_wallet_scoped = [
-        "wallet_metadata",
+        "wallets",
         "core_sync_state",
         "identities",
         "contacts",
