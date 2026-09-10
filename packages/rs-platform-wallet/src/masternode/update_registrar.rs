@@ -231,7 +231,7 @@ pub(crate) fn assemble_update_registrar_placeholder(
                 .legacy_public_key_bytes
                 .as_deref()
                 .and_then(|b| b.try_into().ok());
-            ensure_operator_key_unused(summaries, &bytes, legacy.as_ref())?;
+            ensure_operator_key_unused(summaries, &params.pro_tx_hash, &bytes, legacy.as_ref())?;
             bytes
         }
         None => normalize_operator_key_to_basic(
@@ -433,19 +433,26 @@ pub(crate) fn resolve_owner_payout_script(
     Ok(script)
 }
 
-/// Refuse a candidate operator key already registered to any masternode —
-/// operator keys are consensus-unique across the whole list, so a duplicate
-/// would make the ProUpRegTx invalid. The list may hold either
-/// serialization of a key, so both forms are checked.
+/// Refuse a candidate operator key already registered to any masternode
+/// other than `target` — operator keys are consensus-unique across the
+/// list, so such a duplicate would make the ProUpRegTx invalid. The target
+/// itself is exempt: both of Core's `CheckProUpRegTx` duplicate-key checks
+/// exclude the node being updated, so re-asserting its own current key
+/// (say, on a retry) is valid. The list may hold either serialization of a
+/// key, so both forms are checked.
 pub(crate) fn ensure_operator_key_unused(
     summaries: &[MasternodeListSummary],
+    target: &[u8; 32],
     candidate: &[u8; 48],
     candidate_legacy: Option<&[u8; 48]>,
 ) -> Result<(), PlatformWalletError> {
-    let clash = summaries.iter().find(|entry| {
-        entry.operator_public_key == *candidate
-            || candidate_legacy.is_some_and(|legacy| entry.operator_public_key == *legacy)
-    });
+    let clash = summaries
+        .iter()
+        .filter(|entry| entry.pro_tx_hash != *target)
+        .find(|entry| {
+            entry.operator_public_key == *candidate
+                || candidate_legacy.is_some_and(|legacy| entry.operator_public_key == *legacy)
+        });
     if let Some(entry) = clash {
         return Err(PlatformWalletError::InvalidParameter(format!(
             "the chosen operator key is already used by masternode {} — operator keys must \
@@ -754,23 +761,31 @@ mod tests {
     }
 
     /// Operator keys are consensus-unique across the list — a candidate in
-    /// use (under either serialization) must be refused before signing.
+    /// use by any OTHER masternode (under either serialization) must be
+    /// refused before signing, while the target's own current key passes:
+    /// Core's duplicate-key checks exclude the node being updated.
     #[test]
     fn used_operator_keys_are_refused() {
         let mut entry = masternode(0x11);
         entry.operator_public_key = [0xAA; 48];
         let summaries = vec![entry];
+        let other_target = [0x99; 32];
 
-        let err = ensure_operator_key_unused(&summaries, &[0xAA; 48], None)
+        let err = ensure_operator_key_unused(&summaries, &other_target, &[0xAA; 48], None)
             .expect_err("modern-serialization clash refused");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
 
-        let err = ensure_operator_key_unused(&summaries, &[0xBB; 48], Some(&[0xAA; 48]))
-            .expect_err("legacy-serialization clash refused");
+        let err =
+            ensure_operator_key_unused(&summaries, &other_target, &[0xBB; 48], Some(&[0xAA; 48]))
+                .expect_err("legacy-serialization clash refused");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
 
-        ensure_operator_key_unused(&summaries, &[0xBB; 48], Some(&[0xCC; 48]))
+        ensure_operator_key_unused(&summaries, &other_target, &[0xBB; 48], Some(&[0xCC; 48]))
             .expect("an unused key passes");
+
+        // The target re-asserting its own registered key is not a clash.
+        ensure_operator_key_unused(&summaries, &[0x11; 32], &[0xAA; 48], None)
+            .expect("the target's own current operator key passes");
     }
 
     /// The full prepare wiring below the network fetches — entry lookup,
