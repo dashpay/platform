@@ -30,7 +30,7 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// v14 hosts five consensus changes:
+/// v14 hosts six consensus changes:
 ///
 /// 1. **Contract-level ranked aggregates** (this branch): an index can
 ///    declare that its groups are rankable by an aggregate, so a query like
@@ -123,6 +123,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    admitted only for non-overlapping windows (`range == step`) sourced
 ///    from the immutable `$createdAt`.
 ///
+/// 6. **Keep-history storage structure B**: the primary key stores the current
+///    document reference while each document's retained Items live in a separate
+///    provable count tree keyed by `encode_u64(block_time_ms) || encode_u64(sequence)`,
+///    where the sequence is `$revision` or 1 when no revision is present.
+///    The activation hook migrates existing histories and index references in the
+///    block transaction. History v1 authenticates pages and lifecycle counts with
+///    separate proofs. This is non-additive: history v0 and `block_time_ms`
+///    point-in-time reads are rejected for keep-history types after activation;
+///    SDKs older than this release cannot read those documents.
+///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type
 /// one level below it, and a demoted `CountSumTree` value tree contributes
@@ -133,7 +143,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// Until a contract uses the ranked or time-range grammar, the only v14
 /// behavior changes are the shared-prefix fix, the contested-index
 /// cross-check, the index-reorder schema-compatibility fix and the relative
-/// daily withdrawal limit; everything else matches v13:
+/// daily withdrawal limit, and the keep-history migration and query changes:
 ///
 /// * `CONTRACT_VERSIONS_V6` points `document_type_schema` at the v3 document
 ///   meta-schema, which hosts the ranked index keywords
@@ -187,7 +197,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   formats 0–2 (all pre-v14 documents) deserialize exactly as before with
 ///   an unstamped (pre-annotation) layout.
 ///
-/// The wire surface changes only additively: `GetDocumentsRequestV1`
+/// The ranked wire surface changes additively: `GetDocumentsRequestV1`
 /// already carries `selects` / `group_by` / `order_by` / `limit` /
 /// `offset`; the ranked response is an additive `ResultData.ranked`
 /// variant, whose `skipped` field is likewise additive; and the v1
@@ -196,13 +206,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// has no time-range operator at all).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; structure B history storage, estimation and proofs
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: total credits history for the withdrawal limit and keep-history activation migration
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
-        query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
+        query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked/HAVING routing, committed-time IN_TIME_RANGE and document history v1
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
