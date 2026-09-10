@@ -1,5 +1,5 @@
 use crate::queries::utils::deserialize_required_query;
-use crate::queries::ProofMetadataResponseWasm;
+use crate::queries::{ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataWasm};
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -14,7 +14,7 @@ use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
 use drive::query::{OrderClause, TimeRangeGridSpec, TimeRangeSelector, WhereClause, WhereOperator};
-use drive_proof_verifier::types::DocumentHistory;
+use drive_proof_verifier::types::{DocumentHistory, DocumentHistoryProofInfo};
 use drive_proof_verifier::{DocumentSplitAverages, DocumentSplitCounts, DocumentSplitSums};
 use js_sys::{BigInt, Map};
 use serde::Deserialize;
@@ -790,12 +790,12 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getDocumentHistoryWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<DocumentHistoryResult>"
+        unchecked_return_type = "DocumentHistoryProofMetadataResponseTyped"
     )]
     pub async fn get_document_history_with_proof_info(
         &self,
         query: DocumentHistoryQueryJs,
-    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+    ) -> Result<DocumentHistoryProofMetadataResponseWasm, WasmSdkError> {
         let query = parse_document_history_query(query)?;
         let contract_id = query.data_contract_id;
         let document_type_name = query.document_type_name.clone();
@@ -805,15 +805,19 @@ impl WasmSdk {
             .map_err(|error| {
                 WasmSdkError::not_found(format!("Document type not found: {error}"))
             })?;
-        let (history, metadata, proof) =
-            DocumentHistory::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
-        let history = history
+        let result = DocumentHistoryProofInfo::fetch(self.as_ref(), query)
+            .await?
             .ok_or_else(|| WasmSdkError::not_found("document history response is missing"))?;
-        Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            document_history_to_js(history, contract_id, &document_type_name)?,
-            metadata,
-            proof,
-        ))
+        Ok(DocumentHistoryProofMetadataResponseWasm {
+            data: document_history_to_js(result.history, contract_id, &document_type_name)?,
+            metadata: result.response.metadata.expect("verified metadata").into(),
+            entries_proof: result.response.entries_proof.map(Into::into),
+            metadata_proof: result
+                .response
+                .metadata_proof
+                .expect("verified metadata proof")
+                .into(),
+        })
     }
 
     #[wasm_bindgen(
@@ -1413,6 +1417,35 @@ mod history_wasm_tests {
     use wasm_bindgen_test::wasm_bindgen_test;
 
     #[wasm_bindgen_test]
+    fn should_export_both_history_proofs_without_combining_them() {
+        let make_proof = |bytes| {
+            ProofInfoWasm::from(dash_sdk::platform::proto::Proof {
+                grovedb_proof: bytes,
+                ..Default::default()
+            })
+        };
+        let result = DocumentHistoryProofMetadataResponseWasm {
+            data: JsValue::NULL,
+            metadata: dash_sdk::platform::proto::ResponseMetadata::default().into(),
+            entries_proof: Some(make_proof(vec![1, 2])),
+            metadata_proof: make_proof(vec![3, 4]),
+        };
+        let result = JsValue::from(result);
+        let entries = Reflect::get(&result, &"entriesProof".into()).unwrap();
+        let metadata = Reflect::get(&result, &"metadataProof".into()).unwrap();
+        assert_eq!(
+            js_sys::Uint8Array::new(&Reflect::get(&entries, &"grovedbProof".into()).unwrap())
+                .to_vec(),
+            vec![1, 2]
+        );
+        assert_eq!(
+            js_sys::Uint8Array::new(&Reflect::get(&metadata, &"grovedbProof".into()).unwrap())
+                .to_vec(),
+            vec![3, 4]
+        );
+    }
+
+    #[wasm_bindgen_test]
     fn should_preserve_same_time_revisions_and_exact_lifecycle_counts_in_javascript() {
         let count = (1u64 << 53) + 1;
         let history = DocumentHistory {
@@ -1474,3 +1507,37 @@ mod history_wasm_tests {
         );
     }
 }
+
+/// History page with the two independently reusable proofs and their shared metadata.
+#[wasm_bindgen(js_name = DocumentHistoryProofMetadataResponse)]
+pub struct DocumentHistoryProofMetadataResponseWasm {
+    data: JsValue,
+    metadata: ResponseMetadataWasm,
+    entries_proof: Option<ProofInfoWasm>,
+    metadata_proof: ProofInfoWasm,
+}
+
+#[wasm_bindgen(js_class = DocumentHistoryProofMetadataResponse)]
+impl DocumentHistoryProofMetadataResponseWasm {
+    #[wasm_bindgen(getter)]
+    pub fn data(&self) -> JsValue {
+        self.data.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn metadata(&self) -> ResponseMetadataWasm {
+        self.metadata.clone()
+    }
+    #[wasm_bindgen(getter = entriesProof)]
+    pub fn entries_proof(&self) -> Option<ProofInfoWasm> {
+        self.entries_proof.clone()
+    }
+    #[wasm_bindgen(getter = metadataProof)]
+    pub fn metadata_proof(&self) -> ProofInfoWasm {
+        self.metadata_proof.clone()
+    }
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const DOCUMENT_HISTORY_PROOF_INFO_TS: &str = r#"
+export type DocumentHistoryProofMetadataResponseTyped = DocumentHistoryProofMetadataResponse & { data: DocumentHistoryResult };
+"#;

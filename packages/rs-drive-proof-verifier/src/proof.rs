@@ -1504,6 +1504,65 @@ fn verify_document_history_response_v1(
     ))
 }
 
+impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistoryProofInfo {
+    type Request = platform::GetDocumentHistoryRequest;
+    type Response = platform::GetDocumentHistoryResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let response = response.into();
+        let Some(platform::get_document_history_response::Version::V1(wire)) = &response.version
+        else {
+            return Err(Error::ResponseDecodeError {
+                error: "history proof info requires a version 1 response".to_owned(),
+            });
+        };
+        let wire = wire.clone();
+        let (history, metadata, proof) = DocumentHistory::maybe_from_proof_with_metadata(
+            request,
+            response,
+            network,
+            platform_version,
+            provider,
+        )?;
+        Ok((
+            history.map(|history| Self {
+                history,
+                response: wire,
+            }),
+            metadata,
+            proof,
+        ))
+    }
+}
+
+impl DocumentHistoryProofInfo {
+    /// Independently authenticate the retained response against its original request.
+    pub fn verify(
+        &self,
+        request: platform::GetDocumentHistoryRequest,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &dyn ContextProvider,
+    ) -> Result<Option<DocumentHistory>, Error> {
+        DocumentHistory::maybe_from_proof(
+            request,
+            platform::GetDocumentHistoryResponse::from(self.response.clone()),
+            network,
+            platform_version,
+            provider,
+        )
+    }
+}
+
 impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
     type Request = platform::GetDocumentHistoryRequest;
     type Response = platform::GetDocumentHistoryResponse;
@@ -2971,6 +3030,10 @@ macro_rules! define_length {
 
 define_length!(DataContract);
 define_length!(DataContractHistory, |d: &DataContractHistory| d.len());
+define_length!(DocumentHistoryProofInfo, |d: &DocumentHistoryProofInfo| d
+    .history
+    .entries
+    .len());
 define_length!(DocumentHistory, |d: &DocumentHistory| d.entries.len());
 define_length!(Document);
 define_length!(Identity);

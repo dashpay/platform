@@ -230,6 +230,32 @@ impl MockResponse for Document {
 
 type MockDocumentHistory = (Vec<(u64, u64, Vec<u8>)>, Option<(bool, u64)>);
 
+impl MockResponse for drive_proof_verifier::types::DocumentHistoryProofInfo {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        use dapi_grpc::Message;
+        bincode::encode_to_vec(
+            (
+                self.history.mock_serialize(sdk),
+                self.response.encode_to_vec(),
+            ),
+            BINCODE_CONFIG,
+        )
+        .expect("encode document history proof info")
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self {
+        use dapi_grpc::Message;
+        let ((history, response), _): ((Vec<u8>, Vec<u8>), _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG)
+                .expect("decode document history proof info");
+        Self {
+            history: drive_proof_verifier::types::DocumentHistory::mock_deserialize(sdk, &history),
+            response: dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV1::decode(response.as_slice())
+                .expect("decode document history response"),
+        }
+    }
+}
+
 impl MockResponse for drive_proof_verifier::types::DocumentHistory {
     fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
         use drive_proof_verifier::types::DocumentHistoryState;
