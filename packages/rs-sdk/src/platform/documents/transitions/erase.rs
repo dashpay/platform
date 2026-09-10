@@ -149,14 +149,48 @@ impl DocumentEraseTransitionBuilder {
     }
 }
 
-/// What one erase transition achieved.
+/// What one erase transition left behind.
 #[derive(Debug)]
 pub enum DocumentEraseResult {
-    /// The erase was accepted. Whether it removed the last revision is not
-    /// something the transition's own proof can show, because the document was
-    /// already absent from ordinary reads before it ran — read the current
-    /// lifecycle with [`Sdk::document_current_lifecycle`] to find out.
-    Accepted(Identifier),
+    /// The document is absent by id as of the proof's block. It already was
+    /// before the erase ran, so this is an observation of the state the erase
+    /// affected, not evidence that this erase executed — read the current
+    /// lifecycle with [`Sdk::document_current_lifecycle`] to find out how much
+    /// history is left.
+    AbsentAsOfProof(Identifier),
+}
+
+/// Reads the observation an erase leaves behind out of the verified result.
+///
+/// Its own function so a test can drive it with the outcome an erase actually
+/// produces: the proof classifier reports an erase as affected state, which the
+/// strict wait refuses, so the erase has to take the affected-state wait and
+/// this has to accept what that wait returns.
+fn erase_observation(result: StateTransitionProofResult) -> Result<DocumentEraseResult, Error> {
+    match result {
+        StateTransitionProofResult::VerifiedDocuments(documents) => {
+            if let Some((erased_id, None)) = documents.into_iter().next() {
+                Ok(DocumentEraseResult::AbsentAsOfProof(erased_id))
+            } else {
+                Err(Error::DriveProofError(
+                    drive::error::proof::ProofError::UnexpectedResultProof(
+                        "expected an absent document in the VerifiedDocuments result for an \
+                         erase transition"
+                            .to_string(),
+                    ),
+                    vec![],
+                    Default::default(),
+                ))
+            }
+        }
+        _ => Err(Error::DriveProofError(
+            drive::error::proof::ProofError::UnexpectedResultProof(
+                "expected VerifiedDocuments for a document erase transition".to_string(),
+            ),
+            vec![],
+            Default::default(),
+        )),
+    }
 }
 
 impl Sdk {
@@ -167,8 +201,10 @@ impl Sdk {
     /// one transition may remove needs several, and this method broadcasts one.
     ///
     /// The proof this returns authenticates that the document is absent by id,
-    /// which it already was before the erase ran, so it is evidence about the
-    /// state, not about this transition having executed. Use
+    /// which it already was before the erase ran, so it is an observation of
+    /// the state the erase affected rather than evidence that this erase
+    /// executed. That is why it takes the affected-state wait: the strict wait
+    /// refuses exactly this classification. Use
     /// [`Sdk::document_current_lifecycle`] to observe how much history is left.
     pub async fn document_erase<S: Signer<IdentityPublicKey>>(
         &self,
@@ -184,33 +220,10 @@ impl Sdk {
             .await?;
 
         let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
+            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(self, put_settings)
             .await?;
 
-        match proof_result {
-            StateTransitionProofResult::VerifiedDocuments(documents) => {
-                if let Some((erased_id, None)) = documents.into_iter().next() {
-                    Ok(DocumentEraseResult::Accepted(erased_id))
-                } else {
-                    Err(Error::DriveProofError(
-                        drive::error::proof::ProofError::UnexpectedResultProof(
-                            "expected an absent document in the VerifiedDocuments result for an \
-                             erase transition"
-                                .to_string(),
-                        ),
-                        vec![],
-                        Default::default(),
-                    ))
-                }
-            }
-            _ => Err(Error::DriveProofError(
-                drive::error::proof::ProofError::UnexpectedResultProof(
-                    "expected VerifiedDocuments for a document erase transition".to_string(),
-                ),
-                vec![],
-                Default::default(),
-            )),
-        }
+        erase_observation(proof_result)
     }
 
     /// Reads where a document stands in its lifecycle right now.
@@ -249,5 +262,35 @@ impl Sdk {
                 remaining_revisions: 0,
                 times: Default::default(),
             }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    /// The erase reads its observation out of exactly the result the
+    /// affected-state wait hands back, and refuses anything else.
+    #[test]
+    fn should_read_an_absent_document_as_the_erases_observation() {
+        let id = Identifier::from([9u8; 32]);
+        let observation = erase_observation(StateTransitionProofResult::VerifiedDocuments(
+            BTreeMap::from([(id, None)]),
+        ))
+        .expect("an absent document is what an erase leaves behind");
+        assert!(matches!(
+            observation,
+            DocumentEraseResult::AbsentAsOfProof(seen) if seen == id
+        ));
+
+        let document = dpp::document::Document::V0(Default::default());
+        erase_observation(StateTransitionProofResult::VerifiedDocuments(
+            BTreeMap::from([(id, Some(document))]),
+        ))
+        .expect_err("a document that is still there did not survive an erase");
+
+        erase_observation(StateTransitionProofResult::VerifiedTokenBalanceAbsence(id))
+            .expect_err("only a document result can describe an erase");
     }
 }
