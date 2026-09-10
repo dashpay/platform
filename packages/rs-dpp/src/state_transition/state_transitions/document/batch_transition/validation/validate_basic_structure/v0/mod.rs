@@ -4,7 +4,9 @@ use crate::consensus::basic::document::{
 };
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::BasicError;
-use crate::state_transition::batch_transition::batched_transition::DocumentIndexOnlyDeleteTransition;
+use crate::state_transition::batch_transition::batched_transition::{
+    DocumentEraseTransition, DocumentIndexOnlyDeleteTransition,
+};
 
 use crate::identity::identity_nonce::MISSING_IDENTITY_REVISIONS_FILTER;
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -125,6 +127,41 @@ impl BatchTransition {
                             // The kind does not exist at this protocol
                             // version; the empty supported range (min 1,
                             // max 0) states exactly that.
+                            result.add_error(BasicError::UnsupportedVersionError(
+                                UnsupportedVersionError::new(feature_version, 1, 0),
+                            ));
+                        }
+                        Some(bounds) if !bounds.bounds.check_version(feature_version) => {
+                            result.add_error(BasicError::UnsupportedVersionError(
+                                UnsupportedVersionError::new(
+                                    feature_version,
+                                    bounds.bounds.min_version,
+                                    bounds.bounds.max_version,
+                                ),
+                            ));
+                        }
+                        Some(_) => {}
+                    }
+                }
+
+                // The erase kind joined the wire at protocol version 14. Old
+                // software cannot decode it at all, so no historical block can
+                // contain one — this check exists so that new software agrees
+                // with old software while a pre-14 protocol version is still
+                // active.
+                if let DocumentTransition::Erase(erase) = transition {
+                    let feature_version = match erase {
+                        DocumentEraseTransition::V0(_) => 0,
+                    };
+                    match &platform_version
+                        .dpp
+                        .state_transition_serialization_versions
+                        .document_erase_state_transition
+                    {
+                        None => {
+                            // The kind does not exist at this protocol
+                            // version; the empty supported range (min 1, max 0)
+                            // states exactly that.
                             result.add_error(BasicError::UnsupportedVersionError(
                                 UnsupportedVersionError::new(feature_version, 1, 0),
                             ));

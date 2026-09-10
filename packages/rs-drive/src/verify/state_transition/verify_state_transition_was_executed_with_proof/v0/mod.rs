@@ -503,6 +503,24 @@ impl Drive {
                                         .to_string(),
                                 )))
                             }
+                            DocumentTransition::Erase(erase_transition) => {
+                                // An erase acts on a document that was already
+                                // deleted, so the by-id proof shows it absent
+                                // both before and after. The absence is the
+                                // state the transition affected, not evidence
+                                // that this erase ran; the classifier below
+                                // reports it as such.
+                                if document.is_some() {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution contained a current document for erased id {}", erase_transition.base().id()))));
+                                }
+                                Ok((
+                                    root_hash,
+                                    VerifiedDocuments(BTreeMap::from([(
+                                        erase_transition.base().id(),
+                                        None,
+                                    )])),
+                                ))
+                            }
                         }
                     }
                     BatchedTransitionRef::Token(token_transition) => {
@@ -2136,10 +2154,17 @@ impl Drive {
                             data_contract_id
                         ))),
                     )?;
-                    !contract
-                        .document_type_for_name(document_transition.document_type_name())
-                        .map_err(|e| Error::Proof(ProofError::UnknownContract(e.to_string())))?
-                        .index_only()
+                    // EXCEPT an erase: the document it acts on was already
+                    // deleted, so the by-id proof shows the same absence
+                    // whether or not this erase ran.
+                    if matches!(document_transition, DocumentTransition::Erase(_)) {
+                        false
+                    } else {
+                        !contract
+                            .document_type_for_name(document_transition.document_type_name())
+                            .map_err(|e| Error::Proof(ProofError::UnknownContract(e.to_string())))?
+                            .index_only()
+                    }
                 }
                 Some(BatchedTransitionRef::Token(token_transition)) => {
                     let data_contract_id = token_transition.data_contract_id();

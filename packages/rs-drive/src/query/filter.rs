@@ -324,6 +324,10 @@ impl DriveDocumentQueryFilter<'_> {
                     TransitionCheckResult::Fail
                 }
             }
+            // An erase carries no document values and acts on a document that
+            // is already invisible to every document query, so no
+            // content-based subscription filter can describe it.
+            DocumentTransition::Erase(_) => TransitionCheckResult::Fail,
             DocumentTransition::IndexOnlyDelete(index_only_delete) => {
                 if let DocumentActionMatchClauses::Delete {
                     original_document_clauses,
