@@ -15,6 +15,9 @@
 #[cfg(feature = "server")]
 mod fetch;
 
+#[cfg(feature = "server")]
+mod refund_recipients;
+
 #[cfg(all(test, feature = "server", feature = "verify"))]
 mod tests;
 

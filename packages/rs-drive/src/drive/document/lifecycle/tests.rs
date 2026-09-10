@@ -1053,3 +1053,58 @@ fn should_reject_an_unsupported_erase_estimation_version() {
         Error::Drive(DriveError::UnknownVersionMismatch { .. })
     ));
 }
+
+/// The recipient work is priced from the ordinary balance-update path and
+/// scales with the number of beneficiaries one erase can credit, without
+/// touching any identity's balance.
+#[test]
+fn should_price_the_refund_recipients_an_erase_can_credit() {
+    use dpp::block::epoch::Epoch;
+
+    let drive = setup_drive_with_initial_state_structure(None);
+    let epoch = Epoch::new(0).unwrap();
+    let version = latest();
+
+    let priced = drive
+        .erase_refund_recipient_cost(&epoch, version)
+        .expect("expected a price for the recipient work");
+    assert!(
+        priced.processing_fee > 0,
+        "crediting a beneficiary is work somebody has to pay for"
+    );
+    assert!(
+        priced.fee_refunds.0.is_empty() && priced.storage_fee == 0,
+        "pricing must not invent a refund or a storage charge of its own"
+    );
+
+    // The same shape at half the bound costs proportionally less, which is what
+    // makes this a price for the bound rather than a constant.
+    let mut halved = version.clone();
+    halved
+        .system_limits
+        .max_document_revisions_erased_per_transition = Some(chunk_size() as u16 / 2);
+    let smaller = drive
+        .erase_refund_recipient_cost(&epoch, &halved)
+        .expect("expected a price at the smaller bound");
+    assert!(
+        smaller.processing_fee < priced.processing_fee,
+        "a smaller chunk credits fewer beneficiaries: {} is not below {}",
+        smaller.processing_fee,
+        priced.processing_fee
+    );
+
+    // Every balance in the drive is untouched: this is a measurement, not a
+    // mutation.
+    assert!(
+        drive
+            .fetch_identity_balance(default_owner_id(), None, version)
+            .expect("expected the balance read to run")
+            .is_none(),
+        "pricing must not create the identity it measures against"
+    );
+}
+
+/// The synthetic identity the price is measured against.
+fn default_owner_id() -> [u8; 32] {
+    [0u8; 32]
+}
