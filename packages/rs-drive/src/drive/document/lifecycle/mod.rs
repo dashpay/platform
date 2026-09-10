@@ -97,8 +97,13 @@ impl DocumentLifecycleRecord {
 
     /// Whether an authorized erasure has already started, which is what lets a
     /// continuation run without any authorization of its own.
+    ///
+    /// Read off the revision the erasure started from rather than the time it
+    /// started at: a history sequence is one or more for every real revision,
+    /// so zero can only mean the field was never written, while a block time of
+    /// zero is a value a clock could in principle produce.
     pub fn is_erasing(&self) -> bool {
-        self.erasing_started_at_ms() != 0
+        self.erasing_from_revision() != 0
     }
 
     /// Returns the record an erase start writes over this one, keeping the
@@ -205,6 +210,14 @@ mod record_tests {
         let record = DocumentLifecycleRecord::deleted_at(7);
         assert!(!record.is_erasing());
         assert_eq!(record.erasing_from_revision(), 0);
+    }
+
+    /// A block whose time is zero must not make a committed erasure look like
+    /// one that never started.
+    #[test]
+    fn should_report_an_erasure_started_in_a_block_at_time_zero_as_erasing() {
+        let record = DocumentLifecycleRecord::deleted_at(0).starting_erase_at(0, 0, 1);
+        assert!(record.is_erasing());
     }
 
     #[test]

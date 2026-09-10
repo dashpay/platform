@@ -21,6 +21,9 @@ use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
+use drive::drive::document::history::{
+    DocumentHistoryQueryV1, DocumentHistorySelector, DocumentHistoryState,
+};
 use drive::drive::document::lifecycle::DocumentLifecycleState;
 use drive::util::storage_flags::StorageFlags;
 use rand::rngs::StdRng;
@@ -275,6 +278,123 @@ impl Fixture {
             &mut self.platform,
             transition.serialize_to_bytes().expect("serialized"),
         )
+    }
+
+    /// Writes revisions straight into storage so the document retains more than
+    /// one erase chunk can remove. How they got there does not matter to an
+    /// erase: it reads what the history holds.
+    fn retain_revisions(&mut self, document_type_name: &str, revisions: u64) {
+        let platform_version = PlatformVersion::get(14).unwrap();
+        let contract = self.contract.clone();
+        let document_type = contract
+            .document_type_for_name(document_type_name)
+            .expect("expected the document type");
+        // The same flags the create wrote, so overwriting the current pointer
+        // replaces exactly as many bytes as it holds.
+        let flags = Some(std::borrow::Cow::Owned(StorageFlags::new_single_epoch(
+            0,
+            Some(self.owner.id().to_buffer()),
+        )));
+        let mut document = self.document.clone();
+        for revision in 2..=revisions {
+            document.set_revision(Some(revision));
+            self.platform
+                .drive
+                .add_document_for_contract(
+                    drive::util::object_size_info::DocumentAndContractInfo {
+                        owned_document_info: drive::util::object_size_info::OwnedDocumentInfo {
+                            document_info:
+                                drive::util::object_size_info::DocumentInfo::DocumentRefInfo((
+                                    &document,
+                                    flags.clone(),
+                                )),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    true,
+                    BlockInfo::default_with_time(1_000 + revision),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to retain a revision");
+        }
+    }
+
+    /// Builds an erase without processing it, so several can share one block.
+    async fn erase_transition(&mut self, document_type_name: &str, as_owner: bool) -> Vec<u8> {
+        let platform_version = PlatformVersion::get(14).unwrap();
+        let mut document = self.document.clone();
+        document.set_revision(Some(1));
+        let (key, signer, nonce) = if as_owner {
+            let nonce = self.nonce;
+            self.nonce += 1;
+            (&self.owner_key, &self.owner_signer, nonce)
+        } else {
+            document.set_owner_id(self.stranger.id());
+            let nonce = self.stranger_nonce;
+            self.stranger_nonce += 1;
+            (&self.stranger_key, &self.stranger_signer, nonce)
+        };
+        BatchTransition::new_document_erase_transition_from_document(
+            document,
+            self.document_type(document_type_name),
+            key,
+            nonce,
+            0,
+            signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected an erase transition")
+        .serialize_to_bytes()
+        .expect("serialized")
+    }
+
+    fn remaining_revisions(&self, document_type_name: &str) -> u64 {
+        let query = DocumentHistoryQueryV1 {
+            contract_id: self.contract.id().to_buffer(),
+            document_type_name: document_type_name.to_string(),
+            document_id: self.document.id().to_buffer(),
+            selector: DocumentHistorySelector::StartAtTime(0),
+            limit: Some(1),
+        };
+        self.platform
+            .drive
+            .fetch_document_history_v1(
+                &query,
+                self.document_type(document_type_name),
+                None,
+                PlatformVersion::get(14).unwrap(),
+            )
+            .expect("expected to read the history")
+            .lifecycle
+            .remaining_revisions
+    }
+
+    fn history_state(&self, document_type_name: &str) -> DocumentHistoryState {
+        let query = DocumentHistoryQueryV1 {
+            contract_id: self.contract.id().to_buffer(),
+            document_type_name: document_type_name.to_string(),
+            document_id: self.document.id().to_buffer(),
+            selector: DocumentHistorySelector::StartAtTime(0),
+            limit: Some(1),
+        };
+        self.platform
+            .drive
+            .fetch_document_history_v1(
+                &query,
+                self.document_type(document_type_name),
+                None,
+                PlatformVersion::get(14).unwrap(),
+            )
+            .expect("expected to read the history")
+            .lifecycle
+            .state
     }
 
     fn lifecycle(&self, document_type_name: &str) -> DocumentLifecycleState {
@@ -539,4 +659,177 @@ async fn should_reject_an_erase_of_an_id_that_holds_nothing() {
             ..
         }
     );
+}
+
+/// Once an erasure is committed, the committed record is the authorization, so
+/// an identity that owns nothing can finish the work. An owner who loses their
+/// keys, their funds or their permission cannot strand a half-erased document.
+#[tokio::test]
+async fn should_let_any_identity_finish_an_erasure_its_owner_started() {
+    let chunk = PlatformVersion::get(14)
+        .unwrap()
+        .system_limits
+        .max_document_revisions_erased_per_transition
+        .expect("protocol 14 bounds the chunk") as u64;
+
+    let mut fixture = Fixture::new("note").await;
+    fixture.retain_revisions("note", chunk + 1);
+    assert_eq!(
+        fixture.remaining_revisions("note"),
+        chunk + 1,
+        "the fixture must retain more than one chunk can remove"
+    );
+    assert_successful(&fixture.delete_as_owner("note").await, "the delete");
+
+    // A stranger cannot start one.
+    assert_matches!(
+        fixture.erase("note", false, None).await,
+        StateTransitionExecutionResult::PaidConsensusError {
+            error: ConsensusError::StateError(StateError::DocumentOwnerIdMismatchError(_)),
+            ..
+        }
+    );
+
+    assert_successful(
+        &fixture.erase("note", true, None).await,
+        "the owner commits the erasure",
+    );
+    assert_eq!(fixture.history_state("note"), DocumentHistoryState::Erasing);
+
+    // And now the same stranger can finish it.
+    assert_successful(
+        &fixture.erase("note", false, None).await,
+        "a continuation needs no authorization of its own",
+    );
+    assert_matches!(fixture.lifecycle("note"), DocumentLifecycleState::Absent);
+}
+
+/// A document whose erasure has begun is not there to be deleted again.
+#[tokio::test]
+async fn should_reject_a_delete_of_a_document_whose_erasure_has_begun() {
+    let chunk = PlatformVersion::get(14)
+        .unwrap()
+        .system_limits
+        .max_document_revisions_erased_per_transition
+        .expect("protocol 14 bounds the chunk") as u64;
+
+    let mut fixture = Fixture::new("note").await;
+    fixture.retain_revisions("note", chunk + 1);
+    assert_successful(&fixture.delete_as_owner("note").await, "the delete");
+    assert_successful(&fixture.erase("note", true, None).await, "the erase start");
+    assert_eq!(fixture.history_state("note"), DocumentHistoryState::Erasing);
+
+    assert_matches!(
+        fixture.delete_as_owner("note").await,
+        StateTransitionExecutionResult::PaidConsensusError {
+            error: ConsensusError::StateError(StateError::DocumentNotFoundError(_)),
+            ..
+        }
+    );
+}
+
+/// Two erases in one block each see the previous one's effect, because each
+/// transition is applied into the block transaction before the next is
+/// validated.
+#[tokio::test]
+async fn should_finish_an_erasure_across_two_transitions_in_one_block() {
+    let chunk = PlatformVersion::get(14)
+        .unwrap()
+        .system_limits
+        .max_document_revisions_erased_per_transition
+        .expect("protocol 14 bounds the chunk") as u64;
+
+    let mut fixture = Fixture::new("note").await;
+    fixture.retain_revisions("note", chunk + 1);
+    assert_successful(&fixture.delete_as_owner("note").await, "the delete");
+
+    let first = fixture.erase_transition("note", true).await;
+    let second = fixture.erase_transition("note", false).await;
+
+    let state = fixture.platform.state.load();
+    let version = state.current_platform_version().unwrap();
+    let transaction = fixture.platform.drive.grove.start_transaction();
+    let result = fixture
+        .platform
+        .platform
+        .process_raw_state_transitions(
+            &[first, second],
+            &state,
+            &BlockInfo::default(),
+            &transaction,
+            version,
+            false,
+            None,
+        )
+        .expect("expected transition processing");
+    fixture
+        .platform
+        .drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(result.valid_count(), 2, "both erases must execute");
+    assert_matches!(fixture.lifecycle("note"), DocumentLifecycleState::Absent);
+}
+
+/// A delete and the erase that follows it can share a block: the erase reads
+/// the lifecycle record the delete has already written into the same
+/// transaction.
+#[tokio::test]
+async fn should_delete_and_erase_in_one_block() {
+    let mut fixture = Fixture::new("note").await;
+
+    let platform_version = PlatformVersion::get(14).unwrap();
+    let mut document = fixture.document.clone();
+    document.set_revision(Some(1));
+    let delete = BatchTransition::new_document_deletion_transition_from_document(
+        document.clone(),
+        fixture.document_type("note"),
+        &fixture.owner_key,
+        fixture.nonce,
+        0,
+        None,
+        &fixture.owner_signer,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected a delete transition")
+    .serialize_to_bytes()
+    .expect("serialized");
+    fixture.nonce += 1;
+    let erase = fixture.erase_transition("note", true).await;
+
+    let state = fixture.platform.state.load();
+    let version = state.current_platform_version().unwrap();
+    let transaction = fixture.platform.drive.grove.start_transaction();
+    let result = fixture
+        .platform
+        .platform
+        .process_raw_state_transitions(
+            &[delete, erase],
+            &state,
+            &BlockInfo::default(),
+            &transaction,
+            version,
+            false,
+            None,
+        )
+        .expect("expected transition processing");
+    fixture
+        .platform
+        .drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        result.valid_count(),
+        2,
+        "the erase must see the delete that shares its block"
+    );
+    assert_matches!(fixture.lifecycle("note"), DocumentLifecycleState::Absent);
 }
