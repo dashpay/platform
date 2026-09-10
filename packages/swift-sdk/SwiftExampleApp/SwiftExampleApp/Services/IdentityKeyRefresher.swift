@@ -59,32 +59,37 @@ enum IdentityKeyRefresher {
         }
 
         // Public keys — parse the freshly-fetched set.
-        var parsedPublicKeys: [IdentityPublicKey] = []
-        if let publicKeysArray = fetchedIdentity["publicKeys"] as? [[String: Any]] {
-            parsedPublicKeys = publicKeysArray.compactMap { keyData -> IdentityPublicKey? in
-                guard let id = keyData["id"] as? Int,
-                      let purpose = keyData["purpose"] as? Int,
-                      let securityLevel = keyData["securityLevel"] as? Int,
-                      let keyType = keyData["type"] as? Int,
-                      let dataStr = keyData["data"] as? String,
-                      let data = Data(base64Encoded: dataStr) else {
-                    return nil
-                }
-
-                let readOnly = keyData["readOnly"] as? Bool ?? false
-                let disabledAt = keyData["disabledAt"] as? UInt64
-
-                return IdentityPublicKey(
-                    id: UInt32(id),
-                    purpose: KeyPurpose(rawValue: UInt8(purpose)) ?? .authentication,
-                    securityLevel: SecurityLevel(rawValue: UInt8(securityLevel)) ?? .high,
-                    contractBounds: nil,
-                    keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
-                    readOnly: readOnly,
-                    data: data,
-                    disabledAt: disabledAt
-                )
+        let publicKeysArray: [[String: Any]]
+        if let rows = fetchedIdentity["publicKeys"] as? [[String: Any]] {
+            publicKeysArray = rows
+        } else if let rows = fetchedIdentity["publicKeys"] as? [String: [String: Any]] {
+            publicKeysArray = Array(rows.values)
+        } else {
+            throw SDKError.serializationError("Identity response is missing public keys")
+        }
+        let parsedPublicKeys = try publicKeysArray.compactMap { keyData -> IdentityPublicKey? in
+            guard let id = keyData["id"] as? Int,
+                  let purpose = keyData["purpose"] as? Int,
+                  let securityLevel = keyData["securityLevel"] as? Int,
+                  let keyType = keyData["type"] as? Int,
+                  let dataStr = keyData["data"] as? String,
+                  let data = Data(base64Encoded: dataStr) else {
+                return nil
             }
+
+            let readOnly = keyData["readOnly"] as? Bool ?? false
+            let disabledAt = keyData["disabledAt"] as? UInt64
+
+            return IdentityPublicKey(
+                id: UInt32(id),
+                purpose: KeyPurpose(rawValue: UInt8(purpose)) ?? .authentication,
+                securityLevel: SecurityLevel(rawValue: UInt8(securityLevel)) ?? .high,
+                contractBounds: try ContractBounds.fromPlatformJSON(keyData["contractBounds"]),
+                keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
+                readOnly: readOnly,
+                data: data,
+                disabledAt: disabledAt
+            )
         }
 
         // Replace the PersistentIdentity's public key rows with the

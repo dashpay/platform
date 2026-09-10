@@ -57,3 +57,6 @@ pub use invalid_instant_asset_lock_proof_signature_error::*;
 pub use missing_master_public_key_error::*;
 pub use missing_public_key_error::*;
 pub use not_implemented_credit_withdrawal_transition_pooling_error::*;
+
+mod invalid_authentication_scope_error;
+pub use invalid_authentication_scope_error::InvalidAuthenticationScopeErrorWasm;

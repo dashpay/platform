@@ -186,6 +186,8 @@ pub struct IdentityPublicKeyFFI {
     pub disabled_at: u64,
     pub data_ptr: *mut u8,
     pub data_len: usize,
+    /// Complete DPP bounds JSON, null for an unrestricted key. Rust-owned.
+    pub contract_bounds_json: *mut std::os::raw::c_char,
 }
 
 /// Snapshot every `IdentityPublicKey` on the identity into a flat
@@ -221,6 +223,14 @@ pub unsafe extern "C" fn managed_identity_get_public_keys(
                 None => (false, 0u64),
             };
 
+            let contract_bounds_json =
+                pk.contract_bounds().map_or(std::ptr::null_mut(), |bounds| {
+                    let json = serde_json::to_string(bounds)
+                        .expect("ContractBounds JSON serialization is infallible");
+                    std::ffi::CString::new(json)
+                        .expect("JSON escapes NUL bytes")
+                        .into_raw()
+                });
             buf.push(IdentityPublicKeyFFI {
                 key_id,
                 purpose: pk.purpose() as u8,
@@ -231,6 +241,7 @@ pub unsafe extern "C" fn managed_identity_get_public_keys(
                 disabled_at: disabled_val,
                 data_ptr,
                 data_len,
+                contract_bounds_json,
             });
         }
         buf
@@ -263,6 +274,10 @@ pub unsafe extern "C" fn managed_identity_free_public_keys(
     }
     let slice = unsafe { std::slice::from_raw_parts_mut(keys, count) };
     for entry in slice.iter_mut() {
+        if !entry.contract_bounds_json.is_null() {
+            drop(unsafe { std::ffi::CString::from_raw(entry.contract_bounds_json) });
+            entry.contract_bounds_json = std::ptr::null_mut();
+        }
         if !entry.data_ptr.is_null() && entry.data_len > 0 {
             let data_slice =
                 unsafe { std::slice::from_raw_parts_mut(entry.data_ptr, entry.data_len) };
@@ -324,6 +339,40 @@ mod tests {
             revision: 1,
         };
         Identity::V0(identity_v0)
+    }
+
+    #[test]
+    fn scoped_public_key_snapshot_keeps_bounds_json() {
+        use dpp::identity::contract_bounds::{
+            AuthenticationScope, AuthenticationScopeV0, ContractBounds, ContractScope,
+        };
+        let scope = ContractBounds::Scoped(AuthenticationScope::V0(AuthenticationScopeV0 {
+            contracts: vec![ContractScope {
+                id: Identifier::from([7; 32]),
+                document_types: None,
+            }],
+            permissions: 65,
+            expires_at: Some(1_900_000_000_000),
+        }));
+        let mut identity = create_test_identity();
+        let Identity::V0(inner) = &mut identity;
+        let IdentityPublicKey::V0(key) = inner.public_keys.get_mut(&0).unwrap();
+        key.security_level = SecurityLevel::HIGH;
+        key.contract_bounds = Some(scope.clone());
+        let handle = MANAGED_IDENTITY_STORAGE.insert(ManagedIdentity::new(identity, 0));
+        let mut keys = std::ptr::null_mut();
+        let mut count = 0;
+        unsafe {
+            let result = managed_identity_get_public_keys(handle, &mut keys, &mut count);
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+            assert_eq!(count, 1);
+            let json = std::ffi::CStr::from_ptr((*keys).contract_bounds_json)
+                .to_str()
+                .unwrap();
+            assert_eq!(serde_json::from_str::<ContractBounds>(json).unwrap(), scope);
+            managed_identity_free_public_keys(keys, count);
+            managed_identity_destroy(handle);
+        }
     }
 
     #[test]

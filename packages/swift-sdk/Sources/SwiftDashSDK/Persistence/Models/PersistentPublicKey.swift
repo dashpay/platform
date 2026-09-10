@@ -34,6 +34,9 @@ public final class PersistentPublicKey {
     /// `.singleContract(id:)`. Optional so old stores load cleanly.
     public var contractBoundsDocumentTypeName: String?
 
+    /// Versioned DPP scope bytes. Optional for lightweight migration of existing stores.
+    public var contractBoundsScope: Data?
+
     // MARK: - Private Key Reference (optional)
     public var privateKeyKeychainIdentifier: String?
 
@@ -74,6 +77,7 @@ public final class PersistentPublicKey {
         disabledAt: Int64? = nil,
         contractBounds: [Data]? = nil,
         contractBoundsDocumentTypeName: String? = nil,
+        contractBoundsScope: Data? = nil,
         identityId: String
     ) {
         self.keyId = keyId
@@ -89,6 +93,7 @@ public final class PersistentPublicKey {
             self.contractBoundsData = nil
         }
         self.contractBoundsDocumentTypeName = contractBoundsDocumentTypeName
+        self.contractBoundsScope = contractBoundsScope
         self.identityId = identityId
         self.createdAt = Date()
     }
@@ -116,6 +121,7 @@ public final class PersistentPublicKey {
             // `PersistentPublicKey.from(IdentityPublicKey, identityId:)`
             // which sets both columns atomically.
             contractBoundsDocumentTypeName = nil
+            contractBoundsScope = nil
             if let newValue = newValue {
                 contractBoundsData = try? JSONSerialization.data(withJSONObject: newValue.map { $0.base64EncodedString() })
             } else {
@@ -178,7 +184,9 @@ extension PersistentPublicKey {
         // rejected here. Drop the bounds projection on length
         // mismatch — the rest of the key is still recoverable.
         let bounds: ContractBounds?
-        if let id = contractBounds?.first, id.count == 32 {
+        if let encodedScope = contractBoundsScope {
+            bounds = .scoped(encodedScope: encodedScope)
+        } else if let id = contractBounds?.first, id.count == 32 {
             if let docTypeName = contractBoundsDocumentTypeName, !docTypeName.isEmpty {
                 bounds = .singleContractDocumentType(id: id, documentTypeName: docTypeName)
             } else {
@@ -205,7 +213,12 @@ extension PersistentPublicKey {
     public static func from(_ publicKey: IdentityPublicKey, identityId: String) -> PersistentPublicKey? {
         let boundsIds: [Data]?
         let docTypeName: String?
+        var scope: Data?
         switch publicKey.contractBounds {
+        case .scoped(let encodedScope):
+            boundsIds = nil
+            docTypeName = nil
+            scope = encodedScope
         case .singleContract(let id):
             boundsIds = [id]
             docTypeName = nil
@@ -226,6 +239,7 @@ extension PersistentPublicKey {
             disabledAt: publicKey.disabledAt.map { Int64($0) },
             contractBounds: boundsIds,
             contractBoundsDocumentTypeName: docTypeName,
+            contractBoundsScope: scope,
             identityId: identityId
         )
     }

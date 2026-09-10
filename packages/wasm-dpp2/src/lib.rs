@@ -40,6 +40,7 @@ pub use core::pro_tx_hash::{
 pub use identity::signer::IdentitySignerWasm;
 pub use identity::transitions::pooling::PoolingWasm;
 
+pub use data_contract::contract_bounds::AuthenticationPermission;
 pub use data_contract::{
     ContractBoundsWasm, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
     DataContractWasm, DocumentPropertyReferenceArrayJs, DocumentPropertyReferenceMapJs,

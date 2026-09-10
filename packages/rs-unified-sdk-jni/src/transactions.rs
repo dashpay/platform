@@ -151,13 +151,15 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
 ///   u8   purpose           (DPP Purpose discriminant, 0 = AUTHENTICATION)
 ///   u8   security_level    (DPP SecurityLevel discriminant, 0 = MASTER)
 ///   u8   read_only         (0 / 1)
-///   u8   contract_bounds_kind (0 none, 1 SingleContract, 2 SingleContractDocumentType)
+///   u8   contract_bounds_kind (0 none, 1 SingleContract, 2 SingleContractDocumentType, 3 Scoped)
 ///   u16  pubkey_len
 ///   u8[pubkey_len]  pubkey_bytes  (compressed pubkey, or 20-byte HASH160)
-///   if contract_bounds_kind != 0:
+///   if contract_bounds_kind == 1 or contract_bounds_kind == 2:
 ///     u8[32] contract_bounds_id
 ///   if contract_bounds_kind == 2:
 ///     u16 doc_type_len, u8[doc_type_len] doc_type (UTF-8)
+///   if contract_bounds_kind == 3:
+///     u16 scope_len, u8[scope_len] versioned DPP scope bytes
 /// ```
 ///
 /// `disablePublicKeyIds` is a JVM `int[]` of key ids to disable (may be

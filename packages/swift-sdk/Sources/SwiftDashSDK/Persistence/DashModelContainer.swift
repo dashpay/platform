@@ -123,7 +123,50 @@ public enum DashModelContainer {
             + [PersistentTrackedMasternode.self]
     }
 
-    /// All persistent model types in the current Dash SDK schema (V4).
+    /// The exact model set shipped as schema V4.  The relationship component
+    /// is frozen at its pre-scoped-authentication shape so that adding the
+    /// scope column below cannot mutate V4's checksum.
+    fileprivate static var v4ModelTypes: [any PersistentModel.Type] {
+        [
+            DashSchemaV4.PersistentIdentity.self,
+            DashSchemaV4.PersistentDPNSName.self,
+            DashSchemaV4.PersistentDashpayProfile.self,
+            DashSchemaV4.PersistentDashpayContactProfile.self,
+            DashSchemaV4.PersistentDashpayContactRequest.self,
+            DashSchemaV4.PersistentDashpayPayment.self,
+            DashSchemaV4.PersistentDashpayIgnoredSender.self,
+            DashSchemaV4.PersistentDocument.self,
+            DashSchemaV4.PersistentDataContract.self,
+            DashSchemaV4.PersistentPublicKey.self,
+            DashSchemaV4.PersistentTokenBalance.self,
+            DashSchemaV4.PersistentKeyword.self,
+            DashSchemaV4.PersistentToken.self,
+            DashSchemaV4.PersistentDocumentType.self,
+            DashSchemaV4.PersistentIndex.self,
+            DashSchemaV4.PersistentProperty.self,
+            DashSchemaV4.PersistentTokenHistoryEvent.self,
+            DashSchemaV4.PersistentPlatformAddress.self,
+            PersistentPlatformAddressesSyncState.self,
+            DashSchemaV4.PersistentWallet.self,
+            DashSchemaV4.PersistentAccount.self,
+            DashSchemaV4.PersistentCoreAddress.self,
+            DashSchemaV4.PersistentTransaction.self,
+            DashSchemaV4.PersistentTxo.self,
+            DashSchemaV4.PersistentPendingInput.self,
+            PersistentWalletManagerMetadata.self,
+            PersistentShieldedNote.self,
+            PersistentShieldedOutgoingNote.self,
+            PersistentShieldedSyncState.self,
+            PersistentShieldedActivity.self,
+            PersistentShieldedViewingKey.self,
+            PersistentAssetLock.self,
+            PersistentInvitation.self,
+            PersistentMasternode.self,
+            PersistentTrackedMasternode.self,
+        ]
+    }
+
+    /// All persistent model types in the current Dash SDK schema (V5).
     /// Unlike the lists above this one tracks the LIVE models, so it moves
     /// whenever a model gains a property — which is exactly why the
     /// released versions must not.
@@ -133,7 +176,7 @@ public enum DashModelContainer {
 
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(versionedSchema: DashSchemaV4.self)
+        Schema(versionedSchema: DashSchemaV5.self)
     }
 
     /// Create a persistent model container for storing data
@@ -181,14 +224,15 @@ public enum DashModelContainer {
 /// SwiftData migration plan for Dash Platform model updates
 public enum DashMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self]
+        [DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self, DashSchemaV5.self]
     }
 
     public static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV2.self),
             .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self),
-            .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self)
+            .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self),
+            .lightweight(fromVersion: DashSchemaV4.self, toVersion: DashSchemaV5.self)
         ]
     }
 }
@@ -389,6 +433,17 @@ public enum DashSchemaV4: VersionedSchema {
     public static var versionIdentifier: Schema.Version {
         Schema.Version(4, 0, 0)
     }
+
+    public static var models: [any PersistentModel.Type] {
+        DashModelContainer.v4ModelTypes
+    }
+}
+
+/// Version 5 adds `PersistentPublicKey.contractBoundsScope`. V4 references
+/// the frozen relationship component, so this stage is a normal additive
+/// migration from stores written by the previous release.
+public enum DashSchemaV5: VersionedSchema {
+    public static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
 
     public static var models: [any PersistentModel.Type] {
         DashModelContainer.modelTypes

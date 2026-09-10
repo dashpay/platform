@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 // MARK: - Key Type
 
@@ -167,6 +168,7 @@ public struct IdentityPublicKey: Codable, Equatable, Sendable {
 // MARK: - Contract Bounds
 
 public enum ContractBounds: Codable, Equatable, Sendable, CustomStringConvertible {
+    case scoped(encodedScope: Data)
     case singleContract(id: Identifier)
     case singleContractDocumentType(id: Identifier, documentTypeName: String)
 
@@ -174,9 +176,11 @@ public enum ContractBounds: Codable, Equatable, Sendable, CustomStringConvertibl
         case type
         case id
         case documentType
+        case encodedScope
     }
 
     private enum BoundType: String, Codable {
+        case scoped
         case singleContract
         case singleContractDocumentType
     }
@@ -186,6 +190,8 @@ public enum ContractBounds: Codable, Equatable, Sendable, CustomStringConvertibl
         let type = try container.decode(BoundType.self, forKey: .type)
 
         switch type {
+        case .scoped:
+            self = .scoped(encodedScope: try container.decode(Data.self, forKey: .encodedScope))
         case .singleContract:
             let id = try container.decode(Identifier.self, forKey: .id)
             self = .singleContract(id: id)
@@ -200,6 +206,9 @@ public enum ContractBounds: Codable, Equatable, Sendable, CustomStringConvertibl
         var container = encoder.container(keyedBy: CodingKeys.self)
 
         switch self {
+        case .scoped(let encodedScope):
+            try container.encode(BoundType.scoped, forKey: .type)
+            try container.encode(encodedScope, forKey: .encodedScope)
         case .singleContract(let id):
             try container.encode(BoundType.singleContract, forKey: .type)
             try container.encode(id, forKey: .id)
@@ -212,6 +221,8 @@ public enum ContractBounds: Codable, Equatable, Sendable, CustomStringConvertibl
 
     public var description: String {
         switch self {
+        case .scoped:
+            return "Scoped application authentication"
         case .singleContract(let id):
             return "Limited to contract: \(id.toBase58String())"
         case .singleContractDocumentType(let id, let docType):
@@ -219,8 +230,10 @@ public enum ContractBounds: Codable, Equatable, Sendable, CustomStringConvertibl
         }
     }
 
-    public var contractId: Identifier {
+    public var contractId: Identifier? {
         switch self {
+        case .scoped:
+            return nil
         case .singleContract(let id):
             return id
         case .singleContractDocumentType(let id, _):
@@ -317,5 +330,40 @@ extension DPPIdentity {
             balance: balance,
             revision: 0
         )
+    }
+}
+
+extension ContractBounds {
+    /// Decode bounds returned by Platform without implementing DPP's wire encoding in Swift.
+    public static func fromPlatformJSON(_ value: Any?) throws -> ContractBounds? {
+        guard let value, !(value is NSNull) else { return nil }
+        let input = try JSONSerialization.data(withJSONObject: value)
+        guard let json = String(data: input, encoding: .utf8) else {
+            throw SDKError.serializationError("Invalid contract bounds JSON")
+        }
+        let result = json.withCString { dash_sdk_contract_bounds_parse_json($0) }
+        if let error = result.error {
+            let message = error.pointee.message.map { String(cString: $0) } ?? "Invalid contract bounds"
+            dash_sdk_error_free(error)
+            throw SDKError.serializationError(message)
+        }
+        guard let raw = result.data else { throw SDKError.serializationError("Missing contract bounds") }
+        defer { dash_sdk_string_free(raw.assumingMemoryBound(to: CChar.self)) }
+        let output = Data(String(cString: raw.assumingMemoryBound(to: CChar.self)).utf8)
+        guard let fields = try JSONSerialization.jsonObject(with: output) as? [String: Any],
+              let kind = fields["kind"] as? Int else {
+            throw SDKError.serializationError("Invalid normalized contract bounds")
+        }
+        if kind == 3, let bytes = fields["scope"] as? [UInt8] {
+            return .scoped(encodedScope: Data(bytes))
+        }
+        guard let bytes = fields["id"] as? [UInt8], bytes.count == 32 else {
+            throw SDKError.serializationError("Missing contract identifier")
+        }
+        if kind == 1 { return .singleContract(id: Data(bytes)) }
+        if kind == 2, let name = fields["documentType"] as? String {
+            return .singleContractDocumentType(id: Data(bytes), documentTypeName: name)
+        }
+        throw SDKError.serializationError("Unknown contract bounds kind")
     }
 }

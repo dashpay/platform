@@ -204,6 +204,11 @@ fn serialize_identity_public_key(key: &IdentityPublicKey) -> Result<Object, JsVa
                 Some(bounds) => {
                     let bounds_obj = Object::new();
                     match bounds {
+                        dpp::identity::contract_bounds::ContractBounds::Scoped(scope) => {
+                            Reflect::set(&bounds_obj, &JsValue::from_str("type"), &JsValue::from_str("Scoped"))?;
+                            let value = serde_wasm_bindgen::to_value(scope).map_err(|e| JsValue::from_str(&e.to_string()))?;
+                            Reflect::set(&bounds_obj, &JsValue::from_str("scope"), &value)?;
+                        }
                         dpp::identity::identity_public_key::contract_bounds::ContractBounds::SingleContract { id } => {
                             Reflect::set(&bounds_obj, &JsValue::from_str("type"), &JsValue::from_str("SingleContract"))
                                 .map_err(|_| JsValue::from_str("Failed to set bounds type"))?;
