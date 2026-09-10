@@ -763,3 +763,149 @@ fn should_not_resolve_a_deleted_document_by_id() {
         "a deleted document is not fetchable by id"
     );
 }
+
+/// The counted and summed entry of a keep-history type is its current pointer,
+/// so removing it decrements both aggregates by construction and a deleted
+/// document stops contributing without any bookkeeping of its own.
+#[test]
+fn should_decrement_the_count_and_the_sum_when_a_keep_history_document_is_deleted() {
+    use crate::drive::document::paths::contract_document_type_path_vec;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::document_factory::DocumentFactory;
+    use dpp::platform_value::platform_value;
+    use grovedb::Element;
+
+    let version = latest();
+    let schema = platform_value!({
+        "type": "object",
+        "documentsKeepHistory": true,
+        "canBeDeleted": true,
+        "documentsCountable": true,
+        "documentsSummable": "amount",
+        "properties": {
+            "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295i64, "position": 0},
+        },
+        "required": ["amount"],
+        "additionalProperties": false,
+        "indices": [{"name": "amount", "properties": [{"amount": "asc"}]}],
+    });
+    let contract = DataContractFactory::new(version.protocol_version)
+        .expect("expected a contract factory")
+        .create_with_value_config(
+            [7; 32].into(),
+            0,
+            platform_value!({ "tip": schema }),
+            None,
+            None,
+        )
+        .expect("a countable summable keep-history type must parse")
+        .data_contract_owned();
+
+    let drive = setup_drive_with_initial_state_structure(None);
+    drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .expect("expected to apply the contract");
+    let document_type = contract
+        .document_type_for_name("tip")
+        .expect("expected the tip type");
+    assert!(document_type.documents_countable());
+
+    let mut document = DocumentFactory::new(version.protocol_version)
+        .expect("expected a document factory")
+        .create_document(
+            &contract,
+            [7; 32].into(),
+            "tip".into(),
+            platform_value!({"amount": 5}),
+        )
+        .expect("expected a tip");
+    document.set_id([9; 32].into());
+    for revision in 1..=3u64 {
+        document.set_revision(Some(revision));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                revision > 1,
+                BlockInfo::default_with_time(1_000 + revision),
+                true,
+                None,
+                version,
+                None,
+            )
+            .expect("expected to write a revision");
+    }
+
+    let type_path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "tip");
+    let aggregates = || {
+        let element = drive
+            .grove
+            .get_raw(
+                type_path.as_slice().into(),
+                &[0],
+                None,
+                &latest().drive.grove_version,
+            )
+            .value
+            .expect("expected the primary-key tree");
+        let Element::CountSumTree(_, count, sum, _) = element else {
+            panic!("a countable summable type stores its documents in a count-sum tree");
+        };
+        (count, sum)
+    };
+    assert_eq!(
+        aggregates(),
+        (1, 5),
+        "one live document contributing its amount, whatever its history holds"
+    );
+
+    let batch = drive
+        .delete_document_for_contract_operations(
+            document.id(),
+            &contract,
+            document_type,
+            &BlockInfo::default_with_time(5_000),
+            Some(Identifier::new([7; 32])),
+            None,
+            &mut None,
+            None,
+            version,
+        )
+        .expect("expected to delete");
+    drive
+        .apply_batch_low_level_drive_operations(None, None, batch, &mut vec![], &version.drive)
+        .expect("expected to apply the delete");
+
+    assert_eq!(
+        aggregates(),
+        (0, 0),
+        "a deleted document contributes to neither aggregate, though its revisions remain"
+    );
+
+    // Its index entries are gone too, so the value it held is free for another
+    // document to take.
+    let mut index_path = type_path.clone();
+    index_path.push(b"amount".to_vec());
+    let mut query = grovedb::Query::new();
+    query.insert_all();
+    let (results, _) = drive
+        .grove_get_raw_path_query(
+            &grovedb::PathQuery::new(index_path, grovedb::SizedQuery::new(query, Some(10), None)),
+            None,
+            grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType,
+            &mut vec![],
+            &version.drive,
+        )
+        .expect("expected to read the index");
+    assert!(
+        results.to_key_elements().is_empty(),
+        "a delete removes every index reference that led to the document"
+    );
+}
