@@ -113,11 +113,6 @@ pub enum DocumentOperationType<'a> {
     EraseDocument {
         /// The document id
         document_id: Identifier,
-        /// Whether this is the authorized first chunk, which commits the
-        /// document to erasure, rather than a continuation of one already
-        /// committed. Derived from the document's committed lifecycle, never
-        /// from the transition.
-        start: bool,
         /// Data Contract info to potentially be resolved if needed
         contract_info: DataContractInfo<'a>,
         /// Document type
@@ -364,7 +359,6 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
             }
             DocumentOperationType::EraseDocument {
                 document_id,
-                start,
                 contract_info,
                 document_type_info,
             } => {
@@ -384,7 +378,6 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     contract,
                     document_type,
                     block_info,
-                    start,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,

@@ -8,6 +8,7 @@ impl DocumentTransitionActionTypeGetter for DocumentTransitionAction {
         match self {
             DocumentTransitionAction::CreateAction(_) => DocumentTransitionActionType::Create,
             DocumentTransitionAction::DeleteAction(_) => DocumentTransitionActionType::Delete,
+            DocumentTransitionAction::EraseAction(_) => DocumentTransitionActionType::Erase,
             DocumentTransitionAction::ReplaceAction(_) => DocumentTransitionActionType::Replace,
             DocumentTransitionAction::TransferAction(_) => DocumentTransitionActionType::Transfer,
             DocumentTransitionAction::PurchaseAction(_) => DocumentTransitionActionType::Purchase,

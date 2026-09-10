@@ -24,10 +24,6 @@ impl Drive {
     /// * `contract`: The contract that contains the document.
     /// * `document_type`: The type of the document, which must keep history.
     /// * `block_info`: The block this erase belongs to.
-    /// * `start`: Whether this is the authorized first chunk, which commits the
-    ///   document to erasure, rather than a continuation of one already
-    ///   committed. Derived from the document's committed lifecycle, never from
-    ///   the transition.
     /// * `estimated_costs_only_with_layer_info`: Estimated costs with layer info.
     /// * `transaction`: The transaction argument.
     /// * `platform_version`: The platform version to select the correct function version to run.
@@ -42,7 +38,6 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         block_info: &BlockInfo,
-        start: bool,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -61,7 +56,6 @@ impl Drive {
                 contract,
                 document_type,
                 block_info,
-                start,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
