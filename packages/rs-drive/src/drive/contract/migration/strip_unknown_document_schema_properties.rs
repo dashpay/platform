@@ -29,8 +29,13 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         // 1. Fetch all contract IDs.
-        let contract_ids =
-            self.fetch_contract_ids_v0(None, u16::MAX, Some(transaction), drive_version)?;
+        let contract_ids = self.fetch_contract_ids_v0(
+            None,
+            u16::MAX,
+            Some(transaction),
+            &mut vec![],
+            drive_version,
+        )?;
 
         tracing::debug!(
             contract_count = contract_ids.len(),
