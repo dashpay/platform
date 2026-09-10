@@ -18,6 +18,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             fetch_document_history: 0,
             prove_document_history: 0,
             primary_key_path_query: 0,
+            fetch_document_lifecycle: 0,
             detect_count_mode: 0,
             detect_sum_mode: 0,
             detect_ranked_mode: 0,
@@ -41,6 +42,8 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             delete_document_for_contract_operations: 0,
             delete_index_only_document_for_contract_operations: 0,
             delete_index_only_document_for_contract: 0,
+            erase_document_for_contract_operations: 0,
+            add_estimation_costs_for_erase_document: 0,
         },
         insert: DriveDocumentInsertMethodVersions {
             add_document: 0,

@@ -534,6 +534,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_time_range_ttl_seconds: None,
         min_time_range_ttl_drop_operations_per_write: None,
         minimum_grovedb_proof_envelope_version: 0,
+        max_document_revisions_erased_per_transition: None,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,
