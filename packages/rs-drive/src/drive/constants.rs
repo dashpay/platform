@@ -13,6 +13,8 @@ pub const BASE_CONTRACT_KEEPING_HISTORY_STORAGE_PATH_SIZE: u32 = 34; // 1 + 32 +
 pub const BASE_CONTRACT_DOCUMENTS_KEEPING_HISTORY_STORAGE_TIME_REFERENCE_PATH: u32 = 75;
 /// Base contract documents_keeping_history_primary_key path for document ID size
 pub const BASE_CONTRACT_DOCUMENTS_KEEPING_HISTORY_PRIMARY_KEY_PATH_FOR_DOCUMENT_ID_SIZE: u32 = 67; // 1 + 32 + 1 + 1 + 32, then we need to add document_type_name.len()
+/// Encoded upstream reference to a composite-keyed document revision.
+pub const DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE: u32 = 54;
 /// BaseDataContract Documents path size
 pub const BASE_CONTRACT_DOCUMENTS_PATH: u32 = 34;
 /// BaseDataContract Documents primary key path

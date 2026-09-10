@@ -66,9 +66,10 @@ mod tests {
 
     const DOCUMENT_TYPE_NAME: &str = "profile";
 
-    fn setup_history_document() -> (Drive, dpp::prelude::DataContract, dpp::document::Document) {
+    fn setup_history_document(
+        platform_version: &PlatformVersion,
+    ) -> (Drive, dpp::prelude::DataContract, dpp::document::Document) {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
             false,
@@ -105,8 +106,8 @@ mod tests {
         contract: &dpp::prelude::DataContract,
         document: &dpp::document::Document,
         time_ms: u64,
+        platform_version: &PlatformVersion,
     ) {
-        let platform_version = PlatformVersion::latest();
         let document_type = contract
             .document_type_for_name(DOCUMENT_TYPE_NAME)
             .expect("profile document type");
@@ -134,20 +135,101 @@ mod tests {
     }
 
     #[test]
-    fn should_fetch_document_history_in_time_order_with_pagination() {
-        let (drive, contract, mut document) = setup_history_document();
+    fn should_retain_both_replacements_in_the_same_block() {
+        use crate::drive::document::paths::contract_document_type_path_vec;
+        use crate::util::common::encode::encode_u64;
+        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+        use grovedb::query_result_type::{QueryResultElement, QueryResultType};
+        use grovedb::{Element, PathQuery, Query, SizedQuery};
+
         let platform_version = PlatformVersion::latest();
+        let (drive, contract, mut document) = setup_history_document(platform_version);
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE_NAME)
+            .expect("profile document type");
+        document.set_revision(Some(1));
+        put_document(&drive, &contract, &document, 1000, platform_version);
+
+        for revision in [2, 3] {
+            document.set_revision(Some(revision));
+            document.set("displayName", format!("Revision {revision}").into());
+            drive
+                .update_document_for_contract(
+                    &document,
+                    &contract,
+                    document_type,
+                    Some(document.owner_id().to_buffer()),
+                    BlockInfo::default_with_time(2000),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("replace document in the same block");
+        }
+
+        let mut history_path =
+            contract_document_type_path_vec(contract.id().as_slice(), DOCUMENT_TYPE_NAME);
+        let history_key = if platform_version
+            .drive
+            .methods
+            .document
+            .insert
+            .add_document_to_primary_storage
+            == 0
+        {
+            0
+        } else {
+            2
+        };
+        history_path.extend([vec![history_key], document.id().to_vec()]);
+        let mut query = Query::new();
+        query.insert_range_from(encode_u64(0)..);
+        let (results, _) = drive
+            .grove_get_path_query(
+                &PathQuery::new(history_path, SizedQuery::new(query, None, None)),
+                None,
+                QueryResultType::QueryKeyElementPairResultType,
+                &mut Vec::new(),
+                &platform_version.drive,
+            )
+            .expect("read retained revision bodies");
+        let revisions = results
+            .elements
+            .into_iter()
+            .map(|entry| match entry {
+                QueryResultElement::KeyElementPairResultItem((_, Element::Item(bytes, _))) => {
+                    Document::from_bytes(&bytes, document_type, platform_version)
+                        .expect("deserialize retained revision")
+                        .revision()
+                        .expect("mutable document has a revision")
+                }
+                _ => panic!("history must contain document items"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            revisions,
+            vec![1, 2, 3],
+            "every accepted edit must remain readable"
+        );
+    }
+
+    #[test]
+    fn should_fetch_document_history_in_time_order_with_pagination() {
+        let platform_version = PlatformVersion::get(13).expect("protocol 13");
+        let (drive, contract, mut document) = setup_history_document(platform_version);
         let contract_id = contract.id().to_buffer();
         let document_id = document.id().to_buffer();
         let document_type = contract
             .document_type_for_name(DOCUMENT_TYPE_NAME)
             .expect("profile document type");
 
-        put_document(&drive, &contract, &document, 1000);
+        put_document(&drive, &contract, &document, 1000, platform_version);
         document.set("displayName", "Alice 2".into());
-        put_document(&drive, &contract, &document, 2000);
+        put_document(&drive, &contract, &document, 2000, platform_version);
         document.set("displayName", "Alice 3".into());
-        put_document(&drive, &contract, &document, 3000);
+        put_document(&drive, &contract, &document, 3000, platform_version);
 
         let history = drive
             .fetch_document_history(
@@ -200,17 +282,17 @@ mod tests {
 
     #[test]
     fn should_prove_and_verify_document_history() {
-        let (drive, contract, mut document) = setup_history_document();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol 13");
+        let (drive, contract, mut document) = setup_history_document(platform_version);
         let contract_id = contract.id().to_buffer();
         let document_id = document.id().to_buffer();
         let document_type = contract
             .document_type_for_name(DOCUMENT_TYPE_NAME)
             .expect("profile document type");
 
-        put_document(&drive, &contract, &document, 1000);
+        put_document(&drive, &contract, &document, 1000, platform_version);
         document.set("displayName", "Alice 2".into());
-        put_document(&drive, &contract, &document, 2000);
+        put_document(&drive, &contract, &document, 2000, platform_version);
 
         let proof = drive
             .prove_document_history(
