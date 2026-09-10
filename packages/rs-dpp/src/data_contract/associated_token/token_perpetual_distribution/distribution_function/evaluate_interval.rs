@@ -1,5 +1,4 @@
 use std::ops::{Div, RangeInclusive};
-#[cfg(feature = "token-reward-explanations")]
 use platform_version::version::PlatformVersion;
 use crate::balances::credits::TokenAmount;
 use crate::block::epoch::EpochIndex;
@@ -1559,6 +1558,7 @@ impl DistributionFunction {
     /// - `end_included`: The end moment (inclusive).
     /// - `step`: The interval between each emission evaluation; must be greater than zero.
     /// - `get_epoch_reward_ratio`: Optional function providing a reward ratio for epoch-based distributions.
+    /// - `platform_version`: Selects the evaluator's math version.
     ///
     /// # Returns
     ///
@@ -1571,6 +1571,7 @@ impl DistributionFunction {
         interval_end_included: RewardDistributionMoment,
         step: RewardDistributionMoment,
         get_epoch_reward_ratio: Option<F>,
+        platform_version: &PlatformVersion,
     ) -> Result<TokenAmount, ProtocolError>
     where
         F: Fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>,
@@ -1649,8 +1650,11 @@ impl DistributionFunction {
         let mut current_point = first_step;
 
         while current_point <= last_step {
-            let base_amount =
-                self.evaluate(distribution_start_step.to_u64(), current_point.to_u64())?;
+            let base_amount = self.evaluate(
+                distribution_start_step.to_u64(),
+                current_point.to_u64(),
+                platform_version,
+            )?;
 
             let amount = if let (
                 RewardDistributionMoment::EpochBasedMoment(epoch_index),
@@ -1707,6 +1711,7 @@ impl DistributionFunction {
     /// - `Ok(IntervalEvaluationExplanation)` containing the result and detailed explanation.
     /// - `Err(ProtocolError)` on mismatched types, zero steps, or overflow.
     #[cfg(feature = "token-reward-explanations")]
+    #[allow(clippy::too_many_arguments)]
     pub fn evaluate_interval_with_explanation<F>(
         &self,
         distribution_start: RewardDistributionMoment,
@@ -1715,6 +1720,7 @@ impl DistributionFunction {
         step: RewardDistributionMoment,
         get_epoch_reward_ratio: Option<F>,
         is_first_claim: bool,
+        platform_version: &PlatformVersion,
     ) -> Result<IntervalEvaluationExplanation, ProtocolError>
     where
         F: Fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>,
@@ -1838,8 +1844,11 @@ impl DistributionFunction {
         let mut collected_ratios = Vec::new();
 
         while current_point <= last_step {
-            let base_amount =
-                self.evaluate(distribution_start_step.to_u64(), current_point.to_u64())?;
+            let base_amount = self.evaluate(
+                distribution_start_step.to_u64(),
+                current_point.to_u64(),
+                platform_version,
+            )?;
 
             let (amount, reward_ratio) = if let (
                 RewardDistributionMoment::EpochBasedMoment(epoch_index),
@@ -1915,6 +1924,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -1946,6 +1956,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -1976,6 +1987,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2007,6 +2019,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2048,6 +2061,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2086,6 +2100,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2124,6 +2139,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2165,6 +2181,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2206,6 +2223,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2247,6 +2265,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2288,6 +2307,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2318,6 +2338,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2359,6 +2380,7 @@ mod tests {
                     step,
                     Some(get_ratio),
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2383,6 +2405,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2415,6 +2438,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2451,6 +2475,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2476,6 +2501,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2504,6 +2530,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2542,6 +2569,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2575,6 +2603,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2621,6 +2650,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2651,6 +2681,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2693,6 +2724,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2718,6 +2750,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2743,6 +2776,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2772,6 +2806,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2813,6 +2848,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2855,6 +2891,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2885,6 +2922,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2911,6 +2949,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2942,6 +2981,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -2980,6 +3020,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3018,6 +3059,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3059,6 +3101,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3100,6 +3143,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3141,6 +3185,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3182,6 +3227,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3223,6 +3269,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3264,6 +3311,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3294,6 +3342,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3334,6 +3383,7 @@ mod tests {
                     step,
                     Some(get_ratio),
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3358,6 +3408,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3393,6 +3444,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3431,6 +3483,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3464,6 +3517,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3494,6 +3548,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3535,6 +3590,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3575,6 +3631,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3607,6 +3664,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3638,6 +3696,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3671,6 +3730,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3714,6 +3774,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3757,6 +3818,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3797,6 +3859,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3837,6 +3900,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3880,6 +3944,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3928,6 +3993,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -3976,6 +4042,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4024,6 +4091,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4072,6 +4140,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4120,6 +4189,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4168,6 +4238,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4216,6 +4287,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4253,6 +4325,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4290,6 +4363,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4315,6 +4389,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4340,6 +4415,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4379,6 +4455,7 @@ mod tests {
                     step,
                     Some(get_ratio),
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4403,6 +4480,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4435,6 +4513,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     true,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4477,6 +4556,7 @@ mod tests {
                     step,
                     Some(get_ratio),
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4520,6 +4600,7 @@ mod tests {
                     step,
                     Some(get_ratio),
                     true, // first claim
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4563,6 +4644,7 @@ mod tests {
                     step,
                     Some(get_ratio),
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4620,6 +4702,7 @@ mod tests {
                     step,
                     Some(get_ratio),
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
@@ -4678,6 +4761,7 @@ mod tests {
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
                     false,
+                    PlatformVersion::latest(),
                 )
                 .unwrap();
 
