@@ -101,7 +101,7 @@ impl<C> Platform<C> {
             ))));
 
         let response = if prove {
-            let proof = self.drive.prove_document_history(
+            let proof = self.drive.prove_document_history_legacy(
                 contract_id.to_buffer(),
                 &document_type_name,
                 document_id.to_buffer(),
@@ -120,7 +120,7 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
-            let documents = self.drive.fetch_document_history(
+            let documents = self.drive.fetch_document_history_legacy(
                 contract_id.to_buffer(),
                 &document_type_name,
                 document_type,

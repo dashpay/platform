@@ -47,6 +47,46 @@ pub struct DocumentHistoryQueryV1 {
     pub limit: Option<u16>,
 }
 
+/// Versioned history request accepted by the Drive dispatchers.
+#[derive(Debug, Clone)]
+pub enum DocumentHistoryQuery {
+    /// Timestamp-only layout used by released protocols.
+    V0 {
+        /// Contract identifier.
+        contract_id: [u8; 32],
+        /// Document type name.
+        document_type_name: String,
+        /// Document identifier.
+        document_id: [u8; 32],
+        /// Inclusive timestamp lower bound.
+        start_at_ms: u64,
+        /// Page length.
+        limit: Option<u16>,
+        /// Legacy ordinal offset.
+        offset: Option<u16>,
+    },
+    /// Composite-key layout with authenticated lifecycle metadata.
+    V1(DocumentHistoryQueryV1),
+}
+
+/// A history result selected by the protocol's layout.
+#[derive(Debug)]
+pub enum DocumentHistoryResult {
+    /// Timestamp-keyed legacy revisions.
+    V0(std::collections::BTreeMap<u64, Document>),
+    /// Composite revisions and lifecycle metadata.
+    V1(DocumentHistoryV1),
+}
+
+/// Proof material selected by the protocol's layout.
+#[derive(Debug)]
+pub enum DocumentHistoryProof {
+    /// One legacy history proof.
+    V0(Vec<u8>),
+    /// Separate composite-entry and lifecycle proofs.
+    V1(DocumentHistoryProofV1),
+}
+
 /// Lifecycle states supported by live-pointer storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DocumentHistoryState {
@@ -94,7 +134,7 @@ pub struct DocumentHistoryProofV1 {
     pub metadata_proof: Vec<u8>,
 }
 
-fn invalid(message: &str) -> Error {
+pub(crate) fn invalid(message: &str) -> Error {
     Error::Query(QuerySyntaxError::Unsupported(message.to_owned()))
 }
 
@@ -135,19 +175,11 @@ impl DocumentHistoryQueryV1 {
 
     /// The leaf-only query required for authenticated count-offset pagination.
     pub fn entries_query(&self, version: &PlatformVersion) -> Result<PathQuery, Error> {
+        Drive::fetch_document_history_query(&DocumentHistoryQuery::V1(self.clone()), version)
+    }
+
+    pub(crate) fn entries_query_v1(&self) -> Result<PathQuery, Error> {
         self.validate()?;
-        if version
-            .drive
-            .methods
-            .document
-            .query
-            .fetch_document_history_query
-            != 1
-        {
-            return Err(invalid(
-                "composite document history is unavailable at this protocol version",
-            ));
-        }
         let mut query = Query::new();
         let mut limit = self.limit.unwrap_or(MAX_DOCUMENT_HISTORY_FETCH_LIMIT);
         let offset = match self.selector {
@@ -200,6 +232,8 @@ impl DocumentHistoryQueryV1 {
     fn lifecycle(
         &self,
         metadata: Vec<grovedb::query_result_type::PathKeyOptionalElementTrio>,
+        document_type: DocumentTypeRef,
+        version: &PlatformVersion,
     ) -> Result<(DocumentHistoryLifecycle, bool), Error> {
         let mut primary =
             contract_document_type_path_vec(&self.contract_id, &self.document_type_name);
@@ -207,6 +241,7 @@ impl DocumentHistoryQueryV1 {
         let mut history = primary.clone();
         history[4] = vec![DOCUMENT_HISTORY_TREE_KEY];
         let mut active = false;
+        let mut latest_revision = None;
         let mut count = None;
         for (path, key, element) in metadata {
             let Some(element) = element else {
@@ -216,17 +251,21 @@ impl DocumentHistoryQueryV1 {
                 return Err(corrupt("history metadata key does not match the document"));
             }
             if path == primary {
-                if !matches!(
-                    element,
-                    Element::Item(..)
-                        | Element::ItemWithSumItem(..)
-                        | Element::Reference(..)
-                        | Element::ReferenceWithSumItem(..)
-                ) {
+                let bytes = match element {
+                    Element::Item(bytes, _) | Element::ItemWithSumItem(bytes, _, _) => bytes,
+                    _ => {
+                        return Err(corrupt(
+                            "history current pointer did not resolve to a document",
+                        ))
+                    }
+                };
+                let document = Document::from_bytes(&bytes, document_type, version)?;
+                if document.id().as_slice() != self.document_id {
                     return Err(corrupt(
-                        "history current pointer has an invalid element type",
+                        "history current document id does not match the query",
                     ));
                 }
+                latest_revision = Some(document.revision().unwrap_or(1));
                 if active {
                     return Err(corrupt("duplicate history current pointer"));
                 }
@@ -246,6 +285,16 @@ impl DocumentHistoryQueryV1 {
         }
         if active && count.unwrap_or_default() == 0 || !active && count.unwrap_or_default() > 0 {
             return Err(corrupt("current document and retained history disagree"));
+        }
+        if matches!(
+            self.selector,
+            DocumentHistorySelector::Revision(_) | DocumentHistorySelector::StartAtRevision(_)
+        ) && active
+            && latest_revision != count
+        {
+            return Err(invalid(
+                "retained history contains a revision gap; use time pagination",
+            ));
         }
         Ok((
             DocumentHistoryLifecycle {
@@ -315,7 +364,7 @@ impl DocumentHistoryQueryV1 {
 #[cfg(feature = "server")]
 impl Drive {
     /// Fetches a composite-keyed page and its current lifecycle metadata.
-    pub fn fetch_document_history_v1(
+    pub(crate) fn fetch_document_history_v1_impl(
         &self,
         query: &DocumentHistoryQueryV1,
         document_type: DocumentTypeRef,
@@ -337,9 +386,6 @@ impl Drive {
             return Err(invalid("document type does not keep history"));
         }
         let entries_query = query.entries_query(version)?;
-        if version.drive.methods.document.query.fetch_document_history != 1 {
-            return Err(invalid("document history fetch version is unsupported"));
-        }
         let metadata_query = query.metadata_query(version)?;
         let (metadata, _) = self.grove_get_raw_path_query(
             &metadata_query,
@@ -348,12 +394,30 @@ impl Drive {
             &mut vec![],
             &version.drive,
         )?;
+        let mut metadata = metadata.to_path_key_elements();
+        for (path, key, element) in &mut metadata {
+            if matches!(
+                element,
+                Element::Reference(..) | Element::ReferenceWithSumItem(..)
+            ) {
+                *element = self
+                    .grove
+                    .get::<Vec<u8>, _>(
+                        path.as_slice(),
+                        key,
+                        transaction,
+                        &version.drive.grove_version,
+                    )
+                    .value?;
+            }
+        }
         let (lifecycle, present) = query.lifecycle(
             metadata
-                .to_path_key_elements()
                 .into_iter()
                 .map(|(path, key, element)| (path, key, Some(element)))
                 .collect(),
+            document_type,
+            version,
         )?;
         let entries = if present {
             let (entries, _) = self.grove_get_raw_path_query(
@@ -371,16 +435,13 @@ impl Drive {
     }
 
     /// Produces independent pagination and metadata proofs from the same state.
-    pub fn prove_document_history_v1(
+    pub(crate) fn prove_document_history_v1_impl(
         &self,
         query: &DocumentHistoryQueryV1,
         document_type: DocumentTypeRef,
         transaction: grovedb::TransactionArg,
         version: &PlatformVersion,
     ) -> Result<(DocumentHistoryV1, DocumentHistoryProofV1), Error> {
-        if version.drive.methods.document.query.prove_document_history != 1 {
-            return Err(invalid("document history proof version is unsupported"));
-        }
         let (history, present) =
             self.fetch_document_history_with_presence(query, document_type, transaction, version)?;
         let metadata_proof = self.grove_get_proved_path_query(
@@ -412,7 +473,7 @@ impl Drive {
 #[cfg(feature = "verify")]
 impl Drive {
     /// Verifies both proofs, their common root, and the revision positions.
-    pub fn verify_document_history_v1(
+    pub(crate) fn verify_document_history_v1_impl(
         query: &DocumentHistoryQueryV1,
         proof: &DocumentHistoryProofV1,
         document_type: DocumentTypeRef,
@@ -422,16 +483,6 @@ impl Drive {
             return Err(invalid("document type does not keep history"));
         }
         let entries_query = query.entries_query(version)?;
-        if version
-            .drive
-            .methods
-            .verify
-            .document
-            .verify_document_history
-            != 1
-        {
-            return Err(invalid("document history verifier version is unsupported"));
-        }
         let (root, metadata) = grovedb::GroveDb::verify_query_with_options(
             &proof.metadata_proof,
             &query.metadata_query(version)?,
@@ -442,7 +493,7 @@ impl Drive {
             },
             &version.drive.grove_version,
         )?;
-        let (lifecycle, present) = query.lifecycle(metadata)?;
+        let (lifecycle, present) = query.lifecycle(metadata, document_type, version)?;
         let entries = match (&proof.entries_proof, present) {
             (None, false) => vec![],
             (Some(bytes), true) => {
@@ -482,3 +533,63 @@ impl Drive {
 
 #[cfg(all(test, feature = "server", feature = "verify"))]
 mod tests;
+
+#[cfg(feature = "server")]
+impl Drive {
+    /// Fetches composite history through the protocol dispatcher.
+    pub fn fetch_document_history_v1(
+        &self,
+        query: &DocumentHistoryQueryV1,
+        document_type: DocumentTypeRef,
+        transaction: grovedb::TransactionArg,
+        version: &PlatformVersion,
+    ) -> Result<DocumentHistoryV1, Error> {
+        match self.fetch_document_history(
+            &DocumentHistoryQuery::V1(query.clone()),
+            document_type,
+            transaction,
+            version,
+        )? {
+            DocumentHistoryResult::V1(history) => Ok(history),
+            _ => Err(invalid("composite history requires history v1")),
+        }
+    }
+    /// Proves composite history through the protocol dispatcher.
+    pub fn prove_document_history_v1(
+        &self,
+        query: &DocumentHistoryQueryV1,
+        document_type: DocumentTypeRef,
+        transaction: grovedb::TransactionArg,
+        version: &PlatformVersion,
+    ) -> Result<(DocumentHistoryV1, DocumentHistoryProofV1), Error> {
+        match self.prove_document_history(
+            &DocumentHistoryQuery::V1(query.clone()),
+            Some(document_type),
+            transaction,
+            version,
+        )? {
+            (Some(history), DocumentHistoryProof::V1(proof)) => Ok((history, proof)),
+            _ => Err(invalid("composite history requires history v1")),
+        }
+    }
+}
+#[cfg(feature = "verify")]
+impl Drive {
+    /// Verifies composite history through the protocol dispatcher.
+    pub fn verify_document_history_v1(
+        query: &DocumentHistoryQueryV1,
+        proof: &DocumentHistoryProofV1,
+        document_type: DocumentTypeRef,
+        version: &PlatformVersion,
+    ) -> Result<([u8; 32], DocumentHistoryV1), Error> {
+        match Self::verify_document_history(
+            &DocumentHistoryProof::V1(proof.clone()),
+            &DocumentHistoryQuery::V1(query.clone()),
+            document_type,
+            version,
+        )? {
+            (root, Some(DocumentHistoryResult::V1(history))) => Ok((root, history)),
+            _ => Err(invalid("composite history requires history v1")),
+        }
+    }
+}

@@ -88,7 +88,21 @@ fn should_authenticate_history_pages_metadata_and_absence() {
         DocumentHistorySelector::Revision(22),
         DocumentHistorySelector::Revision(23),
         DocumentHistorySelector::StartAtRevision(7),
+        DocumentHistorySelector::StartAtRevision(20),
     ] {
+        let expected = match selector {
+            DocumentHistorySelector::Revision(revision) => {
+                if revision <= 22 {
+                    vec![revision]
+                } else {
+                    vec![]
+                }
+            }
+            DocumentHistorySelector::StartAtRevision(revision) => {
+                (revision..=(revision + 9).min(22)).collect()
+            }
+            _ => unreachable!(),
+        };
         query.selector = selector;
         query.limit = None;
         let (page, proof) = drive
@@ -97,6 +111,13 @@ fn should_authenticate_history_pages_metadata_and_absence() {
         let (_, verified) =
             Drive::verify_document_history_v1(&query, &proof, document_type, version).unwrap();
         assert_eq!(verified, page);
+        assert_eq!(
+            page.entries
+                .iter()
+                .map(|entry| entry.revision)
+                .collect::<Vec<_>>(),
+            expected
+        );
         assert_eq!(page.lifecycle.remaining_revisions, 22);
     }
     query.selector = DocumentHistorySelector::StartAtTime(0);
@@ -518,4 +539,117 @@ fn should_charge_count_tree_overhead_when_propagating_history_roots() {
         plain.cost.storage_cost.replaced_bytes + 4 * 8,
         "each rewritten ancestor carries its child's authenticated count"
     );
+}
+
+#[test]
+fn should_report_legacy_history_as_unsupported_after_activation() {
+    let version = PlatformVersion::get(14).unwrap();
+    let drive = setup_drive_with_initial_state_structure(Some(version));
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
+        false,
+        version,
+    )
+    .unwrap();
+    let document_type = contract.document_type_for_name("profile").unwrap();
+    let errors = [
+        drive
+            .fetch_document_history_legacy(
+                [1; 32],
+                "profile",
+                document_type,
+                [2; 32],
+                None,
+                0,
+                None,
+                None,
+                version,
+            )
+            .unwrap_err(),
+        drive
+            .prove_document_history_legacy(
+                [1; 32], "profile", [2; 32], None, 0, None, None, version,
+            )
+            .unwrap_err(),
+        Drive::fetch_document_history_query_legacy(
+            [1; 32], "profile", [2; 32], 0, None, None, version,
+        )
+        .unwrap_err(),
+        Drive::verify_document_history_legacy(
+            &[],
+            [1; 32],
+            "profile",
+            document_type,
+            [2; 32],
+            0,
+            None,
+            None,
+            version,
+        )
+        .unwrap_err(),
+    ];
+    for error in errors {
+        assert!(
+            matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
+            "legacy history is a supported method with an obsolete request shape: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn should_reject_history_keys_that_are_not_sixteen_bytes() {
+    let version = PlatformVersion::get(14).unwrap();
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
+        false,
+        version,
+    )
+    .unwrap();
+    let document_type = contract.document_type_for_name("profile").unwrap();
+    let mut document = json_document_to_document(
+        "tests/supporting_files/contract/dashpay/profile0.json",
+        Some([8; 32].into()),
+        document_type,
+        version,
+    )
+    .unwrap();
+    document.set_revision(Some(1));
+    let query = DocumentHistoryQueryV1 {
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "profile".into(),
+        document_id: document.id().to_buffer(),
+        selector: DocumentHistorySelector::StartAtTime(0),
+        limit: None,
+    };
+    let bytes = document
+        .serialize(document_type, &contract, version)
+        .unwrap();
+    let mut key = encode_u64(1000);
+    key.extend(encode_u64(1));
+    assert_eq!(
+        query
+            .decode_entries(
+                vec![(key.clone(), Element::new_item(bytes.clone()))],
+                document_type,
+                version
+            )
+            .unwrap()[0]
+            .revision,
+        1
+    );
+    let mut overlong = key.clone();
+    overlong.push(0);
+    for invalid in [key[..8].to_vec(), key[..15].to_vec(), overlong] {
+        let error = query
+            .decode_entries(
+                vec![(invalid, Element::new_item(bytes.clone()))],
+                document_type,
+                version,
+            )
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("exactly sixteen bytes"),
+            "{error}"
+        );
+    }
 }
