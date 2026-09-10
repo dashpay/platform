@@ -1,12 +1,12 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Write-path coverage for the `IdentityChangeSet.removed` tombstone
-//! branch. The tombstone runs a wallet-scoped, NULL-safe
-//! `UPDATE identities SET tombstoned = 1 WHERE identity_id = ?1 AND
-//! wallet_id IS ?2`, mirroring the upsert's per-entry wallet cross-check.
-//! These tests pin that a tombstoned identity is excluded from the
-//! per-wallet `load_state` and that a foreign wallet's `removed` set
-//! cannot tombstone this wallet's identity.
+//! Write-path coverage for the `IdentityChangeSet.removed` branch. The
+//! removal runs a wallet-scoped, NULL-safe `DELETE FROM identities WHERE
+//! identity_id = ?1 AND wallet_id IS ?2`, mirroring the upsert's
+//! per-entry wallet cross-check. These tests pin that a removed identity
+//! leaves nothing behind for `load_state` to see, that re-adding its id
+//! starts from a blank identity, and that a foreign wallet's `removed`
+//! set cannot reach this wallet's identity.
 
 mod common;
 
@@ -53,11 +53,11 @@ fn entry_for(id: u8, wallet_id: [u8; 32]) -> IdentityEntry {
     }
 }
 
-/// An identity routed through `IdentityChangeSet.removed` is tombstoned
-/// and disappears from the per-wallet `load_state` while a sibling,
+/// An identity routed through `IdentityChangeSet.removed` is deleted and
+/// disappears from the per-wallet `load_state` while a sibling,
 /// non-removed identity survives.
 #[test]
-fn qa_tomb1_removed_identity_excluded_from_load() {
+fn qa_rm1_removed_identity_excluded_from_load() {
     let (persister, _tmp, path) = fresh_persister();
     let w = wid(0xD0);
     ensure_wallet_meta(&persister, &w);
@@ -82,7 +82,7 @@ fn qa_tomb1_removed_identity_excluded_from_load() {
         )
         .unwrap();
 
-    // Second flush: tombstone drop_me.
+    // Second flush: remove drop_me.
     let mut removed: BTreeSet<Identifier> = BTreeSet::new();
     removed.insert(drop_me.id);
     persister
@@ -102,7 +102,7 @@ fn qa_tomb1_removed_identity_excluded_from_load() {
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
 
-    // The tombstoned row is still physically present (logical delete).
+    // The removed row is physically gone; only the survivor remains.
     let total: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM identities WHERE wallet_id = ?1",
@@ -110,25 +110,16 @@ fn qa_tomb1_removed_identity_excluded_from_load() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(total, 2, "tombstone is a logical delete; row stays on disk");
+    assert_eq!(total, 1, "a removal deletes the row, it does not flag it");
 
-    let tombstoned: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM identities WHERE wallet_id = ?1 AND tombstoned = 1",
-            rusqlite::params![w.as_slice()],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(tombstoned, 1, "exactly one identity tombstoned");
-
-    // load_state must skip the tombstoned identity and keep the other.
+    // load_state must surface only the survivor.
     let state = identities::load_state(&conn, &w).unwrap();
     drop(conn);
     let wallet_idents = state.wallet_identities.get(&w).expect("wallet bucket");
     assert_eq!(
         wallet_idents.len(),
         1,
-        "load_state must surface only the non-tombstoned identity"
+        "load_state must surface only the surviving identity"
     );
     let surviving_ids: Vec<Identifier> = wallet_idents.values().map(|m| m.identity.id()).collect();
     assert!(
@@ -137,14 +128,17 @@ fn qa_tomb1_removed_identity_excluded_from_load() {
     );
     assert!(
         !surviving_ids.contains(&drop_me.id),
-        "tombstoned identity must NOT appear in load"
+        "removed identity must NOT appear in load"
     );
 }
 
-/// Re-upserting a tombstoned identity clears the tombstone (the upsert
-/// sets `tombstoned = 0`) — the resurrection path the writer relies on.
+/// Re-adding a removed identity id is legal and idempotent — the upsert
+/// simply finds no conflicting row — but it starts from a blank
+/// identity, never the removed one's state. The in-memory
+/// `IdentityManager` drops the whole `ManagedIdentity` on removal, so
+/// this is what keeps storage and memory agreeing.
 #[test]
-fn qa_tomb2_reupsert_clears_tombstone() {
+fn qa_rm2_re_add_after_removal_is_a_fresh_row() {
     let (persister, _tmp, path) = fresh_persister();
     let w = wid(0xD1);
     ensure_wallet_meta(&persister, &w);
@@ -180,13 +174,34 @@ fn qa_tomb2_reupsert_clears_tombstone() {
         )
         .unwrap();
 
-    // Re-upsert resurrects.
+    // The removal is observable between the two writes: nothing is left
+    // for the re-add to inherit.
+    {
+        let conn = persister.lock_conn_for_test();
+        let rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM identities WHERE identity_id = ?1",
+                rusqlite::params![e.id.as_slice()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rows, 0, "the removal deleted the row");
+    }
+
+    // Re-add the same id with a different balance: a plain insert now,
+    // not an update of a surviving row.
+    let re_added = IdentityEntry {
+        balance: 9_999,
+        ..e.clone()
+    };
+    let mut re_add: BTreeMap<Identifier, IdentityEntry> = BTreeMap::new();
+    re_add.insert(re_added.id, re_added);
     persister
         .store(
             w,
             PlatformWalletChangeSet {
                 identities: Some(IdentityChangeSet {
-                    identities: idents,
+                    identities: re_add,
                     removed: Default::default(),
                 }),
                 ..Default::default()
@@ -197,34 +212,29 @@ fn qa_tomb2_reupsert_clears_tombstone() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let tombstoned: i64 = conn
-        .query_row(
-            "SELECT tombstoned FROM identities WHERE identity_id = ?1",
-            rusqlite::params![e.id.as_slice()],
-            |r| r.get(0),
-        )
-        .unwrap();
     let state = identities::load_state(&conn, &w).unwrap();
     drop(conn);
-    assert_eq!(tombstoned, 0, "re-upsert must clear the tombstone flag");
+    let bucket = state.wallet_identities.get(&w).expect("wallet bucket");
+    assert_eq!(bucket.len(), 1, "the re-added identity is loadable again");
     assert_eq!(
-        state
-            .wallet_identities
-            .get(&w)
-            .map(|m| m.len())
-            .unwrap_or(0),
-        1,
-        "resurrected identity must reappear in load"
+        bucket
+            .values()
+            .next()
+            .expect("one identity")
+            .identity
+            .balance(),
+        9_999,
+        "the re-added blob wins; no trace of the removed one survives"
     );
 }
 
-/// The tombstone UPDATE is scoped by `wallet_id`: a `removed` entry
-/// naming an identity parented to a different wallet is a no-op against
-/// that wallet's row (NULL-safe `wallet_id IS ?2` predicate). An
-/// identity_id is globally unique to one wallet, so this is
-/// defense-in-depth enforcing the isolation the data model assumes.
+/// The removal DELETE is scoped by `wallet_id`: a `removed` entry naming
+/// an identity parented to a different wallet is a no-op against that
+/// wallet's row (NULL-safe `wallet_id IS ?2` predicate). An identity_id
+/// is globally unique to one wallet, so this is defense-in-depth
+/// enforcing the isolation the data model assumes.
 #[test]
-fn qa_tomb3_tombstone_update_is_wallet_scoped() {
+fn qa_rm3_removal_is_wallet_scoped() {
     let (persister, _tmp, path) = fresh_persister();
     let wa = wid(0xE0);
     let wb = wid(0xE1);
@@ -267,9 +277,9 @@ fn qa_tomb3_tombstone_update_is_wallet_scoped() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let tombstoned: i64 = conn
+    let rows: i64 = conn
         .query_row(
-            "SELECT tombstoned FROM identities WHERE identity_id = ?1",
+            "SELECT COUNT(*) FROM identities WHERE identity_id = ?1",
             rusqlite::params![b_ident.id.as_slice()],
             |r| r.get(0),
         )
@@ -278,11 +288,11 @@ fn qa_tomb3_tombstone_update_is_wallet_scoped() {
     drop(conn);
 
     // Cross-wallet isolation: wallet A's `removed` set names wallet B's
-    // identity, but the wallet-scoped tombstone UPDATE leaves B's row
-    // untouched, so B's load still surfaces the identity.
+    // identity, but the wallet-scoped DELETE leaves B's row untouched,
+    // so B's load still surfaces the identity.
     assert_eq!(
-        tombstoned, 0,
-        "wallet-scoped tombstone: A's removed set must NOT affect B's identity"
+        rows, 1,
+        "wallet-scoped removal: A's removed set must NOT delete B's identity"
     );
     assert_eq!(
         b_state
@@ -291,6 +301,6 @@ fn qa_tomb3_tombstone_update_is_wallet_scoped() {
             .map(|m| m.len())
             .unwrap_or(0),
         1,
-        "B's identity must survive A's unrelated tombstone"
+        "B's identity must survive A's unrelated removal"
     );
 }
