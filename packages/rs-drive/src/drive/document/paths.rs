@@ -1,4 +1,18 @@
 use crate::drive::{constants, RootTree};
+
+/// Reserved document-type key containing the revision trees.
+pub const DOCUMENT_HISTORY_TREE_KEY: u8 = 2;
+
+/// Path to all retained revisions of one document.
+pub fn document_history_path(
+    contract_id: &[u8],
+    document_type_name: &str,
+    document_id: &[u8],
+) -> Vec<Vec<u8>> {
+    let mut path = contract_document_type_path_vec(contract_id, document_type_name);
+    path.extend([vec![DOCUMENT_HISTORY_TREE_KEY], document_id.to_vec()]);
+    path
+}
 #[cfg(feature = "server")]
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 #[cfg(feature = "server")]
@@ -96,7 +110,9 @@ pub fn contract_documents_keeping_history_primary_key_path_for_unknown_document_
 /// Returns the size of the path to a contract document.
 fn contract_documents_keeping_history_primary_key_path_for_document_id_size(
     document_type_name_len: u32,
+    drive_version: &dpp::version::drive_versions::DriveVersion,
 ) -> u32 {
+    let _ = drive_version;
     constants::BASE_CONTRACT_DOCUMENTS_KEEPING_HISTORY_PRIMARY_KEY_PATH_FOR_DOCUMENT_ID_SIZE
         + document_type_name_len
 }
@@ -105,7 +121,18 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id_size(
 /// Returns the size of the path to the time at which a document type was stored.
 pub fn contract_documents_keeping_history_storage_time_reference_path_size(
     document_type_name_len: u32,
+    drive_version: &dpp::version::drive_versions::DriveVersion,
 ) -> u32 {
-    constants::BASE_CONTRACT_DOCUMENTS_KEEPING_HISTORY_STORAGE_TIME_REFERENCE_PATH
-        + document_type_name_len
+    if drive_version
+        .methods
+        .document
+        .insert
+        .add_document_to_primary_storage
+        == 0
+    {
+        constants::BASE_CONTRACT_DOCUMENTS_KEEPING_HISTORY_STORAGE_TIME_REFERENCE_PATH
+            + document_type_name_len
+    } else {
+        constants::DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE
+    }
 }

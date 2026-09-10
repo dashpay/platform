@@ -1330,7 +1330,11 @@ mod tests {
             ..Default::default()
         };
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version = if using_history {
+            PlatformVersion::get(13).expect("protocol 13")
+        } else {
+            PlatformVersion::latest()
+        };
 
         let drive: Drive = setup_drive(Some(config));
 
@@ -1636,7 +1640,11 @@ mod tests {
             ..Default::default()
         };
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version = if using_history {
+            PlatformVersion::get(13).expect("protocol 13")
+        } else {
+            PlatformVersion::latest()
+        };
 
         let drive: Drive = setup_drive(Some(config));
 
@@ -1843,7 +1851,11 @@ mod tests {
             ..Default::default()
         };
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version = if using_history {
+            PlatformVersion::get(13).expect("protocol 13")
+        } else {
+            PlatformVersion::latest()
+        };
 
         let drive: Drive = setup_drive(Some(config));
 

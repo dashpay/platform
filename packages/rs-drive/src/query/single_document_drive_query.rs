@@ -63,12 +63,27 @@ impl SingleDocumentDriveQuery {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        if self.document_type_keeps_history
+            && self.block_time_ms.is_some()
+            && platform_version
+                .drive
+                .methods
+                .document
+                .insert
+                .add_document_to_primary_storage
+                == 1
+        {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "point-in-time reads are unavailable for history-keeping document types"
+                    .to_string(),
+            )));
+        }
         match self.contested_status {
             SingleDocumentDriveQueryContestedStatus::NotContested => {
-                Ok(self.construct_non_contested_path_query(true))
+                Ok(self.construct_non_contested_path_query(true, platform_version))
             }
             SingleDocumentDriveQueryContestedStatus::MaybeContested => {
-                let non_contested = self.construct_non_contested_path_query(true);
+                let non_contested = self.construct_non_contested_path_query(true, platform_version);
                 let contested = self.construct_contested_path_query(true);
                 PathQuery::merge(
                     vec![&non_contested, &contested],
@@ -83,7 +98,11 @@ impl SingleDocumentDriveQuery {
     }
 
     /// Operations to construct the normal path query.
-    fn construct_non_contested_path_query(&self, with_limit_1: bool) -> PathQuery {
+    fn construct_non_contested_path_query(
+        &self,
+        with_limit_1: bool,
+        platform_version: &PlatformVersion,
+    ) -> PathQuery {
         // First we should get the overall document_type_path
         let mut path =
             contract_document_type_path_vec(&self.contract_id, self.document_type_name.as_str());
@@ -93,7 +112,15 @@ impl SingleDocumentDriveQuery {
         let mut query = Query::new();
         query.insert_key(self.document_id.to_vec());
 
-        if self.document_type_keeps_history {
+        if self.document_type_keeps_history
+            && platform_version
+                .drive
+                .methods
+                .document
+                .insert
+                .add_document_to_primary_storage
+                == 0
+        {
             // if the documents keep history then we should insert a subquery
             if let Some(block_time) = self.block_time_ms {
                 let encoded_block_time = encode_u64(block_time);
