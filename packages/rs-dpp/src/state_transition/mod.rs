@@ -805,6 +805,32 @@ impl StateTransition {
             platform_value::with_value_decode_depth_limit(max_value_depth, || {
                 StateTransition::deserialize_from_bytes(bytes)
             })?;
+        // Before activation, old binaries cannot decode the new bounds variant.
+        // Preserve that unpaid failure before any asset lock or nonce can be consumed.
+        if platform_version.protocol_version < 14 {
+            use crate::identity::contract_bounds::ContractBounds;
+            use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
+            use crate::state_transition::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+            use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+            use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+            use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+
+            let keys = match &state_transition {
+                Self::IdentityCreate(st) => st.public_keys(),
+                Self::IdentityCreateFromAddresses(st) => st.public_keys(),
+                Self::IdentityCreateFromShieldedPool(st) => st.public_keys(),
+                Self::IdentityUpdate(st) => st.public_keys_to_add(),
+                _ => &[],
+            };
+            if keys
+                .iter()
+                .any(|key| matches!(key.contract_bounds(), Some(ContractBounds::Scoped(_))))
+            {
+                return Err(ProtocolError::PlatformDeserializationError(
+                    "scoped authentication keys are not activated".into(),
+                ));
+            }
+        }
         #[cfg(all(feature = "state-transitions", feature = "validation"))]
         {
             let active_version_range = state_transition.active_version_range();
@@ -1279,6 +1305,43 @@ impl StateTransition {
         call_method_identity_signed!(self, set_signature_public_key_id, public_key_id)
     }
 
+    /// Check the scope when the signing API receives the identity key metadata.
+    /// Raw signing primitives cannot check bounds without that metadata.
+    #[cfg(feature = "state-transition-signing")]
+    fn verify_identity_key_scope(
+        &self,
+        identity_public_key: &IdentityPublicKey,
+    ) -> Result<(), ProtocolError> {
+        if let Some(crate::identity::contract_bounds::ContractBounds::Scoped(scope)) =
+            identity_public_key.contract_bounds()
+        {
+            use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+            match self {
+                StateTransition::Batch(batch)
+                    if batch
+                        .transitions_iter()
+                        .all(|transition| scope.allows_transition(transition)) => {}
+                StateTransition::Batch(_) => {
+                    return Err(ProtocolError::ConsensusError(Box::new(
+                        crate::consensus::signature::ScopedKeyOutOfScopeError::new(
+                            identity_public_key.id(),
+                        )
+                        .into(),
+                    )))
+                }
+                _ => {
+                    return Err(ProtocolError::ConsensusError(Box::new(
+                        crate::consensus::signature::ScopedKeyNonBatchError::new(
+                            identity_public_key.id(),
+                        )
+                        .into(),
+                    )))
+                }
+            }
+        }
+        Ok(())
+    }
+
     #[cfg(feature = "state-transition-signing")]
     pub async fn sign_external<S: Signer<IdentityPublicKey>>(
         &mut self,
@@ -1307,6 +1370,7 @@ impl StateTransition {
         >,
         options: StateTransitionSigningOptions,
     ) -> Result<(), ProtocolError> {
+        self.verify_identity_key_scope(identity_public_key)?;
         match self {
             StateTransition::DataContractCreate(st) => {
                 st.verify_public_key_level_and_purpose(identity_public_key, options)?;
@@ -1482,6 +1546,7 @@ impl StateTransition {
         bls: &impl BlsModule,
         options: StateTransitionSigningOptions,
     ) -> Result<(), ProtocolError> {
+        self.verify_identity_key_scope(identity_public_key)?;
         call_errorable_method_identity_signed!(
             self,
             verify_public_key_level_and_purpose,
@@ -1973,6 +2038,81 @@ mod tests {
     // StateTransitionSigningOptions tests
     // -----------------------------------------------------------------------
 
+    #[cfg(all(feature = "state-transition-signing", feature = "bls-signatures"))]
+    #[test]
+    fn should_enforce_scope_before_private_key_signing() {
+        use crate::consensus::signature::{ScopedKeyNonBatchError, ScopedKeyOutOfScopeError};
+        use crate::identity::contract_bounds::authentication_scope::{
+            permissions, AuthenticationScope, AuthenticationScopeV0, ContractScope,
+        };
+        use crate::identity::contract_bounds::ContractBounds;
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+
+        let private_key = [1; 32];
+        let bls = crate::bls::native_bls::NativeBlsModule;
+        let scope = AuthenticationScopeV0 {
+            contracts: vec![ContractScope {
+                id: Identifier::from([2; 32]),
+                document_types: Some(vec!["preorder".to_string()]),
+            }],
+            permissions: permissions::DOCUMENT_DELETE,
+            expires_at: None,
+        };
+        let mut key = IdentityPublicKeyV0 {
+            id: 7,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: KeyType::ECDSA_SECP256K1,
+            data: get_compressed_public_ec_key(&private_key)
+                .unwrap()
+                .to_vec()
+                .into(),
+            contract_bounds: Some(ContractBounds::Scoped(AuthenticationScope::V0(
+                scope.clone(),
+            ))),
+            ..Default::default()
+        };
+        sample_batch_st_with_delete()
+            .sign(&key.clone().into(), &private_key, &bls)
+            .expect("allowed document delete must sign");
+
+        let err = sample_transfer_st()
+            .sign(&key.clone().into(), &private_key, &bls)
+            .unwrap_err();
+        assert!(matches!(err, ProtocolError::ConsensusError(error)
+            if *error == ScopedKeyNonBatchError::new(key.id).into()));
+
+        for mismatch in ["contract", "document type", "operation"] {
+            let mut denied = scope.clone();
+            match mismatch {
+                "contract" => denied.contracts[0].id = Identifier::from([3; 32]),
+                "document type" => denied.contracts[0].document_types = Some(vec!["other".into()]),
+                "operation" => denied.permissions = permissions::DOCUMENT_CREATE,
+                _ => unreachable!(),
+            }
+            key.contract_bounds = Some(ContractBounds::Scoped(AuthenticationScope::V0(denied)));
+            let mut transition = sample_batch_st_with_delete();
+            let original = transition.clone();
+            let err = transition
+                .sign(&key.clone().into(), &private_key, &bls)
+                .unwrap_err();
+            assert!(
+                matches!(err, ProtocolError::ConsensusError(error)
+                if *error == ScopedKeyOutOfScopeError::new(key.id).into()),
+                "{mismatch}"
+            );
+            assert_eq!(
+                transition, original,
+                "rejection must preserve the transition"
+            );
+        }
+
+        key.contract_bounds = None;
+        sample_batch_st_with_delete()
+            .sign(&key.into(), &private_key, &bls)
+            .expect("unscoped keys must still sign");
+    }
+
     #[test]
     fn test_signing_options_default() {
         let opts = StateTransitionSigningOptions::default();
@@ -2322,6 +2462,86 @@ mod tests {
             StateTransition::deserialize_from_bytes_in_version(&bytes, PlatformVersion::latest())
                 .expect("deserialize_from_bytes_in_version should succeed");
         assert_eq!(original, restored);
+    }
+
+    #[test]
+    fn should_reject_scoped_registration_during_decoding_before_activation() {
+        use crate::identity::contract_bounds::{
+            authentication_scope::permissions, AuthenticationScope, AuthenticationScopeV0,
+            ContractBounds, ContractScope,
+        };
+        use crate::serialization::PlatformSerializable;
+        use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
+        use crate::state_transition::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+        use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+
+        let key = IdentityPublicKeyInCreationV0 {
+            contract_bounds: Some(ContractBounds::Scoped(AuthenticationScope::V0(
+                AuthenticationScopeV0 {
+                    contracts: vec![ContractScope {
+                        id: Identifier::from([1; 32]),
+                        document_types: None,
+                    }],
+                    permissions: permissions::DOCUMENT_CREATE,
+                    expires_at: None,
+                },
+            ))),
+            ..Default::default()
+        };
+        let transitions = [
+            StateTransition::IdentityCreate(IdentityCreateTransition::V0(
+                IdentityCreateTransitionV0 {
+                    public_keys: vec![key.clone().into()],
+                    ..Default::default()
+                },
+            )),
+            StateTransition::IdentityCreateFromAddresses(
+                IdentityCreateFromAddressesTransition::V0(
+                    IdentityCreateFromAddressesTransitionV0 {
+                        public_keys: vec![key.clone().into()],
+                        ..Default::default()
+                    },
+                ),
+            ),
+            StateTransition::IdentityCreateFromShieldedPool(
+                IdentityCreateFromShieldedPoolTransition::V0(
+                    IdentityCreateFromShieldedPoolTransitionV0 {
+                        public_keys: vec![key.clone().into()],
+                        denomination: 0,
+                        actions: vec![],
+                        anchor: [0; 32],
+                        proof: vec![],
+                        binding_signature: [0; 64],
+                        send_to_address_on_creation_failure: Default::default(),
+                        identity_id: Identifier::from([0; 32]),
+                    },
+                ),
+            ),
+            StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(
+                IdentityUpdateTransitionV0 {
+                    add_public_keys: vec![key.into()],
+                    ..Default::default()
+                },
+            )),
+        ];
+        for transition in transitions {
+            let bytes = transition.serialize_to_bytes().unwrap();
+            assert!(matches!(
+                StateTransition::deserialize_from_bytes_in_version(
+                    &bytes,
+                    PlatformVersion::get(13).unwrap()
+                ),
+                Err(ProtocolError::PlatformDeserializationError(_))
+            ));
+            assert_eq!(
+                StateTransition::deserialize_from_bytes_in_version(
+                    &bytes,
+                    PlatformVersion::get(14).unwrap()
+                )
+                .unwrap(),
+                transition
+            );
+        }
     }
 
     #[test]

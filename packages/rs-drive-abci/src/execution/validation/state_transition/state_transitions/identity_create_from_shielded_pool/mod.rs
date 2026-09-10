@@ -14,6 +14,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::identity_create_from_shielded_pool::state::v0::IdentityCreateFromShieldedPoolStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::identity_create_from_shielded_pool::state::v1::IdentityCreateFromShieldedPoolStateTransitionStateValidationV1;
 use crate::execution::validation::state_transition::identity_create_from_shielded_pool::transform_into_action::v0::IdentityCreateFromShieldedPoolStateTransitionTransformIntoActionValidationV0;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -83,6 +84,7 @@ pub trait StateTransitionStateValidationForIdentityCreateFromShieldedPoolTransit
         &self,
         action: IdentityCreateFromShieldedPoolTransitionAction,
         platform: &PlatformRef<C>,
+        block_info: &dpp::block::block_info::BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -95,6 +97,7 @@ impl StateTransitionStateValidationForIdentityCreateFromShieldedPoolTransitionV0
         &self,
         action: IdentityCreateFromShieldedPoolTransitionAction,
         platform: &PlatformRef<C>,
+        block_info: &dpp::block::block_info::BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -107,9 +110,17 @@ impl StateTransitionStateValidationForIdentityCreateFromShieldedPoolTransitionV0
             .state
         {
             0 => self.validate_state_v0(platform, action, execution_context, tx, platform_version),
+            1 => self.validate_state_v1(
+                platform,
+                block_info,
+                action,
+                execution_context,
+                tx,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create from shielded pool transition: validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

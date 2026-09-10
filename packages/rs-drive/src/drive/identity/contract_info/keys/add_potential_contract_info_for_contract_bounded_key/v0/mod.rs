@@ -59,7 +59,7 @@ impl Drive {
             self.add_contract_info_operations_v0(
                 identity_id,
                 epoch,
-                vec![contract_apply_info],
+                contract_apply_info,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 drive_operations,

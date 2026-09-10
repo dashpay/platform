@@ -97,6 +97,7 @@ impl StateTransitionStateValidation for StateTransition {
                 st.validate_state_for_identity_create_transition(
                     action,
                     platform,
+                    block_info,
                     execution_context,
                     tx,
                 )
@@ -163,6 +164,7 @@ impl StateTransitionStateValidation for StateTransition {
                 st.validate_state_for_identity_create_from_addresses_transition(
                     action,
                     platform,
+                    block_info,
                     execution_context,
                     tx,
                 )
@@ -247,6 +249,7 @@ impl StateTransitionStateValidation for StateTransition {
                 st.validate_state_for_identity_create_from_shielded_pool_transition(
                     action,
                     platform,
+                    block_info,
                     execution_context,
                     tx,
                 )

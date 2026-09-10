@@ -14,8 +14,11 @@ use crate::version::drive_versions::drive_identity_method_versions::{
 };
 
 /// V2 is protocol version 14's identity-method table. It differs from V1 in
-/// its withdrawal methods:
+/// its contract-bound key indexing and withdrawal methods:
 ///
+/// * `contract_info.add_potential_contract_info_for_contract_bounded_key` 0 -> 1:
+///   supports scoped authentication-key references. V0 preserves the historical
+///   rejection of authentication keys with legacy contract bounds before v14.
 /// * `withdrawals.document.find_withdrawal_documents_by_status_and_transaction_indices`
 ///   0 -> 1, selecting the v1 withdrawal-by-transaction-index query builder
 ///   that carries the transaction-index `In` clause in
@@ -141,7 +144,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
             add_new_identity: 0,
         },
         contract_info: DriveIdentityContractInfoMethodVersions {
-            add_potential_contract_info_for_contract_bounded_key: 0,
+            add_potential_contract_info_for_contract_bounded_key: 1,
             refresh_potential_contract_info_key_references: 0,
             merge_identity_contract_nonce: 0,
         },

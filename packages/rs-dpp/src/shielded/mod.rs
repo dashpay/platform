@@ -24,7 +24,8 @@ pub use compute_minimum_shielded_fee::{
 // re-exported (callers use the wrappers; byte-layout tests use the `_v0` impls).
 pub use sighash::{
     compute_platform_sighash, identity_create_from_shielded_extra_sighash_data,
-    identity_create_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
+    identity_create_from_shielded_extra_sighash_data_v0,
+    identity_create_from_shielded_extra_sighash_data_v1, shielded_withdrawal_extra_sighash_data,
     shielded_withdrawal_extra_sighash_data_v0, unshield_extra_sighash_data,
     unshield_extra_sighash_data_v0,
 };

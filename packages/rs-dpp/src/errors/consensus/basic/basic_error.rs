@@ -1,3 +1,4 @@
+use crate::consensus::basic::identity::InvalidAuthenticationScopeError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -699,6 +700,8 @@ pub enum BasicError {
 
     #[error(transparent)]
     DataContractInvalidRequiredFieldsUpdateError(DataContractInvalidRequiredFieldsUpdateError),
+    #[error(transparent)]
+    InvalidAuthenticationScopeError(InvalidAuthenticationScopeError),
 }
 
 impl From<BasicError> for ConsensusError {

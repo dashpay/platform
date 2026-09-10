@@ -27,3 +27,12 @@ pub use crate::consensus::signature::signature_error::SignatureError;
 pub use crate::consensus::signature::signature_should_not_be_present_error::SignatureShouldNotBePresentError;
 pub use crate::consensus::signature::uncompressed_public_key_not_allowed_error::UncompressedPublicKeyNotAllowedError;
 pub use crate::consensus::signature::wrong_public_key_purpose_error::WrongPublicKeyPurposeError;
+
+mod scoped_key_non_batch_error;
+pub use scoped_key_non_batch_error::ScopedKeyNonBatchError;
+
+mod scoped_key_expired_error;
+pub use scoped_key_expired_error::ScopedKeyExpiredError;
+
+mod scoped_key_out_of_scope_error;
+pub use scoped_key_out_of_scope_error::ScopedKeyOutOfScopeError;

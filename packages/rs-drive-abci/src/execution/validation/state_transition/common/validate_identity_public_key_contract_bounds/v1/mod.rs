@@ -91,6 +91,14 @@ fn validate_identity_public_key_contract_bounds_v1(
     let contract_id = match contract_bounds {
         ContractBounds::SingleContract { id } => *id,
         ContractBounds::SingleContractDocumentType { id, .. } => *id,
+        ContractBounds::Scoped(_) => {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                dpp::consensus::basic::identity::InvalidAuthenticationScopeError::new(
+                    "scope is not activated".into(),
+                )
+                .into(),
+            ))
+        }
     };
     let outcome = drive.get_system_or_user_contract_with_fee(
         contract_id.to_buffer(),
@@ -110,6 +118,7 @@ fn validate_identity_public_key_contract_bounds_v1(
     };
 
     match contract_bounds {
+        ContractBounds::Scoped(_) => unreachable!("rejected above"),
         ContractBounds::SingleContract { .. } => {
             let requirements_for_purpose = match purpose {
                 ENCRYPTION => contract.config().requires_identity_encryption_bounded_key(),

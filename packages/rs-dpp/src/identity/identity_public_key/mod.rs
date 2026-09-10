@@ -51,7 +51,11 @@ pub type TimestampMillis = u64;
     Ord,
     PartialOrd,
 )]
-#[platform_serialize(limit = 2000, unversioned)] //This is not platform versioned automatically
+// Bincode's decoding budget includes container allocations, not just wire bytes.
+// A valid scope can allocate 16 ContractScopes and 256 Strings in addition to
+// its 2 KiB encoding. 16 KiB covers those allocations and the remaining key fields.
+// Scope validation retains its separate 2 KiB wire limit.
+#[platform_serialize(limit = 16384, unversioned)] // Not automatically platform versioned.
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[serde(tag = "$formatVersion")]
 pub enum IdentityPublicKey {

@@ -7,7 +7,7 @@ use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_method_versions::v3::DPP_METHOD_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
-use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_state_transition_method_versions::v2::STATE_TRANSITION_METHOD_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v3::STATE_TRANSITION_SERIALIZATION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_versions::v3::STATE_TRANSITION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_token_versions::v2::TOKEN_VERSIONS_V2;
@@ -194,6 +194,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// where-clause operator enum gains `IN_TIME_RANGE = 11`, which pre-v14
 /// servers reject as an unknown operator rather than misread (the v0 wire
 /// has no time-range operator at all).
+/// Contract-scoped authentication keys activate through key-structure v1, bounds v2,
+/// signature authorization v1 and batch advanced-structure v1. Identity creation
+/// now validates key bounds, and identity-update state v1 retains validation fees.
+/// Shielded identity creation binds scope metadata using extra-sighash-data v1.
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot
@@ -210,7 +214,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         validation: DPP_VALIDATION_VERSIONS_V5,
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
-        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
+        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V3,
         contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties

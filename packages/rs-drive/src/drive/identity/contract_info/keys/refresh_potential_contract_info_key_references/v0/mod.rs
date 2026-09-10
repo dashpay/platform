@@ -53,7 +53,7 @@ impl Drive {
             self.refresh_contract_info_operations_v0(
                 identity_id,
                 epoch,
-                vec![contract_apply_info],
+                contract_apply_info,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 drive_operations,
@@ -145,6 +145,9 @@ impl Drive {
                 let storage_key_requirements = contract
                     .as_ref()
                     .map(|contract| match purpose {
+                        Purpose::AUTHENTICATION => {
+                            Ok(StorageKeyRequirements::MultipleReferenceToLatest)
+                        }
                         Purpose::ENCRYPTION => {
                             let encryption_storage_key_requirements = contract
                                 .contract
@@ -203,7 +206,17 @@ impl Drive {
                     let sibling_ref_type_path = SiblingReference(key_id_bytes);
 
                     self.batch_refresh_reference(
-                        identity_contract_info_group_keys_path_vec(&identity_id, &root_id),
+                        if purpose == Purpose::AUTHENTICATION {
+                            // Scoped authentication's current-key reference belongs beside
+                            // its key IDs, under the purpose subtree. Keep legacy paths frozen.
+                            identity_contract_info_group_path_key_purpose_vec(
+                                &identity_id,
+                                &root_id,
+                                purpose,
+                            )
+                        } else {
+                            identity_contract_info_group_keys_path_vec(&identity_id, &root_id)
+                        },
                         vec![],
                         Element::Reference(sibling_ref_type_path, Some(2), None),
                         true,
@@ -260,6 +273,9 @@ impl Drive {
                     let storage_key_requirements = contract
                         .as_ref()
                         .map(|contract| match purpose {
+                            Purpose::AUTHENTICATION => {
+                                Ok(StorageKeyRequirements::MultipleReferenceToLatest)
+                            }
                             Purpose::ENCRYPTION => {
                                 let document_type = contract
                                     .contract
