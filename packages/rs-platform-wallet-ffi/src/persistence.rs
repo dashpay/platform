@@ -2039,7 +2039,7 @@ impl PlatformWalletPersistence for FFIPersister {
                              code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
