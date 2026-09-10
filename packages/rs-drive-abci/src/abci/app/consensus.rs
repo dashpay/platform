@@ -7,7 +7,9 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::snapshot::SnapshotFetchingSession;
+use crate::platform_types::snapshot::{
+    clear_restore_sentinel_best_effort, restore_sentinel_exists, SnapshotFetchingSession,
+};
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
@@ -89,7 +91,18 @@ impl<'a, C> TransactionalApplication<'a> for ConsensusAbciApplication<'a, C> {
         self.platform
             .drive
             .commit_transaction(transaction, &platform_version.drive)
-            .map_err(Error::Drive)
+            .map_err(Error::Drive)?;
+        if restore_sentinel_exists(&self.platform.config.db_path) {
+            if let Err(error) = self.platform.drive.grove.flush() {
+                tracing::error!(
+                    ?error,
+                    "could not flush genesis state before clearing restore sentinel"
+                );
+            } else {
+                clear_restore_sentinel_best_effort(&self.platform.config.db_path);
+            }
+        }
+        Ok(())
     }
 }
 

@@ -127,6 +127,20 @@ impl Platform<DefaultCoreRPC> {
 }
 
 impl<C> Platform<C> {
+    /// Drop the in-memory state that was derived from a database before a failed
+    /// state-sync restore. The database wipe leaves an empty chain, so retaining the
+    /// old state would make the next `info` call compare unrelated roots and panic.
+    pub fn reset_state_after_wipe(&self) -> Result<(), Error> {
+        let initial = INITIAL_PROTOCOL_VERSION;
+        let state = PlatformState::default_with_protocol_versions(initial, initial, &self.config)?;
+        self.state.store(Arc::new(state));
+        self.committed_block_height_guard
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.checkpoint_platform_states
+            .store(Arc::new(BTreeMap::new()));
+        Ok(())
+    }
+
     /// Open Platform with Drive and block execution context.
     pub fn open_with_client<P: AsRef<Path>>(
         path: P,
@@ -182,6 +196,10 @@ impl<C> Platform<C> {
             );
 
             wipe_drive_for_restore(&drive).map_err(Error::Drive)?;
+            drive
+                .grove
+                .flush()
+                .map_err(|error| Error::Drive(error.into()))?;
             clear_restore_sentinel(&config.db_path).map_err(|e| {
                 Error::Drive(drive::error::Error::IOErrorWithInfoString(
                     e.into(),

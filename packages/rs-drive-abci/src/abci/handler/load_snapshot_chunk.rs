@@ -2,11 +2,77 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::snapshot::{
-    max_serving_pins, SnapshotManager, MAX_STATE_SYNC_CHUNK_ID_SIZE,
+    max_serving_pins, unpack_nested_chunk_ids, SnapshotManager, MAX_STATE_SYNC_CHUNK_ID_SIZE,
     SUPPORTED_STATE_SYNC_PROTOCOL_VERSIONS,
 };
 use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
+
+fn validate_chunk_id_batch(chunk_id: &[u8]) -> Result<(), AbciError> {
+    if chunk_id.len() == 32 {
+        return Ok(());
+    }
+
+    // Tenderdash supplies the global id directly for a single follow-up chunk and
+    // supplies GroveDB's outer packed form when several ids are requested together.
+    let global_ids = match unpack_nested_chunk_ids(chunk_id) {
+        Ok(ids) if ids.iter().all(|id| id.len() == 32 || id.len() >= 35) => ids,
+        _ => vec![chunk_id.to_vec()],
+    };
+    if global_ids.len() != crate::platform_types::snapshot::STATE_SYNC_CHUNK_IDS_PER_REQUEST {
+        return Err(AbciError::StateSyncBadRequest(format!(
+            "load_snapshot_chunk contains {} global chunk ids, maximum is {}",
+            global_ids.len(),
+            crate::platform_types::snapshot::STATE_SYNC_CHUNK_IDS_PER_REQUEST
+        )));
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    for global_id in global_ids {
+        if !seen.insert(global_id.clone()) {
+            return Err(AbciError::StateSyncBadRequest(
+                "load_snapshot_chunk contains duplicate global chunk ids".to_string(),
+            ));
+        }
+        if global_id.len() < 35 {
+            return Err(AbciError::StateSyncBadRequest(
+                "load_snapshot_chunk malformed global chunk id".to_string(),
+            ));
+        }
+        let root_key_len = u16::from_be_bytes([global_id[32], global_id[33]]) as usize;
+        let nested_offset = 35usize.checked_add(root_key_len).ok_or_else(|| {
+            AbciError::StateSyncBadRequest(
+                "load_snapshot_chunk malformed global chunk id".to_string(),
+            )
+        })?;
+        if global_id.len() < nested_offset {
+            return Err(AbciError::StateSyncBadRequest(
+                "load_snapshot_chunk malformed global chunk id".to_string(),
+            ));
+        }
+        let local_ids = unpack_nested_chunk_ids(&global_id[nested_offset..]).map_err(|e| {
+            AbciError::StateSyncBadRequest(format!(
+                "load_snapshot_chunk malformed local chunk ids: {e}"
+            ))
+        })?;
+        if !local_ids.is_empty()
+            && local_ids.len() != crate::platform_types::snapshot::STATE_SYNC_CHUNK_IDS_PER_REQUEST
+        {
+            return Err(AbciError::StateSyncBadRequest(format!(
+                "load_snapshot_chunk contains {} local chunk ids, maximum is {}",
+                local_ids.len(),
+                crate::platform_types::snapshot::STATE_SYNC_CHUNK_IDS_PER_REQUEST
+            )));
+        }
+        let mut local_seen = std::collections::HashSet::new();
+        if local_ids.iter().any(|id| !local_seen.insert(id)) {
+            return Err(AbciError::StateSyncBadRequest(
+                "load_snapshot_chunk contains duplicate local chunk ids".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
 
 /// Serves one chunk of a state sync snapshot from the checkpoint registry.
 ///
@@ -43,6 +109,8 @@ pub fn load_snapshot_chunk<C>(
         ))
         .into());
     }
+
+    validate_chunk_id_batch(&request.chunk_id)?;
 
     let wire_version = u16::try_from(request.version)
         .ok()
@@ -101,6 +169,15 @@ pub fn load_snapshot_chunk<C>(
             ))
         })?;
 
+    if chunk.len() > crate::platform_types::snapshot::MAX_STATE_SYNC_CHUNK_SIZE {
+        return Err(AbciError::StateSyncInternalError(format!(
+            "load_snapshot_chunk generated {} bytes, exceeding the {} byte response limit",
+            chunk.len(),
+            crate::platform_types::snapshot::MAX_STATE_SYNC_CHUNK_SIZE
+        ))
+        .into());
+    }
+
     // Pin (or refresh the pin of) the checkpoint only once a chunk was actually served.
     // Pinning before the fetch would let a peer keep a checkpoint — and its directory —
     // alive with a stream of requests that never succeed.
@@ -117,9 +194,30 @@ pub fn load_snapshot_chunk<C>(
 mod tests {
     use super::*;
     use crate::config::PlatformConfig;
+    use crate::platform_types::snapshot::pack_nested_chunk_ids;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::version::PlatformVersion;
+
+    fn global_chunk_id(local_ids: &[Vec<u8>]) -> Vec<u8> {
+        let mut id = vec![0u8; 35];
+        id.extend(pack_nested_chunk_ids(local_ids).expect("pack local ids"));
+        id
+    }
+
+    #[test]
+    fn load_rejects_multi_chunk_batches_before_fetching() {
+        let first = global_chunk_id(&[vec![1]]);
+        let second = global_chunk_id(&[vec![2]]);
+        let packed = pack_nested_chunk_ids(&[first, second]).expect("pack global ids");
+        assert!(validate_chunk_id_batch(&packed).is_err());
+    }
+
+    #[test]
+    fn load_rejects_duplicate_local_ids() {
+        let global = global_chunk_id(&[vec![1], vec![1]]);
+        assert!(validate_chunk_id_batch(&global).is_err());
+    }
 
     #[test]
     fn load_snapshot_chunk_serves_root_chunk_and_rejects_bad_requests() {

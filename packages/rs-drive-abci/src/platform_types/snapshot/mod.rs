@@ -50,14 +50,19 @@ pub fn write_restore_sentinel(
     height: u64,
 ) -> std::io::Result<()> {
     std::fs::create_dir_all(db_path)?;
-    std::fs::write(
-        restore_sentinel_path(db_path),
+    use std::io::Write;
+    let path = restore_sentinel_path(db_path);
+    let mut file = std::fs::File::create(&path)?;
+    file.write_all(
         format!(
             "state sync restore in progress\nheight: {}\napp_hash: {}\n",
             height,
             hex::encode(app_hash)
-        ),
-    )
+        )
+        .as_bytes(),
+    )?;
+    file.sync_all()?;
+    std::fs::File::open(db_path)?.sync_all()
 }
 
 /// Clears the restore sentinel at a point where the node is already self-consistent —
@@ -85,7 +90,7 @@ pub fn clear_restore_sentinel_best_effort(db_path: &Path) {
 /// a genesis initialization.
 pub fn clear_restore_sentinel(db_path: &Path) -> std::io::Result<()> {
     match std::fs::remove_file(restore_sentinel_path(db_path)) {
-        Ok(()) => Ok(()),
+        Ok(()) => std::fs::File::open(db_path)?.sync_all(),
         // Absent is the normal case on every path that clears defensively.
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
@@ -155,6 +160,56 @@ pub const MAX_STATE_SYNC_CHUNK_SIZE: usize = 16 * 1024 * 1024;
 /// of peer-supplied data (issue #3773). Chunk ids are packed vectors of 32-byte subtree
 /// prefixes plus short traversal instructions, so well-formed ids stay far below this.
 pub const MAX_STATE_SYNC_CHUNK_ID_SIZE: usize = 64 * 1024;
+
+/// Keep each load request bounded to one global and one local chunk. GroveDB generates
+/// the complete response before returning it, so a request containing several IDs can
+/// exceed the ABCI receive limit before the caller has a chance to inspect the result.
+pub const STATE_SYNC_CHUNK_IDS_PER_REQUEST: usize = 1;
+
+/// Decode GroveDB's length-prefixed nested byte format without exposing the
+/// dependency's private replication helpers to request handlers.
+pub fn unpack_nested_chunk_ids(input: &[u8]) -> Result<Vec<Vec<u8>>, String> {
+    if input.len() < 4 {
+        return Err("input is shorter than the element count".to_string());
+    }
+    let count = u32::from_be_bytes(input[..4].try_into().unwrap()) as usize;
+    if count > (input.len() - 4) / 4 {
+        return Err("declared element count exceeds input".to_string());
+    }
+    let mut offset = 4usize;
+    let mut result = Vec::with_capacity(count);
+    for _ in 0..count {
+        let end_len = offset.checked_add(4).ok_or("length overflow")?;
+        if end_len > input.len() {
+            return Err("truncated element length".to_string());
+        }
+        let len = u32::from_be_bytes(input[offset..end_len].try_into().unwrap()) as usize;
+        offset = end_len;
+        let end = offset.checked_add(len).ok_or("element length overflow")?;
+        if end > input.len() {
+            return Err("truncated element".to_string());
+        }
+        result.push(input[offset..end].to_vec());
+        offset = end;
+    }
+    if offset != input.len() {
+        return Err("trailing bytes after nested elements".to_string());
+    }
+    Ok(result)
+}
+
+/// Encode chunk identifiers using GroveDB's length-prefixed nested byte format.
+pub fn pack_nested_chunk_ids(items: &[Vec<u8>]) -> Result<Vec<u8>, String> {
+    let count = u32::try_from(items.len()).map_err(|_| "too many elements".to_string())?;
+    let mut result = Vec::new();
+    result.extend_from_slice(&count.to_be_bytes());
+    for item in items {
+        let len = u32::try_from(item.len()).map_err(|_| "element is too large".to_string())?;
+        result.extend_from_slice(&len.to_be_bytes());
+        result.extend_from_slice(item);
+    }
+    Ok(result)
+}
 
 /// Maximum number of subtrees processed in a single batch of a grovedb state sync
 /// session on the consuming side.
@@ -306,44 +361,50 @@ impl SnapshotManager {
     /// answered must not be able to keep a checkpoint alive.
     pub fn pin_for_serving(&self, height: u64, checkpoint: Arc<Checkpoint>, max_pins: usize) {
         let now = Instant::now();
-        let mut pins = self
-            .serving_pins
-            .write()
-            .expect("serving pins lock poisoned");
-        retain_live_pins(&mut pins, now);
+        let released = {
+            let mut pins = self
+                .serving_pins
+                .write()
+                .expect("serving pins lock poisoned");
+            let mut released = remove_expired_pins(&mut pins, now);
 
-        if let Some(pin) = pins.get_mut(&height) {
-            // Refresh the idle deadline only — `pinned_at` is deliberately untouched so
-            // the absolute lifetime cannot be extended by activity.
-            pin.last_served = now;
-            return;
-        }
+            if let Some(pin) = pins.get_mut(&height) {
+                // Refresh the idle deadline only — `pinned_at` is deliberately untouched so
+                // the absolute lifetime cannot be extended by activity.
+                pin.last_served = now;
+                released
+            } else {
+                // Evict the least recently served pin to make room for a genuinely new one.
+                while pins.len() >= max_pins.max(1) {
+                    let Some(coldest) = pins
+                        .iter()
+                        .min_by_key(|(_, pin)| pin.last_served)
+                        .map(|(pinned_height, _)| *pinned_height)
+                    else {
+                        break;
+                    };
+                    tracing::warn!(
+                        evicted_height = coldest,
+                        new_height = height,
+                        "[state_sync] serving pin limit reached, releasing the least recently served pin",
+                    );
+                    if let Some(pin) = pins.remove(&coldest) {
+                        released.push(pin);
+                    }
+                }
 
-        // Evict the least recently served pin to make room for a genuinely new one
-        while pins.len() >= max_pins.max(1) {
-            let Some(coldest) = pins
-                .iter()
-                .min_by_key(|(_, pin)| pin.last_served)
-                .map(|(pinned_height, _)| *pinned_height)
-            else {
-                break;
-            };
-            tracing::warn!(
-                evicted_height = coldest,
-                new_height = height,
-                "[state_sync] serving pin limit reached, releasing the least recently served pin",
-            );
-            pins.remove(&coldest);
-        }
-
-        pins.insert(
-            height,
-            ServingPin {
-                checkpoint,
-                pinned_at: now,
-                last_served: now,
-            },
-        );
+                pins.insert(
+                    height,
+                    ServingPin {
+                        checkpoint,
+                        pinned_at: now,
+                        last_served: now,
+                    },
+                );
+                released
+            }
+        };
+        drop(released);
     }
 
     /// Returns a pinned checkpoint for the given height, if the pin is still held AND
@@ -355,12 +416,19 @@ impl SnapshotManager {
     /// transfer was abandoned long ago.
     pub fn pinned_checkpoint(&self, height: u64) -> Option<Arc<Checkpoint>> {
         let now = Instant::now();
-        let mut pins = self
-            .serving_pins
-            .write()
-            .expect("serving pins lock poisoned");
-        retain_live_pins(&mut pins, now);
-        pins.get(&height).map(|pin| Arc::clone(&pin.checkpoint))
+        let (checkpoint, released) = {
+            let mut pins = self
+                .serving_pins
+                .write()
+                .expect("serving pins lock poisoned");
+            let released = remove_expired_pins(&mut pins, now);
+            (
+                pins.get(&height).map(|pin| Arc::clone(&pin.checkpoint)),
+                released,
+            )
+        };
+        drop(released);
+        checkpoint
     }
 
     /// Releases every pin that has passed either of its deadlines.
@@ -370,11 +438,14 @@ impl SnapshotManager {
     /// so an over-long one is cut off even while it keeps requesting.
     pub fn release_expired_pins(&self) {
         let now = Instant::now();
-        let mut pins = self
-            .serving_pins
-            .write()
-            .expect("serving pins lock poisoned");
-        retain_live_pins(&mut pins, now);
+        let released = {
+            let mut pins = self
+                .serving_pins
+                .write()
+                .expect("serving pins lock poisoned");
+            remove_expired_pins(&mut pins, now)
+        };
+        drop(released);
     }
 
     /// Number of checkpoints currently pinned for serving.
@@ -414,8 +485,15 @@ impl SnapshotManager {
     }
 }
 
-fn retain_live_pins(pins: &mut BTreeMap<u64, ServingPin>, now: Instant) {
-    pins.retain(|_, pin| pin.is_live(now));
+fn remove_expired_pins(pins: &mut BTreeMap<u64, ServingPin>, now: Instant) -> Vec<ServingPin> {
+    let expired_heights: Vec<u64> = pins
+        .iter()
+        .filter_map(|(height, pin)| (!pin.is_live(now)).then_some(*height))
+        .collect();
+    expired_heights
+        .into_iter()
+        .filter_map(|height| pins.remove(&height))
+        .collect()
 }
 
 #[cfg(test)]
