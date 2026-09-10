@@ -726,6 +726,7 @@ mod tests {
     use dashcore::{Address as DashAddress, Network};
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::signer::{Signer, SignerMethod};
+    use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
     use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
     use key_wallet::DerivationPath;
@@ -914,6 +915,73 @@ mod tests {
             &DashAddress::dummy(Network::Testnet, usize::from(tag)),
             1_000_000,
         )
+    }
+
+    /// A DRAIN THAT CARRIES A MEMO, through the production finalize path.
+    ///
+    /// The MAYAChain deposit shape: `SelectionStrategy::All` with the vault
+    /// destination plus a zero-value OP_RETURN memo. key-wallet used to accept
+    /// exactly one output under `All` ("requires exactly one output"), so the
+    /// memo made every whole-balance swap unbuildable — a caller had to guess
+    /// the fee and send an explicit amount instead. The engine now counts
+    /// value carriers and lets zero-value data outputs ride along; this pins
+    /// that the rust-dashcore revision THIS workspace builds against carries
+    /// that behaviour, since a pin regression leaves every other test green.
+    ///
+    /// The amount given for the destination is 0: under `All` the engine sets
+    /// it, and 0 is what the hosts pass. The assertions are the ones a host
+    /// relies on: the build succeeds, the memo survives at value 0, and the
+    /// sole spendable output — the deliverable amount the FFI reports —
+    /// receives the entire balance minus the fee, with no change.
+    #[tokio::test]
+    async fn memo_bearing_drain_delivers_the_whole_balance_minus_fee() {
+        let (core, signer) = core(
+            StandardAccountType::BIP44Account,
+            Arc::new(AlwaysOkBroadcaster),
+        )
+        .await;
+        let destination = DashAddress::dummy(Network::Testnet, 7);
+        let memo = b"=:MAYA.CACAO:maya1abc";
+        let builder = TransactionBuilder::new()
+            .set_selection_strategy(SelectionStrategy::All)
+            .add_output(&destination, 0)
+            .add_op_return(memo)
+            .expect("memo is within the OP_RETURN limit");
+
+        let finalized = core
+            .finalize_transaction(builder, &[AccountTypePreference::BIP44], 0, &signer)
+            .await
+            .expect("a drain may carry a zero-value OP_RETURN memo beside its destination");
+
+        let tx = finalized.transaction();
+        let (memos, carriers): (Vec<_>, Vec<_>) = tx
+            .output
+            .iter()
+            .partition(|out| out.script_pubkey.is_op_return());
+        assert_eq!(
+            carriers.len(),
+            1,
+            "exactly one spendable output: no change under a drain"
+        );
+        assert_eq!(memos.len(), 1, "the memo is on-chain");
+        assert_eq!(
+            memos[0].value, 0,
+            "a data carrier claims none of the drained balance"
+        );
+        assert!(
+            memos[0].script_pubkey.as_bytes().ends_with(memo),
+            "the OP_RETURN carries the caller's memo bytes"
+        );
+        assert_eq!(carriers[0].script_pubkey, destination.script_pubkey());
+        assert!(
+            finalized.fee() > 0,
+            "the memo bytes are priced into a real fee"
+        );
+        assert_eq!(
+            carriers[0].value,
+            10_000_000 - finalized.fee(),
+            "the destination receives the fixture's whole balance minus the fee"
+        );
     }
 
     /// `reservation_only` end to end IN THIS WORKSPACE. key-wallet covers
