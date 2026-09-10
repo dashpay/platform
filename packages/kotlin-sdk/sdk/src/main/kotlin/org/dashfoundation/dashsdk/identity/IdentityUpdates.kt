@@ -47,11 +47,17 @@ enum class SecurityLevel(val ffiValue: Int) {
 }
 
 /**
- * Contract-bounds shape for an ENCRYPTION / DECRYPTION key — Kotlin mirror
- * of Swift's `ManagedPlatformWallet.ContractBounds`. Required by Drive for
- * those purposes; omitted (null) for AUTHENTICATION / TRANSFER.
+ * Kotlin mirror of Swift's `ManagedPlatformWallet.ContractBounds`.
+ * Legacy variants describe encryption bounds; Scoped carries authentication grants.
  */
 sealed class ContractBounds {
+    /** Versioned scope bytes produced by DPP. Rust validates them on registration. */
+    data class Scoped(val encodedScope: ByteArray) : ContractBounds() {
+        override fun equals(other: Any?): Boolean =
+            other is Scoped && encodedScope.contentEquals(other.encodedScope)
+        override fun hashCode(): Int = encodedScope.contentHashCode()
+    }
+
     /** Bind the key to a single contract (any of its document types). */
     data class SingleContract(val contractId: ByteArray) : ContractBounds() {
         init {

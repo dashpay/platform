@@ -3821,7 +3821,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // and reconstruct as `.singleContract`.
             let snapshotBoundsIds: [Data]?
             let snapshotBoundsDocType: String?
+            var snapshotScope: Data?
             switch entry.contractBounds {
+            case .some(.scoped(let encodedScope)):
+                snapshotBoundsIds = nil
+                snapshotBoundsDocType = nil
+                snapshotScope = encodedScope
             case .some(.singleContract(let id)):
                 snapshotBoundsIds = [id]
                 snapshotBoundsDocType = nil
@@ -3877,6 +3882,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // scope) must overwrite any stale value here.
             row.contractBounds = snapshotBoundsIds
             row.contractBoundsDocumentTypeName = snapshotBoundsDocType
+            row.contractBoundsScope = snapshotScope
 
             // Private-key handling: no secret crosses the FFI. A
             // wallet-derivable key whose private bytes were materialized by
@@ -7852,7 +7858,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // wrong-length id falls back to "no bounds"
                     // rather than crashing FFI marshalling on the
                     // Rust side.
-                    if let id = pk.contractBounds?.first, id.count == 32 {
+                    if let scope = pk.contractBoundsScope {
+                        row.contract_bounds_kind = 3
+                        if !scope.isEmpty {
+                            let scopeBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: scope.count)
+                            scope.copyBytes(to: scopeBuf, count: scope.count)
+                            allocation.scalarBuffers.append((scopeBuf, scope.count))
+                            row.contract_bounds_scope = UnsafePointer(scopeBuf)
+                            row.contract_bounds_scope_len = UInt(scope.count)
+                        }
+                    } else if let id = pk.contractBounds?.first, id.count == 32 {
                         withUnsafeMutableBytes(of: &row.contract_bounds_id) { dst in
                             id.copyBytes(to: dst.bindMemory(to: UInt8.self).baseAddress!, count: 32)
                         }
@@ -9519,8 +9534,15 @@ private func persistIdentityKeysCallback(
                 } else {
                     bounds = nil
                 }
-            default:
+            case 3:
+                guard let scope = e.contract_bounds_scope, e.contract_bounds_scope_len > 0 else {
+                    return -1
+                }
+                bounds = .scoped(encodedScope: Data(bytes: scope, count: Int(e.contract_bounds_scope_len)))
+            case 0:
                 bounds = nil
+            default:
+                return -1
             }
 
             upserts.append(.init(

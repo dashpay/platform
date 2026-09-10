@@ -6,6 +6,77 @@ import XCTest
 
 final class DashModelMigrationTests: XCTestCase {
     @MainActor
+    func testV4PublicKeysMigrateToV5AndPersistAuthenticationScope() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("dash.store")
+        let walletId = Data(repeating: 7, count: 32)
+        let identityId = Data(repeating: 8, count: 32)
+        let keyData = Data(repeating: 2, count: 33)
+        let keychainIdentifier = "migration-key-reference"
+
+        // Use the historical shape: a store written with the new live model
+        // would hide the unknown-schema regression this test guards against.
+        do {
+            let schema = Schema(versionedSchema: DashSchemaV4.self)
+            let keyEntity = try XCTUnwrap(schema.entities.first { $0.name == "PersistentPublicKey" })
+            XCTAssertNil(keyEntity.attributesByName["contractBoundsScope"])
+            let configuration = ModelConfiguration(
+                schema: schema, url: storeURL, cloudKitDatabase: .none)
+            let container = try ModelContainer(for: schema, configurations: [configuration])
+            let wallet = DashSchemaV4.PersistentWallet(walletId: walletId, network: .testnet)
+            let identity = DashSchemaV4.PersistentIdentity(identityId: identityId, network: .testnet)
+            let key = DashSchemaV4.PersistentPublicKey(
+                keyId: 3,
+                purpose: .authentication,
+                securityLevel: .high,
+                keyType: .ecdsaSecp256k1,
+                publicKeyData: keyData,
+                identityId: identityId.toBase58String())
+            container.mainContext.insert(wallet)
+            container.mainContext.insert(identity)
+            container.mainContext.insert(key)
+            identity.wallet = wallet
+            key.identity = identity
+            key.privateKeyKeychainIdentifier = keychainIdentifier
+            try container.mainContext.save()
+        }
+
+        let schema = DashModelContainer.schema
+        let configuration = ModelConfiguration(
+            schema: schema, url: storeURL, cloudKitDatabase: .none)
+        let scope = Data([0, 1, 2, 3, 65, 0])
+        do {
+            let container = try ModelContainer(
+                for: schema, migrationPlan: DashMigrationPlan.self, configurations: [configuration])
+            let keys = try container.mainContext.fetch(FetchDescriptor<PersistentPublicKey>())
+            XCTAssertEqual(keys.count, 1)
+            let key = try XCTUnwrap(keys.first)
+            XCTAssertEqual(key.keyId, 3)
+            XCTAssertEqual(key.publicKeyData, keyData)
+            XCTAssertEqual(key.privateKeyKeychainIdentifier, keychainIdentifier)
+            XCTAssertEqual(key.identity?.identityId, identityId)
+            XCTAssertEqual(key.identity?.wallet?.walletId, walletId)
+            XCTAssertEqual(key.identity?.publicKeys.count, 1)
+            XCTAssertNil(key.contractBoundsScope)
+            key.contractBoundsScope = scope
+            try container.mainContext.save()
+        }
+
+        // Reopening proves the new bytes are durable, not just retained by
+        // the context's cached instance of the migrated key.
+        let reopened = try ModelContainer(
+            for: schema, migrationPlan: DashMigrationPlan.self, configurations: [configuration])
+        let key = try XCTUnwrap(
+            reopened.mainContext.fetch(FetchDescriptor<PersistentPublicKey>()).first)
+        XCTAssertEqual(key.contractBoundsScope, scope)
+        XCTAssertEqual(key.privateKeyKeychainIdentifier, keychainIdentifier)
+        XCTAssertEqual(key.identity?.wallet?.walletId, walletId)
+    }
+
+    @MainActor
     func testV1StoreMigratesToV2AndAcceptsTrackedMasternodes() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -67,7 +138,7 @@ final class DashModelMigrationTests: XCTestCase {
     /// The stage this change adds: a V3 store must migrate to V4 and read
     /// back with the sweep columns backfilled to their "nothing swept yet"
     /// values. V3 registers the frozen component, so the row goes in as the
-    /// frozen type and comes out as the live one — which is the whole point
+    /// V3 frozen type and comes out as the V4 frozen one — which is the whole point
     /// of the freeze: the same entity, one property wider. A pending-input
     /// row rides along so the tombstone index V4 adds is exercised by the
     /// migration too.
@@ -134,18 +205,18 @@ final class DashModelMigrationTests: XCTestCase {
             configurations: [v4Configuration])
 
         let wallets = try migrated.mainContext.fetch(
-            FetchDescriptor<PersistentWallet>())
+            FetchDescriptor<DashSchemaV4.PersistentWallet>())
         XCTAssertEqual(wallets.count, 1, "the V3 row must survive the migration")
         XCTAssertNil(
             wallets.first?.lastAppliedChainLockHeight,
             "a wallet migrated from V3 has no chainlock boundary yet, so no "
                 + "tombstone it later takes can be collected on a fabricated one")
         let pending = try migrated.mainContext.fetch(
-            FetchDescriptor<PersistentPendingInput>())
+            FetchDescriptor<DashSchemaV4.PersistentPendingInput>())
         XCTAssertEqual(pending.count, 1, "the V3 pending row must survive the migration")
         XCTAssertEqual(pending.first?.isSweptTombstone, false, "backfilled as an ordinary claim")
         XCTAssertNil(pending.first?.winnerMinedHeight, "and unstamped")
-        let coins = try migrated.mainContext.fetch(FetchDescriptor<PersistentTxo>())
+        let coins = try migrated.mainContext.fetch(FetchDescriptor<DashSchemaV4.PersistentTxo>())
         XCTAssertEqual(coins.count, 1, "the V3 TXO row must survive the migration")
         XCTAssertEqual(coins.first?.isSpent, true, "its spent flag is carried as stored")
         XCTAssertNil(
@@ -153,7 +224,7 @@ final class DashModelMigrationTests: XCTestCase {
             "a coin migrated from V3 was never held by a sweep — the stamp backfills to nil, "
                 + "so the release and re-delivery rules see an ordinary spent coin")
         let transactions = try migrated.mainContext.fetch(
-            FetchDescriptor<PersistentTransaction>())
+            FetchDescriptor<DashSchemaV4.PersistentTransaction>())
         XCTAssertEqual(transactions.map(\.context), [2], "the V3 transaction row survives unchanged")
     }
 
@@ -161,7 +232,7 @@ final class DashModelMigrationTests: XCTestCase {
     /// change actually widens: a V1 store carrying a wallet, a transaction
     /// and a coin must arrive at V4 with every row intact and the V4 columns
     /// at their backfill values. V1 and V2 register the frozen component,
-    /// so the rows go in as frozen types and come out live — the property
+    /// so the rows move between the matching frozen types — the property
     /// the freeze exists to guarantee, pinned here where it matters most.
     @MainActor
     func testV1StoreWithWalletTransactionAndCoinMigratesToV4() throws {
@@ -218,15 +289,15 @@ final class DashModelMigrationTests: XCTestCase {
             migrationPlan: DashMigrationPlan.self,
             configurations: [v4Configuration])
 
-        let wallets = try migrated.mainContext.fetch(FetchDescriptor<PersistentWallet>())
+        let wallets = try migrated.mainContext.fetch(FetchDescriptor<DashSchemaV4.PersistentWallet>())
         XCTAssertEqual(wallets.map(\.walletId), [walletId])
         XCTAssertNil(wallets.first?.lastAppliedChainLockHeight)
         let transactions = try migrated.mainContext.fetch(
-            FetchDescriptor<PersistentTransaction>())
+            FetchDescriptor<DashSchemaV4.PersistentTransaction>())
         XCTAssertEqual(transactions.map(\.txid), [txid])
         XCTAssertEqual(transactions.first?.context, 3)
         XCTAssertEqual(transactions.first?.netAmount, 2_000)
-        let coins = try migrated.mainContext.fetch(FetchDescriptor<PersistentTxo>())
+        let coins = try migrated.mainContext.fetch(FetchDescriptor<DashSchemaV4.PersistentTxo>())
         XCTAssertEqual(coins.count, 1)
         XCTAssertEqual(coins.first?.vout, 1)
         XCTAssertEqual(coins.first?.amount, 2_000)

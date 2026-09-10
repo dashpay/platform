@@ -1302,6 +1302,9 @@ unsafe extern "C" fn tramp_persist_identity_keys(
     })
 }
 
+// Shared with descriptor verification so the smoke check resolves the actual call signature.
+const IDENTITY_KEY_UPSERT_DESCRIPTOR: &str = "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;[B)I";
+
 unsafe fn persist_identity_key_upsert(
     env: &mut JNIEnv,
     bridge: &JObject,
@@ -1314,10 +1317,11 @@ unsafe fn persist_identity_key_upsert(
     let key_wallet_id = env.byte_array_from_slice(&e.wallet_id)?;
     let cb_id = env.byte_array_from_slice(&e.contract_bounds_id)?;
     let cb_doctype = cstr_opt(env, e.contract_bounds_document_type)?;
+    let cb_scope = bytes(env, e.contract_bounds_scope, e.contract_bounds_scope_len)?;
     env.call_method(
         bridge,
         "onPersistIdentityKeyUpsert",
-        "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;)I",
+        IDENTITY_KEY_UPSERT_DESCRIPTOR,
         &[
             wid.into(),
             (&identity_id).into(),
@@ -1338,6 +1342,7 @@ unsafe fn persist_identity_key_upsert(
             JValue::Byte(e.contract_bounds_kind as i8),
             (&cb_id).into(),
             (&cb_doctype).into(),
+            (&cb_scope).into(),
         ],
     )?
     .i()
@@ -2137,6 +2142,7 @@ struct IdentityKeyRestoreStaged {
     key: IdentityKeyRestoreFFI,
     data: Vec<u8>,
     doc_type: Option<CString>,
+    scope: Vec<u8>,
 }
 
 /// Mint the raw FFI pointers for a fully staged wallet list. Infallible:
@@ -2301,8 +2307,13 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                                          mut key,
                                          data,
                                          doc_type,
+                                         scope,
                                      }| {
                                         (key.data, key.data_len) = vec_into_raw(data);
+                                        (
+                                            key.contract_bounds_scope,
+                                            key.contract_bounds_scope_len,
+                                        ) = vec_into_raw(scope);
                                         // Only kind==2 carried a doc-type; `into_raw`
                                         // hands ownership to the FFI struct, reclaimed
                                         // via `CString::from_raw` in the free path.
@@ -3365,6 +3376,7 @@ fn build_identity_key_restore(
     // Java String. Interior NULs (impossible for a DPP document-type name)
     // would fail `CString::new` — degrade to `None` rather than fail the load.
     let doc_type = read_opt_cstring_field(env, holder, "contractBoundsDocumentType")?;
+    let scope = read_bytes_field_vec(env, holder, "contractBoundsScope")?;
 
     let key = IdentityKeyRestoreFFI {
         key_id,
@@ -3377,11 +3389,14 @@ fn build_identity_key_restore(
         contract_bounds_kind,
         contract_bounds_id,
         contract_bounds_document_type: ptr::null(),
+        contract_bounds_scope: ptr::null(),
+        contract_bounds_scope_len: 0,
     };
     Ok(IdentityKeyRestoreStaged {
         key,
         data,
         doc_type,
+        scope,
     })
 }
 
@@ -3616,6 +3631,7 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
                             // `seal_wallet_entries` (only kind==2 keys have
                             // a non-null pointer).
                             free_raw_cstring(k.contract_bounds_document_type);
+                            free_raw_bytes(k.contract_bounds_scope, k.contract_bounds_scope_len);
                         }
                         drop(keys);
                     }
@@ -4533,10 +4549,7 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         "([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;\
          [BZ[BZLjava/lang/String;J)I",
     ),
-    (
-        "onPersistIdentityKeyUpsert",
-        "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;)I",
-    ),
+    ("onPersistIdentityKeyUpsert", IDENTITY_KEY_UPSERT_DESCRIPTOR),
     ("onPersistIdentityKeyRemoval", "([B[BI)I"),
     ("onPersistTokenBalanceUpsert", "([B[B[BJ)I"),
     ("onPersistTokenBalanceRemoval", "([B[B[B)I"),

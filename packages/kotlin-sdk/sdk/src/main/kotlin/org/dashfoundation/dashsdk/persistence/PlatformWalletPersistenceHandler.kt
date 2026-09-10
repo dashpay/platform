@@ -1863,7 +1863,12 @@ class PlatformWalletPersistenceHandler(
         contractBoundsKind: Byte,
         contractBoundsId: ByteArray,
         contractBoundsDocumentType: String?,
+        contractBoundsScope: ByteArray,
     ): Int = guarded {
+        val boundsKind = contractBoundsKind.toInt() and 0xFF
+        require(boundsKind in 0..3) { "Unknown contract bounds kind: $boundsKind" }
+        require(boundsKind != 3 || contractBoundsScope.isNotEmpty()) { "Missing authentication scope" }
+
         // Item 1 — private-key persistence (the CLAUDE.md "one allowed
         // exception" shape). The `IdentityKeyEntryFFI` payload carries only
         // a derivation breadcrumb (`wallet_id` + `identity_index` +
@@ -1978,9 +1983,9 @@ class PlatformWalletPersistenceHandler(
             val existing = db.publicKeyDao().getByIdentityAndKeyId(identityBase58, keyId)
             // ContractBounds projection → the legacy JSON blob column +
             // doc-type name (Swift stores `[base64(contractId)]` JSON).
-            val boundsData = if ((contractBoundsKind.toInt() and 0xFF) != 0)
+            val boundsData = if (boundsKind in 1..2)
                 contractBoundsIdToJson(contractBoundsId) else null
-            val docTypeName = if ((contractBoundsKind.toInt() and 0xFF) == 2)
+            val docTypeName = if (boundsKind == 2)
                 contractBoundsDocumentType else null
             val row = PublicKeyEntity(
                 id = existing?.id ?: 0,
@@ -1993,6 +1998,7 @@ class PlatformWalletPersistenceHandler(
                 publicKeyData = publicKeyData,
                 contractBoundsData = boundsData,
                 contractBoundsDocumentTypeName = docTypeName,
+                contractBoundsScope = if (boundsKind == 3) contractBoundsScope.copyOf() else null,
                 // Set to the Keystore identifier when the deriver stored the
                 // scalar; otherwise preserve any prior identifier (idempotent
                 // re-persist) and fall back to watch-only (null) for
@@ -2857,6 +2863,7 @@ class PlatformWalletPersistenceHandler(
                     // kind 0 rather than crashing FFI marshalling.
                     val boundsId = pk.contractBoundsData?.let { contractBoundsJsonToId(it) }
                     val (kind, id) = when {
+                        pk.contractBoundsScope != null -> 3.toByte() to ByteArray(0)
                         boundsId == null -> 0.toByte() to ByteArray(0)
                         pk.contractBoundsDocumentTypeName != null -> 2.toByte() to boundsId
                         else -> 1.toByte() to boundsId
@@ -2869,6 +2876,7 @@ class PlatformWalletPersistenceHandler(
                         readOnly = pk.readOnly,
                         data = pk.publicKeyData,
                         contractBoundsKind = kind,
+                        contractBoundsScope = pk.contractBoundsScope ?: ByteArray(0),
                         contractBoundsId = id,
                         contractBoundsDocumentType =
                             if (kind.toInt() == 2) pk.contractBoundsDocumentTypeName else null,

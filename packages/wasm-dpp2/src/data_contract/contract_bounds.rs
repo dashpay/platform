@@ -4,29 +4,95 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
-use dpp::identity::contract_bounds::ContractBounds;
+use dpp::identity::contract_bounds::{
+    AuthenticationScope, ContractBounds, authentication_scope::permissions,
+};
 use dpp::prelude::Identifier;
+use dpp::serialization::JsonConvertible;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+/// Combine explicitly granted actions with bitwise OR.
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug)]
+pub enum AuthenticationPermission {
+    DocumentCreate = 1,
+    DocumentReplace = 2,
+    DocumentDelete = 4,
+    DocumentTransfer = 8,
+    DocumentUpdatePrice = 16,
+    DocumentPurchase = 32,
+    DocumentTokenPayment = 64,
+    TokenBurn = 128,
+    TokenMint = 256,
+    TokenTransfer = 512,
+    TokenFreeze = 1024,
+    TokenUnfreeze = 2048,
+    TokenDestroyFrozenFunds = 4096,
+    TokenClaim = 8192,
+    TokenEmergencyAction = 16384,
+    TokenConfigUpdate = 32768,
+    TokenDirectPurchase = 65536,
+    TokenSetPrice = 131072,
+}
+// wasm-bindgen requires literal discriminants; keep them tied to consensus bits.
+const _: () = {
+    assert!(AuthenticationPermission::DocumentCreate as u32 == permissions::DOCUMENT_CREATE);
+    assert!(AuthenticationPermission::DocumentReplace as u32 == permissions::DOCUMENT_REPLACE);
+    assert!(AuthenticationPermission::DocumentDelete as u32 == permissions::DOCUMENT_DELETE);
+    assert!(AuthenticationPermission::DocumentTransfer as u32 == permissions::DOCUMENT_TRANSFER);
+    assert!(
+        AuthenticationPermission::DocumentUpdatePrice as u32 == permissions::DOCUMENT_UPDATE_PRICE
+    );
+    assert!(AuthenticationPermission::DocumentPurchase as u32 == permissions::DOCUMENT_PURCHASE);
+    assert!(
+        AuthenticationPermission::DocumentTokenPayment as u32
+            == permissions::DOCUMENT_TOKEN_PAYMENT
+    );
+    assert!(AuthenticationPermission::TokenBurn as u32 == permissions::TOKEN_BURN);
+    assert!(AuthenticationPermission::TokenMint as u32 == permissions::TOKEN_MINT);
+    assert!(AuthenticationPermission::TokenTransfer as u32 == permissions::TOKEN_TRANSFER);
+    assert!(AuthenticationPermission::TokenFreeze as u32 == permissions::TOKEN_FREEZE);
+    assert!(AuthenticationPermission::TokenUnfreeze as u32 == permissions::TOKEN_UNFREEZE);
+    assert!(
+        AuthenticationPermission::TokenDestroyFrozenFunds as u32
+            == permissions::TOKEN_DESTROY_FROZEN_FUNDS
+    );
+    assert!(AuthenticationPermission::TokenClaim as u32 == permissions::TOKEN_CLAIM);
+    assert!(
+        AuthenticationPermission::TokenEmergencyAction as u32
+            == permissions::TOKEN_EMERGENCY_ACTION
+    );
+    assert!(AuthenticationPermission::TokenConfigUpdate as u32 == permissions::TOKEN_CONFIG_UPDATE);
+    assert!(
+        AuthenticationPermission::TokenDirectPurchase as u32 == permissions::TOKEN_DIRECT_PURCHASE
+    );
+    assert!(AuthenticationPermission::TokenSetPrice as u32 == permissions::TOKEN_SET_PRICE);
+};
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
-/**
- * ContractBounds serialized as a plain object.
- */
-export interface ContractBoundsObject {
-    identifier: Uint8Array;
-    documentTypeName?: string;
-    contractBoundsType: "SingleContract" | "SingleContractDocumentType";
+export interface ContractScopeInput { id: string; documentTypes?: string[] | null; }
+export interface AuthenticationScopeJSON {
+    $formatVersion: "0";
+    contracts: ContractScopeInput[];
+    permissions: number;
+    expiresAt: number | string | null;
 }
 
 /**
- * ContractBounds serialized as JSON.
+ * ContractBounds serialized as a plain object.
  */
-export interface ContractBoundsJSON {
-    identifier: string;
-    documentTypeName?: string;
-    contractBoundsType: "SingleContract" | "SingleContractDocumentType";
-}
+export type ContractBoundsObject =
+    | { $type: "singleContract"; id: Uint8Array }
+    | { $type: "documentType"; id: Uint8Array; documentTypeName: string }
+    | { $type: "scoped"; $formatVersion: "0"; contracts: { id: Uint8Array; documentTypes?: string[] | null }[]; permissions: number; expiresAt?: bigint | null };
+
+/** ContractBounds serialized as JSON. */
+export type ContractBoundsJSON =
+    | { $type: "singleContract"; id: string }
+    | { $type: "documentType"; id: string; documentTypeName: string }
+    | ({ $type: "scoped" } & AuthenticationScopeJSON);
 "#;
 
 #[wasm_bindgen]
@@ -97,6 +163,41 @@ impl ContractBoundsWasm {
                 document_type_name,
             },
         ))
+    }
+
+    /// Creates an application delegation. Sort order is canonicalized by the
+    /// constructor; duplicates/empty restrictions remain errors.
+    #[wasm_bindgen(js_name = "Scoped")]
+    pub fn scoped(
+        contracts: JsValue,
+        permissions: u32,
+        expires_at: Option<u64>,
+    ) -> WasmDppResult<ContractBoundsWasm> {
+        let contracts_json: serde_json::Value = serde_wasm_bindgen::from_value(contracts)
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+        let mut scope = AuthenticationScope::from_json(serde_json::json!({
+            "$formatVersion": "0", "contracts": contracts_json,
+            "permissions": permissions, "expiresAt": expires_at,
+        }))?;
+        let AuthenticationScope::V0(ref mut inner) = scope;
+        inner.contracts.sort_by_key(|entry| entry.id);
+        for entry in &mut inner.contracts {
+            if let Some(names) = &mut entry.document_types {
+                names.sort();
+            }
+        }
+        scope.validate()?;
+        Ok(ContractBoundsWasm(ContractBounds::Scoped(scope)))
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn scope(&self) -> WasmDppResult<JsValue> {
+        match &self.0 {
+            ContractBounds::Scoped(scope) => {
+                crate::serialization::conversions::json_to_js_value(&scope.to_json()?)
+            }
+            _ => Ok(JsValue::UNDEFINED),
+        }
     }
 
     #[wasm_bindgen(getter = "identifier")]

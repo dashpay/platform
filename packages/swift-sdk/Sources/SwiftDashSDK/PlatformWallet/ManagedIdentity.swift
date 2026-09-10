@@ -84,8 +84,7 @@ public final class ManagedIdentity: @unchecked Sendable {
     }
 
     /// Snapshot of an identity's registered public keys. Mirrors the
-    /// DPP `IdentityPublicKeyV0` shape. Contract bounds aren't
-    /// included yet — see the FFI docstring.
+    /// DPP `IdentityPublicKeyV0` shape, including the complete contract bounds.
     public struct IdentityPublicKeyInfo: Sendable {
         public let keyId: Int32
         public let purpose: KeyPurpose
@@ -99,6 +98,7 @@ public final class ManagedIdentity: @unchecked Sendable {
         /// (compressed secp256k1 pubkey for ECDSA, hash160 for
         /// HASH160 variants, etc.).
         public let data: Data
+        public let contractBounds: ContractBounds?
     }
 
     /// Return every `IdentityPublicKey` registered on this identity.
@@ -143,6 +143,13 @@ public final class ManagedIdentity: @unchecked Sendable {
                 data = Data()
             }
 
+            let bounds: ContractBounds?
+            if let json = ffi.contract_bounds_json {
+                let value = try JSONSerialization.jsonObject(with: Data(String(cString: json).utf8))
+                bounds = try ContractBounds.fromPlatformJSON(value)
+            } else {
+                bounds = nil
+            }
             keys.append(
                 IdentityPublicKeyInfo(
                     keyId: Int32(bitPattern: ffi.key_id),
@@ -153,7 +160,8 @@ public final class ManagedIdentity: @unchecked Sendable {
                     disabledAt: ffi.disabled_at_is_some
                         ? Int64(bitPattern: ffi.disabled_at)
                         : nil,
-                    data: data
+                    data: data,
+                    contractBounds: bounds
                 )
             )
         }

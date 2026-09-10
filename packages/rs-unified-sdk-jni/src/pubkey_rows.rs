@@ -69,6 +69,7 @@ pub(crate) struct DecodedPubkeyRow {
     pub(crate) pubkey_bytes: Vec<u8>,
     pub(crate) contract_bounds_id: Option<[u8; 32]>,
     pub(crate) contract_bounds_document_type: Option<CString>,
+    pub(crate) contract_bounds_scope: Vec<u8>,
 }
 
 impl DecodedPubkeyRow {
@@ -87,6 +88,8 @@ impl DecodedPubkeyRow {
             pubkey_len: self.pubkey_bytes.len(),
             read_only: self.read_only,
             contract_bounds_kind: self.contract_bounds_kind,
+            contract_bounds_scope: self.contract_bounds_scope.as_ptr(),
+            contract_bounds_scope_len: self.contract_bounds_scope.len(),
             contract_bounds_id: self
                 .contract_bounds_id
                 .as_ref()
@@ -110,13 +113,15 @@ impl DecodedPubkeyRow {
 ///   u8   purpose           (DPP Purpose discriminant, 0 = AUTHENTICATION)
 ///   u8   security_level    (DPP SecurityLevel discriminant, 0 = MASTER)
 ///   u8   read_only         (0 / 1 — any other byte is rejected)
-///   u8   contract_bounds_kind (0 none, 1 SingleContract, 2 SingleContractDocumentType)
+///   u8   contract_bounds_kind (0 none, 1 SingleContract, 2 SingleContractDocumentType, 3 Scoped)
 ///   u16  pubkey_len
 ///   u8[pubkey_len]  pubkey_bytes  (compressed pubkey, or 20-byte HASH160)
-///   if contract_bounds_kind != 0:
+///   if contract_bounds_kind == 1 or contract_bounds_kind == 2:
 ///     u8[32] contract_bounds_id
 ///   if contract_bounds_kind == 2:
 ///     u16 doc_type_len, u8[doc_type_len] doc_type (UTF-8)
+///   if contract_bounds_kind == 3:
+///     u16 scope_len, u8[scope_len] versioned DPP scope bytes
 /// ```
 ///
 /// Strict: returns `Err` on truncation, trailing bytes, a negative key ID
@@ -180,9 +185,9 @@ pub(crate) fn parse_pubkey_rows(bytes: &[u8]) -> Result<Vec<DecodedPubkeyRow>, S
             }
         };
         let contract_bounds_kind = fixed[8];
-        if contract_bounds_kind > 2 {
+        if contract_bounds_kind > 3 {
             return Err(format!(
-                "pubkey blob row {i} contractBoundsKind must be 0, 1 or 2, got {contract_bounds_kind}"
+                "pubkey blob row {i} contractBoundsKind must be 0, 1, 2 or 3, got {contract_bounds_kind}"
             ));
         }
         let pubkey_len = u16::from_be_bytes([fixed[9], fixed[10]]) as usize;
@@ -192,7 +197,7 @@ pub(crate) fn parse_pubkey_rows(bytes: &[u8]) -> Result<Vec<DecodedPubkeyRow>, S
 
         let mut contract_bounds_id: Option<[u8; 32]> = None;
         let mut contract_bounds_document_type: Option<CString> = None;
-        if contract_bounds_kind != 0 {
+        if matches!(contract_bounds_kind, 1 | 2) {
             let id_bytes = read(&mut cursor, 32)
                 .ok_or_else(|| format!("pubkey blob truncated at row {i} contractBoundsId"))?;
             let mut id = [0u8; 32];
@@ -212,6 +217,19 @@ pub(crate) fn parse_pubkey_rows(bytes: &[u8]) -> Result<Vec<DecodedPubkeyRow>, S
             }
         }
 
+        let contract_bounds_scope = if contract_bounds_kind == 3 {
+            let length = read(&mut cursor, 2)
+                .ok_or_else(|| format!("pubkey blob truncated at row {i} scope length"))?;
+            let length = u16::from_be_bytes([length[0], length[1]]) as usize;
+            if length == 0 || length > 2048 {
+                return Err(format!("pubkey blob row {i} invalid scope length"));
+            }
+            read(&mut cursor, length)
+                .ok_or_else(|| format!("pubkey blob truncated at row {i} scope"))?
+                .to_vec()
+        } else {
+            Vec::new()
+        };
         rows.push(DecodedPubkeyRow {
             key_id,
             key_type,
@@ -222,6 +240,7 @@ pub(crate) fn parse_pubkey_rows(bytes: &[u8]) -> Result<Vec<DecodedPubkeyRow>, S
             pubkey_bytes,
             contract_bounds_id,
             contract_bounds_document_type,
+            contract_bounds_scope,
         });
     }
 
@@ -461,6 +480,20 @@ mod tests {
     }
 
     #[test]
+    fn scoped_payload_has_independent_length_prefixed_framing() {
+        let mut bytes = vec![0, 0, 0, 1, 0, 0, 0, 7, 0, 0, 2, 0, 3, 0, 1, 2];
+        bytes.extend_from_slice(&[0, 4, 0, 9, 0, 8]);
+        let decoded = parse_pubkey_rows(&bytes).unwrap();
+        assert_eq!(decoded[0].contract_bounds_scope, vec![0, 9, 0, 8]);
+        assert!(decoded[0].contract_bounds_id.is_none());
+        let ffi = decoded[0].to_ffi();
+        assert_eq!(ffi.contract_bounds_kind, 3);
+        assert_eq!(ffi.contract_bounds_scope_len, 4);
+        bytes.pop();
+        assert!(parse_pubkey_rows(&bytes).is_err());
+    }
+
+    #[test]
     fn round_trips_the_full_six_key_policy() {
         let dashpay_id = [7u8; 32];
         let decoded = parse_pubkey_rows(&encode(&six_key_policy())).expect("parse");
@@ -539,8 +572,8 @@ mod tests {
     #[test]
     fn rejects_invalid_bounds_kind() {
         let mut rows = vec![base_master()];
-        rows[0].bounds = Some((3, [1u8; 32], None));
-        // encode() writes kind byte from bounds.0 = 3, then a 32-byte id.
+        rows[0].bounds = Some((4, [1u8; 32], None));
+        // encode() writes kind byte from bounds.0 = 4, then a 32-byte id.
         let err = parse_pubkey_rows(&encode(&rows)).unwrap_err();
         assert!(err.contains("contractBoundsKind"), "{err}");
     }

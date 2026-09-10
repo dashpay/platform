@@ -94,12 +94,10 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 /// the caller retains ownership. Compressed secp256k1 pubkeys are
 /// always 33 bytes (`pubkey_len == 33`); BLS would be 48; etc.
 ///
-/// **Contract bounds** — keys may optionally carry a reference to
-/// the contract (and optionally a document type) they're allowed to
-/// operate within. Consensus accepts unbounded keys for every
-/// purpose, including Encryption / Decryption; bounds only become
-/// meaningful when the target contract or document type explicitly
-/// requires a bounded key. Encoded inline as:
+/// **Contract bounds** — legacy variants qualify encryption/decryption
+/// keys by contract or document type. Scoped authentication grants encode
+/// the contracts, document operations and expiry that consensus enforces.
+/// Encoded inline as:
 ///   - `contract_bounds_kind == 0` → no bounds.
 ///   - `contract_bounds_kind == 1` → `SingleContract`. The first
 ///     32 bytes at `contract_bounds_id` are the contract id; the
@@ -108,6 +106,8 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 ///     `contract_bounds_id` is the 32-byte contract id;
 ///     `contract_bounds_document_type` is a NUL-terminated UTF-8
 ///     document type name. Both must be non-null.
+///   - `contract_bounds_kind == 3` → `Scoped`. The scope pointer/length
+///     contain the complete versioned AuthenticationScope bincode payload.
 ///
 /// All pointers are borrowed for the call duration only — the
 /// FFI does not retain or free them.
@@ -122,11 +122,15 @@ pub struct IdentityPubkeyFFI {
     pub read_only: bool,
     /// Discriminant for the contract-bounds union. See struct doc.
     pub contract_bounds_kind: u8,
-    /// 32-byte contract id when `contract_bounds_kind != 0`.
+    /// 32-byte contract id when `contract_bounds_kind` is 1 or 2.
     pub contract_bounds_id: *const u8,
     /// NUL-terminated UTF-8 document type name when
     /// `contract_bounds_kind == 2`. Null otherwise.
     pub contract_bounds_document_type: *const std::os::raw::c_char,
+    /// Versioned AuthenticationScope bincode bytes for kind 3; null otherwise.
+    /// Ownership matches the other buffers in this struct.
+    pub contract_bounds_scope: *const u8,
+    pub contract_bounds_scope_len: usize,
 }
 
 /// Decode the optional `contract_bounds_*` payload off an
@@ -215,11 +219,33 @@ pub(crate) unsafe fn decode_contract_bounds(
                 document_type_name: doc_type,
             }))
         }
+        3 => {
+            if row.contract_bounds_scope.is_null()
+                || row.contract_bounds_scope_len == 0
+                || row.contract_bounds_scope_len
+                    > dpp::identity::contract_bounds::authentication_scope::MAX_SCOPE_BYTES
+            {
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                    format!("{field_label}[{row_index}] has an invalid scope buffer"),
+                ));
+            }
+            let bytes =
+                slice::from_raw_parts(row.contract_bounds_scope, row.contract_bounds_scope_len);
+            dpp::identity::contract_bounds::AuthenticationScope::from_bytes(bytes)
+                .map(|scope| Some(ContractBounds::Scoped(scope)))
+                .map_err(|error| {
+                    PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                        error.to_string(),
+                    )
+                })
+        }
         other => Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!(
                 "{field_label}[{row_index}].contract_bounds_kind = {other} is not a valid \
-                 discriminant (0=none, 1=SingleContract, 2=SingleContractDocumentType)"
+                 discriminant (0=none, 1=SingleContract, 2=SingleContractDocumentType, 3=Scoped)"
             ),
         )),
     }
@@ -839,6 +865,8 @@ mod tests {
             contract_bounds_kind: 0,
             contract_bounds_id: ptr::null(),
             contract_bounds_document_type: ptr::null(),
+            contract_bounds_scope: std::ptr::null(),
+            contract_bounds_scope_len: 0,
         }
     }
 

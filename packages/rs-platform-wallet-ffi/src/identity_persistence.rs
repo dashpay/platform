@@ -281,6 +281,9 @@ pub struct IdentityKeyEntryFFI {
     //     C-string are meaningful. Doc-type string is released by
     //     [`free_identity_key_entry_ffi`].
     //
+    //   * `contract_bounds_kind == 3` — versioned AuthenticationScope bytes
+    //     owned by `contract_bounds_scope`, released by the same free helper.
+    //
     // Keeping the kind tag inline (vs. always nulling fields) lets
     // the Swift side switch on a single discriminant without
     // probing pointer values, matching how the rest of this struct
@@ -298,6 +301,10 @@ pub struct IdentityKeyEntryFFI {
     pub contract_bounds_kind: u8,
     pub contract_bounds_id: [u8; 32],
     pub contract_bounds_document_type: *const c_char,
+    /// Versioned AuthenticationScope bincode bytes for kind 3; null otherwise.
+    /// Ownership matches the other buffers in this struct.
+    pub contract_bounds_scope: *const u8,
+    pub contract_bounds_scope_len: usize,
 }
 
 /// Composite identifier for [`IdentityKeysChangeSet::removed`] entries
@@ -345,8 +352,10 @@ pub struct IdentityKeyRemovalFFI {
 //   169..=175 (padding to 8 for pointer alignment)
 //   176..=183 contract_bounds_document_type *const c_char
 //
-// Total size = 184, alignment = 8 (from u64 / pointer).
-const _: [u8; 184] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
+//   184..=191 contract_bounds_scope *const u8
+//   192..=199 contract_bounds_scope_len usize
+// Total size = 200, alignment = 8 (from u64 / pointer).
+const _: [u8; 200] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
 
 // Compile-time guard for `IdentityEntryFFI`. Same rationale as the
@@ -652,40 +661,10 @@ impl IdentityKeyEntryFFI {
     /// caller owns the heap-allocated `public_key_data_ptr` byte
     /// buffer and (when present) the
     /// `contract_bounds_document_type` C-string; release both via
-    /// [`free_identity_key_entry_ffi`]. Scoped keys are rejected before any
-    /// allocation because this ABI cannot preserve their authorization bounds.
-    pub fn from_entry(entry: &IdentityKeyEntry) -> Result<Self, &'static str> {
+    /// [`free_identity_key_entry_ffi`].
+    pub fn from_entry(entry: &IdentityKeyEntry) -> Self {
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
         use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
-
-        // Project the DPP `ContractBounds` enum into the kind /
-        // id / doc-type-cstring trio so the Swift side can switch
-        // on a single discriminant. Strings containing interior
-        // NULs (impossible in practice — DPP rejects them) keep
-        // the discriminant + payload self-consistent by falling
-        // back to `SingleContract { id }` (kind=1 + null doc-type
-        // pointer); emitting kind=2 with a null doc-type pointer
-        // would silently strip the bound on the Swift side, so
-        // demoting to `SingleContract` is the closest faithful
-        // representation — the document-type qualifier is the
-        // only thing lost, the contract id is preserved.
-        let (contract_bounds_kind, contract_bounds_id, contract_bounds_document_type) = match entry
-            .public_key
-            .contract_bounds()
-        {
-            Some(ContractBounds::SingleContract { id }) => (1u8, id.to_buffer(), ptr::null()),
-            Some(ContractBounds::SingleContractDocumentType {
-                id,
-                document_type_name,
-            }) => match CString::new(document_type_name.as_str()) {
-                Ok(c) => (2u8, id.to_buffer(), c.into_raw() as *const c_char),
-                Err(_) => (1u8, id.to_buffer(), ptr::null()),
-            },
-            Some(ContractBounds::Scoped(_)) => {
-                return Err("scoped authentication keys require a newer native persistence ABI");
-            }
-            None => (0u8, [0u8; 32], ptr::null()),
-        };
 
         let pk_bytes = entry.public_key.data().as_slice().to_vec();
         let pk_len = pk_bytes.len();
@@ -708,7 +687,45 @@ impl IdentityKeyEntryFFI {
             None => (false, 0, 0),
         };
 
-        Ok(Self {
+        // Project the DPP `ContractBounds` enum into the kind /
+        // id / doc-type-cstring trio so the Swift side can switch
+        // on a single discriminant. Strings containing interior
+        // NULs (impossible in practice — DPP rejects them) keep
+        // the discriminant + payload self-consistent by falling
+        // back to `SingleContract { id }` (kind=1 + null doc-type
+        // pointer); emitting kind=2 with a null doc-type pointer
+        // would silently strip the bound on the Swift side, so
+        // demoting to `SingleContract` is the closest faithful
+        // representation — the document-type qualifier is the
+        // only thing lost, the contract id is preserved.
+        let scope_bytes = match entry.public_key.contract_bounds() {
+            Some(ContractBounds::Scoped(scope)) => {
+                bincode::encode_to_vec(scope, bincode::config::standard())
+                    .expect("AuthenticationScope encoding into a Vec is infallible")
+            }
+            _ => Vec::new(),
+        };
+        let contract_bounds_scope_len = scope_bytes.len();
+        let contract_bounds_scope = if scope_bytes.is_empty() {
+            ptr::null()
+        } else {
+            Box::into_raw(scope_bytes.into_boxed_slice()) as *const u8
+        };
+        let (contract_bounds_kind, contract_bounds_id, contract_bounds_document_type) =
+            match entry.public_key.contract_bounds() {
+                Some(ContractBounds::SingleContract { id }) => (1u8, id.to_buffer(), ptr::null()),
+                Some(ContractBounds::SingleContractDocumentType {
+                    id,
+                    document_type_name,
+                }) => match CString::new(document_type_name.as_str()) {
+                    Ok(c) => (2u8, id.to_buffer(), c.into_raw() as *const c_char),
+                    Err(_) => (1u8, id.to_buffer(), ptr::null()),
+                },
+                Some(ContractBounds::Scoped(_)) => (3u8, [0u8; 32], ptr::null()),
+                None => (0u8, [0u8; 32], ptr::null()),
+            };
+
+        Self {
             identity_id: entry.identity_id.to_buffer(),
             key_id: entry.key_id,
             purpose: entry.public_key.purpose() as u8,
@@ -728,7 +745,9 @@ impl IdentityKeyEntryFFI {
             contract_bounds_kind,
             contract_bounds_id,
             contract_bounds_document_type,
-        })
+            contract_bounds_scope,
+            contract_bounds_scope_len,
+        }
     }
 }
 
@@ -874,6 +893,15 @@ unsafe fn free_optional_c_string(slot: &mut *const c_char) {
 /// `entry` must have been produced by
 /// [`IdentityKeyEntryFFI::from_entry`] and not previously freed.
 pub unsafe fn free_identity_key_entry_ffi(entry: &mut IdentityKeyEntryFFI) {
+    if !entry.contract_bounds_scope.is_null() {
+        let raw = std::ptr::slice_from_raw_parts_mut(
+            entry.contract_bounds_scope as *mut u8,
+            entry.contract_bounds_scope_len,
+        );
+        drop(unsafe { Box::from_raw(raw) });
+        entry.contract_bounds_scope = ptr::null();
+        entry.contract_bounds_scope_len = 0;
+    }
     if !entry.public_key_data_ptr.is_null() && entry.public_key_data_len > 0 {
         // Reconstruct the boxed slice we created via `Box::into_raw`
         // on a `Box<[u8]>`. Using `Vec::from_raw_parts` would over-
@@ -1193,7 +1221,7 @@ mod tests {
                 key_index: 5,
             }),
         };
-        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry).unwrap();
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.identity_id, [2u8; 32]);
         assert_eq!(ffi.key_id, 5);
         assert_eq!(ffi.purpose, Purpose::AUTHENTICATION as u8);
@@ -1235,7 +1263,7 @@ mod tests {
             wallet_id: None,
             derivation_indices: None,
         };
-        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry).unwrap();
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert!(!ffi.wallet_id_is_some);
         assert!(!ffi.derivation_indices_is_some);
         assert!(ffi.read_only);
@@ -1247,37 +1275,33 @@ mod tests {
     }
 
     #[test]
-    fn scoped_keys_are_rejected_before_native_persistence_callbacks() {
-        use crate::persistence::{FFIPersister, PersistenceCallbacks};
+    fn scoped_key_payload_survives_ffi_projection_and_registration_decode() {
+        use crate::identity_registration_with_signer::{decode_contract_bounds, IdentityPubkeyFFI};
         use dpp::identity::contract_bounds::{
             AuthenticationScope, AuthenticationScopeV0, ContractBounds, ContractScope,
         };
-        use platform_wallet::changeset::PlatformWalletPersistence;
-        use platform_wallet::{IdentityKeysChangeSet, PlatformWalletChangeSet};
-        use std::sync::atomic::{AtomicBool, Ordering};
-
-        unsafe extern "C" fn begin(context: *mut std::ffi::c_void, _: *const u8) -> i32 {
-            (*(context as *const AtomicBool)).store(true, Ordering::SeqCst);
-            0
-        }
-
+        let scope = AuthenticationScope::V0(AuthenticationScopeV0 {
+            contracts: vec![
+                ContractScope {
+                    id: Identifier::from([1; 32]),
+                    document_types: Some(vec!["post".into()]),
+                },
+                ContractScope {
+                    id: Identifier::from([2; 32]),
+                    document_types: None,
+                },
+            ],
+            permissions: 65,
+            expires_at: Some(1_900_000_000_000),
+        });
         let entry = IdentityKeyEntry {
-            identity_id: Identifier::from([1; 32]),
-            key_id: 1,
+            identity_id: Identifier::from([3; 32]),
+            key_id: 5,
             public_key: IdentityPublicKey::V0(IdentityPublicKeyV0 {
-                id: 1,
+                id: 5,
                 purpose: Purpose::AUTHENTICATION,
                 security_level: SecurityLevel::HIGH,
-                contract_bounds: Some(ContractBounds::Scoped(AuthenticationScope::V0(
-                    AuthenticationScopeV0 {
-                        contracts: vec![ContractScope {
-                            id: Identifier::from([2; 32]),
-                            document_types: None,
-                        }],
-                        permissions: 1,
-                        expires_at: None,
-                    },
-                ))),
+                contract_bounds: Some(ContractBounds::Scoped(scope.clone())),
                 key_type: KeyType::ECDSA_SECP256K1,
                 read_only: false,
                 data: BinaryData::new(vec![2; 33]),
@@ -1287,27 +1311,36 @@ mod tests {
             wallet_id: None,
             derivation_indices: None,
         };
-        assert!(IdentityKeyEntryFFI::from_entry(&entry).is_err());
-
-        let began = AtomicBool::new(false);
-        let persister = FFIPersister::new(PersistenceCallbacks {
-            context: &began as *const AtomicBool as *mut std::ffi::c_void,
-            on_changeset_begin_fn: Some(begin),
-            ..Default::default()
-        });
-        let changeset = PlatformWalletChangeSet {
-            identity_keys: Some(IdentityKeysChangeSet {
-                upserts: [((entry.identity_id, entry.key_id), entry)].into(),
-                ..Default::default()
-            }),
-            ..Default::default()
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
+        assert_eq!(ffi.contract_bounds_kind, 3);
+        let row = IdentityPubkeyFFI {
+            key_id: ffi.key_id,
+            key_type: ffi.key_type,
+            purpose: ffi.purpose,
+            security_level: ffi.security_level,
+            pubkey_bytes: ffi.public_key_data_ptr,
+            pubkey_len: ffi.public_key_data_len,
+            read_only: ffi.read_only,
+            contract_bounds_kind: ffi.contract_bounds_kind,
+            contract_bounds_id: ptr::null(),
+            contract_bounds_document_type: ptr::null(),
+            contract_bounds_scope: ffi.contract_bounds_scope,
+            contract_bounds_scope_len: ffi.contract_bounds_scope_len,
         };
-        assert!(persister.store([3; 32], changeset).is_err());
-        assert!(!began.load(Ordering::SeqCst));
-        assert!(persister
-            .store([3; 32], PlatformWalletChangeSet::default())
-            .is_ok());
-        assert!(began.load(Ordering::SeqCst));
+        let decoded = unsafe { decode_contract_bounds(&row, Purpose::AUTHENTICATION, 0, "keys") };
+        assert!(matches!(decoded, Ok(Some(ContractBounds::Scoped(value))) if value == scope));
+        let invalid_row = IdentityPubkeyFFI {
+            contract_bounds_scope_len: row.contract_bounds_scope_len - 1,
+            ..row
+        };
+        assert!(unsafe {
+            decode_contract_bounds(&invalid_row, Purpose::AUTHENTICATION, 0, "keys")
+        }
+        .is_err());
+        unsafe { free_identity_key_entry_ffi(&mut ffi) };
+        assert!(ffi.contract_bounds_scope.is_null());
+        assert_eq!(ffi.contract_bounds_scope_len, 0);
+        unsafe { free_identity_key_entry_ffi(&mut ffi) };
     }
 
     #[test]
@@ -1332,7 +1365,7 @@ mod tests {
             wallet_id: None,
             derivation_indices: None,
         };
-        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry).unwrap();
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.contract_bounds_kind, 1);
         assert_eq!(ffi.contract_bounds_id, [0xAB; 32]);
         assert!(ffi.contract_bounds_document_type.is_null());
@@ -1364,7 +1397,7 @@ mod tests {
             wallet_id: None,
             derivation_indices: None,
         };
-        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry).unwrap();
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.contract_bounds_kind, 2);
         assert_eq!(ffi.contract_bounds_id, [0xCD; 32]);
         assert!(!ffi.contract_bounds_document_type.is_null());

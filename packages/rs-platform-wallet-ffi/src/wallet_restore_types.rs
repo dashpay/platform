@@ -192,7 +192,7 @@ pub struct AccountSpecFFI {
 ///
 /// `contract_bounds_*` mirror the [`IdentityKeyEntryFFI`]
 /// projection of DPP's `ContractBounds` enum (kind tag: 0=none,
-/// 1=SingleContract, 2=SingleContractDocumentType). Including them
+/// 1=SingleContract, 2=SingleContractDocumentType, 3=Scoped). Including them
 /// here closes the persist↔restore round-trip — without it, scoped
 /// DashPay keys (registered with `SingleContractDocumentType`) come
 /// back as unbounded on cold restart.
@@ -212,11 +212,11 @@ pub struct IdentityKeyRestoreFFI {
     pub data: *const u8,
     pub data_len: usize,
     /// ContractBounds discriminant: 0=none, 1=SingleContract,
-    /// 2=SingleContractDocumentType. Mirrors the encoding in
+    /// 2=SingleContractDocumentType, 3=Scoped. Mirrors the encoding in
     /// [`crate::identity_persistence::IdentityKeyEntryFFI`].
     pub contract_bounds_kind: u8,
     /// 32-byte contract identifier. Zeroed when
-    /// `contract_bounds_kind == 0`; otherwise the contract id the
+    /// `contract_bounds_kind` is 0 or 3; otherwise the contract id the
     /// key is bound to.
     pub contract_bounds_id: [u8; 32],
     /// NUL-terminated UTF-8 doc-type name. Non-null iff
@@ -224,6 +224,10 @@ pub struct IdentityKeyRestoreFFI {
     /// same load-callback allocation arena that frees the public-
     /// key data buffer).
     pub contract_bounds_document_type: *const c_char,
+    /// Versioned AuthenticationScope bincode bytes for kind 3; null otherwise.
+    /// Ownership matches the other buffers in this struct.
+    pub contract_bounds_scope: *const u8,
+    pub contract_bounds_scope_len: usize,
 }
 
 /// Per-identity entry attached to a [`WalletRestoreEntryFFI`].

@@ -45,10 +45,14 @@ pub struct ParsedIdentityUpdatePublicKeyFFI {
     pub read_only: bool,
     pub data_ptr: *mut u8,
     pub data_len: usize,
-    /// 0 = none, 1 = SingleContract, 2 = SingleContractDocumentType.
+    /// 0 = none, 1 = SingleContract, 2 = SingleContractDocumentType, 3 = Scoped.
     pub contract_bounds_kind: u8,
     pub contract_bounds_id: [u8; 32],
     pub contract_bounds_document_type: *mut c_char,
+    /// Versioned AuthenticationScope bincode bytes for kind 3; null otherwise.
+    /// Ownership matches the other buffers in this struct.
+    pub contract_bounds_scope: *const u8,
+    pub contract_bounds_scope_len: usize,
 }
 
 /// Owned C representation of the inspectable parts of a parsed
@@ -119,10 +123,7 @@ fn encode_contract_bounds(
                 ),
             )),
         },
-        Some(ContractBounds::Scoped(_)) => Err(PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "scoped authentication keys require a newer native inspection ABI",
-        )),
+        Some(ContractBounds::Scoped(_)) => Ok((3u8, [0u8; 32], ptr::null_mut())),
         None => Ok((0u8, [0u8; 32], ptr::null_mut())),
     }
 }
@@ -136,6 +137,14 @@ fn encode_contract_bounds(
 /// pointer this module allocated and has not freed yet.
 unsafe fn free_parsed_public_keys(keys: &mut [ParsedIdentityUpdatePublicKeyFFI]) {
     for key in keys.iter_mut() {
+        if !key.contract_bounds_scope.is_null() {
+            drop(Box::from_raw(ptr::slice_from_raw_parts_mut(
+                key.contract_bounds_scope as *mut u8,
+                key.contract_bounds_scope_len,
+            )));
+            key.contract_bounds_scope = ptr::null();
+            key.contract_bounds_scope_len = 0;
+        }
         if !key.data_ptr.is_null() && key.data_len > 0 {
             let data_slice = slice::from_raw_parts_mut(key.data_ptr, key.data_len);
             let _ = Box::from_raw(data_slice as *mut [u8]);
@@ -173,6 +182,25 @@ pub(crate) fn project_parsed_identity_update(
                 }
             };
 
+        let scope_bytes = match public_key.contract_bounds() {
+            Some(ContractBounds::Scoped(scope)) => match scope.to_bytes() {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    unsafe { free_parsed_public_keys(&mut add_public_keys_vec) };
+                    return Err(PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                        error.to_string(),
+                    ));
+                }
+            },
+            _ => Vec::new(),
+        };
+        let contract_bounds_scope_len = scope_bytes.len();
+        let contract_bounds_scope = if scope_bytes.is_empty() {
+            ptr::null()
+        } else {
+            Box::into_raw(scope_bytes.into_boxed_slice()) as *const u8
+        };
         let data = public_key.data().as_slice().to_vec().into_boxed_slice();
         let data_len = data.len();
         let data_ptr = Box::into_raw(data) as *mut u8;
@@ -188,6 +216,8 @@ pub(crate) fn project_parsed_identity_update(
             contract_bounds_kind,
             contract_bounds_id,
             contract_bounds_document_type,
+            contract_bounds_scope,
+            contract_bounds_scope_len,
         });
     }
 

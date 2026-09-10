@@ -765,7 +765,9 @@ struct PublicKeyStorageDetailView: View {
             }
             Section("Data") {
                 FieldRow(label: "Public Key", value: hexString(record.publicKeyData))
-                if let bounds = record.contractBounds, !bounds.isEmpty {
+                if record.contractBoundsScope != nil {
+                    FieldRow(label: "Contract Bounds", value: "Scoped authentication")
+                } else if let bounds = record.contractBounds, !bounds.isEmpty {
                     FieldRow(label: "Contract Bounds", value: "\(bounds.count)")
                     ForEach(Array(bounds.enumerated()), id: \.offset) { _, contractId in
                         FieldRow(label: "Contract", value: contractId.toBase58String())

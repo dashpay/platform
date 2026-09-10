@@ -142,9 +142,11 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * pre-migration row reads back as an ordinary, unstamped, non-tombstone
  * entry, and a wallet with no recorded chainlock height has no boundary
  * at all (nothing collects).
+ *
+ * Version 12 (scoped authentication): preserves encoded contract scopes on public keys.
  */
 @Database(
-    version = 11,
+    version = 12,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -542,6 +544,13 @@ abstract class DashDatabase : RoomDatabase() {
             }
         }
 
+        /** v11 → v12: preserve versioned authentication scope bytes. */
+        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE public_keys ADD COLUMN contractBoundsScope BLOB")
+            }
+        }
+
         /** v9 → v10: additive DPNS marketplace state on legacy label rows. */
         val MIGRATION_9_10: Migration = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -635,6 +644,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_8_9,
                     MIGRATION_9_10,
                     MIGRATION_10_11,
+                    MIGRATION_11_12,
                 )
                 .build()
 
