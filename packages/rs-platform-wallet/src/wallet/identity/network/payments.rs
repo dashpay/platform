@@ -755,7 +755,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     permanent_read_failure.get_or_insert(e);
                     continue;
                 }
-                Err(e) => return Err(PlatformWalletError::PersisterLoad(e)),
             };
             // An InstantSend lock is final for DashPay display, same as a
             // mined block — one definition of "final", shared with the
