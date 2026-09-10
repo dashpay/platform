@@ -1592,7 +1592,7 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
                 error: e.to_string(),
             })?;
 
-        let (root_hash, maybe_history) = Drive::verify_document_history(
+        let (root_hash, maybe_history) = Drive::verify_document_history_legacy(
             supported_grovedb_proof_bytes(proof, platform_version)?,
             contract_id.into_buffer(),
             &document_type_name,
