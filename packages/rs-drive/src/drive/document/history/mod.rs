@@ -134,6 +134,24 @@ pub struct DocumentHistoryProofV1 {
     pub metadata_proof: Vec<u8>,
 }
 
+#[cfg(feature = "verify")]
+impl DocumentHistoryProofV1 {
+    /// Requires envelopes that bind terminal tree counts and pagination bounds.
+    /// Full decoding and cryptographic verification follow this version check.
+    pub fn validate_envelopes(&self) -> Result<(), Error> {
+        for bytes in std::iter::once(&self.metadata_proof).chain(self.entries_proof.iter()) {
+            // GroveDB serializes its proof enum discriminant as a bincode u32.
+            let (envelope, _): (u32, usize) =
+                bincode::decode_from_slice(bytes, bincode::config::standard().with_big_endian())
+                    .map_err(|_| corrupt("invalid document history proof envelope"))?;
+            if envelope != 1 {
+                return Err(invalid("unsupported proof version: document history v1 requires GroveDB v1 proof envelopes"));
+            }
+        }
+        Ok(())
+    }
+}
+
 pub(crate) fn invalid(message: &str) -> Error {
     Error::Query(QuerySyntaxError::Unsupported(message.to_owned()))
 }
@@ -479,6 +497,7 @@ impl Drive {
         document_type: DocumentTypeRef,
         version: &PlatformVersion,
     ) -> Result<([u8; 32], DocumentHistoryV1), Error> {
+        proof.validate_envelopes()?;
         if !document_type.documents_keep_history() {
             return Err(invalid("document type does not keep history"));
         }

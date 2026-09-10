@@ -1452,6 +1452,9 @@ fn verify_document_history_response_v1(
             .map(|proof| proof.grovedb_proof.clone()),
         metadata_proof: proof.grovedb_proof.clone(),
     };
+    proofs
+        .validate_envelopes()
+        .map_drive_error(proof, metadata)?;
     let (root, history) =
         Drive::verify_document_history_v1(&query, &proofs, document_type, platform_version)
             .map_drive_error(proof, metadata)?;
