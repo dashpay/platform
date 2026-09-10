@@ -6,9 +6,9 @@ use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::Purpose;
 use dpp::identity::signer::Signer;
-use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyType;
 use dpp::identity::SecurityLevel;
+use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 
@@ -16,6 +16,17 @@ use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::{ContactProfileEntry, DashPayProfile};
+
+// Profile documents require HIGH or CRITICAL authentication; MASTER is reserved
+// for identity operations and cannot authorize an ordinary document write.
+fn profile_signing_key(identity: &Identity) -> Option<&IdentityPublicKey> {
+    identity.get_first_public_key_matching(
+        Purpose::AUTHENTICATION,
+        [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
+        [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160].into(),
+        false,
+    )
+}
 
 // ---------------------------------------------------------------------------
 // Sync profiles
@@ -109,8 +120,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Mirrors [`Self::create_profile`] but signing is routed through
     /// the supplied `&S: Signer<IdentityPublicKey>`. The signing key
-    /// is still resolved from the identity's `public_keys` map (first
-    /// AUTHENTICATION key, matching the legacy variant) — the signer
+    /// is resolved from the identity's active HIGH or CRITICAL ECDSA
+    /// authentication keys (full public key or HASH160) — the signer
     /// is responsible for producing a signature for whatever key is
     /// picked.
     ///
@@ -172,20 +183,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .identity_manager
                 .managed_identity(identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            managed
-                .identity
-                // DashPay profile create/update writes a document state
-                // transition, which DPP requires to be signed by a
-                // HIGH-or-stricter authentication key. MASTER is
-                // intentionally excluded — it's reserved for identity
-                // self-modification (update / key rotation /
-                // withdrawal) and rejected on document writes.
-                .get_first_public_key_matching(
-                    Purpose::AUTHENTICATION,
-                    [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
-                    false,
-                )
+            profile_signing_key(&managed.identity)
                 .cloned()
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
@@ -334,20 +332,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .identity_manager
                 .managed_identity(identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            managed
-                .identity
-                // DashPay profile create/update writes a document state
-                // transition, which DPP requires to be signed by a
-                // HIGH-or-stricter authentication key. MASTER is
-                // intentionally excluded — it's reserved for identity
-                // self-modification (update / key rotation /
-                // withdrawal) and rejected on document writes.
-                .get_first_public_key_matching(
-                    Purpose::AUTHENTICATION,
-                    [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
-                    false,
-                )
+            profile_signing_key(&managed.identity)
                 .cloned()
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
@@ -800,6 +785,86 @@ mod tests {
     use super::*;
     use crate::wallet::identity::ProfileUpdate;
     use std::collections::BTreeMap;
+
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::version::PlatformVersion;
+
+    fn profile_key(key_type: KeyType, security_level: SecurityLevel) -> IdentityPublicKeyV0 {
+        IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level,
+            key_type,
+            data: vec![1; key_type.default_size()].into(),
+            ..Default::default()
+        }
+    }
+
+    fn identity_with_key(key: IdentityPublicKeyV0) -> Identity {
+        let mut identity = Identity::default_versioned(PlatformVersion::latest()).unwrap();
+        identity.add_public_key(key.into());
+        identity
+    }
+
+    #[test]
+    fn should_select_high_and_critical_ecdsa_profile_keys() {
+        for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
+            for level in [SecurityLevel::HIGH, SecurityLevel::CRITICAL] {
+                let identity = identity_with_key(profile_key(key_type, level));
+                assert!(
+                    profile_signing_key(&identity).is_some(),
+                    "{key_type:?}/{level:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_reject_ineligible_profile_keys() {
+        let empty = Identity::default_versioned(PlatformVersion::latest()).unwrap();
+        assert!(profile_signing_key(&empty).is_none());
+        for key_type in [
+            KeyType::BLS12_381,
+            KeyType::BIP13_SCRIPT_HASH,
+            KeyType::EDDSA_25519_HASH160,
+        ] {
+            assert!(profile_signing_key(&identity_with_key(profile_key(
+                key_type,
+                SecurityLevel::HIGH
+            )))
+            .is_none());
+        }
+        for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
+            for level in [SecurityLevel::MASTER, SecurityLevel::MEDIUM] {
+                assert!(
+                    profile_signing_key(&identity_with_key(profile_key(key_type, level))).is_none()
+                );
+            }
+            let mut key = profile_key(key_type, SecurityLevel::HIGH);
+            key.disabled_at = Some(1);
+            assert!(profile_signing_key(&identity_with_key(key)).is_none());
+            let mut key = profile_key(key_type, SecurityLevel::CRITICAL);
+            key.purpose = Purpose::TRANSFER;
+            assert!(profile_signing_key(&identity_with_key(key)).is_none());
+        }
+    }
+
+    #[test]
+    fn should_select_high_hash160_from_reported_identity_layout() {
+        let mut identity =
+            identity_with_key(profile_key(KeyType::ECDSA_HASH160, SecurityLevel::HIGH));
+        let mut master = profile_key(KeyType::ECDSA_HASH160, SecurityLevel::MASTER);
+        master.id = 0;
+        identity.add_public_key(master.into());
+        let mut transfer = profile_key(KeyType::ECDSA_HASH160, SecurityLevel::CRITICAL);
+        transfer.id = 2;
+        transfer.purpose = Purpose::TRANSFER;
+        identity.add_public_key(transfer.into());
+        assert_eq!(
+            profile_signing_key(&identity),
+            identity.public_keys().get(&1)
+        );
+    }
 
     fn existing_full() -> BTreeMap<String, Value> {
         let mut m = BTreeMap::new();
