@@ -478,7 +478,6 @@ impl Drive {
                 let reference_max_size =
                     contract_documents_keeping_history_storage_time_reference_path_size(
                         document_type.name().len() as u32,
-                        drive_version,
                     );
                 PathKeyUnknownElementSize((
                     document_id_in_primary_path,
