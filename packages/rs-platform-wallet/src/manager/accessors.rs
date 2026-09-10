@@ -309,6 +309,13 @@ impl OutpointClass {
 /// A UTXO set that moves between pages (a round landing mid-walk) can drop
 /// a row out of ONE walk or repeat one; both are benign for the insert-only,
 /// idempotent store reconcile this serves, which re-runs on a cadence.
+/// Whether `account_type` is a contact's watch-only chain
+/// (`DashpayExternalAccount`): coins there belong to the contact, so the
+/// inventory omits them and the classifier has no verdict for them.
+pub fn is_watch_only_contact(account_type: &AccountType) -> bool {
+    matches!(account_type, AccountType::DashpayExternalAccount { .. })
+}
+
 pub fn wallet_utxos_page(
     wm: &key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>,
     wallet_id: &WalletId,
@@ -337,6 +344,11 @@ pub fn wallet_utxos_page(
             a.as_funds()
                 .map(|funds| (a.managed_account_type().to_account_type(), funds))
         })
+        // A contact's watch-only chain is not this wallet's money: its
+        // coins never enter the inventory, so no store ever heals them in
+        // as the user's. Decided here, not by the store, so a renumbered
+        // tag or a new watch-only account type cannot repoint the gate.
+        .filter(|(account_type, _)| !is_watch_only_contact(account_type))
         .collect();
     accounts.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -427,6 +439,11 @@ pub fn classify_outpoints(
                 .any(|(_, funds)| funds.utxos.contains_key(&query.outpoint))
             {
                 return OutpointClass::Unspent;
+            }
+            // A contact's watch-only chain gets no verdict at all: its
+            // coins are the contact's to spend, never this wallet's to flip.
+            if is_watch_only_contact(&query.account_type) {
+                return OutpointClass::Unknown;
             }
             let Some((_, owner)) = accounts
                 .iter()

@@ -10859,7 +10859,6 @@ struct CoreTxoHealCounts: Sendable {
     var insertedDuffs: UInt64 = 0
     var alreadyPresent = 0
     var skippedImmature = 0
-    var skippedForeign = 0
     var skippedUnresolvedAccount = 0
     var skippedInvalid = 0
 }
@@ -10909,11 +10908,12 @@ extension PlatformWalletPersistenceHandler {
                     counts.skippedInvalid += 1
                     continue
                 }
-                if row.account.isWatchOnlyContactAccount {
-                    counts.skippedForeign += 1
-                    continue
-                }
-                guard row.height > 0, tipHeight >= row.height,
+                // The engine's own confirmation flag first, then the depth
+                // this store requires before it materialises a coin it never
+                // saw arrive. Which accounts may be healed at all is the
+                // engine's call: `wallet_utxos_page` omits a contact's
+                // watch-only chain.
+                guard row.isConfirmed, row.height > 0, tipHeight >= row.height,
                       tipHeight - row.height + 1 >= minConfirmations
                 else {
                     counts.skippedImmature += 1

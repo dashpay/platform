@@ -36,16 +36,6 @@ public struct CoreAccountKey: Hashable, Sendable {
         self.friendIdentityId = friendIdentityId
     }
 
-    /// `ACCOUNT_TYPE_TAG_FFI_DASHPAY_EXTERNAL_ACCOUNT` in the generated
-    /// header: a contact's watch-only chain. Its coins are the contact's,
-    /// never this wallet's, so the reconcile neither heals nor classifies
-    /// them.
-    static let dashpayExternalAccountTag: UInt8 = 13
-
-    /// Whether this account is a contact's watch-only chain.
-    public var isWatchOnlyContactAccount: Bool {
-        typeTag == Self.dashpayExternalAccountTag
-    }
 }
 
 /// One coin the engine holds, as one row of the paged inventory
@@ -172,7 +162,6 @@ public struct CoreTxoReconcileReport: Equatable, Sendable {
     /// Engine rows below the confirmation gate.
     public var skippedImmature = 0
     /// Engine rows on a contact's watch-only chain.
-    public var skippedForeign = 0
     /// Engine rows whose account has no store row to file them under.
     public var skippedUnresolvedAccount = 0
     /// Engine rows the store could not validate (malformed txid, no

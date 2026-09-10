@@ -3037,8 +3037,13 @@ public class PlatformWalletManager: ObservableObject {
     ) {
         guard handle != NULL_HANDLE else { return }
         if let value = snapshot.spvProgress,
-           spvProgress == baseline.spvProgress, value != spvProgress {
-            spvProgress = value
+           spvProgress == baseline.spvProgress {
+            if value != spvProgress {
+                spvProgress = value
+            }
+            // Every accepted read, not only a changed one: the note is the
+            // reconcile's only clock, and a quiet steady-state wallet's
+            // progress does not change for the whole cadence.
             noteSpvProgressForCoreTxoReconcile(value)
         }
         if let value = snapshot.spvIsRunning,

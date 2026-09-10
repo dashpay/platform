@@ -98,14 +98,6 @@ final class CoreTxoReconcileTests: XCTestCase {
         )
     }
 
-    private var watchOnlyContact: CoreAccountKey {
-        CoreAccountKey(
-            typeTag: CoreAccountKey.dashpayExternalAccountTag, standardTag: 0, index: 0,
-            registrationIndex: 0, keyClass: 0,
-            userIdentityId: Data(repeating: 0x0a, count: 32), friendIdentityId: Data(repeating: 0x0b, count: 32)
-        )
-    }
-
     private func txid(_ byte: UInt8) -> Data { Data(repeating: byte, count: 32) }
 
     private func makeHandler() throws -> (PlatformWalletPersistenceHandler, ModelContainer) {
@@ -210,7 +202,8 @@ final class CoreTxoReconcileTests: XCTestCase {
         amount: UInt64 = 19_549,
         height: UInt32 = 2_391_743,
         address: String? = nil,
-        script: Data? = nil
+        script: Data? = nil,
+        isConfirmed: Bool = true
     ) -> CoreEngineUtxo {
         CoreEngineUtxo(
             account: account ?? bip44,
@@ -220,7 +213,7 @@ final class CoreTxoReconcileTests: XCTestCase {
             address: address ?? fixtureAddress,
             scriptPubKey: script ?? fixtureScript,
             height: height,
-            isConfirmed: true,
+            isConfirmed: isConfirmed,
             isInstantLocked: false,
             isCoinbase: false,
             isLocked: false
@@ -394,18 +387,19 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(try restoredUtxoCount(handler), 2)
     }
 
-    func testTheHealPassRefusesImmatureForeignUnresolvedAndMalformedCoins() throws {
+    func testTheHealPassRefusesImmatureUnconfirmedUnresolvedAndMalformedCoins() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container) // BIP44 only: no CoinJoin account row
         let immature = engineUtxo(txid: txid(0x76), height: tipHeight - 50)
         let atGate = engineUtxo(txid: txid(0x77), height: tipHeight - 99) // exactly 100 confirmations
-        let foreign = engineUtxo(account: watchOnlyContact, txid: txid(0x78))
+        // Deep enough, but the engine itself does not call it confirmed.
+        let engineUnconfirmed = engineUtxo(txid: txid(0x78), isConfirmed: false)
         let unresolved = engineUtxo(account: coinJoin, txid: txid(0x79))
         let noScript = engineUtxo(txid: txid(0x7a), script: Data())
         let noAddress = engineUtxo(txid: txid(0x7b), address: "")
         let unconfirmed = engineUtxo(txid: txid(0x7c), height: 0)
         let engine = FakeCoreTxoEngine(
-            inventory: [immature, atGate, foreign, unresolved, noScript, noAddress, unconfirmed]
+            inventory: [immature, atGate, engineUnconfirmed, unresolved, noScript, noAddress, unconfirmed]
         )
 
         let report = run(handler, engine: engine)
@@ -413,8 +407,7 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertTrue(report.completed)
         XCTAssertEqual(report.engineRows, 7)
         XCTAssertEqual(report.inserted, 1)
-        XCTAssertEqual(report.skippedImmature, 2)
-        XCTAssertEqual(report.skippedForeign, 1)
+        XCTAssertEqual(report.skippedImmature, 3)
         XCTAssertEqual(report.skippedUnresolvedAccount, 1)
         XCTAssertEqual(report.skippedInvalid, 2)
         XCTAssertNotNil(try txo(container, txid: txid(0x77)))

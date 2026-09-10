@@ -219,7 +219,6 @@ extension PlatformWalletManager {
                 report.insertedDuffs = report.insertedDuffs.addingReportingOverflow(counts.insertedDuffs).0
                 report.alreadyPresent += counts.alreadyPresent
                 report.skippedImmature += counts.skippedImmature
-                report.skippedForeign += counts.skippedForeign
                 report.skippedUnresolvedAccount += counts.skippedUnresolvedAccount
                 report.skippedInvalid += counts.skippedInvalid
             }
@@ -394,7 +393,6 @@ extension PlatformWalletManager {
                 "not_owned_count": .integer(Int64(report.notOwned)),
                 "retry_count": .integer(Int64(report.retries)),
                 "stale_retry_count": .integer(Int64(report.staleRetries)),
-                "skipped_foreign_count": .integer(Int64(report.skippedForeign)),
                 "skipped_immature_count": .integer(Int64(report.skippedImmature)),
                 "skipped_invalid_count": .integer(Int64(report.skippedInvalid)),
                 "skipped_unresolved_account_count": .integer(Int64(report.skippedUnresolvedAccount)),
