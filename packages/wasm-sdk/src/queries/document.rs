@@ -7,7 +7,9 @@ use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::drive::query::SelectProjection;
-use dash_sdk::platform::documents::document_history_query::DocumentHistoryQuery;
+use dash_sdk::platform::documents::document_history_query::{
+    DocumentHistoryQuery, DocumentHistorySelector,
+};
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
@@ -173,23 +175,20 @@ export interface DocumentHistoryQuery {
    */
   documentId: IdentifierLike
 
-  /**
-   * Millisecond timestamp (exclusive) to start after.
-   * @default 0
-   */
-  startAtMs?: number;
-
-  /**
-   * Maximum number of entries to return.
-   * @default undefined
-   */
+  /** Inclusive lower time bound. Supply exactly one selector. */
+  startAtMs?: bigint | number;
+  /** Complete exclusive cursor returned by a previous page. */
+  startAfter?: { timeMs: bigint | number; revision: bigint | number };
+  startAtRevision?: bigint | number;
+  revision?: bigint | number;
+  /** Maximum ten entries. A single revision requires limit one. */
   limit?: number;
+}
 
-  /**
-   * Offset for pagination through the document history.
-   * @default undefined
-   */
-  offset?: number;
+export interface DocumentHistoryResult {
+  entries: { timeMs: bigint; revision: bigint; document: Document }[];
+  lifecycle: { state: "ACTIVE" | "ABSENT"; remainingRevisions: bigint };
+
 }
 "#;
 
@@ -235,17 +234,23 @@ pub(super) struct DocumentsQueryInput {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DocumentHistoryQueryInput {
     data_contract_id: IdentifierWasm,
     document_type_name: String,
     document_id: IdentifierWasm,
-    #[serde(default)]
     start_at_ms: Option<u64>,
-    #[serde(default)]
+    start_after: Option<DocumentHistoryCursorInput>,
+    start_at_revision: Option<u64>,
+    revision: Option<u64>,
     limit: Option<u32>,
-    #[serde(default)]
-    offset: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DocumentHistoryCursorInput {
+    time_ms: u64,
+    revision: u64,
 }
 
 fn parse_document_history_query(
@@ -253,15 +258,89 @@ fn parse_document_history_query(
 ) -> Result<DocumentHistoryQuery, WasmSdkError> {
     let input: DocumentHistoryQueryInput =
         deserialize_required_query(query, "Query object is required", "document history query")?;
-
+    let selectors = [
+        input.start_at_ms.is_some(),
+        input.start_after.is_some(),
+        input.start_at_revision.is_some(),
+        input.revision.is_some(),
+    ];
+    if selectors.into_iter().filter(|present| *present).count() != 1 {
+        return Err(WasmSdkError::invalid_argument(
+            "exactly one history selector is required",
+        ));
+    }
+    let selector = if let Some(time) = input.start_at_ms {
+        DocumentHistorySelector::StartAtTime(time)
+    } else if let Some(cursor) = input.start_after {
+        DocumentHistorySelector::StartAfter {
+            time_ms: cursor.time_ms,
+            revision: cursor.revision,
+        }
+    } else if let Some(revision) = input.start_at_revision {
+        DocumentHistorySelector::StartAtRevision(revision)
+    } else {
+        DocumentHistorySelector::Revision(input.revision.expect("one selector was checked"))
+    };
     Ok(DocumentHistoryQuery {
         data_contract_id: input.data_contract_id.into(),
         document_type_name: input.document_type_name,
         document_id: input.document_id.into(),
-        start_at_ms: input.start_at_ms.unwrap_or(0),
+        selector,
         limit: input.limit,
-        offset: input.offset,
     })
+}
+
+fn document_history_to_js(
+    history: DocumentHistory,
+    contract_id: Identifier,
+    document_type_name: &str,
+) -> Result<JsValue, WasmSdkError> {
+    use drive_proof_verifier::types::DocumentHistoryState;
+    use js_sys::{Array, Object, Reflect};
+    let set = |object: &Object, key: &str, value: &JsValue| {
+        Reflect::set(object, &JsValue::from_str(key), value).map_err(|_| {
+            WasmSdkError::invalid_argument("could not construct document history result")
+        })
+    };
+    let entries = Array::new();
+    for entry in history.entries {
+        let object = Object::new();
+        set(&object, "timeMs", &BigInt::from(entry.time_ms).into())?;
+        set(&object, "revision", &BigInt::from(entry.revision).into())?;
+        set(
+            &object,
+            "document",
+            &DocumentWasm::new(
+                entry.document,
+                contract_id,
+                document_type_name.to_owned(),
+                None,
+            )
+            .into(),
+        )?;
+        entries.push(&object);
+    }
+    let lifecycle = history.lifecycle.ok_or_else(|| {
+        WasmSdkError::invalid_argument("history response did not authenticate lifecycle metadata")
+    })?;
+    let metadata = Object::new();
+    set(
+        &metadata,
+        "state",
+        &JsValue::from_str(match lifecycle.state {
+            DocumentHistoryState::Active => "ACTIVE",
+            DocumentHistoryState::Absent => "ABSENT",
+        }),
+    )?;
+    set(
+        &metadata,
+        "remainingRevisions",
+        &BigInt::from(lifecycle.remaining_revisions).into(),
+    )?;
+    let result = Object::new();
+    set(&result, "entries", &entries.into())?;
+    set(&result, "lifecycle", &metadata.into())?;
+    Ok(result.into())
 }
 
 pub(super) async fn build_documents_query(
@@ -688,44 +767,30 @@ pub(super) fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, Wasm
 impl WasmSdk {
     #[wasm_bindgen(
         js_name = "getDocumentHistory",
-        unchecked_return_type = "Map<bigint, Document>"
+        unchecked_return_type = "DocumentHistoryResult"
     )]
     pub async fn get_document_history(
         &self,
         query: DocumentHistoryQueryJs,
-    ) -> Result<Map, WasmSdkError> {
+    ) -> Result<JsValue, WasmSdkError> {
         let query = parse_document_history_query(query)?;
         let contract_id = query.data_contract_id;
         let document_type_name = query.document_type_name.clone();
-
-        let data_contract = self.get_or_fetch_contract(contract_id).await?;
-        data_contract
+        let contract = self.get_or_fetch_contract(contract_id).await?;
+        contract
             .document_type_for_name(&document_type_name)
-            .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
-
-        let history_result = DocumentHistory::fetch(self.as_ref(), query).await?;
-        let history_map = Map::new();
-
-        if let Some(history) = history_result {
-            for (block_time_ms, document) in history {
-                let document_js = JsValue::from(DocumentWasm::new(
-                    document,
-                    contract_id,
-                    document_type_name.clone(),
-                    None,
-                ));
-                let key = JsValue::from(BigInt::from(block_time_ms));
-
-                history_map.set(&key, &document_js);
-            }
-        }
-
-        Ok(history_map)
+            .map_err(|error| {
+                WasmSdkError::not_found(format!("Document type not found: {error}"))
+            })?;
+        let history = DocumentHistory::fetch(self.as_ref(), query)
+            .await?
+            .ok_or_else(|| WasmSdkError::not_found("document history response is missing"))?;
+        document_history_to_js(history, contract_id, &document_type_name)
     }
 
     #[wasm_bindgen(
         js_name = "getDocumentHistoryWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<bigint, Document>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<DocumentHistoryResult>"
     )]
     pub async fn get_document_history_with_proof_info(
         &self,
@@ -734,32 +799,18 @@ impl WasmSdk {
         let query = parse_document_history_query(query)?;
         let contract_id = query.data_contract_id;
         let document_type_name = query.document_type_name.clone();
-
-        let data_contract = self.get_or_fetch_contract(contract_id).await?;
-        data_contract
+        let contract = self.get_or_fetch_contract(contract_id).await?;
+        contract
             .document_type_for_name(&document_type_name)
-            .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
-
-        let (history_result, metadata, proof) =
+            .map_err(|error| {
+                WasmSdkError::not_found(format!("Document type not found: {error}"))
+            })?;
+        let (history, metadata, proof) =
             DocumentHistory::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
-        let history_map = Map::new();
-
-        if let Some(history) = history_result {
-            for (block_time_ms, document) in history {
-                let document_js = JsValue::from(DocumentWasm::new(
-                    document,
-                    contract_id,
-                    document_type_name.clone(),
-                    None,
-                ));
-                let key = JsValue::from(BigInt::from(block_time_ms));
-
-                history_map.set(&key, &document_js);
-            }
-        }
-
+        let history = history
+            .ok_or_else(|| WasmSdkError::not_found("document history response is missing"))?;
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            history_map,
+            document_history_to_js(history, contract_id, &document_type_name)?,
             metadata,
             proof,
         ))
@@ -1348,5 +1399,78 @@ mod tests {
             "grid": { "range": 21_600, "step": 7_200, "phase": 0.5 },
         }))
         .expect_err("a fractional phase is not a contract-declared value");
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod history_wasm_tests {
+    use super::*;
+    use drive_proof_verifier::types::{
+        DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryState,
+    };
+    use js_sys::{Array, Reflect};
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[wasm_bindgen_test]
+    fn should_preserve_same_time_revisions_and_exact_lifecycle_counts_in_javascript() {
+        let count = (1u64 << 53) + 1;
+        let history = DocumentHistory {
+            entries: [1, 2]
+                .into_iter()
+                .map(|revision| DocumentHistoryEntry {
+                    time_ms: 2000,
+                    revision,
+                    document: Document::V0(Default::default()),
+                })
+                .collect(),
+            lifecycle: Some(DocumentHistoryLifecycle {
+                state: DocumentHistoryState::Active,
+                remaining_revisions: count,
+            }),
+        };
+        let result = document_history_to_js(history, [1; 32].into(), "note").unwrap();
+        let entries = Array::from(&Reflect::get(&result, &"entries".into()).unwrap());
+        assert_eq!(entries.length(), 2);
+        for (index, revision) in [1u64, 2].into_iter().enumerate() {
+            assert_eq!(
+                Reflect::get(&entries.get(index as u32), &"revision".into()).unwrap(),
+                JsValue::from(revision)
+            );
+        }
+        let lifecycle = Reflect::get(&result, &"lifecycle".into()).unwrap();
+        assert_eq!(
+            Reflect::get(&lifecycle, &"remainingRevisions".into()).unwrap(),
+            JsValue::from(count)
+        );
+        assert_eq!(
+            Reflect::get(&lifecycle, &"state".into()).unwrap(),
+            JsValue::from_str("ACTIVE")
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn should_reject_conflicting_selectors_and_public_offsets() {
+        let base = r#"{"dataContractId":"GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec","documentTypeName":"note","documentId":"4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah""#;
+        for fields in [
+            "",
+            ",\"startAtMs\":0,\"revision\":1",
+            ",\"startAtMs\":0,\"offset\":1",
+        ] {
+            let input = js_sys::JSON::parse(&format!("{base}{fields}}}")).unwrap();
+            assert!(parse_document_history_query(input.unchecked_into()).is_err());
+        }
+        let input = js_sys::JSON::parse(&format!(
+            "{base},\"startAfter\":{{\"timeMs\":2000,\"revision\":22}}}}"
+        ))
+        .unwrap();
+        let query = parse_document_history_query(input.unchecked_into()).unwrap();
+        assert_eq!(
+            query.selector,
+            DocumentHistorySelector::StartAfter {
+                time_ms: 2000,
+                revision: 22
+            }
+        );
     }
 }
