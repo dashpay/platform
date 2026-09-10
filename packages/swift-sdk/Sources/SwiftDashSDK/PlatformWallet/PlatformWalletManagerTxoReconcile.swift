@@ -42,6 +42,10 @@ extension PlatformWalletManager {
     /// run gives up (each deferral waits `coreTxoReconcileRetryDelay`).
     nonisolated static let coreTxoReconcileMaxRetries = 200
     nonisolated static let coreTxoReconcileRetryDelay: TimeInterval = 0.05
+    /// How many times in a row one page is classified again because a
+    /// persistence round committed between its read and its apply, before
+    /// the run gives up.
+    nonisolated static let coreTxoReconcileMaxStaleRetries = 5
 
     /// Reconcile the SwiftData TXO store of `walletId` against the engine,
     /// once the SPV scan has reached a trustworthy steady state — see the
@@ -223,8 +227,12 @@ extension PlatformWalletManager {
             cursor = last
         }
 
-        // Pass B — classify: every unspent store row of the wallet.
+        // Pass B — classify: every unspent store row of the wallet. A page
+        // whose verdicts were read before a round committed is classified
+        // again (`staleGeneration`), at most `coreTxoReconcileMaxStaleRetries`
+        // times in a row.
         var offset = 0
+        var staleRetries = 0
         while true {
             if isCancelled() {
                 report.completed = false
@@ -253,9 +261,23 @@ extension PlatformWalletManager {
                     handler.reconcileApplyEngineClasses(
                         walletId: walletId,
                         rows: page.rows,
-                        classes: classes
+                        classes: classes,
+                        expectedGeneration: page.generation
                     )
                 }) else { return report }
+                if counts.staleGeneration {
+                    staleRetries += 1
+                    report.staleRetries += 1
+                    guard staleRetries <= coreTxoReconcileMaxStaleRetries else {
+                        report.completed = false
+                        return report
+                    }
+                    // Same offset: nothing was written, the page is re-read
+                    // and classified against the store as it is now.
+                    report.storeRows -= page.rows.count
+                    continue
+                }
+                staleRetries = 0
                 report.flipped += counts.flipped
                 report.flippedDuffs = report.flippedDuffs.addingReportingOverflow(counts.flippedDuffs).0
                 report.unspent += counts.unspent
@@ -371,6 +393,7 @@ extension PlatformWalletManager {
                 "inserted_value_duffs": .unsignedInteger(report.insertedDuffs),
                 "not_owned_count": .integer(Int64(report.notOwned)),
                 "retry_count": .integer(Int64(report.retries)),
+                "stale_retry_count": .integer(Int64(report.staleRetries)),
                 "skipped_foreign_count": .integer(Int64(report.skippedForeign)),
                 "skipped_immature_count": .integer(Int64(report.skippedImmature)),
                 "skipped_invalid_count": .integer(Int64(report.skippedInvalid)),

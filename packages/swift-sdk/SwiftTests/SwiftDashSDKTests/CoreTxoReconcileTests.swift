@@ -14,6 +14,10 @@ final class FakeCoreTxoEngine: CoreTxoEngineInventory, @unchecked Sendable {
     private(set) var pageCalls = 0
     private(set) var classifyCalls = 0
     private(set) var classified: [CoreOutpointOwnershipQuery] = []
+    /// Runs before each `classify`, outside the engine's lock — a test's
+    /// stand-in for the world moving while the reconcile is between its
+    /// engine read and its store write (e.g. a persistence round committing).
+    var onClassify: (@Sendable () -> Void)?
 
     init(inventory: [CoreEngineUtxo] = [], verdicts: [Data: CoreOutpointClass] = [:]) {
         _inventory = inventory
@@ -46,8 +50,13 @@ final class FakeCoreTxoEngine: CoreTxoEngineInventory, @unchecked Sendable {
         }
     }
 
+    func setVerdict(_ outpoint: Data, _ verdict: CoreOutpointClass) {
+        lock.withLock { _verdicts[outpoint] = verdict }
+    }
+
     func classify(_ queries: [CoreOutpointOwnershipQuery]) throws -> [CoreOutpointClass] {
-        try lock.withLock {
+        onClassify?()
+        return try lock.withLock {
             classifyCalls += 1
             if _failClassify { throw Failure() }
             classified.append(contentsOf: queries)
@@ -287,6 +296,48 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(engine.classified.count, 1)
         XCTAssertEqual(engine.classified.first?.account, bip44)
         XCTAssertEqual(engine.classified.first?.scriptPubKey, fixtureScript)
+    }
+
+    /// The engine is asked off the persistence queue and the verdict is
+    /// applied on it; a persistence round that opens AND commits in that gap
+    /// can re-credit the very coin (a reorg of its spender hands it back in
+    /// `utxos_added`). The apply must refuse a verdict read before that
+    /// round, and the page is classified again against the store as it is
+    /// now — here the engine holds the coin again, so nothing is flipped.
+    func testAVerdictReadBeforeAnInterveningRoundIsNotAppliedAndThePageIsReclassified() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedUnspentTxo(in: container, txid: txid(0x72))
+        let outpoint = PersistentTxo.makeOutpoint(txid: txid(0x72), vout: 0)
+        let engine = FakeCoreTxoEngine(verdicts: [outpoint: .knownUncredited])
+        let walletId = self.walletId
+        let classifies = Counter()
+        engine.onClassify = {
+            // Only the first classify sees the world move: a round commits
+            // between this read and the apply, and after it the engine
+            // holds the coin again.
+            guard classifies.next() == 1 else { return }
+            handler.beginChangeset(walletId: walletId)
+            _ = handler.endChangeset(walletId: walletId, success: true)
+            engine.setVerdict(outpoint, .unspent)
+        }
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertTrue(report.completed)
+        XCTAssertEqual(report.staleRetries, 1, "the first verdict was read before the round and refused")
+        XCTAssertEqual(engine.classifyCalls, 2, "the page is classified again after the refusal")
+        XCTAssertEqual(report.flipped, 0)
+        XCTAssertEqual(report.unspent, 1)
+        XCTAssertEqual(report.storeRows, 1)
+        let coin = try XCTUnwrap(txo(container, txid: txid(0x72)))
+        XCTAssertFalse(coin.isSpent, "a coin the engine re-credited in the gap stays unspent")
+    }
+
+    private final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+        func next() -> Int { lock.withLock { value += 1; return value } }
     }
 
     // MARK: 2. Absence from both inventories changes nothing

@@ -267,14 +267,19 @@ pub struct OutpointOwnershipQuery {
 /// Only [`Self::KnownUncredited`] is positive evidence a reconciler may act
 /// on: the owning account recorded the funding transaction (its txid is in
 /// the account's records or its finalized set), recognises the output's
-/// script as its own, and does not hold the coin. Under `update_utxos`'s
-/// rules an owned output of a known record is absent from `utxos` only
-/// because the engine skipped it for a spent reason (a block was observed
-/// spending it, or the record is doomed) or consumed it. Everything else
-/// says nothing: `Unknown` covers a funding transaction this session never
-/// processed — after a restart the finalized set is empty, so absence
-/// proves nothing — and `NotOwned` a script the account's pools do not
-/// monitor, which the engine could never have credited in the first place.
+/// script as its own, does not hold the coin, AND a funds account holds a
+/// MINED record whose transaction spends the outpoint. The last condition
+/// is what makes the answer durable. Absence from `utxos` alone is not:
+/// `update_utxos` removes the inputs of a mempool spend that may never
+/// confirm, and a conflict sweep releases a loser's other inputs without
+/// reinserting their coins — both leave the coin absent with its funding
+/// known, and both are states the store deliberately keeps restorable.
+/// Everything else says nothing: `Unknown` covers those, a funding
+/// transaction this session never processed (after a restart the finalized
+/// set is empty), and a spender the engine never recorded at all (the
+/// rust-dashcore#992 shape, which only the emit-time verdict can name);
+/// `NotOwned` a script the account's pools do not monitor, which the engine
+/// could never have credited in the first place.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutpointClass {
@@ -282,8 +287,8 @@ pub enum OutpointClass {
     Unknown = 0,
     /// The coin is in a funds account's live `utxos`.
     Unspent = 1,
-    /// The owning account knows the funding txid, owns the script, and
-    /// does not hold the coin.
+    /// The owning account knows the funding txid, owns the script, does
+    /// not hold the coin, and a mined record spends the outpoint.
     KnownUncredited = 2,
     /// The owning account's pools do not monitor the script.
     NotOwned = 3,
@@ -320,16 +325,19 @@ pub fn wallet_utxos_page(
     let Some(info) = wm.get_wallet_info(wallet_id) else {
         return (Vec::new(), false);
     };
-    let mut accounts: Vec<(AccountType, &key_wallet::managed_account::ManagedCoreFundsAccount)> =
-        info.core_wallet
-            .accounts
-            .all_accounts()
-            .iter()
-            .filter_map(|a| {
-                a.as_funds()
-                    .map(|funds| (a.managed_account_type().to_account_type(), funds))
-            })
-            .collect();
+    let mut accounts: Vec<(
+        AccountType,
+        &key_wallet::managed_account::ManagedCoreFundsAccount,
+    )> = info
+        .core_wallet
+        .accounts
+        .all_accounts()
+        .iter()
+        .filter_map(|a| {
+            a.as_funds()
+                .map(|funds| (a.managed_account_type().to_account_type(), funds))
+        })
+        .collect();
     accounts.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut rows = Vec::with_capacity(limit);
@@ -380,7 +388,10 @@ pub fn classify_outpoints(
     let Some(info) = wm.get_wallet_info(wallet_id) else {
         return vec![OutpointClass::Unknown; queries.len()];
     };
-    let accounts: Vec<(AccountType, &key_wallet::managed_account::ManagedCoreFundsAccount)> = info
+    let accounts: Vec<(
+        AccountType,
+        &key_wallet::managed_account::ManagedCoreFundsAccount,
+    )> = info
         .core_wallet
         .accounts
         .all_accounts()
@@ -391,6 +402,21 @@ pub fn classify_outpoints(
         })
         .collect();
 
+    // Durable spend evidence: the inputs of every MINED record in any funds
+    // account. A mempool spend, an IS-locked spend or a released loser input
+    // leaves a coin absent from `utxos` too, and none of those is a verdict.
+    let mined_spends: std::collections::HashSet<OutPoint> = accounts
+        .iter()
+        .flat_map(|(_, funds)| funds.transactions().values())
+        .filter(|record| record.context.block_info().is_some())
+        .flat_map(|record| {
+            record
+                .transaction
+                .input
+                .iter()
+                .map(|input| input.previous_output)
+        })
+        .collect();
     queries
         .iter()
         .map(|query| {
@@ -413,7 +439,8 @@ pub fn classify_outpoints(
                 return OutpointClass::NotOwned;
             }
             let txid = &query.outpoint.txid;
-            if owner.has_transaction(txid) || owner.transaction_is_finalized(txid) {
+            let funding_known = owner.has_transaction(txid) || owner.transaction_is_finalized(txid);
+            if funding_known && mined_spends.contains(&query.outpoint) {
                 OutpointClass::KnownUncredited
             } else {
                 OutpointClass::Unknown
@@ -1904,7 +1931,11 @@ mod txo_inventory_tests {
         (wm, wallet_id)
     }
 
-    fn query(account_type: AccountType, outpoint: OutPoint, script: &ScriptBuf) -> OutpointOwnershipQuery {
+    fn query(
+        account_type: AccountType,
+        outpoint: OutPoint,
+        script: &ScriptBuf,
+    ) -> OutpointOwnershipQuery {
         OutpointOwnershipQuery {
             account_type,
             outpoint,
@@ -1920,7 +1951,11 @@ mod txo_inventory_tests {
         let mut coins = Vec::new();
         for (seed, value) in [(11u8, 1_000u64), (12, 2_000), (13, 3_000)] {
             let tx = funding(script.clone(), seed, value);
-            assert!(ctx.check_transaction(&tx, in_block(100_000 + seed as u32)).await.is_relevant);
+            assert!(
+                ctx.check_transaction(&tx, in_block(100_000 + seed as u32))
+                    .await
+                    .is_relevant
+            );
             coins.push(OutPoint {
                 txid: tx.txid(),
                 vout: 0,
@@ -1964,10 +1999,15 @@ mod txo_inventory_tests {
         assert!(!more);
     }
 
-    /// The four answers, each from the arrival order that produces it —
-    /// including the field case: a collateral burn processed before its
-    /// funding is never recorded, the funding is, and the coin is absent
-    /// from `utxos`, which is exactly `KnownUncredited`.
+    /// The four answers, each from the arrival order that produces it.
+    /// `KnownUncredited` needs a mined spender on record: a coin funded and
+    /// then burned while held. The field case — a collateral burn processed
+    /// before its funding is never recorded, the funding is, the coin is
+    /// absent — is `Unknown` here: no record spends it, so absence is not
+    /// durable evidence (the emit-time verdict covers that shape). A coin
+    /// spent only in the mempool is `Unknown` too: `update_utxos` removed
+    /// it, but the spend may never confirm and the store keeps it
+    /// restorable.
     #[tokio::test]
     async fn classifies_unspent_known_uncredited_not_owned_and_unknown() {
         let mut ctx = TestWalletContext::new_random();
@@ -1975,7 +2015,11 @@ mod txo_inventory_tests {
 
         // A coin the engine holds.
         let held = funding(script.clone(), 21, 5_000);
-        assert!(ctx.check_transaction(&held, in_block(100_000)).await.is_relevant);
+        assert!(
+            ctx.check_transaction(&held, in_block(100_000))
+                .await
+                .is_relevant
+        );
         let held_coin = OutPoint {
             txid: held.txid(),
             vout: 0,
@@ -1987,11 +2031,16 @@ mod txo_inventory_tests {
             txid: burned.txid(),
             vout: 0,
         };
-        assert!(!ctx
-            .check_transaction(&collateral_burn(burned_coin), in_block(100_002))
-            .await
-            .is_relevant);
-        assert!(ctx.check_transaction(&burned, in_block(100_001)).await.is_relevant);
+        assert!(
+            !ctx.check_transaction(&collateral_burn(burned_coin), in_block(100_002))
+                .await
+                .is_relevant
+        );
+        assert!(
+            ctx.check_transaction(&burned, in_block(100_001))
+                .await
+                .is_relevant
+        );
 
         // A coin spent the ordinary way: funded, then burned while held.
         let spent = funding(script.clone(), 23, 7_000);
@@ -1999,12 +2048,37 @@ mod txo_inventory_tests {
             txid: spent.txid(),
             vout: 0,
         };
-        assert!(ctx.check_transaction(&spent, in_block(100_003)).await.is_relevant);
-        assert!(ctx
-            .check_transaction(&collateral_burn(spent_coin), in_block(100_004))
-            .await
-            .is_relevant);
+        assert!(
+            ctx.check_transaction(&spent, in_block(100_003))
+                .await
+                .is_relevant
+        );
+        assert!(
+            ctx.check_transaction(&collateral_burn(spent_coin), in_block(100_004))
+                .await
+                .is_relevant
+        );
 
+        // A coin spent only in the mempool: absent from `utxos`, funding
+        // known, spender unconfirmed.
+        let mempool_spent = funding(script.clone(), 24, 9_000);
+        let mempool_spent_coin = OutPoint {
+            txid: mempool_spent.txid(),
+            vout: 0,
+        };
+        assert!(
+            ctx.check_transaction(&mempool_spent, in_block(100_005))
+                .await
+                .is_relevant
+        );
+        assert!(
+            ctx.check_transaction(
+                &collateral_burn(mempool_spent_coin),
+                key_wallet::transaction_checking::TransactionContext::Mempool
+            )
+            .await
+            .is_relevant
+        );
         let (wm, wallet_id) = manager_with(ctx);
         let never_seen = OutPoint {
             txid: Txid::from_slice(&[0x99u8; 32]).expect("valid txid"),
@@ -2014,34 +2088,24 @@ mod txo_inventory_tests {
             query(bip44_account_0(), held_coin, &script),
             query(bip44_account_0(), burned_coin, &script),
             query(bip44_account_0(), spent_coin, &script),
+            query(bip44_account_0(), mempool_spent_coin, &script),
             query(bip44_account_0(), burned_coin, &foreign_script()),
             query(bip44_account_0(), never_seen, &script),
             // The right coin filed under the wrong account: the CoinJoin
             // account exists but its pools never monitored a BIP44 script,
             // so ownership fails before the txid is even consulted.
-            query(
-                AccountType::CoinJoin {
-                    index: 0,
-                },
-                burned_coin,
-                &script,
-            ),
+            query(AccountType::CoinJoin { index: 0 }, burned_coin, &script),
             // A coin filed under an account the wallet does not have at all.
-            query(
-                AccountType::CoinJoin {
-                    index: 7,
-                },
-                burned_coin,
-                &script,
-            ),
+            query(AccountType::CoinJoin { index: 7 }, burned_coin, &script),
         ];
         let classes = classify_outpoints(&wm, &wallet_id, &queries);
         assert_eq!(
             classes,
             vec![
                 OutpointClass::Unspent,
+                OutpointClass::Unknown,
                 OutpointClass::KnownUncredited,
-                OutpointClass::KnownUncredited,
+                OutpointClass::Unknown,
                 OutpointClass::NotOwned,
                 OutpointClass::Unknown,
                 OutpointClass::NotOwned,

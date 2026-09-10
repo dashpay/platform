@@ -216,6 +216,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         var coreAddressesByAddress: [String: PersistentCoreAddress] = [:]
     }
     private var roundIndex: ChangesetRoundIndex?
+    /// Number of persistence rounds committed by this handler, read and
+    /// compared on `serialQueue`. The store reconcile classifies rows off
+    /// this queue and applies the verdicts on it; a round committed in
+    /// between may have re-credited one of them (a reorg of the spender
+    /// delivers the coin back in `utxos_added`), so a flip is refused when
+    /// the count moved since the rows were read, and the page is
+    /// classified again.
+    private(set) var committedRoundGeneration: UInt64 = 0
 
     /// Set when the open round advanced either half of the tombstone
     /// finality boundary — `syncedHeight` through the changeset callback or
@@ -3358,6 +3366,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
                 do {
                     try backgroundContext.save()
+                    committedRoundGeneration &+= 1
                     SDKLogger.event(
                         "persistence_changeset_committed",
                         category: .persistence,
@@ -10802,6 +10811,8 @@ struct CoreTxoStoreUnspentPage: Sendable {
     let rows: [CoreTxoStoreUnspentRow]
     let fetched: Int
     let hasMore: Bool
+    /// `committedRoundGeneration` as read together with the rows.
+    let generation: UInt64
 }
 
 /// Counts from one heal step.
@@ -10824,6 +10835,9 @@ struct CoreTxoFlipCounts: Sendable {
     var notOwned = 0
     /// Rows that changed under the walk (already spent, or gone).
     var stale = 0
+    /// A round committed between the read and the apply: nothing written,
+    /// the page is classified again.
+    var staleGeneration = false
 }
 
 extension PlatformWalletPersistenceHandler {
@@ -10993,7 +11007,8 @@ extension PlatformWalletPersistenceHandler {
             return .done(CoreTxoStoreUnspentPage(
                 rows: rows,
                 fetched: fetched.count,
-                hasMore: fetched.count == limit
+                hasMore: fetched.count == limit,
+                generation: committedRoundGeneration
             ))
         }
     }
@@ -11005,14 +11020,24 @@ extension PlatformWalletPersistenceHandler {
     /// dropped, and `isSpent` is monotonic so a row already spent is left
     /// alone. `unspent`, `unknown` and `notOwned` are counted, never acted
     /// on: absence of a coin from the engine proves nothing, and a spent
-    /// row is never un-marked by anything here.
+    /// row is never un-marked by anything here. A verdict is applied only
+    /// against the store it was read from: the engine was asked off this
+    /// queue, and a round committed since the rows were read
+    /// (`expectedGeneration`) may have re-credited one of them, so then
+    /// nothing is written and the caller classifies the page again.
     func reconcileApplyEngineClasses(
         walletId: Data,
         rows: [CoreTxoStoreUnspentRow],
-        classes: [CoreOutpointClass]
+        classes: [CoreOutpointClass],
+        expectedGeneration: UInt64
     ) -> CoreTxoReconcileStep<CoreTxoFlipCounts> {
         onQueue {
             guard !inChangeset else { return .retryLater }
+            guard committedRoundGeneration == expectedGeneration else {
+                var stale = CoreTxoFlipCounts()
+                stale.staleGeneration = true
+                return .done(stale)
+            }
             var counts = CoreTxoFlipCounts()
             for (row, verdict) in zip(rows, classes) {
                 switch verdict {

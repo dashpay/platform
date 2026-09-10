@@ -1158,7 +1158,10 @@ pub unsafe extern "C" fn platform_wallet_classify_outpoints(
     let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
 
     let mut owned: Vec<OutpointOwnershipQuery> = Vec::with_capacity(count);
-    for (i, q) in std::slice::from_raw_parts(queries, count).iter().enumerate() {
+    for (i, q) in std::slice::from_raw_parts(queries, count)
+        .iter()
+        .enumerate()
+    {
         let spec = account_spec_from_raw_tags(
             q.type_tag,
             q.standard_tag,

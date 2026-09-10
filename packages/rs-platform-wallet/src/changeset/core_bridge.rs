@@ -1352,9 +1352,7 @@ fn utxo_credit_verdicts_from_wallet(
                 continue;
             }
             let verdict = if let Some(height) = observed.get(&outpoint) {
-                UtxoCreditVerdict::ObservedSpent {
-                    height: *height,
-                }
+                UtxoCreditVerdict::ObservedSpent { height: *height }
             } else if doomed {
                 UtxoCreditVerdict::Doomed
             } else {
@@ -5627,9 +5625,18 @@ mod utxo_credit_verdict_tests {
         };
 
         let burn_result = managed_wallet
-            .check_core_transaction(&collateral_burn(coin), in_block(100_001), &mut wallet, true, true)
+            .check_core_transaction(
+                &collateral_burn(coin),
+                in_block(100_001),
+                &mut wallet,
+                true,
+                true,
+            )
             .await;
-        assert!(!burn_result.is_relevant, "a burn of an unknown coin matches nothing");
+        assert!(
+            !burn_result.is_relevant,
+            "a burn of an unknown coin matches nothing"
+        );
         assert!(burn_result.new_records.is_empty());
         assert!(burn_result.updated_records.is_empty());
 
@@ -5659,9 +5666,7 @@ mod utxo_credit_verdict_tests {
         let verdicts = utxo_credit_verdicts_from_wallet(&managed_wallet, &[funding_record]);
         assert_eq!(
             verdicts.get(&coin),
-            Some(&UtxoCreditVerdict::ObservedSpent {
-                height: 100_001
-            })
+            Some(&UtxoCreditVerdict::ObservedSpent { height: 100_001 })
         );
         assert_eq!(verdicts.len(), 1);
     }
@@ -5735,7 +5740,10 @@ mod utxo_credit_verdict_tests {
         assert!(!funds.utxos.contains_key(&loser_output));
 
         let verdicts = utxo_credit_verdicts_from_wallet(&managed_wallet, &[loser_record]);
-        assert_eq!(verdicts.get(&loser_output), Some(&UtxoCreditVerdict::Doomed));
+        assert_eq!(
+            verdicts.get(&loser_output),
+            Some(&UtxoCreditVerdict::Doomed)
+        );
     }
 
     /// End to end through the event bridge: the funding record's
@@ -5791,9 +5799,7 @@ mod utxo_credit_verdict_tests {
         let cs = build_core_changeset(&manager, &event(wallet_id)).await;
         assert_eq!(
             cs.utxo_credit_verdicts.get(&coin),
-            Some(&UtxoCreditVerdict::ObservedSpent {
-                height: 100_001
-            })
+            Some(&UtxoCreditVerdict::ObservedSpent { height: 100_001 })
         );
         assert!(
             cs.new_utxos.iter().any(|u| u.outpoint == coin),

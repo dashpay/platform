@@ -196,6 +196,9 @@ public struct CoreTxoReconcileReport: Equatable, Sendable {
     // Run shape.
     /// Steps deferred because a Rust persistence round was open.
     public var retries = 0
+    /// Pages classified again because a persistence round committed between
+    /// their read and their apply.
+    public var staleRetries = 0
     /// Engine reads that failed; the run stops at the first.
     public var transportFailures = 0
     /// Store writes that failed to save; the run stops at the first.

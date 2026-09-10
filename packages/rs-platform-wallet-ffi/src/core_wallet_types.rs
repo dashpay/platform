@@ -119,9 +119,9 @@ pub(crate) fn build_utxo_credit_verdicts_for_callback(
         .iter()
         .map(|(outpoint, verdict)| {
             let (code, spent_at_height) = match verdict {
-                UtxoCreditVerdict::ObservedSpent {
-                    height,
-                } => (UTXO_CREDIT_VERDICT_OBSERVED_SPENT, *height),
+                UtxoCreditVerdict::ObservedSpent { height } => {
+                    (UTXO_CREDIT_VERDICT_OBSERVED_SPENT, *height)
+                }
                 UtxoCreditVerdict::Doomed => (UTXO_CREDIT_VERDICT_DOOMED, 0),
                 UtxoCreditVerdict::Uncredited => (UTXO_CREDIT_VERDICT_UNCREDITED, 0),
             };

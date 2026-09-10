@@ -7429,9 +7429,7 @@ mod tests {
             let mut core = CoreChangeSet::default();
             core.utxo_credit_verdicts.insert(
                 outpoint(0xAB, 1),
-                UtxoCreditVerdict::ObservedSpent {
-                    height: 2_402_896,
-                },
+                UtxoCreditVerdict::ObservedSpent { height: 2_402_896 },
             );
             core.utxo_credit_verdicts
                 .insert(outpoint(0xCD, 0), UtxoCreditVerdict::Doomed);
