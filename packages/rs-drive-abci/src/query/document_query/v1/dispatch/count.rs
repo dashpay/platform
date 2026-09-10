@@ -188,7 +188,7 @@ impl<C> Platform<C> {
     }
 }
 
-fn into_v1_entry(e: SplitCountEntry) -> CountEntry {
+pub(super) fn into_v1_entry(e: SplitCountEntry) -> CountEntry {
     CountEntry {
         in_key: e.in_key,
         key: e.key,

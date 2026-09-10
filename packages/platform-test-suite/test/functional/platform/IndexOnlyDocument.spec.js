@@ -6,6 +6,18 @@ const generateRandomIdentifier = require('../../../lib/test/utils/generateRandom
 const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
 const createPlatformProofVerifier = require('../../../lib/test/createPlatformProofVerifier');
 
+function identifierLikeToBase58(evo, value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (value && typeof value.toBase58 === 'function') {
+    return value.toBase58();
+  }
+
+  return evo.Identifier.fromBytes(Array.from(value)).toBase58();
+}
+
 const {
   Errors: {
     StateTransitionBroadcastError,
@@ -306,7 +318,7 @@ describe('Platform', () => {
       // quorum-signed root, re-deriving the outer query and checking
       // it against the proven inner values — the node cannot steer
       // the join.
-      const { sdk: evoSdk } = await createPlatformProofVerifier
+      const { evo, sdk: evoSdk } = await createPlatformProofVerifier
         .getEvoSdkForNetwork(process.env.NETWORK);
 
       const page = await evoSdk.documents.chained({
@@ -327,8 +339,75 @@ describe('Platform', () => {
 
       // The inner projection carries the pagination cursor.
       const [innerLike] = page.innerDocuments;
-      // Identifier-typed properties surface as base58 strings in JS.
-      expect(innerLike.properties.postId).to.equal(post.getId().toString());
+      expect(identifierLikeToBase58(evo, innerLike.properties.postId))
+        .to.equal(post.getId().toString());
+    });
+
+    it('should fetch a feed page with its like counts and my likes through a composite query', async () => {
+      // The same owner also likes a post outside this page. Without the
+      // $id-to-postId binding, the owner filter would return both likes.
+      const otherPost = await client.platform.documents.create(
+        'yappr.post',
+        identity,
+        { hashtag: 'otherhashtag', message: 'a post outside the feed page' },
+      );
+      await client.platform.documents.broadcast({ create: [otherPost] }, identity);
+      await waitForSTPropagated();
+
+      const otherLike = await client.platform.documents.create(
+        'yappr.like',
+        identity,
+        { hashtag: 'otherhashtag', postId: otherPost.getId() },
+      );
+      await client.platform.documents.broadcast({ create: [otherLike] }, identity);
+      await waitForSTPropagated();
+
+      // A page plus the sub-queries derived from it, ONE merged proof:
+      // the dash posts, one like count per post (from the countable
+      // [hashtag, postId] index with hashtag fixed), and which of them
+      // I liked (the byLiker index with $ownerId fixed, its postId
+      // terminal bound to the page ids: value-bounded, so no limit).
+      // The WASM SDK bootstraps the page from the proof, re-derives
+      // every sub-query, and verifies the composition against the
+      // quorum-signed root.
+      const { evo, sdk: evoSdk } = await createPlatformProofVerifier
+        .getEvoSdkForNetwork(process.env.NETWORK);
+
+      const page = await evoSdk.documents.composite({
+        dataContractId: dataContract.getId().toString(),
+        documentType: 'post',
+        where: [['hashtag', '==', POST_HASHTAG]],
+        limit: 10,
+        subQueries: [
+          {
+            documentType: 'like',
+            kind: 'counts',
+            where: [['hashtag', '==', POST_HASHTAG]],
+            bind: { sourceProperty: '$id', field: 'postId' },
+          },
+          {
+            documentType: 'like',
+            where: [['$ownerId', '==', identity.getId().toString()]],
+            bind: { sourceProperty: '$id', field: 'postId' },
+          },
+        ],
+      });
+
+      expect(page.pageDocuments).to.have.lengthOf(1);
+      expect(page.subResults).to.have.lengthOf(2);
+
+      const [pagePost] = page.pageDocuments;
+      expect(pagePost.id.toBase58()).to.equal(post.getId().toString());
+
+      const [likeCounts, myLikes] = page.subResults;
+      expect(likeCounts.kind).to.equal('counts');
+      expect(likeCounts.counts.get(post.getId().toString())).to.equal(1n);
+
+      expect(myLikes.kind).to.equal('documents');
+      expect(myLikes.documents).to.have.lengthOf(1);
+      expect(myLikes.documents[0].ownerId.toBase58()).to.equal(identity.getId().toString());
+      expect(identifierLikeToBase58(evo, myLikes.documents[0].properties.postId))
+        .to.equal(pagePost.id.toBase58());
     });
 
     it('should fail to query a subset-index projection without proofs', async () => {

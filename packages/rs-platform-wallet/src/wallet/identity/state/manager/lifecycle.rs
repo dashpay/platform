@@ -94,12 +94,13 @@ impl IdentityManager {
 
     /// Add an identity to the out-of-wallet (observed read-only) bucket.
     ///
-    /// Replaces the previous `add_watched_identity` — we no longer keep
-    /// a separate `WatchedIdentity` type; observed identities are just
-    /// `ManagedIdentity` rows with `wallet_id == None` and an empty
-    /// public-key map. If an identity with the same id is already in
-    /// either bucket this is a no-op (matches the old `add_watched_identity`
-    /// idempotency contract).
+    /// There is no separate `WatchedIdentity` type; observed identities
+    /// are just `ManagedIdentity` rows with `wallet_id == None` and
+    /// `identity_index == None`, which is what forces signing and
+    /// derivation callers to handle them explicitly. The `Identity` is
+    /// stored exactly as supplied — an observed identity fetched from
+    /// Platform keeps the public keys it came with. If an identity with
+    /// the same id is already in either bucket this is a no-op.
     pub fn add_out_of_wallet_identity(
         &mut self,
         identity: Identity,
@@ -151,8 +152,12 @@ impl IdentityManager {
 
     /// Remove an identity from whichever bucket holds it.
     ///
-    /// Persists the tombstone changeset via `persister` and returns the
-    /// removed [`Identity`]. O(log n) via the side-index.
+    /// Persists the removal via `persister` and returns the removed
+    /// [`Identity`]. O(log n) via the side-index.
+    ///
+    /// Removal is terminal in storage as well as in memory: the persister
+    /// deletes the identity and every row it owns, so re-adding the same
+    /// id later starts from a blank identity.
     pub fn remove_identity(
         &mut self,
         identity_id: &Identifier,

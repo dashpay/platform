@@ -482,7 +482,7 @@ mod tests {
     fn test_sender_wrong_purpose() {
         // VOTING, not AUTHENTICATION: the legacy dashj cohort pairs an
         // AUTHENTICATION sender key with an AUTHENTICATION recipient key and
-        // is now accepted on receive, so AUTHENTICATION no longer exercises
+        // is accepted on receive, so AUTHENTICATION does not exercise
         // the sender-side rejection this test is about.
         let sender = make_identity(vec![make_key(0, KeyType::ECDSA_SECP256K1, Purpose::VOTING)]);
         let recipient = make_identity(vec![make_key(

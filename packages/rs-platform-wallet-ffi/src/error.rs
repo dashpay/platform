@@ -1,4 +1,5 @@
 use dpp::platform_value::string_encoding::Encoding;
+use platform_wallet::changeset::PersistenceErrorKind;
 use platform_wallet::PlatformWalletError;
 use std::ffi::CString;
 use std::os::raw::c_char;
@@ -293,6 +294,7 @@ pub enum PlatformWalletFFIResultCode {
     //   47  ErrorAssetLockInputConflict     asset-lock double-spend detection
     //                                       (terminal; RESERVED, no emitter yet)
     //   48  ErrorAssetLockInputContested    asset-lock double-spend detection (provisional)
+    //   49-54 the persister operation x kind block below
     //
     // 38/39/40 carry a STABLE JSON detail object in the result `message`
     // instead of the typed `Display` rendering — see each variant's doc for
@@ -505,18 +507,74 @@ pub enum PlatformWalletFFIResultCode {
     ErrorAssetLockInputContested = 48,
 
     // -----------------------------------------------------------------
-    // Embedded-persister failures (49-50), claimed from the allocation
-    // frontier in the error-code registry (#4318). 28, 30, 32 and 33 are
-    // reserved-not-free, so the frontier is the only allocation source.
-    // ErrorPersisterFatal was never contested and keeps 49.
-    // ErrorPersisterTransient was originally minted at 48 on 2026-08-27;
-    // merged #4356 took 48 for ErrorAssetLockInputContested on 2026-08-31,
-    // so it moved to 50 — see the registry's row 50 for the full account.
+    // Persister failures, operation x retry classification (49-54).
+    //
+    // The wallet's PersisterLoad / PersisterStore / PersisterRestore each
+    // carry a typed `PersistenceError` whose `kind` says whether a retry can
+    // help. One code per (operation, kind) pair keeps both halves: a host can
+    // tell a failed read from a failed write AND a retryable failure from a
+    // permanent one, without parsing the message.
     // -----------------------------------------------------------------
-    /// A persister operation failed permanently; callers must not retry.
-    ErrorPersisterFatal = 49,
-    /// A persister operation failed transiently; callers may retry.
-    ErrorPersisterTransient = 50,
+    /// Maps `PlatformWalletError::PersisterLoad` classified
+    /// [`Transient`](platform_wallet::changeset::PersistenceErrorKind::Transient):
+    /// a retryable condition (`SQLITE_BUSY` and friends) while reading.
+    ///
+    /// Host action: retry later. Nothing was mutated — a load is a read.
+    ErrorPersisterLoadTransient = 49,
+
+    /// Maps `PlatformWalletError::PersisterLoad` for every other
+    /// classification — `Fatal`, `Constraint`, and a poisoned persister lock:
+    /// a corrupt or unreadable store, or a decode that will fail identically
+    /// next time.
+    ///
+    /// Host action: do NOT retry; inspect the message and repair or
+    /// re-provision the store. `Constraint` folds in here because a read
+    /// cannot violate one — reported on a load it is a backend defect, not a
+    /// caller data error, and not retryable either way.
+    ErrorPersisterLoadFatal = 50,
+
+    /// Maps `PlatformWalletError::PersisterStore` classified
+    /// [`Transient`](platform_wallet::changeset::PersistenceErrorKind::Transient):
+    /// a busy or momentarily unavailable store rejected the write.
+    ///
+    /// **Nothing was applied or retained**: the persister must attest that the
+    /// failed store is safe to reissue, including that it buffered nothing.
+    ///
+    /// Host action: retry later. A busy database produces this code only when
+    /// its backend provides that attestation. The buffered `SqlitePersister`
+    /// does not: its transient store failures map to `ErrorPersisterStoreFatal`
+    /// and require backend-aware recovery through `flush`, not another `store`.
+    ErrorPersisterStoreTransient = 51,
+
+    /// Maps `PlatformWalletError::PersisterStore` classified `Fatal`, and a
+    /// poisoned persister lock: a full disk, a corrupt schema, an I/O error
+    /// outside the retryable class.
+    ///
+    /// Host action: do NOT retry; inspect the message. The wallet's in-memory
+    /// state was rolled back to before the operation, so the host may
+    /// re-attempt once the underlying fault is fixed.
+    ErrorPersisterStoreFatal = 52,
+
+    /// Maps `PlatformWalletError::PersisterStore` classified
+    /// [`Constraint`](platform_wallet::changeset::PersistenceErrorKind::Constraint):
+    /// a SQL constraint / foreign-key / integrity violation. Distinct from
+    /// [`Self::ErrorPersisterStoreFatal`] so a host can separate "your data is
+    /// wrong" (caller or schema-mapping bug) from "the storage engine is
+    /// unhappy" (operator problem) — they route to different people.
+    ///
+    /// Host action: do NOT retry unchanged — fix the data, or the host-side
+    /// schema mapping that produced it.
+    ErrorPersisterStoreConstraint = 53,
+
+    /// Maps `PlatformWalletError::PersisterRestore`: rehydrating persisted
+    /// platform-address state into a freshly registered wallet failed. One
+    /// code, not three — it wraps a `PlatformWalletError` rather than a
+    /// `PersistenceError`, so there is no retry classification to split on,
+    /// and the wrapped error's `Display` is the only detail channel.
+    ///
+    /// Host action: inspect the message; the wallet was registered but its
+    /// persisted address state did not come back.
+    ErrorPersisterRestore = 54,
 
     /// The named thing does not exist.
     ///
@@ -537,31 +595,6 @@ pub enum PlatformWalletFFIResultCode {
     /// against (`dashpay/platform#4185`).
     NotFound = 98,
     ErrorUnknown = 99,
-}
-
-fn persistence_result_code(
-    error: &platform_wallet::changeset::PersistenceError,
-) -> PlatformWalletFFIResultCode {
-    if error.is_transient() {
-        PlatformWalletFFIResultCode::ErrorPersisterTransient
-    } else {
-        PlatformWalletFFIResultCode::ErrorPersisterFatal
-    }
-}
-
-fn platform_wallet_persister_result_code(
-    mut error: &PlatformWalletError,
-) -> PlatformWalletFFIResultCode {
-    loop {
-        match error {
-            PlatformWalletError::PersisterLoad(error)
-            | PlatformWalletError::PersisterStore(error) => {
-                return persistence_result_code(error);
-            }
-            PlatformWalletError::PersisterRestore(inner) => error = inner,
-            _ => return PlatformWalletFFIResultCode::ErrorPersisterFatal,
-        }
-    }
 }
 
 /// Must be freed with ['platform_wallet_ffi_result_free']
@@ -854,11 +887,6 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AssetLockInsufficientFunds { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds
             }
-            PlatformWalletError::PersisterLoad(..)
-            | PlatformWalletError::PersisterStore(..)
-            | PlatformWalletError::PersisterRestore(..) => {
-                platform_wallet_persister_result_code(&error)
-            }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its
             // callback context alive and skip any paired persistence wipe.
@@ -928,6 +956,28 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // rides `NotFound` rather than spending a fifth marketplace
             // code hosts would handle identically.
             PlatformWalletError::DpnsNameNotFound { .. } => PlatformWalletFFIResultCode::NotFound,
+            // The persister trio, split by the store's own retry
+            // classification — flattened to ErrorUnknown a host could not tell
+            // a busy database from a corrupt one. `PersisterRestore` carries
+            // no kind to split on, so it takes a single code.
+            PlatformWalletError::PersisterLoad(source) => match source.kind() {
+                Some(PersistenceErrorKind::Transient) => {
+                    PlatformWalletFFIResultCode::ErrorPersisterLoadTransient
+                }
+                _ => PlatformWalletFFIResultCode::ErrorPersisterLoadFatal,
+            },
+            PlatformWalletError::PersisterStore(source) => match source.kind() {
+                Some(PersistenceErrorKind::Transient) => {
+                    PlatformWalletFFIResultCode::ErrorPersisterStoreTransient
+                }
+                Some(PersistenceErrorKind::Constraint) => {
+                    PlatformWalletFFIResultCode::ErrorPersisterStoreConstraint
+                }
+                _ => PlatformWalletFFIResultCode::ErrorPersisterStoreFatal,
+            },
+            PlatformWalletError::PersisterRestore(..) => {
+                PlatformWalletFFIResultCode::ErrorPersisterRestore
+            }
             // NOTE: `MessageSigningFailed` is deliberately NOT matched, so it
             // falls to the `ErrorUnknown` catch-all below. Its causes are
             // internal invariant breaks (a public key that does not own the
@@ -1126,8 +1176,10 @@ impl From<dpp::platform_value::Error> for PlatformWalletFFIResult {
 
 impl From<platform_wallet::changeset::PersistenceError> for PlatformWalletFFIResult {
     fn from(e: platform_wallet::changeset::PersistenceError) -> Self {
-        let code = persistence_result_code(&e);
-        Self::err(code, format!("persistence error: {e}"))
+        Self::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("persistence error: {e}"),
+        )
     }
 }
 
@@ -1152,19 +1204,6 @@ impl From<anyhow::Error> for PlatformWalletFFIResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn result_code_discriminants_remain_stable() {
-        assert_eq!(
-            PlatformWalletFFIResultCode::ErrorPersisterTransient as i32,
-            50
-        );
-        assert_eq!(PlatformWalletFFIResultCode::ErrorPersisterFatal as i32, 49);
-        assert_eq!(
-            PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected as i32,
-            26
-        );
-    }
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 
@@ -1202,71 +1241,6 @@ mod tests {
             "before\0after",
         );
         assert!(!r.message.is_null());
-    }
-
-    fn persistence_error(
-        kind: platform_wallet::changeset::PersistenceErrorKind,
-    ) -> platform_wallet::changeset::PersistenceError {
-        platform_wallet::changeset::PersistenceError::backend_with_kind(kind, "test failure")
-    }
-
-    #[test]
-    fn should_map_persistence_errors_by_retry_classification() {
-        use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
-
-        let transient: PlatformWalletFFIResult =
-            persistence_error(PersistenceErrorKind::Transient).into();
-        assert_eq!(
-            transient.code,
-            PlatformWalletFFIResultCode::ErrorPersisterTransient
-        );
-
-        for error in [
-            persistence_error(PersistenceErrorKind::Fatal),
-            persistence_error(PersistenceErrorKind::Constraint),
-            PersistenceError::LockPoisoned,
-        ] {
-            let result: PlatformWalletFFIResult = error.into();
-            assert_eq!(
-                result.code,
-                PlatformWalletFFIResultCode::ErrorPersisterFatal
-            );
-        }
-    }
-
-    #[test]
-    fn should_map_platform_wallet_persister_errors_by_retry_classification() {
-        use platform_wallet::changeset::PersistenceErrorKind;
-
-        let cases = [
-            (
-                PlatformWalletError::PersisterLoad(persistence_error(
-                    PersistenceErrorKind::Transient,
-                )),
-                PlatformWalletFFIResultCode::ErrorPersisterTransient,
-            ),
-            (
-                PlatformWalletError::PersisterStore(persistence_error(PersistenceErrorKind::Fatal)),
-                PlatformWalletFFIResultCode::ErrorPersisterFatal,
-            ),
-            (
-                PlatformWalletError::PersisterRestore(Box::new(
-                    PlatformWalletError::PersisterStore(persistence_error(
-                        PersistenceErrorKind::Transient,
-                    )),
-                )),
-                PlatformWalletFFIResultCode::ErrorPersisterTransient,
-            ),
-            (
-                PlatformWalletError::PersisterRestore(Box::new(PlatformWalletError::WalletLocked)),
-                PlatformWalletFFIResultCode::ErrorPersisterFatal,
-            ),
-        ];
-
-        for (error, expected) in cases {
-            let result: PlatformWalletFFIResult = error.into();
-            assert_eq!(result.code, expected);
-        }
     }
 
     /// The three "can't-select-inputs" wallet variants (`NoSpendableInputs`,
@@ -1640,18 +1614,20 @@ mod tests {
     /// Code 26 is a promise about cleanup, not about the broadcaster's
     /// verdict: the row was untracked and the funding reservation released,
     /// so a rebuild is safe. An asset-lock build whose rejection raced a
-    /// concurrent resume keeps both — the guard retains the advanced row and
-    /// the release is skipped — and reports the unknown outcome instead. The
-    /// two must never collapse to one code across the boundary: a host that
-    /// read 26 there would rebuild from other UTXOs and create a second asset
-    /// lock beside a transaction the advance says reached the network.
+    /// concurrent resume keeps both — a guard retains the row, either
+    /// because the resume already advanced it or because the resume holds
+    /// its dispatch window, and the release is skipped — and reports the
+    /// unknown outcome instead. The two must never collapse to one code
+    /// across the boundary: a host that read 26 there would rebuild from
+    /// other UTXOs and create a second asset lock beside a transaction that
+    /// has either reached the network already or is about to.
     #[test]
     fn a_retained_asset_lock_row_reports_the_unknown_outcome_not_the_rejection() {
         let retained: PlatformWalletFFIResult =
             PlatformWalletError::TransactionBroadcastUnconfirmed(
                 "asset lock 0000..:0 stays tracked and reserved: the broadcast was \
-                 rejected, but a concurrent resume had already advanced the row past \
-                 Built, so the transaction may be on the network"
+                 rejected, but a concurrent resume is driving the same row, so the \
+                 transaction may be on the network or about to reach it"
                     .to_string(),
             )
             .into();
@@ -2088,6 +2064,215 @@ mod tests {
         };
         let result: PlatformWalletFFIResult = internal.into();
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
+    }
+
+    /// A `PersistenceError` of a chosen kind, as a backend would report it.
+    fn persistence_error(
+        kind: PersistenceErrorKind,
+    ) -> platform_wallet::changeset::PersistenceError {
+        platform_wallet::changeset::PersistenceError::backend_with_kind(kind, "database is locked")
+    }
+
+    /// The one persister outcome a host may retry unchanged.
+    #[test]
+    fn persister_load_transient_maps_to_code_49() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorPersisterLoadTransient as i32,
+            49
+        );
+
+        let result: PlatformWalletFFIResult = PlatformWalletError::from_load_failure(
+            persistence_error(PersistenceErrorKind::Transient),
+        )
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPersisterLoadTransient
+        );
+        assert!(
+            message_of(&result).contains("database is locked"),
+            "the typed Display must survive the conversion: {}",
+            message_of(&result)
+        );
+    }
+
+    /// None is retryable, and a read cannot violate a constraint.
+    #[test]
+    fn persister_load_non_transient_kinds_fold_onto_code_50() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorPersisterLoadFatal as i32,
+            50
+        );
+
+        for error in [
+            persistence_error(PersistenceErrorKind::Fatal),
+            persistence_error(PersistenceErrorKind::Constraint),
+            platform_wallet::changeset::PersistenceError::LockPoisoned,
+        ] {
+            let rendered = error.to_string();
+            let result: PlatformWalletFFIResult =
+                PlatformWalletError::from_load_failure(error).into();
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorPersisterLoadFatal,
+                "every non-transient load failure folds onto 50: {rendered}"
+            );
+        }
+    }
+
+    /// A persister attesting the atomic round contract, so the mapping tests
+    /// below exercise the code table rather than the re-issue gate.
+    fn atomic_persister() -> crate::persistence::FFIPersister {
+        extern "C" fn ok_begin(_ctx: *mut std::ffi::c_void, _wallet_id: *const u8) -> i32 {
+            0
+        }
+        extern "C" fn ok_end(
+            _ctx: *mut std::ffi::c_void,
+            _wallet_id: *const u8,
+            _success: bool,
+        ) -> i32 {
+            0
+        }
+
+        crate::persistence::FFIPersister::new_with_persistence_capabilities(
+            crate::persistence::PersistenceCallbacks {
+                on_changeset_begin_fn: Some(ok_begin),
+                on_changeset_end_fn: Some(ok_end),
+                ..Default::default()
+            },
+            platform_wallet::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS,
+        )
+    }
+
+    /// The busy-database registration case (`dashpay/platform#4365`): the
+    /// wallet does not retry the write, the host learns it may.
+    #[test]
+    fn persister_store_transient_maps_to_code_51() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorPersisterStoreTransient as i32,
+            51
+        );
+
+        let result: PlatformWalletFFIResult = PlatformWalletError::from_store_failure(
+            &atomic_persister(),
+            persistence_error(PersistenceErrorKind::Transient),
+        )
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreTransient
+        );
+
+        // Code 51 promises the host nothing was committed and the changeset
+        // may be re-sent. A persister that does not attest that never reaches
+        // it — the promise is enforced before the code is chosen, not after.
+        let unattested: PlatformWalletFFIResult = PlatformWalletError::from_store_failure(
+            &crate::persistence::FFIPersister::new(
+                crate::persistence::PersistenceCallbacks::default(),
+            ),
+            persistence_error(PersistenceErrorKind::Transient),
+        )
+        .into();
+        assert_eq!(
+            unattested.code,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreFatal,
+            "an unattested persister must not produce the re-issue invitation"
+        );
+    }
+
+    /// Permanent writes, plus the lock-poisoned case that has no kind.
+    #[test]
+    fn persister_store_fatal_maps_to_code_52() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorPersisterStoreFatal as i32,
+            52
+        );
+
+        for error in [
+            persistence_error(PersistenceErrorKind::Fatal),
+            platform_wallet::changeset::PersistenceError::LockPoisoned,
+        ] {
+            let result: PlatformWalletFFIResult =
+                PlatformWalletError::from_store_failure(&atomic_persister(), error).into();
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorPersisterStoreFatal
+            );
+        }
+    }
+
+    /// "Your data is wrong" must not arrive as "the storage engine is unhappy".
+    #[test]
+    fn persister_store_constraint_maps_to_code_53() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorPersisterStoreConstraint as i32,
+            53
+        );
+
+        let result: PlatformWalletFFIResult = PlatformWalletError::from_store_failure(
+            &atomic_persister(),
+            persistence_error(PersistenceErrorKind::Constraint),
+        )
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreConstraint
+        );
+        assert_ne!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreFatal
+        );
+    }
+
+    /// One code, and the wrapped error's rendering still reaches the host.
+    #[test]
+    fn persister_restore_maps_to_code_54() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorPersisterRestore as i32,
+            54
+        );
+
+        let result: PlatformWalletFFIResult = PlatformWalletError::from_restore_failure(
+            PlatformWalletError::WalletCreation("no address pool".to_string()),
+        )
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPersisterRestore
+        );
+        assert!(
+            message_of(&result).contains("no address pool"),
+            "the wrapped error's Display is the only detail channel: {}",
+            message_of(&result)
+        );
+    }
+
+    /// A host pins these integers, so a collision with an already-allocated
+    /// code silently re-labels a shipped meaning.
+    #[test]
+    fn persister_codes_occupy_their_own_slots() {
+        let persister = [
+            PlatformWalletFFIResultCode::ErrorPersisterLoadTransient as i32,
+            PlatformWalletFFIResultCode::ErrorPersisterLoadFatal as i32,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreTransient as i32,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreFatal as i32,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreConstraint as i32,
+            PlatformWalletFFIResultCode::ErrorPersisterRestore as i32,
+        ];
+        assert_eq!(persister, [49, 50, 51, 52, 53, 54]);
+
+        // The highest code allocated before this block, plus the terminal
+        // sentinels.
+        for taken in [
+            PlatformWalletFFIResultCode::ErrorAssetLockInputContested as i32,
+            PlatformWalletFFIResultCode::NotFound as i32,
+            PlatformWalletFFIResultCode::ErrorUnknown as i32,
+        ] {
+            assert!(
+                !persister.contains(&taken),
+                "persister codes must not collide with {taken}"
+            );
+        }
     }
 
     /// Read a result's message back as an owned `String`. Every

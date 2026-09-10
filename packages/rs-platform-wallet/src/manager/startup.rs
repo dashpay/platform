@@ -222,9 +222,9 @@ pub enum WalletStartupStatus {
     /// The distinction from [`Self::Ready`] is the whole point: an identity
     /// hiding at an unanswered index is invisible to everything that consults
     /// local state, so calling this launch `Ready` promises an identity set
-    /// that was never established. That is #4365's exact shape, one level up —
-    /// the wallet has *an* identity, so the warm-launch shortcut and every
-    /// tally signal read clean while a second identity stays lost.
+    /// that was never established. The lost-second-identity shape recurs one
+    /// level up: the wallet has *an* identity, so the warm-launch shortcut
+    /// and every tally signal read clean while a second identity stays lost.
     ///
     /// Not terminal: the verdict stays on record, so the next launch re-opens
     /// the question instead of taking the shortcut. Nothing about the contact
@@ -242,10 +242,9 @@ impl WalletStartupStatus {
     /// the failure is local and will still be there next time, or the scan
     /// answered everything it probed.
     ///
-    /// This is the distinction platform#4352 made expressible: before it, "no
-    /// identity exists" and "we never got through" both arrived as an empty
-    /// success, so clients either retried a proven-empty scan forever or cached
-    /// a network failure as fact.
+    /// The distinction matters: if "no identity exists" and "we never got
+    /// through" both arrived as an empty success, clients would either retry a
+    /// proven-empty scan forever or cache a network failure as fact.
     pub fn discovery_worth_retrying(self) -> bool {
         matches!(self, Self::PartialNoIdentity | Self::IdentityScanIncomplete)
     }
@@ -412,12 +411,10 @@ impl StartupTally {
     /// identity there is nothing to have drained.
     pub(crate) fn status(&self) -> WalletStartupStatus {
         // Both of these say "the identity question is still open", so neither
-        // may decide the verdict once an identity is known. That used to be
-        // structurally impossible — discovery ran only when nothing was on
-        // file, and every branch that found something returned early — but a
-        // rescan forced by an incomplete prior scan reaches them with an
-        // identity already recorded, and reporting *that* launch as
-        // `DiscoveryFailed` would hide a sync and drain that both ran.
+        // may decide the verdict once an identity is known. A rescan forced
+        // by an incomplete prior scan reaches them with an identity already
+        // recorded, and reporting *that* launch as `DiscoveryFailed` would
+        // hide a sync and drain that both ran.
         //
         // A local fault outranks unreachability: both leave the question open,
         // but only this one tells the client not to bother asking again.
@@ -451,11 +448,11 @@ impl StartupTally {
         // Last, and deliberately so: every check above describes work this
         // launch did, while this one describes an identity set the wallet is
         // on record as not having fully established. Ranking it here is what
-        // makes the fix additive — the only run whose status changes is the
-        // one that used to come back `Ready`, which is precisely the run that
-        // was lying. Everything else keeps the status a client already
-        // handles, and reads `identity_scan_incomplete` on the outcome if it
-        // cares.
+        // keeps the check additive — the only run it reclassifies is the one
+        // that would otherwise come back `Ready`, which is precisely the run
+        // that would be lying. Everything else keeps the status a client
+        // already handles, and reads `identity_scan_incomplete` on the outcome
+        // if it cares.
         //
         // `Ready` is the promise that a contact payment has everything it
         // needs. An unanswered index can hide a whole identity from every
@@ -550,10 +547,10 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         //    scan it does not need — unless the scan that produced those
         //    identities is on record as having left indices unanswered, in
         //    which case "we already have one" is not evidence that we have
-        //    them all. A wallet whose second identity was hidden by a failed
-        //    probe used to stay that way for the life of the installation,
-        //    because this shortcut is the only thing that would have looked
-        //    again (dashpay/platform#4365).
+        //    them all. Without that exception a wallet whose second identity
+        //    was hidden by a failed probe stays that way for the life of the
+        //    installation, because this shortcut is the only thing that would
+        //    look again.
         //
         //    Only a recorded incomplete scan re-opens the question. An absent
         //    verdict keeps the shortcut, so hosts that do not persist it are
@@ -783,8 +780,8 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
     /// An `Ok` result ends the loop whether or not it found anything: Platform
     /// answered, and an empty answer is a proof of absence that rescanning
     /// cannot overturn. Only [`PlatformWalletError::IdentityDiscoveryIncomplete`]
-    /// — the error platform#4352 introduced for a scan that never got through
-    /// — is worth another attempt.
+    /// — the error for a scan that never got through — is worth another
+    /// attempt.
     async fn discover_identity_with_backoff(
         &self,
         wallet_id: &WalletId,
@@ -863,9 +860,9 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
                 // prefix of the index space and answered the rest of it not at
                 // all, which is exactly the state a later launch must not
                 // mistake for a settled identity set. Without this the
-                // budget-expiry path reproduces #4365 in its own right — it
-                // consults local state, finds the sighting that was persisted
-                // before cancellation, and records a warm launch.
+                // budget-expiry path hides a second identity in its own right
+                // — it consults local state, finds the sighting that was
+                // persisted before cancellation, and records a warm launch.
                 self.record_identity_scan_cut_off(wallet_id).await;
                 // Sightings persist incrementally, so an abandoned scan may
                 // still have folded an identity in before it was cut off.
@@ -971,8 +968,8 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
     ///
     /// Mirrors what `discover` publishes for itself, retry policy included;
     /// needed separately because a scan dropped mid-await never reaches its own
-    /// bookkeeping. This is the verdict least affordable to lose — it is the
-    /// one that re-opens the identity question on the next launch.
+    /// bookkeeping. This is the verdict least affordable to lose — the one that
+    /// re-opens the identity question on the next launch.
     async fn record_identity_scan_cut_off(&self, wallet_id: &WalletId) {
         // Coverage of nothing: the scan was dropped mid-await, so it answered
         // no index and may not clear one an earlier scan left open.
@@ -990,24 +987,15 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             identity_scan_state: Some(recorded),
             ..Default::default()
         };
-        // Transient failures are ridden out on the registration path's bounded
-        // policy; the buffer preserves the changeset, so the retries re-drive
-        // it through `flush`. The final outcome is still swallowed — an
-        // abandoned scan must not turn a shutdown into an error.
-        let mut changeset_slot = Some(changeset);
-        let outcome = crate::manager::retry_transient(|| match changeset_slot.take() {
-            Some(cs) => self.persister.store(*wallet_id, cs),
-            None => self.persister.flush(*wallet_id),
-        })
-        .await;
-        if let Err(e) = outcome {
-            tracing::error!(
+        // Single attempt, not retried — the outcome is logged and swallowed
+        // either way: an abandoned scan must not turn a shutdown into an error.
+        if let Err(e) = self.persister.store(*wallet_id, changeset) {
+            tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 transient = e.is_transient(),
                 error = %e,
-                "abandoned scan's verdict could not be persisted after retries; the next \
-                 launch will take the warm shortcut over an identity set nothing proved \
-                 complete"
+                "abandoned scan's verdict could not be persisted; the next launch will take \
+                 the warm shortcut over an identity set nothing proved complete"
             );
         }
     }
@@ -1036,8 +1024,8 @@ mod tests {
         );
     }
 
-    /// The opposite case, and the reason the distinction is expressible at all
-    /// (platform#4352): never reaching Platform is not evidence of absence.
+    /// The opposite case, and the reason the distinction exists at all: never
+    /// reaching Platform is not evidence of absence.
     #[test]
     fn unreachable_discovery_is_not_settled() {
         let mut tally = StartupTally::default();
@@ -1227,11 +1215,11 @@ mod tests {
     /// the rescan failing is not nothing either: it means the scan gap that
     /// forced it is still there.
     ///
-    /// This test previously asserted `Ready` for the unreachable half, pinning
-    /// the very defect the `identity_scan_incomplete` signal exists to close —
-    /// a launch that knows its identity set is partial reporting the status
-    /// that promises it is complete. Both halves keep their real subject (the
-    /// identity must not be re-opened) and now assert the gap is reported.
+    /// Asserting `Ready` for the unreachable half would pin the very defect
+    /// the `identity_scan_incomplete` signal exists to close — a launch that
+    /// knows its identity set is partial reporting the status that promises it
+    /// is complete. Both halves keep their real subject (the identity must not
+    /// be re-opened) and assert the gap is reported.
     #[test]
     fn a_failed_rescan_reports_the_scan_gap_without_reopening_the_identity() {
         // The scenario the name describes: the prior verdict said incomplete,
@@ -1392,8 +1380,8 @@ mod tests {
     }
 
     fn seed_for(phrase: &str) -> [u8; 64] {
-        use key_wallet::mnemonic::{Language, Mnemonic};
-        Mnemonic::from_phrase(phrase, Language::English)
+        use key_wallet::mnemonic::Mnemonic;
+        Mnemonic::from_phrase(phrase)
             .expect("valid test mnemonic")
             .to_seed("")
     }
@@ -1631,7 +1619,7 @@ mod tests {
         assert!(!report.is_complete());
         assert!(report.is_fully_degraded());
 
-        // The back-compat return shape can no longer render this as success.
+        // The back-compat return shape must not render this as success.
         let err = wallet
             .identity()
             .dashpay()
@@ -1701,10 +1689,11 @@ mod tests {
     ///
     /// Driven with a zero budget so no branch depends on network timing: every
     /// step is abandoned at its deadline and what is asserted is purely which
-    /// verdict came out. ("No verdict at all" is not reachable here — the
-    /// harness's mock SDK answers no probe, so creating the wallet already
-    /// leaves one — and it is the accessor's own documented contract that an
-    /// absent verdict reads as unknown rather than incomplete.)
+    /// verdict came out. The incomplete verdict is planted through the same
+    /// `record_identity_scan` the scans use: registration records none (the
+    /// wallet is external-signable by then, so the resident-key probe never
+    /// runs), and it is the accessor's own documented contract that an absent
+    /// verdict reads as unknown rather than incomplete.
     #[tokio::test]
     async fn a_recorded_incomplete_scan_reaches_the_outcome() {
         use crate::changeset::IdentityScanStateEntry;
@@ -1719,19 +1708,20 @@ mod tests {
         let owning =
             SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
 
-        // The wallet arrives with an unanswered index on record — a real
-        // incomplete scan, produced by the mock SDK refusing every probe
-        // during wallet creation, not a hand-planted flag.
+        // The wallet arrives with an unanswered index on record — the verdict
+        // an abandoned scan leaves behind (index 0 probed, unanswered),
+        // recorded the way the scans record theirs.
         let covered_through;
         {
-            let wm = manager.wallet_manager.read().await;
-            let verdict = wm
-                .get_wallet_info(&wallet_id)
-                .expect("wallet info")
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .record_identity_scan(wallet_id, IdentityScanStateEntry::incomplete(0, 1, vec![0]));
+            let verdict = info
                 .identity_manager
                 .identity_scan_state(&wallet_id)
                 .cloned()
-                .expect("precondition: the creation scan recorded a verdict");
+                .expect("precondition: the planted verdict is on record");
             assert!(
                 !verdict.complete,
                 "precondition: that verdict must be the incomplete one"
@@ -1773,7 +1763,7 @@ mod tests {
             let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
             // Coverage matters: a verdict only clears the gaps it walked, so
             // this stand-in for a clean rescan has to span the same indices
-            // the creation scan left unanswered.
+            // the planted verdict left unanswered.
             info.identity_manager.record_identity_scan(
                 wallet_id,
                 IdentityScanStateEntry::completed(0, covered_through),

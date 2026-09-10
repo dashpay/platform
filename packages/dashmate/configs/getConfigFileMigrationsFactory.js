@@ -10,6 +10,7 @@ import {
   SSL_PROVIDERS,
 } from '../src/constants.js';
 import { stockImagePattern, historicalStockImagePattern } from '../src/config/stockImages.js';
+import generateRandomString from '../src/util/generateRandomString.js';
 
 /**
  * @param {HomeDir} homeDir
@@ -1715,6 +1716,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               providerConfigs.letsencrypt.acmeDirectoryUrl = base.get(
                 'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
               );
+            }
+
+            // Backfill Tor without silently enabling it on existing nodes.
+            // Setup offers it separately; preserve any existing Tor settings.
+            if (options.core && options.core.tor === undefined) {
+              options.core.tor = base.getStored('core.tor');
+              options.core.tor.enabled = false;
+              options.core.tor.control.password = generateRandomString(12);
             }
           });
 

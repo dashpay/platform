@@ -222,8 +222,8 @@ mod tests {
 
     /// An address that previously carried a cached balance and is proven
     /// absent this pass must produce a single zeroed entry (balance 0,
-    /// nonce 0). This is the chain-reset bug: without it the stale
-    /// balance is never written back to 0.
+    /// nonce 0). Without it a stale balance is never written back to 0
+    /// after a chain reset.
     #[test]
     fn absent_previously_funded_address_emits_zero_entry() {
         let mut before = BTreeMap::new();

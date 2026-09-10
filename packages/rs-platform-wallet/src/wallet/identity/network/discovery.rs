@@ -151,13 +151,6 @@ impl Default for IdentityDiscoveryOptions {
 }
 
 impl IdentityWallet {
-    /// Thin wrapper around [`Self::discover`] using default options —
-    /// resume from the cached scan index, stop after `IDENTITY_GAP_LIMIT`
-    /// consecutive misses. Kept for back-compat with existing callers.
-    pub async fn sync(&self) -> Result<Vec<Identity>, PlatformWalletError> {
-        self.discover(IdentityDiscoveryOptions::default()).await
-    }
-
     /// Discover identities owned by this wallet via gap-limit scanning.
     ///
     /// For each identity index starting at `opts.start_index` (or one
@@ -384,12 +377,13 @@ impl IdentityWallet {
         // the verdict below. Every `?` in here is a LOCAL fault — a wallet that
         // left the manager, a persistence write that failed — not a probe that
         // went unanswered, and each of them abandons the scan part-way through
-        // the index space. Returning straight out left no verdict at all, and
-        // "unknown" is what keeps the warm-launch shortcut: the next launch saw
-        // the identities this scan had already folded in, took the shortcut,
-        // and never looked at the indices it never reached. That is #4365's
-        // shape on the local-fault path, so the error is carried out to the
-        // publish below rather than thrown from the middle of the walk.
+        // the index space. Returning straight out would leave no verdict at
+        // all, and "unknown" is what keeps the warm-launch shortcut: the next
+        // launch sees the identities this scan already folded in, takes the
+        // shortcut, and never looks at the indices it never reached. That is
+        // the missed-identity shape on the local-fault path, so the error is
+        // carried out to the publish below rather than thrown from the middle
+        // of the walk.
         let scan_outcome: Result<(), PlatformWalletError> = async {
             while tally.should_continue(gap_limit) {
                 // Derive the MASTER auth pubkey hash for this identity index
@@ -643,11 +637,7 @@ impl IdentityWallet {
     /// survival across a restart, and it must not be allowed to fail the scan
     /// that just succeeded.
     ///
-    /// Best-effort is not one-shot, though. A backend that is merely busy
-    /// would otherwise cost the verdict its durability outright, which is the
-    /// gap the verdict exists to close (dashpay/platform#4365), so a transient
-    /// failure is ridden out on the same bounded policy the registration path
-    /// uses before the outcome is swallowed.
+    /// `store` is attempted once; persistence failures are logged and swallowed.
     async fn publish_scan_verdict(
         &self,
         wallet_id: crate::wallet::platform_wallet::WalletId,
@@ -677,23 +667,14 @@ impl IdentityWallet {
             identity_scan_state: Some(recorded),
             ..Default::default()
         };
-        // On a transient `store` failure the persister keeps the changeset
-        // buffered (its documented contract), so the retries re-drive that
-        // same write through `flush` rather than handing it over twice.
-        let mut changeset_slot = Some(changeset);
-        let outcome = crate::manager::retry_transient(|| match changeset_slot.take() {
-            Some(cs) => self.persister.store(cs),
-            None => self.persister.flush(),
-        })
-        .await;
-        if let Err(e) = outcome {
-            tracing::error!(
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 transient = e.is_transient(),
                 error = %e,
-                "identity-scan verdict could not be persisted after retries; a partial scan \
-                 will not be retried after a restart, so an identity at an unanswered index \
-                 stays hidden until a later scan publishes a verdict that lands"
+                "identity-scan verdict could not be persisted; a partial scan will not be \
+                 retried after a restart, so an identity at an unanswered index stays hidden \
+                 until a later scan publishes a verdict that lands"
             );
         }
     }
@@ -703,9 +684,9 @@ impl IdentityWallet {
 ///
 /// A scan answers "which identities does this seed own", and there are three
 /// endings, not two: it found some, it confirmed there are none, or it never
-/// got an answer. The third used to be reported as the second — a failed probe
-/// incremented the same miss counter as an empty index, so a scan that reached
-/// no one at all returned "this seed owns no identity". Callers cannot retry
+/// got an answer. The third must not be reported as the second: if a failed
+/// probe incremented the same miss counter as an empty index, a scan that
+/// reached no one at all would return "this seed owns no identity". Callers cannot retry
 /// what they were told is a definitive answer, so a few seconds of network
 /// trouble after restore-from-seed cost a whole session's DashPay state.
 ///
@@ -866,7 +847,7 @@ mod tests {
     use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::Identifier;
     use key_wallet::bip32::ExtendedPrivKey;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::Network;
     use std::collections::BTreeMap;
 
@@ -874,7 +855,7 @@ mod tests {
          abandon abandon abandon abandon abandon about";
 
     fn test_master() -> ExtendedPrivKey {
-        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("mnemonic");
         let seed = mnemonic.to_seed("");
         ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master xpriv")
     }
@@ -1155,10 +1136,10 @@ mod tests {
         assert!(!tally.is_trustworthy());
     }
 
-    /// The #4365 shape: an identity at index 0, no answer at index 1. The
-    /// scan is trustworthy — its findings are real — and it is NOT complete,
-    /// and those are different questions. Reporting only the first is what let
-    /// an identity at the unanswered index stay hidden for the life of an
+    /// The missed-identity shape: an identity at index 0, no answer at index
+    /// 1. The scan is trustworthy — its findings are real — and it is NOT
+    /// complete, and those are different questions. Reporting only the first
+    /// lets an identity at the unanswered index stay hidden for the life of an
     /// installation.
     #[test]
     fn a_scan_that_found_something_despite_a_failed_probe_is_trustworthy_but_incomplete() {
@@ -1364,11 +1345,11 @@ mod tests {
     /// probe hash from resident key material, and this wallet is
     /// external-signable (its seed lives outside the manager), so the derive
     /// fails on the first index. That is one of the `?` early returns above
-    /// `publish_scan_verdict`, and before this fix every one of them returned
-    /// without publishing anything at all: the previous verdict stood, and a
-    /// verdict that says "complete" is exactly what keeps the warm-launch
-    /// shortcut armed. The wallet would then trust an index space this scan
-    /// abandoned — #4365's shape reached from the local-fault side.
+    /// `publish_scan_verdict`; if any of them returned without publishing
+    /// anything at all, the previous verdict would stand, and a verdict that
+    /// says "complete" is exactly what keeps the warm-launch shortcut armed.
+    /// The wallet would then trust an index space this scan abandoned — the
+    /// missed-identity shape reached from the local-fault side.
     #[tokio::test]
     async fn a_local_fault_mid_scan_replaces_a_stale_complete_verdict() {
         use crate::changeset::IdentityScanStateEntry;

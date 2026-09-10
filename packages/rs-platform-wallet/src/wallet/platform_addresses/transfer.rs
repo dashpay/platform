@@ -394,8 +394,8 @@ impl PlatformAddressWallet {
         };
 
         // Lower fee_strategy AFTER augmentation so indexes resolve against
-        // the FINAL outputs map. Lowering before would reintroduce the
-        // misrouting bug this wrapper exists to prevent.
+        // the FINAL outputs map. Lowering before would cause the
+        // misrouting this wrapper exists to prevent.
         let indexed_fee_strategy = fee_strategy.to_indexed(&inputs_for_resolve, &final_outputs)?;
 
         // Replicate the Auto path's ReduceOutput fee-headroom guard so callers
