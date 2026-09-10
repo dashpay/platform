@@ -1,3 +1,7 @@
+use super::basic::identity::InvalidAuthenticationScopeErrorWasm;
+use super::signature::ScopedKeyExpiredErrorWasm;
+use super::signature::ScopedKeyNonBatchErrorWasm;
+use super::signature::ScopedKeyOutOfScopeErrorWasm;
 use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm,
     InvalidSignaturePublicKeyPurposeErrorWasm, JsonSchemaErrorWasm,
@@ -656,6 +660,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         InvalidIdentityAssetLockTransactionError(e) => {
             InvalidIdentityAssetLockTransactionErrorWasm::from(e).into()
         }
+        dpp::consensus::basic::BasicError::InvalidAuthenticationScopeError(e) => {
+            InvalidAuthenticationScopeErrorWasm::from(e).into()
+        }
         IdentityAssetLockTransactionTooManyInputsError(e) => {
             IdentityAssetLockTransactionTooManyInputsErrorWasm::from(e).into()
         }
@@ -1048,6 +1055,11 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
         SignatureError::BasicBLSError(err) => BasicBLSErrorWasm::from(err).into(),
         SignatureError::InvalidSignaturePublicKeyPurposeError(err) => {
             InvalidSignaturePublicKeyPurposeErrorWasm::from(err).into()
+        }
+        SignatureError::ScopedKeyNonBatchError(err) => ScopedKeyNonBatchErrorWasm::from(err).into(),
+        SignatureError::ScopedKeyExpiredError(err) => ScopedKeyExpiredErrorWasm::from(err).into(),
+        SignatureError::ScopedKeyOutOfScopeError(err) => {
+            ScopedKeyOutOfScopeErrorWasm::from(err).into()
         }
         SignatureError::UncompressedPublicKeyNotAllowedError(err) => {
             UncompressedPublicKeyNotAllowedErrorWasm::from(err).into()
