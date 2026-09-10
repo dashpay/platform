@@ -14,6 +14,7 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 };
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use drive::drive::document::lifecycle::DocumentLifecycleState;
 use drive::drive::document::query::query_contested_documents_storage::QueryContestedDocumentsOutcomeV0Methods;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::drive::Drive;
@@ -212,6 +213,54 @@ fn fetch_documents_for_transitions_knowing_contract_and_document_type_v1(
 // ============================================================================
 // fetch_document_with_id
 // ============================================================================
+
+/// Versioned facade for `fetch_keep_history_document_lifecycle`.
+///
+/// Classifies one keep-history document as active, deleted, erasing or absent
+/// and bills the reads it performed. Every stateful check that has to tell a
+/// deleted document from one that never existed goes through this; a document
+/// type that keeps no history has no lifecycle to read and must not reach it.
+pub(crate) fn fetch_keep_history_document_lifecycle(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    id: Identifier,
+    epoch: &Epoch,
+    execution_context: &mut StateTransitionExecutionContext,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<DocumentLifecycleState, Error> {
+    match platform_version
+        .drive_abci
+        .validation_and_processing
+        .state_transitions
+        .batch_state_transition
+        .fetch_keep_history_document_lifecycle
+    {
+        0 => {
+            let (state, fee_result) = drive
+                .fetch_document_lifecycle(
+                    contract,
+                    document_type,
+                    id,
+                    Some(epoch),
+                    transaction,
+                    platform_version,
+                )
+                .map_err(Error::Drive)?;
+            execution_context
+                .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+            Ok(state)
+        }
+        version => Err(Error::Execution(
+            crate::error::execution::ExecutionError::UnknownVersionMismatch {
+                method: "fetch_keep_history_document_lifecycle".to_string(),
+                known_versions: vec![0],
+                received: version,
+            },
+        )),
+    }
+}
 
 /// Versioned facade for `fetch_document_with_id`.
 ///
