@@ -1,6 +1,10 @@
-//! Regression tests for the `documentsKeepHistory` + `canBeDeleted`
-//! cross-flag rule added in `try_from_schema` v3 (protocol version 14).
+//! The keep-history document lifecycle as generation 3 admits it: a
+//! keep-history type may allow deletion, may additionally allow erasure, and
+//! may not carry a contested index.
 use super::*;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use platform_value::platform_value;
 
 /// Parses through the public dispatcher at the given protocol version so
@@ -50,159 +54,189 @@ fn keep_history_deletable_schema() -> Value {
     })
 }
 
-/// `documentsKeepHistory: true` + `canBeDeleted: true` is
-/// self-contradictory: rs-drive unconditionally refuses to delete
-/// a document whose type keeps history
-/// (`InvalidDeletionOfDocumentThatKeepsHistory`), so `canBeDeleted:
-/// true` advertises a capability the storage layer will always
-/// reject. The parser must reject the combination at contract
-/// creation time so an SDK user gets a clean validation error
-/// instead of the delete failing as an internal error at execution.
-///
-/// With the `validation` feature enabled the rejection must surface
-/// as `ProtocolError::ConsensusError` (not bare
-/// `ProtocolError::DataContractError`) — drive-abci's
-/// `transform_into_action_v0` only turns the consensus variant into
-/// a clean invalid (paid) transition with a bump action; the
-/// data-contract-error variant propagates as an internal execution
-/// error in validator mode.
+/// The two settings describe different things and no longer contradict each
+/// other: history decides what is retained, deletion decides what ordinary
+/// reads can still see. A delete on such a type removes the document from
+/// every ordinary read and leaves its revisions readable.
 #[test]
-fn doctype_keep_history_with_can_be_deleted_rejected() {
-    let result = parse(keep_history_deletable_schema());
+fn should_accept_a_keep_history_type_that_allows_deletion() {
+    let document_type = parse(keep_history_deletable_schema())
+        .expect("a keep-history type may allow deletion from protocol version 14");
+    assert!(document_type.documents_keep_history());
+    assert!(document_type.documents_can_be_deleted());
     assert!(
-        result.is_err(),
-        "documentsKeepHistory: true + canBeDeleted: true must be rejected"
-    );
-    let err = result.unwrap_err();
-    let msg = format!("{:?}", err);
-    assert!(
-        msg.contains("documentsKeepHistory") && msg.contains("canBeDeleted"),
-        "error must reference both documentsKeepHistory and canBeDeleted; got {msg}"
-    );
-    #[cfg(feature = "validation")]
-    assert!(
-        matches!(err, ProtocolError::ConsensusError(_)),
-        "with `validation` feature the rejection must be ProtocolError::ConsensusError so \
-         drive-abci's transform_into_action turns it into an invalid (paid) transition \
-         with a bump action rather than propagating as an internal execution error; got \
-         {err:?}"
+        !document_type.documents_can_be_erased(),
+        "erasure is not implied by deletion; it has to be asked for"
     );
 }
 
-/// Omitting `canBeDeleted` exercises the contract-config default boundary:
-/// the latest config defaults it to `true`, so a keep-history document type
-/// remains contradictory and must be rejected during full validation.
+/// The contract config defaults `canBeDeleted` to true, so a keep-history type
+/// that says nothing about deletion is deletable — the same value it carried
+/// before protocol 14, now with a delete that works.
 #[test]
-fn doctype_keep_history_with_can_be_deleted_omitted_rejected() {
+fn should_accept_a_keep_history_type_that_omits_the_delete_flag() {
     let schema = platform_value!({
         "type": "object",
         "properties": {
-            "label": {
-                "type": "string",
-                "maxLength": 50,
-                "position": 0,
-            },
+            "label": {"type": "string", "maxLength": 50, "position": 0},
         },
         "additionalProperties": false,
         "documentsKeepHistory": true,
     });
-    let result = parse(schema);
-    assert!(
-        result.is_err(),
-        "omitted canBeDeleted must default to true and conflict with documentsKeepHistory"
-    );
-    let msg = format!("{:?}", result.unwrap_err());
-    assert!(
-        msg.contains("documentsKeepHistory") && msg.contains("canBeDeleted"),
-        "error must reference both documentsKeepHistory and defaulted canBeDeleted; got {msg}"
-    );
-}
-
-/// `documentsKeepHistory: true` + `canBeDeleted: true` is rejected
-/// ONLY when `full_validation: true`. With `full_validation: false`
-/// (the restore / migration / cache-warmup path) the same schema must
-/// parse cleanly so already-deployed contradictory contracts continue
-/// to load at v14+ — the drive-abci delete-transition guard turns
-/// their deletes into clean invalid (paid) transitions instead of
-/// rejecting them as internal errors at the contract-load layer.
-#[test]
-fn doctype_keep_history_with_can_be_deleted_accepted_without_full_validation() {
-    let document_type = parse_at_version(keep_history_deletable_schema(), 14, false).expect(
-        "documentsKeepHistory: true + canBeDeleted: true must be accepted when \
-         full_validation: false so already-deployed contradictory contracts continue to load",
-    );
+    let document_type = parse(schema).expect("the omitted flag defaults to deletable");
     assert!(document_type.documents_keep_history());
     assert!(document_type.documents_can_be_deleted());
 }
 
-/// Protocol version 12 routes to `try_from_schema` v2, which has no
-/// cross-flag rule — the combination must stay accepted there even under
-/// full validation, because v12 is released and consensus-frozen:
-/// contracts accepted at v12 must replay identically.
+/// A keep-history type that withholds deletion is still valid: its documents
+/// are append-only and can never leave ordinary reads.
 #[test]
-fn doctype_keep_history_with_can_be_deleted_accepted_at_protocol_version_12() {
-    let document_type = parse_at_version(keep_history_deletable_schema(), 12, true).expect(
-        "documentsKeepHistory: true + canBeDeleted: true must stay accepted at protocol \
-         version 12 (consensus-frozen v2 parser) for replay compatibility",
-    );
-    assert!(document_type.documents_keep_history());
-    assert!(document_type.documents_can_be_deleted());
-}
-
-/// Guard against an over-broad fix: `documentsKeepHistory: true` +
-/// `canBeDeleted: false` is consistent (the doctype is append-only)
-/// and must continue to parse cleanly. The sibling omitted-key regression
-/// covers the distinct default-`true` boundary and therefore expects
-/// rejection rather than acceptance.
-#[test]
-fn doctype_keep_history_with_can_be_deleted_false_accepted() {
+fn should_accept_a_keep_history_type_that_withholds_deletion() {
     let schema = platform_value!({
         "type": "object",
         "properties": {
-            "label": {
-                "type": "string",
-                "maxLength": 50,
-                "position": 0,
-            },
+            "label": {"type": "string", "maxLength": 50, "position": 0},
         },
         "additionalProperties": false,
         "documentsKeepHistory": true,
         "canBeDeleted": false,
     });
-    let document_type = parse(schema)
-        .expect("documentsKeepHistory: true + canBeDeleted: false is consistent and must parse");
+    let document_type = parse(schema).expect("an append-only keep-history type is valid");
     assert!(document_type.documents_keep_history());
     assert!(!document_type.documents_can_be_deleted());
 }
 
-/// Symmetric guard: `canBeDeleted: true` on a non-keep-history
-/// doctype must continue to parse cleanly. Catches a predicate that
-/// triggers on `canBeDeleted: true` alone instead of the AND.
+/// The released parsers never saw the rule and must keep parsing the same
+/// schemas the same way, so a historical block replays identically.
 #[test]
-fn doctype_can_be_deleted_without_keep_history_accepted() {
+fn should_accept_a_keep_history_deletable_type_at_released_protocol_versions() {
+    for protocol in [12, 13] {
+        let document_type = parse_at_version(keep_history_deletable_schema(), protocol, true)
+            .unwrap_or_else(|error| {
+                panic!("protocol {protocol} must still accept the schema: {error:?}")
+            });
+        assert!(document_type.documents_keep_history());
+        assert!(document_type.documents_can_be_deleted());
+    }
+}
+
+fn erasable_schema(keep_history: bool, can_be_deleted: bool, can_be_erased: bool) -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "label": {"type": "string", "maxLength": 50, "position": 0},
+        },
+        "additionalProperties": false,
+        "documentsKeepHistory": keep_history,
+        "canBeDeleted": can_be_deleted,
+        "canBeErased": can_be_erased,
+    })
+}
+
+#[test]
+fn should_accept_an_erasable_keep_history_deletable_type() {
+    let document_type =
+        parse(erasable_schema(true, true, true)).expect("the admitted combination must parse");
+    assert!(document_type.documents_can_be_erased());
+}
+
+/// Erasure purges retained revisions of a document that has already been
+/// deleted, so a type with no history has nothing to purge and a type whose
+/// documents can never be deleted can never reach the state erasure acts on.
+/// Neither is silently ignored.
+#[test]
+fn should_reject_erasure_without_history_or_without_deletion() {
+    for (keep_history, can_be_deleted) in [(false, true), (true, false), (false, false)] {
+        let error = parse(erasable_schema(keep_history, can_be_deleted, true)).unwrap_err();
+        let message = format!("{error:?}");
+        assert!(
+            message.contains("canBeErased"),
+            "the error must name the flag the author has to change; got {message}"
+        );
+    }
+}
+
+/// Erasure defaults to off: a type that says nothing about it cannot have its
+/// revisions purged.
+#[test]
+fn should_default_erasure_to_off() {
+    let document_type = parse(keep_history_deletable_schema()).expect("parses");
+    assert!(!document_type.documents_can_be_erased());
+}
+
+/// The keyword does not exist in the earlier meta-schemas, so a contract that
+/// declares it is refused there rather than silently parsing without it.
+#[test]
+fn should_reject_the_erasure_keyword_at_released_protocol_versions() {
+    for protocol in [12, 13] {
+        assert!(
+            parse_at_version(erasable_schema(true, true, true), protocol, true).is_err(),
+            "protocol {protocol} has no canBeErased keyword"
+        );
+    }
+}
+
+/// A contested resource is awarded outside transition validation, at an id
+/// derived from the winner rather than from the contested values, so that award
+/// can land on an id whose retained history already exists. The two are kept
+/// apart at registration until the contested machinery can handle it.
+#[test]
+fn should_reject_a_keep_history_type_that_carries_a_contested_index() {
     let schema = platform_value!({
         "type": "object",
         "properties": {
-            "label": {
-                "type": "string",
-                "maxLength": 50,
-                "position": 0,
-            },
+            "label": {"type": "string", "maxLength": 50, "position": 0},
         },
+        "indices": [
+            {
+                "name": "byLabel",
+                "properties": [{"label": "asc"}],
+                "unique": true,
+                "contested": {
+                    "fieldMatches": [{"field": "label", "regexPattern": "^[a-z]{3,10}$"}],
+                    "resolution": 0,
+                },
+            },
+        ],
+        "required": ["label"],
         "additionalProperties": false,
-        "canBeDeleted": true,
+        "documentsMutable": false,
+        "documentsKeepHistory": true,
+        "canBeDeleted": false,
     });
-    let document_type =
-        parse(schema).expect("canBeDeleted: true without documentsKeepHistory must parse cleanly");
-    assert!(!document_type.documents_keep_history());
-    assert!(document_type.documents_can_be_deleted());
+    let error = parse(schema).expect_err("a contested keep-history type must be refused");
+    let message = format!("{error:?}");
+    assert!(
+        message.contains("contested"),
+        "the error must say which index is the problem; got {message}"
+    );
 }
+
+/// The same index without history is unaffected: the refusal is about the
+/// combination, not about contested indexes.
 #[test]
-fn should_accept_contradictory_keep_history_schema_at_protocol_13() {
-    let document_type = parse_at_version(keep_history_deletable_schema(), 13, true)
-        .expect("released protocol 13 must still accept the schema");
-    assert!(document_type.documents_keep_history());
-    assert!(document_type.documents_can_be_deleted());
+fn should_accept_a_contested_index_without_history() {
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "label": {"type": "string", "maxLength": 50, "position": 0},
+        },
+        "indices": [
+            {
+                "name": "byLabel",
+                "properties": [{"label": "asc"}],
+                "unique": true,
+                "contested": {
+                    "fieldMatches": [{"field": "label", "regexPattern": "^[a-z]{3,10}$"}],
+                    "resolution": 0,
+                },
+            },
+        ],
+        "required": ["label"],
+        "additionalProperties": false,
+        "documentsMutable": false,
+    });
+    parse(schema).expect("a contested index alone is fine");
 }
 
 fn repair_schema(keep_history: bool, can_be_deleted: bool) -> Value {
@@ -217,46 +251,30 @@ fn repair_schema(keep_history: bool, can_be_deleted: bool) -> Value {
     })
 }
 
+/// A keep-history type may withdraw deletion, and only in that direction.
 #[test]
-fn should_repair_legacy_keep_history_delete_flag_at_protocol_14() {
-    let legacy_schemas = [
-        repair_schema(true, true),
-        platform_value!({
-            "type": "object",
-            "properties": {
-                "label": {"type": "string", "maxLength": 50, "position": 0},
-            },
-            "additionalProperties": false,
-            "documentsKeepHistory": true,
-        }),
-    ];
-    for schema in legacy_schemas {
-        let old = parse_at_version(schema, 13, true).unwrap();
-        let repaired = parse_at_version(repair_schema(true, false), 14, true).unwrap();
-        let result = old
-            .as_ref()
-            .validate_update(repaired.as_ref(), 2, PlatformVersion::get(14).unwrap())
-            .expect("repair must reach a consensus result");
-        assert!(result.is_valid(), "repair rejected: {:?}", result.errors);
-    }
+fn should_allow_a_keep_history_type_to_withdraw_deletion_at_protocol_14() {
+    let old = parse_at_version(repair_schema(true, true), 13, true).unwrap();
+    let new = parse_at_version(repair_schema(true, false), 14, true).unwrap();
+    let result = old
+        .as_ref()
+        .validate_update(new.as_ref(), 2, PlatformVersion::get(14).unwrap())
+        .expect("the update must reach a consensus result");
+    assert!(result.is_valid(), "rejected: {:?}", result.errors);
 }
 
 #[test]
-fn should_preserve_legacy_keep_history_repair_rejection_through_protocol_13() {
+fn should_preserve_the_immutable_delete_flag_through_protocol_13() {
     for protocol in [12, 13] {
         let old = parse_at_version(repair_schema(true, true), protocol, true).unwrap();
-        let repaired = parse_at_version(repair_schema(true, false), protocol, true).unwrap();
+        let new = parse_at_version(repair_schema(true, false), protocol, true).unwrap();
         let result = old
             .as_ref()
-            .validate_update(
-                repaired.as_ref(),
-                2,
-                PlatformVersion::get(protocol).unwrap(),
-            )
+            .validate_update(new.as_ref(), 2, PlatformVersion::get(protocol).unwrap())
             .unwrap();
         assert!(
             !result.is_valid(),
-            "protocol {protocol} must still reject repair"
+            "protocol {protocol} must still refuse the change"
         );
     }
 }
@@ -285,8 +303,48 @@ fn should_reject_other_delete_and_history_flag_changes_at_protocol_14() {
     }
 }
 
+/// Erasability is immutable in both directions. Widening it hands an
+/// irreversible operation to a type registered without it; narrowing it after a
+/// first chunk has removed revisions strands a partially erased document.
 #[test]
-fn should_reject_incompatible_properties_during_keep_history_repair() {
+fn should_reject_every_change_to_the_erasure_flag() {
+    for (before, after) in [(false, true), (true, false)] {
+        let old = parse_at_version(erasable_schema(true, true, before), 14, false).unwrap();
+        let new = parse_at_version(erasable_schema(true, true, after), 14, false).unwrap();
+        let result = old
+            .as_ref()
+            .validate_update(new.as_ref(), 2, PlatformVersion::get(14).unwrap())
+            .unwrap();
+        assert!(
+            !result.is_valid(),
+            "unexpectedly accepted canBeErased {before} -> {after}"
+        );
+    }
+}
+
+/// An erasable type can never stop being deletable, whichever way the update is
+/// spelled: erasure applies to deleted documents only, and since erasability
+/// itself cannot be withdrawn, such a type could never reach a state erasure
+/// acts on again. Keeping the flag makes the type unparseable; dropping it
+/// changes an immutable flag.
+#[test]
+fn should_refuse_to_withdraw_deletion_from_an_erasable_type() {
+    assert!(
+        parse_at_version(erasable_schema(true, false, true), 14, false).is_err(),
+        "an erasable type that forbids deletion is not a valid type at all"
+    );
+
+    let old = parse_at_version(erasable_schema(true, true, true), 14, false).unwrap();
+    let new = parse_at_version(repair_schema(true, false), 14, false).unwrap();
+    let result = old
+        .as_ref()
+        .validate_update(new.as_ref(), 2, PlatformVersion::get(14).unwrap())
+        .unwrap();
+    assert!(!result.is_valid(), "an erasable type kept its delete flag");
+}
+
+#[test]
+fn should_reject_incompatible_properties_during_a_delete_flag_withdrawal() {
     let old = parse_at_version(repair_schema(true, true), 13, true).unwrap();
     let new = parse_at_version(
         platform_value!({
@@ -308,12 +366,12 @@ fn should_reject_incompatible_properties_during_keep_history_repair() {
         .unwrap();
     assert!(
         !result.is_valid(),
-        "repair must not bypass schema compatibility"
+        "the withdrawal must not bypass schema compatibility"
     );
 }
 
 #[test]
-fn should_reject_mutability_change_during_keep_history_repair() {
+fn should_reject_mutability_change_during_a_delete_flag_withdrawal() {
     let old = parse_at_version(repair_schema(true, true), 13, true).unwrap();
     let mut schema = repair_schema(true, false);
     schema.set_value("documentsMutable", false.into()).unwrap();
@@ -324,12 +382,12 @@ fn should_reject_mutability_change_during_keep_history_repair() {
         .unwrap();
     assert!(
         !result.is_valid(),
-        "repair must not bypass other configuration checks"
+        "the withdrawal must not bypass other configuration checks"
     );
 }
 
 #[test]
-fn should_still_validate_property_named_can_be_deleted_during_keep_history_repair() {
+fn should_still_validate_a_property_named_can_be_deleted_during_a_withdrawal() {
     let mut old_schema = repair_schema(true, true);
     old_schema
         .set_value(

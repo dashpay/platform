@@ -61,7 +61,6 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         block_info: &BlockInfo,
-        start: bool,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -181,7 +180,7 @@ impl Drive {
                 &mut batch_operations,
                 &platform_version.drive,
             )?;
-        } else if start {
+        } else {
             let (record, flags) = self.fetch_lifecycle_record_with_flags(
                 document_id,
                 &lifecycle_path,
@@ -189,6 +188,12 @@ impl Drive {
                 transaction,
                 platform_version,
             )?;
+            if record.is_erasing() {
+                // A continuation: the record already carries the erasure this
+                // chunk is finishing, and nothing but an authorized first chunk
+                // may write those fields.
+                return Ok(batch_operations);
+            }
             let (time_ms, revision) = Self::decode_revision_key(&removable[0])?;
             // Equal in size to the record it replaces, and carrying the same
             // flags, so the deleter stays the beneficiary of its bytes.
