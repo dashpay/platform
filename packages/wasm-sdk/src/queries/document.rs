@@ -185,6 +185,26 @@ export interface DocumentHistoryQuery {
   /** Maximum ten entries. A single revision requires limit one. */
   limit?: number;
 }
+export interface DocumentHistoryResult {
+  entries: { timeMs: bigint; revision: bigint; document: Document }[];
+  lifecycle: {
+    /**
+     * ACTIVE while the document is visible to ordinary reads, DELETED once it
+     * has been deleted and its revisions are retained, ERASING once an
+     * authorized erasure has begun, ABSENT when nothing is left.
+     */
+    state: "ACTIVE" | "DELETED" | "ERASING" | "ABSENT";
+    remainingRevisions: bigint;
+    /** Zero unless the document has been deleted. */
+    deletedAtMs: bigint;
+    /** Zero unless an authorized erasure has begun. */
+    erasingStartedAtMs: bigint;
+    /** Timestamp of the newest revision retained when the erasure began. */
+    erasingFromTimeMs: bigint;
+    /** History sequence of that revision. */
+    erasingFromRevision: bigint;
+  };
+}
 "#;
 
 #[wasm_bindgen]
