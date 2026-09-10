@@ -70,18 +70,9 @@ impl DocumentEraseTransitionActionStructureValidationV0 for DocumentEraseTransit
         }
 
         // Erase has no token cost of its own: the deletion it follows was paid
-        // for when the document was deleted. Offering one would let a
-        // continuation, which anyone may submit, move tokens.
-        if self.base().token_cost().is_some() {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                InvalidDocumentTransitionActionError::new(format!(
-                    "an erase of a document of type {} must not carry token payment information",
-                    document_type_name
-                ))
-                .into(),
-            ));
-        }
-
+        // for when the document was deleted. A transition that offers to pay
+        // one is refused where the offer is still visible, when the transition
+        // becomes an action.
         Ok(SimpleConsensusValidationResult::new())
     }
 }

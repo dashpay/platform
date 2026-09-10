@@ -376,6 +376,51 @@ mod tests {
     /// (`document_index_only_delete_state_transition` is `Some` in
     /// STATE_TRANSITION_SERIALIZATION_VERSIONS_V3), rejected below (where
     /// the kind's table entry is `None`).
+    /// Software that predates the erase kind cannot decode one at all, so no
+    /// historical block can contain one. The gate exists so that new software
+    /// agrees with old software while a pre-14 protocol version is still
+    /// active.
+    #[test]
+    fn validate_base_structure_v0_gates_erase_by_protocol_version() {
+        use crate::state_transition::batch_transition::batched_transition::document_erase_transition::DocumentEraseTransitionV0;
+        use crate::state_transition::batch_transition::batched_transition::DocumentEraseTransition;
+
+        let erase =
+            DocumentTransition::Erase(DocumentEraseTransition::V0(DocumentEraseTransitionV0 {
+                base: make_base(1, "note"),
+            }));
+
+        let batch = make_batch_v0(vec![erase]);
+
+        for protocol in [12, 13] {
+            let version = PlatformVersion::get(protocol).expect("the protocol version exists");
+            let result = batch
+                .validate_base_structure_v0(version)
+                .expect("no protocol err");
+            assert!(
+                result.errors.iter().any(|error| matches!(
+                    error,
+                    ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+                )),
+                "protocol {protocol} must reject an erase as an unsupported version, got {:?}",
+                result.errors
+            );
+        }
+
+        let pv14 = PlatformVersion::get(14).expect("PV14 exists");
+        let result = batch
+            .validate_base_structure_v0(pv14)
+            .expect("no protocol err");
+        assert!(
+            !result.errors.iter().any(|error| matches!(
+                error,
+                ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+            )),
+            "PV14 must admit an erase, got {:?}",
+            result.errors
+        );
+    }
+
     #[test]
     fn validate_base_structure_v0_gates_index_only_delete_by_protocol_version() {
         use crate::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::DocumentIndexOnlyDeleteTransitionV0;
