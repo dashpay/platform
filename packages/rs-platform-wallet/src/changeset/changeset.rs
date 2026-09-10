@@ -658,22 +658,43 @@ impl Merge for CoreChangeSet {
         // Credit verdicts, part 1: the newer changeset re-projected every
         // record it carries against a NEWER wallet snapshot, and only records
         // a verdict for outputs the wallet does not hold — so an older
-        // verdict for an output of such a record that the newer map does
-        // not mention means "credited since", not "still uncredited". Drop
-        // those before the newer map is folded in below, along with any
-        // outpoint the newer changeset credits outright. Computed here,
-        // before `other.records` is consumed.
+        // verdict for an output such a record walked that the newer map
+        // does not mention means "credited since", not "still uncredited".
+        // Drop those before the newer map is folded in below, along with any
+        // outpoint the newer changeset credits outright.
+        //
+        // Keyed on the OUTPUTS the newer records walked, not their txids:
+        // verdicts are produced per account slice, over that slice's
+        // `Received` / `Change` outputs. A transaction paying a CoinJoin
+        // account and a BIP44 change address is two slices; a newer
+        // changeset re-projecting only the BIP44 slice never walked the
+        // CoinJoin output and cannot restate its verdict, so a txid-keyed
+        // guard would erase it and the persister would materialise the very
+        // row the verdict exists to prevent. Computed here, before
+        // `other.records` is consumed.
         if !self.utxo_credit_verdicts.is_empty() {
-            let reprojected: std::collections::HashSet<Txid> = other
+            use key_wallet::managed_account::transaction_record::OutputRole;
+            let reprojected: std::collections::HashSet<OutPoint> = other
                 .records
                 .iter()
                 .chain(other.account_records.iter())
-                .map(|record| record.txid)
+                .flat_map(|record| {
+                    record
+                        .output_details
+                        .iter()
+                        .filter(|detail| {
+                            matches!(detail.role, OutputRole::Received | OutputRole::Change)
+                        })
+                        .map(move |detail| OutPoint {
+                            txid: record.txid,
+                            vout: detail.index,
+                        })
+                })
                 .collect();
             let credited: std::collections::HashSet<OutPoint> =
                 other.new_utxos.iter().map(|utxo| utxo.outpoint).collect();
             self.utxo_credit_verdicts.retain(|outpoint, _| {
-                !reprojected.contains(&outpoint.txid) && !credited.contains(outpoint)
+                !reprojected.contains(outpoint) && !credited.contains(outpoint)
             });
         }
         if !other.records.is_empty() && !self.sweeps.is_empty() {
@@ -3346,7 +3367,25 @@ mod utxo_credit_verdict_merge_tests {
         );
     }
 
-    fn record_for(txid_byte: u8) -> TransactionRecord {
+    fn outpoint_at(byte: u8, vout: u32) -> OutPoint {
+        OutPoint {
+            txid: Txid::from_byte_array([byte; 32]),
+            vout,
+        }
+    }
+
+    /// One account slice of transaction `txid_byte`, classifying the given
+    /// outputs `(vout, role)` — the shape `utxo_credit_verdicts_from_wallet`
+    /// walks. `account_type` is the slice's owner.
+    fn slice_for(
+        txid_byte: u8,
+        account_type: key_wallet::account::AccountType,
+        outputs: &[(
+            u32,
+            key_wallet::managed_account::transaction_record::OutputRole,
+        )],
+    ) -> TransactionRecord {
+        use key_wallet::managed_account::transaction_record::OutputDetail;
         let tx = Transaction {
             version: 2,
             lock_time: 0,
@@ -3356,19 +3395,37 @@ mod utxo_credit_verdict_merge_tests {
         };
         let mut record = TransactionRecord::new(
             tx,
-            key_wallet::account::AccountType::Standard {
-                index: 0,
-                standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
-            },
+            account_type,
             key_wallet::transaction_checking::TransactionContext::Mempool,
             key_wallet::transaction_checking::transaction_router::TransactionType::Standard,
             key_wallet::managed_account::transaction_record::TransactionDirection::Incoming,
             Vec::new(),
-            Vec::new(),
+            outputs
+                .iter()
+                .map(|(index, role)| OutputDetail {
+                    index: *index,
+                    role: role.clone(),
+                    address: None,
+                    value: 1,
+                })
+                .collect(),
             0,
         );
         record.txid = Txid::from_byte_array([txid_byte; 32]);
         record
+    }
+
+    fn bip44() -> key_wallet::account::AccountType {
+        key_wallet::account::AccountType::Standard {
+            index: 0,
+            standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+        }
+    }
+
+    /// A BIP44 slice whose output 0 is `Received`.
+    fn record_for(txid_byte: u8) -> TransactionRecord {
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        slice_for(txid_byte, bip44(), &[(0, OutputRole::Received)])
     }
 
     /// Two events folded into one round are projected against two wallet
@@ -3405,6 +3462,63 @@ mod utxo_credit_verdict_merge_tests {
             older.utxo_credit_verdicts.get(&outpoint(2)),
             Some(&UtxoCreditVerdict::ObservedSpent { height: 10 }),
             "a record the newer changeset does not carry keeps its verdict"
+        );
+    }
+
+    /// Verdicts are produced per account slice, so the guard is keyed on
+    /// the outputs the newer slices actually walked. One transaction pays a
+    /// CoinJoin account (output 1) and BIP44 change (output 0); the newer
+    /// changeset re-projects only the BIP44 slice. It re-judged output 0
+    /// and found it credited — that verdict goes — but it never walked
+    /// output 1 and cannot restate its verdict, so that one stays. An
+    /// output the slice lists as `Sent` (a counterparty's) re-judges
+    /// nothing either.
+    #[test]
+    fn merge_keeps_an_older_verdict_for_a_sibling_slice_the_newer_changeset_did_not_walk() {
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        let coinjoin = key_wallet::account::AccountType::CoinJoin { index: 0 };
+        let mut older = CoreChangeSet::default();
+        older
+            .account_records
+            .push(slice_for(1, bip44(), &[(0, OutputRole::Change)]));
+        older
+            .account_records
+            .push(slice_for(1, coinjoin, &[(1, OutputRole::Received)]));
+        older.utxo_credit_verdicts.insert(
+            outpoint_at(1, 0),
+            UtxoCreditVerdict::ObservedSpent { height: 10 },
+        );
+        older.utxo_credit_verdicts.insert(
+            outpoint_at(1, 1),
+            UtxoCreditVerdict::ObservedSpent { height: 10 },
+        );
+        older
+            .utxo_credit_verdicts
+            .insert(outpoint_at(1, 2), UtxoCreditVerdict::Uncredited);
+
+        let mut newer = CoreChangeSet::default();
+        newer.account_records.push(slice_for(
+            1,
+            bip44(),
+            &[(0, OutputRole::Change), (2, OutputRole::Sent)],
+        ));
+        newer.records = newer.account_records.clone();
+        older.merge(newer);
+
+        assert_eq!(
+            older.utxo_credit_verdicts.get(&outpoint_at(1, 0)),
+            None,
+            "the BIP44 slice re-judged its change output and found it credited"
+        );
+        assert_eq!(
+            older.utxo_credit_verdicts.get(&outpoint_at(1, 1)),
+            Some(&UtxoCreditVerdict::ObservedSpent { height: 10 }),
+            "the CoinJoin slice was not re-projected: its verdict stands"
+        );
+        assert_eq!(
+            older.utxo_credit_verdicts.get(&outpoint_at(1, 2)),
+            Some(&UtxoCreditVerdict::Uncredited),
+            "a `Sent` output is the counterparty's; listing it re-judges nothing"
         );
     }
 

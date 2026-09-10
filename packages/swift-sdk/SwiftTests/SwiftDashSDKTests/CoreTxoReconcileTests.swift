@@ -416,6 +416,51 @@ final class CoreTxoReconcileTests: XCTestCase {
         }
     }
 
+    /// A coin the engine holds and the store lacks, whose outpoint a
+    /// pending-input claim already names: the heal inserts the row and the
+    /// drain writes it spent on the spot. Nothing was repaired — the engine
+    /// still holds the coin — but a row was written, so the run reports it
+    /// as a mutation rather than as a clean, all-zero pass.
+    func testAHealTheDrainWritesSpentIsReportedAsAMutation() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        // The spender is already a confirmed row of the store; only the coin
+        // it consumed is missing (the funding record never reached the
+        // store), so its input claim is still pending.
+        let outpoint = PersistentTxo.makeOutpoint(txid: txid(0x7d), vout: 0)
+        let context = ModelContext(container)
+        let spender = PersistentTransaction(
+            txid: txid(0x7e),
+            transactionData: Data(repeating: 0x05, count: 10),
+            context: 3,
+            blockHeight: 2_391_800,
+            netAmount: -19_549
+        )
+        context.insert(spender)
+        context.insert(PersistentPendingInput(
+            outpoint: outpoint,
+            inputIndex: 0,
+            spendingTxid: txid(0x7e),
+            spendingTransaction: spender,
+            walletId: walletId
+        ))
+        try context.save()
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0x7d))])
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertTrue(report.completed)
+        XCTAssertEqual(report.engineRows, 1)
+        XCTAssertEqual(report.healedSpent, 1)
+        XCTAssertEqual(report.inserted, 0)
+        XCTAssertEqual(report.flipped, 0)
+        XCTAssertEqual(report.mutations, 1, "a row was written, even though nothing was repaired")
+        let coin = try XCTUnwrap(txo(container, txid: txid(0x7d)))
+        XCTAssertTrue(coin.isSpent)
+        XCTAssertEqual(try pendingCount(container), 0, "the claim was consumed by the drain")
+        XCTAssertEqual(try restoredUtxoCount(handler), 0)
+    }
+
     // MARK: 4. Nothing runs before the scan is complete
 
     func testTheSteadyStateGateRefusesAnUnfinishedScan() {

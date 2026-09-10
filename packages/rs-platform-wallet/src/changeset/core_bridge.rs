@@ -1078,11 +1078,23 @@ async fn build_core_changeset(
             // stale slice supersede a complete fold earlier in this
             // drain's batch — the chainlock's own events carry the
             // row's finality forward.
-            let slices: Vec<TransactionRecord> =
-                match wallet_slices_for_txid(wallet_manager, wallet_id, &record.txid).await {
-                    Some(slices) => slices,
-                    None => vec![(**record).clone()],
-                };
+            //
+            // The credit verdicts are read under the SAME guard as the
+            // slices: a verdict is the engine's opinion on a record's
+            // outputs, and the record's own context is one of its inputs
+            // (an unconfirmed record whose input a block spent reads
+            // `Doomed`). Read from two snapshots, a funding that confirmed
+            // and lost its coin to a mempool child between them would be
+            // judged on a stale mempool context and marked spent for good.
+            let (slices, utxo_credit_verdicts): (
+                Vec<TransactionRecord>,
+                BTreeMap<OutPoint, UtxoCreditVerdict>,
+            ) = match wallet_slices_and_verdicts_for_txid(wallet_manager, wallet_id, &record.txid)
+                .await
+            {
+                Some(read) => read,
+                None => (vec![(**record).clone()], BTreeMap::new()),
+            };
             // A contact's watch-only chain never defines the wallet's
             // transaction row or its TXOs (see `is_contact_watch_only`);
             // the usage deltas below are still emitted, so the event
@@ -1095,9 +1107,6 @@ async fn build_core_changeset(
                 .collect();
             let (addresses_marked_used, account_highest_used) =
                 collect_usage_deltas(wallet_manager, wallet_id, vec![&**record]).await;
-            let utxo_credit_verdicts =
-                utxo_credit_verdicts(wallet_manager, wallet_id, &owned.iter().collect::<Vec<_>>())
-                    .await;
             let mut folded = owned.clone();
             crate::changeset::changeset::fold_same_txid_records(&mut folded);
             CoreChangeSet {
@@ -1339,7 +1348,11 @@ async fn collect_usage_deltas(
 ///
 /// One read of the wallet lock per event, like [`collect_usage_deltas`];
 /// the walk itself is [`utxo_credit_verdicts_from_wallet`], factored so
-/// tests can drive it against a bare `ManagedWalletInfo`.
+/// tests can drive it against a bare `ManagedWalletInfo`. `BlockProcessed`
+/// uses this over the event's own records (block records carry their
+/// block context and cannot read `Doomed`); `TransactionDetected` reads
+/// its slices and their verdicts under one guard through
+/// [`wallet_slices_and_verdicts_for_txid`].
 async fn utxo_credit_verdicts(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
@@ -1385,7 +1398,11 @@ async fn utxo_credit_verdicts(
 /// time, which is later than the record — that is the same lag every
 /// other delta this bridge derives already has, and a coin spent in a
 /// block since the record was built reads `ObservedSpent` by the same
-/// evidence the engine used to drop it.
+/// evidence the engine used to drop it. The one thing that must NOT lag
+/// is the record's context relative to the wallet it is judged against:
+/// callers hand in records read from the same wallet snapshot (the
+/// manager's own slices under one guard), never a clone from an earlier
+/// one.
 fn utxo_credit_verdicts_from_wallet(
     core_wallet: &key_wallet::wallet::ManagedWalletInfo,
     records: &[&TransactionRecord],
@@ -1622,6 +1639,24 @@ async fn wallet_slices_for_txid(
     wallet_id: &WalletId,
     txid: &dashcore::Txid,
 ) -> Option<Vec<TransactionRecord>> {
+    wallet_slices_and_verdicts_for_txid(wallet_manager, wallet_id, txid)
+        .await
+        .map(|(slices, _)| slices)
+}
+
+/// [`wallet_slices_for_txid`] plus the credit verdicts of the owned
+/// slices' outputs ([`utxo_credit_verdicts_from_wallet`]), both read under
+/// ONE wallet read guard, so the records a verdict is judged on and the
+/// wallet state it is judged against are the same snapshot. Same `None` /
+/// `Some(vec![])` contract; the verdicts of an empty slice set are empty.
+async fn wallet_slices_and_verdicts_for_txid(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    txid: &dashcore::Txid,
+) -> Option<(
+    Vec<TransactionRecord>,
+    BTreeMap<OutPoint, UtxoCreditVerdict>,
+)> {
     let guard = wallet_manager.read().await;
     let info = guard.get_wallet_info(wallet_id)?;
     let mut slices = Vec::new();
@@ -1630,7 +1665,12 @@ async fn wallet_slices_for_txid(
             slices.push(record.clone());
         }
     }
-    Some(slices)
+    let owned: Vec<&TransactionRecord> = slices
+        .iter()
+        .filter(|r| !is_contact_watch_only(r))
+        .collect();
+    let verdicts = utxo_credit_verdicts_from_wallet(&info.core_wallet, &owned);
+    Some((slices, verdicts))
 }
 
 /// Is this record owned by a contact's watch-only DashPay chain?
@@ -6069,5 +6109,91 @@ mod utxo_credit_verdict_tests {
 
         let unknown = build_core_changeset(&manager, &event([0xEEu8; 32])).await;
         assert!(unknown.utxo_credit_verdicts.is_empty());
+    }
+
+    /// `TransactionDetected` judges the outputs of the records it READS,
+    /// under the guard it reads them with — never the event's own record,
+    /// which is a clone taken at emit time and can be stale by drain time.
+    /// Here the funding was still in the mempool when emitted; since then
+    /// it confirmed (its inputs now sit in the observed-spent map) and a
+    /// mempool child took the coin. Judged on the stale clone the coin
+    /// reads `Doomed` — a durable spent mark for a spend that may never
+    /// confirm. Judged on the manager's own confirmed record it reads
+    /// `Uncredited`, and the store learns the rest from the child's record.
+    #[tokio::test]
+    async fn transaction_detected_judges_the_records_it_reads_not_the_stale_event_clone() {
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::identity::IdentityManager;
+
+        let mut ctx = TestWalletContext::new_random();
+        let fund_tx = funding_of(ctx.receive_address.script_pubkey(), 6);
+        let coin = OutPoint {
+            txid: fund_tx.txid(),
+            vout: 0,
+        };
+        let seen_in_mempool = ctx
+            .check_transaction(&fund_tx, TransactionContext::Mempool)
+            .await;
+        let stale_clone = seen_in_mempool
+            .new_records
+            .first()
+            .expect("mempool funding record")
+            .clone();
+        assert!(matches!(stale_clone.context, TransactionContext::Mempool));
+        // The funding confirms: its inputs enter the observed-spent map.
+        assert!(
+            ctx.check_transaction(&fund_tx, in_block(100_000))
+                .await
+                .is_relevant
+        );
+        // A mempool child takes the coin.
+        let child = spend_to(coin, foreign_script(), 19_000);
+        assert!(
+            ctx.check_transaction(&child, TransactionContext::Mempool)
+                .await
+                .is_relevant
+        );
+        assert!(!ctx
+            .managed_wallet
+            .first_bip44_managed_account()
+            .expect("bip44 account")
+            .utxos
+            .contains_key(&coin));
+        // The stale clone, judged against the wallet as it is now, WOULD
+        // read `Doomed`: that is the wrong verdict the bridge must not emit.
+        assert_eq!(
+            utxo_credit_verdicts_from_wallet(&ctx.managed_wallet, &[&stale_clone]).get(&coin),
+            Some(&UtxoCreditVerdict::Doomed)
+        );
+
+        let info = PlatformWalletInfo {
+            core_wallet: ctx.managed_wallet,
+            generation: Arc::new(WalletGeneration::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+            observed_input_conflicts: Default::default(),
+        };
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+        let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+        let manager = Arc::new(RwLock::new(wm));
+
+        let event = WalletEvent::TransactionDetected {
+            wallet_id,
+            record: Box::new(stale_clone),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        };
+        let cs = build_core_changeset(&manager, &event).await;
+        assert_eq!(
+            cs.utxo_credit_verdicts.get(&coin),
+            Some(&UtxoCreditVerdict::Uncredited),
+            "judged on the manager's confirmed record: taken, not doomed"
+        );
+        assert!(
+            cs.records.iter().all(|r| r.context.block_info().is_some()),
+            "the row is rebuilt from the manager's record, not the stale clone"
+        );
     }
 }

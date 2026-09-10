@@ -164,7 +164,6 @@ public struct CoreTxoReconcileReport: Equatable, Sendable {
     public var healedSpent = 0
     /// Engine rows below the confirmation gate.
     public var skippedImmature = 0
-    /// Engine rows on a contact's watch-only chain.
     /// Engine rows whose account has no store row to file them under.
     public var skippedUnresolvedAccount = 0
     /// Engine rows the store could not validate (malformed txid, no
@@ -201,8 +200,10 @@ public struct CoreTxoReconcileReport: Equatable, Sendable {
 
     public init() {}
 
-    /// Rows this run changed.
-    public var mutations: Int { inserted + flipped }
+    /// Rows this run wrote: healed, flipped, and healed rows the drain wrote
+    /// spent on insert — the last is a divergence recorded, not repaired,
+    /// but it is a row the store did not have before.
+    public var mutations: Int { inserted + flipped + healedSpent }
 }
 
 /// Why `reconcileCoreTxoStore(for:)` did not run.

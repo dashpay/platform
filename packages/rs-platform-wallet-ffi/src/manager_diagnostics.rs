@@ -1129,10 +1129,11 @@ pub unsafe extern "C" fn platform_wallet_wallet_utxos_page_free(
 
 /// Classify `count` store rows for `wallet_id` — see the
 /// `OUTPOINT_CLASS_*` constants; `out_classes[i]` answers `queries[i]`, so
-/// `out_classes` must have room for `count` bytes. The whole call is
-/// rejected when any query carries an unknown account tag, so a partially
-/// answered batch never reaches the caller. Cost is `count × accounts`,
-/// never the size of the inventory. Same lock discipline as
+/// `out_classes` must have room for `count` bytes. A query whose account
+/// tag this build cannot map keeps `OUTPOINT_CLASS_UNKNOWN` in its slot
+/// and the remaining queries are still classified; the call fails only on
+/// a bad handle or pointer. Cost is `count × accounts`, never the size of
+/// the inventory. Same lock discipline as
 /// `platform_wallet_wallet_utxos_page`.
 ///
 /// # Safety

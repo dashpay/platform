@@ -432,18 +432,22 @@ pub fn classify_outpoints(
     queries
         .iter()
         .map(|query| {
-            // Unspent wins outright: a coin the engine holds is a coin,
-            // whichever account the store filed it under.
+            // A contact's watch-only chain gets no verdict at all — not
+            // even `Unspent`: its coins are the contact's to spend, never
+            // this wallet's to flip or to count.
+            if is_watch_only_contact(&query.account_type) {
+                return OutpointClass::Unknown;
+            }
+            // Unspent wins outright: a coin the engine holds in one of the
+            // WALLET's funds accounts is a coin, whichever of them the store
+            // filed it under. A contact account holding the outpoint says
+            // nothing about this wallet's row.
             if accounts
                 .iter()
+                .filter(|(account_type, _)| !is_watch_only_contact(account_type))
                 .any(|(_, funds)| funds.utxos.contains_key(&query.outpoint))
             {
                 return OutpointClass::Unspent;
-            }
-            // A contact's watch-only chain gets no verdict at all: its
-            // coins are the contact's to spend, never this wallet's to flip.
-            if is_watch_only_contact(&query.account_type) {
-                return OutpointClass::Unknown;
             }
             let Some((_, owner)) = accounts
                 .iter()
@@ -2114,6 +2118,17 @@ mod txo_inventory_tests {
             query(AccountType::CoinJoin { index: 0 }, burned_coin, &script),
             // A coin filed under an account the wallet does not have at all.
             query(AccountType::CoinJoin { index: 7 }, burned_coin, &script),
+            // A held coin filed under a contact's watch-only chain: the
+            // guard answers before the unspent search does.
+            query(
+                AccountType::DashpayExternalAccount {
+                    index: 0,
+                    user_identity_id: [0x11u8; 32],
+                    friend_identity_id: [0x22u8; 32],
+                },
+                held_coin,
+                &script,
+            ),
         ];
         let classes = classify_outpoints(&wm, &wallet_id, &queries);
         assert_eq!(
@@ -2126,6 +2141,7 @@ mod txo_inventory_tests {
                 OutpointClass::NotOwned,
                 OutpointClass::Unknown,
                 OutpointClass::NotOwned,
+                OutpointClass::Unknown,
                 OutpointClass::Unknown,
             ]
         );
