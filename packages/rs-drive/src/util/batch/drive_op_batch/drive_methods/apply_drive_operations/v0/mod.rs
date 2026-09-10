@@ -47,6 +47,14 @@ impl Drive {
         if operations.is_empty() {
             return Ok(FeeResult::default());
         }
+        // With no caller transaction, TTL preparation (direct drainage
+        // writes), conversion reads, and the batch apply would each commit
+        // on their own, so a conversion error after preparation would leave
+        // drained buckets committed without the write. Span all of it with
+        // one owned transaction and commit only once the batch applied.
+        let owned_transaction =
+            (apply && transaction.is_none()).then(|| self.grove.start_transaction());
+        let transaction = owned_transaction.as_ref().or(transaction);
         if apply {
             self.prepare_drive_operations_time_range_ttl(
                 &operations,
@@ -89,6 +97,9 @@ impl Drive {
             &mut cost_operations,
             &platform_version.drive,
         )?;
+        if let Some(owned_transaction) = owned_transaction {
+            self.commit_transaction(owned_transaction, &platform_version.drive)?;
+        }
 
         // Execute drive operation callbacks after updating state
         for task in finalize_tasks {

@@ -4481,3 +4481,168 @@ fn grouped_creates_reuse_pending_trees_under_a_ttl_level() {
         );
     }
 }
+
+/// With no caller transaction, `apply_drive_operations` prepares TTL
+/// drainage before converting any operation. A conversion failure after
+/// that must not leave the drainage committed on its own: the whole call
+/// rides one owned transaction, so the committed root is untouched.
+#[test]
+fn apply_drive_operations_rolls_back_ttl_preparation_when_conversion_fails_without_a_caller_transaction(
+) {
+    use crate::util::batch::drive_op_batch::{DocumentOperationType, DriveOperation};
+    use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
+
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = build_ttl_contract_with_index_keys(
+        243,
+        vec![(
+            Value::Text("countable".to_string()),
+            Value::Text("countable".to_string()),
+        )],
+    );
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+    let document_type = contract.document_type_for_name("post").expect("post");
+
+    // One document in a bucket that will be expired at the failing call's
+    // block time, so preparation has something to drain.
+    let t0 = 10_000 * HOUR_MS;
+    let owner = [244u8; 32];
+    let document = Document::V0(DocumentV0 {
+        id: Identifier::from(fixture_bytes(245, t0, "doomed")),
+        owner_id: Identifier::from(owner),
+        properties: BTreeMap::from([
+            ("hashtag".to_string(), Value::Text("doomed".to_string())),
+            ("amount".to_string(), Value::U64(1)),
+        ]),
+        created_at: Some(t0 + MINUTE_MS_TTL),
+        revision: Some(1),
+        ..Default::default()
+    });
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &document,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(owner),
+                },
+                contract: &contract,
+                document_type,
+            },
+            false,
+            BlockInfo {
+                time_ms: t0 + MINUTE_MS_TTL,
+                ..Default::default()
+            },
+            true,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("add document");
+    let root_before = drive
+        .grove
+        .root_hash(None, &platform_version.drive.grove_version)
+        .unwrap()
+        .expect("root hash");
+
+    // Deleting a document that does not exist fails during conversion —
+    // after preparation drained the expired bucket.
+    let missing = Identifier::from(fixture_bytes(246, t0, "missing"));
+    drive
+        .apply_drive_operations(
+            vec![DriveOperation::DocumentOperation(
+                DocumentOperationType::DeleteDocument {
+                    document_id: missing,
+                    contract_info: DataContractInfo::BorrowedDataContract(&contract),
+                    document_type_info: DocumentTypeInfo::DocumentTypeRef(document_type),
+                },
+            )],
+            true,
+            &BlockInfo {
+                time_ms: t0 + 6 * HOUR_MS,
+                ..Default::default()
+            },
+            None,
+            platform_version,
+            None,
+        )
+        .expect_err("deleting a missing document fails conversion");
+    let root_after = drive
+        .grove
+        .root_hash(None, &platform_version.drive.grove_version)
+        .unwrap()
+        .expect("root hash");
+    assert_eq!(
+        root_before, root_after,
+        "a failed batch must not leave its TTL preparation committed"
+    );
+}
+
+/// Same contract for the public indexOnly delete: a submitted tuple that
+/// fails the row-commitment gate after preparation drained an expired
+/// bucket must roll that drainage back along with everything else.
+#[test]
+fn delete_index_only_document_rolls_back_ttl_preparation_when_the_tuple_mismatches_without_a_caller_transaction(
+) {
+    let pv = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(pv));
+    let contract = index_only_ttl_contract(7200, 14400, true);
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .unwrap();
+    let dt = contract.document_type_for_name("like").unwrap();
+    let t0 = 5000 * HOUR_MS;
+    insert_ttl_like(&drive, &contract, &ttl_like(t0, "old"));
+    let root_before = drive
+        .grove
+        .root_hash(None, &pv.drive.grove_version)
+        .unwrap()
+        .expect("root hash");
+
+    // No entry carries this tuple's commitment: the gate rejects it after
+    // preparation drained the expired bucket holding "old".
+    drive
+        .delete_index_only_document_for_contract(
+            ttl_like(t0, "never"),
+            &contract,
+            dt,
+            BlockInfo {
+                time_ms: t0 + 6 * HOUR_MS,
+                ..Default::default()
+            },
+            true,
+            None,
+            pv,
+            None,
+        )
+        .expect_err("a tuple no entry commits to must be rejected");
+    let root_after = drive
+        .grove
+        .root_hash(None, &pv.drive.grove_version)
+        .unwrap()
+        .expect("root hash");
+    assert_eq!(
+        root_before, root_after,
+        "a rejected indexOnly delete must not leave its TTL preparation committed"
+    );
+}

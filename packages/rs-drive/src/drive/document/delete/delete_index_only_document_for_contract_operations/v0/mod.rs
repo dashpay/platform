@@ -55,6 +55,14 @@ impl Drive {
             Some(HashMap::new())
         };
 
+        // With no caller transaction, TTL preparation (direct drainage
+        // writes) inside the operations builder and the apply below would
+        // each commit on their own: a tuple failing the row-commitment gate
+        // after preparation would leave drained buckets committed. Span
+        // both with one owned transaction.
+        let owned_transaction =
+            (apply && transaction.is_none()).then(|| self.grove.start_transaction());
+        let transaction = owned_transaction.as_ref().or(transaction);
         let batch_operations = self.delete_index_only_document_for_contract_operations(
             document,
             contract,
@@ -73,6 +81,9 @@ impl Drive {
             &mut drive_operations,
             &platform_version.drive,
         )?;
+        if let Some(owned_transaction) = owned_transaction {
+            self.commit_transaction(owned_transaction, &platform_version.drive)?;
+        }
 
         Drive::calculate_fee(
             None,
