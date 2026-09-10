@@ -10,7 +10,19 @@ use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
+use std::time::Duration;
+
+use crate::broadcaster::TransactionBroadcaster;
+use key_wallet::transaction_checking::transaction_context::TransactionContext;
+use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
+
 use super::{run_blocking_load, PlatformWalletManager};
+
+/// How long the load-time re-dispatch waits for the SPV transport before
+/// giving up for this launch. Zero connected peers turns a send into a
+/// definitive rejection rather than a retry, and there is no urgency: the
+/// next launch offers the same transactions again.
+const RESEND_TRANSPORT_READY_WAIT: Duration = Duration::from_secs(30);
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Load the full [`ClientStartState`] from the configured persister
@@ -97,11 +109,62 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         'load: for (expected_wallet_id, wallet_state) in wallets {
             let ClientWalletStartState {
-                wallet,
-                wallet_info,
+                mut wallet,
+                mut wallet_info,
                 identity_manager,
                 unused_asset_locks,
+                unconfirmed_outgoing_txs,
             } = wallet_state;
+
+            // Replay the sends the host still holds as unconfirmed, before
+            // anything reads the restored balance.
+            //
+            // Their spend effect is never persisted: `isSpent` stays `false`
+            // on the input row until the spending transaction reaches a
+            // block, because a mempool-only sighting is reversible by
+            // eviction. So the UTXO restore above has just handed those
+            // inputs back as spendable. A live process was still correct —
+            // it held the effect in memory — and until now a restart
+            // recovered it only by re-observing the transaction on the
+            // network. A transaction that never reached the network cannot
+            // be re-observed, so its input stayed spendable for good and the
+            // balance re-counted the coin.
+            //
+            // Routing each record through the ordinary mempool check (rather
+            // than inserting it into `transactions_mut()` raw, the way the
+            // asset-lock record restore does) is the whole point: it runs
+            // `update_utxos`, which drops the input from `utxos` and records
+            // it in `spent_outpoints`, reproducing exactly the state the
+            // live process held. A raw insert would leave `spent_outpoints`
+            // empty AND make every later re-dispatch a no-op, because
+            // `has_transaction` would then report the record as not new.
+            //
+            // `update_state` and `update_balance` are both on: the balance
+            // this produces is what `generation.set(..)` mirrors a few lines
+            // below, and the UI reads that.
+            if !unconfirmed_outgoing_txs.is_empty() {
+                let mut replayed = 0usize;
+                for tx in &unconfirmed_outgoing_txs {
+                    let result = wallet_info
+                        .check_core_transaction(
+                            tx,
+                            TransactionContext::Mempool,
+                            &mut wallet,
+                            true,
+                            true,
+                        )
+                        .await;
+                    if result.is_relevant {
+                        replayed += 1;
+                    }
+                }
+                tracing::info!(
+                    wallet_id = %hex::encode(expected_wallet_id),
+                    offered = unconfirmed_outgoing_txs.len(),
+                    replayed,
+                    "load: replayed unconfirmed outgoing sends"
+                );
+            }
 
             // Flatten the (account → outpoint → lock) map into the flat
             // OutPoint → TrackedAssetLock map that `PlatformWalletInfo`
@@ -205,6 +268,63 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(
                 &self.spv_manager,
             )));
+
+            // Give the replayed sends an owner again on the network side.
+            //
+            // dash-spv's rebroadcast timer is the only thing that retries a
+            // transaction whose broadcast saw no acceptance signal, and its
+            // `broadcasts` map is process-local: it is filled at the
+            // broadcast call and never seeded from persisted rows. So a send
+            // that did not reach the network before the app was closed had
+            // nobody left to resend it — measured, it never went out again.
+            // Re-dispatching here hands it back to that timer.
+            //
+            // Deliberately fire-and-forget on a detached task: this must not
+            // hold up the load, and no verdict is wanted. `broadcast_transaction`
+            // is used rather than the awaiting variant precisely because the
+            // timer, not this call, is meant to own the outcome — and an
+            // unrequested `Uncertain` 60 s later has no listener on the app
+            // side, so it cannot surface a stray dialog.
+            //
+            // Safe against double-spending: this re-sends the SAME signed
+            // bytes, which is idempotent for the network, and `start_broadcast`
+            // is idempotent per txid. The real hazard would be re-dispatching
+            // without the accounting replay above — the input would be
+            // selectable again and this wallet could sign a conflicting
+            // transaction. That is why the two halves ship together.
+            if !unconfirmed_outgoing_txs.is_empty() {
+                let broadcaster_for_resend = Arc::clone(&broadcaster);
+                let txs_to_resend = unconfirmed_outgoing_txs.clone();
+                tokio::spawn(async move {
+                    // Zero connected peers makes the send a definitive
+                    // `Rejected` rather than a retry, so wait for the
+                    // transport before offering anything.
+                    if !broadcaster_for_resend
+                        .wait_until_ready(RESEND_TRANSPORT_READY_WAIT)
+                        .await
+                    {
+                        tracing::warn!(
+                            pending = txs_to_resend.len(),
+                            "load: broadcast transport not ready; leaving unconfirmed \
+                             sends for the next launch"
+                        );
+                        return;
+                    }
+                    for tx in txs_to_resend {
+                        let txid = tx.txid();
+                        // Goes through the acceptance wait, which is fine on
+                        // a detached task: the verdict is only logged, and
+                        // dash-spv has already taken ownership by then.
+                        match broadcaster_for_resend.broadcast(&tx).await {
+                            Ok(_) => tracing::info!(%txid, "load: re-dispatched unconfirmed send"),
+                            Err(e) => {
+                                tracing::warn!(%txid, error = ?e, "load: re-dispatch failed")
+                            }
+                        }
+                    }
+                });
+            }
+
             let platform_wallet = PlatformWallet::new(
                 Arc::clone(&self.sdk),
                 wallet_id,
@@ -435,6 +555,7 @@ mod idempotent_load_tests {
                     wallet_info: self.managed.clone(),
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
+                    unconfirmed_outgoing_txs: Vec::new(),
                 },
             );
             Ok(ClientStartState {
@@ -473,6 +594,7 @@ mod idempotent_load_tests {
                 wallet_info: self.managed.clone(),
                 identity_manager: IdentityManagerStartState::default(),
                 unused_asset_locks: BTreeMap::new(),
+                unconfirmed_outgoing_txs: Vec::new(),
             };
             let mut wallets = BTreeMap::new();
             wallets.insert(self.wallet.compute_wallet_id(), entry());

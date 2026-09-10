@@ -66,7 +66,8 @@ use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, ContactProfileRestoreEntryFFI, IdentityKeyRestoreFFI,
     IdentityRestoreEntryFFI, LoadWalletListFreeFn, PaymentRestoreEntryFFI,
-    ProviderSpecialTxRestoreEntryFFI, StandardAccountTypeTagFFI, UnresolvedAssetLockTxRecordFFI,
+    ProviderSpecialTxRestoreEntryFFI, StandardAccountTypeTagFFI, UnconfirmedOutgoingTxRecordFFI,
+    UnresolvedAssetLockTxRecordFFI,
     UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
@@ -5482,11 +5483,66 @@ fn build_wallet_start_state(
     // was interrupted by an app kill can resume from the latest
     // status without rebroadcasting.
     let unused_asset_locks = build_unused_asset_locks(entry)?;
+
+    // Decode the sends the host still holds as unconfirmed. Decode
+    // only: applying the spend needs `check_core_transaction`, which is
+    // async and wants the `Wallet` and the `ManagedWalletInfo`
+    // together, so the replay happens at the async boundary in
+    // `manager::load::load_from_persistor`. See
+    // `ClientWalletStartState::unconfirmed_outgoing_txs`.
+    //
+    // Sorted by the host's `first_seen` so a parent send is replayed
+    // before a child that spends its change; a child applied first
+    // would find its input still absent and be dropped as irrelevant.
+    let unconfirmed_outgoing_txs = {
+        use dashcore::consensus::Decodable;
+        let recs: &[UnconfirmedOutgoingTxRecordFFI] = if entry
+            .unconfirmed_outgoing_tx_records
+            .is_null()
+            || entry.unconfirmed_outgoing_tx_records_count == 0
+        {
+            &[]
+        } else {
+            unsafe {
+                slice::from_raw_parts(
+                    entry.unconfirmed_outgoing_tx_records,
+                    entry.unconfirmed_outgoing_tx_records_count,
+                )
+            }
+        };
+        let mut decoded: Vec<(u64, dashcore::blockdata::transaction::Transaction)> =
+            Vec::with_capacity(recs.len());
+        let mut dropped_decode = 0usize;
+        for rec in recs {
+            if rec.tx_bytes.is_null() || rec.tx_bytes_len == 0 {
+                dropped_decode += 1;
+                continue;
+            }
+            let bytes = unsafe { slice::from_raw_parts(rec.tx_bytes, rec.tx_bytes_len) };
+            match dashcore::blockdata::transaction::Transaction::consensus_decode(
+                &mut &bytes[..],
+            ) {
+                Ok(tx) => decoded.push((rec.first_seen, tx)),
+                Err(_) => dropped_decode += 1,
+            }
+        }
+        if dropped_decode > 0 {
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                dropped_decode,
+                "load: unconfirmed outgoing tx records failed to decode"
+            );
+        }
+        decoded.sort_by_key(|(first_seen, _)| *first_seen);
+        decoded.into_iter().map(|(_, tx)| tx).collect::<Vec<_>>()
+    };
+
     let wallet_state = ClientWalletStartState {
         wallet,
         wallet_info,
         identity_manager,
         unused_asset_locks,
+        unconfirmed_outgoing_txs,
     };
 
     let platform_address_state = if per_account.is_empty()
