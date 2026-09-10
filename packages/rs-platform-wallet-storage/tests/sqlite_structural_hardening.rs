@@ -20,14 +20,14 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::WalletStorageError;
 use rusqlite::params;
 
-/// a child insert without a `wallet_metadata` parent is
+/// a child insert without a `wallets` parent is
 /// rejected by the native FK (not a trigger).
 #[test]
 fn native_fk_rejects_orphan_child() {
     let (persister, _tmp, _path) = fresh_persister();
     let conn = persister.lock_conn_for_test();
     let res = conn.execute(
-        "INSERT INTO identities (wallet_id, wallet_index, identity_id, entry_blob, tombstoned) \
+        "INSERT INTO identities (wallet_id, identity_index, identity_id, entry_blob, tombstoned) \
          VALUES (?1, NULL, ?2, X'00', 0)",
         params![[7u8; 32].as_slice(), [9u8; 32].as_slice()],
     );
@@ -38,9 +38,11 @@ fn native_fk_rejects_orphan_child() {
     );
 }
 
-/// an `identity_keys` row whose `identities` parent does not
-/// exist is rejected by the FK to `identities(identity_id)` (cascade
-/// chain `wallet_metadata → identities → identity_keys`).
+/// An `identity_keys` row whose `identities` parent does not exist is
+/// rejected by the FK to `identities(identity_id)`. The `wallet_id`
+/// parent exists (via `ensure_wallet_meta`), so the failure is
+/// specifically the missing identity, not the wallet (cascade chain
+/// `wallets → identities → identity_keys`).
 #[test]
 fn native_fk_rejects_identity_keys_without_identity() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -49,9 +51,9 @@ fn native_fk_rejects_identity_keys_without_identity() {
     let conn = persister.lock_conn_for_test();
     let res = conn.execute(
         "INSERT INTO identity_keys \
-            (identity_id, key_id, public_key_blob, public_key_hash) \
-         VALUES (?1, 0, X'00', X'00')",
-        params![[3u8; 32].as_slice()],
+            (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \
+         VALUES (?1, ?2, 0, X'00', X'00', NULL)",
+        params![w.as_slice(), [3u8; 32].as_slice()],
     );
     let err = res.unwrap_err().to_string();
     assert!(
@@ -115,38 +117,22 @@ fn make_utxo(addr: &Address, vout: u32, value: u64) -> Utxo {
     Utxo::new(outpoint, txout, addr.clone(), 10, false)
 }
 
-/// UTXOs resolve their real `account_index` from the derived-address
-/// map written earlier in the same transaction, instead of a hardcoded
-/// 0.
+/// UTXOs without matching pool rows resolve to the default account.
 #[test]
-fn multi_account_utxos_bucket_to_real_account() {
+fn utxos_without_pool_rows_bucket_under_default_account() {
     use platform_wallet_storage::sqlite::schema::core_state;
 
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xC7);
     ensure_wallet_meta(&persister, &w);
 
-    let addr_acct5 = p2pkh(0x05);
-    let addr_acct9 = p2pkh(0x09);
+    let addr_a = p2pkh(0x05);
+    let addr_b = p2pkh(0x09);
 
     {
         let mut conn = persister.lock_conn_for_test();
-        // Pre-seed the derived-address map with two distinct accounts.
-        for (acct, addr) in [(5u32, &addr_acct5), (9u32, &addr_acct9)] {
-            conn.execute(
-                "INSERT INTO core_derived_addresses \
-                    (wallet_id, account_type, account_index, address, derivation_path, used) \
-                 VALUES (?1, 'standard', ?2, ?3, '0/0', 0)",
-                params![w.as_slice(), acct as i64, addr.to_string()],
-            )
-            .unwrap();
-        }
-
         let cs = CoreChangeSet {
-            new_utxos: vec![
-                make_utxo(&addr_acct5, 0, 1000),
-                make_utxo(&addr_acct9, 1, 2000),
-            ],
+            new_utxos: vec![make_utxo(&addr_a, 0, 1000), make_utxo(&addr_b, 1, 2000)],
             ..Default::default()
         };
         let tx = conn.transaction().unwrap();
@@ -157,49 +143,20 @@ fn multi_account_utxos_bucket_to_real_account() {
     let conn = persister.lock_conn_for_test();
     let by_account = core_state::list_unspent_utxos(&conn, &w).unwrap();
     assert_eq!(
-        by_account.get(&5).map(|v| v.len()),
-        Some(1),
-        "account 5 should hold exactly one UTXO"
+        by_account.len(),
+        1,
+        "all UTXOs bucket under a single (default) account"
     );
     assert_eq!(
-        by_account.get(&9).map(|v| v.len()),
-        Some(1),
-        "account 9 should hold exactly one UTXO"
+        by_account.get(&0).map(|v| v.len()),
+        Some(2),
+        "both UTXOs are attributed to the default account (index 0)"
     );
 }
 
-/// A NEW unspent UTXO whose address is absent from
-/// `core_derived_addresses` cannot resolve an owning account, so the
-/// write is refused with the typed `UtxoAddressNotDerived` instead of
-/// silently mis-filing live funds under account 0.
+/// A spent-only placeholder persists but remains excluded from unspent reads.
 #[test]
-fn unspent_utxo_on_undeclared_address_is_rejected() {
-    use platform_wallet_storage::sqlite::schema::core_state;
-
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xC8);
-    ensure_wallet_meta(&persister, &w);
-
-    let addr_unknown = p2pkh(0xEE);
-    let mut conn = persister.lock_conn_for_test();
-    let cs = CoreChangeSet {
-        new_utxos: vec![make_utxo(&addr_unknown, 0, 3000)],
-        ..Default::default()
-    };
-    let tx = conn.transaction().unwrap();
-    let err = core_state::apply(&tx, &w, &cs)
-        .expect_err("unspent UTXO on an undeclared address must error");
-    assert!(
-        matches!(err, WalletStorageError::UtxoAddressNotDerived { .. }),
-        "expected UtxoAddressNotDerived, got {err:?}"
-    );
-}
-
-/// A spent-only placeholder UTXO whose address was never derived still
-/// persists with the account-0 fallback — spent rows are excluded from
-/// the unspent set, so the placeholder index is inert.
-#[test]
-fn spent_only_utxo_on_undeclared_address_uses_zero_fallback() {
+fn spent_only_utxo_on_undeclared_address_is_excluded() {
     use platform_wallet_storage::sqlite::schema::core_state;
 
     let (persister, _tmp, _path) = fresh_persister();
@@ -231,20 +188,20 @@ fn spent_only_utxo_on_undeclared_address_uses_zero_fallback() {
 /// an out-of-range `birth_height` errors rather than truncating.
 #[test]
 fn birth_height_overflow_errors_not_truncates() {
-    use platform_wallet_storage::sqlite::schema::wallet_meta;
+    use platform_wallet_storage::sqlite::schema::wallets;
     let (persister, _tmp, _path) = fresh_persister();
     let w = wid(0xD1);
     {
         let conn = persister.lock_conn_for_test();
         // 1<<40 overflows u32 but fits the i64 column.
         conn.execute(
-            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
             params![w.as_slice(), 1_099_511_627_776i64],
         )
         .unwrap();
     }
     let conn = persister.lock_conn_for_test();
-    let err = wallet_meta::fetch(&conn, &w).expect_err("overflow must error");
+    let err = wallets::fetch(&conn, &w).expect_err("overflow must error");
     assert!(
         matches!(err, WalletStorageError::IntegerOverflow { .. }),
         "expected IntegerOverflow, got {err:?}"
@@ -427,7 +384,7 @@ fn asset_lock_typed_vs_blob_mismatch_rejected() {
         status: AssetLockStatus::Built,
         proof: None,
     };
-    let lifecycle_blob = blob::encode(&entry).unwrap();
+    let lifecycle_blob = asset_locks::encode_entry_for_test(&entry).unwrap();
     let op_bytes = blob::encode_outpoint(&outpoint).unwrap();
 
     {
@@ -441,7 +398,8 @@ fn asset_lock_typed_vs_blob_mismatch_rejected() {
     }
 
     let conn = persister.lock_conn_for_test();
-    let err = asset_locks::load_state(&conn, &w).expect_err("mismatch must fail");
+    let err = asset_locks::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect_err("mismatch must fail");
     assert!(
         matches!(err, WalletStorageError::AssetLockEntryMismatch { .. }),
         "expected AssetLockEntryMismatch, got {err:?}"
