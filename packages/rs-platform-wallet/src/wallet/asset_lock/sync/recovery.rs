@@ -880,16 +880,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// [`PlatformWalletError::TransactionBroadcastUnconfirmed`].
     ///
     /// A `Built` / `Broadcast` lock is screened by
-    /// [`first_confirmed_input_conflict`], and a hit never refuses the
-    /// resume. It caps the wait at the policy's own bound — a caller's
-    /// longer budget only delays a verdict a lock no peer will relay cannot
-    /// escape — and the verdict is read afterwards by
-    /// [`Self::input_conflict_verdict`]: a proof that arrives during the
-    /// bounded wait settles the lock normally, and a conflict the wait did
-    /// not clear is reported as the
-    /// provisional [`PlatformWalletError::AssetLockInputContested`], which
-    /// keeps the lock tracked for a later retry. Blocking the
-    /// broadcast-and-wait outright is what this evidence does NOT support:
+    /// [`first_confirmed_input_conflict`], and a hit never refuses the send
+    /// attempt. When the transport was ready, it caps the proof wait at the
+    /// policy's own bound — a caller's longer budget only delays a verdict a
+    /// lock no peer will relay cannot escape — and the verdict is re-read
+    /// afterwards by [`Self::input_conflict_verdict`]. When readiness was
+    /// missed and the send was rejected before dispatch, no live transport
+    /// can deliver a proof, so the contested verdict returns immediately and
+    /// the readiness-deferred retry owns the next proof wait. A proof already
+    /// present locally settles the lock before either path. Blocking the send
+    /// attempt outright is what this evidence does NOT support:
     /// the screen also reads records the load path rebuilt from persisted
     /// rows, which no event can demote once their block has been
     /// reorganized out behind an offline wallet, so a pre-emptive refusal
@@ -1420,10 +1420,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 //
                 // Without a standing input conflict, a DEFINITE `Rejected`
                 // ends the resume early — but it says NOTHING about the row,
-                // and must not be read as one. The row's RECORD may already
-                // hold the answer. A lock can sit at `Broadcast` while its
-                // transaction record carries an IS lock or a chain-locked
-                // context, because
+                // and must not be read as one. A standing conflict only falls
+                // through to the bounded proof wait when transport readiness
+                // succeeded; after a readiness miss there is no live source
+                // for a new proof, so the deferred retry owns that wait. The
+                // row's RECORD may already hold the answer. A lock can sit at
+                // `Broadcast` while its transaction record carries an IS lock
+                // or a chain-locked context, because
                 // finality that arrives with no waiter active enriches the
                 // record without advancing the tracked status
                 // (`LockNotifyHandler` only wakes waiters, and
@@ -1491,7 +1494,38 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                                 local_proof = Some(proof);
                             }
                             Err(probe_err) => {
-                                if input_conflict.is_none() {
+                                if let Some((input, spent_by, height)) = input_conflict {
+                                    if transport_missed.load(Ordering::Relaxed) {
+                                        tracing::warn!(
+                                            outpoint = %out_point,
+                                            %input,
+                                            %spent_by,
+                                            ?height,
+                                            error = %e,
+                                            probe = %probe_err,
+                                            "resume_asset_lock: defensive re-broadcast was \
+                                             rejected after transport readiness was missed; \
+                                             returning the standing conflict immediately and \
+                                             leaving the next proof wait to the deferred retry"
+                                        );
+                                        return Err(PlatformWalletError::AssetLockInputContested {
+                                            out_point: *out_point,
+                                            input,
+                                            spent_by,
+                                            height,
+                                        });
+                                    }
+                                    tracing::warn!(
+                                        outpoint = %out_point,
+                                        error = %e,
+                                        probe = %probe_err,
+                                        "resume_asset_lock: defensive re-broadcast of a \
+                                         Broadcast-status lock was rejected before dispatch \
+                                         with an input conflict sighted over a ready transport; \
+                                         entering the bounded proof wait so live synchronization \
+                                         can settle the lock before the conflict verdict is re-read"
+                                    );
+                                } else {
                                     tracing::warn!(
                                         outpoint = %out_point,
                                         error = %e,
@@ -1515,16 +1549,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                                         ),
                                     );
                                 }
-                                tracing::warn!(
-                                    outpoint = %out_point,
-                                    error = %e,
-                                    probe = %probe_err,
-                                    "resume_asset_lock: defensive re-broadcast of a \
-                                     Broadcast-status lock was rejected before dispatch \
-                                     with an input conflict sighted; entering the bounded \
-                                     proof wait so live synchronization can settle the \
-                                     lock before the conflict verdict is re-read"
-                                );
                             }
                         }
                     } else {
@@ -3049,11 +3073,11 @@ mod tests {
         );
     }
 
-    /// The same shape without a proof: the rejection must not pre-empt the
-    /// bounded wait the sighting exists to bound, and its expiry must be
-    /// reported as the provisional contested verdict — never as the
-    /// definite-rejection code 26, which promises a released reservation
-    /// this path does not release.
+    /// The same shape without a proof, over a broadcaster whose transport is
+    /// ready: the rejection must not pre-empt the bounded wait the sighting
+    /// exists to bound, and its expiry must be reported as the provisional
+    /// contested verdict — never as the definite-rejection code 26, which
+    /// promises a released reservation this path does not release.
     #[tokio::test]
     async fn a_rejected_rebroadcast_of_a_conflicted_built_lock_reports_the_contested_verdict() {
         let fixture = ConflictFixture::rejecting().await;
@@ -3127,11 +3151,13 @@ mod tests {
             "the second resume must start from the defensive Broadcast arm"
         );
 
+        let second_started = tokio::time::Instant::now();
         let second_error = fixture
             .manager
             .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
             .await
             .expect_err("the standing conflict must keep bounding later resumes");
+        let second_elapsed = second_started.elapsed();
         match second_error {
             PlatformWalletError::AssetLockInputContested {
                 out_point,
@@ -3153,6 +3179,10 @@ mod tests {
             fixture.broadcast_count(),
             2,
             "each resume still attempts its own re-broadcast before reporting the conflict"
+        );
+        assert!(
+            second_elapsed >= Duration::from_millis(10),
+            "a ready transport with a standing conflict must still enter the bounded proof wait"
         );
 
         // The retained status is only half the invariant. A row that is
@@ -5195,6 +5225,85 @@ mod tests {
             !attempts[0].1,
             "and that one send goes into the transport as it actually is — \
              still down. The ceiling bounds the race, it does not resolve it"
+        );
+    }
+
+    /// Regression: an offline `Broadcast` resume with a standing conflict
+    /// must return after the transport-readiness wait and rejected send. No
+    /// proof can arrive through the transport that just missed readiness, so
+    /// the deferred retry owns the next wait for connectivity.
+    ///
+    /// A 10ms caller timeout cannot catch this delay: both the immediate path
+    /// and an accidental proof wait finish inside that short explicit bound.
+    /// Using `None` exercises the production proof-wait default, while paused
+    /// time makes it practical to prove that only the 15s readiness wait ran.
+    #[tokio::test(start_paused = true)]
+    async fn offline_broadcast_resume_with_a_conflict_skips_the_dead_proof_wait() {
+        let broadcaster = Arc::new(StartingUpBroadcaster::never_comes_up());
+        let fixture = tracked_lock_at(broadcaster.clone(), AssetLockStatus::Broadcast).await;
+
+        let (funded_input, spender_txid) = {
+            let mut wm = fixture.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&fixture.wallet_id)
+                .expect("wallet must remain registered");
+            let funded_input = info
+                .tracked_asset_locks
+                .get(&fixture.out_point)
+                .expect("lock stays tracked")
+                .transaction
+                .input
+                .first()
+                .expect("asset lock spends at least one input")
+                .previous_output;
+            let spender = transaction_spending(funded_input);
+            let spender_txid = spender.txid();
+            info.core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("funded fixture has BIP44 account 0")
+                .transactions_mut()
+                .insert(spender_txid, record_for(spender, confirmed_at(1_234)));
+            (funded_input, spender_txid)
+        };
+
+        let started = tokio::time::Instant::now();
+        let error = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, None)
+            .await
+            .expect_err("the standing conflict must explain the offline resume");
+        let elapsed = started.elapsed();
+
+        match error {
+            PlatformWalletError::AssetLockInputContested {
+                out_point,
+                input,
+                spent_by,
+                height,
+            } => {
+                assert_eq!(out_point, fixture.out_point);
+                assert_eq!(input, funded_input);
+                assert_eq!(spent_by, spender_txid);
+                assert_eq!(height, Some(1_234));
+            }
+            other => panic!("expected AssetLockInputContested, got {other:?}"),
+        }
+        assert_eq!(
+            broadcaster.readiness_budgets(),
+            vec![BROADCAST_TRANSPORT_READY_WAIT],
+            "the foreground attempt gets exactly one bounded readiness wait"
+        );
+        assert_eq!(
+            elapsed, BROADCAST_TRANSPORT_READY_WAIT,
+            "the offline foreground resume must not add the default proof wait"
+        );
+        let attempts = broadcaster.attempts();
+        assert_eq!(attempts.len(), 1, "the foreground resume gets one send");
+        assert!(
+            !attempts[0].1,
+            "the send is rejected before dispatch because readiness was missed"
         );
     }
 
