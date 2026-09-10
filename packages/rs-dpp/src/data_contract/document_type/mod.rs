@@ -126,6 +126,12 @@ pub(crate) mod property_names {
     /// 14). See `apply_index_only` in `try_from_schema::common` for the
     /// structural constraints the flag imposes.
     pub const INDEX_ONLY: &str = "indexOnly";
+    /// Doctype-level flag declaring that a deleted document of this type may
+    /// have its retained revisions purged by an erase transition. Requires
+    /// `documentsKeepHistory: true` and `canBeDeleted: true`, defaults to
+    /// false, and is immutable across contract updates. Meta-schema v3+
+    /// (protocol version 14).
+    pub const CAN_BE_ERASED: &str = "canBeErased";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
