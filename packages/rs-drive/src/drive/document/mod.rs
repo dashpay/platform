@@ -36,6 +36,9 @@ mod index_uniqueness;
 mod insert;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert_contested;
+/// Activation migration and its inventory.
+#[cfg(feature = "server")]
+pub mod migration;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 pub mod query;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
