@@ -111,7 +111,7 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     .unwrap();
     let documents_before = platform
         .drive
-        .query_documents(query, None, false, None, None)
+        .query_documents(query, None, false, None, Some(13))
         .unwrap()
         .documents()
         .to_vec();
@@ -120,6 +120,22 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     let mut upgraded_state = platform.state.load().as_ref().clone();
     upgraded_state.set_current_protocol_version_in_consensus(14);
     upgraded_state.set_next_epoch_protocol_version(14);
+    let migration = platform.drive.grove.start_transaction();
+    platform
+        .perform_events_on_first_block_of_protocol_change(
+            &upgraded_state,
+            &BlockInfo::default(),
+            &migration,
+            13,
+            new_version,
+        )
+        .unwrap();
+    platform
+        .drive
+        .grove
+        .commit_transaction(migration)
+        .value
+        .unwrap();
     platform.state.store(std::sync::Arc::new(upgraded_state));
 
     // Re-reading the actual stored contract at v14 must bypass the parser's
@@ -223,7 +239,7 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     .unwrap();
     let documents_after = platform
         .drive
-        .query_documents(query, None, false, None, None)
+        .query_documents(query, None, false, None, Some(14))
         .unwrap()
         .documents()
         .to_vec();
@@ -231,4 +247,164 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
         documents_before, documents_after,
         "repair must preserve existing documents"
     );
+}
+
+#[tokio::test]
+async fn should_retain_replacements_transfers_prices_and_purchases_at_one_timestamp() {
+    use dpp::data_contract::DataContractFactory;
+    use drive::drive::document::history::{DocumentHistoryQueryV1, DocumentHistorySelector};
+    let version = PlatformVersion::get(14).unwrap();
+    let mut platform = TestPlatformBuilder::new()
+        .with_initial_protocol_version(14)
+        .build_with_mock_rpc()
+        .set_initial_state_structure();
+    let (owner, owner_signer, owner_key) = setup_identity(&mut platform, 958, dash_to_credits!(1));
+    let (buyer, buyer_signer, buyer_key) = setup_identity(&mut platform, 450, dash_to_credits!(1));
+    let contract = DataContractFactory::new(14).unwrap().create_with_value_config(owner.id(), 0, platform_value!({
+        "note": {
+            "type": "object", "documentsKeepHistory": true, "documentsMutable": true,
+            "canBeDeleted": false, "transferable": 1, "tradeMode": 1,
+            "properties": { "message": { "type": "string", "maxLength": 256, "position": 0 } },
+            "required": ["message"], "additionalProperties": false,
+            "indices": [{"name": "owner", "properties": [{"$ownerId": "asc"}]}]
+        }
+    }), None, None).unwrap().data_contract_owned();
+    platform
+        .drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .unwrap();
+    let document_type = contract.document_type_for_name("note").unwrap();
+    let mut rng = StdRng::seed_from_u64(937);
+    let entropy = Bytes32::random_with_rng(&mut rng);
+    let mut document = document_type
+        .random_document_with_identifier_and_entropy(
+            &mut rng,
+            owner.id(),
+            entropy,
+            DocumentFieldFillType::DoNotFillIfNotRequired,
+            DocumentFieldFillSize::AnyDocumentFillSize,
+            version,
+        )
+        .unwrap();
+    let query = DocumentHistoryQueryV1 {
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "note".into(),
+        document_id: document.id().to_buffer(),
+        selector: DocumentHistorySelector::StartAtTime(0),
+        limit: None,
+    };
+    for revision in 1..=5 {
+        document.set_revision(Some(revision));
+        let transition = match revision {
+            1 => {
+                BatchTransition::new_document_creation_transition_from_document(
+                    document.clone(),
+                    document_type,
+                    entropy.0,
+                    &owner_key,
+                    1,
+                    0,
+                    None,
+                    &owner_signer,
+                    version,
+                    None,
+                )
+                .await
+            }
+            2 => {
+                document.set("message", "replaced".into());
+                BatchTransition::new_document_replacement_transition_from_document(
+                    document.clone(),
+                    document_type,
+                    &owner_key,
+                    2,
+                    0,
+                    None,
+                    &owner_signer,
+                    version,
+                    None,
+                )
+                .await
+            }
+            3 => {
+                BatchTransition::new_document_transfer_transition_from_document(
+                    document.clone(),
+                    document_type,
+                    buyer.id(),
+                    &owner_key,
+                    3,
+                    0,
+                    None,
+                    &owner_signer,
+                    version,
+                    None,
+                )
+                .await
+            }
+            4 => {
+                BatchTransition::new_document_update_price_transition_from_document(
+                    document.clone(),
+                    document_type,
+                    100,
+                    &buyer_key,
+                    1,
+                    0,
+                    None,
+                    &buyer_signer,
+                    version,
+                    None,
+                )
+                .await
+            }
+            5 => {
+                BatchTransition::new_document_purchase_transition_from_document(
+                    document.clone(),
+                    document_type,
+                    owner.id(),
+                    100,
+                    &owner_key,
+                    4,
+                    0,
+                    None,
+                    &owner_signer,
+                    version,
+                    None,
+                )
+                .await
+            }
+            _ => unreachable!(),
+        }
+        .unwrap();
+        assert_matches!(
+            process_and_commit(&mut platform, transition.serialize_to_bytes().unwrap()),
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let (history, proof) = platform
+            .drive
+            .prove_document_history_v1(&query, document_type, None, version)
+            .unwrap();
+        assert_eq!(history.lifecycle.remaining_revisions, revision);
+        assert_eq!(
+            history
+                .entries
+                .iter()
+                .map(|entry| entry.revision)
+                .collect::<Vec<_>>(),
+            (1..=revision).collect::<Vec<_>>()
+        );
+        assert!(history.entries.iter().all(|entry| entry.time_ms == 0));
+        let (_, verified) =
+            drive::drive::Drive::verify_document_history_v1(&query, &proof, document_type, version)
+                .unwrap();
+        assert_eq!(verified, history);
+        document = history.entries.last().unwrap().document.clone();
+        assert_eq!(
+            document.owner_id(),
+            if [3, 4].contains(&revision) {
+                buyer.id()
+            } else {
+                owner.id()
+            }
+        );
+    }
 }
