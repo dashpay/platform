@@ -12,7 +12,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::{key_info::KeyInfo, KeyInfoPath};
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees, Mix};
-use grovedb::EstimatedSumTrees::NoSumTrees;
+use grovedb::EstimatedSumTrees::AllProvableCountTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;
 
@@ -63,7 +63,7 @@ impl Drive {
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
                 estimated_layer_count: PotentiallyAtMaxElements,
-                estimated_layer_sizes: AllSubtrees(32, NoSumTrees, flags_size),
+                estimated_layer_sizes: AllSubtrees(32, AllProvableCountTrees, flags_size),
             },
         );
         let mut path = KeyInfoPath::from_known_path(root.iter().map(Vec::as_slice));
