@@ -66,4 +66,23 @@ class DocumentTypeCapabilitiesTest {
         val config = buildJsonObject { put("documentsCanBeDeletedContractDefault", false) }
         assertTrue(documentTypeCapabilities(schema, config).canBeDeleted)
     }
+
+    @Test
+    fun canBeErasedIsOffUnlessTheSchemaSetsIt() {
+        // Erasure has no contract-config default: a type that does not say
+        // `canBeErased` cannot be erased, however deletable it is, so the
+        // Erase action must stay disabled for it.
+        val deletable = buildJsonObject {
+            put("documentsKeepHistory", true)
+            put("canBeDeleted", true)
+        }
+        assertFalse(documentTypeCapabilities(deletable, config = null).canBeErased)
+
+        val erasable = buildJsonObject {
+            put("documentsKeepHistory", true)
+            put("canBeDeleted", true)
+            put("canBeErased", true)
+        }
+        assertTrue(documentTypeCapabilities(erasable, config = null).canBeErased)
+    }
 }

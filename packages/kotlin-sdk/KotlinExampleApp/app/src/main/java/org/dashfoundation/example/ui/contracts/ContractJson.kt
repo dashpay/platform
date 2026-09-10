@@ -67,6 +67,12 @@ internal fun JsonObject.objectField(key: String): JsonObject? = this[key] as? Js
 internal data class DocumentTypeCapabilities(
     val documentsMutable: Boolean,
     val canBeDeleted: Boolean,
+    /**
+     * Whether a deleted document's retained revisions may be erased. Only
+     * a keep-history type can set it, it has no contract-config default,
+     * and it is off unless the schema says otherwise.
+     */
+    val canBeErased: Boolean,
 )
 
 /**
@@ -91,6 +97,7 @@ internal fun documentTypeCapabilities(
             ?: config?.boolField("documentsMutableContractDefault") ?: true,
         canBeDeleted = schema?.boolField("canBeDeleted")
             ?: config?.boolField("documentsCanBeDeletedContractDefault") ?: true,
+        canBeErased = schema?.boolField("canBeErased") ?: false,
     )
 
 /**

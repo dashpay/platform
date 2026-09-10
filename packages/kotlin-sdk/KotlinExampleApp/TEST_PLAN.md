@@ -204,6 +204,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | DOC-13 | Aggregation — sum of a numeric property | Platform | Uncommon | 🧪 | | **Sum / Average Documents** screen (op selector → **Sum**) → `dash_sdk_document_sum`. |
 | DOC-14 | Aggregation — average of a numeric property | Platform | Uncommon | 🧪 | | Same screen (op selector → **Average**) → `dash_sdk_document_average`. |
 | DOC-15 | Document transfer / purchase across wallets | Platform | Uncommon | ✅ | multiwallet | A creates + lists a document (`DOC-02`/`DOC-06`); B transfers/purchases it (`DOC-05`/`DOC-07`). |
+| DOC-16 | Erase a deleted keep-history document's revisions | Platform | Thorough | 🧪 | | **Browse Documents** → document → **Actions…** → **Erase Document…** (or the **Erase Document** catalog entry) → `DocumentTransactions.erase` → `platform_wallet_document_erase`. Needs a `documentsKeepHistory` type with `canBeErased: true` and a document already deleted via `DOC-04`; the first erase must be signed by the owner, later ones by any identity, each removing up to 100 revisions. Not driven on a device; no such type exists on testnet yet. |
 
 ### 4.8 Tokens — `Domain=Token`
 

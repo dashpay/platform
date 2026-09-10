@@ -57,10 +57,11 @@ import org.dashfoundation.example.util.truncateMiddle
 
 /**
  * Owned-document actions for one document — the DOC-03 replace / DOC-04
- * delete / DOC-05 transfer flows the iOS document ops menu ships
- * (`ManagedPlatformWallet.replaceDocument` / `deleteDocument` /
- * `transferDocument`). Reached from a document row's "Actions…" button and
- * from the document replace/delete/transfer transition-catalog entries.
+ * delete / DOC-16 erase / DOC-05 transfer flows the iOS document ops menu
+ * ships (`ManagedPlatformWallet.replaceDocument` / `deleteDocument` /
+ * `eraseDocument` / `transferDocument`). Reached from a document row's
+ * "Actions…" button and from the document replace/delete/erase/transfer
+ * transition-catalog entries.
  *
  * The document is probed by id (debounced, like [DocumentWithPriceScreen]) so
  * the acting-identity ownership badge and the replace-field prefill reflect
@@ -116,11 +117,13 @@ fun DocumentActionsScreen(
 
     var recipient by remember { mutableStateOf<RecipientSelection?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showEraseConfirm by remember { mutableStateOf(false) }
 
     var isSubmitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var replaceSuccess by remember { mutableStateOf<String?>(null) }
     var deleteSuccess by remember { mutableStateOf<String?>(null) }
+    var eraseSuccess by remember { mutableStateOf<String?>(null) }
     var transferSuccess by remember { mutableStateOf<String?>(null) }
 
     val schema = remember(contract?.lastUpdated, typeName) {
@@ -143,6 +146,7 @@ fun DocumentActionsScreen(
     val capabilities = documentTypeCapabilities(schema, contractConfig)
     val documentsMutable = capabilities.documentsMutable
     val canBeDeleted = capabilities.canBeDeleted
+    val canBeErased = capabilities.canBeErased
 
     // Default acting identity to the on-chain owner when it's one of ours,
     // else the first identity — replace/delete/transfer require ownership.
@@ -448,6 +452,46 @@ fun DocumentActionsScreen(
                 ) { showDeleteConfirm = true }
             }
 
+            // ── Erase (DOC-16) ────────────────────────────────────────────
+            // A deleted document is invisible to the probe above, so the
+            // erase cannot be ownership-gated here; consensus refuses a
+            // first erase from anyone but the owner (a paid rejection) and
+            // accepts later ones from any identity.
+            FormSection(title = "Erase") {
+                Text(
+                    "Remove the retained revisions of a document that has already " +
+                        "been deleted. Each erase removes up to 100 revisions; repeat " +
+                        "until the history is gone.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("documentActions.erase"),
+                )
+                eraseSuccess?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.testTag("eraseDocument.success"),
+                    )
+                }
+                if (!canBeErased) {
+                    Text(
+                        "This document type cannot be erased — an erase will be " +
+                            "rejected by consensus (fees are still charged).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                SubmitButton(
+                    text = "Erase Document…",
+                    isLoading = false,
+                    enabled = !isSubmitting && actingIdentity != null && manager != null &&
+                        canBeErased && documentIdText.isNotBlank(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("eraseDocument.button"),
+                ) { showEraseConfirm = true }
+            }
+
             // ── Transfer (DOC-05) ─────────────────────────────────────────
             FormSection(title = "Transfer") {
                 Text(
@@ -555,6 +599,51 @@ fun DocumentActionsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showEraseConfirm) {
+        AlertDialog(
+            onDismissRequest = { showEraseConfirm = false },
+            title = { Text("Erase document history?") },
+            text = {
+                Text(
+                    "This removes up to 100 retained revisions of the deleted document " +
+                        "${truncateMiddle(documentIdText.trim(), 8, 6)}. This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showEraseConfirm = false
+                        val signer = actingIdentity ?: return@TextButton
+                        val docIdBytes = Base58.decodeIdentifier(documentIdText.trim())
+                            ?: return@TextButton
+                        submitDocumentTransaction(
+                            begin = { isSubmitting = true; eraseSuccess = null },
+                            end = { isSubmitting = false },
+                            fail = { error = it },
+                            scope = scope,
+                        ) {
+                            val (wallet, mgr, signingKeyId) = resolveSigning(container, signer)
+                            mgr.documentTransactions.erase(
+                                walletHandle = wallet,
+                                ownerId = signer.identityId,
+                                contractId = contractIdBytes,
+                                documentType = typeName,
+                                documentId = docIdBytes,
+                                signingKeyId = signingKeyId,
+                                signerHandle = mgr.signerHandle,
+                            )
+                            eraseSuccess = "Erase accepted on-chain; repeat while revisions remain."
+                        }
+                    },
+                    modifier = Modifier.testTag("eraseDocument.confirm"),
+                ) { Text("Erase") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEraseConfirm = false }) { Text("Cancel") }
             },
         )
     }
