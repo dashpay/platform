@@ -32,6 +32,7 @@ fn migrate_summable_history(revision_count: u64) -> DocumentHistoryMigrationStat
         )
         .unwrap()
         .data_contract_owned();
+    let contract_flags = StorageFlags::new_single_epoch(7, Some([66; 32]));
     let directory = tempfile::TempDir::new().unwrap();
     let (drive, _) = Drive::open(
         directory.path(),
@@ -43,7 +44,14 @@ fn migrate_summable_history(revision_count: u64) -> DocumentHistoryMigrationStat
     .unwrap();
     drive.create_initial_state_structure(None, old).unwrap();
     drive
-        .apply_contract(&contract, BlockInfo::default(), true, None, None, old)
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            Some(Cow::Borrowed(&contract_flags)),
+            None,
+            old,
+        )
         .unwrap();
     let document_type = contract.document_type_for_name("tip").unwrap();
     let mut document = DocumentFactory::new(13)
@@ -177,8 +185,22 @@ fn migrate_summable_history(revision_count: u64) -> DocumentHistoryMigrationStat
         .unwrap();
     assert_eq!(
         history_tree.get_flags(),
-        &None,
+        &StorageFlags::map_to_some_element_flags(Some(&contract_flags)),
         "new structural bytes inherit the contract's flags"
+    );
+    let history_root = drive
+        .grove
+        .get_raw(
+            type_path.as_slice().into(),
+            &[DOCUMENT_HISTORY_TREE_KEY],
+            Some(&transaction),
+            &new.drive.grove_version,
+        )
+        .value
+        .unwrap();
+    assert_eq!(
+        history_root.get_flags(),
+        &StorageFlags::map_to_some_element_flags(Some(&contract_flags))
     );
     let empty_type = contract_document_type_path_vec(contract.id().as_slice(), "empty");
     let empty_history = drive
@@ -191,6 +213,10 @@ fn migrate_summable_history(revision_count: u64) -> DocumentHistoryMigrationStat
         )
         .value
         .unwrap();
+    assert_eq!(
+        empty_history.get_flags(),
+        &StorageFlags::map_to_some_element_flags(Some(&contract_flags))
+    );
     assert!(matches!(empty_history, Element::Tree(..)));
     println!("revisions={revision_count} {stats:#?}");
     stats
@@ -270,6 +296,7 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
     assert_eq!(stats.revisions, 2);
     assert_eq!(stats.migrated_documents, 1);
     assert!(stats.index_entries > 0);
+    assert_eq!(stats.rewritten_index_entries, stats.index_entries);
     let root_migrated = drive
         .grove
         .root_hash(Some(&transaction), &new.drive.grove_version)
@@ -408,4 +435,46 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
         assert!(fetched.is_err() && proved.is_err() && verified.is_err(), "revision 3 exists in retained [1,3], so an empty ordinal page must be rejected: fetch rejected={}, prove rejected={}, verify rejected={}", fetched.is_err(), proved.is_err(), verified.is_err());
     }
     println!("{stats:#?}");
+}
+
+#[test]
+fn should_reject_unrecognised_type_children_during_migration_inventory() {
+    let old = PlatformVersion::get(13).unwrap();
+    let new = PlatformVersion::get(14).unwrap();
+    for (key, element) in [
+        (vec![0, 9], Element::empty_tree()),
+        (b"unknown".to_vec(), Element::empty_tree()),
+        (b"item".to_vec(), Element::new_item(vec![])),
+    ] {
+        let drive = setup_drive_with_initial_state_structure(Some(old));
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
+            false,
+            old,
+        )
+        .unwrap();
+        drive
+            .apply_contract(&contract, BlockInfo::default(), true, None, None, old)
+            .unwrap();
+        let path = contract_document_type_path_vec(contract.id().as_slice(), "profile");
+        drive
+            .grove
+            .insert(
+                path.as_slice(),
+                &key,
+                element,
+                None,
+                None,
+                &old.drive.grove_version,
+            )
+            .value
+            .unwrap();
+        let transaction = drive.grove.start_transaction();
+        assert!(
+            drive
+                .migrate_document_history_storage(&transaction, new)
+                .is_err(),
+            "unrecognised type child {key:?} cannot be silently skipped"
+        );
+    }
 }
