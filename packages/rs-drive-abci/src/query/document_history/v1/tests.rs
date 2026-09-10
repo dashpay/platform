@@ -101,6 +101,15 @@ fn signed_proof(
 
 #[test]
 fn should_round_trip_history_api_through_quorum_and_grove_proof_verification() {
+    history_api_proof_round_trip(false);
+}
+
+#[test]
+fn should_reject_legacy_proof_envelopes_in_history_v1_through_sdk() {
+    history_api_proof_round_trip(true);
+}
+
+fn history_api_proof_round_trip(gapped: bool) {
     let (platform, state, version) = setup_platform(None, Network::Testnet, None);
     let mut state = state.as_ref().clone();
     let contract = json_document_to_contract(concat!(env!("CARGO_MANIFEST_DIR"), "/../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json"), false, version).unwrap();
@@ -120,6 +129,9 @@ fn should_round_trip_history_api_through_quorum_and_grove_proof_verification() {
     )
     .unwrap();
     for revision in 1..=3 {
+        if gapped && revision == 2 {
+            continue;
+        }
         document.set_revision(Some(revision));
         platform
             .drive
@@ -181,6 +193,68 @@ fn should_round_trip_history_api_through_quorum_and_grove_proof_verification() {
     let committed = state.last_committed_block_info.as_mut().unwrap();
     committed.set_app_hash(root);
     committed.set_signature(signed.signature.try_into().unwrap());
+    if gapped {
+        for (wire_selector, selector) in [
+            (Selector::Revision(3), DocumentHistorySelector::Revision(3)),
+            (
+                Selector::StartAtRevision(3),
+                DocumentHistorySelector::StartAtRevision(3),
+            ),
+        ] {
+            let request = GetDocumentHistoryRequestV1 {
+                data_contract_id: contract.id().to_vec(),
+                document_type_name: "profile".into(),
+                document_id: document.id().to_vec(),
+                limit: None,
+                prove: true,
+                selector: Some(wire_selector),
+            };
+            let mut time_request = request.clone();
+            time_request.selector = Some(Selector::StartAtMs(0));
+            let mut response = platform
+                .query_document_history_v1(time_request, &state, version)
+                .unwrap()
+                .into_data()
+                .unwrap();
+            let query = DocumentHistoryQueryV1 {
+                contract_id: contract.id().to_buffer(),
+                document_type_name: "profile".into(),
+                document_id: document.id().to_buffer(),
+                selector,
+                limit: None,
+            };
+            response.entries.clear();
+            response.lifecycle.as_mut().unwrap().remaining_revisions = 3;
+            response.metadata_proof.as_mut().unwrap().grovedb_proof =
+                drive::util::test_helpers::history_proof::downgrade_history_count(
+                    &response.metadata_proof.as_ref().unwrap().grovedb_proof,
+                    Some(3),
+                    version,
+                );
+            response.entries_proof.as_mut().unwrap().grovedb_proof = platform
+                .drive
+                .grove_get_proved_path_query(
+                    &query.entries_query(version).unwrap(),
+                    None,
+                    &mut vec![],
+                    &version.drive,
+                )
+                .unwrap();
+            let error = DocumentHistory::maybe_from_proof(
+                request.clone(),
+                response.clone(),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect_err("history v1 requires GroveDB v1 even with a valid quorum signature");
+            assert!(error.to_string().contains("unsupported proof version"));
+            assert!(drive_proof_verifier::types::DocumentHistoryProofInfo::maybe_from_proof_with_metadata(
+                request, response, Network::Testnet, version, &provider,
+            ).is_err());
+        }
+        return;
+    }
     let selections = [
         (
             document.id().to_buffer(),
@@ -269,6 +343,17 @@ fn should_round_trip_history_api_through_quorum_and_grove_proof_verification() {
         let result = verify(response.clone()).unwrap().unwrap();
         assert_eq!(result.entries, expected.entries);
         assert_eq!(result.lifecycle, Some(expected.lifecycle));
+        let mut legacy_metadata = response.clone();
+        let bytes = &mut legacy_metadata
+            .metadata_proof
+            .as_mut()
+            .unwrap()
+            .grovedb_proof;
+        *bytes =
+            drive::util::test_helpers::history_proof::downgrade_history_count(bytes, None, version);
+        let error =
+            verify(legacy_metadata).expect_err("metadata always requires a GroveDB v1 envelope");
+        assert!(error.to_string().contains("unsupported proof version"));
         let mut bad_count = response.clone();
         bad_count.lifecycle.as_mut().unwrap().remaining_revisions += 1;
         assert!(
@@ -282,6 +367,15 @@ fn should_round_trip_history_api_through_quorum_and_grove_proof_verification() {
         bad_signature.metadata_proof.as_mut().unwrap().signature[0] ^= 1;
         assert!(verify(bad_signature).is_err());
         if response.entries_proof.is_some() {
+            let mut downgraded = response.clone();
+            let bytes = &mut downgraded.entries_proof.as_mut().unwrap().grovedb_proof;
+            *bytes = drive::util::test_helpers::history_proof::downgrade_history_count(
+                bytes, None, version,
+            );
+            assert!(
+                verify(downgraded).is_err(),
+                "entries also require an authenticated V1 envelope"
+            );
             let mut missing = response.clone();
             missing.entries_proof = None;
             assert!(verify(missing).is_err());
