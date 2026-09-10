@@ -1872,13 +1872,6 @@ pub(super) fn apply_doctype_aggregates(
     Ok(())
 }
 
-/// Read the doctype-level `indexOnly` keyword off the raw schema.
-///
-/// Runs before the core parse because the core takes `schema` by value —
-/// same shape as [`parse_doctype_aggregate_keywords`]. Only the generation-3
-/// driver calls this; earlier generations ignore the keyword exactly as they
-/// ignore every doctype-level keyword they predate (their meta-schemas still
-/// reject it under `full_validation`).
 /// Read the doctype-level `canBeErased` flag out of the raw schema.
 ///
 /// Runs before the core parse for the same reason as
@@ -1985,6 +1978,13 @@ pub(super) fn reject_contested_keep_history(
     Ok(())
 }
 
+/// Read the doctype-level `indexOnly` keyword off the raw schema.
+///
+/// Runs before the core parse because the core takes `schema` by value —
+/// same shape as [`parse_doctype_aggregate_keywords`]. Only the generation-3
+/// driver calls this; earlier generations ignore the keyword exactly as they
+/// ignore every doctype-level keyword they predate (their meta-schemas still
+/// reject it under `full_validation`).
 pub(super) fn parse_index_only_keyword(schema: &Value) -> Result<bool, ProtocolError> {
     let schema_map_opt = schema.to_map().ok();
 

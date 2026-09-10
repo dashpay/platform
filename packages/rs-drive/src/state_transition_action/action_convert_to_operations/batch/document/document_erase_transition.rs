@@ -32,8 +32,9 @@ impl DriveHighLevelBatchOperationConverter for DocumentEraseTransitionAction {
                 let data_contract_id = base.data_contract_id();
                 let identity_contract_nonce = base.identity_contract_nonce();
 
-                // No token operation: erase carries no token cost, and its
-                // structure validation refuses a transition that offers one.
+                // No token operation: erase carries no token cost, and a
+                // transition that offers to pay one is refused where the offer
+                // is still visible, when the transition becomes an action.
                 Ok(vec![
                     IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
                         identity_id: owner_id.into_buffer(),

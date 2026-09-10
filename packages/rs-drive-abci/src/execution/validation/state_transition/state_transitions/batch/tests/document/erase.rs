@@ -877,3 +877,179 @@ async fn should_charge_an_erase_for_the_refund_recipients_it_can_credit() {
         recipient_cost.processing_fee
     );
 }
+
+/// A paid failure has to leave its nonce bump behind, or the same rejected
+/// transition can be replayed for free. The refusals the lifecycle adds are no
+/// exception.
+#[tokio::test]
+async fn should_persist_the_nonce_bump_on_a_refused_erase() {
+    let mut fixture = Fixture::new("note").await;
+
+    let nonce_after = |fixture: &Fixture| {
+        fixture
+            .platform
+            .drive
+            .fetch_identity_contract_nonce(
+                fixture.owner.id().to_buffer(),
+                fixture.contract.id().to_buffer(),
+                true,
+                None,
+                PlatformVersion::get(14).unwrap(),
+            )
+            .expect("expected to read the identity contract nonce")
+            .expect("the create already wrote one")
+    };
+    let before = nonce_after(&fixture);
+
+    // An erase of a document that has not been deleted.
+    assert_matches!(
+        fixture.erase("note", true, None).await,
+        StateTransitionExecutionResult::PaidConsensusError { .. }
+    );
+    let after_refusal = nonce_after(&fixture);
+    assert_eq!(
+        after_refusal,
+        before + 1,
+        "a refused erase must still consume its nonce"
+    );
+
+    // And an erase whose token payment is refused in the transformer, which is
+    // a different refusal path with its own nonce-bump action.
+    let token_payment_info = TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+        payment_token_contract_id: Some(Identifier::new([5u8; 32])),
+        token_contract_position: 0,
+        minimum_token_cost: None,
+        maximum_token_cost: Some(10),
+        gas_fees_paid_by: Default::default(),
+    });
+    assert_matches!(
+        fixture.erase("note", true, Some(token_payment_info)).await,
+        StateTransitionExecutionResult::PaidConsensusError { .. }
+    );
+    assert_eq!(
+        nonce_after(&fixture),
+        after_refusal + 1,
+        "the transformer's refusal must consume its nonce too"
+    );
+}
+
+/// A delete and a create of the same id in one block: the create sees the
+/// delete's reservation through the block transaction and is refused, so an id
+/// cannot be recycled while its revisions are retained.
+#[tokio::test]
+async fn should_reject_a_create_that_follows_a_delete_of_the_same_id_in_one_block() {
+    let mut fixture = Fixture::new("note").await;
+
+    let platform_version = PlatformVersion::get(14).unwrap();
+    let mut document = fixture.document.clone();
+    document.set_revision(Some(1));
+    let delete = BatchTransition::new_document_deletion_transition_from_document(
+        document,
+        fixture.document_type("note"),
+        &fixture.owner_key,
+        fixture.nonce,
+        0,
+        None,
+        &fixture.owner_signer,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected a delete transition")
+    .serialize_to_bytes()
+    .expect("serialized");
+    fixture.nonce += 1;
+
+    let create = BatchTransition::new_document_creation_transition_from_document(
+        fixture.document.clone(),
+        fixture.document_type("note"),
+        fixture.entropy.0,
+        &fixture.owner_key,
+        fixture.nonce,
+        0,
+        None,
+        &fixture.owner_signer,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected a create transition")
+    .serialize_to_bytes()
+    .expect("serialized");
+    fixture.nonce += 1;
+
+    let state = fixture.platform.state.load();
+    let version = state.current_platform_version().unwrap();
+    let transaction = fixture.platform.drive.grove.start_transaction();
+    let result = fixture
+        .platform
+        .platform
+        .process_raw_state_transitions(
+            &[delete, create],
+            &state,
+            &BlockInfo::default(),
+            &transaction,
+            version,
+            false,
+            None,
+        )
+        .expect("expected transition processing");
+    fixture
+        .platform
+        .drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(result.valid_count(), 1, "only the delete may execute");
+    assert_eq!(result.invalid_paid_count(), 1, "the create must be refused");
+    assert_matches!(
+        fixture.lifecycle("note"),
+        DocumentLifecycleState::Deleted(_)
+    );
+}
+
+/// Replacing a deleted document is refused for the same reason a second delete
+/// is: nothing an ordinary read can see is there any more. This is the existing
+/// not-found path, pinned here because the lifecycle is what makes the document
+/// invisible while its revisions survive.
+#[tokio::test]
+async fn should_reject_a_replace_of_a_deleted_document() {
+    let mut fixture = Fixture::new("note").await;
+    assert_successful(&fixture.delete_as_owner("note").await, "the delete");
+
+    let platform_version = PlatformVersion::get(14).unwrap();
+    let mut replacement = fixture.document.clone();
+    replacement.set_revision(Some(2));
+    let transition = BatchTransition::new_document_replacement_transition_from_document(
+        replacement,
+        fixture.document_type("note"),
+        &fixture.owner_key,
+        fixture.nonce,
+        0,
+        None,
+        &fixture.owner_signer,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected a replace transition");
+    fixture.nonce += 1;
+
+    let result = process(
+        &mut fixture.platform,
+        transition.serialize_to_bytes().expect("serialized"),
+    );
+    assert_matches!(
+        result,
+        StateTransitionExecutionResult::PaidConsensusError {
+            error: ConsensusError::StateError(StateError::DocumentNotFoundError(_)),
+            ..
+        }
+    );
+    assert_matches!(
+        fixture.lifecycle("note"),
+        DocumentLifecycleState::Deleted(_)
+    );
+}

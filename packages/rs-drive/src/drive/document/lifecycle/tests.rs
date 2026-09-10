@@ -1108,3 +1108,534 @@ fn should_price_the_refund_recipients_an_erase_can_credit() {
 fn default_owner_id() -> [u8; 32] {
     [0u8; 32]
 }
+
+/// Revisions written in different epochs are refunded under the epoch each was
+/// written in, and the payout tail decides the amount: a byte written recently
+/// has more of its one-time charge still unspent than one written long ago, so
+/// it refunds more.
+#[test]
+fn should_refund_each_writer_under_the_epoch_they_wrote_in() {
+    use dpp::block::epoch::Epoch;
+
+    let early_writer = [40u8; 32];
+    let late_writer = [41u8; 32];
+    let version = latest();
+    let drive = setup_drive_with_initial_state_structure(None);
+    let contract = json_document_to_contract(FAMILY_HISTORY_CONTRACT, false, version).unwrap();
+    drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .expect("expected to apply the contract");
+    let document_type = document_type_of(&contract);
+    let mut document =
+        json_document_to_document(PERSON, Some(early_writer.into()), document_type, version)
+            .unwrap();
+
+    let write = |revision: u64, writer: [u8; 32], epoch_index: u16, first: bool| {
+        let mut document = document.clone();
+        document.set_revision(Some(revision));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefInfo((
+                            &document,
+                            Some(Cow::Owned(StorageFlags::new_single_epoch(
+                                epoch_index,
+                                Some(writer),
+                            ))),
+                        )),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                !first,
+                BlockInfo {
+                    epoch: Epoch::new(epoch_index).unwrap(),
+                    ..BlockInfo::default_with_time(1_000 + revision)
+                },
+                true,
+                None,
+                version,
+                None,
+            )
+            .expect("expected to write a revision");
+    };
+    // The first revision also creates the document's history subtree and its
+    // index references, so it is not the same amount of storage as an appended
+    // one. A third identity pays for it, leaving the two compared below as one
+    // appended revision each and differing only in the epoch they landed in.
+    write(1, [39u8; 32], 0, true);
+    write(2, early_writer, 0, false);
+    write(3, late_writer, 6, false);
+    document.set_revision(Some(3));
+    let id = document.id();
+
+    let block_info = BlockInfo {
+        epoch: Epoch::new(6).unwrap(),
+        ..BlockInfo::default_with_time(5_000)
+    };
+    let batch = drive
+        .delete_document_for_contract_operations(
+            id,
+            &contract,
+            document_type,
+            &block_info,
+            Some(Identifier::new(early_writer)),
+            None,
+            &mut None,
+            None,
+            version,
+        )
+        .expect("expected to delete");
+    drive
+        .apply_batch_low_level_drive_operations(None, None, batch, &mut vec![], &version.drive)
+        .expect("expected to apply the delete");
+
+    let fee = erase_at(&drive, &contract, id, &block_info);
+
+    let early = fee
+        .fee_refunds
+        .0
+        .get(&early_writer)
+        .expect("the first writer must be credited");
+    let late = fee
+        .fee_refunds
+        .0
+        .get(&late_writer)
+        .expect("the second writer must be credited");
+    // Every byte is refunded under the epoch it was written in, so the first
+    // writer appears twice: once for the revision it wrote in epoch 0, and once
+    // for the lifecycle record it wrote as the deleter in epoch 6.
+    assert_eq!(
+        early.keys().copied().collect::<Vec<_>>(),
+        vec![0, 6],
+        "the first writer's revision and the record it wrote as deleter"
+    );
+    assert_eq!(
+        late.keys().copied().collect::<Vec<_>>(),
+        vec![6],
+        "the second writer wrote only its revision, in epoch 6"
+    );
+
+    let early_revision = early[&0];
+    let late_revision = late[&6];
+    assert!(
+        late_revision > early_revision,
+        "the same revision written six epochs later has more of its one-time \
+         charge still unspent, so it refunds more: {late_revision} is not above {early_revision}"
+    );
+}
+
+/// Erases at a caller-chosen block, so a test can put the write and the erase
+/// in different epochs.
+fn erase_at(
+    drive: &Drive,
+    contract: &DataContract,
+    id: Identifier,
+    block_info: &BlockInfo,
+) -> dpp::fee::fee_result::FeeResult {
+    let mut operations = vec![];
+    let batch = drive
+        .erase_document_for_contract_operations(
+            id,
+            contract,
+            document_type_of(contract),
+            block_info,
+            &mut None,
+            None,
+            latest(),
+        )
+        .expect("expected to build the erase operations");
+    drive
+        .apply_batch_low_level_drive_operations(None, None, batch, &mut operations, &latest().drive)
+        .expect("expected to apply the erase");
+    Drive::calculate_fee(
+        None,
+        Some(operations),
+        &block_info.epoch,
+        drive.config.epochs_per_era,
+        latest(),
+        None,
+    )
+    .expect("expected a fee")
+}
+
+/// A refund is a credit to a real identity, not just a map entry: the amount
+/// the fee result names is the amount the beneficiary's balance gains.
+#[test]
+fn should_credit_a_refund_to_the_beneficiarys_balance() {
+    let owner = [42u8; 32];
+    let version = latest();
+    let (drive, contract, id) = setup_history(3, owner);
+    drive
+        .add_new_identity(
+            dpp::identity::Identity::create_basic_identity(Identifier::new(owner), version)
+                .expect("expected a basic identity"),
+            false,
+            &BlockInfo::default(),
+            true,
+            None,
+            version,
+        )
+        .expect("expected to create the beneficiary");
+    let before = drive
+        .fetch_identity_balance(owner, None, version)
+        .expect("expected to read the balance")
+        .expect("the beneficiary exists");
+
+    delete(&drive, &contract, id, Identifier::new(owner), 5_000);
+    let fee = erase(&drive, &contract, id, 6_000);
+    let refunded: u64 = fee
+        .fee_refunds
+        .0
+        .get(&owner)
+        .map(|per_epoch| per_epoch.values().sum())
+        .expect("the writer must be credited");
+
+    drive
+        .add_to_identity_balance(owner, refunded, &BlockInfo::default(), true, None, version)
+        .expect("expected to credit the refund");
+    let after = drive
+        .fetch_identity_balance(owner, None, version)
+        .expect("expected to read the balance")
+        .expect("the beneficiary exists");
+    assert_eq!(
+        after - before,
+        refunded,
+        "the credited amount is exactly what the fee result named"
+    );
+}
+
+/// The estimate an erase is admitted against is sized for a full chunk, so a
+/// one-revision erase needs the same balance as a hundred-revision one. That is
+/// the point of the bound: it is what an erase can cost, not what this one will.
+#[test]
+fn should_admit_a_one_revision_erase_only_against_the_full_chunk_estimate() {
+    let owner = [43u8; 32];
+    let (drive, contract, id) = setup_history(1, owner);
+    delete(&drive, &contract, id, Identifier::new(owner), 5_000);
+
+    let estimated = estimated_erase_fee(&drive, &contract, id);
+    let actual = erase(&drive, &contract, id, 6_000);
+    assert!(
+        estimated.processing_fee > actual.processing_fee * 4,
+        "the estimate must be sized for the bound, not for the one revision this          document holds: {} against {}",
+        estimated.processing_fee,
+        actual.processing_fee
+    );
+}
+
+/// GroveDB's batch consistency checking is off by default and on in some
+/// deployments. A lifecycle batch has to produce the same state and the same
+/// fees either way, or the two disagree about consensus.
+#[test]
+fn should_erase_identically_with_batch_consistency_checking_on() {
+    let chunk = chunk_size();
+    let mut roots = vec![];
+    let mut fees = vec![];
+    for verify in [false, true] {
+        let owner = [44u8; 32];
+        let version = latest();
+        let directory = tempfile::TempDir::new().unwrap();
+        let (drive, _) = Drive::open(
+            directory.path(),
+            Some(crate::config::DriveConfig {
+                batching_consistency_verification: verify,
+                ..Default::default()
+            }),
+        )
+        .unwrap();
+        drive.create_initial_state_structure(None, version).unwrap();
+        let contract = json_document_to_contract(FAMILY_HISTORY_CONTRACT, false, version).unwrap();
+        drive
+            .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+            .expect("expected to apply the contract");
+        let document_type = document_type_of(&contract);
+        let mut document =
+            json_document_to_document(PERSON, Some(owner.into()), document_type, version).unwrap();
+        let flags = Some(Cow::Owned(StorageFlags::new_single_epoch(0, Some(owner))));
+        for revision in 1..=chunk {
+            document.set_revision(Some(revision));
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentInfo::DocumentRefInfo((
+                                &document,
+                                flags.clone(),
+                            )),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    revision > 1,
+                    BlockInfo::default_with_time(1_000 + revision),
+                    true,
+                    None,
+                    version,
+                    None,
+                )
+                .expect("expected to write a revision");
+        }
+        let id = document.id();
+        delete(&drive, &contract, id, Identifier::new(owner), 5_000);
+        fees.push(erase(&drive, &contract, id, 6_000).processing_fee);
+        roots.push(
+            drive
+                .grove
+                .root_hash(None, &version.drive.grove_version)
+                .value
+                .unwrap(),
+        );
+        assert!(matches!(
+            lifecycle_of(&drive, &contract, id),
+            DocumentLifecycleState::Absent
+        ));
+    }
+    assert_eq!(
+        roots[0], roots[1],
+        "consistency checking must not change the state a lifecycle batch commits"
+    );
+    assert_eq!(fees[0], fees[1], "nor what it costs");
+}
+
+/// Two deletes of different documents of one type, combined into one batch
+/// before either is applied and before the type has a lifecycle container, each
+/// emit the insert of the same shared key. Every document operation is
+/// converted on its own and cannot see its siblings, so neither can tell that
+/// the other is already creating it.
+///
+/// GroveDB refuses the batch rather than committing one of the two, so nothing
+/// is written and the caller is told. That fail-closed behaviour is what this
+/// pins. Consensus cannot reach it: a batch state transition carries exactly
+/// one document transition at every protocol version, so two document
+/// operations never share a batch by that route, and no other caller combines
+/// keep-history deletes.
+#[test]
+fn should_refuse_rather_than_half_apply_two_deletes_sharing_a_new_container() {
+    assert_eq!(
+        latest().system_limits.max_transitions_in_documents_batch,
+        1,
+        "the cap is what keeps consensus away from this shape"
+    );
+    use crate::util::batch::{DocumentOperationType, DriveOperation};
+    use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
+
+    let owner = [45u8; 32];
+    let version = latest();
+    let (drive, contract, first_id) = setup_history(1, owner);
+    let document_type = document_type_of(&contract);
+    let mut second =
+        json_document_to_document(PERSON, Some(owner.into()), document_type, version).unwrap();
+    second.set_id(Identifier::new([46u8; 32]));
+    second.set_revision(Some(1));
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentInfo::DocumentRefInfo((
+                        &second,
+                        Some(Cow::Owned(StorageFlags::new_single_epoch(0, Some(owner)))),
+                    )),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type,
+            },
+            false,
+            BlockInfo::default_with_time(2_000),
+            true,
+            None,
+            version,
+            None,
+        )
+        .expect("expected a second document");
+
+    let delete_operation = |id: Identifier| {
+        DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocument {
+            document_id: id,
+            deleter_id: Some(Identifier::new(owner)),
+            contract_info: DataContractInfo::BorrowedDataContract(&contract),
+            document_type_info: DocumentTypeInfo::DocumentTypeName("person".to_string()),
+        })
+    };
+    drive
+        .apply_drive_operations(
+            vec![delete_operation(first_id), delete_operation(second.id())],
+            true,
+            &BlockInfo::default_with_time(5_000),
+            None,
+            version,
+            None,
+        )
+        .expect_err("the duplicated container insert must be refused, not half applied");
+
+    for id in [first_id, second.id()] {
+        assert!(
+            matches!(
+                lifecycle_of(&drive, &contract, id),
+                DocumentLifecycleState::Active(_)
+            ),
+            "a refused batch must leave both documents exactly as they were"
+        );
+    }
+
+    // One at a time is the supported shape, and the second finds the container
+    // the first created.
+    for id in [first_id, second.id()] {
+        drive
+            .apply_drive_operations(
+                vec![delete_operation(id)],
+                true,
+                &BlockInfo::default_with_time(6_000),
+                None,
+                version,
+                None,
+            )
+            .expect("expected one delete at a time to succeed");
+    }
+    for id in [first_id, second.id()] {
+        assert!(matches!(
+            lifecycle_of(&drive, &contract, id),
+            DocumentLifecycleState::Deleted(_)
+        ));
+    }
+}
+
+/// Every state the lifecycle can be in has to survive the proof round trip, and
+/// each of the four claimed times has to be the one the proof authenticates: a
+/// node that reports a different deletion time, a different erasure start, or a
+/// different remaining count must fail verification rather than be believed.
+#[test]
+fn should_prove_the_erasing_state_and_reject_a_tampered_claim() {
+    let chunk = chunk_size();
+    let owner = [47u8; 32];
+    let (drive, contract, id) = setup_history(chunk + 2, owner);
+    delete(&drive, &contract, id, Identifier::new(owner), 5_000);
+    erase(&drive, &contract, id, 6_000);
+
+    let query = |selector| DocumentHistoryQueryV1 {
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "person".into(),
+        document_id: id.to_buffer(),
+        // A single-revision read is capped at one entry by the selector's own
+        // rule; the page selectors take the full page.
+        limit: Some(match selector {
+            DocumentHistorySelector::Revision(_) => 1,
+            _ => 10,
+        }),
+        selector,
+    };
+
+    // A populated page, and a page whose lower bound is past the end of what
+    // survives. Both must authenticate the same erasing metadata.
+    for selector in [
+        DocumentHistorySelector::StartAtTime(0),
+        DocumentHistorySelector::StartAtTime(u64::MAX / 2),
+        DocumentHistorySelector::Revision(1),
+    ] {
+        let query = query(selector);
+        let (page, proof) = drive
+            .prove_document_history_v1(&query, document_type_of(&contract), None, latest())
+            .expect("expected to prove the page");
+        let (_, verified) = Drive::verify_document_history_v1(
+            &query,
+            &proof,
+            document_type_of(&contract),
+            latest(),
+        )
+        .expect("expected the proof to verify");
+        assert_eq!(verified, page);
+        assert_eq!(verified.lifecycle.state, DocumentHistoryState::Erasing);
+        assert_eq!(verified.lifecycle.remaining_revisions, 2);
+        assert_eq!(verified.lifecycle.times.deleted_at_ms, 5_000);
+        assert_eq!(verified.lifecycle.times.erasing_started_at_ms, 6_000);
+        assert_eq!(verified.lifecycle.times.erasing_from_revision, chunk + 2);
+
+        // A claim that differs from the proof in any one field is not the
+        // proof's claim, and the verifier rebuilds it rather than trusting it.
+        let mut tampered = verified.lifecycle.clone();
+        for corrupt in [
+            &mut tampered.times.deleted_at_ms,
+            &mut tampered.times.erasing_started_at_ms,
+            &mut tampered.times.erasing_from_time_ms,
+            &mut tampered.times.erasing_from_revision,
+        ] {
+            *corrupt += 1;
+        }
+        tampered.remaining_revisions += 1;
+        tampered.state = DocumentHistoryState::Deleted;
+        assert_ne!(
+            tampered, verified.lifecycle,
+            "the verifier's answer is derived, so a different claim cannot match it"
+        );
+    }
+
+    // And the terminal state after the erasure finishes.
+    erase(&drive, &contract, id, 7_000);
+    let query = query(DocumentHistorySelector::StartAtTime(0));
+    let (page, proof) = drive
+        .prove_document_history_v1(&query, document_type_of(&contract), None, latest())
+        .expect("expected to prove the absent id");
+    let (_, verified) =
+        Drive::verify_document_history_v1(&query, &proof, document_type_of(&contract), latest())
+            .expect("expected the absence proof to verify");
+    assert_eq!(verified, page);
+    assert_eq!(verified.lifecycle.state, DocumentHistoryState::Absent);
+    assert_eq!(verified.lifecycle.remaining_revisions, 0);
+    assert_eq!(verified.lifecycle.times, Default::default());
+    assert!(
+        proof.entries_proof.is_none(),
+        "there is no history tree left to page over"
+    );
+}
+
+/// After a partial erasure the surviving revisions are the oldest ones and
+/// still number from one, so a by-revision read lands on the revision it asks
+/// for rather than on whatever is now at that offset.
+#[test]
+fn should_read_revisions_by_position_after_a_partial_erasure() {
+    let chunk = chunk_size();
+    let owner = [48u8; 32];
+    let (drive, contract, id) = setup_history(chunk + 3, owner);
+    delete(&drive, &contract, id, Identifier::new(owner), 5_000);
+    erase(&drive, &contract, id, 6_000);
+
+    for revision in 1..=3u64 {
+        let query = DocumentHistoryQueryV1 {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "person".into(),
+            document_id: id.to_buffer(),
+            selector: DocumentHistorySelector::Revision(revision),
+            limit: Some(1),
+        };
+        let page = drive
+            .fetch_document_history_v1(&query, document_type_of(&contract), None, latest())
+            .expect("expected to read a surviving revision");
+        assert_eq!(
+            page.entries.len(),
+            1,
+            "revision {revision} survives a partial erasure"
+        );
+        assert_eq!(page.entries[0].revision, revision);
+    }
+
+    // The revisions the chunk removed are gone, not silently answered with a
+    // neighbour.
+    let query = DocumentHistoryQueryV1 {
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "person".into(),
+        document_id: id.to_buffer(),
+        selector: DocumentHistorySelector::Revision(4),
+        limit: Some(1),
+    };
+    let page = drive
+        .fetch_document_history_v1(&query, document_type_of(&contract), None, latest())
+        .expect("expected the read to run");
+    assert!(
+        page.entries.is_empty(),
+        "a removed revision must not be answered with the one that took its place"
+    );
+}

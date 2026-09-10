@@ -107,11 +107,10 @@ impl Drive {
             // A dry run skips the probe, which reports the tree as absent, and
             // pays for it as a fixed cost so estimation and execution agree.
             if !created && !insert_without_check {
-                return Err(Error::Drive(
-                    DriveError::CorruptedDocumentAlreadyExists(
-                        "a document of this id still retains revisions and can not be created                          until they are erased",
-                    ),
-                ));
+                return Err(Error::Drive(DriveError::CorruptedDocumentAlreadyExists(
+                    "a document of this id still retains revisions and can not be \
+                         created until they are erased",
+                )));
             }
         } else {
             operations.push(
