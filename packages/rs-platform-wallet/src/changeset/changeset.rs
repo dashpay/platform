@@ -3404,7 +3404,7 @@ mod utxo_credit_verdict_merge_tests {
                 .iter()
                 .map(|(index, role)| OutputDetail {
                     index: *index,
-                    role: role.clone(),
+                    role: *role,
                     address: None,
                     value: 1,
                 })

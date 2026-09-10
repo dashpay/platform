@@ -1631,24 +1631,13 @@ async fn is_chain_locked(
 /// Every account slice the manager currently holds for `txid` in
 /// `wallet_id` — the authoritative "all accounts matched so far"
 /// snapshot behind the wallet-level fold (see the `TransactionDetected`
-/// arm of [`build_core_changeset`]). Returns `None` when the manager
-/// doesn't know the wallet at all, `Some(vec![])` when it does but no
-/// account holds a record for the txid (e.g. pruned at chain-lock).
-async fn wallet_slices_for_txid(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    wallet_id: &WalletId,
-    txid: &dashcore::Txid,
-) -> Option<Vec<TransactionRecord>> {
-    wallet_slices_and_verdicts_for_txid(wallet_manager, wallet_id, txid)
-        .await
-        .map(|(slices, _)| slices)
-}
-
-/// [`wallet_slices_for_txid`] plus the credit verdicts of the owned
-/// slices' outputs ([`utxo_credit_verdicts_from_wallet`]), both read under
-/// ONE wallet read guard, so the records a verdict is judged on and the
-/// wallet state it is judged against are the same snapshot. Same `None` /
-/// `Some(vec![])` contract; the verdicts of an empty slice set are empty.
+/// arm of [`build_core_changeset`]) — together with the credit verdicts
+/// of the owned slices' outputs ([`utxo_credit_verdicts_from_wallet`]),
+/// both read under ONE wallet read guard, so the records a verdict is
+/// judged on and the wallet state it is judged against are the same
+/// snapshot. Returns `None` when the manager doesn't know the wallet at
+/// all, `Some((vec![], empty))` when it does but no account holds a record
+/// for the txid (e.g. pruned at chain-lock).
 async fn wallet_slices_and_verdicts_for_txid(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
@@ -3101,7 +3090,7 @@ mod contact_watch_only_projection_tests {
         let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
         let manager = Arc::new(RwLock::new(wm));
 
-        let slices = wallet_slices_for_txid(&manager, &wallet_id, &spend.txid())
+        let (slices, _) = wallet_slices_and_verdicts_for_txid(&manager, &wallet_id, &spend.txid())
             .await
             .expect("manager knows the wallet");
         assert_eq!(slices.len(), 2, "both funding accounts hold a slice");
