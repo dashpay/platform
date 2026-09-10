@@ -349,10 +349,8 @@ impl DocumentHistoryDriveQuery {
             (true, _) => DocumentHistoryState::Active,
             (false, Some(record)) if record.is_erasing() => DocumentHistoryState::Erasing,
             (false, Some(_)) => DocumentHistoryState::Deleted,
-            // A history with no record and no current pointer predates the
-            // lifecycle record; every lifecycle delete writes one, so this is
-            // retained defensively while old histories are migrated.
-            (false, None) if count.unwrap_or_default() > 0 => DocumentHistoryState::Deleted,
+            // Retained history with no record and no pointer was rejected as
+            // inconsistent above, so nothing is left here but an unused id.
             (false, None) => DocumentHistoryState::Absent,
         };
         let times = record
