@@ -5,6 +5,7 @@ use super::*;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
+use crate::data_contract::errors::DataContractError;
 use platform_value::platform_value;
 
 /// Parses through the public dispatcher at the given protocol version so
@@ -153,7 +154,42 @@ fn should_reject_erasure_without_history_or_without_deletion() {
             message.contains("canBeErased"),
             "the error must name the flag the author has to change; got {message}"
         );
+        assert_contract_structure_consensus_error(&error);
     }
+}
+
+/// A signed contract carrying a refused combination must be a paid rejection
+/// with a nonce bump, and only the consensus variant becomes one: the bare
+/// data-contract variant escapes the transformation as an internal execution
+/// error, which costs the submitter nothing and reports nothing useful.
+#[cfg(feature = "validation")]
+fn assert_contract_structure_consensus_error(error: &ProtocolError) {
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
+
+    let ProtocolError::ConsensusError(consensus) = error else {
+        panic!("expected a consensus error, got {error:?}");
+    };
+    assert!(
+        matches!(
+            consensus.as_ref(),
+            ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::InvalidContractStructure(_)
+            ))
+        ),
+        "expected an invalid-contract-structure basic error, got {consensus:?}"
+    );
+}
+
+#[cfg(not(feature = "validation"))]
+fn assert_contract_structure_consensus_error(error: &ProtocolError) {
+    assert!(
+        matches!(
+            error,
+            ProtocolError::DataContractError(DataContractError::InvalidContractStructure(_))
+        ),
+        "without the validation feature the structural variant is all there is, got {error:?}"
+    );
 }
 
 /// Erasure defaults to off: a type that says nothing about it cannot have its
@@ -210,6 +246,7 @@ fn should_reject_a_keep_history_type_that_carries_a_contested_index() {
         message.contains("contested"),
         "the error must say which index is the problem; got {message}"
     );
+    assert_contract_structure_consensus_error(&error);
 }
 
 /// The same index without history is unaffected: the refusal is about the
