@@ -28,7 +28,8 @@ impl Drive {
     /// revisions than a chunk removes, so its height is bounded rather than
     /// derived from the chunk size; an estimate keyed to the chunk would
     /// understate the merk path of a long history.
-    pub(crate) fn add_estimation_costs_for_erase_document(
+    #[inline(always)]
+    pub(super) fn add_estimation_costs_for_erase_document_v0(
         document_id: Identifier,
         contract: &DataContract,
         document_type: DocumentTypeRef,
