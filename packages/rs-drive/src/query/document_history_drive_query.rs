@@ -1,7 +1,10 @@
 //! A page of a document's retained revisions with its lifecycle, read from
 //! whichever history layout the protocol version stores.
 
-use crate::drive::document::paths::{contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY};
+use crate::drive::document::lifecycle::DocumentLifecycleRecord;
+use crate::drive::document::paths::{
+    contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY, DOCUMENT_LIFECYCLE_TREE_KEY,
+};
 use crate::drive::document::MAX_DOCUMENT_HISTORY_FETCH_LIMIT;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -58,6 +61,24 @@ pub enum DocumentHistoryState {
     Active,
     /// Neither a current document nor a retained history exists.
     Absent,
+    /// The document has been deleted; its revisions are still retained.
+    Deleted,
+    /// An authorized erasure has started and has not finished.
+    Erasing,
+}
+
+/// Authenticated lifecycle timestamps independent of the requested page.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DocumentHistoryLifecycleTimes {
+    /// Block time the document was deleted at, zero while it is active.
+    pub deleted_at_ms: u64,
+    /// Block time an authorized erasure started at, zero while none has.
+    pub erasing_started_at_ms: u64,
+    /// Timestamp of the newest revision retained when the erasure started.
+    pub erasing_from_time_ms: u64,
+    /// History sequence of the newest revision retained when the erasure
+    /// started.
+    pub erasing_from_revision: u64,
 }
 
 /// Authenticated history metadata independent of the requested page.
@@ -67,6 +88,8 @@ pub struct DocumentHistoryLifecycle {
     pub state: DocumentHistoryState,
     /// Count authenticated by the per-document count-tree element.
     pub remaining_revisions: u64,
+    /// Times recorded by the lifecycle record, all zero unless one exists.
+    pub times: DocumentHistoryLifecycleTimes,
 }
 
 /// One retained edit, including its complete pagination cursor.
@@ -212,7 +235,12 @@ impl DocumentHistoryDriveQuery {
     /// Queries the pointer, lifecycle reservation, and raw history tree separately.
     pub fn metadata_path_query(&self, version: &PlatformVersion) -> Result<PathQuery, Error> {
         self.validate()?;
-        let queries = [0, 1, DOCUMENT_HISTORY_TREE_KEY].map(|branch| {
+        let queries = [
+            0,
+            DOCUMENT_LIFECYCLE_TREE_KEY,
+            DOCUMENT_HISTORY_TREE_KEY,
+        ]
+        .map(|branch| {
             let mut path =
                 contract_document_type_path_vec(&self.contract_id, &self.document_type_name);
             path.push(vec![branch]);
@@ -238,9 +266,12 @@ impl DocumentHistoryDriveQuery {
         primary.push(vec![0]);
         let mut history = primary.clone();
         history[4] = vec![DOCUMENT_HISTORY_TREE_KEY];
+        let mut lifecycle = primary.clone();
+        lifecycle[4] = vec![DOCUMENT_LIFECYCLE_TREE_KEY];
         let mut active = false;
         let mut latest_revision = None;
         let mut count = None;
+        let mut record = None;
         for (path, key, element) in metadata {
             let Some(element) = element else {
                 continue;
@@ -248,7 +279,17 @@ impl DocumentHistoryDriveQuery {
             if key != self.document_id {
                 return Err(corrupt("history metadata key does not match the document"));
             }
-            if path == primary {
+            if path == lifecycle {
+                let Element::Item(bytes, _) = element else {
+                    return Err(corrupt("a lifecycle record is not an item"));
+                };
+                if record
+                    .replace(DocumentLifecycleRecord::deserialize(&bytes)?)
+                    .is_some()
+                {
+                    return Err(corrupt("duplicate lifecycle record"));
+                }
+            } else if path == primary {
                 let bytes = match element {
                     Element::Item(bytes, _) | Element::ItemWithSumItem(bytes, _, _) => bytes,
                     _ => {
@@ -281,8 +322,18 @@ impl DocumentHistoryDriveQuery {
                 ));
             }
         }
-        if active && count.unwrap_or_default() == 0 || !active && count.unwrap_or_default() > 0 {
+        if active && record.is_some() {
+            return Err(corrupt(
+                "a current document cannot also carry a lifecycle record",
+            ));
+        }
+        if active && count.unwrap_or_default() == 0
+            || !active && record.is_none() && count.unwrap_or_default() > 0
+        {
             return Err(corrupt("current document and retained history disagree"));
+        }
+        if record.is_some() && count.unwrap_or_default() == 0 {
+            return Err(corrupt("a lifecycle record survives its retained history"));
         }
         if matches!(
             self.filter,
@@ -294,14 +345,29 @@ impl DocumentHistoryDriveQuery {
                 "retained history contains a revision gap; use time pagination",
             ));
         }
+        let state = match (active, &record) {
+            (true, _) => DocumentHistoryState::Active,
+            (false, Some(record)) if record.is_erasing() => DocumentHistoryState::Erasing,
+            (false, Some(_)) => DocumentHistoryState::Deleted,
+            // A history with no record and no current pointer predates the
+            // lifecycle record; every lifecycle delete writes one, so this is
+            // retained defensively while old histories are migrated.
+            (false, None) if count.unwrap_or_default() > 0 => DocumentHistoryState::Deleted,
+            (false, None) => DocumentHistoryState::Absent,
+        };
+        let times = record
+            .map(|record| DocumentHistoryLifecycleTimes {
+                deleted_at_ms: record.deleted_at_ms(),
+                erasing_started_at_ms: record.erasing_started_at_ms(),
+                erasing_from_time_ms: record.erasing_from_time_ms(),
+                erasing_from_revision: record.erasing_from_revision(),
+            })
+            .unwrap_or_default();
         Ok((
             DocumentHistoryLifecycle {
-                state: if active {
-                    DocumentHistoryState::Active
-                } else {
-                    DocumentHistoryState::Absent
-                },
+                state,
                 remaining_revisions: count.unwrap_or_default(),
+                times,
             },
             count.is_some(),
         ))

@@ -1,10 +1,12 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 
@@ -21,6 +23,8 @@ impl Drive {
     /// * `document_id`: The ID of the document to delete.
     /// * `contract`: The contract that contains the document.
     /// * `document_type`: The type of the document.
+    /// * `block_info`: The block this delete belongs to.
+    /// * `deleter_id`: The identity credited with the lifecycle record's bytes.
     /// * `previous_batch_operations`: Previous batch operations to include.
     /// * `estimated_costs_only_with_layer_info`: Estimated costs with layer info.
     /// * `transaction`: The transaction argument.
@@ -35,6 +39,8 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type: DocumentTypeRef,
+        block_info: &BlockInfo,
+        deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -91,6 +97,19 @@ impl Drive {
                 document_id,
                 contract,
                 document_type,
+                block_info,
+                deleter_id,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            1 => self.delete_document_for_contract_operations_v1(
+                document_id,
+                contract,
+                document_type,
+                block_info,
+                deleter_id,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 block_time_ms,
@@ -99,7 +118,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "delete_document_for_contract_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -112,6 +131,8 @@ impl Drive {
     /// * `document_id`: The ID of the document to delete.
     /// * `contract`: The contract that contains the document.
     /// * `document_type`: The type of the document.
+    /// * `block_info`: The block this delete belongs to.
+    /// * `deleter_id`: The identity credited with the lifecycle record's bytes.
     /// * `previous_batch_operations`: Previous batch operations to include.
     /// * `estimated_costs_only_with_layer_info`: Estimated costs with layer info.
     /// * `transaction`: The transaction argument.
@@ -126,6 +147,8 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type: DocumentTypeRef,
+        block_info: &BlockInfo,
+        deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -145,6 +168,19 @@ impl Drive {
                 document_id,
                 contract,
                 document_type,
+                block_info,
+                deleter_id,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            1 => self.force_delete_document_for_contract_operations_v1(
+                document_id,
+                contract,
+                document_type,
+                block_info,
+                deleter_id,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 block_time_ms,
@@ -153,7 +189,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "force_delete_document_for_contract_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

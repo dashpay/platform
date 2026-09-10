@@ -4,7 +4,9 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 
 use dpp::identifier::Identifier;
@@ -14,58 +16,58 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
-    /// Deletes a document.
+    /// Prepares the operations for removing a bounded chunk of the retained
+    /// revisions of a document that has already been deleted.
     ///
     /// # Parameters
-    /// * `document_id`: The ID of the document to delete.
+    /// * `document_id`: The document whose revisions are being removed.
     /// * `contract`: The contract that contains the document.
-    /// * `document_type_name`: The name of the document type.
-    /// * `owner_id`: The owner ID of the document.
-    /// * `estimated_costs_only_with_layer_info`: An optional hashmap with layer information for estimated costs.
+    /// * `document_type`: The type of the document, which must keep history.
+    /// * `block_info`: The block this erase belongs to.
+    /// * `start`: Whether this is the authorized first chunk, which commits the
+    ///   document to erasure, rather than a continuation of one already
+    ///   committed. Derived from the document's committed lifecycle, never from
+    ///   the transition.
+    /// * `estimated_costs_only_with_layer_info`: Estimated costs with layer info.
     /// * `transaction`: The transaction argument.
-    /// * `drive_operations`: A mutable vector of low level drive operations.
-    /// * `drive_version`: The drive version to select the correct function version to run.
+    /// * `platform_version`: The platform version to select the correct function version to run.
     ///
     /// # Returns
-    /// * `Ok(())` if the operation was successful.
+    /// * `Ok(Vec<LowLevelDriveOperation>)` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     #[allow(clippy::too_many_arguments)]
-    pub fn delete_document_for_contract_apply_and_add_to_operations(
+    pub(crate) fn erase_document_for_contract_operations(
         &self,
         document_id: Identifier,
         contract: &DataContract,
-        document_type_name: &str,
+        document_type: DocumentTypeRef,
         block_info: &BlockInfo,
-        deleter_id: Option<Identifier>,
-        estimated_costs_only_with_layer_info: Option<
+        start: bool,
+        estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        block_time_ms: u64,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match platform_version
             .drive
             .methods
             .document
             .delete
-            .delete_document_for_contract_apply_and_add_to_operations
+            .erase_document_for_contract_operations
         {
-            0 => self.delete_document_for_contract_apply_and_add_to_operations_v0(
+            0 => self.erase_document_for_contract_operations_v0(
                 document_id,
                 contract,
-                document_type_name,
+                document_type,
                 block_info,
-                deleter_id,
+                start,
                 estimated_costs_only_with_layer_info,
-                block_time_ms,
                 transaction,
-                drive_operations,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "delete_document_for_contract_apply_and_add_to_operations".to_string(),
+                method: "erase_document_for_contract_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
