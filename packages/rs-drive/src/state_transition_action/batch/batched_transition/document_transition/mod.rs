@@ -4,6 +4,8 @@ pub mod document_base_transition_action;
 pub mod document_create_transition_action;
 /// document_delete_transition_action
 pub mod document_delete_transition_action;
+/// document_erase_transition_action
+pub mod document_erase_transition_action;
 /// document_index_only_delete_transition_action
 pub mod document_index_only_delete_transition_action;
 /// document_purchase_transition_action
@@ -26,6 +28,8 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 use crate::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_index_only_delete_transition_action::v0::DocumentIndexOnlyDeleteTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_index_only_delete_transition_action::DocumentIndexOnlyDeleteTransitionAction;
+use crate::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::v0::DocumentEraseTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::DocumentEraseTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::{DocumentPurchaseTransitionAction, DocumentPurchaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::{DocumentTransferTransitionAction, DocumentTransferTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::document_transition::document_update_price_transition_action::{DocumentUpdatePriceTransitionAction, DocumentUpdatePriceTransitionActionAccessorsV0};
@@ -52,6 +56,9 @@ pub enum DocumentTransitionAction {
     /// indexOnly delete-by-values — carries the document's property
     /// values, since there is no primary-storage row to fetch them from
     IndexOnlyDeleteAction(DocumentIndexOnlyDeleteTransitionAction),
+    /// Removes the retained revisions of an already deleted keep-history
+    /// document, a chunk at a time.
+    EraseAction(DocumentEraseTransitionAction),
 }
 
 impl DocumentTransitionAction {
@@ -65,6 +72,7 @@ impl DocumentTransitionAction {
             DocumentTransitionAction::PurchaseAction(d) => d.base(),
             DocumentTransitionAction::UpdatePriceAction(d) => d.base(),
             DocumentTransitionAction::IndexOnlyDeleteAction(d) => d.base(),
+            DocumentTransitionAction::EraseAction(d) => d.base(),
         }
     }
 
@@ -78,6 +86,7 @@ impl DocumentTransitionAction {
             DocumentTransitionAction::PurchaseAction(d) => d.base_owned(),
             DocumentTransitionAction::UpdatePriceAction(d) => d.base_owned(),
             DocumentTransitionAction::IndexOnlyDeleteAction(d) => d.base_owned(),
+            DocumentTransitionAction::EraseAction(d) => d.base_owned(),
         }
     }
 }
