@@ -43,6 +43,7 @@ mod delete_document_for_contract_with_named_type_operations;
 // This module contains functionality to delete a document for contract operations
 mod delete_document_for_contract_operations;
 mod delete_index_only_document_for_contract_operations;
+mod erase_document_for_contract_operations;
 
 mod internal;
 
@@ -1262,13 +1263,29 @@ mod tests {
         );
     }
 
+    /// Protocol 13 refuses the delete outright, and protocol 14 carries it out:
+    /// the document leaves every ordinary read while its revisions stay where
+    /// they are.
     #[test]
-    fn test_delete_document_keeps_history_returns_error() {
+    fn test_delete_document_keeps_history_returns_error_at_protocol_13() {
+        run_keep_history_delete_at_protocol_version(13);
+    }
+
+    #[test]
+    fn should_delete_a_keep_history_document_without_touching_its_revisions_at_protocol_14() {
+        run_keep_history_delete_at_protocol_version(14);
+    }
+
+    fn run_keep_history_delete_at_protocol_version(protocol_version: u32) {
+        use crate::drive::document::lifecycle::DocumentLifecycleState;
+        use dpp::document::DocumentV0Getters;
+
         let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected a known protocol version");
 
         let contract = setup_contract(
             &drive,
@@ -1328,24 +1345,55 @@ mod tests {
             .try_into()
             .expect("this be 32 bytes");
 
-        // Attempting to delete a document that keeps history should return an error
-        let err = drive
-            .delete_document_for_contract(
-                document_id,
+        let outcome = drive.delete_document_for_contract(
+            document_id,
+            &contract,
+            "person",
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+        );
+
+        if protocol_version < 14 {
+            assert!(matches!(
+                outcome.expect_err("expected deleting a history-keeping document to fail"),
+                Error::Drive(DriveError::InvalidDeletionOfDocumentThatKeepsHistory(_))
+            ));
+            return;
+        }
+
+        outcome.expect("expected the delete to succeed");
+
+        let document_id = Identifier::from(document_id);
+        let (state, _) = drive
+            .fetch_document_lifecycle(
                 &contract,
-                "person",
-                BlockInfo::default(),
-                true,
+                document_type,
+                document_id,
+                None,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
-            .expect_err("expected deleting a history-keeping document to fail");
+            .expect("expected to read the lifecycle");
+        let DocumentLifecycleState::Deleted(retained) = state else {
+            panic!("expected the document to be deleted, got {state:?}");
+        };
+        assert_eq!(
+            retained.id(),
+            document_id,
+            "the retained revision must still be readable"
+        );
 
-        assert!(matches!(
-            err,
-            Error::Drive(DriveError::InvalidDeletionOfDocumentThatKeepsHistory(_))
-        ));
+        let query = DriveDocumentQuery::all_items_query(&contract, document_type, None);
+        let (documents, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to query documents");
+        assert!(
+            documents.is_empty(),
+            "a deleted document must be absent from every ordinary read"
+        );
     }
 
     // ---------- Error-path tests (added for coverage) ----------
@@ -1442,7 +1490,8 @@ mod tests {
                 random_document_id,
                 nonexistent_contract_id,
                 "profile",
-                &epoch,
+                &BlockInfo::default_with_epoch(epoch),
+                None,
                 None,
                 &mut estimated_costs_only_with_layer_info,
                 None,

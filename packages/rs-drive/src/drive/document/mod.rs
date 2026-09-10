@@ -36,6 +36,9 @@ mod index_uniqueness;
 mod insert;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert_contested;
+/// The lifecycle record of a deleted keep-history document.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod lifecycle;
 /// Activation migration and its inventory.
 #[cfg(feature = "server")]
 pub mod migration;

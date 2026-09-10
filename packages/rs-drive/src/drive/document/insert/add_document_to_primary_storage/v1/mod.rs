@@ -89,7 +89,7 @@ impl Drive {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         };
         if let Some(document) = document {
-            self.batch_insert_empty_tree_if_not_exists::<0>(
+            let created = self.batch_insert_empty_tree_if_not_exists::<0>(
                 PathKey((history_root, document.id().to_vec())),
                 TreeType::ProvableCountTree,
                 flags,
@@ -99,6 +99,20 @@ impl Drive {
                 operations,
                 version,
             )?;
+            // An id whose revisions are still retained is taken, even though
+            // nothing in the primary-key tree says so. Appending to that
+            // history would silently merge a new document into a deleted one's
+            // record, so it is refused here rather than only in transition
+            // validation: this is the guard that covers writers outside it.
+            // A dry run skips the probe, which reports the tree as absent, and
+            // pays for it as a fixed cost so estimation and execution agree.
+            if !created && !insert_without_check {
+                return Err(Error::Drive(
+                    DriveError::CorruptedDocumentAlreadyExists(
+                        "a document of this id still retains revisions and can not be created                          until they are erased",
+                    ),
+                ));
+            }
         } else {
             operations.push(
                 LowLevelDriveOperation::for_estimated_path_key_empty_provable_count_tree(

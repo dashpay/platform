@@ -3,6 +3,7 @@ use grovedb::batch::KeyInfoPath;
 
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
 
 use std::collections::HashMap;
@@ -43,6 +44,8 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type: DocumentTypeRef,
+        _block_info: &BlockInfo,
+        _deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -60,6 +63,8 @@ impl Drive {
             document_id,
             contract,
             document_type,
+            _block_info,
+            _deleter_id,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
             transaction,
@@ -75,6 +80,8 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type: DocumentTypeRef,
+        _block_info: &BlockInfo,
+        _deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,

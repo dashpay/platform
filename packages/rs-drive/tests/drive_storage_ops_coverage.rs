@@ -870,6 +870,7 @@ mod document_operation_tests {
     fn document_operation_add_type_construction() {
         let id = dpp::prelude::Identifier::new([2u8; 32]);
         let _op = DocumentOperationType::DeleteDocument {
+            deleter_id: None,
             document_id: id,
             contract_info: drive::util::object_size_info::DataContractInfo::DataContractId(
                 dpp::prelude::Identifier::new([3u8; 32]),
