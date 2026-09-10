@@ -134,7 +134,7 @@ pub struct DocumentHistoryProofV1 {
     pub metadata_proof: Vec<u8>,
 }
 
-#[cfg(feature = "verify")]
+#[cfg(any(feature = "server", feature = "verify"))]
 impl DocumentHistoryProofV1 {
     /// Requires envelopes that bind terminal tree counts and pagination bounds.
     /// Full decoding and cryptographic verification follow this version check.
@@ -488,7 +488,7 @@ impl Drive {
     }
 }
 
-#[cfg(feature = "verify")]
+#[cfg(any(feature = "server", feature = "verify"))]
 impl Drive {
     /// Verifies both proofs, their common root, and the revision positions.
     pub(crate) fn verify_document_history_v1_impl(
@@ -592,7 +592,7 @@ impl Drive {
         }
     }
 }
-#[cfg(feature = "verify")]
+#[cfg(any(feature = "server", feature = "verify"))]
 impl Drive {
     /// Verifies composite history through the protocol dispatcher.
     pub fn verify_document_history_v1(
