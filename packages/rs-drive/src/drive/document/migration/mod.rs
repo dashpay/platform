@@ -1,3 +1,10 @@
+//! Activation migration of persisted document histories.
+//!
+//! Any error deliberately halts the activation block for every validator. All
+//! batches belong to the activation transaction; no partial migration may commit.
+//! Every `corrupt()` path is unreachable for valid pre-14 state: legacy writers
+//! and contract-update validation preserve the storage invariants checked here.
+
 use crate::drive::document::paths::{contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY};
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
@@ -48,7 +55,8 @@ pub struct DocumentHistoryMigrationStats {
     pub cost: OperationCost,
 }
 
-type IndexEntries = BTreeMap<Vec<u8>, Vec<(Vec<Vec<u8>>, Vec<u8>, Element)>>;
+type IndexReference = (Vec<Vec<u8>>, Vec<u8>, Element);
+type IndexEntries = BTreeMap<Vec<u8>, Vec<IndexReference>>;
 
 #[cfg(test)]
 mod index_tests;
@@ -114,12 +122,19 @@ impl Drive {
         let mut stats = DocumentHistoryMigrationStats::default();
         let mut cursor: Option<[u8; 32]> = None;
         loop {
-            let ids = self.fetch_contract_ids(
+            let mut operations = vec![];
+            let ids = self.fetch_contract_ids_with_operations(
                 cursor.map(|id| (id, false)),
                 u16::MAX,
                 Some(transaction),
+                &mut operations,
                 platform_version,
             )?;
+            for operation in operations {
+                if let LowLevelDriveOperation::CalculatedCostOperation(cost) = operation {
+                    stats.cost += cost;
+                }
+            }
             if ids.is_empty() {
                 break;
             }
@@ -327,9 +342,9 @@ impl Drive {
                             &mut stats,
                         )?;
                         if let Some(references) = index_entries.remove(&document_id) {
-                            let collected = references.len();
                             let rewrites: Vec<_> = references
-                                .into_iter()
+                                .iter()
+                                .cloned()
                                 .map(|(path, key, mut element)| {
                                     match &mut element {
                                         Element::Reference(reference, hops, _)
@@ -345,18 +360,19 @@ impl Drive {
                                     QualifiedGroveDbOp::insert_or_replace_op(path, key, element)
                                 })
                                 .collect();
-                            if rewrites.len() != collected {
-                                return Err(corrupt(
-                                    "history index rewrite count differs from its inventory",
-                                ));
-                            }
                             self.history_migration_batch(
                                 rewrites,
                                 transaction,
                                 platform_version,
                                 &mut stats,
                             )?;
-                            stats.rewritten_index_entries += collected as u64;
+                            self.history_migration_check_index_rewrites(
+                                &references,
+                                &document_id,
+                                transaction,
+                                platform_version,
+                                &mut stats,
+                            )?;
                         }
                         stats.migrated_documents += 1;
                     }
@@ -367,6 +383,46 @@ impl Drive {
             }
         }
         Ok(stats)
+    }
+
+    fn history_migration_check_index_rewrites(
+        &self,
+        references: &[IndexReference],
+        document_id: &[u8],
+        transaction: &Transaction,
+        version: &PlatformVersion,
+        stats: &mut DocumentHistoryMigrationStats,
+    ) -> Result<(), Error> {
+        let mut rewritten = 0;
+        for (path, key, original) in references {
+            let mut expected = original.clone();
+            match &mut expected {
+                Element::Reference(reference, hops, _)
+                | Element::ReferenceWithSumItem(reference, hops, _, _) => {
+                    *reference =
+                        UpstreamRootHeightReference(4, vec![vec![0], document_id.to_vec()]);
+                    *hops = Some(2);
+                }
+                _ => continue,
+            }
+            let stored = self.grove.get_raw(
+                path.as_slice().into(),
+                key,
+                Some(transaction),
+                &version.drive.grove_version,
+            );
+            stats.cost += stored.cost;
+            if stored.value? == expected {
+                rewritten += 1;
+            }
+        }
+        if rewritten != references.len() {
+            return Err(corrupt(
+                "history index rewrite count differs from its inventory",
+            ));
+        }
+        stats.rewritten_index_entries += rewritten as u64;
+        Ok(())
     }
 
     fn history_migration_count_revisions(
