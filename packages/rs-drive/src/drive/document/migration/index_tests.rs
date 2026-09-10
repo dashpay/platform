@@ -11,6 +11,12 @@ use std::borrow::Cow;
 
 #[test]
 fn should_read_and_prove_fresh_and_migrated_history_through_every_index_kind() {
+    for countable in [false, true] {
+        read_and_prove_index_matrix(countable);
+    }
+}
+
+fn read_and_prove_index_matrix(countable: bool) {
     let new = PlatformVersion::get(14).unwrap();
     for migrated in [false, true] {
         let old = PlatformVersion::get(if migrated { 13 } else { 14 }).unwrap();
@@ -20,7 +26,7 @@ fn should_read_and_prove_fresh_and_migrated_history_through_every_index_kind() {
         let contract = DataContractFactory::new(old.protocol_version).unwrap().create_with_value_config([7;32].into(), 0, platform_value!({
             "tip": {
                 "type":"object", "documentsKeepHistory":true, "documentsMutable":true, "canBeDeleted":false,
-                "documentsCountable":true, "documentsSummable":"amount",
+                "documentsCountable":countable, "documentsSummable":"amount",
                 "properties": {
                     "slug":{"type":"string", "maxLength":10, "position":0},
                     "group":{"type":"string", "maxLength":10, "position":1},
@@ -189,10 +195,14 @@ fn should_read_and_prove_fresh_and_migrated_history_through_every_index_kind() {
             )
             .value
             .unwrap();
-        assert!(
-            matches!(primary, Element::CountSumTree(_, 2, 60, _)),
-            "{primary:?}"
-        );
+        if countable {
+            assert!(
+                matches!(primary, Element::CountSumTree(_, 2, 60, _)),
+                "{primary:?}"
+            );
+        } else {
+            assert!(matches!(primary, Element::SumTree(_, 60, _)), "{primary:?}");
+        }
         let mut path = type_path.clone();
         path.push(b"recipient".to_vec());
         let mut ignored = DocumentHistoryMigrationStats::default();
