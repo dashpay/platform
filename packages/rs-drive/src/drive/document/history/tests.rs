@@ -445,3 +445,77 @@ fn should_include_reference_hops_in_history_pointer_size_estimates() {
         }
     }
 }
+
+#[test]
+fn should_charge_count_tree_overhead_when_propagating_history_roots() {
+    use crate::drive::document::paths::contract_documents_primary_key_path;
+    use crate::util::storage_flags::StorageFlags;
+    use grovedb::batch::KeyInfoPath;
+    use grovedb::{EstimatedLayerCount, EstimatedLayerSizes, EstimatedSumTrees};
+    use std::collections::HashMap;
+    let version = PlatformVersion::get(14).unwrap();
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
+        false,
+        version,
+    )
+    .unwrap();
+    let document_type = contract.document_type_for_name("profile").unwrap();
+    let document = json_document_to_document(
+        "tests/supporting_files/contract/dashpay/profile0.json",
+        Some([8; 32].into()),
+        document_type,
+        version,
+    )
+    .unwrap();
+    let info = DocumentAndContractInfo {
+        owned_document_info: OwnedDocumentInfo {
+            document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+            owner_id: None,
+        },
+        contract: &contract,
+        document_type,
+    };
+    let mut layers = HashMap::new();
+    Drive::add_estimation_costs_for_add_document_to_primary_storage(
+        &info,
+        contract_documents_primary_key_path(contract.id().as_slice(), "profile"),
+        &mut layers,
+        version,
+    )
+    .unwrap();
+    let mut root = contract_document_type_path_vec(contract.id().as_slice(), "profile");
+    root.push(vec![DOCUMENT_HISTORY_TREE_KEY]);
+    let mut layer = layers
+        .remove(&KeyInfoPath::from_known_path(
+            root.iter().map(Vec::as_slice),
+        ))
+        .unwrap();
+    layer.estimated_layer_count = EstimatedLayerCount::ApproximateElements(7);
+    let propagate = |layer: &grovedb::EstimatedLayerInformation| {
+        grovedb::GroveDb::average_case_merk_insert_tree(
+            &grovedb::batch::key_info::KeyInfo::KnownKey(vec![9; 32]),
+            &None,
+            grovedb::TreeType::ProvableCountTree,
+            grovedb::TreeType::NormalTree,
+            0,
+            Some(layer),
+            &version.drive.grove_version,
+        )
+    };
+    let actual = propagate(&layer);
+    actual.value.unwrap();
+    layer.estimated_layer_sizes = EstimatedLayerSizes::AllSubtrees(
+        32,
+        EstimatedSumTrees::NoSumTrees,
+        Some(StorageFlags::approximate_size(true, None)),
+    );
+    let plain = propagate(&layer);
+    plain.value.unwrap();
+    assert_eq!(actual.cost.seek_count, plain.cost.seek_count);
+    assert_eq!(
+        actual.cost.storage_cost.replaced_bytes,
+        plain.cost.storage_cost.replaced_bytes + 4 * 8,
+        "each rewritten ancestor carries its child's authenticated count"
+    );
+}
