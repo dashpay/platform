@@ -613,8 +613,8 @@ fn meta_identity_cleanup_fires_on_wallet_cascade() {
     )
     .unwrap();
     conn.execute(
-        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
-         VALUES (?1, ?2, NULL, X'00', 0)",
+        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob) \
+         VALUES (?1, ?2, NULL, X'00')",
         params![&idy[..], &w[..]],
     )
     .unwrap();
@@ -682,8 +682,8 @@ fn meta_token_cleanup_fires_on_wallet_cascade_two_hops() {
     )
     .unwrap();
     conn.execute(
-        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
-         VALUES (?1, ?2, NULL, X'00', 0)",
+        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob) \
+         VALUES (?1, ?2, NULL, X'00')",
         params![&idy[..], &w[..]],
     )
     .unwrap();

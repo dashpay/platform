@@ -724,8 +724,8 @@ mod tests {
         conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
         conn.execute(
             "INSERT INTO identities \
-             (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
-             VALUES (?1, ?2, NULL, ?3, 0)",
+             (identity_id, wallet_id, identity_index, entry_blob) \
+             VALUES (?1, ?2, NULL, ?3)",
             rusqlite::params![&[0x1Au8; 32][..], &[0x2Bu8; 32][..], vec![0u8; 4]],
         )
         .unwrap();
@@ -770,8 +770,8 @@ mod tests {
                 identity_id[..8].copy_from_slice(&(i as u64).to_le_bytes());
                 tx.execute(
                     "INSERT INTO identities \
-                     (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
-                     VALUES (?1, ?2, NULL, ?3, 0)",
+                     (identity_id, wallet_id, identity_index, entry_blob) \
+                     VALUES (?1, ?2, NULL, ?3)",
                     rusqlite::params![&identity_id[..], &[0x2Bu8; 32][..], vec![0u8; 4]],
                 )
                 .unwrap();

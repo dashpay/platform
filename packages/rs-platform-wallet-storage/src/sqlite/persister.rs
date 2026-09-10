@@ -8,14 +8,14 @@ use rusqlite::{Connection, OptionalExtension};
 
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
-    ClientStartState, IdentityChangeSet, Merge, PersistenceCapabilities, PersistenceError,
+    ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
     PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::backup::{self, BackupKind};
-use crate::sqlite::buffer::Buffer;
+use crate::sqlite::buffer::{Buffer, PendingWrites};
 use crate::sqlite::config::{FlushMode, LoadPolicy, SqlitePersisterConfig, Synchronous};
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation, LoadSite};
@@ -660,7 +660,7 @@ impl SqlitePersister {
     ///
     /// Keys are folded in exactly as `load()` does for wallet-owned
     /// identities, so a returned `ManagedIdentity` is usable without a
-    /// second call. Tombstoned identities are omitted.
+    /// second call.
     ///
     /// # Errors
     ///
@@ -774,12 +774,11 @@ impl SqlitePersister {
         // `drained_slot` and consumed only after commit.
         let drained = self.buffer.take_for_flush(&wallet_id)?;
         let had_buffered = drained.is_some();
-        let drained_slot: std::cell::Cell<Option<PlatformWalletChangeSet>> =
-            std::cell::Cell::new(drained);
+        let drained_slot: std::cell::Cell<Option<PendingWrites>> = std::cell::Cell::new(drained);
 
         // Any pre-commit failure must restore the changeset so a delete
         // that didn't happen doesn't lose pending writes.
-        let restore_buffer = |slot: &std::cell::Cell<Option<PlatformWalletChangeSet>>| {
+        let restore_buffer = |slot: &std::cell::Cell<Option<PendingWrites>>| {
             if let Some(cs) = slot.take() {
                 if let Err(e) = self.buffer.restore(wallet_id, cs) {
                     tracing::error!(
@@ -823,7 +822,7 @@ impl SqlitePersister {
             // must precede the cascade's `BEGIN EXCLUSIVE` because
             // `Backup::new` deadlocks if the source holds an active write tx.
             // Applying a changeset outside `store()` is safe here because
-            // `identities::apply` re-runs the slot check inside this very tx.
+            // `identities::apply_upserts` re-runs the slot check in this very tx.
             if let Some(cs) = drained_slot.take() {
                 #[cfg(any(test, feature = "__test-helpers"))]
                 if let Some(primed) = primed_pre_flush_error {
@@ -839,7 +838,7 @@ impl SqlitePersister {
                         return Err(WalletStorageError::Sqlite(e));
                     }
                 };
-                match apply_changeset_to_tx(&pre_flush_tx, &wallet_id, &cs) {
+                match apply_pending_writes_to_tx(&pre_flush_tx, &wallet_id, &cs) {
                     Ok(()) => {
                         if let Err(e) = pre_flush_tx.commit() {
                             drained_slot.set(Some(cs));
@@ -1116,7 +1115,7 @@ impl SqlitePersister {
     fn handle_flush_error(
         &self,
         wallet_id: &WalletId,
-        cs: PlatformWalletChangeSet,
+        cs: PendingWrites,
         err: WalletStorageError,
     ) -> Result<(), PersistenceError> {
         let field_count = populated_field_count(&cs);
@@ -1661,10 +1660,13 @@ impl PlatformWalletPersistence for SqlitePersister {
 /// tracing fields. Computed
 /// from the public fields so no storage-only helper leaks into the
 /// `rs-platform-wallet` API.
-fn populated_field_count(cs: &PlatformWalletChangeSet) -> usize {
+fn populated_field_count(cs: &PendingWrites) -> usize {
     // Single source of truth with the version-domain mapping: each populated
     // field is exactly one touched domain.
-    schema::versions::touched_domains(cs).len()
+    cs.segments
+        .iter()
+        .map(|segment| schema::versions::touched_domains(segment).len())
+        .sum()
 }
 
 /// Total rows sitting in the tables `load()` has no reader for.
@@ -2110,15 +2112,15 @@ fn apply_pragmas(
 /// what `apply` will see and not an approximation of it. `None` when
 /// `incoming` carries no identities.
 fn merged_identities(
-    buffered: Option<&PlatformWalletChangeSet>,
+    buffered: Option<&PendingWrites>,
     incoming: &PlatformWalletChangeSet,
 ) -> Option<IdentityChangeSet> {
-    let incoming = incoming.identities.clone()?;
-    let Some(mut merged) = buffered.and_then(|cs| cs.identities.clone()) else {
-        return Some(incoming);
-    };
-    merged.merge(incoming);
-    Some(merged)
+    incoming.identities.as_ref()?;
+    Some(
+        buffered
+            .unwrap_or(&PendingWrites::default())
+            .identities_with(incoming),
+    )
 }
 
 /// Apply every populated sub-changeset under one transaction and
@@ -2129,11 +2131,23 @@ fn merged_identities(
 fn write_changeset_in_one_tx(
     conn: &mut Connection,
     wallet_id: &WalletId,
-    cs: &PlatformWalletChangeSet,
+    cs: &PendingWrites,
 ) -> Result<(), WalletStorageError> {
     let tx = conn.transaction()?;
-    apply_changeset_to_tx(&tx, wallet_id, cs)?;
+    apply_pending_writes_to_tx(&tx, wallet_id, cs)?;
     tx.commit()?;
+    Ok(())
+}
+
+/// Replay lifecycle segments atomically, including delete-wallet pre-flushes.
+fn apply_pending_writes_to_tx(
+    tx: &rusqlite::Transaction<'_>,
+    wallet_id: &WalletId,
+    pending: &PendingWrites,
+) -> Result<(), WalletStorageError> {
+    for cs in &pending.segments {
+        apply_changeset_to_tx(tx, wallet_id, cs)?;
+    }
     Ok(())
 }
 
@@ -2182,7 +2196,7 @@ fn apply_changeset_to_tx(
         schema::shielded_viewing_keys::apply(tx, wallet_id, shielded)?;
     }
     if let Some(identities) = cs.identities.as_ref() {
-        schema::identities::apply(tx, wallet_id, identities)?;
+        schema::identities::apply_upserts(tx, wallet_id, identities)?;
     }
     if let Some(keys) = cs.identity_keys.as_ref() {
         schema::identity_keys::apply(tx, wallet_id, keys)?;
@@ -2215,6 +2229,13 @@ fn apply_changeset_to_tx(
             cs.dashpay_profiles.as_ref(),
             cs.dashpay_payments_overlay.as_ref(),
         )?;
+    }
+    // Identity removals land LAST: the delete cascades every identity-scoped
+    // child row, so running it before the writers above would instead pull
+    // the FK parent out from under their inserts and fail the whole flush.
+    // See `schema::identities::apply_removals`.
+    if let Some(identities) = cs.identities.as_ref() {
+        schema::identities::apply_removals(tx, wallet_id, identities)?;
     }
     // Bump each touched domain's version inside this same tx so a domain's
     // cache-invalidation marker commits atomically with its data.

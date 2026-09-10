@@ -1043,6 +1043,39 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "eddsa")]
+    #[test]
+    fn populate_platform_node_pool_validates_batch_before_mutating() {
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = seed_bearing_wallet(Network::Mainnet);
+        let mut keys = derive_platform_node_public_keys(&wallet, Network::Mainnet, 2)
+            .expect("platform-node derivation");
+        keys[1].index = 1 << 31;
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+
+        let result = populate_platform_node_pool(&mut wallet_info, &keys, Network::Mainnet);
+
+        assert!(matches!(result, Err(PlatformWalletError::KeyDerivation(_))));
+        let account = wallet_info
+            .accounts
+            .provider_platform_keys
+            .as_ref()
+            .expect("managed platform-node account");
+        let pool = account
+            .managed_account_type()
+            .address_pools()
+            .into_iter()
+            .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+            .expect("AbsentHardened pool");
+        assert!(
+            pool.addresses.is_empty(),
+            "an invalid later key must not leave earlier keys inserted"
+        );
+    }
+
     /// The secp256k1 (owner / voting) families must derive at the DIP-3
     /// account path applied EXACTLY once: `m/9'/coin'/3'/{2'|1'}/index`.
     ///

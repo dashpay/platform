@@ -188,7 +188,7 @@ pub fn apply(
         // `(identity_id, key_id)` alone now identifies the row, so
         // `wallet_id = ?1` is no longer part of the key — it is kept
         // deliberately as a scope GUARD, mirroring the `identities`
-        // tombstone: one wallet's `removed` set must not delete another
+        // DELETE: one wallet's `removed` set must not delete another
         // wallet's key. Keeping it makes a cross-scope delete a no-op;
         // dropping it would make that delete succeed, which is a
         // destructive way to be permissive.
