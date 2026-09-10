@@ -11,7 +11,6 @@ use dpp::data_contract::TokenConfiguration;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
-use drive::drive::document::history::DocumentHistoryProofV1;
 use drive::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use drive_proof_verifier::types::DocumentHistory;
 use drive_proof_verifier::{ContextProvider, ContextProviderError, FromProof};
@@ -57,6 +56,7 @@ fn signed_proof(
     root: [u8; 32],
     metadata: &ResponseMetadata,
     key: &SecretKey<Bls12381G2Impl>,
+    quorum_type: u32,
 ) -> Proof {
     let state = StateId {
         app_version: metadata.protocol_version as u64,
@@ -76,7 +76,13 @@ fn signed_proof(
             .unwrap(),
     };
     let digest = commit
-        .calculate_sign_hash(&metadata.chain_id, 1, &[9; 32], metadata.height as i64, 0)
+        .calculate_sign_hash(
+            &metadata.chain_id,
+            quorum_type.try_into().unwrap(),
+            &[9; 32],
+            metadata.height as i64,
+            0,
+        )
         .unwrap();
     Proof {
         grovedb_proof: bytes,
@@ -89,13 +95,14 @@ fn signed_proof(
             .to_vec(),
         round: 0,
         block_id_hash: vec![7; 32],
-        quorum_type: 1,
+        quorum_type,
     }
 }
 
 #[test]
 fn should_round_trip_history_api_through_quorum_and_grove_proof_verification() {
     let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+    let mut state = state.as_ref().clone();
     let contract = json_document_to_contract(concat!(env!("CARGO_MANIFEST_DIR"), "/../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json"), false, version).unwrap();
     platform
         .drive
@@ -139,20 +146,41 @@ fn should_round_trip_history_api_through_quorum_and_grove_proof_verification() {
         contract: Arc::new(contract.clone()),
         key: key.public_key().to_bytes().try_into().unwrap(),
     };
-    let metadata = ResponseMetadata {
-        height: 42,
-        core_chain_locked_height: 12,
-        epoch: 0,
-        time_ms: 3000,
-        protocol_version: 14,
-        chain_id: "history-test-chain".into(),
-    };
+    state.last_committed_block_info = Some(
+        dpp::block::extended_block_info::v0::ExtendedBlockInfoV0 {
+            basic_info: BlockInfo {
+                height: 42,
+                core_height: 12,
+                time_ms: 3000,
+                epoch: Default::default(),
+            },
+            app_hash: [0; 32],
+            quorum_hash: [9; 32],
+            block_id_hash: [7; 32],
+            proposer_pro_tx_hash: [0; 32],
+            signature: [0; 96],
+            round: 0,
+        }
+        .into(),
+    );
+    let metadata = platform.response_metadata_v0(&state, CheckpointUsed::Current);
     let root = platform
         .drive
         .grove
         .root_hash(None, &version.drive.grove_version)
         .value
         .unwrap();
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Setters;
+    let signed = signed_proof(
+        vec![],
+        root,
+        &metadata,
+        &key,
+        platform.config.validator_set.quorum_type as u32,
+    );
+    let committed = state.last_committed_block_info.as_mut().unwrap();
+    committed.set_app_hash(root);
+    committed.set_signature(signed.signature.try_into().unwrap());
     let selections = [
         (
             document.id().to_buffer(),
@@ -192,7 +220,7 @@ fn should_round_trip_history_api_through_quorum_and_grove_proof_verification() {
             document_type_name: "profile".into(),
             document_id: id.to_vec(),
             limit: None,
-            prove: false,
+            prove: true,
             selector: Some(wire_selector),
         };
         let mut response = platform
@@ -207,25 +235,11 @@ fn should_round_trip_history_api_through_quorum_and_grove_proof_verification() {
             limit: None,
             selector,
         };
-        let (
-            expected,
-            DocumentHistoryProofV1 {
-                entries_proof,
-                metadata_proof,
-            },
-        ) = platform
+        let expected = platform
             .drive
-            .prove_document_history_v1(&query, document_type, None, version)
+            .fetch_document_history_v1(&query, document_type, None, version)
             .unwrap();
-        response.entries_proof =
-            entries_proof.map(|bytes| signed_proof(bytes, root, &metadata, &key));
-        response.metadata_proof = Some(signed_proof(metadata_proof, root, &metadata, &key));
-        response.metadata = Some(metadata.clone());
-        let request: GetDocumentHistoryRequest = GetDocumentHistoryRequestV1 {
-            prove: true,
-            ..request
-        }
-        .into();
+        let request: GetDocumentHistoryRequest = request.into();
         let verify = |response: GetDocumentHistoryResponseV1| {
             DocumentHistory::maybe_from_proof(
                 request.clone(),
@@ -235,6 +249,23 @@ fn should_round_trip_history_api_through_quorum_and_grove_proof_verification() {
                 &provider,
             )
         };
+        let (exported, _, _) =
+            drive_proof_verifier::types::DocumentHistoryProofInfo::maybe_from_proof_with_metadata(
+                request.clone(),
+                GetDocumentHistoryResponse::from(response.clone()),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .unwrap();
+        let exported = exported.unwrap();
+        assert_eq!(exported.response, response);
+        assert_eq!(
+            exported
+                .verify(request.clone(), Network::Testnet, version, &provider)
+                .unwrap(),
+            Some(exported.history)
+        );
         let result = verify(response.clone()).unwrap().unwrap();
         assert_eq!(result.entries, expected.entries);
         assert_eq!(result.lifecycle, Some(expected.lifecycle));

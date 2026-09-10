@@ -118,6 +118,16 @@ pub struct DocumentHistory {
     /// Present for history v1; legacy responses do not authenticate lifecycle metadata.
     pub lifecycle: Option<DocumentHistoryLifecycle>,
 }
+/// Verified history with the complete wire response needed for independent verification.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DocumentHistoryProofInfo {
+    /// Decoded and verified history page.
+    pub history: DocumentHistory,
+    /// Original entries, lifecycle, metadata, and both quorum-signed proofs.
+    pub response:
+        dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV1,
+}
+
 /// Multiple data contracts.
 ///
 /// Mapping between data contract IDs and data contracts.
