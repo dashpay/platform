@@ -909,3 +909,147 @@ fn should_decrement_the_count_and_the_sum_when_a_keep_history_document_is_delete
         "a delete removes every index reference that led to the document"
     );
 }
+
+/// The per-type container is shared by every document of the type and outlives
+/// any one of them, so it belongs to nobody: an erase removes records and
+/// per-document history trees, never this. The record inside it is the byte an
+/// erase does refund, and that one names the deleter.
+#[test]
+fn should_leave_the_lifecycle_container_unflagged_while_the_record_names_the_deleter() {
+    use crate::drive::document::paths::contract_document_type_path_vec;
+
+    let owner = [25u8; 32];
+    let deleter = Identifier::new([26u8; 32]);
+    let (drive, contract, id) = setup_history(2, owner);
+    delete(&drive, &contract, id, deleter, 5_000);
+
+    let mut type_path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "person");
+    let container = drive
+        .grove
+        .get_raw(
+            type_path.as_slice().into(),
+            &[crate::drive::document::paths::DOCUMENT_LIFECYCLE_TREE_KEY],
+            None,
+            &latest().drive.grove_version,
+        )
+        .value
+        .expect("the first delete creates the container");
+    assert_eq!(
+        container.get_flags(),
+        &None,
+        "the shared container must belong to nobody"
+    );
+
+    type_path.push(vec![
+        crate::drive::document::paths::DOCUMENT_LIFECYCLE_TREE_KEY,
+    ]);
+    let record = drive
+        .grove
+        .get_raw(
+            type_path.as_slice().into(),
+            id.as_slice(),
+            None,
+            &latest().drive.grove_version,
+        )
+        .value
+        .expect("the record exists");
+    let flags = StorageFlags::map_cow_some_element_flags_ref(record.get_flags())
+        .expect("the record's flags must decode")
+        .expect("the record names its deleter");
+    assert_eq!(
+        flags.owner_id(),
+        Some(&deleter.to_buffer()),
+        "the record is the byte an erase refunds, and it belongs to the deleter"
+    );
+}
+
+/// Only the first delete of a type pays for the container. A second one finds
+/// it already there and pays for its record alone, so the storage difference
+/// between the two is exactly the container.
+#[test]
+fn should_charge_the_container_to_the_first_delete_of_a_type_only() {
+    let owner = [27u8; 32];
+    let version = latest();
+    let (drive, contract, first_id) = setup_history(1, owner);
+    let document_type = document_type_of(&contract);
+
+    // A second document of the same type, so the second delete finds the
+    // container already in place.
+    let mut second =
+        json_document_to_document(PERSON, Some(owner.into()), document_type, version).unwrap();
+    second.set_id(Identifier::new([28u8; 32]));
+    second.set_revision(Some(1));
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentInfo::DocumentRefInfo((
+                        &second,
+                        Some(Cow::Owned(StorageFlags::new_single_epoch(0, Some(owner)))),
+                    )),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type,
+            },
+            false,
+            BlockInfo::default_with_time(2_000),
+            true,
+            None,
+            version,
+            None,
+        )
+        .expect("expected a second document");
+
+    let deleter = Identifier::new([29u8; 32]);
+    let first = delete(&drive, &contract, first_id, deleter, 5_000);
+    let later = delete(&drive, &contract, second.id(), deleter, 6_000);
+
+    assert!(
+        first.storage_fee > later.storage_fee,
+        "the first delete pays for the container as well as its record: {} vs {}",
+        first.storage_fee,
+        later.storage_fee
+    );
+}
+
+/// The declared feature slot has to actually route: a table that selects a
+/// version this code does not implement must fail loudly rather than silently
+/// keep using the old estimate.
+#[test]
+fn should_reject_an_unsupported_erase_estimation_version() {
+    use std::collections::HashMap;
+
+    let owner = [30u8; 32];
+    let (_drive, contract, id) = setup_history(1, owner);
+    let mut version = latest().clone();
+    assert_eq!(
+        version
+            .drive
+            .methods
+            .document
+            .delete
+            .add_estimation_costs_for_erase_document,
+        0,
+        "protocol 14 selects the only implementation there is"
+    );
+    version
+        .drive
+        .methods
+        .document
+        .delete
+        .add_estimation_costs_for_erase_document = 1;
+
+    let error = Drive::add_estimation_costs_for_erase_document(
+        id,
+        &contract,
+        document_type_of(&contract),
+        &mut HashMap::new(),
+        &version,
+    )
+    .expect_err("an unimplemented version must be refused");
+    assert!(matches!(
+        error,
+        Error::Drive(DriveError::UnknownVersionMismatch { .. })
+    ));
+}
