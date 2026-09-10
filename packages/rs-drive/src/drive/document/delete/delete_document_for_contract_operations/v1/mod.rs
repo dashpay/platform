@@ -248,10 +248,6 @@ impl Drive {
         let lifecycle_path =
             document_lifecycle_path(contract.id_ref().as_bytes(), document_type.name().as_str());
         let element_flags = StorageFlags::map_to_some_element_flags(storage_flags);
-        let flags_len = storage_flags
-            .map(StorageFlags::serialized_size)
-            .unwrap_or_default();
-
         if let Some(layers) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_lifecycle_record(
                 contract,
@@ -265,7 +261,9 @@ impl Drive {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
                 in_tree_type: TreeType::NormalTree,
                 tree_type: TreeType::NormalTree,
-                flags_len,
+                // The container is unflagged, so its element carries no
+                // beneficiary payload to size.
+                flags_len: 0,
             }
         } else {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
@@ -276,16 +274,28 @@ impl Drive {
             document_type.name().as_str(),
         );
         let lifecycle_tree_key = vec![DOCUMENT_LIFECYCLE_TREE_KEY];
+        // The container is shared by every document of the type and outlives
+        // any one of them: an erase removes records and per-document history
+        // trees, never this. Flagging it to whoever happened to delete first
+        // would charge them for structure nobody refunds, and would make the
+        // committed encoding depend on which document went first. The record
+        // inside it keeps the deleter's flags, which is what an erase refunds.
+        //
+        // The running batch is consulted so that two deletes of different
+        // documents of the same type, prepared before either is applied, insert
+        // this one key once rather than twice.
+        let mut container_operations = Vec::new();
         self.batch_insert_empty_tree_if_not_exists::<0>(
             PathKey((std::mem::take(&mut document_type_path), lifecycle_tree_key)),
             TreeType::NormalTree,
-            storage_flags,
+            None,
             tree_apply_type,
             transaction,
-            &mut None,
-            batch_operations,
+            &mut Some(batch_operations),
+            &mut container_operations,
             &platform_version.drive,
         )?;
+        batch_operations.append(&mut container_operations);
 
         // The record's content is fully known whether or not this is a dry
         // run: it is a fixed-width encoding of the deletion time, and the
