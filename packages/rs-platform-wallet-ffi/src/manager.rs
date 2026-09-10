@@ -1415,6 +1415,70 @@ mod tests {
         assert!(read.wallet_changeset_sweeps.is_some());
         assert!(read.wallet_changeset_chain_lock_height.is_some());
     }
+    /// A query whose account tag this build cannot map must not fail the
+    /// batch: the classifier's own answer for anything it cannot name is
+    /// `Unknown`, and the store row behind the query is durable, so a batch
+    /// failure would repeat on every reconcile run with the same page.
+    #[test]
+    fn classify_outpoints_answers_unknown_for_an_unmappable_account_tag() {
+        use crate::core_wallet_types::{OutPointFFI, OutpointOwnershipQueryFFI};
+        use crate::manager_diagnostics::platform_wallet_classify_outpoints;
+        let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let callbacks = persistence_callbacks();
+        let event_cbs = event_callbacks();
+        let mut handle = 0;
+        let created = unsafe {
+            platform_wallet_manager_create(
+                &sdk as *const Sdk as *const c_void,
+                &callbacks,
+                &event_cbs,
+                &mut handle,
+            )
+        };
+        assert_eq!(created.code, PlatformWalletFFIResultCode::Success);
+        let wallet_id = [0x11u8; 32];
+        let script = [0x76u8, 0xa9, 0x14];
+        let query = |type_tag: u8| OutpointOwnershipQueryFFI {
+            type_tag,
+            standard_tag: 0,
+            index: 0,
+            registration_index: 0,
+            key_class: 0,
+            user_identity_id: [0; 32],
+            friend_identity_id: [0; 32],
+            outpoint: OutPointFFI {
+                txid: [0x22; 32],
+                vout: 0,
+            },
+            script_pubkey: script.as_ptr(),
+            script_pubkey_len: script.len(),
+        };
+        // An identity-key account tag, a mappable BIP44 tag, and a tag from
+        // the future, in one batch.
+        let queries = [query(15), query(0), query(200)];
+        let mut out = [0xFFu8; 3];
+        let result = unsafe {
+            platform_wallet_classify_outpoints(
+                handle,
+                wallet_id.as_ptr(),
+                queries.as_ptr(),
+                queries.len(),
+                out.as_mut_ptr(),
+            )
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::Success,
+            "an unmappable tag degrades that query to Unknown, it does not fail the batch"
+        );
+        assert_eq!(
+            out,
+            [0, 0, 0],
+            "every slot is answered, Unknown where nothing can be said"
+        );
+        let destroyed = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(destroyed.code, PlatformWalletFFIResultCode::Success);
+    }
 }
 
 /// Wallet-generation teardown vs. the deferred-payment registry

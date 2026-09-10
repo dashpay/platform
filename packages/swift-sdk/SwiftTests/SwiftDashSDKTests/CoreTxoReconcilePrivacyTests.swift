@@ -128,6 +128,10 @@ final class CoreTxoReconcilePrivacyTests: XCTestCase {
         XCTAssertTrue(log.contains("event=persistence_txo_reconcile_item"))
         XCTAssertTrue(log.contains("observed_spent_count=1"))
         XCTAssertTrue(log.contains("action=\"healed\""))
+        XCTAssertFalse(
+            log.contains("amount_duffs="),
+            "the value of an individual coin never leaves the store through these events"
+        )
         XCTAssertTrue(log.contains("action=\"flipped_spent\""))
 
         let forbidden: [(String, String)] = [

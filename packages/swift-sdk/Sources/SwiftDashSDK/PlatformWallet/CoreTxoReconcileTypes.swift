@@ -159,6 +159,9 @@ public struct CoreTxoReconcileReport: Equatable, Sendable {
     /// Rows inserted.
     public var inserted = 0
     public var insertedDuffs: UInt64 = 0
+    /// Engine coins the store lacked whose row the pending-input drain wrote
+    /// spent on insert: the divergence is recorded, not repaired.
+    public var healedSpent = 0
     /// Engine rows below the confirmation gate.
     public var skippedImmature = 0
     /// Engine rows on a contact's watch-only chain.

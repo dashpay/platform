@@ -10857,6 +10857,8 @@ struct CoreTxoStoreUnspentPage: Sendable {
 struct CoreTxoHealCounts: Sendable {
     var inserted = 0
     var insertedDuffs: UInt64 = 0
+    /// Rows the drain of pending inputs wrote spent on insert — not repairs.
+    var healedSpent = 0
     var alreadyPresent = 0
     var skippedImmature = 0
     var skippedUnresolvedAccount = 0
@@ -10958,6 +10960,25 @@ extension PlatformWalletPersistenceHandler {
                     record.coreAddress = coreAddr
                 }
                 drainPendingInputs(into: record, resolvedWalletId: walletId)
+                if record.isSpent {
+                    // A pending-input claim or a swept tombstone already
+                    // covered this outpoint, so the drain wrote the row spent
+                    // on the spot. That is not a repair of the divergence the
+                    // engine reported — the engine holds the coin, the store
+                    // now says spent, and nothing un-marks a spent row — so it
+                    // is counted on its own for the operator to see.
+                    counts.healedSpent += 1
+                    SDKLogger.event(
+                        "persistence_txo_reconcile_item",
+                        category: .persistence,
+                        fields: [
+                            "action": .publicText("healed_spent"),
+                            "outpoint_reference": .reference(outpoint),
+                            "wallet_reference": .reference(walletId),
+                        ]
+                    )
+                    continue
+                }
                 counts.inserted += 1
                 counts.insertedDuffs = counts.insertedDuffs.addingReportingOverflow(row.amount).0
                 SDKLogger.event(
@@ -10965,13 +10986,14 @@ extension PlatformWalletPersistenceHandler {
                     category: .persistence,
                     fields: [
                         "action": .publicText("healed"),
-                        "amount_duffs": .unsignedInteger(row.amount),
                         "outpoint_reference": .reference(outpoint),
                         "wallet_reference": .reference(walletId),
                     ]
                 )
             }
-            guard counts.inserted == 0 || reconcileSave(operation: "txo_reconcile_heal", walletId: walletId) else {
+            guard counts.inserted + counts.healedSpent == 0
+                || reconcileSave(operation: "txo_reconcile_heal", walletId: walletId)
+            else {
                 return .failed
             }
             return .done(counts)
@@ -11100,7 +11122,6 @@ extension PlatformWalletPersistenceHandler {
                         category: .persistence,
                         fields: [
                             "action": .publicText("flipped_spent"),
-                            "amount_duffs": .unsignedInteger(txo.amount),
                             "outpoint_reference": .reference(row.outpoint),
                             "wallet_reference": .reference(walletId),
                         ]

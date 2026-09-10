@@ -1157,7 +1157,16 @@ pub unsafe extern "C" fn platform_wallet_classify_outpoints(
     check_ptr!(out_classes);
     let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
 
+    // Every slot starts as `Unknown`, the classifier's own answer for
+    // anything it cannot name. A query whose account tag this build cannot
+    // map (an identity-key account, a forward-versioned tag, a stray
+    // standard tag) keeps that answer instead of failing the batch: the row
+    // behind it is durable, so a batch failure would repeat on every run,
+    // and the caller already leaves `Unknown` alone.
+    let out = std::slice::from_raw_parts_mut(out_classes, count);
+    out.fill(platform_wallet::manager::accessors::OutpointClass::Unknown.as_u8());
     let mut owned: Vec<OutpointOwnershipQuery> = Vec::with_capacity(count);
+    let mut positions: Vec<usize> = Vec::with_capacity(count);
     for (i, q) in std::slice::from_raw_parts(queries, count)
         .iter()
         .enumerate()
@@ -1173,13 +1182,9 @@ pub unsafe extern "C" fn platform_wallet_classify_outpoints(
         );
         let account_type = match account_type_from_spec_ref(&spec) {
             Ok(at) => at,
-            Err(e) => {
-                return PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                    format!("query {i}: {e}"),
-                );
-            }
+            Err(_) => continue,
         };
+        positions.push(i);
         let script_pubkey = if q.script_pubkey.is_null() || q.script_pubkey_len == 0 {
             Vec::new()
         } else {
@@ -1204,9 +1209,8 @@ pub unsafe extern "C" fn platform_wallet_classify_outpoints(
         let wm = wallet_manager.blocking_read();
         classify_outpoints(&wm, &wid, &owned)
     };
-    let out = std::slice::from_raw_parts_mut(out_classes, count);
-    for (slot, class) in out.iter_mut().zip(classes) {
-        *slot = class.as_u8();
+    for (position, class) in positions.into_iter().zip(classes) {
+        out[position] = class.as_u8();
     }
     PlatformWalletFFIResult::ok()
 }
