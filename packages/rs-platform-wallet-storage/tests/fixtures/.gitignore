@@ -1,0 +1,4 @@
+# SQLite WAL/SHM side files produced when a test opens a committed fixture.
+*.db-wal
+*.db-shm
+*.db-journal

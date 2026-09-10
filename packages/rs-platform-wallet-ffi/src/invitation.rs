@@ -208,15 +208,11 @@ pub unsafe extern "C" fn platform_wallet_create_invitation(
     let result = unwrap_option_or_return!(option);
     let invitation = unwrap_result_or_return!(result);
 
-    // Marshal the funding outpoint out. `Txid: AsRef<[u8]>`, matching the
-    // conversion convention used across this crate's changeset FFI.
-    let mut txid = [0u8; 32];
-    txid.copy_from_slice(invitation.out_point.txid.as_ref());
+    // Marshal the funding outpoint out through the crate's one conversion
+    // authority (`From<&OutPoint> for OutPointFFI`) — this value joins the
+    // same outpoint-keyed rows the sweep releases match on.
     unsafe {
-        *out_outpoint = OutPointFFI {
-            txid,
-            vout: invitation.out_point.vout,
-        };
+        *out_outpoint = OutPointFFI::from(&invitation.out_point);
     }
 
     // The URI is a secret (embeds the voucher key). Do NOT log it — the error

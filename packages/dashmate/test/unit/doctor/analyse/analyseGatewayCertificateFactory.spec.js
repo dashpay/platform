@@ -14,6 +14,16 @@ function validTo(days) {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString();
 }
 
+/**
+ * @param {string} value
+ * @return {string}
+ */
+function stripAnsi(value) {
+  const escape = String.fromCharCode(27);
+
+  return value.replace(new RegExp(`${escape}\\[[0-9;]*m`, 'g'), '');
+}
+
 describe('analyseGatewayCertificateFactory', () => {
   let analyseGatewayCertificate;
   let config;
@@ -754,7 +764,10 @@ describe('analyseGatewayCertificateFactory', () => {
         detail: 'acme: error: 400 :: urn:ietf:params:acme:error:connection :: timeout',
         attemptedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
         lastSuccessAt: new Date(Date.now() - 5 * DAY_MS).toISOString(),
-        consecutiveFailures: 37,
+        // A sentinel no rendered date or time can contain: the counter-leak
+        // assertions below match it verbatim, so a coincidental "37" in a
+        // minute field can no longer fail them.
+        consecutiveFailures: 739577,
         issuanceSpentAt: null,
         issuanceUncertainAt: null,
         gatewayReloadFailedAt: null,
@@ -907,13 +920,15 @@ describe('analyseGatewayCertificateFactory', () => {
       renewalFailed();
 
       const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+      const description = stripAnsi(renewal.getDescription());
+      const solution = stripAnsi(renewal.getSolution());
 
-      expect(renewal.getSolution()).to.contain('Last renewed');
-      expect(renewal.getDescription()).to.not.contain('failing since');
-      expect(renewal.getSolution()).to.not.contain('failing since');
+      expect(solution).to.contain('Last renewed');
+      expect(description).to.not.contain('failing since');
+      expect(solution).to.not.contain('failing since');
       // The counter counts scheduler wake-ups, not attempts.
-      expect(renewal.getDescription()).to.not.contain('37');
-      expect(renewal.getSolution()).to.not.contain('37');
+      expect(description).to.not.contain('739577');
+      expect(solution).to.not.contain('739577');
     });
 
     it('should name the cause instead of sending an operator to the logs', () => {
