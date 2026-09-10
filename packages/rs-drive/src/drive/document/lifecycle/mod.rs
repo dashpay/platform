@@ -15,6 +15,9 @@
 #[cfg(feature = "server")]
 mod fetch;
 
+#[cfg(all(test, feature = "server", feature = "verify"))]
+mod tests;
+
 #[cfg(feature = "server")]
 pub use fetch::DocumentLifecycleState;
 
@@ -170,7 +173,7 @@ impl DocumentLifecycleRecord {
 }
 
 #[cfg(test)]
-mod tests {
+mod record_tests {
     use super::*;
 
     #[test]
