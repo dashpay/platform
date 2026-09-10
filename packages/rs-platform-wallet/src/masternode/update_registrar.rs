@@ -114,16 +114,51 @@ pub async fn prepare_masternode_update_registrar<S: TransactionSigner + ?Sized +
     let collateral_script =
         resolve_collateral_script(wallet, &registration_tx, &registration).await?;
 
-    let placeholder = assemble_update_registrar_placeholder(
-        wallet,
-        &summaries,
-        &registration,
-        &collateral_script,
-        &params,
-        &owner,
-    )?;
+    let (placeholder, owner) = assemble_update_registrar_placeholder_from_async(
+        wallet.clone(),
+        summaries,
+        registration,
+        collateral_script,
+        params,
+        owner,
+    )
+    .await?;
 
     build_sign_update_registrar(wallet.core(), placeholder, owner, signer).await
+}
+
+/// The assembly step as the async orchestrator must run it: on the
+/// blocking pool. The assembly derives wallet keys, and
+/// [`PlatformWallet::derive_provider_key_at_index`] takes the
+/// wallet-manager lock via tokio's `blocking_read`, which panics when
+/// called on an async worker thread — exactly where the FFI's
+/// `block_on_worker` polls this future. The owner secret rides through and
+/// comes back so the caller can keep signing with it.
+async fn assemble_update_registrar_placeholder_from_async(
+    wallet: PlatformWallet,
+    summaries: Vec<MasternodeListSummary>,
+    registration: ProviderRegistrationPayload,
+    collateral_script: ScriptBuf,
+    params: MasternodeUpdateRegistrarParams,
+    owner: OwnerSecret,
+) -> Result<(ProviderUpdateRegistrarPayload, OwnerSecret), PlatformWalletError> {
+    tokio::task::spawn_blocking(move || {
+        let placeholder = assemble_update_registrar_placeholder(
+            &wallet,
+            &summaries,
+            &registration,
+            &collateral_script,
+            &params,
+            &owner,
+        )?;
+        Ok((placeholder, owner))
+    })
+    .await
+    .map_err(|join_error| {
+        PlatformWalletError::KeyDerivation(format!(
+            "the registrar assembly task did not complete: {join_error}"
+        ))
+    })?
 }
 
 /// Everything between the network reads and the funding build: resolve the
@@ -282,15 +317,19 @@ pub(crate) fn collateral_output_script(
 
 /// Core resolves the masternode's collateral UTXO and rejects a ProUpRegTx
 /// whose final voting key (or the immutable owner key) is the collateral's
-/// P2PKH destination (`bad-protx-collateral-reuse`) — the rule keeping the
-/// collateral key off an online voting server. Candidate discovery joins
-/// wallet keys against DML voting fields only, so a key whose address once
-/// funded this node's collateral looks unused there; this is the check that
-/// stops it before funding. From v3 (ExtAddr) entries Core also rejects a
-/// payout script equal to the collateral script (`bad-protx-payee-reuse`);
-/// this payload is version 2, so that arm applies exactly when the ENTRY is
-/// v3 — Core gates on `max(entry version, payload version)`, and an entry
-/// advertises extended net info exactly when it is v3+.
+/// key destination (`bad-protx-collateral-reuse`) — the rule keeping the
+/// collateral key off an online voting server. `ExtractDestination` maps
+/// both a P2PKH collateral and a valid P2PK one to a `PKHash` — the latter
+/// by hashing the public key in its original (compressed or uncompressed)
+/// script serialization — so both forms are extracted here. Candidate
+/// discovery joins wallet keys against DML voting fields only, so a key
+/// whose address once funded this node's collateral looks unused there;
+/// this is the check that stops it before funding. From v3 (ExtAddr)
+/// entries Core also rejects a payout script equal to the collateral script
+/// (`bad-protx-payee-reuse`); this payload is version 2, so that arm
+/// applies exactly when the ENTRY is v3 — Core gates on `max(entry version,
+/// payload version)`, and an entry advertises extended net info exactly
+/// when it is v3+.
 pub(crate) fn ensure_collateral_not_reused(
     collateral_script: &ScriptBuf,
     owner_key_hash: &PubkeyHash,
@@ -298,14 +337,27 @@ pub(crate) fn ensure_collateral_not_reused(
     script_payout: &ScriptBuf,
     entry_is_v3: bool,
 ) -> Result<(), PlatformWalletError> {
-    if let Some(collateral_key) = p2pkh_script_hash(collateral_script.as_bytes()) {
-        if collateral_key == owner_key_hash.to_byte_array()
-            || collateral_key == *final_voting_key_hash
-        {
+    let collateral_key = p2pkh_script_hash(collateral_script.as_bytes()).or_else(|| {
+        collateral_script
+            .p2pk_public_key()
+            .map(|public_key| public_key.pubkey_hash().to_byte_array())
+    });
+    if let Some(collateral_key) = collateral_key {
+        // The owner key is immutable, so its collision has no remedy the
+        // caller can apply — unlike the voting key, which can be re-chosen.
+        if collateral_key == owner_key_hash.to_byte_array() {
             return Err(PlatformWalletError::InvalidParameter(
-                "the chosen voting key (or the owner key) is the masternode's collateral \
-                 address — consensus rejects reusing the collateral key \
-                 (`bad-protx-collateral-reuse`); pick a different voting key"
+                "the masternode's immutable owner key is its collateral address — consensus \
+                 rejects reusing the collateral key (`bad-protx-collateral-reuse`), so this \
+                 masternode cannot be updated with a ProUpRegTx"
+                    .to_string(),
+            ));
+        }
+        if collateral_key == *final_voting_key_hash {
+            return Err(PlatformWalletError::InvalidParameter(
+                "the chosen voting key is the masternode's collateral address — consensus \
+                 rejects reusing the collateral key (`bad-protx-collateral-reuse`); pick a \
+                 different voting key"
                     .to_string(),
             ));
         }
@@ -727,13 +779,37 @@ mod tests {
     /// public orchestrator uses, then funded, signed and broadcast. The
     /// public function adds only the SPV summaries read, the txid-bound
     /// ProRegTx fetch and the collateral resolution around this.
-    #[test]
-    fn assembles_and_signs_through_the_prepare_wiring() {
-        use dashcore::blockdata::transaction::special_transaction::provider_registration::{
-            ProviderMasternodeType, ProviderRegistrationPayload,
-        };
+    /// A registration payload for masternode `0x11` with an internal
+    /// collateral and the test owner key — the ProRegTx side of the
+    /// assembly fixtures.
+    fn test_registration() -> ProviderRegistrationPayload {
+        use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderMasternodeType;
         use dashcore::OutPoint;
 
+        ProviderRegistrationPayload {
+            version: ProviderRegistrationPayload::CURRENT_VERSION,
+            masternode_type: ProviderMasternodeType::Regular,
+            masternode_mode: 0,
+            collateral_outpoint: OutPoint {
+                txid: Txid::all_zeros(),
+                vout: 0,
+            },
+            service_address: "10.0.0.17:9999".parse().expect("socket address"),
+            owner_key_hash: owner_key_hash(),
+            operator_public_key: BLSPublicKey::from([0x11; 48]),
+            voting_key_hash: PubkeyHash::from_byte_array([0x11; 20]),
+            operator_reward: 0,
+            script_payout: ScriptBuf::new(),
+            inputs_hash: InputsHash::all_zeros(),
+            signature: vec![],
+            platform_node_id: None,
+            platform_p2p_port: None,
+            platform_http_port: None,
+        }
+    }
+
+    #[test]
+    fn assembles_and_signs_through_the_prepare_wiring() {
         let wallet = crate::test_support::sync_test_platform_wallet();
 
         let derived_operator: [u8; 48] = wallet
@@ -759,26 +835,7 @@ mod tests {
             new_voting_key_index: Some(0),
             payout_address: payout_address.to_string(),
         };
-        let registration = ProviderRegistrationPayload {
-            version: ProviderRegistrationPayload::CURRENT_VERSION,
-            masternode_type: ProviderMasternodeType::Regular,
-            masternode_mode: 0,
-            collateral_outpoint: OutPoint {
-                txid: Txid::all_zeros(),
-                vout: 0,
-            },
-            service_address: "10.0.0.17:9999".parse().expect("socket address"),
-            owner_key_hash: owner_key_hash(),
-            operator_public_key: BLSPublicKey::from([0x11; 48]),
-            voting_key_hash: PubkeyHash::from_byte_array([0x11; 20]),
-            operator_reward: 0,
-            script_payout: ScriptBuf::new(),
-            inputs_hash: InputsHash::all_zeros(),
-            signature: vec![],
-            platform_node_id: None,
-            platform_p2p_port: None,
-            platform_http_port: None,
-        };
+        let registration = test_registration();
         let collateral = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0xAB; 20]));
 
         let placeholder = assemble_update_registrar_placeholder(
@@ -883,6 +940,50 @@ mod tests {
                 owner_key_hash().to_byte_array()
             );
         });
+    }
+
+    /// Regression for the review's async-context panic: key derivation
+    /// takes the wallet-manager lock via tokio's `blocking_read`, which
+    /// panics on a runtime worker thread — where the FFI's
+    /// `block_on_worker` polls the orchestrator. Driving the same
+    /// assembly seam the orchestrator awaits from inside a multi-thread
+    /// runtime must yield the payload, not abort.
+    #[test]
+    fn assembly_derives_keys_from_an_async_context_without_panicking() {
+        // The fixture hands back an `Arc`; the orchestrator moves an owned
+        // clone of the wallet handle into the assembly task.
+        let wallet = PlatformWallet::clone(&crate::test_support::sync_test_platform_wallet());
+        let summaries = vec![masternode(0x11)];
+        let params = MasternodeUpdateRegistrarParams {
+            pro_tx_hash: [0x11; 32],
+            new_operator_key_index: Some(0),
+            new_voting_key_index: Some(0),
+            payout_address: DashAddress::dummy(Network::Mainnet, 3).to_string(),
+        };
+        let collateral = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0xAB; 20]));
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime");
+        let (placeholder, _owner) = runtime
+            .block_on(async move {
+                // A spawned task (not just `block_on`) — the assembly must
+                // survive polling on a worker in an async execution
+                // context, exactly like the FFI drives it.
+                tokio::spawn(assemble_update_registrar_placeholder_from_async(
+                    wallet,
+                    summaries,
+                    test_registration(),
+                    collateral,
+                    params,
+                    owner(),
+                ))
+                .await
+                .expect("assembly task must not panic in an async context")
+            })
+            .expect("assembly succeeds");
+        assert_eq!(placeholder.pro_tx_hash, Txid::from_byte_array([0x11; 32]));
     }
 
     #[tokio::test]
@@ -1053,6 +1154,32 @@ mod review_tests {
         ensure_collateral_not_reused(&unrelated, &owner, &voting, &payout, true)
             .expect("an unrelated collateral passes both gates");
 
+        // The two collisions are distinct conditions: re-choosing the
+        // voting key clears one, while the immutable owner key's collision
+        // has no remedy — the messages must say so.
+        let owner_message = ensure_collateral_not_reused(
+            &ScriptBuf::new_p2pkh(&owner),
+            &owner,
+            &voting,
+            &payout,
+            false,
+        )
+        .expect_err("owner collision")
+        .to_string();
+        assert!(
+            owner_message.contains("cannot be updated"),
+            "the owner-key collision must not suggest re-choosing the voting key: \
+             {owner_message}"
+        );
+        let voting_message =
+            ensure_collateral_not_reused(&voting_collateral, &owner, &voting, &payout, false)
+                .expect_err("voting collision")
+                .to_string();
+        assert!(
+            voting_message.contains("pick a different voting key"),
+            "the voting-key collision is remedied by re-choosing: {voting_message}"
+        );
+
         // Payout == collateral: Core applies this arm only from v3
         // (ExtAddr) entries — a P2SH collateral carries no key id, so only
         // the gated script-equality check can fire.
@@ -1062,6 +1189,67 @@ mod review_tests {
         let err = ensure_collateral_not_reused(&p2sh, &owner, &voting, &p2sh, true)
             .expect_err("a v3 entry's payout must not be the collateral script");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+    }
+
+    /// Core's `ExtractDestination` also converts a valid P2PK collateral
+    /// script to a `PKHash` — hashing the public key in its original
+    /// (compressed or uncompressed) serialization — and `CheckProUpRegTx`
+    /// compares that hash against the owner and final voting keys. A P2PK
+    /// collateral paid to either key must be refused, in both
+    /// serializations.
+    #[test]
+    fn p2pk_collateral_reuse_is_refused() {
+        let secp = Secp256k1::new();
+        let secret = SecretKey::from_byte_array(&[7u8; 32]).expect("valid scalar");
+        let inner = SecpPublicKey::from_secret_key(&secp, &secret);
+        let compressed = dashcore::PublicKey::new(inner);
+        let uncompressed = dashcore::PublicKey::new_uncompressed(inner);
+        let payout = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0x33; 20]));
+        let other_owner = PubkeyHash::from_byte_array([0x11; 20]);
+        let other_voting = [0x22u8; 20];
+
+        // Compressed P2PK collateral at the chosen voting key.
+        let compressed_collateral = ScriptBuf::new_p2pk(&compressed);
+        let voting = compressed.pubkey_hash().to_byte_array();
+        let err = ensure_collateral_not_reused(
+            &compressed_collateral,
+            &other_owner,
+            &voting,
+            &payout,
+            false,
+        )
+        .expect_err("a compressed-P2PK collateral at the voting key is refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+
+        // Uncompressed P2PK collateral at the owner key — hashed over the
+        // key's own 65-byte serialization, which differs from the
+        // compressed hash.
+        let uncompressed_collateral = ScriptBuf::new_p2pk(&uncompressed);
+        let owner = uncompressed.pubkey_hash();
+        assert_ne!(
+            owner.to_byte_array(),
+            voting,
+            "the two serializations must hash differently for this test to mean anything"
+        );
+        let err = ensure_collateral_not_reused(
+            &uncompressed_collateral,
+            &owner,
+            &other_voting,
+            &payout,
+            false,
+        )
+        .expect_err("an uncompressed-P2PK collateral at the owner key is refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+
+        // A P2PK collateral for an unrelated key passes.
+        ensure_collateral_not_reused(
+            &compressed_collateral,
+            &other_owner,
+            &other_voting,
+            &payout,
+            false,
+        )
+        .expect("an unrelated P2PK collateral passes");
     }
 
     /// The collateral script comes from an output index inside a fetched

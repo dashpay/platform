@@ -719,13 +719,17 @@ pub unsafe extern "C" fn platform_wallet_manager_provider_key_candidates(
     };
 
     let ResolvedContext { wallet, spv, .. } = context;
-    let candidates = unwrap_result_or_return!(block_on_worker(async move {
-        let summaries = spv
-            .masternode_list_summaries()
+    // Only the list read runs on the runtime. Candidate derivation takes
+    // the wallet-manager lock via tokio's `blocking_read`, which panics on
+    // an async worker thread, so it stays on this plain FFI thread — the
+    // same split `platform_wallet_provider_key_at_index` uses.
+    let summaries = unwrap_result_or_return!(block_on_worker(async move {
+        spv.masternode_list_summaries()
             .await
-            .ok_or(platform_wallet::PlatformWalletError::MasternodeListUnavailable)?;
-        provider_key_candidates(&wallet, &summaries, kind, count)
+            .ok_or(platform_wallet::PlatformWalletError::MasternodeListUnavailable)
     }));
+    let candidates =
+        unwrap_result_or_return!(provider_key_candidates(&wallet, &summaries, kind, count));
 
     let mut entries: Vec<ProviderKeyCandidateFFI> =
         candidates.into_iter().map(candidate_to_ffi).collect();
