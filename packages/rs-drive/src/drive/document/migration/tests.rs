@@ -127,6 +127,11 @@ fn migrate_summable_history(revision_count: u64) -> DocumentHistoryMigrationStat
             &mut ignored,
         )
         .unwrap();
+    assert_eq!(
+        old_entries.iter().filter(|(key, _)| key != &[0]).count(),
+        history.len(),
+        "every retained source revision must have a destination revision",
+    );
     for ((_, original), (_, migrated)) in old_entries
         .iter()
         .filter(|(key, _)| key != &[0])
