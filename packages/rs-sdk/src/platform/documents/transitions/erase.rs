@@ -178,7 +178,6 @@ impl Sdk {
     ) -> Result<DocumentEraseResult, Error> {
         let platform_version = self.version();
         let put_settings = erase_document_transition_builder.settings;
-        let document_id = erase_document_transition_builder.document_id;
 
         let state_transition = erase_document_transition_builder
             .sign(self, signing_key, signer, platform_version)

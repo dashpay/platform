@@ -897,6 +897,77 @@ mod tests {
                 .unwrap(),
             root
         );
+
+        // The lifecycle works over migrated storage, not only over history
+        // written after activation. A contract registered before protocol 14
+        // cannot declare `canBeErased` — the grammar that admits the keyword
+        // did not exist then — so this exercises the storage layer directly:
+        // whether a delete and an erase read and rewrite revision keys the
+        // migration produced.
+        use drive::drive::document::lifecycle::DocumentLifecycleState;
+        use drive::util::batch::{DocumentOperationType, DriveOperation};
+        use drive::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
+
+        let document_id = dpp::identifier::Identifier::from_bytes(&document_id).unwrap();
+        let document_type = contract.document_type_for_name("note").unwrap();
+        let contract_info = || DataContractInfo::BorrowedDataContract(&contract);
+        let document_type_info = || DocumentTypeInfo::DocumentTypeName("note".to_string());
+        let apply = |operation: DriveOperation, time_ms: u64| {
+            restarted
+                .drive
+                .apply_drive_operations(
+                    vec![operation],
+                    true,
+                    &dpp::block::block_info::BlockInfo::default_with_time(time_ms),
+                    None,
+                    new_version,
+                    None,
+                )
+                .expect("expected to apply the operation")
+        };
+        let lifecycle = || {
+            restarted
+                .drive
+                .fetch_document_lifecycle(
+                    &contract,
+                    document_type,
+                    document_id,
+                    None,
+                    None,
+                    new_version,
+                )
+                .expect("expected to read the lifecycle")
+                .0
+        };
+
+        apply(
+            DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocument {
+                document_id,
+                deleter_id: Some(dpp::identifier::Identifier::new([3u8; 32])),
+                contract_info: contract_info(),
+                document_type_info: document_type_info(),
+            }),
+            1_681_094_400_000,
+        );
+        let state = lifecycle();
+        assert!(
+            matches!(state, DocumentLifecycleState::Deleted(_)),
+            "a migrated document must be deletable, got {state:?}"
+        );
+
+        apply(
+            DriveOperation::DocumentOperation(DocumentOperationType::EraseDocument {
+                document_id,
+                contract_info: contract_info(),
+                document_type_info: document_type_info(),
+            }),
+            1_681_094_500_000,
+        );
+        let state = lifecycle();
+        assert!(
+            matches!(state, DocumentLifecycleState::Absent),
+            "erasing every migrated revision must free the id, got {state:?}"
+        );
     }
 
     #[stack_size(4 * 1024 * 1024)]

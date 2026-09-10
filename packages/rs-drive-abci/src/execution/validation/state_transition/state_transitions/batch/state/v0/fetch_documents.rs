@@ -220,6 +220,7 @@ fn fetch_documents_for_transitions_knowing_contract_and_document_type_v1(
 /// and bills the reads it performed. Every stateful check that has to tell a
 /// deleted document from one that never existed goes through this; a document
 /// type that keeps no history has no lifecycle to read and must not reach it.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_keep_history_document_lifecycle(
     drive: &Drive,
     contract: &DataContract,

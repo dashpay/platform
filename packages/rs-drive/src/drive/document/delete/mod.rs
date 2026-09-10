@@ -1366,7 +1366,6 @@ mod tests {
 
         outcome.expect("expected the delete to succeed");
 
-        let document_id = Identifier::from(document_id);
         let (state, _) = drive
             .fetch_document_lifecycle(
                 &contract,
