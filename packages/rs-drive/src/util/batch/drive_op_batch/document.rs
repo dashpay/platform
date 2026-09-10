@@ -98,6 +98,26 @@ pub enum DocumentOperationType<'a> {
     DeleteDocument {
         /// The document id
         document_id: Identifier,
+        /// The identity credited with the bytes of the lifecycle record a
+        /// keep-history delete writes, and refunded when an erase removes it.
+        /// `None` where no signer stands behind the delete.
+        deleter_id: Option<Identifier>,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
+    },
+    /// Removes a bounded chunk of the retained revisions of an already deleted
+    /// keep-history document, dropping the history subtree and the lifecycle
+    /// record with the terminal chunk.
+    EraseDocument {
+        /// The document id
+        document_id: Identifier,
+        /// Whether this is the authorized first chunk, which commits the
+        /// document to erasure, rather than a continuation of one already
+        /// committed. Derived from the document's committed lifecycle, never
+        /// from the transition.
+        start: bool,
         /// Data Contract info to potentially be resolved if needed
         contract_info: DataContractInfo<'a>,
         /// Document type
@@ -315,6 +335,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
             }
             DocumentOperationType::DeleteDocument {
                 document_id,
+                deleter_id,
                 contract_info,
                 document_type_info,
             } => {
@@ -333,11 +354,43 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     document_id,
                     contract,
                     document_type,
+                    block_info,
+                    deleter_id,
                     None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
                 )
+            }
+            DocumentOperationType::EraseDocument {
+                document_id,
+                start,
+                contract_info,
+                document_type_info,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+
+                let mut operations = drive.erase_document_for_contract_operations(
+                    document_id,
+                    contract,
+                    document_type,
+                    block_info,
+                    start,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                drive_operations.append(&mut operations);
+                Ok(drive_operations)
             }
             DocumentOperationType::DeleteIndexOnlyDocument {
                 document_id,
