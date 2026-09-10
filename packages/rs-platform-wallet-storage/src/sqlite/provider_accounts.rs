@@ -149,6 +149,7 @@ pub(super) fn insert_platform_node_pool_entry(
 mod tests {
     use super::*;
     use key_wallet::Network;
+    use platform_wallet::wallet::provider_key_at_index::derive_platform_node_public_keys;
 
     fn provider_key_test_wallet() -> key_wallet::wallet::Wallet {
         key_wallet::wallet::Wallet::from_seed_bytes(
@@ -226,5 +227,184 @@ mod tests {
         assert!(accounts
             .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
             .is_none());
+    }
+    #[test]
+    fn insert_used_platform_node_pool_entry_restores_used_bookkeeping() {
+        use dashcore::hashes::Hash;
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = provider_key_test_wallet();
+        let key = derive_platform_node_public_keys(&wallet, Network::Testnet, 8)
+            .expect("platform-node derivation")
+            .pop()
+            .expect("derived key");
+        let payload = dashcore::address::Payload::PubkeyHash(
+            dashcore::PubkeyHash::from_byte_array(key.node_id),
+        );
+        let address = dashcore::Address::new(Network::Testnet, payload);
+        let script_pubkey = address.script_pubkey();
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+
+        insert_platform_node_pool_entry(
+            &mut wallet_info,
+            Network::Testnet,
+            key.index,
+            address,
+            script_pubkey,
+            key.public_key,
+            true,
+        )
+        .expect("restore used platform-node row");
+
+        let account = wallet_info
+            .accounts
+            .provider_platform_keys
+            .as_ref()
+            .expect("managed platform-node account");
+        let pool = account
+            .managed_account_type()
+            .address_pools()
+            .into_iter()
+            .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+            .cloned()
+            .expect("AbsentHardened pool");
+        let restored = pool.addresses.get(&key.index).expect("restored entry");
+        assert!(restored.is_used());
+        assert!(pool.used_indices.contains(&key.index));
+        assert_eq!(pool.highest_used, Some(key.index));
+    }
+
+    #[test]
+    fn insert_platform_node_pool_entry_rejects_unmanaged_account() {
+        use dashcore::hashes::Hash;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = provider_key_test_wallet();
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        wallet_info.accounts.provider_platform_keys = None;
+        let address = dashcore::Address::new(
+            Network::Testnet,
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(
+                [0x42; 20],
+            )),
+        );
+
+        let err = insert_platform_node_pool_entry(
+            &mut wallet_info,
+            Network::Testnet,
+            0,
+            address.clone(),
+            address.script_pubkey(),
+            [0x24; 32],
+            false,
+        )
+        .expect_err("an unmanaged account must not report a successful insert");
+
+        assert!(matches!(err, PlatformNodePoolError::NoManagedAccount));
+    }
+
+    #[test]
+    fn insert_platform_node_pool_entry_clears_stale_used_bookkeeping_on_downgrade() {
+        use dashcore::hashes::Hash;
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = provider_key_test_wallet();
+        let keys = derive_platform_node_public_keys(&wallet, Network::Testnet, 8)
+            .expect("platform-node derivation");
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+
+        for key in [&keys[2], &keys[7]] {
+            let payload = dashcore::address::Payload::PubkeyHash(
+                dashcore::PubkeyHash::from_byte_array(key.node_id),
+            );
+            let address = dashcore::Address::new(Network::Testnet, payload);
+            insert_platform_node_pool_entry(
+                &mut wallet_info,
+                Network::Testnet,
+                key.index,
+                address.clone(),
+                address.script_pubkey(),
+                key.public_key,
+                true,
+            )
+            .expect("insert used platform-node row");
+        }
+
+        for (key, expected_highest) in [(&keys[7], Some(keys[2].index)), (&keys[2], None)] {
+            let payload = dashcore::address::Payload::PubkeyHash(
+                dashcore::PubkeyHash::from_byte_array(key.node_id),
+            );
+            let address = dashcore::Address::new(Network::Testnet, payload);
+            insert_platform_node_pool_entry(
+                &mut wallet_info,
+                Network::Testnet,
+                key.index,
+                address.clone(),
+                address.script_pubkey(),
+                key.public_key,
+                false,
+            )
+            .expect("downgrade platform-node row to available");
+
+            let account = wallet_info
+                .accounts
+                .provider_platform_keys
+                .as_ref()
+                .expect("managed platform-node account");
+            let pool = account
+                .managed_account_type()
+                .address_pools()
+                .into_iter()
+                .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+                .expect("AbsentHardened pool");
+            assert!(!pool.used_indices.contains(&key.index));
+            assert_eq!(pool.highest_used, expected_highest);
+        }
+    }
+
+    #[test]
+    fn insert_platform_node_pool_entry_rejects_missing_hardened_pool() {
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = provider_key_test_wallet();
+        let keys = derive_platform_node_public_keys(&wallet, Network::Testnet, 1)
+            .expect("platform-node derivation");
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let account = info
+            .accounts
+            .provider_platform_keys
+            .as_mut()
+            .expect("managed platform-node account must exist");
+        for pool in account.managed_account_type_mut().address_pools_mut() {
+            pool.pool_type = AddressPoolType::Absent;
+        }
+
+        use dashcore::hashes::Hash;
+        let key = &keys[0];
+        let address = dashcore::Address::new(
+            Network::Testnet,
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(
+                key.node_id,
+            )),
+        );
+        let result = insert_platform_node_pool_entry(
+            &mut info,
+            Network::Testnet,
+            key.index,
+            address.clone(),
+            address.script_pubkey(),
+            key.public_key,
+            false,
+        );
+        assert!(matches!(
+            result,
+            Err(PlatformNodePoolError::MissingHardenedPool)
+        ));
     }
 }

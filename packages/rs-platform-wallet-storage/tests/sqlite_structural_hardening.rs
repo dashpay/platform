@@ -27,8 +27,8 @@ fn native_fk_rejects_orphan_child() {
     let (persister, _tmp, _path) = fresh_persister();
     let conn = persister.lock_conn_for_test();
     let res = conn.execute(
-        "INSERT INTO identities (wallet_id, identity_index, identity_id, entry_blob, tombstoned) \
-         VALUES (?1, NULL, ?2, X'00', 0)",
+        "INSERT INTO identities (wallet_id, identity_index, identity_id, entry_blob) \
+         VALUES (?1, NULL, ?2, X'00')",
         params![[7u8; 32].as_slice(), [9u8; 32].as_slice()],
     );
     let err = res.unwrap_err().to_string();

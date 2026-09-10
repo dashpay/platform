@@ -93,7 +93,7 @@ fn live_occupant(p: &SqlitePersister, wallet_id: &WalletId, index: u32) -> Optio
     let conn = p.lock_conn_for_test();
     conn.query_row(
         "SELECT identity_id FROM identities \
-         WHERE wallet_id IS ?1 AND identity_index = ?2 AND tombstoned = 0",
+         WHERE wallet_id IS ?1 AND identity_index = ?2",
         params![wallet_id.as_slice(), i64::from(index)],
         |row| row.get::<_, Vec<u8>>(0),
     )
