@@ -1362,7 +1362,7 @@ mod tests {
             None,
             None::<fn(&mut DataContract)>,
             transaction.as_ref(),
-            None,
+            Some(platform_version),
         );
 
         let id = Identifier::from([1u8; 32]);
@@ -1672,7 +1672,7 @@ mod tests {
             None,
             None::<fn(&mut DataContract)>,
             transaction.as_ref(),
-            None,
+            Some(platform_version),
         );
 
         let id = Identifier::from([1u8; 32]);
@@ -1883,7 +1883,7 @@ mod tests {
             None,
             None::<fn(&mut DataContract)>,
             transaction.as_ref(),
-            None,
+            Some(platform_version),
         );
 
         let id = Identifier::from([1u8; 32]);
