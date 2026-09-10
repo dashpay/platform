@@ -24,7 +24,7 @@ final class GetAddressInfoViewModel: BaseViewModel {
       } else {
         return ("xmark.circle.fill", .red, "Invalid bech32m address")
       }
-    } else if trimmed.count == 42 && trimmed.allSatisfy({ $0.isHexDigit }) {
+    } else if trimmed.count == 42 && trimmed.allSatisfy({ $0.isHexDigit && $0.isASCII }) {
       return ("checkmark.circle.fill", .green, "Hex format (42 characters)")
     } else if !trimmed.isEmpty {
       return ("questionmark.circle", .orange, "Unknown format")

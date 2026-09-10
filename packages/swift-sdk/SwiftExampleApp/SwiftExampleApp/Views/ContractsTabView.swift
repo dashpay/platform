@@ -883,9 +883,11 @@ struct ContractsTabView: View {
         let stripped = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if stripped.isEmpty { return nil }
 
-        // Hex: must be exactly 64 chars and all hex digits.
+        // Hex: must be exactly 64 chars and all ASCII hex digits.
+        // `Character.isHexDigit` alone also accepts the fullwidth
+        // forms (U+FF10…), which `Data(hexString:)` cannot decode.
         if stripped.count == 64,
-           stripped.allSatisfy({ $0.isHexDigit }),
+           stripped.allSatisfy({ $0.isHexDigit && $0.isASCII }),
            let data = Data(hexString: stripped),
            data.count == 32 {
             return data
