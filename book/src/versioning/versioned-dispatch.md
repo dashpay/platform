@@ -630,8 +630,8 @@ Three things to take from this:
   message. That is deliberate: a node that cannot run the agreed protocol must
   stop rather than produce a divergent state root.
 - **`perform_events_on_first_block_of_protocol_change` is where state
-  migrations live.** Anything a new protocol version needs done to the tree
-  once, before its first state transition runs, goes here: creating a new
+  migrations live.** Anything that needs to be done to the tree once for a new
+  protocol version, before its first state transition runs, goes here: creating a new
   root-tree subtree, rewriting a system contract, back-filling a sum tree.
 
 The migration hook is itself a versioned method

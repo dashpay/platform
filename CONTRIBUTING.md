@@ -59,8 +59,9 @@ belongs, error and panic policy, module layout, test placement) are written
 down in The Dash Platform Book under `book/`. Start with the
 [Coding Conventions](book/src/contributing/coding-conventions.md) chapter; it
 links to the chapters that explain each subsystem. Build the book locally with
-`mdbook serve book`, or read the rendered version published from the current
-dev branch by the `Deploy Book & API Docs` workflow.
+`mdbook serve book`, or read the rendered version at
+<https://dashpay.github.io/platform/>, which the `Deploy Book & API Docs`
+workflow publishes from the current dev branch.
 
 
 Testing

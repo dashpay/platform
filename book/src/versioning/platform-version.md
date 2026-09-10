@@ -153,9 +153,12 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
 };
 ```
 
-Now compare with `PLATFORM_V14`, the latest at the time of writing. Every slot
-that differs from `PLATFORM_V13` carries a trailing `// changed:` comment
-saying what changed; the slots without one are inherited unchanged:
+Now compare with `PLATFORM_V14`, the latest at the time of writing. By
+convention, each sub-constant slot that was bumped carries a trailing
+`// changed:` comment saying what changed. The `protocol_version` field is the
+snapshot's identity and is never annotated. One bumped slot in this snapshot,
+`validation` (`DPP_VALIDATION_VERSIONS_V4` to `V5`), is missing its comment,
+which is exactly the omission the convention exists to prevent:
 
 ```rust
 // packages/rs-platform-version/src/version/v14.rs

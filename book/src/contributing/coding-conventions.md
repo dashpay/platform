@@ -27,8 +27,11 @@ ask is "could two nodes disagree because of this?"
 
 ## Where code goes
 
-The dependency chain is `platform-version` → `dpp` → `drive` → `drive-abci` →
-`dash-sdk`, and it only points one way (see the
+The crates are layered, and dependencies only point downward:
+`platform-version` at the bottom, then `dpp`, then `drive`. Above `drive` the
+graph forks: `drive-abci` (the node) and `dash-sdk` (the client) both depend on
+`drive`, the SDK with the `verify` feature only, and `dash-sdk` does not depend
+on `drive-abci` at all (see the
 [Monorepo Overview](../architecture/overview.md)). Put a change in the lowest
 crate that has what the change needs, and no lower.
 
@@ -483,7 +486,7 @@ now does.
 4. Test the rejection through `process_raw_state_transitions`, and test that
    the previous protocol version still accepts the input.
 
-**Adding a query end to end**
+**Adding a query end-to-end**
 
 1. Proto message in `packages/dapi-grpc/protos/platform/v0/platform.proto`,
    registered in `build.rs`'s versioned request and response lists.
