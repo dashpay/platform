@@ -233,7 +233,11 @@ fn should_measure_history_depth_instead_of_only_document_count() {
     let deep = migrate_summable_history(256);
     assert_eq!(shallow.documents, deep.documents);
     assert_eq!(deep.revisions, shallow.revisions * 16);
-    assert!(deep.cost.storage_loaded_bytes > shallow.cost.storage_loaded_bytes * 8);
+    // Compare the incremental history work independently of fixed inventory reads.
+    assert_eq!(
+        deep.cost.storage_loaded_bytes - shallow.cost.storage_loaded_bytes,
+        257_722,
+    );
     assert!(deep.cost.hash_node_calls > shallow.cost.hash_node_calls);
 }
 
@@ -522,4 +526,128 @@ fn should_reject_unrecognised_type_children_during_migration_inventory() {
             "unrecognised type child {key:?} cannot be silently skipped"
         );
     }
+}
+
+#[test]
+fn should_account_for_contract_enumeration_even_when_no_contracts_exist() {
+    let version = PlatformVersion::get(14).unwrap();
+    let drive = setup_drive_with_initial_state_structure(Some(version));
+    let transaction = drive.grove.start_transaction();
+    let mut query = Query::new();
+    query.insert_all();
+    let mut operations = vec![];
+    drive
+        .grove_get_raw_path_query(
+            &PathQuery::new(
+                vec![vec![crate::drive::RootTree::DataContractDocuments as u8]],
+                SizedQuery::new(query, Some(u16::MAX), None),
+            ),
+            Some(&transaction),
+            QueryResultType::QueryKeyElementPairResultType,
+            &mut operations,
+            &version.drive,
+        )
+        .unwrap();
+    let mut expected = OperationCost::default();
+    for operation in operations {
+        if let LowLevelDriveOperation::CalculatedCostOperation(cost) = operation {
+            expected += cost;
+        }
+    }
+    assert!(expected.seek_count > 0);
+    let stats = drive
+        .migrate_document_history_storage(&transaction, version)
+        .unwrap();
+    assert_eq!(stats.contracts, 0);
+    assert_eq!(
+        stats.cost, expected,
+        "the terminal empty enumeration page still costs work"
+    );
+}
+
+#[test]
+fn should_halt_migration_when_an_inventoried_index_reference_was_not_rewritten() {
+    let old = PlatformVersion::get(13).unwrap();
+    let new = PlatformVersion::get(14).unwrap();
+    let drive = setup_drive_with_initial_state_structure(Some(old));
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
+        false,
+        old,
+    )
+    .unwrap();
+    drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, old)
+        .unwrap();
+    let document_type = contract.document_type_for_name("profile").unwrap();
+    let document = json_document_to_document(
+        "tests/supporting_files/contract/dashpay/profile0.json",
+        Some([7; 32].into()),
+        document_type,
+        old,
+    )
+    .unwrap();
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type,
+            },
+            true,
+            BlockInfo::default_with_time(1000),
+            true,
+            None,
+            old,
+            None,
+        )
+        .unwrap();
+    let transaction = drive.grove.start_transaction();
+    let type_path = contract_document_type_path_vec(contract.id().as_slice(), "profile");
+    let mut stats = DocumentHistoryMigrationStats::default();
+    let mut inventory = IndexEntries::new();
+    for (key, _) in drive
+        .history_migration_entries(&type_path, &transaction, old, &mut stats)
+        .unwrap()
+    {
+        if key == [0] {
+            continue;
+        }
+        let mut path = type_path.clone();
+        path.push(key);
+        drive
+            .history_migration_index_entries(path, &transaction, old, &mut stats, &mut inventory)
+            .unwrap();
+    }
+    let references = inventory.remove(document.id().as_slice()).unwrap();
+    assert!(!references.is_empty());
+    let error = drive
+        .history_migration_check_index_rewrites(
+            &references,
+            document.id().as_slice(),
+            &transaction,
+            new,
+            &mut stats,
+        )
+        .expect_err("an omitted rewrite must halt instead of being counted as rewritten");
+    assert!(error
+        .to_string()
+        .contains("history index rewrite count differs from its inventory"));
+    assert_eq!(stats.rewritten_index_entries, 0);
+    drive
+        .migrate_document_history_storage(&transaction, new)
+        .unwrap();
+    drive
+        .history_migration_check_index_rewrites(
+            &references,
+            document.id().as_slice(),
+            &transaction,
+            new,
+            &mut stats,
+        )
+        .unwrap();
+    assert_eq!(stats.rewritten_index_entries, references.len() as u64);
 }
