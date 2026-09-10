@@ -27,6 +27,9 @@ mod delete;
 mod estimation_costs;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod get_fetch;
+/// Composite-key history queries and proof results.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod history;
 #[cfg(feature = "server")]
 mod index_uniqueness;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
