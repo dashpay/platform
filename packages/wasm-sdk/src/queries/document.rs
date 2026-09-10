@@ -307,7 +307,6 @@ impl DocumentHistoryEntryWasm {
     pub fn time_ms(&self) -> BigInt {
         BigInt::from(self.time_ms)
     }
-
     #[wasm_bindgen(getter)]
     pub fn revision(&self) -> BigInt {
         BigInt::from(self.revision)
@@ -340,6 +339,10 @@ impl DocumentHistoryEntryWasm {
 pub struct DocumentHistoryLifecycleWasm {
     state: String,
     remaining_revisions: u64,
+    deleted_at_ms: u64,
+    erasing_started_at_ms: u64,
+    erasing_from_time_ms: u64,
+    erasing_from_revision: u64,
 }
 
 #[derive(Serialize)]
@@ -347,6 +350,10 @@ pub struct DocumentHistoryLifecycleWasm {
 struct DocumentHistoryLifecycleSerde {
     state: String,
     remaining_revisions: String,
+    deleted_at_ms: String,
+    erasing_started_at_ms: String,
+    erasing_from_time_ms: String,
+    erasing_from_revision: String,
 }
 
 #[wasm_bindgen(js_class = DocumentHistoryLifecycle)]
@@ -361,6 +368,26 @@ impl DocumentHistoryLifecycleWasm {
         BigInt::from(self.remaining_revisions)
     }
 
+    #[wasm_bindgen(getter = "deletedAtMs")]
+    pub fn deleted_at_ms(&self) -> BigInt {
+        BigInt::from(self.deleted_at_ms)
+    }
+
+    #[wasm_bindgen(getter = "erasingStartedAtMs")]
+    pub fn erasing_started_at_ms(&self) -> BigInt {
+        BigInt::from(self.erasing_started_at_ms)
+    }
+
+    #[wasm_bindgen(getter = "erasingFromTimeMs")]
+    pub fn erasing_from_time_ms(&self) -> BigInt {
+        BigInt::from(self.erasing_from_time_ms)
+    }
+
+    #[wasm_bindgen(getter = "erasingFromRevision")]
+    pub fn erasing_from_revision(&self) -> BigInt {
+        BigInt::from(self.erasing_from_revision)
+    }
+
     #[wasm_bindgen(js_name = toJSON)]
     pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
         serialization::to_json(&self.to_serde()).map_err(WasmSdkError::from)
@@ -372,6 +399,10 @@ impl DocumentHistoryLifecycleWasm {
         DocumentHistoryLifecycleSerde {
             state: self.state.clone(),
             remaining_revisions: self.remaining_revisions.to_string(),
+            deleted_at_ms: self.deleted_at_ms.to_string(),
+            erasing_started_at_ms: self.erasing_started_at_ms.to_string(),
+            erasing_from_time_ms: self.erasing_from_time_ms.to_string(),
+            erasing_from_revision: self.erasing_from_revision.to_string(),
         }
     }
 }
@@ -452,10 +483,16 @@ impl DocumentHistoryResultWasm {
                 .map(|lifecycle| DocumentHistoryLifecycleWasm {
                     state: match lifecycle.state {
                         DocumentHistoryState::Active => "ACTIVE",
+                        DocumentHistoryState::Deleted => "DELETED",
+                        DocumentHistoryState::Erasing => "ERASING",
                         DocumentHistoryState::Absent => "ABSENT",
                     }
                     .to_owned(),
                     remaining_revisions: lifecycle.remaining_revisions,
+                    deleted_at_ms: lifecycle.times.deleted_at_ms,
+                    erasing_started_at_ms: lifecycle.times.erasing_started_at_ms,
+                    erasing_from_time_ms: lifecycle.times.erasing_from_time_ms,
+                    erasing_from_revision: lifecycle.times.erasing_from_revision,
                 }),
         })
     }
