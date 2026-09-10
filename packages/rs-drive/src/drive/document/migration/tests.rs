@@ -409,6 +409,21 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
             .1,
         page
     );
+    let mut legacy_entries = proof.clone();
+    legacy_entries.entries_proof = Some(
+        crate::util::test_helpers::history_proof::downgrade_history_count(
+            proof.entries_proof.as_ref().unwrap(),
+            None,
+            new,
+        ),
+    );
+    let error =
+        Drive::verify_document_history_v1(&history_query, &legacy_entries, document_type, new)
+            .expect_err("entries require a GroveDB v1 envelope");
+    assert!(matches!(
+        error,
+        Error::Query(crate::error::query::QuerySyntaxError::Unsupported(_))
+    ));
     use crate::drive::document::history::DocumentHistoryProofV1;
     for selector in [
         DocumentHistorySelector::Revision(3),
@@ -432,6 +447,36 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
         };
         let verified =
             Drive::verify_document_history_v1(&history_query, &dishonest, document_type, new);
+        let mut downgraded = dishonest.clone();
+        downgraded.metadata_proof =
+            crate::util::test_helpers::history_proof::downgrade_history_count(
+                &proof.metadata_proof,
+                Some(3),
+                new,
+            );
+        let (legacy_root, _) = grovedb::GroveDb::verify_query_with_options(
+            &downgraded.metadata_proof,
+            &history_query.metadata_query(new).unwrap(),
+            grovedb::VerifyOptions {
+                absence_proofs_for_non_existing_searched_keys: false,
+                verify_proof_succinctness: true,
+                include_empty_trees_in_result: true,
+            },
+            &new.drive.grove_version,
+        )
+        .unwrap();
+        assert_eq!(
+            legacy_root, root_migrated,
+            "legacy terminal counts do not change the committed root"
+        );
+        let error =
+            Drive::verify_document_history_v1(&history_query, &downgraded, document_type, new)
+                .expect_err("history v1 rejects legacy metadata envelopes");
+        assert!(matches!(
+            error,
+            Error::Query(crate::error::query::QuerySyntaxError::Unsupported(_))
+        ));
+
         assert!(fetched.is_err() && proved.is_err() && verified.is_err(), "revision 3 exists in retained [1,3], so an empty ordinal page must be rejected: fetch rejected={}, prove rejected={}, verify rejected={}", fetched.is_err(), proved.is_err(), verified.is_err());
     }
     println!("{stats:#?}");
