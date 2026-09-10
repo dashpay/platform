@@ -1921,8 +1921,14 @@ pub(super) fn apply_can_be_erased(
         return Ok(());
     }
 
+    // A consensus error, not a bare data-contract error: only the consensus
+    // variant becomes a paid rejection with a nonce bump when a signed contract
+    // create or update carries the combination. The bare variant would escape as
+    // an internal execution error and cost the submitter nothing.
     let structure_error = |message: String| {
-        ProtocolError::DataContractError(DataContractError::InvalidContractStructure(message))
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
     };
 
     if !document_type.documents_keep_history {
@@ -1965,7 +1971,9 @@ pub(super) fn reject_contested_keep_history(
         .iter()
         .find(|(_, index)| index.contested_index.is_some())
     {
-        return Err(ProtocolError::DataContractError(
+        // Consensus error for the same reason as `apply_can_be_erased`: a
+        // signed contract carrying this combination must be a paid rejection.
+        return Err(consensus_or_protocol_data_contract_error(
             DataContractError::InvalidContractStructure(format!(
                 "document type \"{}\" sets `documentsKeepHistory: true` and declares the \
                  contested index \"{}\": a contested resource is awarded outside transition \
