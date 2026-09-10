@@ -27,8 +27,9 @@ internal object TransactionsNative {
      * @param addPubkeysBlob big-endian rows for the keys to add: `u32
      *   rowCount` then per row `u32 keyId, u8 keyType, u8 purpose, u8
      *   securityLevel, u8 readOnly, u8 contractBoundsKind, u16 pubkeyLen,
-     *   pubkey`, plus (when `contractBoundsKind != 0`) a 32-byte contract id
-     *   and (when `== 2`) `u16 docTypeLen, docType`. May be empty.
+     *   pubkey`, plus (for kinds 1 and 2) a 32-byte contract id
+     *   and (when `== 2`) `u16 docTypeLen, docType`; kind 3 instead carries
+     *   `u16 scopeLen, scopeBytes`. May be empty.
      * @param disablePublicKeyIds key ids to disable; may be empty. At least
      *   one of add / disable must be non-empty.
      */

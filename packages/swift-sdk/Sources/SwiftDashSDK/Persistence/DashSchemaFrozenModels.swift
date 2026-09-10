@@ -29,13 +29,14 @@ import SwiftData
 //
 // - `PersistentAssetLock`, frozen at its V2 shape (everything the live
 //   model has EXCEPT `recipientIsExternal`, which V3 added). Referenced by
-//   `DashSchemaV1.models` and `DashSchemaV2.models`; V3 and V4 reference
+//   `DashSchemaV1.models` and `DashSchemaV2.models`; V3 and later reference
 //   the live type.
 // - The 24 models of the relationship component that contains
 //   `PersistentTransaction`, `PersistentTxo`, `PersistentPendingInput` and
 //   `PersistentWallet`, frozen at their V3 shape (everything the live
 //   models had before V4's sweep columns). Referenced by V1, V2 and V3;
-//   V4 references the live types. The component travels as a whole
+//   V4 uses its own snapshot in `DashSchemaV4FrozenModels.swift`; V5
+//   references the live types. The component travels as a whole
 //   because a frozen model must declare its relationships against frozen
 //   counterparts (an `inverse:` key path is typed on the destination
 //   model), and following those relationships in both directions closes

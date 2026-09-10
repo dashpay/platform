@@ -4529,6 +4529,70 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals("contactRequest", key.contractBoundsDocumentType)
     }
 
+    @Test
+    fun loadWalletListPreservesScopedAuthenticationBytes() = runTest {
+        // Signing-critical restore path: a cold-started wallet must get its
+        // identities and public keys back exactly as persisted — keyId,
+        // repr(u8) discriminants, key bytes, and the (kind, id, docType)
+        // contract-bounds triple (kind 2 = SingleContractDocumentType).
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val identityId = ByteArray(32) { 12 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 7 }
+        val boundsId = ByteArray(0)
+        val scope = byteArrayOf(0, 1, 3, 0, 65, 1, 0)
+
+        fun persistKey(kind: Byte, scopeBytes: ByteArray) = handler.onPersistIdentityKeyUpsert(
+            walletId = walletId,
+            identityId = identityId,
+            keyId = 4,
+            purpose = 0,
+            securityLevel = 2,
+            keyType = 0,
+            readOnly = true,
+            disabledAtIsSome = false,
+            disabledAt = 0,
+            publicKeyData = pubkey,
+            publicKeyHash = ByteArray(20),
+            walletIdIsSome = true,
+            keyWalletId = walletId,
+            derivationIndicesIsSome = false,
+            identityIndex = 0,
+            keyIndex = 0,
+            contractBoundsKind = kind,
+            contractBoundsId = boundsId,
+            contractBoundsDocumentType = null,
+            contractBoundsScope = scopeBytes,
+        )
+        assertEquals(1, persistKey(4, scope))
+        assertEquals(1, persistKey(3, ByteArray(0)))
+        handler.onChangesetBegin(walletId)
+        assertEquals(0, persistKey(3, scope))
+        handler.onChangesetEnd(walletId, success = true)
+
+        val list = handler.onLoadWalletList()
+        assertEquals(1, list.size)
+        assertEquals(1, list[0].identities.size)
+        val identity = list[0].identities[0]
+        assertTrue(identityId.contentEquals(identity.identityId))
+        assertEquals(1, identity.keys.size)
+        val key = identity.keys[0]
+        assertEquals(4, key.keyId)
+        assertEquals(0.toByte(), key.keyType)
+        assertEquals(0.toByte(), key.purpose)
+        assertEquals(2.toByte(), key.securityLevel)
+        assertTrue(key.readOnly)
+        assertTrue(pubkey.contentEquals(key.data))
+        assertEquals(3.toByte(), key.contractBoundsKind)
+        assertTrue(boundsId.contentEquals(key.contractBoundsId))
+        assertNull(key.contractBoundsDocumentType)
+        assertTrue(scope.contentEquals(key.contractBoundsScope))
+    }
+
     // ── DashPay contacts: upsert metadata, ignore delta, restore ──────
 
     /** Persist one incoming contact row for [senderId] owned by [ownerId]. */
@@ -6018,7 +6082,7 @@ class PlatformWalletPersistenceHandlerTest {
         // A tombstone with a NULL stamp is never collected. The
         // mempool-context sweep path writes exactly this shape — an
         // IS-locked, unmined winner has no finality horizon to stamp —
-        // and legacy rows (the v10 → v11 migration leaves pre-existing
+        // and legacy rows (the v11 → v12 migration leaves pre-existing
         // tombstones NULL) read identically. With no proof of finality
         // the safe reading is to hold it forever rather than guess it
         // collectible.

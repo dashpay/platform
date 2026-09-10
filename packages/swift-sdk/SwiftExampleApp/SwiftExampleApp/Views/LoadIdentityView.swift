@@ -332,7 +332,7 @@ struct LoadIdentityView: View {
                 // The publicKeys might be a dictionary with key IDs as keys
                 if let publicKeysDict = identityData["publicKeys"] as? [String: Any] {
                     print("🔵 Public keys are in dictionary format")
-                    parsedPublicKeys = publicKeysDict.compactMap { (keyIdStr, keyData) -> IdentityPublicKey? in
+                    parsedPublicKeys = try publicKeysDict.compactMap { (keyIdStr, keyData) -> IdentityPublicKey? in
                         guard let keyData = keyData as? [String: Any],
                               let id = Int(keyIdStr) ?? keyData["id"] as? Int,
                               let purpose = keyData["purpose"] as? Int,
@@ -356,7 +356,7 @@ struct LoadIdentityView: View {
                             id: UInt32(id),
                             purpose: KeyPurpose(rawValue: UInt8(purpose)) ?? .authentication,
                             securityLevel: SecurityLevel(rawValue: UInt8(securityLevel)) ?? .high,
-                            contractBounds: nil,
+                            contractBounds: try ContractBounds.fromPlatformJSON(keyData["contractBounds"]),
                             keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
                             readOnly: readOnly,
                             data: data,
@@ -365,7 +365,7 @@ struct LoadIdentityView: View {
                     }
                 } else if let publicKeysArray = identityData["publicKeys"] as? [[String: Any]] {
                     print("🔵 Public keys are in array format")
-                    parsedPublicKeys = publicKeysArray.compactMap { keyData -> IdentityPublicKey? in
+                    parsedPublicKeys = try publicKeysArray.compactMap { keyData -> IdentityPublicKey? in
                         guard let id = keyData["id"] as? Int,
                               let purpose = keyData["purpose"] as? Int,
                               let securityLevel = keyData["securityLevel"] as? Int,
@@ -388,7 +388,7 @@ struct LoadIdentityView: View {
                             id: UInt32(id),
                             purpose: KeyPurpose(rawValue: UInt8(purpose)) ?? .authentication,
                             securityLevel: SecurityLevel(rawValue: UInt8(securityLevel)) ?? .high,
-                            contractBounds: nil,
+                            contractBounds: try ContractBounds.fromPlatformJSON(keyData["contractBounds"]),
                             keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
                             readOnly: readOnly,
                             data: data,

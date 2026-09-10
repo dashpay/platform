@@ -470,13 +470,21 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    @Test
+    fun migrate11To12AddsAuthenticationScope() {
+        helper.createDatabase(dbName, 11).close()
+        val db = helper.runMigrationsAndValidate(dbName, 12, true, DashDatabase.MIGRATION_11_12)
+        db.query("SELECT contractBoundsScope FROM public_keys").close()
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            11,
+            12,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -485,16 +493,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
             DashDatabase.MIGRATION_10_11,
+            DashDatabase.MIGRATION_11_12,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v11 schema. */
+    /** The full chain from v1 must also land on a valid v12 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            11,
+            12,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -506,6 +515,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
             DashDatabase.MIGRATION_10_11,
+            DashDatabase.MIGRATION_11_12,
         ).close()
     }
 }

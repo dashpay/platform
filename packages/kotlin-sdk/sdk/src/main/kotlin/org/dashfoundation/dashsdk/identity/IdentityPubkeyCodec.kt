@@ -28,13 +28,15 @@ import java.io.DataOutputStream
  *   u8  purpose          (DPP Purpose discriminant, 0 = AUTHENTICATION)
  *   u8  securityLevel    (DPP SecurityLevel discriminant, 0 = MASTER)
  *   u8  readOnly         (0 / 1)
- *   u8  contractBoundsKind (0 none, 1 SingleContract, 2 SingleContractDocumentType)
+ *   u8  contractBoundsKind (0 none, 1 SingleContract, 2 SingleContractDocumentType, 3 Scoped)
  *   u16 pubkeyLen
  *   u8[pubkeyLen] pubkeyBytes  (compressed pubkey, or 20-byte HASH160)
- *   if contractBoundsKind != 0:
+ *   if contractBoundsKind == 1 or contractBoundsKind == 2:
  *     u8[32] contractBoundsId
  *   if contractBoundsKind == 2:
  *     u16 docTypeLen, u8[docTypeLen] docType (UTF-8)
+ *   if contractBoundsKind == 3:
+ *     u16 scopeLen, u8[scopeLen] versioned DPP scope bytes
  * ```
  */
 object IdentityPubkeyCodec {
@@ -57,6 +59,11 @@ object IdentityPubkeyCodec {
             dos.writeShort(k.pubkeyBytes.size)
             dos.write(k.pubkeyBytes)
             when (val bounds = k.contractBounds) {
+                is ContractBounds.Scoped -> {
+                    require(bounds.encodedScope.size in 1..2048) { "Invalid scope size" }
+                    dos.writeShort(bounds.encodedScope.size)
+                    dos.write(bounds.encodedScope)
+                }
                 null -> Unit
                 is ContractBounds.SingleContract -> dos.write(bounds.contractId)
                 is ContractBounds.SingleContractDocumentType -> {
@@ -71,8 +78,9 @@ object IdentityPubkeyCodec {
         return out.toByteArray()
     }
 
-    /** Discriminant matching the FFI: 0 none, 1 SingleContract, 2 with doc type. */
+    /** Discriminant matching the FFI: 0 none, 1 SingleContract, 2 with doc type, 3 Scoped. */
     internal fun contractBoundsKind(bounds: ContractBounds?): Int = when (bounds) {
+        is ContractBounds.Scoped -> 3
         null -> 0
         is ContractBounds.SingleContract -> 1
         is ContractBounds.SingleContractDocumentType -> 2

@@ -31,7 +31,7 @@ pub use keys::{
     dash_sdk_identity_public_key_destroy, dash_sdk_identity_public_key_get_id, StateTransitionType,
 };
 pub use names::dash_sdk_identity_register_name;
-pub use parse::dash_sdk_identity_parse_json;
+pub use parse::{dash_sdk_contract_bounds_parse_json, dash_sdk_identity_parse_json};
 pub use put::{
     dash_sdk_identity_put_to_platform_with_chain_lock,
     dash_sdk_identity_put_to_platform_with_chain_lock_and_wait,

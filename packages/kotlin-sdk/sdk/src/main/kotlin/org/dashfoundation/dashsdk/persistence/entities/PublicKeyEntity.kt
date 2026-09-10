@@ -56,6 +56,9 @@ data class PublicKeyEntity(
     val contractBoundsData: ByteArray? = null,
     /** Document-type qualifier for `.singleContractDocumentType` bounds. */
     val contractBoundsDocumentTypeName: String? = null,
+
+    /** Versioned DPP authentication scope; null for legacy bounds. */
+    val contractBoundsScope: ByteArray? = null,
     val privateKeyKeychainIdentifier: String? = null,
     /**
      * Derivation breadcrumb (DIP-9 identity index) captured from the

@@ -200,9 +200,10 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     }
 
     /// Swift mirror of `dpp::identity::identity_public_key::contract_bounds::ContractBounds`.
-    /// Pinned to two variants (no `MultipleContractsOfSameOwner`)
-    /// to match the Rust enum's currently-supported shape.
+    /// Scoped authentication grants retain their versioned DPP encoding.
     public enum ContractBounds: Sendable, Equatable {
+        /// Versioned scope bytes produced by DPP; validated by Rust on registration.
+        case scoped(encodedScope: Data)
         /// Key may be used within a specific contract (any
         /// document type). Maps to `kind == 1` on the FFI side.
         case singleContract(id: Data)
@@ -669,7 +670,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         let pk = pubkeys[index]
         return buffers[index].withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> R in
             let basePtr = raw.bindMemory(to: UInt8.self).baseAddress
-            return pinContractBounds(pk.contractBounds) { kind, idPtr, docTypePtr in
+            return pinContractBounds(pk.contractBounds) { kind, idPtr, docTypePtr, scopePtr, scopeLen in
                 rows.append(
                     IdentityPubkeyFFI(
                         key_id: pk.keyId,
@@ -681,7 +682,9 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                         read_only: pk.readOnly,
                         contract_bounds_kind: kind,
                         contract_bounds_id: idPtr,
-                        contract_bounds_document_type: docTypePtr
+                        contract_bounds_document_type: docTypePtr,
+                        contract_bounds_scope: scopePtr,
+                        contract_bounds_scope_len: scopeLen
                     )
                 )
                 return pinNext(index + 1, &rows, pubkeys, buffers, body)
@@ -696,11 +699,15 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// inside `pinNext`.
     private static func pinContractBounds<R>(
         _ bounds: ContractBounds?,
-        _ body: (UInt8, UnsafePointer<UInt8>?, UnsafePointer<CChar>?) -> R
+        _ body: (UInt8, UnsafePointer<UInt8>?, UnsafePointer<CChar>?, UnsafePointer<UInt8>?, UInt) -> R
     ) -> R {
         switch bounds {
         case .none:
-            return body(0, nil, nil)
+            return body(0, nil, nil, nil, 0)
+        case .scoped(let encodedScope):
+            return encodedScope.withUnsafeBytes { raw in
+                body(3, nil, nil, raw.bindMemory(to: UInt8.self).baseAddress, UInt(raw.count))
+            }
         case .singleContract(let id):
             // The Rust side reads exactly 32 bytes off
             // `contract_bounds_id`. A short or empty `Data` would
@@ -714,7 +721,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             )
             return id.withUnsafeBytes { raw -> R in
                 let idPtr = raw.bindMemory(to: UInt8.self).baseAddress
-                return body(1, idPtr, nil)
+                return body(1, idPtr, nil, nil, 0)
             }
         case .singleContractDocumentType(let id, let documentTypeName):
             precondition(
@@ -724,7 +731,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             return id.withUnsafeBytes { raw -> R in
                 let idPtr = raw.bindMemory(to: UInt8.self).baseAddress
                 return documentTypeName.withCString { docTypePtr in
-                    body(2, idPtr, docTypePtr)
+                    body(2, idPtr, docTypePtr, nil, 0)
                 }
             }
         }
@@ -3453,6 +3460,11 @@ extension ManagedPlatformWallet {
                 id: Swift.withUnsafeBytes(of: &idTuple) { Data($0) },
                 documentTypeName: documentTypeName
             )
+        case 3:
+            guard let scope = entry.contract_bounds_scope, entry.contract_bounds_scope_len > 0 else {
+                throw PlatformWalletError.deserialization("Missing authentication scope at key \(index)")
+            }
+            return .scoped(encodedScope: Data(bytes: scope, count: Int(entry.contract_bounds_scope_len)))
         default:
             throw PlatformWalletError.deserialization(
                 "Unknown IdentityUpdateTransition contract-bounds kind \(entry.contract_bounds_kind) at key \(index)"

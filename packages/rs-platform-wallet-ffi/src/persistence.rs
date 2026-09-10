@@ -1694,23 +1694,6 @@ impl PlatformWalletPersistence for FFIPersister {
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
-        // The legacy native ABI cannot represent Scoped. Reject the whole
-        // round before any callback; never persist an unrestricted projection.
-        if let Some(keys) = &changeset.identity_keys {
-            use dpp::identity::contract_bounds::ContractBounds;
-            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-            if keys.upserts.values().any(|entry| {
-                matches!(
-                    entry.public_key.contract_bounds(),
-                    Some(ContractBounds::Scoped(_))
-                )
-            }) {
-                return Err(PersistenceError::backend(
-                    "scoped authentication keys require a newer native persistence ABI",
-                ));
-            }
-        }
-
         // Serialize the ENTIRE begin→per-kind→end round against every
         // other round producer (see `round_lock`'s field doc and
         // dashpay/platform#4069). The lock is a synchronous
@@ -2148,10 +2131,11 @@ impl PlatformWalletPersistence for FFIPersister {
         // `PersistentPublicKey` rows.
         if let Some(ref keys_cs) = changeset.identity_keys {
             if let Some(cb) = self.callbacks.on_persist_identity_keys_fn {
-                let mut upserts = Vec::with_capacity(keys_cs.upserts.len());
-                let projection = keys_cs.upserts.values().try_for_each(|entry| {
-                    IdentityKeyEntryFFI::from_entry(entry).map(|entry| upserts.push(entry))
-                });
+                let mut upserts: Vec<IdentityKeyEntryFFI> = keys_cs
+                    .upserts
+                    .values()
+                    .map(IdentityKeyEntryFFI::from_entry)
+                    .collect();
                 let removed: Vec<IdentityKeyRemovalFFI> = keys_cs
                     .removed
                     .iter()
@@ -2160,25 +2144,19 @@ impl PlatformWalletPersistence for FFIPersister {
                         key_id: *key_id,
                     })
                     .collect();
-                let result = if projection.is_ok() {
-                    unsafe {
-                        cb(
-                            self.callbacks.context,
-                            wallet_id.as_ptr(),
-                            upserts.as_ptr(),
-                            upserts.len(),
-                            if removed.is_empty() {
-                                std::ptr::null()
-                            } else {
-                                removed.as_ptr()
-                            },
-                            removed.len(),
-                        )
-                    }
-                } else {
-                    // Preserve rollback and free every successful projection
-                    // on any projection failure added in the future.
-                    -1
+                let result = unsafe {
+                    cb(
+                        self.callbacks.context,
+                        wallet_id.as_ptr(),
+                        upserts.as_ptr(),
+                        upserts.len(),
+                        if removed.is_empty() {
+                            std::ptr::null()
+                        } else {
+                            removed.as_ptr()
+                        },
+                        removed.len(),
+                    )
                 };
                 for entry in upserts.iter_mut() {
                     unsafe { free_identity_key_entry_ffi(entry) };
@@ -6177,8 +6155,8 @@ unsafe fn build_identity_public_keys(
         // inconsistency (the writer is supposed to demote to
         // kind=1 in that case — see identity_persistence.rs); we
         // demote it here too rather than fabricating an empty doc-
-        // type name. Invalid kind tags load as unbounded so a
-        // forward-compatible writer doesn't lock us out.
+        // type name. Unknown kinds and corrupt scoped payloads are skipped
+        // with a warning; they must never become unbounded keys.
         let contract_bounds: Option<ContractBounds> = match row.contract_bounds_kind {
             0 => None,
             1 => Some(ContractBounds::SingleContract {
@@ -6201,7 +6179,35 @@ unsafe fn build_identity_public_keys(
                     }
                 }
             }
-            _ => None,
+            3 => {
+                if row.contract_bounds_scope.is_null()
+                    || row.contract_bounds_scope_len == 0
+                    || row.contract_bounds_scope_len
+                        > dpp::identity::contract_bounds::authentication_scope::MAX_SCOPE_BYTES
+                {
+                    tracing::warn!(
+                        key_id = row.key_id,
+                        "Skipping key with invalid persisted scope buffer"
+                    );
+                    continue;
+                }
+                match dpp::identity::contract_bounds::AuthenticationScope::from_bytes(
+                    slice::from_raw_parts(row.contract_bounds_scope, row.contract_bounds_scope_len),
+                ) {
+                    Ok(scope) => Some(ContractBounds::Scoped(scope)),
+                    Err(error) => {
+                        tracing::warn!(key_id = row.key_id, %error, "Skipping key with corrupt persisted scope");
+                        continue;
+                    }
+                }
+            }
+            _ => {
+                tracing::warn!(
+                    key_id = row.key_id,
+                    "Skipping key with unknown persisted bounds kind"
+                );
+                continue;
+            }
         };
 
         let pk = IdentityPublicKey::V0(IdentityPublicKeyV0 {
@@ -9847,5 +9853,58 @@ mod tests {
                 .all(|a| matches!(a.state, AddressState::Used)),
             "every emitted marked-used address must carry used == true"
         );
+    }
+}
+
+#[cfg(test)]
+mod scoped_key_restore_tests {
+    use super::*;
+    use dpp::identity::contract_bounds::{
+        AuthenticationScope, AuthenticationScopeV0, ContractBounds, ContractScope,
+    };
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use std::ptr;
+
+    #[test]
+    fn restore_retains_scope_and_never_widens_corrupt_scope() {
+        let scope = AuthenticationScope::V0(AuthenticationScopeV0 {
+            contracts: vec![ContractScope {
+                id: Identifier::from([7; 32]),
+                document_types: None,
+            }],
+            permissions: 65,
+            expires_at: Some(1_900_000_000_000),
+        });
+        let bytes = scope.to_bytes().unwrap();
+        let key_data = [2; 33];
+        let mut key = IdentityKeyRestoreFFI {
+            key_id: 5,
+            key_type: 0,
+            purpose: 0,
+            security_level: 2,
+            read_only: false,
+            data: key_data.as_ptr(),
+            data_len: key_data.len(),
+            contract_bounds_kind: 3,
+            contract_bounds_id: [0; 32],
+            contract_bounds_document_type: ptr::null(),
+            contract_bounds_scope: bytes.as_ptr(),
+            contract_bounds_scope_len: bytes.len(),
+        };
+        // The repr(C) restore envelope consists exclusively of integer and raw-pointer fields.
+        let mut spec: IdentityRestoreEntryFFI = unsafe { std::mem::zeroed() };
+        spec.keys = &key;
+        spec.keys_count = 1;
+        let restored = unsafe { build_identity_public_keys(&spec) };
+        assert_eq!(
+            restored[&5].contract_bounds(),
+            Some(&ContractBounds::Scoped(scope))
+        );
+        key.contract_bounds_scope_len -= 1;
+        spec.keys = &key;
+        assert!(unsafe { build_identity_public_keys(&spec) }.is_empty());
+        key.contract_bounds_kind = 255;
+        spec.keys = &key;
+        assert!(unsafe { build_identity_public_keys(&spec) }.is_empty());
     }
 }
