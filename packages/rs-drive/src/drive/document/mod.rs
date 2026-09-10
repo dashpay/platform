@@ -88,6 +88,7 @@ fn make_document_reference(
     document: &Document,
     document_type: DocumentTypeRef,
     storage_flags: Option<&StorageFlags>,
+    drive_version: &dpp::version::drive_versions::DriveVersion,
 ) -> Element {
     // we need to construct the reference from the split height of the contract document
     // type which is at 4
@@ -97,7 +98,15 @@ fn make_document_reference(
     let mut reference_path = vec![vec![0], document.id().to_vec()];
     let mut max_reference_hops = 1;
     if document_type.documents_keep_history() {
-        reference_path.push(vec![0]);
+        if drive_version
+            .methods
+            .document
+            .insert
+            .add_document_to_primary_storage
+            == 0
+        {
+            reference_path.push(vec![0]);
+        }
         max_reference_hops += 1;
     }
     // 2 because the contract could allow for history
@@ -160,6 +169,7 @@ pub(crate) fn make_document_reference_with_sum_item(
     // `grovedb-element` as a separate dep.
     sum_value: i64,
     storage_flags: Option<&StorageFlags>,
+    drive_version: &dpp::version::drive_versions::DriveVersion,
 ) -> Element {
     // Reference-path construction mirrors `make_document_reference`
     // byte-for-byte — the only structural difference is the element
@@ -167,7 +177,15 @@ pub(crate) fn make_document_reference_with_sum_item(
     let mut reference_path = vec![vec![0], document.id().to_vec()];
     let mut max_reference_hops = 1;
     if document_type.documents_keep_history() {
-        reference_path.push(vec![0]);
+        if drive_version
+            .methods
+            .document
+            .insert
+            .add_document_to_primary_storage
+            == 0
+        {
+            reference_path.push(vec![0]);
+        }
         max_reference_hops += 1;
     }
     // grovedb PR 670 (`feat: add
@@ -267,7 +285,10 @@ fn make_document_contested_reference(
 
 #[cfg(feature = "server")]
 /// size of a document reference.
-fn document_reference_size(document_type: DocumentTypeRef) -> u32 {
+fn document_reference_size(
+    document_type: DocumentTypeRef,
+    drive_version: &dpp::version::drive_versions::DriveVersion,
+) -> u32 {
     // we need to construct the reference from the split height of the contract document
     // type which is at 4
     // 0 represents document storage
@@ -276,7 +297,14 @@ fn document_reference_size(document_type: DocumentTypeRef) -> u32 {
     // vec![vec![0], Vec::from(document.id)];
     // 1 (vec size) + 1 (subvec size) + 1 (0) + 1 (subvec size) + 32 (document id size)
     let mut reference_path_size = 36;
-    if document_type.documents_keep_history() {
+    if document_type.documents_keep_history()
+        && drive_version
+            .methods
+            .document
+            .insert
+            .add_document_to_primary_storage
+            == 0
+    {
         reference_path_size += 2;
     }
 

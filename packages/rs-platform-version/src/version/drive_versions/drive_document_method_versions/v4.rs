@@ -114,7 +114,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             // together: the delete-side no-prune rule is what makes the
             // preallocated trees permanent structure.
             add_document_for_contract_operations: 1,
-            add_document_to_primary_storage: 0,
+            add_document_to_primary_storage: 1,
             add_indices_for_index_level_for_contract_operations: 2,
             add_indices_for_top_index_level_for_contract_operations: 2,
             add_reference_for_index_level_for_contract_operations: 0,
@@ -144,7 +144,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             update_serialized_document_for_contract: 0,
         },
         estimation_costs: DriveDocumentEstimationCostsMethodVersions {
-            add_estimation_costs_for_add_document_to_primary_storage: 0,
+            add_estimation_costs_for_add_document_to_primary_storage: 1,
             add_estimation_costs_for_add_contested_document_to_primary_storage: 0,
             stateless_delete_of_non_tree_for_costs: 0,
         },

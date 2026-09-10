@@ -386,6 +386,24 @@ impl Drive {
                     type_key.as_bytes(),
                 ];
 
+                if document_type.as_ref().documents_keep_history()
+                    && platform_version
+                        .drive
+                        .methods
+                        .document
+                        .insert
+                        .add_document_to_primary_storage
+                        == 1
+                {
+                    self.batch_insert_empty_tree(
+                        type_path,
+                        KeyRef(&[crate::drive::document::paths::DOCUMENT_HISTORY_TREE_KEY]),
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?;
+                }
+
                 // primary key tree — route through the centralized
                 // primary_key_tree_type() so contract update, document inserts,
                 // deletes, and estimation paths all see the same tree-variant

@@ -137,12 +137,14 @@ impl Drive {
                             document_and_contract_info.document_type,
                             sum_value,
                             storage_flags,
+                            &platform_version.drive,
                         ))
                     }
                     None => Ok(make_document_reference(
                         document,
                         document_and_contract_info.document_type,
                         storage_flags,
+                        &platform_version.drive,
                     )),
                 }
             };
@@ -196,7 +198,10 @@ impl Drive {
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllReference(
                             DEFAULT_HASH_SIZE_U8,
-                            document_reference_size(document_and_contract_info.document_type),
+                            document_reference_size(
+                                document_and_contract_info.document_type,
+                                &platform_version.drive,
+                            ),
                             storage_flags.map(|s| s.serialized_size()),
                         ),
                     },
@@ -321,10 +326,12 @@ impl Drive {
                 BatchInsertApplyType::StatelessBatchInsert {
                     in_tree_type: reference_tree_type,
                     target: QueryTargetValue(
-                        document_reference_size(document_and_contract_info.document_type)
-                            + storage_flags
-                                .map(|s| s.serialized_size())
-                                .unwrap_or_default(),
+                        document_reference_size(
+                            document_and_contract_info.document_type,
+                            &platform_version.drive,
+                        ) + storage_flags
+                            .map(|s| s.serialized_size())
+                            .unwrap_or_default(),
                     ),
                 }
             };
