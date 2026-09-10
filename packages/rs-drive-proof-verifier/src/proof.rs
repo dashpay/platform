@@ -1466,10 +1466,17 @@ fn verify_document_history_response_v1(
         })?;
     let expected_state = match history.lifecycle.state {
         DocumentHistoryState::Active => State::Active,
+        DocumentHistoryState::Deleted => State::Deleted,
+        DocumentHistoryState::Erasing => State::Erasing,
         DocumentHistoryState::Absent => State::Absent,
     } as i32;
+    let times = &history.lifecycle.times;
     if claimed.state != expected_state
         || claimed.remaining_revisions != history.lifecycle.remaining_revisions
+        || claimed.deleted_at_ms != times.deleted_at_ms
+        || claimed.erasing_started_at_ms != times.erasing_started_at_ms
+        || claimed.erasing_from_time_ms != times.erasing_from_time_ms
+        || claimed.erasing_from_revision != times.erasing_from_revision
     {
         return Err(Error::ResponseDecodeError {
             error: "history lifecycle metadata differs from its proof".to_owned(),

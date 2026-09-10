@@ -1801,9 +1801,20 @@ message GetDocumentHistoryResponse {
       enum State {
         ACTIVE = 0;
         ABSENT = 1;
+        DELETED = 2;
+        ERASING = 3;
       }
       State state = 1;
       uint64 remaining_revisions = 2 [ jstype = JS_STRING ];
+      // Zero unless the document has been deleted.
+      uint64 deleted_at_ms = 3 [ jstype = JS_STRING ];
+      // Zero unless an authorized erasure has started.
+      uint64 erasing_started_at_ms = 4 [ jstype = JS_STRING ];
+      // Timestamp of the newest revision retained when the erasure started.
+      uint64 erasing_from_time_ms = 5 [ jstype = JS_STRING ];
+      // History sequence of the newest revision retained when the erasure
+      // started.
+      uint64 erasing_from_revision = 6 [ jstype = JS_STRING ];
     }
     repeated Entry entries = 1;
     Lifecycle lifecycle = 2;
