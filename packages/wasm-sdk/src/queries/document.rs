@@ -1488,6 +1488,7 @@ mod history_wasm_tests {
             lifecycle: Some(DocumentHistoryLifecycle {
                 state: DocumentHistoryState::Active,
                 remaining_revisions: count,
+                times: Default::default(),
             }),
         };
         let result = document_history_to_js(history, [1; 32].into(), "note").unwrap();
@@ -1508,6 +1509,47 @@ mod history_wasm_tests {
             Reflect::get(&lifecycle, &"state".into()).unwrap(),
             JsValue::from_str("ACTIVE")
         );
+    }
+
+    /// Every lifecycle time crosses into JavaScript as an exact BigInt, like
+    /// the counts and revisions beside them: a millisecond timestamp does not
+    /// survive a JavaScript number.
+    #[wasm_bindgen_test]
+    fn should_report_the_erasing_state_and_its_times_exactly_in_javascript() {
+        use drive::drive::document::history::DocumentHistoryLifecycleTimes;
+
+        let started_at = (1u64 << 53) + 3;
+        let history = DocumentHistory {
+            entries: vec![],
+            lifecycle: Some(DocumentHistoryLifecycle {
+                state: DocumentHistoryState::Erasing,
+                remaining_revisions: 7,
+                times: DocumentHistoryLifecycleTimes {
+                    deleted_at_ms: 1_700_000_000_001,
+                    erasing_started_at_ms: started_at,
+                    erasing_from_time_ms: 1_700_000_000_002,
+                    erasing_from_revision: 42,
+                },
+            }),
+        };
+        let result = document_history_to_js(history, [1; 32].into(), "note").unwrap();
+        let lifecycle = Reflect::get(&result, &"lifecycle".into()).unwrap();
+        assert_eq!(
+            Reflect::get(&lifecycle, &"state".into()).unwrap(),
+            JsValue::from_str("ERASING")
+        );
+        for (key, expected) in [
+            ("deletedAtMs", 1_700_000_000_001u64),
+            ("erasingStartedAtMs", started_at),
+            ("erasingFromTimeMs", 1_700_000_000_002),
+            ("erasingFromRevision", 42),
+        ] {
+            assert_eq!(
+                Reflect::get(&lifecycle, &key.into()).unwrap(),
+                JsValue::from(expected),
+                "{key} must survive as an exact BigInt"
+            );
+        }
     }
 
     #[wasm_bindgen_test]
