@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub mod document_base_transition;
 pub mod document_create_transition;
 pub mod document_delete_transition;
+pub mod document_erase_transition;
 pub mod document_index_only_delete_transition;
 pub mod document_purchase_transition;
 pub mod document_replace_transition;
@@ -36,6 +37,7 @@ use crate::state_transition::batch_transition::batched_transition::token_transit
 use derive_more::Display;
 pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
+pub use document_erase_transition::DocumentEraseTransition;
 pub use document_index_only_delete_transition::DocumentIndexOnlyDeleteTransition;
 pub use document_purchase_transition::DocumentPurchaseTransition;
 pub use document_replace_transition::DocumentReplaceTransition;

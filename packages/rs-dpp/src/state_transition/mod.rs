@@ -990,6 +990,7 @@ impl StateTransition {
                         BatchedTransitionRef::Document(DocumentTransition::IndexOnlyDelete(_)) => {
                             "IndexOnlyDelete"
                         }
+                        BatchedTransitionRef::Document(DocumentTransition::Erase(_)) => "Erase",
                         BatchedTransitionRef::Token(TokenTransition::Transfer(_)) => {
                             "TokenTransfer"
                         }
