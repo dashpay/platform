@@ -21,6 +21,10 @@ impl<C> Platform<C> {
             previous_protocol_version,
             platform_version,
         )?;
+        // Any migration error deliberately halts this activation block for every
+        // validator; the shared transaction prevents a partial migration from
+        // committing. Its corruption checks are unreachable for valid pre-14
+        // state and must never be downgraded to best-effort recovery.
         if previous_protocol_version < 14 {
             let stats = self
                 .drive
