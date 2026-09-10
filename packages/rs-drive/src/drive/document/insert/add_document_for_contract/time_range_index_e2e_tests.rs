@@ -3490,22 +3490,34 @@ fn ttl_budget_boundary_after_zero_tree_keeps_deletes_exact() {
     assert!(!exists(&zero_path), "its [0] tree is gone");
 
     // The delete must skip at [0] granularity rather than target the
-    // missing subtree.
-    drive
-        .delete_document_for_contract(
+    // missing subtree. Build it through the `_without_ttl_drain` path: the
+    // public helper prepares first, and its budget would finish this
+    // small bucket before the walker ever saw the standing value tree.
+    let delete_operations = drive
+        .delete_document_for_contract_operations_without_ttl_drain(
             document.id(),
             &contract,
-            "post",
-            BlockInfo {
-                time_ms: after_expiry_ms,
-                ..Default::default()
-            },
-            true,
+            document_type,
+            None,
+            &mut None,
+            after_expiry_ms,
             None,
             platform_version,
+        )
+        .expect("building the delete against a drained [0] tree must succeed");
+    drive
+        .apply_batch_low_level_drive_operations(
             None,
+            None,
+            delete_operations,
+            &mut vec![],
+            &platform_version.drive,
         )
         .expect("deleting a doc whose [0] tree drained must succeed");
+    assert!(
+        exists(&group_path),
+        "no preparation ran: the walker faced the standing value tree without its [0]"
+    );
 
     // A later drain finishes the bucket.
     drive
@@ -4338,4 +4350,134 @@ fn ttl_delete_only_write_drains_expired_buckets() {
         "a delete-only write must drain the expired bucket, the surviving \
          document's entries included"
     );
+}
+
+/// Grouped creates thread each document's queued operations into the next
+/// document's pending-tree checks. Under a TTL'd level those operations are
+/// retagged ephemeral, and the checks must still recognize them: two
+/// documents created in one grouped batch that share a brand-new live
+/// bucket, group value tree, and `[0]` tree must reuse the first document's
+/// pending trees instead of queuing them twice — which grovedb's batching
+/// consistency verification (on in the test drive) rejects as an insertion
+/// order error.
+#[test]
+fn grouped_creates_reuse_pending_trees_under_a_ttl_level() {
+    use crate::drive::document::paths::contract_document_type_path_vec;
+    use crate::fees::op::LowLevelDriveOperation;
+    use crate::util::batch::drive_op_batch::{
+        DocumentOperation, DocumentOperationType, DocumentOperationsForContractDocumentType,
+        DriveOperation,
+    };
+    use crate::util::grove_operations::DirectQueryType;
+    use dpp::data_contract::document_type::DocumentPropertyType;
+    use grovedb_path::SubtreePath;
+
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    assert!(
+        drive.config.batching_consistency_verification,
+        "the regression relies on grovedb rejecting duplicate tree inserts"
+    );
+    let contract = build_ttl_contract_with_index_keys(
+        240,
+        vec![(
+            Value::Text("countable".to_string()),
+            Value::Text("countable".to_string()),
+        )],
+    );
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let transform = document_type
+        .indexes()
+        .get("trendingTtl")
+        .expect("index")
+        .time_range
+        .clone()
+        .expect("transform");
+
+    let t0 = 9_000 * HOUR_MS;
+    let owner = [241u8; 32];
+    let docs: Vec<Document> = (1..=2u64)
+        .map(|i| {
+            Document::V0(DocumentV0 {
+                id: Identifier::from(fixture_bytes(242, t0 + i, "grouped")),
+                owner_id: Identifier::from(owner),
+                properties: BTreeMap::from([
+                    ("hashtag".to_string(), Value::Text("shared".to_string())),
+                    ("amount".to_string(), Value::U64(i)),
+                ]),
+                created_at: Some(t0 + MINUTE_MS_TTL),
+                revision: Some(1),
+                ..Default::default()
+            })
+        })
+        .collect();
+    let operations = vec![DriveOperation::DocumentOperation(
+        DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
+            document_operations: DocumentOperationsForContractDocumentType {
+                operations: docs
+                    .iter()
+                    .map(|document| DocumentOperation::AddOperation {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((
+                                document,
+                                StorageFlags::optional_default_as_cow(),
+                            )),
+                            owner_id: Some(owner),
+                        },
+                        override_document: false,
+                    })
+                    .collect(),
+                contract: &contract,
+                document_type,
+            },
+        },
+    )];
+    drive
+        .apply_drive_operations(
+            operations,
+            true,
+            &BlockInfo {
+                time_ms: t0 + MINUTE_MS_TTL,
+                ..Default::default()
+            },
+            None,
+            platform_version,
+            None,
+        )
+        .expect("a grouped create sharing one new live TTL bucket must apply");
+
+    let mut zero_path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "post");
+    zero_path.push(transform.storage_key("$createdAt").into_bytes());
+    zero_path.push(DocumentPropertyType::encode_date_timestamp(t0));
+    zero_path.push(b"hashtag".to_vec());
+    zero_path.push(b"shared".to_vec());
+    zero_path.push(vec![0]);
+    let path_refs: Vec<&[u8]> = zero_path.iter().map(|segment| segment.as_slice()).collect();
+    for document in &docs {
+        let mut scratch: Vec<LowLevelDriveOperation> = vec![];
+        let indexed = drive
+            .grove_has_raw(
+                SubtreePath::from(path_refs.as_slice()),
+                document.id().as_slice(),
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut scratch,
+                &platform_version.drive,
+            )
+            .expect("existence check");
+        assert!(
+            indexed,
+            "both documents index under the shared pending trees"
+        );
+    }
 }

@@ -429,17 +429,27 @@ impl LowLevelDriveOperation {
         GroveDbOpBatch::from_operations(operations)
     }
 
-    /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
+    /// Filters the ordinary groveDB ops from a list of operations into a
+    /// `GroveDbOpBatch`, returning everything else — ephemeral (TTL'd
+    /// subtree) grove operations included — as leftovers, so no caller can
+    /// lose them or bill them at the ordinary storage price by accident.
+    /// The apply path splits three ways instead
+    /// (`grovedb_operations_batch_consume_split_ephemeral`).
     pub fn grovedb_operations_batch_consume_with_leftovers(
         insert_operations: Vec<LowLevelDriveOperation>,
     ) -> (GroveDbOpBatch, Vec<LowLevelDriveOperation>) {
-        let (batch, ephemeral_batch, other_operations) =
-            Self::grovedb_operations_batch_consume_split_ephemeral(insert_operations);
-        debug_assert!(
-            ephemeral_batch.is_empty(),
-            "ephemeral grove operations must go through the ephemeral-aware apply"
-        );
-        (batch, other_operations)
+        let mut grove_operations = vec![];
+        let mut other_operations = vec![];
+        for op in insert_operations {
+            match op {
+                GroveOperation(grovedb_op) => grove_operations.push(grovedb_op),
+                other => other_operations.push(other),
+            }
+        }
+        (
+            GroveDbOpBatch::from_operations(grove_operations),
+            other_operations,
+        )
     }
 
     /// Splits operations three ways: the ordinary grove batch, the
@@ -2295,6 +2305,25 @@ mod tests {
             LowLevelDriveOperation::grovedb_operations_batch_consume_with_leftovers(ops);
         assert!(batch.is_empty());
         assert_eq!(leftovers.len(), 2);
+    }
+
+    #[test]
+    fn grovedb_operations_batch_consume_with_leftovers_keeps_ephemeral_ops() {
+        let ops = vec![
+            make_grove_op(10),
+            make_grove_op(20).retag_ephemeral(),
+            CalculatedCostOperation(OperationCost::default()),
+        ];
+        let (batch, leftovers) =
+            LowLevelDriveOperation::grovedb_operations_batch_consume_with_leftovers(ops);
+        assert_eq!(batch.len(), 1, "only the ordinary grove op joins the batch");
+        assert_eq!(leftovers.len(), 2);
+        assert!(
+            leftovers
+                .iter()
+                .any(|op| matches!(op, EphemeralGroveOperation(_))),
+            "an ephemeral grove op must survive as a leftover, never be dropped"
+        );
     }
 
     #[test]

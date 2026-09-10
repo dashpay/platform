@@ -29,6 +29,12 @@ impl Drive {
         } else {
             Some(HashMap::new())
         };
+        // With no caller transaction, TTL preparation (direct drainage
+        // writes) and the apply below would each commit on their own; span
+        // them with one owned transaction so the write is all-or-nothing.
+        let owned_transaction =
+            (stateful && transaction.is_none()).then(|| self.grove.start_transaction());
+        let transaction = owned_transaction.as_ref().or(transaction);
         if document_is_unique_for_document_type_in_batch {
             let batch_operations = self.add_document_for_contract_operations(
                 document_and_contract_info,
@@ -45,7 +51,7 @@ impl Drive {
                 batch_operations,
                 drive_operations,
                 &platform_version.drive,
-            )
+            )?;
         } else {
             let batch_operations = self.add_document_for_contract_operations(
                 document_and_contract_info,
@@ -62,7 +68,11 @@ impl Drive {
                 batch_operations,
                 drive_operations,
                 &platform_version.drive,
-            )
+            )?;
         }
+        if let Some(owned_transaction) = owned_transaction {
+            self.commit_transaction(owned_transaction, &platform_version.drive)?;
+        }
+        Ok(())
     }
 }
