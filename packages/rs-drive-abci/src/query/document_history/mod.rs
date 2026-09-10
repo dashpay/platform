@@ -9,6 +9,7 @@ use dapi_grpc::platform::v0::{GetDocumentHistoryRequest, GetDocumentHistoryRespo
 use dpp::version::PlatformVersion;
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C> {
     /// Querying of a document history.
@@ -28,6 +29,7 @@ impl<C> Platform<C> {
 
         let feature_version = match &version {
             RequestVersion::V0(_) => 0,
+            RequestVersion::V1(_) => 1,
         };
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
@@ -42,6 +44,13 @@ impl<C> Platform<C> {
         }
 
         match version {
+            RequestVersion::V1(request) => {
+                let result =
+                    self.query_document_history_v1(request, platform_state, platform_version)?;
+                Ok(result.map(|response| GetDocumentHistoryResponse {
+                    version: Some(ResponseVersion::V1(response)),
+                }))
+            }
             RequestVersion::V0(request_v0) => {
                 let result =
                     self.query_document_history_v0(request_v0, platform_state, platform_version)?;

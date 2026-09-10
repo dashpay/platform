@@ -26,6 +26,11 @@ use crate::version::drive_abci_versions::drive_abci_query_versions::{
 /// `ResultData.ranked` entries shape (with `skipped` unset, since a
 /// range page has no rank base).
 pub const DRIVE_ABCI_QUERY_VERSIONS_V3: DriveAbciQueryVersions = DriveAbciQueryVersions {
+    document_history: crate::version::FeatureVersionBounds {
+        min_version: 0,
+        max_version: 1,
+        default_current_version: 1,
+    },
     document_query_helpers: DriveAbciDocumentQueryHelperVersions {
         compute_aggregate_mode_and_check_limit: 2,
     },

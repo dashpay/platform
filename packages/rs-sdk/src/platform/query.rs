@@ -288,24 +288,42 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
         &self,
         settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetDocumentHistoryRequest, Error> {
-        let prove = settings.prove;
-        if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+        use drive::drive::document::history::{DocumentHistoryQueryV1, DocumentHistorySelector};
+        use proto::get_document_history_request::{
+            get_document_history_request_v1::{Cursor, Selector},
+            GetDocumentHistoryRequestV1,
+        };
+        let limit =
+            self.limit.map(u16::try_from).transpose().map_err(|_| {
+                Error::InvalidProvedResponse("history limit out of bounds".to_owned())
+            })?;
+        DocumentHistoryQueryV1 {
+            contract_id: self.data_contract_id.to_buffer(),
+            document_type_name: self.document_type_name.clone(),
+            document_id: self.document_id.to_buffer(),
+            selector: self.selector.clone(),
+            limit,
         }
-
-        Ok(proto::GetDocumentHistoryRequest {
-            version: Some(proto::get_document_history_request::Version::V0(
-                proto::get_document_history_request::GetDocumentHistoryRequestV0 {
-                    data_contract_id: self.data_contract_id.to_vec(),
-                    document_type_name: self.document_type_name.clone(),
-                    document_id: self.document_id.to_vec(),
-                    limit: self.limit,
-                    offset: self.offset,
-                    start_at_ms: self.start_at_ms,
-                    prove,
-                },
-            )),
-        })
+        .entries_query(settings.protocol_version)?;
+        let selector = match self.selector {
+            DocumentHistorySelector::StartAtTime(time) => Selector::StartAtMs(time),
+            DocumentHistorySelector::StartAfter { time_ms, revision } => {
+                Selector::StartAfter(Cursor { time_ms, revision })
+            }
+            DocumentHistorySelector::StartAtRevision(revision) => {
+                Selector::StartAtRevision(revision)
+            }
+            DocumentHistorySelector::Revision(revision) => Selector::Revision(revision),
+        };
+        Ok(GetDocumentHistoryRequestV1 {
+            data_contract_id: self.data_contract_id.to_vec(),
+            document_type_name: self.document_type_name.clone(),
+            document_id: self.document_id.to_vec(),
+            limit: self.limit,
+            selector: Some(selector),
+            prove: settings.prove,
+        }
+        .into())
     }
 }
 
@@ -1412,5 +1430,97 @@ impl Query<GetShieldedNullifiersRequest> for ShieldedNullifiersQuery {
                 },
             )),
         })
+    }
+}
+
+#[cfg(test)]
+mod history_query_tests {
+    use super::*;
+    use crate::platform::QuerySettings;
+    use dpp::version::PlatformVersion;
+    use drive::drive::document::history::DocumentHistorySelector;
+
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_fetch_history_with_lifecycle_and_same_time_revisions() {
+        use crate::platform::Fetch;
+        use drive_proof_verifier::types::{
+            DocumentHistory, DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryState,
+        };
+        let mut sdk = crate::SdkBuilder::default()
+            .with_version(PlatformVersion::get(14).unwrap())
+            .build()
+            .unwrap();
+        let query = DocumentHistoryQuery {
+            data_contract_id: [1; 32].into(),
+            document_type_name: "note".into(),
+            document_id: [2; 32].into(),
+            selector: DocumentHistorySelector::StartAtTime(0),
+            limit: None,
+        };
+        let expected = DocumentHistory {
+            entries: [1, 2]
+                .into_iter()
+                .map(|revision| DocumentHistoryEntry {
+                    time_ms: 2000,
+                    revision,
+                    document: dpp::document::Document::V0(dpp::document::DocumentV0 {
+                        revision: Some(revision),
+                        ..Default::default()
+                    }),
+                })
+                .collect(),
+            lifecycle: Some(DocumentHistoryLifecycle {
+                state: DocumentHistoryState::Active,
+                remaining_revisions: 2,
+            }),
+        };
+        sdk.mock()
+            .expect_fetch(query.clone(), Some(expected.clone()))
+            .await
+            .unwrap();
+        let result = DocumentHistory::fetch(&sdk, query).await.unwrap().unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn should_encode_complete_history_selectors_and_reject_legacy_protocols() {
+        let request_settings = Default::default();
+        let settings = QuerySettings {
+            request_settings: &request_settings,
+            protocol_version: PlatformVersion::get(14).unwrap(),
+            prove: true,
+        };
+        let mut query = DocumentHistoryQuery {
+            data_contract_id: [1; 32].into(),
+            document_type_name: "note".into(),
+            document_id: [2; 32].into(),
+            selector: DocumentHistorySelector::StartAfter {
+                time_ms: 1000,
+                revision: 22,
+            },
+            limit: Some(10),
+        };
+        let request = query.query(&settings).unwrap();
+        let Some(proto::get_document_history_request::Version::V1(request)) = request.version
+        else {
+            panic!("expected history version one");
+        };
+        let Some(proto::get_document_history_request::get_document_history_request_v1::Selector::StartAfter(cursor)) = request.selector else { panic!("expected composite cursor"); };
+        assert_eq!((cursor.time_ms, cursor.revision), (1000, 22));
+        for protocol in [12, 13] {
+            assert!(query
+                .query(&QuerySettings {
+                    protocol_version: PlatformVersion::get(protocol).unwrap(),
+                    ..settings
+                })
+                .is_err());
+        }
+        query.selector = DocumentHistorySelector::Revision(2);
+        assert!(query.query(&settings).is_err());
+        query.limit = Some(1);
+        assert!(query.query(&settings).is_ok());
+        query.selector = DocumentHistorySelector::StartAtRevision(65536);
+        assert!(query.query(&settings).is_err());
     }
 }

@@ -228,6 +228,59 @@ impl MockResponse for Document {
     }
 }
 
+type MockDocumentHistory = (Vec<(u64, u64, Vec<u8>)>, Option<(bool, u64)>);
+
+impl MockResponse for drive_proof_verifier::types::DocumentHistory {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        use drive_proof_verifier::types::DocumentHistoryState;
+        let entries = self
+            .entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.time_ms,
+                    entry.revision,
+                    entry.document.mock_serialize(sdk),
+                )
+            })
+            .collect::<Vec<_>>();
+        let lifecycle = self.lifecycle.as_ref().map(|lifecycle| {
+            (
+                lifecycle.state == DocumentHistoryState::Active,
+                lifecycle.remaining_revisions,
+            )
+        });
+        bincode::encode_to_vec((entries, lifecycle), BINCODE_CONFIG)
+            .expect("encode document history")
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self {
+        use drive_proof_verifier::types::{
+            DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryState,
+        };
+        let ((entries, lifecycle), _): (MockDocumentHistory, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode document history");
+        Self {
+            entries: entries
+                .into_iter()
+                .map(|(time_ms, revision, bytes)| DocumentHistoryEntry {
+                    time_ms,
+                    revision,
+                    document: Document::mock_deserialize(sdk, &bytes),
+                })
+                .collect(),
+            lifecycle: lifecycle.map(|(active, remaining_revisions)| DocumentHistoryLifecycle {
+                state: if active {
+                    DocumentHistoryState::Active
+                } else {
+                    DocumentHistoryState::Absent
+                },
+                remaining_revisions,
+            }),
+        }
+    }
+}
+
 impl MockResponse for Element {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         // Create a bincode configuration

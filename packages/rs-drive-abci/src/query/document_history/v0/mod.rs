@@ -33,6 +33,21 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDocumentHistoryResponseV0>, Error> {
+        if platform_version
+            .drive
+            .methods
+            .document
+            .query
+            .fetch_document_history
+            != 0
+        {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(
+                    "document history requires request version one at this protocol version"
+                        .to_owned(),
+                ),
+            ));
+        }
         let contract_id: Identifier =
             check_validation_result_with_data!(data_contract_id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
@@ -159,7 +174,7 @@ mod tests {
 
     #[test]
     fn should_return_empty_document_history_page_without_error() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, Some(13));
         let contract = json_document_to_contract(
             concat!(
                 env!("CARGO_MANIFEST_DIR"),
