@@ -295,6 +295,70 @@ pub unsafe extern "C" fn platform_wallet_document_delete(
     PlatformWalletFFIResult::ok()
 }
 
+/// Erase + broadcast a chunk of the retained revisions of the already
+/// deleted `document_id` on `contract_id`'s `document_type_name`, signed
+/// via the external `signer_handle` with key `signing_key_id` of
+/// `owner_identity_id`.
+///
+/// Goes through `IdentityWallet::erase_document_with_signer`. The first
+/// erase of a document must be signed by its owner; the erases after it
+/// may be signed by any identity, so `owner_identity_id` is the signing
+/// identity rather than necessarily the document's owner. On success the
+/// erased document's 32-byte id is written to `out_document_id`. Erase
+/// returns no document body, so there is no JSON out-param; whether
+/// revisions remain is read from the document's history.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_document_erase(
+    wallet_handle: Handle,
+    owner_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    document_id: *const u8,
+    signing_key_id: u32,
+    signer_handle: *mut SignerHandle,
+    out_document_id: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(signer_handle);
+    check_ptr!(document_type_name);
+    check_ptr!(out_document_id);
+
+    let owner_id = unwrap_result_or_return!(read_identifier(owner_identity_id));
+    let contract_id_value = unwrap_result_or_return!(read_identifier(contract_id));
+    let document_id_value = unwrap_result_or_return!(read_identifier(document_id));
+
+    let document_type_str =
+        unwrap_result_or_return!(CStr::from_ptr(document_type_name).to_str()).to_string();
+
+    let signer_addr = signer_handle as usize;
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        let result: Result<Identifier, PlatformWalletError> = block_on_worker(async move {
+            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+            let erased_id: Identifier = identity_wallet
+                .erase_document_with_signer(
+                    &owner_id,
+                    &contract_id_value,
+                    &document_type_str,
+                    &document_id_value,
+                    signing_key_id,
+                    signer,
+                )
+                .await?;
+            Ok::<_, PlatformWalletError>(erased_id)
+        });
+        result
+    });
+    let result = unwrap_option_or_return!(option);
+    let erased_id = unwrap_result_or_return!(result);
+
+    let bytes = erased_id.to_buffer();
+    let dst = slice::from_raw_parts_mut(out_document_id, 32);
+    dst.copy_from_slice(&bytes);
+    PlatformWalletFFIResult::ok()
+}
+
 /// Transfer + broadcast `document_id` on `contract_id`'s
 /// `document_type_name`, from `owner_identity_id` to `recipient_id`,
 /// signed via the external `signer_handle` with key `signing_key_id`.
@@ -517,6 +581,41 @@ mod tests {
     use dpp::document::DocumentV0;
     use dpp::platform_value::Value;
     use std::collections::BTreeMap;
+
+    // Every required pointer of the erase export is guarded before any
+    // wallet lookup, so a caller that passes a null signer, type name, or
+    // output buffer gets a null-pointer result instead of a crash.
+    #[test]
+    fn document_erase_rejects_null_required_pointers() {
+        let mut out_id = [0u8; 32];
+        let owner = [1u8; 32];
+        let contract = [2u8; 32];
+        let document = [3u8; 32];
+        let type_name = CString::new("note").unwrap();
+        let signer = 0x10usize as *mut SignerHandle;
+
+        let cases: [(*const c_char, *mut SignerHandle, *mut u8); 3] = [
+            (ptr::null(), signer, out_id.as_mut_ptr()),
+            (type_name.as_ptr(), ptr::null_mut(), out_id.as_mut_ptr()),
+            (type_name.as_ptr(), signer, ptr::null_mut()),
+        ];
+
+        for (type_ptr, signer_ptr, out_ptr) in cases {
+            let result = unsafe {
+                platform_wallet_document_erase(
+                    0,
+                    owner.as_ptr(),
+                    contract.as_ptr(),
+                    type_ptr,
+                    document.as_ptr(),
+                    0,
+                    signer_ptr,
+                    out_ptr,
+                )
+            };
+            assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        }
+    }
 
     // The confirmed-document JSON handed to Swift must be the same canonical
     // shape the DOC-01 list query (`dash_sdk_document_search`) returns:

@@ -48,10 +48,10 @@ use dpp::prelude::{DataContract, Identifier};
 use dpp::ProtocolError;
 
 use dash_sdk::platform::documents::transitions::{
-    DocumentDeleteResult, DocumentDeleteTransitionBuilder, DocumentPurchaseResult,
-    DocumentPurchaseTransitionBuilder, DocumentReplaceResult, DocumentReplaceTransitionBuilder,
-    DocumentSetPriceResult, DocumentSetPriceTransitionBuilder, DocumentTransferResult,
-    DocumentTransferTransitionBuilder,
+    DocumentDeleteResult, DocumentDeleteTransitionBuilder, DocumentEraseResult,
+    DocumentEraseTransitionBuilder, DocumentPurchaseResult, DocumentPurchaseTransitionBuilder,
+    DocumentReplaceResult, DocumentReplaceTransitionBuilder, DocumentSetPriceResult,
+    DocumentSetPriceTransitionBuilder, DocumentTransferResult, DocumentTransferTransitionBuilder,
 };
 use dash_sdk::platform::transition::put_document::PutDocument;
 use dash_sdk::platform::{ContextProvider, DocumentQuery, Fetch};
@@ -597,6 +597,69 @@ impl IdentityWallet {
                 })
             })?;
         Ok(deleted_id)
+    }
+
+    /// Erase a chunk of the retained revisions of an already deleted
+    /// document on `contract_id`'s `document_type_name` and broadcast.
+    ///
+    /// Sibling of `delete_document_with_signer`. The document type must
+    /// keep history and allow erasure, and the document must already be
+    /// deleted. The first erase must be signed by the document's owner
+    /// and commits the document to erasure; every erase after that may be
+    /// signed by any identity, so `owner_identity_id` is the identity
+    /// signing and paying for this chunk rather than necessarily the
+    /// document's owner. One transition removes a bounded chunk of
+    /// revisions; read the document's history to see how many remain and
+    /// submit another erase while there are any.
+    ///
+    /// Signs with the explicit `signing_key_id` (AUTHENTICATION +
+    /// ECDSA) and broadcasts via `Sdk::document_erase` on the
+    /// platform-wallet 8 MB worker stack. Returns the erased document's
+    /// `Identifier` on confirmation.
+    pub async fn erase_document_with_signer<S>(
+        &self,
+        owner_identity_id: &Identifier,
+        contract_id: &Identifier,
+        document_type_name: &str,
+        document_id: &Identifier,
+        signing_key_id: u32,
+        signer: &S,
+    ) -> Result<Identifier, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let data_contract = self
+            .fetch_contract_arc_for_document_op(contract_id, document_type_name)
+            .await?;
+
+        let signing_key = self
+            .resolve_authentication_signing_key(owner_identity_id, signing_key_id)
+            .await?;
+
+        // Erase is keyed by (document_id, owner_id) like delete; the
+        // document is no longer visible to ordinary reads, so there is
+        // nothing to fetch first.
+        let builder = DocumentEraseTransitionBuilder::new(
+            data_contract,
+            document_type_name.to_string(),
+            *document_id,
+            *owner_identity_id,
+        );
+        let DocumentEraseResult::Accepted(erased_id) = self
+            .sdk
+            .document_erase(builder, &signing_key, &SignerRef(signer))
+            .await
+            .map_err(|e| {
+                // Preserve a structured key-unavailable signer failure so the
+                // FFI boundary can still restore code 31; only genuine
+                // operation failures get stringified into `InvalidIdentityData`.
+                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to erase document: {e}"
+                    ))
+                })
+            })?;
+        Ok(erased_id)
     }
 
     /// Transfer an existing document on `contract_id`'s
