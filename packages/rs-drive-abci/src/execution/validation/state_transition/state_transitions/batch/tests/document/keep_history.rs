@@ -251,15 +251,19 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
 
 #[tokio::test]
 async fn should_retain_replacements_transfers_prices_and_purchases_at_one_timestamp() {
-    run_history_write_sequence(false).await;
+    for countable in [false, true] {
+        run_history_write_sequence(false, countable).await;
+    }
 }
 
 #[tokio::test]
 async fn should_replace_and_transfer_migrated_history_through_signed_transitions() {
-    run_history_write_sequence(true).await;
+    for countable in [false, true] {
+        run_history_write_sequence(true, countable).await;
+    }
 }
 
-async fn run_history_write_sequence(migrated: bool) {
+async fn run_history_write_sequence(migrated: bool, countable: bool) {
     use dpp::data_contract::DataContractFactory;
     use drive::drive::document::history::{DocumentHistoryQueryV1, DocumentHistorySelector};
     let version = PlatformVersion::get(14).unwrap();
@@ -273,7 +277,7 @@ async fn run_history_write_sequence(migrated: bool) {
     let contract = DataContractFactory::new(initial_version.protocol_version).unwrap().create_with_value_config(owner.id(), 0, platform_value!({
         "note": {
             "type": "object", "documentsKeepHistory": true, "documentsMutable": true,
-            "canBeDeleted": false, "transferable": 1, "tradeMode": 1, "documentsCountable": true, "documentsSummable": "amount",
+            "canBeDeleted": false, "transferable": 1, "tradeMode": 1, "documentsCountable": countable, "documentsSummable": "amount",
             "properties": { "message": { "type": "string", "maxLength": 256, "position": 0 }, "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295i64, "position": 1} },
             "required": ["message", "amount"], "additionalProperties": false,
             "indices": [{"name": "owner", "properties": [{"$ownerId": "asc"}]}]
@@ -442,7 +446,15 @@ async fn run_history_write_sequence(migrated: bool) {
             )
             .value
             .unwrap();
-        assert!(matches!(primary, drive::grovedb::Element::CountSumTree(_, 1, sum, _) if sum == if revision == 1 {100} else {250}), "one live document contributes its current amount after each signed action: {primary:?}");
+        let expected_sum = if revision == 1 { 100 } else { 250 };
+        if countable {
+            assert!(matches!(primary, drive::grovedb::Element::CountSumTree(_, 1, sum, _) if sum == expected_sum), "one live document contributes its current amount after each signed action: {primary:?}");
+        } else {
+            assert!(
+                matches!(primary, drive::grovedb::Element::SumTree(_, sum, _) if sum == expected_sum),
+                "only the current revision contributes to the primary sum: {primary:?}"
+            );
+        }
         let (history, proof) = platform
             .drive
             .prove_document_history_v1(&query, document_type, None, version)
