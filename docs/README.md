@@ -6,6 +6,11 @@ consolidated [GitHub Pages site](https://dashpay.github.io/platform/) using
 MkDocs. The GitHub workflow described in [docs.yml](/.github/workflows/docs.yml)
 builds the documents and publishes them.
 
+The architecture and conventions guide for the Rust codebase is a separate
+mdBook under [`book/`](/book/), published by
+[book.yml](/.github/workflows/book.yml). Contributors should start with its
+[Coding Conventions](/book/src/contributing/coding-conventions.md) chapter.
+
 ## Viewing documentation locally
 
 You can use [MkDocs](https://www.mkdocs.org/getting-started/) to serve the

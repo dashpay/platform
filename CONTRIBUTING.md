@@ -54,6 +54,14 @@ Please ensure that the code you write adheres to the code style adopted in the
 project, and that all linting checks are passing. We use [AirBnB
 style](https://github.com/airbnb/javascript) for JS code.
 
+For Rust, the architectural rules (protocol versioning, where validation
+belongs, error and panic policy, module layout, test placement) are written
+down in The Dash Platform Book under `book/`. Start with the
+[Coding Conventions](book/src/contributing/coding-conventions.md) chapter; it
+links to the chapters that explain each subsystem. Build the book locally with
+`mdbook serve book`, or read the rendered version published from the current
+dev branch by the `Deploy Book & API Docs` workflow.
+
 
 Testing
 -------
