@@ -46,7 +46,12 @@ pub fn start(
         loop {
             tokio::select! {
                 _ = serving_pin_sweep_cancel.cancelled() => break,
-                _ = interval.tick() => serving_pin_sweep_manager.release_expired_pins(),
+                _ = interval.tick() => {
+                    let manager = Arc::clone(&serving_pin_sweep_manager);
+                    if let Err(error) = tokio::task::spawn_blocking(move || manager.release_expired_pins()).await {
+                        tracing::error!(?error, "state sync serving-pin sweep failed");
+                    }
+                }
             }
         }
     });

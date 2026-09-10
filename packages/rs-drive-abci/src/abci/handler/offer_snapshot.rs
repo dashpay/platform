@@ -124,6 +124,7 @@ where
     wipe_drive_for_restore(&app.platform().drive).map_err(|e| {
         AbciError::StateSyncInternalError(format!("offer_snapshot unable to wipe grovedb: {}", e))
     })?;
+    app.platform().reset_state_after_wipe()?;
 
     let state_sync_info = app
         .platform()

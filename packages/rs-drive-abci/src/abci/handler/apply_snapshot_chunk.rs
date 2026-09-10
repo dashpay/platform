@@ -3,13 +3,74 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::snapshot::{
-    clear_restore_sentinel_best_effort, wipe_drive_for_restore, MAX_STATE_SYNC_CHUNK_ID_SIZE,
-    MAX_STATE_SYNC_CHUNK_SIZE,
+    clear_restore_sentinel_best_effort, pack_nested_chunk_ids, unpack_nested_chunk_ids,
+    wipe_drive_for_restore, MAX_STATE_SYNC_CHUNK_ID_SIZE, MAX_STATE_SYNC_CHUNK_SIZE,
+    STATE_SYNC_CHUNK_IDS_PER_REQUEST,
 };
 use crate::rpc::core::CoreRPCLike;
 use std::sync::atomic::Ordering;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::response_apply_snapshot_chunk;
+
+fn split_chunk_ids(chunk_ids: Vec<Vec<u8>>) -> Result<Vec<Vec<u8>>, Error> {
+    let mut global_ids = Vec::new();
+    for packed in chunk_ids {
+        let ids = if packed.len() == 32 {
+            vec![packed]
+        } else {
+            match unpack_nested_chunk_ids(&packed) {
+                Ok(ids) if ids.iter().all(|id| id.len() == 32 || id.len() >= 35) => ids,
+                _ => vec![packed],
+            }
+        };
+        for global_id in ids {
+            if global_id.len() == 32 {
+                global_ids.push(global_id);
+                continue;
+            }
+            if global_id.len() < 35 {
+                return Err(AbciError::StateSyncInternalError(
+                    "invalid global chunk id".to_string(),
+                )
+                .into());
+            }
+            let root_key_len = u16::from_be_bytes([global_id[32], global_id[33]]) as usize;
+            let nested_offset = 35usize.checked_add(root_key_len).ok_or_else(|| {
+                AbciError::StateSyncInternalError("invalid global chunk id".to_string())
+            })?;
+            if global_id.len() < nested_offset {
+                return Err(AbciError::StateSyncInternalError(
+                    "invalid global chunk id".to_string(),
+                )
+                .into());
+            }
+            let local_ids = unpack_nested_chunk_ids(&global_id[nested_offset..]).map_err(|e| {
+                AbciError::StateSyncInternalError(format!("invalid local chunk ids: {e}"))
+            })?;
+            if local_ids.is_empty() {
+                global_ids.push(global_id);
+                continue;
+            }
+            for local_group in local_ids.chunks(STATE_SYNC_CHUNK_IDS_PER_REQUEST) {
+                let mut split = global_id[..nested_offset].to_vec();
+                split.extend(pack_nested_chunk_ids(local_group).map_err(|e| {
+                    AbciError::StateSyncInternalError(format!(
+                        "unable to pack local chunk ids: {e}"
+                    ))
+                })?);
+                global_ids.push(split);
+            }
+        }
+    }
+
+    let mut result = Vec::new();
+    for group in global_ids.chunks(STATE_SYNC_CHUNK_IDS_PER_REQUEST) {
+        result.push(pack_nested_chunk_ids(group).map_err(|e| {
+            AbciError::StateSyncInternalError(format!("unable to pack global chunk ids: {e}"))
+        })?);
+    }
+    Ok(result)
+}
 
 /// Applies one chunk of a state sync snapshot to the grovedb sync session.
 ///
@@ -137,6 +198,8 @@ where
             }
         };
 
+        let next_chunk_ids = split_chunk_ids(next_chunk_ids)?;
+
         if !session.state_sync_info.is_sync_completed() {
             return Ok(proto::ResponseApplySnapshotChunk {
                 result: response_apply_snapshot_chunk::Result::Accept.into(),
@@ -214,24 +277,6 @@ where
         );
     }
 
-    // Rebuild the in-memory platform state from the reduced platform state contained in
-    // the restored snapshot. This re-derives masternode lists and quorums from Core in
-    // memory only; the root hash equality check below is the restore's integrity backstop.
-    //
-    // This is also where a snapshot taken before the reduced platform state existed
-    // (pre-v15) is refused. Refusing earlier would be better, but grovedb does not expose
-    // the session's transaction, so the Misc tree cannot be probed before the commit —
-    // see the note on `reject_restored_snapshot`.
-    if let Err(e) = app
-        .platform()
-        .reconstruct_platform_state(&session.app_hash, platform_version)
-    {
-        return reject_restored_snapshot(
-            app,
-            &format!("unable to reconstruct the platform state: {}", e),
-        );
-    }
-
     let drive_app_hash = match app
         .platform()
         .drive
@@ -263,13 +308,30 @@ where
         );
     }
 
+    // Rebuild the in-memory platform state from the reduced platform state contained in
+    // the restored snapshot. The database root hash was verified immediately before this
+    // step, so publishing the reconstructed state is the final fallible restore operation.
+    //
+    // This is also where a snapshot taken before the reduced platform state existed
+    // (pre-v15) is refused. Refusing earlier would be better, but grovedb does not expose
+    // the session's transaction, so the Misc tree cannot be probed before the commit —
+    // see the note on `reject_restored_snapshot`.
+    if let Err(e) = app
+        .platform()
+        .reconstruct_platform_state(&session.app_hash, platform_version)
+    {
+        return reject_restored_snapshot(
+            app,
+            &format!("unable to reconstruct the platform state: {}", e),
+        );
+    }
+
     // The query service only serves while `committed_block_height_guard` matches the
     // published state's height. A fresh node's guard is still 0 (nothing was ever
     // finalized through it), while `reconstruct_platform_state` just published the
     // state at the snapshot height — left alone, that mismatch keeps every query
     // unserviceable until the first post-restore block finalizes. Open the gate only
-    // HERE, after grovedb reconstruction, aux persistence and the final app-hash check
-    // have all succeeded: on any earlier failure the guard stays 0, exactly as it must
+    // HERE, after grovedb reconstruction and aux persistence have succeeded: on any earlier failure the guard stays 0, exactly as it must
     // for a node whose restore was rejected. (A restart re-derives the guard from the
     // persisted state, so this store also matches what the next boot would compute.)
     app.platform().committed_block_height_guard.store(
@@ -282,6 +344,12 @@ where
     // `reconstruct_platform_state` has committed the platform state to aux storage, and
     // deliberately best-effort: a successful restore must not be turned into an ABCI error
     // by a `remove_file` hiccup.
+    app.platform().drive.grove.flush().map_err(|error| {
+        AbciError::StateSyncInternalError(format!(
+            "state sync completed but could not flush the restored database: {}",
+            error
+        ))
+    })?;
     clear_restore_sentinel_best_effort(&app.platform().config.db_path);
 
     tracing::info!(
@@ -336,6 +404,7 @@ where
             reason, e
         ))
     })?;
+    app.platform().reset_state_after_wipe()?;
 
     Ok(proto::ResponseApplySnapshotChunk {
         result: response_apply_snapshot_chunk::Result::RejectSnapshot.into(),
@@ -350,10 +419,22 @@ mod tests {
     use super::*;
     use crate::abci::app::FullAbciApplication;
     use crate::abci::handler::offer_snapshot;
-    use crate::platform_types::snapshot::encode_snapshot_metadata;
+    use crate::platform_types::snapshot::{
+        encode_snapshot_metadata, pack_nested_chunk_ids, unpack_nested_chunk_ids,
+    };
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::version::v15::PROTOCOL_VERSION_15;
     use tenderdash_abci::proto::abci::response_offer_snapshot;
+
+    #[test]
+    fn split_chunk_ids_accepts_raw_follow_up_global_ids() {
+        let mut global = vec![0u8; 35];
+        global.extend(pack_nested_chunk_ids(&[vec![1]]).expect("pack local id"));
+        let split = split_chunk_ids(vec![global]).expect("split raw global id");
+        assert_eq!(split.len(), 1);
+        let ids = unpack_nested_chunk_ids(&split[0]).expect("unpack global batch");
+        assert_eq!(ids.len(), 1);
+    }
 
     #[test]
     fn apply_snapshot_chunk_without_session_is_rejected() {
@@ -472,6 +553,17 @@ mod tests {
         assert!(
             app.snapshot_fetching_session.read().unwrap().is_some(),
             "the session stays in place until the re-offer replaces it"
+        );
+        assert_eq!(
+            app.platform().state.load().last_committed_block_height(),
+            0,
+            "rejecting a restore must reset the in-memory state immediately"
+        );
+        assert_eq!(
+            app.platform()
+                .committed_block_height_guard
+                .load(Ordering::Relaxed),
+            0
         );
 
         // The re-offer Tenderdash answers with must be accepted and start over

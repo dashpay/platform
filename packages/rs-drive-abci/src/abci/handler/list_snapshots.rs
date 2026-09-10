@@ -2,6 +2,9 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::snapshot::encode_snapshot_metadata;
+use drive::grovedb::{PathQuery, Query, QueryItem, SizedQuery};
+use drive::query::QueryResultType;
+use std::ops::RangeFull;
 use tenderdash_abci::proto::abci as proto;
 
 /// Lists the state sync snapshots this node can serve.
@@ -63,6 +66,67 @@ pub fn list_snapshots<C>(
                 ))
             })?;
         if !restorable {
+            continue;
+        }
+
+        // GroveDB replication currently cannot restore indexed trees. Walk the
+        // checkpoint's tree elements before advertising it; otherwise a valid
+        // ranked contract would be offered and fail permanently during restore.
+        const DISCOVERY_PAGE_SIZE: u16 = 1024;
+        const DISCOVERY_MAX_PATHS: usize = 4096;
+        let mut pending_paths = vec![vec![]];
+        let mut contains_indexed_tree = false;
+        let mut inspected_paths = 0usize;
+        while let Some(path) = pending_paths.pop() {
+            inspected_paths += 1;
+            if inspected_paths > DISCOVERY_MAX_PATHS {
+                contains_indexed_tree = true;
+                break;
+            }
+            let mut query = Query::new();
+            query.insert_item(QueryItem::RangeFull(RangeFull));
+            // A checkpoint can contain millions of document records. Only the first
+            // bounded page is needed to find the tree elements that state sync cannot
+            // restore; if the page is full, conservatively do not advertise the
+            // checkpoint because the unsupported element may be beyond it.
+            let path_query = PathQuery::new(
+                path.clone(),
+                SizedQuery::new(query, Some(DISCOVERY_PAGE_SIZE), None),
+            );
+            let (elements, _) = checkpoint
+                .grove_db
+                .query_raw(
+                    &path_query,
+                    false,
+                    true,
+                    true,
+                    QueryResultType::QueryKeyElementPairResultType,
+                    None,
+                    grove_version,
+                )
+                .value
+                .map_err(Error::from)?;
+            let elements = elements.to_key_elements();
+            for (key, element) in elements {
+                if element.is_indexed_tree() {
+                    contains_indexed_tree = true;
+                    break;
+                }
+                if element.is_any_tree() {
+                    let mut child_path = path.clone();
+                    child_path.push(key);
+                    pending_paths.push(child_path);
+                }
+            }
+            if contains_indexed_tree {
+                break;
+            }
+        }
+        if contains_indexed_tree {
+            tracing::warn!(
+                height,
+                "[state_sync] not offering checkpoint containing indexed trees"
+            );
             continue;
         }
 

@@ -21,6 +21,7 @@ use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 impl<C> Platform<C>
 where
@@ -43,11 +44,11 @@ where
     ///    masternode identity, so nothing is written and the root hash cannot change;
     /// 3. restores the validator set order recorded by the source (`quorum_positions`),
     ///    which cannot be recovered from Core RPC;
-    /// 4. advances the state to the snapshot block via `update_state_cache`, which
-    ///    performs the same next-into-current validator set rotation the source node
-    ///    performed when it finalized that block, persists the state to aux storage and
-    ///    publishes it, so the `info` handler reports the snapshot height and app hash
-    ///    after both this restore and any later restart.
+    /// 4. advances the state to the snapshot block with the same next-into-current
+    ///    validator set rotation the source node performed when it finalized that block,
+    ///    persists the state to aux storage, and publishes it only after that commit so
+    ///    the `info` handler reports the snapshot height and app hash after both this
+    ///    restore and any later restart.
     pub fn reconstruct_platform_state(
         &self,
         app_hash: &[u8; 32],
@@ -201,22 +202,31 @@ where
         // state for the info handler. Aux writes are not part of the root hash, so
         // committing them separately cannot change the app hash the caller verifies.
         let aux_transaction = self.drive.grove.start_transaction();
-        self.update_state_cache(
-            current_block_info,
-            platform_state,
-            &aux_transaction,
+        // Prepare and persist the state without publishing it. A failed commit must
+        // leave the in-memory state describing the empty, wiped database; publishing
+        // before the commit creates a root/height mismatch that makes `info` panic.
+        if let Some(next_validator_set_quorum_hash) =
+            platform_state.take_next_validator_set_quorum_hash()
+        {
+            platform_state.set_current_validator_set_quorum_hash(next_validator_set_quorum_hash);
+        }
+        platform_state.set_last_committed_block_info(Some(current_block_info));
+        platform_state.set_genesis_block_info(None);
+        self.store_platform_state(
+            &platform_state,
+            Some(&aux_transaction),
             state_platform_version,
         )?;
-        self.drive
-            .grove
-            .commit_transaction(aux_transaction)
-            .unwrap()
-            .map_err(|e| {
-                AbciError::StateSyncInternalError(format!(
-                    "reconstruct_platform_state unable to commit aux transaction: {}",
-                    e
-                ))
-            })?;
+        let commit_result = self.drive.grove.commit_transaction(aux_transaction);
+        let commit_result = commit_result.value;
+        if let Err(error) = commit_result {
+            return Err(AbciError::StateSyncInternalError(format!(
+                "reconstruct_platform_state unable to commit aux transaction: {}",
+                error
+            ))
+            .into());
+        }
+        self.state.store(Arc::new(platform_state));
 
         tracing::debug!(
             block_height,
