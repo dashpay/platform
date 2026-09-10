@@ -302,6 +302,7 @@ impl MockResponse for drive_proof_verifier::types::DocumentHistory {
                     DocumentHistoryState::Absent
                 },
                 remaining_revisions,
+                times: Default::default(),
             }),
         }
     }

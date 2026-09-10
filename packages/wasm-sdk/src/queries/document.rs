@@ -329,6 +329,8 @@ fn document_history_to_js(
         "state",
         &JsValue::from_str(match lifecycle.state {
             DocumentHistoryState::Active => "ACTIVE",
+            DocumentHistoryState::Deleted => "DELETED",
+            DocumentHistoryState::Erasing => "ERASING",
             DocumentHistoryState::Absent => "ABSENT",
         }),
     )?;
@@ -337,6 +339,17 @@ fn document_history_to_js(
         "remainingRevisions",
         &BigInt::from(lifecycle.remaining_revisions).into(),
     )?;
+    // Exact BigInts, like every other timestamp and revision this query
+    // returns: a JavaScript number cannot hold a millisecond timestamp
+    // without losing precision.
+    for (key, value) in [
+        ("deletedAtMs", lifecycle.times.deleted_at_ms),
+        ("erasingStartedAtMs", lifecycle.times.erasing_started_at_ms),
+        ("erasingFromTimeMs", lifecycle.times.erasing_from_time_ms),
+        ("erasingFromRevision", lifecycle.times.erasing_from_revision),
+    ] {
+        set(&metadata, key, &BigInt::from(value).into())?;
+    }
     let result = Object::new();
     set(&result, "entries", &entries.into())?;
     set(&result, "lifecycle", &metadata.into())?;
