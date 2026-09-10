@@ -382,5 +382,30 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
             .1,
         page
     );
+    use crate::drive::document::history::DocumentHistoryProofV1;
+    for selector in [
+        DocumentHistorySelector::Revision(3),
+        DocumentHistorySelector::StartAtRevision(3),
+    ] {
+        history_query.selector = selector;
+        let fetched = drive.fetch_document_history_v1(&history_query, document_type, None, new);
+        let proved = drive.prove_document_history_v1(&history_query, document_type, None, new);
+        let dishonest = DocumentHistoryProofV1 {
+            entries_proof: Some(
+                drive
+                    .grove_get_proved_path_query(
+                        &history_query.entries_query(new).unwrap(),
+                        None,
+                        &mut vec![],
+                        &new.drive,
+                    )
+                    .unwrap(),
+            ),
+            metadata_proof: proof.metadata_proof.clone(),
+        };
+        let verified =
+            Drive::verify_document_history_v1(&history_query, &dishonest, document_type, new);
+        assert!(fetched.is_err() && proved.is_err() && verified.is_err(), "revision 3 exists in retained [1,3], so an empty ordinal page must be rejected: fetch rejected={}, prove rejected={}, verify rejected={}", fetched.is_err(), proved.is_err(), verified.is_err());
+    }
     println!("{stats:#?}");
 }

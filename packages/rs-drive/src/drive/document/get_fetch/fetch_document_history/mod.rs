@@ -1,3 +1,4 @@
+use crate::drive::document::history::{invalid, DocumentHistoryQuery, DocumentHistoryResult};
 mod v0;
 
 use crate::drive::Drive;
@@ -10,9 +11,63 @@ use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
 impl Drive {
+    /// Dispatches historical document queries using the selected protocol layout.
+    pub fn fetch_document_history(
+        &self,
+        query: &DocumentHistoryQuery,
+        document_type: DocumentTypeRef,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentHistoryResult, Error> {
+        match (
+            platform_version
+                .drive
+                .methods
+                .document
+                .query
+                .fetch_document_history,
+            query,
+        ) {
+            (
+                0,
+                DocumentHistoryQuery::V0 {
+                    contract_id,
+                    document_type_name,
+                    document_id,
+                    start_at_ms,
+                    limit,
+                    offset,
+                },
+            ) => self
+                .fetch_document_history_v0(
+                    *contract_id,
+                    document_type_name,
+                    document_type,
+                    *document_id,
+                    transaction,
+                    *start_at_ms,
+                    *limit,
+                    *offset,
+                    platform_version,
+                )
+                .map(DocumentHistoryResult::V0),
+            (1, DocumentHistoryQuery::V1(query)) => self
+                .fetch_document_history_v1_impl(query, document_type, transaction, platform_version)
+                .map(DocumentHistoryResult::V1),
+            (0 | 1, _) => Err(invalid(
+                "document history request shape is unsupported at this protocol version",
+            )),
+            (version, _) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "fetch_document_history".to_owned(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
+    }
+
     /// Fetches the historical revisions of a document that keeps history.
     #[allow(clippy::too_many_arguments)]
-    pub fn fetch_document_history(
+    pub fn fetch_document_history_legacy(
         &self,
         contract_id: [u8; 32],
         document_type_name: &str,
@@ -24,29 +79,21 @@ impl Drive {
         offset: Option<u16>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<u64, Document>, Error> {
-        match platform_version
-            .drive
-            .methods
-            .document
-            .query
-            .fetch_document_history
-        {
-            0 => self.fetch_document_history_v0(
+        match self.fetch_document_history(
+            &DocumentHistoryQuery::V0 {
                 contract_id,
-                document_type_name,
-                document_type,
+                document_type_name: document_type_name.to_owned(),
                 document_id,
-                transaction,
                 start_at_ms,
                 limit,
                 offset,
-                platform_version,
-            ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "fetch_document_history".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
+            },
+            document_type,
+            transaction,
+            platform_version,
+        )? {
+            DocumentHistoryResult::V0(history) => Ok(history),
+            _ => Err(invalid("legacy history requires the timestamp-only layout")),
         }
     }
 }
@@ -232,7 +279,7 @@ mod tests {
         put_document(&drive, &contract, &document, 3000, platform_version);
 
         let history = drive
-            .fetch_document_history(
+            .fetch_document_history_legacy(
                 contract_id,
                 DOCUMENT_TYPE_NAME,
                 document_type,
@@ -250,7 +297,7 @@ mod tests {
         );
 
         let page = drive
-            .fetch_document_history(
+            .fetch_document_history_legacy(
                 contract_id,
                 DOCUMENT_TYPE_NAME,
                 document_type,
@@ -265,7 +312,7 @@ mod tests {
         assert_eq!(page.keys().copied().collect::<Vec<_>>(), vec![2000]);
 
         let empty_page = drive
-            .fetch_document_history(
+            .fetch_document_history_legacy(
                 contract_id,
                 DOCUMENT_TYPE_NAME,
                 document_type,
@@ -295,7 +342,7 @@ mod tests {
         put_document(&drive, &contract, &document, 2000, platform_version);
 
         let proof = drive
-            .prove_document_history(
+            .prove_document_history_legacy(
                 contract_id,
                 DOCUMENT_TYPE_NAME,
                 document_id,
@@ -306,7 +353,7 @@ mod tests {
                 platform_version,
             )
             .expect("prove history");
-        let (_root_hash, history) = Drive::verify_document_history(
+        let (_root_hash, history) = Drive::verify_document_history_legacy(
             &proof,
             contract_id,
             DOCUMENT_TYPE_NAME,
@@ -326,7 +373,7 @@ mod tests {
         );
 
         let empty_page_proof = drive
-            .prove_document_history(
+            .prove_document_history_legacy(
                 contract_id,
                 DOCUMENT_TYPE_NAME,
                 document_id,
@@ -337,7 +384,7 @@ mod tests {
                 platform_version,
             )
             .expect("prove empty page");
-        let (_root_hash, empty_history) = Drive::verify_document_history(
+        let (_root_hash, empty_history) = Drive::verify_document_history_legacy(
             &empty_page_proof,
             contract_id,
             DOCUMENT_TYPE_NAME,
