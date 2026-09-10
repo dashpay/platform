@@ -217,6 +217,13 @@ impl Drive {
     /// Reads the revision keys of one document newest first, one more than a
     /// chunk may remove so the caller can tell a terminal chunk from a partial
     /// one before it emits anything.
+    ///
+    /// The keys are what this needs, but GroveDB's query surface has no
+    /// key-only result shape over a range: every result type it exposes carries
+    /// elements. The revision bodies therefore come back and are dropped, and
+    /// the estimate below prices that read for what it is. What this does avoid
+    /// is the running-batch snapshot the general delete-by-query helper rebuilds
+    /// for every element, which is quadratic in the chunk size.
     fn enumerate_newest_revision_keys(
         &self,
         history_path: &[Vec<u8>],
@@ -302,6 +309,11 @@ impl Drive {
     /// endings: the record write of a first chunk and the subtree removal of a
     /// terminal one. Every erase is therefore admitted against the same
     /// worst-case estimate whatever the document's actual history length.
+    ///
+    /// The enumeration is priced at one revision more than a chunk removes,
+    /// because that is what it reads, and at the full body size, because the
+    /// query surface returns bodies whether or not the caller wants them. The
+    /// record read a non-terminal chunk performs is priced too.
     #[allow(clippy::too_many_arguments)]
     fn estimated_erase_document_operations(
         &self,
@@ -315,11 +327,9 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let mut single_operation = Vec::with_capacity(2);
-        for sequence in 1..=chunk as u64 {
-            // Distinct synthetic keys of the real shape: the dry run's batch is
-            // checked for consistency like any other, so a repeated key would be
-            // rejected rather than priced.
+        // The enumeration reads one revision more than the chunk removes, and
+        // reads each of them whole.
+        for sequence in 1..=chunk as u64 + 1 {
             let mut key = encode_u64(block_info.time_ms);
             key.extend(encode_u64(sequence));
             self.grove_get_raw(
@@ -333,6 +343,28 @@ impl Drive {
                 &mut batch_operations,
                 &platform_version.drive,
             )?;
+        }
+
+        // A non-terminal chunk reads the record before overwriting it.
+        self.grove_get_raw(
+            lifecycle_path.into(),
+            document_id.as_slice(),
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_type: TreeType::NormalTree,
+                query_target: QueryTarget::QueryTargetValue(DOCUMENT_LIFECYCLE_RECORD_SIZE),
+            },
+            transaction,
+            &mut batch_operations,
+            &platform_version.drive,
+        )?;
+
+        let mut single_operation = Vec::with_capacity(2);
+        for sequence in 1..=chunk as u64 {
+            // Distinct synthetic keys of the real shape: the dry run's batch is
+            // checked for consistency like any other, so a repeated key would be
+            // rejected rather than priced.
+            let mut key = encode_u64(block_info.time_ms);
+            key.extend(encode_u64(sequence));
             single_operation.clear();
             self.batch_delete(
                 history_path.into(),
