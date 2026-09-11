@@ -614,8 +614,13 @@ impl IdentityWallet {
     ///
     /// Signs with the explicit `signing_key_id` (AUTHENTICATION +
     /// ECDSA) and broadcasts via `Sdk::document_erase` on the
-    /// platform-wallet 8 MB worker stack. Returns the erased document's
-    /// `Identifier` on confirmation.
+    /// platform-wallet 8 MB worker stack. Returns the document's
+    /// `Identifier` once Platform has proved it absent from ordinary
+    /// reads. That absence predates the erase, so the return is an
+    /// observation of the affected state, not evidence that this erase
+    /// removed any revision; progress is read from the document's
+    /// history, whose lifecycle block carries the state and the exact
+    /// number of revisions still retained.
     pub async fn erase_document_with_signer<S>(
         &self,
         owner_identity_id: &Identifier,
@@ -645,7 +650,7 @@ impl IdentityWallet {
             *document_id,
             *owner_identity_id,
         );
-        let DocumentEraseResult::Accepted(erased_id) = self
+        let DocumentEraseResult::AbsentAsOfProof(absent_id) = self
             .sdk
             .document_erase(builder, &signing_key, &SignerRef(signer))
             .await
@@ -659,7 +664,7 @@ impl IdentityWallet {
                     ))
                 })
             })?;
-        Ok(erased_id)
+        Ok(absent_id)
     }
 
     /// Transfer an existing document on `contract_id`'s

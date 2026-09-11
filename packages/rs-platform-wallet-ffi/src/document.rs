@@ -304,9 +304,13 @@ pub unsafe extern "C" fn platform_wallet_document_delete(
 /// erase of a document must be signed by its owner; the erases after it
 /// may be signed by any identity, so `owner_identity_id` is the signing
 /// identity rather than necessarily the document's owner. On success the
-/// erased document's 32-byte id is written to `out_document_id`. Erase
-/// returns no document body, so there is no JSON out-param; whether
-/// revisions remain is read from the document's history.
+/// document's 32-byte id is written to `out_document_id`: the transition
+/// was broadcast and Platform proved the document absent from ordinary
+/// reads, which it already was before the erase, so success observes the
+/// affected state rather than proving this erase removed a revision.
+/// Erase returns no document body, so there is no JSON out-param; the
+/// lifecycle state and the number of revisions still retained are read
+/// from the document's history.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_document_erase(
