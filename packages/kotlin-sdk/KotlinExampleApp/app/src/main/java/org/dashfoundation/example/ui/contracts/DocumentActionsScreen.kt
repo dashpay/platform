@@ -40,6 +40,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.queries.describeEraseProgress
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.AccessiblePicker
@@ -57,8 +58,8 @@ import org.dashfoundation.example.util.truncateMiddle
 
 /**
  * Owned-document actions for one document — the DOC-03 replace / DOC-04
- * delete / DOC-16 erase / DOC-05 transfer flows the iOS document ops menu
- * ships (`ManagedPlatformWallet.replaceDocument` / `deleteDocument` /
+ * delete / DOC-05 transfer flows the iOS document ops menu ships, plus the
+ * erase (`ManagedPlatformWallet.replaceDocument` / `deleteDocument` /
  * `eraseDocument` / `transferDocument`). Reached from a document row's
  * "Actions…" button and from the document replace/delete/erase/transfer
  * transition-catalog entries.
@@ -452,7 +453,7 @@ fun DocumentActionsScreen(
                 ) { showDeleteConfirm = true }
             }
 
-            // ── Erase (DOC-16) ────────────────────────────────────────────
+            // ── Erase ─────────────────────────────────────────────────────
             // A deleted document is invisible to the probe above, so the
             // erase cannot be ownership-gated here; consensus refuses a
             // first erase from anyone but the owner (a paid rejection) and
@@ -460,8 +461,8 @@ fun DocumentActionsScreen(
             FormSection(title = "Erase") {
                 Text(
                     "Remove the retained revisions of a document that has already " +
-                        "been deleted. Each erase removes up to 100 revisions; repeat " +
-                        "until the history is gone.",
+                        "been deleted. Each erase removes up to 100 revisions; the " +
+                        "lifecycle read after each one says how many remain.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.testTag("documentActions.erase"),
@@ -627,6 +628,12 @@ fun DocumentActionsScreen(
                             scope = scope,
                         ) {
                             val (wallet, mgr, signingKeyId) = resolveSigning(container, signer)
+                            val docIdB58 = Base58.encode(docIdBytes)
+                            // The erase result only observes that the document is
+                            // absent from ordinary reads, which it already was; what
+                            // the erase achieved is read from the lifecycle before
+                            // and after.
+                            val before = sdk?.documents?.lifecycle(contractIdBase58, typeName, docIdB58)
                             mgr.documentTransactions.erase(
                                 walletHandle = wallet,
                                 ownerId = signer.identityId,
@@ -636,7 +643,13 @@ fun DocumentActionsScreen(
                                 signingKeyId = signingKeyId,
                                 signerHandle = mgr.signerHandle,
                             )
-                            eraseSuccess = "Erase accepted on-chain; repeat while revisions remain."
+                            val after = sdk?.documents?.lifecycle(contractIdBase58, typeName, docIdB58)
+                            eraseSuccess = "Erase submitted; document absence observed. " +
+                                if (after != null) {
+                                    describeEraseProgress(before, after)
+                                } else {
+                                    "Lifecycle not read; query the document history to see what remains."
+                                }
                         }
                     },
                     modifier = Modifier.testTag("eraseDocument.confirm"),

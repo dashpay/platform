@@ -672,8 +672,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 /// `ManagedPlatformWallet.eraseDocument`). The first erase of a document
 /// must be signed by its owner; later ones may be signed by any identity.
 ///
-/// Erase returns no document body, so this returns the erased document's
-/// 32-byte id as a `byte[]` for confirmation. Null after throwing on error.
+/// Erase returns no document body, so this returns the document's 32-byte
+/// id as a `byte[]` once its absence is observed under a proof (which it
+/// already was before the erase; progress is read from the history).
+/// Null after throwing on error.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_documentErase(
