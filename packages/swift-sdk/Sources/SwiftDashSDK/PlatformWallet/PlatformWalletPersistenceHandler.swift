@@ -10887,15 +10887,17 @@ extension PlatformWalletPersistenceHandler {
     /// parent transaction when the record is absent, account relationship,
     /// wallet denorm, address link, pending-input drain) so both writers
     /// honour the same rules. Gates, in order: a malformed row (txid not
-    /// 32 bytes, empty script or address) is skipped; a contact's
-    /// watch-only chain is skipped — its coins are the contact's; a coin
-    /// below `minConfirmations` at `tipHeight` is skipped (the inventory
+    /// 32 bytes, empty script or address) is skipped; a coin the engine
+    /// does not call confirmed, or below `minConfirmations` at `tipHeight`,
+    /// is skipped (the inventory
     /// carries the engine's own flags, but a fresh coin can still reorg or,
     /// for coinbase, be immature — it ages into a later run); a coin whose
     /// owning account has no store row is skipped and counted rather than
     /// filed unowned, because the restore loader routes by account and an
     /// unowned row would be dropped at the next launch, recreating the loss.
     /// Inserted rows are `isConfirmed == true` — the gate guarantees it.
+    /// A store read that fails is not a skip: the step fails and the run
+    /// stops, like the unspent-page read in the classify pass.
     func reconcileHealMissingTxos(
         walletId: Data,
         rows: [CoreEngineUtxo],
@@ -10926,7 +10928,21 @@ extension PlatformWalletPersistenceHandler {
                     counts.alreadyPresent += 1
                     continue
                 }
-                guard let account = findAccountRow(walletId: walletId, key: row.account) else {
+                let accountRow: PersistentAccount?
+                do {
+                    accountRow = try findAccountRow(walletId: walletId, key: row.account)
+                } catch {
+                    SDKLogger.event(
+                        "persistence_txo_reconcile_read_failed",
+                        category: .persistence,
+                        severity: .error,
+                        fields: ["wallet_reference": .reference(walletId)],
+                        error: error
+                    )
+                    backgroundContext.rollback()
+                    return .failed
+                }
+                guard let account = accountRow else {
                     counts.skippedUnresolvedAccount += 1
                     continue
                 }
@@ -11137,8 +11153,9 @@ extension PlatformWalletPersistenceHandler {
 
     /// Non-creating lookup of the store's account row for an engine
     /// account key — the same tuple match `applyAccountChangeset` performs,
-    /// minus the insert on miss.
-    private func findAccountRow(walletId: Data, key: CoreAccountKey) -> PersistentAccount? {
+    /// minus the insert on miss. `nil` is a successful miss; a read that
+    /// fails throws, so the caller can tell the two apart.
+    private func findAccountRow(walletId: Data, key: CoreAccountKey) throws -> PersistentAccount? {
         let typeTag = UInt32(key.typeTag)
         let accountIndex = key.index
         let descriptor = FetchDescriptor<PersistentAccount>(
@@ -11148,7 +11165,7 @@ extension PlatformWalletPersistenceHandler {
                     && $0.accountIndex == accountIndex
             }
         )
-        let rows = (try? backgroundContext.fetch(descriptor)) ?? []
+        let rows = try modelFetcher.fetch(descriptor, in: backgroundContext)
         // A row that predates the identity columns carries `Data()` where
         // the engine projects 32 zero bytes; both mean "no identity".
         func identity(_ data: Data) -> Data {

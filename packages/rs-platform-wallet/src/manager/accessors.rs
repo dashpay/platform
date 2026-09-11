@@ -300,15 +300,6 @@ impl OutpointClass {
     }
 }
 
-/// One page of `wallet_id`'s UTXO inventory across every funds account, in
-/// `(AccountType, OutPoint)` order, starting strictly after `after`.
-/// Returns the rows and whether more follow. `limit` is clamped to
-/// `1..=WALLET_UTXO_PAGE_MAX`, with 0 meaning [`WALLET_UTXO_PAGE_DEFAULT`].
-/// An unknown wallet is an empty terminal page.
-///
-/// A UTXO set that moves between pages (a round landing mid-walk) can drop
-/// a row out of ONE walk or repeat one; both are benign for the insert-only,
-/// idempotent store reconcile this serves, which re-runs on a cadence.
 /// Whether `account_type` is a contact's watch-only chain
 /// (`DashpayExternalAccount`): coins there belong to the contact, so the
 /// inventory omits them and the classifier has no verdict for them.
@@ -316,6 +307,16 @@ pub fn is_watch_only_contact(account_type: &AccountType) -> bool {
     matches!(account_type, AccountType::DashpayExternalAccount { .. })
 }
 
+/// One page of `wallet_id`'s UTXO inventory across every funds account
+/// that is not a contact's watch-only chain, in `(AccountType, OutPoint)`
+/// order, starting strictly after `after`. Returns the rows and whether
+/// more follow. `limit` is clamped to `1..=WALLET_UTXO_PAGE_MAX`, with 0
+/// meaning [`WALLET_UTXO_PAGE_DEFAULT`]. An unknown wallet is an empty
+/// terminal page.
+///
+/// A UTXO set that moves between pages (a round landing mid-walk) can drop
+/// a row out of ONE walk or repeat one; both are benign for the insert-only,
+/// idempotent store reconcile this serves, which re-runs on a cadence.
 pub fn wallet_utxos_page(
     wm: &key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>,
     wallet_id: &WalletId,

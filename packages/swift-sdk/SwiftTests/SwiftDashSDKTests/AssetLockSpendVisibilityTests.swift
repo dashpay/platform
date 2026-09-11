@@ -30,7 +30,8 @@ import DashSDKFFI
 
 /// Serves every read live except the one model type it is told to fault,
 /// and records the reads it saw so a test can prove which fetch failed.
-private final class FetchFaultInjector: ModelFetching, @unchecked Sendable {
+/// Shared by every test that needs one model's read to fail.
+final class FetchFaultInjector: ModelFetching, @unchecked Sendable {
     struct ReadFault: Error {}
 
     private let live = LiveModelFetcher()

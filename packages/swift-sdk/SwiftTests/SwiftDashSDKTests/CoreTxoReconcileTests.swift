@@ -100,9 +100,15 @@ final class CoreTxoReconcileTests: XCTestCase {
 
     private func txid(_ byte: UInt8) -> Data { Data(repeating: byte, count: 32) }
 
-    private func makeHandler() throws -> (PlatformWalletPersistenceHandler, ModelContainer) {
+    private func makeHandler(
+        modelFetcher: ModelFetching = LiveModelFetcher()
+    ) throws -> (PlatformWalletPersistenceHandler, ModelContainer) {
         let container = try DashModelContainer.createInMemory()
-        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container,
+            network: .testnet,
+            modelFetcher: modelFetcher
+        )
         return (handler, container)
     }
 
@@ -459,6 +465,27 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertTrue(coin.isSpent)
         XCTAssertEqual(try pendingCount(container), 0, "the claim was consumed by the drain")
         XCTAssertEqual(try restoredUtxoCount(handler), 0)
+    }
+
+    /// A store read that fails inside the heal pass is a failure, not a
+    /// skip: the account lookup cannot tell "no such account" from "could
+    /// not read", so it must not answer the former when the latter
+    /// happened. The run stops, counts the store failure, inserts nothing
+    /// — and reports it as incomplete rather than as an unresolved account.
+    func testTheRunStopsWhenTheAccountLookupCannotRead() throws {
+        let injector = FetchFaultInjector(faulting: PersistentAccount.self)
+        let (handler, container) = try makeHandler(modelFetcher: injector)
+        try seedWallet(in: container)
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0x83))])
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertFalse(report.completed)
+        XCTAssertEqual(report.storeFailures, 1)
+        XCTAssertEqual(report.skippedUnresolvedAccount, 0, "a failed read is not a missing account")
+        XCTAssertEqual(report.inserted, 0)
+        XCTAssertNil(try txo(container, txid: txid(0x83)))
+        XCTAssertTrue(injector.observedReads.contains("PersistentAccount"))
     }
 
     // MARK: 4. Nothing runs before the scan is complete
