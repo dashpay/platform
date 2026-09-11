@@ -4853,6 +4853,45 @@ impl Drop for LoadGuard {
     }
 }
 
+/// Put a batch of unconfirmed outgoing sends into replay order.
+///
+/// `first_seen` establishes the baseline, but the host records it in whole
+/// seconds, so two sends a moment apart share one and their relative order is
+/// undefined. A dependency pass then moves any send that spends another send
+/// in the same batch behind it — replaying a child first leaves it with no
+/// input to spend, so it is discarded as irrelevant and that send's replay is
+/// silently lost.
+fn order_unconfirmed_outgoing(
+    mut decoded: Vec<(u64, dashcore::blockdata::transaction::Transaction)>,
+) -> Vec<dashcore::blockdata::transaction::Transaction> {
+    decoded.sort_by_key(|(first_seen, _)| *first_seen);
+
+    let in_batch: std::collections::HashSet<_> =
+        decoded.iter().map(|(_, tx)| tx.txid()).collect();
+    let mut emitted: std::collections::HashSet<_> = std::collections::HashSet::new();
+    let mut ordered = Vec::with_capacity(decoded.len());
+    let mut queue: std::collections::VecDeque<_> = decoded.into_iter().collect();
+    // Bounded: a full lap with nothing emitted means the remainder depends on
+    // itself, which valid transactions cannot do. Emit in `first_seen` order
+    // rather than spin.
+    let mut passed_over = 0usize;
+    while let Some((first_seen, tx)) = queue.pop_front() {
+        let waits_on_batch_peer = tx.input.iter().any(|input| {
+            let parent = input.previous_output.txid;
+            in_batch.contains(&parent) && !emitted.contains(&parent)
+        });
+        if waits_on_batch_peer && passed_over <= queue.len() {
+            queue.push_back((first_seen, tx));
+            passed_over += 1;
+            continue;
+        }
+        emitted.insert(tx.txid());
+        ordered.push(tx);
+        passed_over = 0;
+    }
+    ordered
+}
+
 /// Reconstruct an external-signable [`Wallet`] + matching start-state
 /// bucket from a single `WalletRestoreEntryFFI`. The mnemonic / seed
 /// stays in the host's keychain; signing requests route back through
@@ -5491,9 +5530,15 @@ fn build_wallet_start_state(
     // `manager::load::load_from_persistor`. See
     // `ClientWalletStartState::unconfirmed_outgoing_txs`.
     //
-    // Sorted by the host's `first_seen` so a parent send is replayed
-    // before a child that spends its change; a child applied first
-    // would find its input still absent and be dropped as irrelevant.
+    // Ordered so a parent send is replayed before a child that spends its
+    // change — a child applied first finds its input absent and is dropped
+    // as irrelevant, silently losing that send's replay.
+    //
+    // `first_seen` alone cannot express this: the host stores it in whole
+    // seconds, and two sends a moment apart share one. So the `first_seen`
+    // sort only establishes a stable starting order, and a dependency pass
+    // then moves any send that spends another send in the same batch behind
+    // it.
     let unconfirmed_outgoing_txs = {
         use dashcore::consensus::Decodable;
         let recs: &[UnconfirmedOutgoingTxRecordFFI] = if entry
@@ -5533,8 +5578,7 @@ fn build_wallet_start_state(
                 "load: unconfirmed outgoing tx records failed to decode"
             );
         }
-        decoded.sort_by_key(|(first_seen, _)| *first_seen);
-        decoded.into_iter().map(|(_, tx)| tx).collect::<Vec<_>>()
+        order_unconfirmed_outgoing(decoded)
     };
 
     let wallet_state = ClientWalletStartState {
@@ -6713,6 +6757,109 @@ mod tests {
     //! Unit tests for the load-side helpers. Focused on the
     //! restoration loops that don't need the full FFI plumbing —
     //! exercising the in-memory mutation against synthetic input.
+
+    mod unconfirmed_outgoing_order {
+        use super::super::order_unconfirmed_outgoing;
+        use dashcore::blockdata::transaction::Transaction;
+        use dashcore::{OutPoint, ScriptBuf, TxIn, TxOut};
+
+        fn tx_spending(parents: &[(dashcore::Txid, u32)], value: u64) -> Transaction {
+            Transaction {
+                version: 2,
+                lock_time: 0,
+                input: parents
+                    .iter()
+                    .map(|(txid, vout)| TxIn {
+                        previous_output: OutPoint {
+                            txid: *txid,
+                            vout: *vout,
+                        },
+                        script_sig: ScriptBuf::new(),
+                        sequence: 0xffff_ffff,
+                        witness: Default::default(),
+                    })
+                    .collect(),
+                output: vec![TxOut {
+                    value,
+                    script_pubkey: ScriptBuf::new(),
+                }],
+                special_transaction_payload: None,
+            }
+        }
+
+        fn root(value: u64) -> Transaction {
+            tx_spending(
+                &[(
+                    "0000000000000000000000000000000000000000000000000000000000000001"
+                        .parse()
+                        .expect("static txid"),
+                    0,
+                )],
+                value,
+            )
+        }
+
+        /// The host stores `first_seen` in whole seconds, so a parent and the
+        /// child spending its change can share one. Replaying the child first
+        /// leaves it with no input and it is dropped as irrelevant — that
+        /// send's replay is then silently lost, which is the whole failure
+        /// this ordering exists to prevent.
+        #[test]
+        fn a_child_sharing_its_parents_second_is_replayed_after_it() {
+            let parent = root(50_000);
+            let child = tx_spending(&[(parent.txid(), 0)], 40_000);
+
+            // Child offered first, identical timestamps: nothing but the
+            // dependency pass can separate them.
+            let ordered = order_unconfirmed_outgoing(vec![
+                (1_700_000_000, child.clone()),
+                (1_700_000_000, parent.clone()),
+            ]);
+
+            assert_eq!(
+                ordered.iter().map(|tx| tx.txid()).collect::<Vec<_>>(),
+                vec![parent.txid(), child.txid()],
+                "the parent must be replayed before the child that spends it"
+            );
+        }
+
+        /// A chain of three, offered fully reversed and all in one second.
+        #[test]
+        fn a_reversed_chain_is_restored_to_dependency_order() {
+            let a = root(90_000);
+            let b = tx_spending(&[(a.txid(), 0)], 80_000);
+            let c = tx_spending(&[(b.txid(), 0)], 70_000);
+
+            let ordered = order_unconfirmed_outgoing(vec![
+                (1_700_000_000, c.clone()),
+                (1_700_000_000, b.clone()),
+                (1_700_000_000, a.clone()),
+            ]);
+
+            assert_eq!(
+                ordered.iter().map(|tx| tx.txid()).collect::<Vec<_>>(),
+                vec![a.txid(), b.txid(), c.txid()]
+            );
+        }
+
+        /// Sends that do not depend on each other keep the order `first_seen`
+        /// gave them — the dependency pass must not reshuffle the baseline.
+        #[test]
+        fn independent_sends_keep_their_first_seen_order() {
+            let older = root(10_000);
+            let newer = root(20_000);
+
+            let ordered = order_unconfirmed_outgoing(vec![
+                (1_700_000_050, newer.clone()),
+                (1_700_000_000, older.clone()),
+            ]);
+
+            assert_eq!(
+                ordered.iter().map(|tx| tx.txid()).collect::<Vec<_>>(),
+                vec![older.txid(), newer.txid()]
+            );
+        }
+    }
 
     use super::*;
 

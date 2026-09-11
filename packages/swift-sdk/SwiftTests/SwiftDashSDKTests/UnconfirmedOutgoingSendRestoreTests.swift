@@ -166,6 +166,22 @@ final class UnconfirmedOutgoingSendRestoreTests: XCTestCase {
         )
     }
 
+    /// An InstantSend-locked send is still unconfirmed as far as the store is
+    /// concerned — `spendIsInBlock` withholds `isSpent` for every context
+    /// below `inBlock`, so its input is handed back as spendable exactly like
+    /// a mempool send's. Filtering on `context == 0` covered only half of
+    /// that rule and left IS-locked sends out of the replay.
+    func testInstantSendLockedSendIsOffered() throws {
+        let (handler, container) = try makeHandler()
+        try seed(in: container, sendContext: 1)
+
+        XCTAssertEqual(
+            offeredCount(handler),
+            1,
+            "an IS-locked send has not reached a block, so its spend is not persisted either"
+        )
+    }
+
     /// A settled send needs no replay: the chain already carries the spend,
     /// and the ordinary restore path reconstructs it.
     func testConfirmedSendIsNotOffered() throws {

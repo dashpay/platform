@@ -7586,7 +7586,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         var candidates: [Data: PersistentTransaction] = [:]
         for txo in txos {
             guard let spender = txo.spendingTransaction else { continue }
-            guard spender.context == 0, spender.blockHeight == 0 else { continue }
+            // Mirror `spendIsInBlock` exactly: it withholds `isSpent` for
+            // every context below `inBlock`, so an InstantSend-locked send
+            // (context 1) leaves its input unspent in the store too and needs
+            // the same replay. Filtering on `== 0` covered only half of that.
+            guard spender.context < TransactionContextType.inBlock.rawValue,
+                  spender.blockHeight == 0
+            else { continue }
             guard !spender.transactionData.isEmpty else { continue }
             guard !excluded.contains(spender.txid) else { continue }
             candidates[spender.txid] = spender
