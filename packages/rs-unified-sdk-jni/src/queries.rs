@@ -19,9 +19,10 @@ use rs_sdk_ffi::{
     dash_sdk_contested_resource_get_voters_for_identity, dash_sdk_data_contract_destroy,
     dash_sdk_data_contract_fetch, dash_sdk_data_contract_fetch_json,
     dash_sdk_data_contract_fetch_result_free, dash_sdk_data_contract_fetch_with_serialization,
-    dash_sdk_document_average, dash_sdk_document_count, dash_sdk_document_search,
-    dash_sdk_document_sum, dash_sdk_dpns_check_availability, dash_sdk_dpns_get_usernames,
-    dash_sdk_dpns_resolve, dash_sdk_dpns_search, dash_sdk_evonode_get_proposed_epoch_blocks_by_ids,
+    dash_sdk_document_average, dash_sdk_document_count, dash_sdk_document_fetch_history,
+    dash_sdk_document_search, dash_sdk_document_sum, dash_sdk_dpns_check_availability,
+    dash_sdk_dpns_get_usernames, dash_sdk_dpns_resolve, dash_sdk_dpns_search,
+    dash_sdk_evonode_get_proposed_epoch_blocks_by_ids,
     dash_sdk_evonode_get_proposed_epoch_blocks_by_range, dash_sdk_group_get_action_signers,
     dash_sdk_group_get_actions, dash_sdk_group_get_info, dash_sdk_identities_fetch_balances,
     dash_sdk_identities_fetch_contract_keys, dash_sdk_identity_fetch,
@@ -38,7 +39,7 @@ use rs_sdk_ffi::{
     dash_sdk_token_get_perpetual_distribution_last_claim,
     dash_sdk_token_get_pre_programmed_distributions, dash_sdk_token_get_statuses,
     dash_sdk_token_get_total_supply, dash_sdk_voting_get_vote_polls_by_end_date,
-    DashSDKDocumentSearchParams, DataContractHandle, SDKHandle,
+    DashSDKDocumentHistorySelector, DashSDKDocumentSearchParams, DataContractHandle, SDKHandle,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -296,6 +297,67 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_documen
                 c_ptr(&order_c),
                 c_ptr(&group_c),
                 limit,
+            )
+        };
+        unsafe { unwrap_string(env, result) }
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Read a page of a keep-history document's revision history with its
+/// lifecycle block; returns the JSON object `dash_sdk_document_fetch_history`
+/// produces. `selector` is the `DashSDKDocumentHistorySelector` discriminant
+/// (0 start-at time, 1 start-after cursor, 2 start-at revision, 3 single
+/// revision); `time_ms` and `revision` are read according to it, and `limit`
+/// zero takes the server default. Negative numbers are rejected before the
+/// unsigned conversion.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_documentHistory(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk: jlong,
+    contract_id: JString,
+    document_type: JString,
+    document_id: JString,
+    selector: jint,
+    time_ms: jlong,
+    revision: jlong,
+    limit: jint,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let selector = match selector {
+            0 => DashSDKDocumentHistorySelector::HistoryStartAtTime,
+            1 => DashSDKDocumentHistorySelector::HistoryStartAfter,
+            2 => DashSDKDocumentHistorySelector::HistoryStartAtRevision,
+            3 => DashSDKDocumentHistorySelector::HistoryRevision,
+            _ => {
+                throw_sdk_exception(env, 1, "unknown document history selector");
+                return ptr::null_mut();
+            }
+        };
+        if time_ms < 0 || revision < 0 || limit < 0 {
+            throw_sdk_exception(
+                env,
+                1,
+                "history time, revision and limit must be non-negative",
+            );
+            return ptr::null_mut();
+        }
+        let contract_c = require_cstr!(env, contract_id);
+        let doc_type = require_cstr!(env, document_type);
+        let doc_id = require_cstr!(env, document_id);
+        let result = unsafe {
+            dash_sdk_document_fetch_history(
+                sdk as *const SDKHandle,
+                contract_c.as_ptr(),
+                doc_type.as_ptr(),
+                doc_id.as_ptr(),
+                selector,
+                time_ms as u64,
+                revision as u64,
+                limit as u32,
             )
         };
         unsafe { unwrap_string(env, result) }
