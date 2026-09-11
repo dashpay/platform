@@ -11,6 +11,7 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v0::DocumentCreateTransitionActionStateValidationV0;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v1::DocumentCreateTransitionActionStateValidationV1;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v2::DocumentCreateTransitionActionStateValidationV2;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v3::DocumentCreateTransitionActionStateValidationV3;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v0::DocumentCreateTransitionActionStructureValidationV0;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v1::DocumentCreateTransitionActionStructureValidationV1;
 use crate::platform_types::platform::PlatformStateRef;
@@ -20,6 +21,7 @@ mod advanced_structure_v1;
 mod state_v0;
 mod state_v1;
 mod state_v2;
+mod state_v3;
 
 pub trait DocumentCreateTransitionActionValidation {
     fn validate_structure(
@@ -111,9 +113,19 @@ impl DocumentCreateTransitionActionValidation for DocumentCreateTransitionAction
                 transaction,
                 platform_version,
             ),
+            // V3 rejects a non-contested create when its document id already belongs to a live
+            // contested document.
+            3 => self.validate_state_v3(
+                platform,
+                owner_id,
+                block_info,
+                execution_context,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentCreateTransitionAction::validate_state".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1, 2, 3],
                 received: version,
             })),
         }

@@ -65,7 +65,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    contest under a vote poll describing a different index than the one
 ///    the contest was created on — which halts the chain when that poll
 ///    ends — or open a contest for a document that is not a contested
-///    resource at all.
+///    resource at all. State validation also prevents a non-contested create
+///    from occupying a live contested document's id before the contest winner
+///    is awarded into primary storage.
 /// 4. **Relative daily withdrawal limit**: the flat 2000 Dash per 24 hours that
 ///    applied from v8 becomes 15% of the total credits Platform held a day ago
 ///    (`SYSTEM_LIMITS_V4.daily_withdrawal_limit_percent`, read by
@@ -187,10 +189,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   contested create transition's prefunded voting balance to name the
 ///   same vote poll the document itself resolves to, and rejecting one on a
 ///   document that resolves to no contested index. It also bumps document
-///   create state validation to 2 and document replace state validation to
-///   1, enforcing `refersTo` document references: a document whose
-///   reference property names an identity or contract that does not exist
-///   is rejected. v13 keeps the v9 table and therefore keeps
+///   create state validation to 3: v2 enforces `refersTo` document references,
+///   while v3 rejects non-contested creates whose id is already present in the
+///   contested tree. Document replace state validation 1 enforces the same
+///   reference checks. v13 keeps the v9 table and therefore keeps
 ///   accepting all of these, so replay of pre-upgrade blocks is unchanged.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
 ///   default 3: documents are stamped with the contract version their bytes
@@ -417,6 +419,24 @@ mod tests {
                 .batch_state_transition
                 .document_create_transition_structure_validation,
             1
+        );
+        assert_eq!(
+            PLATFORM_V13
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .batch_state_transition
+                .document_create_transition_state_validation,
+            1
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .batch_state_transition
+                .document_create_transition_state_validation,
+            3
         );
     }
 }

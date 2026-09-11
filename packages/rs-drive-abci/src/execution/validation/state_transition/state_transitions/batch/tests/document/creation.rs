@@ -16,6 +16,7 @@ mod creation_tests {
     use dpp::fee::fee_result::refunds::FeeRefunds;
     use dpp::fee::fee_result::FeeResult;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
     use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
     use dpp::document::Document;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -2217,7 +2218,7 @@ mod creation_tests {
     }
 
     #[tokio::test]
-    async fn test_document_creation_on_contested_unique_index_should_fail_if_reusing_entropy() {
+    async fn should_reject_reused_entropy_for_contested_and_non_contested_creates() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -2225,6 +2226,8 @@ mod creation_tests {
             .set_genesis_state();
 
         let mut rng = StdRng::seed_from_u64(433);
+        let non_contested_label = "quantumcomputingnow1";
+        let non_contested_normalized_label = "quantumc0mput1ngn0w1";
 
         let platform_state = platform.state.load();
 
@@ -2285,11 +2288,24 @@ mod creation_tests {
 
         let new_entropy = Bytes32::random_with_rng(&mut rng);
 
+        let another_entropy = Bytes32::random_with_rng(&mut rng);
+
         let mut preorder_document_3_on_identity_1 = preorder
             .random_document_with_identifier_and_entropy(
                 &mut rng,
                 identity_1.id(),
                 new_entropy, //change entropy here
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        let mut preorder_document_4_on_identity_1 = preorder
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity_1.id(),
+                another_entropy,
                 DocumentFieldFillType::FillIfNotRequired,
                 DocumentFieldFillSize::AnyDocumentFillSize,
                 platform_version,
@@ -2329,6 +2345,17 @@ mod creation_tests {
             )
             .expect("expected a random document");
 
+        let mut document_4_on_identity_1 = domain
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity_1.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
         document_1.set("parentDomainName", "dash".into());
         document_1.set("normalizedParentDomainName", "dash".into());
         document_1.set("label", "quantum".into());
@@ -2353,9 +2380,30 @@ mod creation_tests {
         );
         document_3_on_identity_1.set("subdomainRules.allowSubdomains", false.into());
 
+        document_4_on_identity_1.set("parentDomainName", "dash".into());
+        document_4_on_identity_1.set("normalizedParentDomainName", "dash".into());
+        document_4_on_identity_1.set("label", non_contested_label.into());
+        document_4_on_identity_1.set("normalizedLabel", non_contested_normalized_label.into());
+        document_4_on_identity_1.set(
+            "records.identity",
+            document_4_on_identity_1.owner_id().into(),
+        );
+        document_4_on_identity_1.set("subdomainRules.allowSubdomains", false.into());
+
+        assert_eq!(document_1.id(), document_4_on_identity_1.id());
+        assert!(domain
+            .prefunded_voting_balance_for_document(&document_1, platform_version)
+            .expect("expected to classify the contested document")
+            .is_some());
+        assert!(domain
+            .prefunded_voting_balance_for_document(&document_4_on_identity_1, platform_version)
+            .expect("expected to classify the non-contested document")
+            .is_none());
+
         let salt_1: [u8; 32] = rng.gen();
         let salt_2: [u8; 32] = rng.gen();
         let salt_3: [u8; 32] = rng.gen();
+        let salt_4: [u8; 32] = rng.gen();
 
         let mut salted_domain_buffer_1: Vec<u8> = vec![];
         salted_domain_buffer_1.extend(salt_1);
@@ -2375,13 +2423,21 @@ mod creation_tests {
 
         let salted_domain_hash_3 = hash_double(salted_domain_buffer_3);
 
+        let mut salted_domain_buffer_4: Vec<u8> = vec![];
+        salted_domain_buffer_4.extend(salt_4);
+        salted_domain_buffer_4.extend(format!("{non_contested_normalized_label}.dash").as_bytes());
+
+        let salted_domain_hash_4 = hash_double(salted_domain_buffer_4);
+
         preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
         preorder_document_2.set("saltedDomainHash", salted_domain_hash_2.into());
         preorder_document_3_on_identity_1.set("saltedDomainHash", salted_domain_hash_3.into());
+        preorder_document_4_on_identity_1.set("saltedDomainHash", salted_domain_hash_4.into());
 
         document_1.set("preorderSalt", salt_1.into());
         document_2.set("preorderSalt", salt_2.into());
         document_3_on_identity_1.set("preorderSalt", salt_3.into());
+        document_4_on_identity_1.set("preorderSalt", salt_4.into());
 
         let documents_batch_create_preorder_transition_1 =
             BatchTransition::new_document_creation_transition_from_document(
@@ -2446,13 +2502,34 @@ mod creation_tests {
                 .serialize_to_bytes()
                 .expect("expected documents batch serialized state transition");
 
+        let documents_batch_create_preorder_transition_4 =
+            BatchTransition::new_document_creation_transition_from_document(
+                preorder_document_4_on_identity_1,
+                preorder,
+                another_entropy.0,
+                &key_1,
+                4,
+                0,
+                None,
+                &signer_1,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_preorder_transition_4 =
+            documents_batch_create_preorder_transition_4
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
         let documents_batch_create_transition_1 =
             BatchTransition::new_document_creation_transition_from_document(
                 document_1,
                 domain,
                 entropy.0,
                 &key_1,
-                4,
+                5,
                 0,
                 None,
                 &signer_1,
@@ -2492,7 +2569,7 @@ mod creation_tests {
                 domain,
                 entropy.0,
                 &key_1,
-                5,
+                6,
                 0,
                 None,
                 &signer_1,
@@ -2506,6 +2583,26 @@ mod creation_tests {
             .serialize_to_bytes()
             .expect("expected documents batch serialized state transition");
 
+        let documents_batch_create_transition_4 =
+            BatchTransition::new_document_creation_transition_from_document(
+                document_4_on_identity_1,
+                domain,
+                entropy.0,
+                &key_1,
+                7,
+                0,
+                None,
+                &signer_1,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition_4 = documents_batch_create_transition_4
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
         let transaction = platform.drive.grove.start_transaction();
 
         let processing_result = platform
@@ -2515,6 +2612,7 @@ mod creation_tests {
                     documents_batch_create_serialized_preorder_transition_1.clone(),
                     documents_batch_create_serialized_preorder_transition_2.clone(),
                     documents_batch_create_serialized_preorder_transition_3.clone(),
+                    documents_batch_create_serialized_preorder_transition_4.clone(),
                 ],
                 &platform_state,
                 &BlockInfo::default(),
@@ -2532,7 +2630,7 @@ mod creation_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.valid_count(), 3);
+        assert_eq!(processing_result.valid_count(), 4);
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -2582,6 +2680,31 @@ mod creation_tests {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit transaction");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::DocumentContestDocumentWithSameIdAlreadyPresentError { .. }
+                ),
+                ..
+            }]
+        );
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition_4],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
