@@ -127,6 +127,95 @@ public struct PathElement: Sendable {
 
 // MARK: - Platform Query Extensions for SDK
 @MainActor
+/// Which revisions of a keep-history document to read. Exactly one
+/// selector applies per `documentGetHistory` call.
+public enum DocumentHistorySelector: Sendable {
+    /// Revisions written at or after the time, oldest first. Zero reads
+    /// the first page of the whole history.
+    case startAtTime(ms: UInt64)
+    /// Revisions after the complete cursor of the last entry received.
+    case startAfter(timeMs: UInt64, revision: UInt64)
+    /// Revisions from the history sequence number onwards.
+    case startAtRevision(UInt64)
+    /// Exactly the revision at the history sequence number; the limit
+    /// must be one.
+    case revision(UInt64)
+
+    var ffiValue: DashSDKDocumentHistorySelector {
+        // DashSDKDocumentHistorySelector is a C enum; Swift doesn't always
+        // import named cases, so the raw values are spelled out.
+        switch self {
+        case .startAtTime: return DashSDKDocumentHistorySelector(rawValue: 0)
+        case .startAfter: return DashSDKDocumentHistorySelector(rawValue: 1)
+        case .startAtRevision: return DashSDKDocumentHistorySelector(rawValue: 2)
+        case .revision: return DashSDKDocumentHistorySelector(rawValue: 3)
+        }
+    }
+
+    var timeMs: UInt64 {
+        switch self {
+        case .startAtTime(let ms): return ms
+        case .startAfter(let timeMs, _): return timeMs
+        case .startAtRevision, .revision: return 0
+        }
+    }
+
+    var revisionValue: UInt64 {
+        switch self {
+        case .startAtTime: return 0
+        case .startAfter(_, let revision): return revision
+        case .startAtRevision(let revision), .revision(let revision): return revision
+        }
+    }
+}
+
+/// Where a keep-history document stands in its lifecycle, as history v1
+/// authenticates it.
+public enum DocumentLifecycleState: String, Sendable {
+    /// Visible to ordinary reads.
+    case active = "ACTIVE"
+    /// Deleted with its revisions retained.
+    case deleted = "DELETED"
+    /// An authorized erasure has begun and revisions are being removed.
+    case erasing = "ERASING"
+    /// Nothing is left.
+    case absent = "ABSENT"
+}
+
+/// The `lifecycle` block of a `documentGetHistory` result.
+public struct DocumentHistoryLifecycle: Sendable {
+    public let state: DocumentLifecycleState
+    /// Exact count of revisions still retained (zero when absent).
+    public let remainingRevisions: UInt64
+    /// Zero unless the document has been deleted.
+    public let deletedAtMs: UInt64
+    /// Zero unless an authorized erasure has begun.
+    public let erasingStartedAtMs: UInt64
+    /// Timestamp of the newest revision retained when the erasure began.
+    public let erasingFromTimeMs: UInt64
+    /// History sequence number of that revision.
+    public let erasingFromRevision: UInt64
+
+    /// Parses the `lifecycle` dictionary of a `documentGetHistory`
+    /// result; nil when the block or its state is missing or unknown.
+    public init?(json: [String: Any]) {
+        guard let stateRaw = json["state"] as? String,
+              let state = DocumentLifecycleState(rawValue: stateRaw) else {
+            return nil
+        }
+        func value(_ key: String) -> UInt64 {
+            if let number = json[key] as? NSNumber { return number.uint64Value }
+            return 0
+        }
+        self.state = state
+        self.remainingRevisions = value("remaining_revisions")
+        self.deletedAtMs = value("deleted_at_ms")
+        self.erasingStartedAtMs = value("erasing_started_at_ms")
+        self.erasingFromTimeMs = value("erasing_from_time_ms")
+        self.erasingFromRevision = value("erasing_from_revision")
+    }
+}
+
 extension SDK {
     // Helper to pass non-Sendable pointers across @Sendable closures when safe
     private final class SendablePtr<T>: @unchecked Sendable {
@@ -470,6 +559,39 @@ extension SDK {
     }
 
     // MARK: - Document Queries
+
+    /// Get a page of a keep-history document's revision history with its
+    /// lifecycle state.
+    ///
+    /// Returns the FFI's JSON object: `entries` (each with `time_ms`,
+    /// `revision` and the canonical `document`) and `lifecycle` (see
+    /// `DocumentHistoryLifecycle`). Pass the last entry's `time_ms` and
+    /// `revision` back as `.startAfter` for the next page. At most ten
+    /// entries per page; `limit` nil takes the default.
+    public func documentGetHistory(
+        dataContractId: String,
+        documentType: String,
+        documentId: String,
+        selector: DocumentHistorySelector = .startAtTime(ms: 0),
+        limit: UInt32? = nil
+    ) async throws -> [String: Any] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+
+        let result = dash_sdk_document_fetch_history(
+            handle,
+            dataContractId,
+            documentType,
+            documentId,
+            selector.ffiValue,
+            selector.timeMs,
+            selector.revisionValue,
+            limit ?? 0
+        )
+
+        return try processJSONResult(result)
+    }
 
     /// List documents
     public func documentList(

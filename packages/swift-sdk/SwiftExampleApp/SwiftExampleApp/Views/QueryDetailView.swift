@@ -361,6 +361,35 @@ struct QueryDetailView: View {
             let documentId = queryInputs["documentId"] ?? ""
             return try await sdk.documentGet(dataContractId: contractId, documentType: documentType, documentId: documentId)
 
+        case "getDocumentHistory":
+            let contractId = queryInputs["dataContractId"] ?? ""
+            let documentType = queryInputs["documentType"] ?? ""
+            let documentId = queryInputs["documentId"] ?? ""
+            let limitStr = queryInputs["limit"] ?? ""
+            let limit = limitStr.isEmpty ? nil : UInt32(limitStr)
+            let startAtMs = UInt64(queryInputs["startAtMs"] ?? "") ?? 0
+            let startAfterTimeMs = UInt64(queryInputs["startAfterTimeMs"] ?? "")
+            let startAfterRevision = UInt64(queryInputs["startAfterRevision"] ?? "")
+            let startAtRevision = UInt64(queryInputs["startAtRevision"] ?? "")
+            let revision = UInt64(queryInputs["revision"] ?? "")
+            let selector: DocumentHistorySelector
+            if let revision {
+                selector = .revision(revision)
+            } else if let startAtRevision {
+                selector = .startAtRevision(startAtRevision)
+            } else if let timeMs = startAfterTimeMs, let rev = startAfterRevision {
+                selector = .startAfter(timeMs: timeMs, revision: rev)
+            } else {
+                selector = .startAtTime(ms: startAtMs)
+            }
+            return try await sdk.documentGetHistory(
+                dataContractId: contractId,
+                documentType: documentType,
+                documentId: documentId,
+                selector: selector,
+                limit: limit
+            )
+
         // DPNS Queries
         case "getDpnsUsername":
             let identityId = queryInputs["identityId"] ?? ""
@@ -885,6 +914,19 @@ struct QueryDetailView: View {
                 QueryInput(name: "dataContractId", label: "Data Contract ID", required: true),
                 QueryInput(name: "documentType", label: "Document Type", required: true),
                 QueryInput(name: "documentId", label: "Document ID", required: true)
+            ]
+
+        case "getDocumentHistory":
+            return [
+                QueryInput(name: "dataContractId", label: "Data Contract ID", required: true),
+                QueryInput(name: "documentType", label: "Document Type", required: true, placeholder: "A documentsKeepHistory type"),
+                QueryInput(name: "documentId", label: "Document ID", required: true),
+                QueryInput(name: "limit", label: "Limit (max 10)", required: false),
+                QueryInput(name: "startAtMs", label: "Start At (milliseconds)", required: false, placeholder: "First page: inclusive lower time bound"),
+                QueryInput(name: "startAfterTimeMs", label: "Start After Time (milliseconds)", required: false, placeholder: "Next page: last entry's time_ms"),
+                QueryInput(name: "startAfterRevision", label: "Start After Revision", required: false, placeholder: "Next page: last entry's revision"),
+                QueryInput(name: "startAtRevision", label: "Start At Revision", required: false, placeholder: "Revision range instead of time"),
+                QueryInput(name: "revision", label: "Revision", required: false, placeholder: "One revision (limit 1)")
             ]
 
         // DPNS Queries

@@ -543,6 +543,9 @@ struct TransitionDetailView: View {
     case "documentDelete":
       return try await executeDocumentDelete(sdk: sdk)
 
+    case "documentErase":
+      return try await executeDocumentErase(sdk: sdk)
+
     case "documentTransfer":
       return try await executeDocumentTransfer(sdk: sdk)
 
@@ -1182,6 +1185,50 @@ struct TransitionDetailView: View {
     _ = signer  // keepalive across the await — see KeychainSigner lifetime contract
 
     return ["message": "Document deleted successfully"]
+  }
+
+  private func executeDocumentErase(sdk: SDK) async throws -> Any {
+    guard !selectedIdentityId.isEmpty,
+          let signingIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
+      throw SDKError.invalidParameter("No identity selected")
+    }
+
+    guard let contractId = formInputs["contractId"], !contractId.isEmpty else {
+      throw SDKError.invalidParameter("Data contract is required")
+    }
+
+    guard let documentType = formInputs["documentType"], !documentType.isEmpty else {
+      throw SDKError.invalidParameter("Document type is required")
+    }
+
+    guard let documentId = formInputs["documentId"], !documentId.isEmpty else {
+      throw SDKError.invalidParameter("Document ID is required")
+    }
+
+    // The selected identity signs and pays. It must own the document for
+    // the first erase; any identity may submit the ones after it.
+    let dppIdentity = DPPIdentity(
+      id: signingIdentity.identityId,
+      publicKeys: Dictionary(uniqueKeysWithValues: signingIdentity.identityPublicKeys.map { ($0.id, $0) }),
+      balance: UInt64(bitPattern: signingIdentity.balance),
+      revision: 0
+    )
+
+    // External-signer pattern (see executeDataContractCreate for the
+    // architectural rationale). Rust calls back through the
+    // `KeychainSigner` trampoline when it needs a signature.
+    let signer = KeychainSigner(modelContainer: modelContext.container)
+
+    try await sdk.documentErase(
+      contractId: contractId,
+      documentType: documentType,
+      documentId: documentId,
+      ownerIdentity: dppIdentity,
+      signer: signer.handle
+    )
+    _ = signer  // keepalive across the await — see KeychainSigner lifetime contract
+
+    return ["message": "Erase accepted; repeat while the document's history reports remaining revisions"]
   }
 
   private func executeDocumentTransfer(sdk: SDK) async throws -> Any {

@@ -872,6 +872,97 @@ extension SDK {
         }
     }
 
+    /// Erase a chunk of the retained revisions of an already deleted
+    /// keep-history document. The first erase must be signed by the
+    /// document's owner; later ones may be signed by any identity, so
+    /// `ownerIdentity` is the signing identity. One call removes a bounded
+    /// chunk; read the document's history to see how many revisions remain.
+    public func documentErase(
+        contractId: String,
+        documentType: String,
+        documentId: String,
+        ownerIdentity: DPPIdentity,
+        signer: OpaquePointer
+    ) async throws {
+        let signerBox = SendableOpaque(signer)
+        let startTime = Date()
+        print("🧹 [DOCUMENT ERASE] Starting at \(startTime)")
+        print("🧹 [DOCUMENT ERASE] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
+
+        // Select the signing key on the MainActor (KeyManager is @MainActor)
+        // before dispatching the FFI work off-actor.
+        guard let signingKey = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT ERASE", signer: signer) else {
+            throw SDKError.protocolError("No suitable key found for signing")
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global().async { [weak self] in
+                guard let self = self, let handle = self.handle else {
+                    continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
+                    return
+                }
+
+                do {
+                    // Prepare C strings
+                    guard let documentIdCString = documentId.cString(using: .utf8),
+                          let ownerIdCString = ownerIdentity.id.toBase58String().cString(using: .utf8),
+                          let contractIdCString = contractId.cString(using: .utf8),
+                          let documentTypeCString = documentType.cString(using: .utf8) else {
+                        throw SDKError.serializationError("Failed to encode strings to C strings")
+                    }
+
+                    // Key selection happened on the MainActor before dispatch.
+                    let keyToUse = signingKey
+
+                    // Create public key handle
+                    guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT ERASE") else {
+                        throw SDKError.protocolError("Failed to create public key handle")
+                    }
+
+                    defer {
+                        dash_sdk_identity_public_key_destroy(keyHandle)
+                    }
+
+                    // Call the FFI function with network timing
+                    let networkStartTime = Date()
+                    print("🧹 [DOCUMENT ERASE] Calling dash_sdk_document_erase_and_wait...")
+                    print("🧹 [DOCUMENT ERASE] Document ID: \(documentId)")
+                    print("🧹 [DOCUMENT ERASE] Signer ID: \(ownerIdentity.id.toBase58String())")
+
+                    let result = dash_sdk_document_erase_and_wait(
+                        handle,
+                        documentIdCString,
+                        ownerIdCString,
+                        contractIdCString,
+                        documentTypeCString,
+                        keyHandle,
+                        signerBox.p,
+                        nil,  // put_settings
+                        nil   // state_transition_creation_options
+                    )
+
+                    let networkTime = Date().timeIntervalSince(networkStartTime)
+                    print("🧹 [DOCUMENT ERASE] Network call completed in \(networkTime) seconds")
+
+                    if let error = result.error {
+                        let errorMessage = String(cString: error.pointee.message)
+                        dash_sdk_error_free(error)
+                        throw SDKError.protocolError(errorMessage)
+                    }
+
+                    let totalTime = Date().timeIntervalSince(startTime)
+                    print("✅ [DOCUMENT ERASE] Success! Total time: \(totalTime) seconds")
+
+                    continuation.resume()
+                } catch {
+                    let totalTime = Date().timeIntervalSince(startTime)
+                    print("❌ [DOCUMENT ERASE] Failed after \(totalTime) seconds: \(error)")
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     /// Transfer a document to another identity
     public func documentTransfer(
         contractId: String,
