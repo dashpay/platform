@@ -7023,7 +7023,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // owns them.
             let (unconfirmedBuf, unconfirmedCount) =
                 buildUnconfirmedOutgoingTxRecordBuffer(
-                    walletId: w.walletId,
+                    rows: unspentBuckets[w.walletId] ?? [],
                     allocation: allocation,
                     excludingTxids: unresolvedAssetLockFundingTxids(walletId: w.walletId)
                 )
@@ -7555,6 +7555,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Asset-lock funding transactions are excluded: they ride
     /// `unresolved_asset_lock_tx_records` and already have an owner in
     /// `resume_asset_lock`. One owner per transaction.
+    ///
+    /// Takes the bucketed `isSpent == false` rows the caller already
+    /// fetched rather than querying by `walletId` again: that bucketing
+    /// routes a legacy row whose `walletId` was never backfilled through
+    /// `account.wallet.walletId`, and it prefetches `spendingTransaction`,
+    /// which this pass reads for every row.
     /// Wire-order txids of the funding transactions already carried by
     /// `unresolved_asset_lock_tx_records`. Read from the same source that
     /// buffer selects from, rather than re-deriving a txid from bytes.
@@ -7574,16 +7580,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     }
 
     private func buildUnconfirmedOutgoingTxRecordBuffer(
-        walletId: Data,
+        rows txos: [PersistentTxo],
         allocation: LoadAllocation,
         excludingTxids excluded: Set<Data>
     ) -> (UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>?, Int) {
-        let descriptor = FetchDescriptor<PersistentTxo>(
-            predicate: #Predicate { $0.walletId == walletId && $0.isSpent == false }
-        )
-        guard let txos = try? backgroundContext.fetch(descriptor), !txos.isEmpty else {
-            return (nil, 0)
-        }
+        guard !txos.isEmpty else { return (nil, 0) }
 
         // Distinct spenders, still unconfirmed, still ours to replay.
         var candidates: [Data: PersistentTransaction] = [:]
