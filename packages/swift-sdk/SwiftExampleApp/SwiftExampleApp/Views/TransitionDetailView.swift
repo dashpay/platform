@@ -1219,6 +1219,13 @@ struct TransitionDetailView: View {
     // `KeychainSigner` trampoline when it needs a signature.
     let signer = KeychainSigner(modelContainer: modelContext.container)
 
+    // The erase result only observes that the document is absent from
+    // ordinary reads, which it already was; what the erase achieved is read
+    // from the lifecycle before and after.
+    let before = try? await sdk.documentGetLifecycle(
+      dataContractId: contractId, documentType: documentType, documentId: documentId
+    )
+
     try await sdk.documentErase(
       contractId: contractId,
       documentType: documentType,
@@ -1228,7 +1235,16 @@ struct TransitionDetailView: View {
     )
     _ = signer  // keepalive across the await — see KeychainSigner lifetime contract
 
-    return ["message": "Erase accepted; repeat while the document's history reports remaining revisions"]
+    let after = try await sdk.documentGetLifecycle(
+      dataContractId: contractId, documentType: documentType, documentId: documentId
+    )
+
+    return [
+      "message": "Erase submitted; document absence observed under proof",
+      "lifecycle": after.state.rawValue,
+      "remainingRevisions": after.remainingRevisions,
+      "progress": DocumentHistoryLifecycle.describeEraseProgress(before: before, after: after)
+    ]
   }
 
   private func executeDocumentTransfer(sdk: SDK) async throws -> Any {

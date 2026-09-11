@@ -875,8 +875,12 @@ extension SDK {
     /// Erase a chunk of the retained revisions of an already deleted
     /// keep-history document. The first erase must be signed by the
     /// document's owner; later ones may be signed by any identity, so
-    /// `ownerIdentity` is the signing identity. One call removes a bounded
-    /// chunk; read the document's history to see how many revisions remain.
+    /// `ownerIdentity` is the signing identity. Returns once the transition
+    /// is broadcast and Platform has proved the document absent from
+    /// ordinary reads, which it already was, so a return observes the
+    /// affected state rather than proving this erase removed a revision;
+    /// `documentGetLifecycle` reports the state and how many revisions
+    /// remain.
     public func documentErase(
         contractId: String,
         documentType: String,
@@ -951,7 +955,7 @@ extension SDK {
                     }
 
                     let totalTime = Date().timeIntervalSince(startTime)
-                    print("✅ [DOCUMENT ERASE] Success! Total time: \(totalTime) seconds")
+                    print("✅ [DOCUMENT ERASE] Broadcast done, absence observed. Total time: \(totalTime) seconds")
 
                     continuation.resume()
                 } catch {
