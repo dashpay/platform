@@ -124,10 +124,10 @@ jobs:
           set -euo pipefail
 
           missing=()
-          for tool in cmake gh jq zip; do
+          for tool in clang cmake gh jq llvm-config zip; do
             command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
           done
-          for pkg in build-essential libgmp-dev libssl-dev pkg-config; do
+          for pkg in build-essential clang libgmp-dev libsnappy-dev libssl-dev llvm pkg-config; do
             dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
           done
           if [ ${#missing[@]} -gt 0 ]; then
