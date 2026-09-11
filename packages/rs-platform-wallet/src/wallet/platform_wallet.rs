@@ -1967,6 +1967,15 @@ impl<'a> WalletStateReadGuard<'a> {
             .get_wallet(&self.wallet_id)
             .expect("wallet exists in guard")
     }
+
+    /// Fallible form of [`wallet`](Self::wallet): `None` when the wallet
+    /// was removed from the manager after this guard's `PlatformWallet`
+    /// handle was resolved. Paths reachable from the FFI while the host
+    /// concurrently deletes the wallet must use this — the panicking
+    /// accessor would abort at the non-unwinding C boundary.
+    pub fn try_wallet(&self) -> Option<&Wallet> {
+        self.guard.get_wallet(&self.wallet_id)
+    }
 }
 
 impl Deref for WalletStateReadGuard<'_> {

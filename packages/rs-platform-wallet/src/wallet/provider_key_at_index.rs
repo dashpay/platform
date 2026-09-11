@@ -433,6 +433,15 @@ impl PlatformWallet {
         // already ran on the FFI side and produced `resolved_seed` before
         // we were called.
         let state = self.state_blocking();
+        // Resolved fallibly, once: the host can remove the wallet while an
+        // FFI caller still holds this `PlatformWallet` handle (the
+        // candidates extern awaits the masternode list between resolving
+        // the handle and deriving), and that race must surface as an
+        // error — the guard's panicking accessor would abort at the
+        // non-unwinding C boundary.
+        let in_process_wallet = state
+            .try_wallet()
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
 
         // Raw 64-byte BIP39 seed — the exact input the account's curve
         // master consumes (#879). Only obtained when a seed-bearing path
@@ -451,7 +460,7 @@ impl PlatformWallet {
                     // seed. `None` for a watch-only / external-signable
                     // wallet (no resident seed), which the caller must
                     // instead service with a `resolved_seed`.
-                    let raw = state.wallet().wallet_seed_bytes().ok_or_else(|| {
+                    let raw = in_process_wallet.wallet_seed_bytes().ok_or_else(|| {
                         PlatformWalletError::KeyDerivation(
                             "wallet has no resident seed (external-signable / watch-only); a \
                              resolved seed is required to derive this provider key"
@@ -468,8 +477,7 @@ impl PlatformWallet {
 
         match kind {
             ProviderKeyKind::Operator => {
-                let account = state
-                    .wallet()
+                let account = in_process_wallet
                     .accounts
                     .bls_account_of_type(account_type)
                     .ok_or_else(|| {
@@ -523,8 +531,7 @@ impl PlatformWallet {
                 // Existence check — a missing account is a caller error,
                 // not a derivation failure (the seed-based entry point below
                 // needs no account state).
-                if state
-                    .wallet()
+                if in_process_wallet
                     .accounts
                     .eddsa_account_of_type(account_type)
                     .is_none()
@@ -576,8 +583,7 @@ impl PlatformWallet {
                 })
             }
             ProviderKeyKind::Owner | ProviderKeyKind::Voting => {
-                let account = state
-                    .wallet()
+                let account = in_process_wallet
                     .accounts
                     .account_of_type(account_type)
                     .ok_or_else(|| {
