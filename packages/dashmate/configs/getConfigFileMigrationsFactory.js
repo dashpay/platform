@@ -1709,6 +1709,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             // development build is stamped above that key and skips it.
             delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
 
+            // Move the Tenderdash image onto the tag the base config now pins
+            // (1.8.0-dev.2), so operators pick it up without waiting for a
+            // Dashmate release. Mirrors the re-pin the 4.1.1 migration did for
+            // the 1.6 -> 1.7 move.
+            if (options.platform?.drive?.tenderdash?.docker) {
+              options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            }
+
             const providerConfigs = options.platform?.gateway?.ssl?.providerConfigs;
 
             if (providerConfigs?.letsencrypt
