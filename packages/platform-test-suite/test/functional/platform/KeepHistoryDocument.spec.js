@@ -73,7 +73,7 @@ describe('Platform', () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
-      ({ evo, sdk: evoSdk } = await getEvoSdkForNetwork(client.getNetwork()));
+      ({ evo, sdk: evoSdk } = await getEvoSdkForNetwork(process.env.NETWORK));
     });
 
     after(async () => {
