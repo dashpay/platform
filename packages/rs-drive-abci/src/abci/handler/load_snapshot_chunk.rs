@@ -34,6 +34,9 @@ fn validate_chunk_id_batch(chunk_id: &[u8]) -> Result<(), AbciError> {
                 "load_snapshot_chunk contains duplicate global chunk ids".to_string(),
             ));
         }
+        if global_id.len() == 32 {
+            continue;
+        }
         if global_id.len() < 35 {
             return Err(AbciError::StateSyncBadRequest(
                 "load_snapshot_chunk malformed global chunk id".to_string(),
@@ -265,6 +268,21 @@ mod tests {
         )
         .expect("should load root chunk");
         assert!(!response.chunk.is_empty());
+
+        // The target also packs 32-byte global IDs into single-ID requests.
+        // They must generate the same chunk as the raw root ID.
+        let packed_response = load_snapshot_chunk(
+            &platform,
+            &snapshot_manager,
+            proto::RequestLoadSnapshotChunk {
+                height: 10,
+                version: 1,
+                chunk_id: pack_nested_chunk_ids(&[root_hash.to_vec()])
+                    .expect("should pack root chunk id"),
+            },
+        )
+        .expect("should load packed root chunk");
+        assert_eq!(packed_response.chunk, response.chunk);
 
         // The served checkpoint must now be pinned against pruning
         assert!(snapshot_manager.pinned_checkpoint(10).is_some());
