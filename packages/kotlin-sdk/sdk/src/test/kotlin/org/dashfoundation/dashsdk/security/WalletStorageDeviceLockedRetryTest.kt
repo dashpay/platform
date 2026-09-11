@@ -367,11 +367,16 @@ class WalletStorageDeviceLockedRetryTest {
             runBlocking { storage.retrieveMnemonicUtf8(walletId) }
         }
         assertTrue(storage.isMasterKeyLockBindingDefectObserved())
-        assertEquals(0, fake.unboundEncryptCalls)
+        // The denied read provisions the device-local witness (one unbound
+        // encrypt of a probe byte) but CANNOT re-wrap the blob — it never got
+        // the plaintext — so the entry is still under the lock-bound alias.
+        assertEquals(1, fake.unboundEncryptCalls)
+        assertEquals(0, fake.unboundDecryptCalls)
 
         // Session 2 — the gate lets a read through (e.g. after a credential
         // unlock). The record armed the re-wrap, which now fires.
         fake.failMasterDecrypts = 0
+        fake.unboundEncryptCalls = 0
         assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
         assertEquals(1, fake.unboundEncryptCalls)
 
@@ -381,6 +386,32 @@ class WalletStorageDeviceLockedRetryTest {
         assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
         assertEquals(masterDecryptsBefore, fake.masterDecryptCalls)
         assertTrue(fake.unboundDecryptCalls >= 1)
+    }
+
+    @Test
+    fun shouldIgnoreADefectFlagWithoutItsDeviceLocalKeystoreWitness() = runBlocking {
+        // Earn the defect record on "this" device.
+        fake.failMasterEncrypts = Int.MAX_VALUE
+        storage.storeMnemonic(walletId, mnemonic)
+        fake.failMasterEncrypts = 0
+        assertTrue(storage.isMasterKeyLockBindingDefectObserved())
+
+        // Now model a restore onto a DIFFERENT handset: Android can carry the
+        // DataStore preference, but never the Keystore key. A healthy phone
+        // must not inherit the lock-gate downgrade from a portable boolean.
+        fake.unboundKeyProvisioned = false
+
+        assertFalse(
+            "a flag without its device-local witness must not be believed",
+            storage.isMasterKeyLockBindingDefectObserved(),
+        )
+
+        // ...and the write path must go back to the lock-bound alias.
+        fake.unboundEncryptCalls = 0
+        fake.masterEncryptCalls = 0
+        storage.storeMnemonic(siblingWalletId, mnemonic)
+        assertEquals(1, fake.masterEncryptCalls)
+        assertEquals(0, fake.unboundEncryptCalls)
     }
 
     // ── re-wrap must never outrun a concurrent write ─────────────────────
@@ -567,6 +598,15 @@ private class FalseLockedFakeKeystoreManager : KeystoreManager() {
     /** Whether the fake master key carries the unlocked-device requirement. */
     var masterKeyLockBound = true
 
+    /**
+     * Whether MASTER_ALIAS_UNBOUND exists in this fake's Keystore — the
+     * device-local witness. Set by any unbound-alias encrypt (which
+     * provisions the key for real), and clearable to model a DataStore
+     * restored onto a DIFFERENT device, where the preference survives but
+     * the Keystore key cannot.
+     */
+    var unboundKeyProvisioned = false
+
     /** The exact buffer reference the last master encrypt received. */
     var lastMasterPlaintextRef: ByteArray? = null
 
@@ -591,6 +631,8 @@ private class FalseLockedFakeKeystoreManager : KeystoreManager() {
 
     override fun sampleDeviceLockState(): DeviceLockState = lockState
 
+    override fun hasUnboundMasterKey(): Boolean = unboundKeyProvisioned
+
     override fun encrypt(plaintext: ByteArray, alias: String): EncryptedBlob = when (alias) {
         MASTER_ALIAS -> {
             masterEncryptCalls++
@@ -612,6 +654,7 @@ private class FalseLockedFakeKeystoreManager : KeystoreManager() {
             unboundEncryptCalls++
             lastUnboundPlaintextRef = plaintext
             onUnboundEncrypt?.invoke()
+            unboundKeyProvisioned = true
             val scriptedFailure = failUnboundEncrypts > 0
             if (scriptedFailure) failUnboundEncrypts--
             check(!scriptedFailure) { "scripted unbound-alias encrypt failure" }

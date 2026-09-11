@@ -372,6 +372,19 @@ class WalletStorage(
      *    the device ([recordLockBindingDefectFromDeniedRead]) — the only
      *    route on a wallet whose blob predates the degradation.
      *
+     * Two-part evidence, and BOTH halves are required. The durable flag says
+     * the defect was seen; [KeystoreManager.hasUnboundMasterKey] says it was
+     * seen *on this device*. The flag is an ordinary DataStore boolean, so a
+     * host app that permits Android backup or device-to-device transfer could
+     * carry it to a different handset — where, trusted alone, it would
+     * authorize the lock-gate downgrade on a healthy phone that never
+     * demonstrated anything. Keystore keys are non-exportable and never
+     * restored, so requiring the unbound alias to exist locally pins the
+     * decision to the device that earned it. A flag arriving without its key
+     * is simply not believed; it is deliberately NOT cleared here, because
+     * this is a read and writing from a read path is what the re-wrap races
+     * taught us to avoid — an inert flag costs nothing.
+     *
      * Never cleared by any targeted mutator — the defect is a property of
      * the device's OS build, not of any wallet, and a healed device
      * staying healed costs nothing on a healthy one, which never sets it.
@@ -382,7 +395,8 @@ class WalletStorage(
      * [KeystoreManager.effectiveKeySecurityPolicy] discipline.
      */
     suspend fun isMasterKeyLockBindingDefectObserved(): Boolean =
-        store.data.first()[MASTER_LOCK_DEFECT_KEY] == true
+        store.data.first()[MASTER_LOCK_DEFECT_KEY] == true &&
+            keystore.hasUnboundMasterKey()
 
     /**
      * Write [plaintext]'s blob under the never-lock-bound
@@ -526,6 +540,14 @@ class WalletStorage(
             denial,
         )
         try {
+            // Provision the device-local witness in the same breath as the
+            // flag. [isMasterKeyLockBindingDefectObserved] requires BOTH, so a
+            // flag without this Keystore key is inert — and unlike the
+            // write-heal path this one holds no plaintext to encrypt, so the
+            // key has to be created explicitly (the
+            // ensureMasterKeyNotLockBlocked probe-encrypt idiom). If it cannot
+            // be created, nothing is recorded and the next read retries.
+            keystore.encrypt(ByteArray(1), KeystoreManager.MASTER_ALIAS_UNBOUND)
             store.edit { it[MASTER_LOCK_DEFECT_KEY] = true }
         } catch (e: CancellationException) {
             throw e
@@ -1227,6 +1249,15 @@ class WalletStorage(
             // coroutine was cancelled during the encrypt / store.edit suspend
             // points, rethrow so the cancellation propagates. Only genuine
             // rewrite failures below stay best-effort (retry on the next read).
+            //
+            // Scrub first. Every caller hands us the plaintext it is about to
+            // RETURN, and a cancellation here unwinds past that return, so the
+            // owner never gets the chance to zero it — stranding a decrypted
+            // identity key on the heap. The mnemonic re-wrap takes the same
+            // precaution; doing it inside this helper covers all three callers
+            // (legacy migration, recovery ladder, and the defective-gate
+            // re-wrap) at once.
+            plain.fill(0)
             throw cancellation
         } catch (_: Throwable) {
             // Best-effort: a rewrite failure must not lose the value the caller
