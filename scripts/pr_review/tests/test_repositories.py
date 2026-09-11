@@ -48,7 +48,7 @@ class RepositoryConfigurationTests(unittest.TestCase):
             self.assertEqual(area['paths'], [name + '/'])
             self.assertEqual(area['owners'], [])
             self.assertTrue(area['unresolved'])
-            self.assertEqual(area['reviewers'], ['ZocoLini', 'dustinface'] if name == 'dash-spv' else ['QuantumExplorer', 'ZocoLini', 'dustinface'])
+            self.assertEqual(area['reviewers'], ['ZocoLini', 'xdustinface'] if name == 'dash-spv' else ['QuantumExplorer', 'ZocoLini', 'xdustinface'])
             _, pr = fixture()
             pr.update(base='dev', author='QuantumExplorer', files=[{'filename':name + '/src/lib.rs'}])
             pr['permissions'].update(QuantumExplorer='admin', shumkov='admin', ZocoLini='write')
