@@ -2,6 +2,7 @@ package org.dashfoundation.dashsdk.security
 
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -382,6 +383,77 @@ class WalletStorageDeviceLockedRetryTest {
         assertTrue(fake.unboundDecryptCalls >= 1)
     }
 
+    // ── re-wrap must never outrun a concurrent write ─────────────────────
+
+    /** Put the defect on record without disturbing [walletId]'s own blob. */
+    private suspend fun recordDefectViaSiblingWrite() {
+        fake.failMasterEncrypts = Int.MAX_VALUE
+        storage.storeMnemonic(siblingWalletId, mnemonic)
+        fake.failMasterEncrypts = 0
+        assertTrue(storage.isMasterKeyLockBindingDefectObserved())
+    }
+
+    @Test
+    fun shouldNotResurrectAMnemonicDeletedDuringTheRewrap() = runBlocking {
+        storage.storeMnemonic(walletId, mnemonic)
+        recordDefectViaSiblingWrite()
+
+        // retrieveMnemonicUtf8 holds a snapshot taken before the delete.
+        // Without a compare-and-set the re-wrap writes that stale ciphertext
+        // back and resurrects a seed the user just destroyed.
+        fake.onUnboundEncrypt = {
+            fake.onUnboundEncrypt = null
+            runBlocking { storage.deleteMnemonic(walletId) }
+        }
+
+        storage.retrieveMnemonic(walletId) // the read itself still succeeds
+
+        assertFalse("a deleted mnemonic must stay deleted", storage.hasMnemonic(walletId))
+    }
+
+    @Test
+    fun shouldNotClobberAMnemonicRewrittenDuringTheRewrap() = runBlocking {
+        val replacement = "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"
+        storage.storeMnemonic(walletId, mnemonic)
+        recordDefectViaSiblingWrite()
+
+        // Same window, but the racing writer stores a NEW phrase. The stale
+        // re-wrap must not overwrite it with the one this read decrypted.
+        fake.onUnboundEncrypt = {
+            fake.onUnboundEncrypt = null
+            runBlocking { storage.storeMnemonic(walletId, replacement) }
+        }
+
+        storage.retrieveMnemonic(walletId)
+
+        assertEquals(
+            "the newer mnemonic must survive the stale re-wrap",
+            replacement,
+            storage.retrieveMnemonic(walletId),
+        )
+    }
+
+    @Test
+    fun shouldScrubPlaintextWhenCancelledDuringTheRewrap() {
+        runBlocking {
+            storage.storeMnemonic(walletId, mnemonic)
+            recordDefectViaSiblingWrite()
+        }
+        fake.lastMasterDecryptRef = null
+
+        // Cancellation inside the re-wrap unwinds PAST the return, so the
+        // caller never receives the buffer and can never scrub it.
+        fake.onUnboundEncrypt = {
+            fake.onUnboundEncrypt = null
+            throw CancellationException("cancelled mid-re-wrap")
+        }
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking { storage.retrieveMnemonicUtf8(walletId) }
+        }
+        assertBufferScrubbed(fake.lastMasterDecryptRef)
+    }
+
     // ── storeMnemonic plaintext-buffer scrubbing ─────────────────────────
 
     @Test
@@ -507,6 +579,16 @@ private class FalseLockedFakeKeystoreManager : KeystoreManager() {
     /** Invoked at each master encrypt attempt (test synchronization hook). */
     var onMasterEncrypt: (() -> Unit)? = null
 
+    /**
+     * Invoked at each UNBOUND-alias encrypt, i.e. inside the re-wrap and
+     * BEFORE its `store.edit` — the exact window in which a concurrent
+     * delete/overwrite must be able to win.
+     */
+    var onUnboundEncrypt: (() -> Unit)? = null
+
+    /** The buffer the last master decrypt handed back (scrub evidence). */
+    var lastMasterDecryptRef: ByteArray? = null
+
     override fun sampleDeviceLockState(): DeviceLockState = lockState
 
     override fun encrypt(plaintext: ByteArray, alias: String): EncryptedBlob = when (alias) {
@@ -529,6 +611,7 @@ private class FalseLockedFakeKeystoreManager : KeystoreManager() {
         MASTER_ALIAS_UNBOUND -> {
             unboundEncryptCalls++
             lastUnboundPlaintextRef = plaintext
+            onUnboundEncrypt?.invoke()
             val scriptedFailure = failUnboundEncrypts > 0
             if (scriptedFailure) failUnboundEncrypts--
             check(!scriptedFailure) { "scripted unbound-alias encrypt failure" }
@@ -562,7 +645,9 @@ private class FalseLockedFakeKeystoreManager : KeystoreManager() {
             "blob was decrypted under the wrong alias: '$alias' cannot open a blob " +
                 "whose iv marker is ${blob.iv.firstOrNull()}"
         }
-        return blob.ciphertext.copyOf()
+        return blob.ciphertext.copyOf().also {
+            if (alias == MASTER_ALIAS) lastMasterDecryptRef = it
+        }
     }
 
     private fun blob(ivMarker: Byte, plaintext: ByteArray) =
