@@ -7,8 +7,7 @@
   ],
   "fallback": {
     "owners": [
-      "QuantumExplorer",
-      "shumkov"
+      "QuantumExplorer"
     ],
     "reviewers": []
   },
@@ -20,7 +19,8 @@
       ],
       "owners": [],
       "reviewers": [
-        "ZocoLini"
+        "ZocoLini",
+        "dustinface"
       ],
       "unresolved": [
         "Owner: no owner visible in responsibility sheet"
@@ -37,7 +37,8 @@
       "owners": [],
       "reviewers": [
         "QuantumExplorer",
-        "ZocoLini"
+        "ZocoLini",
+        "dustinface"
       ],
       "unresolved": [
         "Owner: no owner visible in responsibility sheet"
@@ -54,7 +55,8 @@
       "owners": [],
       "reviewers": [
         "QuantumExplorer",
-        "ZocoLini"
+        "ZocoLini",
+        "dustinface"
       ],
       "unresolved": [
         "Owner: no owner visible in responsibility sheet"

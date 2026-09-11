@@ -48,7 +48,7 @@ class RepositoryConfigurationTests(unittest.TestCase):
             self.assertEqual(area['paths'], [name + '/'])
             self.assertEqual(area['owners'], [])
             self.assertTrue(area['unresolved'])
-            self.assertEqual(area['reviewers'], ['ZocoLini'] if name == 'dash-spv' else ['QuantumExplorer', 'ZocoLini'])
+            self.assertEqual(area['reviewers'], ['ZocoLini', 'dustinface'] if name == 'dash-spv' else ['QuantumExplorer', 'ZocoLini', 'dustinface'])
             _, pr = fixture()
             pr.update(base='dev', author='QuantumExplorer', files=[{'filename':name + '/src/lib.rs'}])
             pr['permissions'].update(QuantumExplorer='admin', shumkov='admin', ZocoLini='write')
@@ -56,11 +56,22 @@ class RepositoryConfigurationTests(unittest.TestCase):
             self.assertEqual(result['state'], 'configuration-error')
             self.assertIn('Unresolved identities in ' + name, result['blockers'])
 
-    def test_all_fallbacks_and_slack_roster_preserve_selected_people(self):
+    def test_fallbacks_name_each_repository_owner_not_platform_leads(self):
+        expected = {'platform': (['QuantumExplorer', 'shumkov'], []),
+                    'rust-dashcore': (['QuantumExplorer'], []),
+                    'tenderdash': (['lklimek'], ['shumkov']),
+                    'grovedb': (['QuantumExplorer'], []),
+                    'dash-evo-tool': (['lklimek'], [])}
+        for name, (owners, reviewers) in expected.items():
+            with self.subTest(repository=name):
+                policy = self.policies['dashpay/' + name]
+                self.assertEqual(policy['fallback'], {'owners': owners, 'reviewers': reviewers})
+                self.assertEqual(codeowners(policy).splitlines()[2], '* ' + ' '.join('@' + user for user in owners + reviewers))
+
+    def test_slack_roster_preserves_selected_people(self):
         handles = set()
         for policy in self.policies.values():
             self.assertEqual(policy['max_active_prs'], 5)
-            self.assertEqual(policy['fallback'], {'owners':['QuantumExplorer', 'shumkov'], 'reviewers':[]})
             for area in [policy['fallback']] + policy['areas']:
                 handles.update(area['owners'] + area['reviewers'])
         self.assertFalse({'strophy', 'silvanassss'} & {handle.lower() for handle in handles})

@@ -4,7 +4,7 @@ Each repository owns its `.github/pr-review-policy.json`. The shared Python eval
 
 ## Ownership and repository boundaries
 
-An owner satisfies the human requirement for their own area, including on their own PR. A reviewer can satisfy another author's requirement. Changes spanning areas must satisfy every affected area. The fallback is QuantumExplorer and shumkov for unmapped paths only. An area with unresolved ownership blocks readiness; it does not silently inherit fallback ownership. Review eligibility is checked against current repository permissions. Automation never grants access or expands a team's privileges.
+An owner satisfies the human requirement for their own area, including on their own PR. A reviewer can satisfy another author's requirement. Changes spanning areas must satisfy every affected area. Each repository's fallback names that repository's own owner and applies to unmapped paths only: QuantumExplorer and shumkov in Platform, QuantumExplorer in rust-dashcore and GroveDB, lklimek in Tenderdash (with shumkov reviewing) and Dash Evo Tool. An area with unresolved ownership blocks readiness; it does not silently inherit fallback ownership. Review eligibility is checked against current repository permissions. Automation never grants access or expands a team's privileges.
 
 The repository registry covers:
 

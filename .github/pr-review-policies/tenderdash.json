@@ -7,10 +7,11 @@
   ],
   "fallback": {
     "owners": [
-      "QuantumExplorer",
-      "shumkov"
+      "lklimek"
     ],
-    "reviewers": []
+    "reviewers": [
+      "shumkov"
+    ]
   },
   "areas": [
     {
