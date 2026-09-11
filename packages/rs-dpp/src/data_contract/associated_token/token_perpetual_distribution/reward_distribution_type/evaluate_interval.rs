@@ -4,6 +4,7 @@ use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::reward_ratio::RewardRatio;
 #[cfg(feature = "token-reward-explanations")]
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::evaluate_interval::IntervalEvaluationExplanation;
+use platform_version::version::PlatformVersion;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use crate::ProtocolError;
@@ -24,6 +25,7 @@ impl RewardDistributionType {
     /// - `current_moment_included` (`RewardDistributionMoment`):
     ///   The latest point up to which rewards should be counted (inclusive).
     /// - `get_epoch_reward_ratio`: Optional function providing a reward ratio for epoch-based distributions.
+    /// - `platform_version`: Selects the evaluator's math version.
     ///
     /// # Returns
     ///
@@ -36,6 +38,7 @@ impl RewardDistributionType {
         start_at_moment: RewardDistributionMoment,
         current_moment_included: RewardDistributionMoment,
         get_epoch_reward_ratio: Option<F>,
+        platform_version: &PlatformVersion,
     ) -> Result<TokenAmount, ProtocolError>
     where
         F: Fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>,
@@ -46,6 +49,7 @@ impl RewardDistributionType {
             current_moment_included,
             self.interval(),
             get_epoch_reward_ratio,
+            platform_version,
         )
     }
 
@@ -80,6 +84,7 @@ impl RewardDistributionType {
         current_moment_included: RewardDistributionMoment,
         get_epoch_reward_ratio: Option<F>,
         is_first_claim: bool,
+        platform_version: &PlatformVersion,
     ) -> Result<IntervalEvaluationExplanation, ProtocolError>
     where
         F: Fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>,
@@ -91,6 +96,7 @@ impl RewardDistributionType {
             self.interval(),
             get_epoch_reward_ratio,
             is_first_claim,
+            platform_version,
         )
     }
 }

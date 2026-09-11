@@ -110,12 +110,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     // `load_state` (`SELECT identity_id, length(entry_blob)…`).
     (
         "identities.rs",
-        "length(entry_blob), entry_blob, tombstoned",
-    ),
-    // load_tombstoned_ids supplies the merge's positive tombstone signal.
-    (
-        "identities.rs",
-        "SELECT identity_id FROM identities WHERE",
+        "length(entry_blob), entry_blob",
     ),
     ("contacts.rs", "SELECT owner_id, contact_id, state"),
     (
