@@ -122,3 +122,6 @@ pub(crate) fn dashpay_contract(
     let _ = CONTRACT.set(std::sync::Arc::clone(&arc));
     Ok(CONTRACT.get().map(std::sync::Arc::clone).unwrap_or(arc))
 }
+
+#[cfg(test)]
+mod pending_crypto_tests;

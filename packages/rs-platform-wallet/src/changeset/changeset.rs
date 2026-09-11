@@ -263,6 +263,69 @@ pub struct CoreChangeSet {
     /// attribute makes it upgrade-safe.
     #[cfg_attr(feature = "serde", serde(default))]
     pub sweeps: Vec<SweepBatch>,
+
+    /// The engine's verdict on every `Received` / `Change` output this
+    /// batch's records carry that the engine did NOT credit to the owning
+    /// account's UTXO set, keyed by outpoint. Absence means credited — the
+    /// ordinary case, and exactly today's behaviour.
+    ///
+    /// A persister that derives its UTXO rows from record roles (the FFI
+    /// projection does: `record_new_utxos_ffi` walks `output_details`)
+    /// otherwise materialises an UNSPENT row for a coin the engine itself
+    /// never held. The engine skips a recognised output only when it has
+    /// already observed the outpoint spent in a block (#649), when the
+    /// record is a doomed mempool transaction whose input a block already
+    /// spent, or when the coin was consumed between emit and drain. In the
+    /// first shape the spender can be a transaction the wallet never
+    /// recorded at all — a coin spent by a transaction with no wallet-owned
+    /// output (a CoinJoin collateral burn: sole `OP_RETURN` output) that was
+    /// processed while the coin was not yet in `utxos` matches nothing and
+    /// is discarded (rust-dashcore#992) — so no later record, spend emit or
+    /// sweep ever corrects the row, and the store's own restore path hands
+    /// the phantom coin back to the engine on every launch. This map is the
+    /// only channel that carries the engine's decision to the store at the
+    /// moment the evidence exists: `observed_spent_outpoints` is pruned at
+    /// the finality boundary long before a scan ends.
+    ///
+    /// Merge: the newer changeset is authoritative for every record it
+    /// re-projects. Each event's verdicts are computed against the wallet
+    /// snapshot its bridge call took, so two events folded into one round
+    /// can disagree about a coin — an output uncredited under the older
+    /// snapshot and credited under the newer one is simply ABSENT from the
+    /// newer map (only uncredited outputs are recorded). The fold therefore
+    /// first drops the older verdicts for every outpoint of a record the
+    /// newer changeset carries, and for every outpoint the newer changeset
+    /// credits (`new_utxos`), and only then extends with the newer map.
+    /// `serde(default)` for the same backward-compatible reading as
+    /// [`Self::sweeps`].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub utxo_credit_verdicts: BTreeMap<OutPoint, UtxoCreditVerdict>,
+}
+
+/// Why the engine did not credit a `Received` / `Change` output of a
+/// record it emitted — see [`CoreChangeSet::utxo_credit_verdicts`].
+///
+/// A persister may treat [`Self::ObservedSpent`] and [`Self::Doomed`] as
+/// positive evidence that the coin is not spendable and store its row as
+/// spent; [`Self::Uncredited`] carries no context and only says "do not
+/// hand this coin back as unspent on a re-delivery".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum UtxoCreditVerdict {
+    /// Not in the owning account's `utxos`: the wallet observed a block at
+    /// `height` spending this outpoint before the output was recognised,
+    /// so `update_utxos` never inserted it (the #649 skip).
+    ObservedSpent {
+        /// Height of the block the wallet observed spending the outpoint.
+        height: u32,
+    },
+    /// Not in `utxos`: the record is an unconfirmed transaction one of
+    /// whose inputs a block already spent, so it can never confirm and
+    /// nothing it created was credited (`doomed_by_a_settled_spend`).
+    Doomed,
+    /// Not in `utxos` for a reason the bridge cannot name — an account-level
+    /// spent mark, a spend, an abandon or a sweep between emit and drain.
+    Uncredited,
 }
 
 /// One `TransactionsSwept` event: the transactions it removed, the
@@ -592,6 +655,48 @@ impl Merge for CoreChangeSet {
         // each scopes its release to the remaining losers' own inputs, or
         // withholds any outpoint a surviving record claims — and the
         // reinstating record is exactly such a claim.
+        // Credit verdicts, part 1: the newer changeset re-projected every
+        // record it carries against a NEWER wallet snapshot, and only records
+        // a verdict for outputs the wallet does not hold — so an older
+        // verdict for an output such a record walked that the newer map
+        // does not mention means "credited since", not "still uncredited".
+        // Drop those before the newer map is folded in below, along with any
+        // outpoint the newer changeset credits outright.
+        //
+        // Keyed on the OUTPUTS the newer records walked, not their txids:
+        // verdicts are produced per account slice, over that slice's
+        // `Received` / `Change` outputs. A transaction paying a CoinJoin
+        // account and a BIP44 change address is two slices; a newer
+        // changeset re-projecting only the BIP44 slice never walked the
+        // CoinJoin output and cannot restate its verdict, so a txid-keyed
+        // guard would erase it and the persister would materialise the very
+        // row the verdict exists to prevent. Computed here, before
+        // `other.records` is consumed.
+        if !self.utxo_credit_verdicts.is_empty() {
+            use key_wallet::managed_account::transaction_record::OutputRole;
+            let reprojected: std::collections::HashSet<OutPoint> = other
+                .records
+                .iter()
+                .chain(other.account_records.iter())
+                .flat_map(|record| {
+                    record
+                        .output_details
+                        .iter()
+                        .filter(|detail| {
+                            matches!(detail.role, OutputRole::Received | OutputRole::Change)
+                        })
+                        .map(move |detail| OutPoint {
+                            txid: record.txid,
+                            vout: detail.index,
+                        })
+                })
+                .collect();
+            let credited: std::collections::HashSet<OutPoint> =
+                other.new_utxos.iter().map(|utxo| utxo.outpoint).collect();
+            self.utxo_credit_verdicts.retain(|outpoint, _| {
+                !reprojected.contains(outpoint) && !credited.contains(outpoint)
+            });
+        }
         if !other.records.is_empty() && !self.sweeps.is_empty() {
             let reinstated: std::collections::HashSet<Txid> =
                 other.records.iter().map(|record| record.txid).collect();
@@ -722,6 +827,11 @@ impl Merge for CoreChangeSet {
         // batch's decision to free it, and only replaying them in sequence
         // preserves that.
         self.sweeps.extend(other.sweeps);
+
+        // Credit verdicts, part 2: newest wins per outpoint; the stale
+        // entries of records the newer changeset re-projected were dropped
+        // at the top of this merge.
+        self.utxo_credit_verdicts.extend(other.utxo_credit_verdicts);
     }
 
     fn is_empty(&self) -> bool {
@@ -737,6 +847,7 @@ impl Merge for CoreChangeSet {
             && self.addresses_marked_used.is_empty()
             && self.account_highest_used.is_empty()
             && self.last_applied_chain_lock.is_none()
+            && self.utxo_credit_verdicts.is_empty()
     }
 }
 
@@ -3222,5 +3333,236 @@ mod tests {
         let merged = cs.account_highest_used[&acct];
         assert_eq!(merged.external, Some(5));
         assert_eq!(merged.internal, Some(1));
+    }
+}
+
+#[cfg(test)]
+mod utxo_credit_verdict_merge_tests {
+    use super::*;
+    use dashcore::hashes::Hash;
+
+    fn outpoint(byte: u8) -> OutPoint {
+        OutPoint {
+            txid: Txid::from_byte_array([byte; 32]),
+            vout: 0,
+        }
+    }
+
+    /// Verdicts fold by union, newest-wins per outpoint, and a changeset
+    /// carrying only verdicts is not empty — it must still reach the
+    /// persister.
+    #[test]
+    fn merge_unions_credit_verdicts_newest_wins() {
+        let mut older = CoreChangeSet::default();
+        older
+            .utxo_credit_verdicts
+            .insert(outpoint(1), UtxoCreditVerdict::Uncredited);
+        older
+            .utxo_credit_verdicts
+            .insert(outpoint(2), UtxoCreditVerdict::ObservedSpent { height: 10 });
+        let mut newer = CoreChangeSet::default();
+        newer
+            .utxo_credit_verdicts
+            .insert(outpoint(1), UtxoCreditVerdict::ObservedSpent { height: 11 });
+        newer
+            .utxo_credit_verdicts
+            .insert(outpoint(3), UtxoCreditVerdict::Doomed);
+        assert!(!Merge::is_empty(&newer));
+
+        older.merge(newer);
+        assert_eq!(older.utxo_credit_verdicts.len(), 3);
+        assert_eq!(
+            older.utxo_credit_verdicts.get(&outpoint(1)),
+            Some(&UtxoCreditVerdict::ObservedSpent { height: 11 })
+        );
+        assert_eq!(
+            older.utxo_credit_verdicts.get(&outpoint(2)),
+            Some(&UtxoCreditVerdict::ObservedSpent { height: 10 })
+        );
+        assert_eq!(
+            older.utxo_credit_verdicts.get(&outpoint(3)),
+            Some(&UtxoCreditVerdict::Doomed)
+        );
+    }
+
+    fn outpoint_at(byte: u8, vout: u32) -> OutPoint {
+        OutPoint {
+            txid: Txid::from_byte_array([byte; 32]),
+            vout,
+        }
+    }
+
+    /// One account slice of transaction `txid_byte`, classifying the given
+    /// outputs `(vout, role)` — the shape `utxo_credit_verdicts_from_wallet`
+    /// walks. `account_type` is the slice's owner.
+    fn slice_for(
+        txid_byte: u8,
+        account_type: key_wallet::account::AccountType,
+        outputs: &[(
+            u32,
+            key_wallet::managed_account::transaction_record::OutputRole,
+        )],
+    ) -> TransactionRecord {
+        use key_wallet::managed_account::transaction_record::OutputDetail;
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+        let mut record = TransactionRecord::new(
+            tx,
+            account_type,
+            key_wallet::transaction_checking::TransactionContext::Mempool,
+            key_wallet::transaction_checking::transaction_router::TransactionType::Standard,
+            key_wallet::managed_account::transaction_record::TransactionDirection::Incoming,
+            Vec::new(),
+            outputs
+                .iter()
+                .map(|(index, role)| OutputDetail {
+                    index: *index,
+                    role: *role,
+                    address: None,
+                    value: 1,
+                })
+                .collect(),
+            0,
+        );
+        record.txid = Txid::from_byte_array([txid_byte; 32]);
+        record
+    }
+
+    fn bip44() -> key_wallet::account::AccountType {
+        key_wallet::account::AccountType::Standard {
+            index: 0,
+            standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+        }
+    }
+
+    /// A BIP44 slice whose output 0 is `Received`.
+    fn record_for(txid_byte: u8) -> TransactionRecord {
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        slice_for(txid_byte, bip44(), &[(0, OutputRole::Received)])
+    }
+
+    /// Two events folded into one round are projected against two wallet
+    /// snapshots. A coin uncredited under the older one and credited under
+    /// the newer one is absent from the newer map, because only uncredited
+    /// outputs carry a verdict — so the newer changeset must erase the
+    /// older verdict for every record it re-projects, or the persister
+    /// writes a live coin spent at creation and the restore never brings it
+    /// back. Verdicts for records the newer changeset does not carry stay.
+    #[test]
+    fn merge_drops_older_verdicts_of_records_the_newer_changeset_reprojects() {
+        let mut older = CoreChangeSet::default();
+        older.records.push(record_for(1));
+        older.records.push(record_for(2));
+        older
+            .utxo_credit_verdicts
+            .insert(outpoint(1), UtxoCreditVerdict::ObservedSpent { height: 10 });
+        older
+            .utxo_credit_verdicts
+            .insert(outpoint(2), UtxoCreditVerdict::ObservedSpent { height: 10 });
+
+        // The newer projection of record 1 carries no verdict for its
+        // output: the coin is credited now. Record 2 is not re-projected.
+        let mut newer = CoreChangeSet::default();
+        newer.records.push(record_for(1));
+        older.merge(newer);
+
+        assert_eq!(
+            older.utxo_credit_verdicts.get(&outpoint(1)),
+            None,
+            "a re-projected record with no verdict means credited: the stale verdict must go"
+        );
+        assert_eq!(
+            older.utxo_credit_verdicts.get(&outpoint(2)),
+            Some(&UtxoCreditVerdict::ObservedSpent { height: 10 }),
+            "a record the newer changeset does not carry keeps its verdict"
+        );
+    }
+
+    /// Verdicts are produced per account slice, so the guard is keyed on
+    /// the outputs the newer slices actually walked. One transaction pays a
+    /// CoinJoin account (output 1) and BIP44 change (output 0); the newer
+    /// changeset re-projects only the BIP44 slice. It re-judged output 0
+    /// and found it credited — that verdict goes — but it never walked
+    /// output 1 and cannot restate its verdict, so that one stays. An
+    /// output the slice lists as `Sent` (a counterparty's) re-judges
+    /// nothing either.
+    #[test]
+    fn merge_keeps_an_older_verdict_for_a_sibling_slice_the_newer_changeset_did_not_walk() {
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        let coinjoin = key_wallet::account::AccountType::CoinJoin { index: 0 };
+        let mut older = CoreChangeSet::default();
+        older
+            .account_records
+            .push(slice_for(1, bip44(), &[(0, OutputRole::Change)]));
+        older
+            .account_records
+            .push(slice_for(1, coinjoin, &[(1, OutputRole::Received)]));
+        older.utxo_credit_verdicts.insert(
+            outpoint_at(1, 0),
+            UtxoCreditVerdict::ObservedSpent { height: 10 },
+        );
+        older.utxo_credit_verdicts.insert(
+            outpoint_at(1, 1),
+            UtxoCreditVerdict::ObservedSpent { height: 10 },
+        );
+        older
+            .utxo_credit_verdicts
+            .insert(outpoint_at(1, 2), UtxoCreditVerdict::Uncredited);
+
+        let mut newer = CoreChangeSet::default();
+        newer.account_records.push(slice_for(
+            1,
+            bip44(),
+            &[(0, OutputRole::Change), (2, OutputRole::Sent)],
+        ));
+        newer.records = newer.account_records.clone();
+        older.merge(newer);
+
+        assert_eq!(
+            older.utxo_credit_verdicts.get(&outpoint_at(1, 0)),
+            None,
+            "the BIP44 slice re-judged its change output and found it credited"
+        );
+        assert_eq!(
+            older.utxo_credit_verdicts.get(&outpoint_at(1, 1)),
+            Some(&UtxoCreditVerdict::ObservedSpent { height: 10 }),
+            "the CoinJoin slice was not re-projected: its verdict stands"
+        );
+        assert_eq!(
+            older.utxo_credit_verdicts.get(&outpoint_at(1, 2)),
+            Some(&UtxoCreditVerdict::Uncredited),
+            "a `Sent` output is the counterparty's; listing it re-judges nothing"
+        );
+    }
+
+    /// A newer changeset that credits an outpoint outright (`new_utxos`)
+    /// beats an older verdict for it even when it carries no record.
+    #[test]
+    fn merge_drops_older_verdict_for_an_outpoint_the_newer_changeset_credits() {
+        let mut older = CoreChangeSet::default();
+        older
+            .utxo_credit_verdicts
+            .insert(outpoint(1), UtxoCreditVerdict::Doomed);
+        let mut newer = CoreChangeSet::default();
+        let script =
+            dashcore::ScriptBuf::new_p2pkh(&dashcore::PubkeyHash::from_byte_array([7u8; 20]));
+        let address = dashcore::Address::from_script(&script, dashcore::Network::Testnet).unwrap();
+        newer.new_utxos.push(key_wallet::Utxo::new(
+            outpoint(1),
+            dashcore::TxOut {
+                value: 1,
+                script_pubkey: script,
+            },
+            address,
+            100,
+            false,
+        ));
+        older.merge(newer);
+        assert!(older.utxo_credit_verdicts.is_empty());
     }
 }
