@@ -7562,8 +7562,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// `account.wallet.walletId`, and it prefetches `spendingTransaction`,
     /// which this pass reads for every row.
     /// Wire-order txids of the funding transactions already carried by
-    /// `unresolved_asset_lock_tx_records`. Read from the same source that
-    /// buffer selects from, rather than re-deriving a txid from bytes.
+    /// `unresolved_asset_lock_tx_records`. Read from the same rows that
+    /// buffer selects from, through the same decoder, rather than
+    /// re-deriving a txid from the serialized bytes.
     private func unresolvedAssetLockFundingTxids(walletId: Data) -> Set<Data> {
         let descriptor = FetchDescriptor<PersistentAssetLock>(
             predicate: #Predicate { entry in
@@ -7571,12 +7572,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
         )
         guard let locks = try? backgroundContext.fetch(descriptor) else { return [] }
-        var txids = Set<Data>()
-        for lock in locks {
-            guard let outpoint = decodeOutPointHex(lock.outPointHex) else { continue }
-            txids.insert(Data(outpoint.prefix(32)))
-        }
-        return txids
+        return Set(locks.compactMap { Self.assetLockFundingTxid(outPointHex: $0.outPointHex) })
     }
 
     private func buildUnconfirmedOutgoingTxRecordBuffer(
