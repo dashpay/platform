@@ -115,38 +115,29 @@ jobs:
           done
           exit "$missing"
 
-      # clang, llvm and libsnappy are installed by ./.github/actions/rust on
-      # Linux; this covers what the rest of the job needs and what a bare
-      # self-hosted image doesn't ship. Every branch is a no-op once the
-      # persistent runner has been provisioned by the first run.
-      - name: Install build dependencies (Linux)
+      # The persistent runner image is the versioned CI environment. Runtime
+      # apt/sudo would let a job mutate the runner and is unnecessary once the
+      # image contract is provisioned.
+      - name: Verify build dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
 
-          MISSING=()
-          for pkg in build-essential cmake libgmp-dev libssl-dev pkg-config jq zip; do
-            dpkg -s "$pkg" >/dev/null 2>&1 || MISSING+=("$pkg")
+          missing=()
+          for tool in cmake gh jq zip; do
+            command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
           done
-          if [ ${#MISSING[@]} -gt 0 ]; then
-            echo "Installing: ${MISSING[*]}"
-            sudo apt-get update -qq
-            sudo apt-get install -qq --yes "${MISSING[@]}"
+          for pkg in build-essential libgmp-dev libssl-dev pkg-config; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Self-hosted runner image is missing: ${missing[*]}"
+            echo "::error::Provision these in the pinned runner image; CI jobs must not install host packages."
+            exit 1
           fi
 
-          # Needed by the immutable-structure check below.
-          if ! command -v gh >/dev/null 2>&1; then
-            sudo apt-get install -qq --yes gh || {
-              curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-                | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-              echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-                | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-              sudo apt-get update -qq
-              sudo apt-get install -qq --yes gh
-            }
-          fi
-
-          # dtolnay/rust-toolchain drives rustup; it must already exist.
+          # dtolnay/rust-toolchain drives rustup; it may install the toolchain
+          # under the runner user's home, but never needs root.
           if ! command -v rustup >/dev/null 2>&1; then
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
               | sh -s -- -y --no-modify-path --default-toolchain none
