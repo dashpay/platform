@@ -174,7 +174,10 @@ pub fn verify_having_range_proof(
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, Vec<RankedEntry>), Error> {
     let (root_hash, entries) = query
-        .verify_having_range_proof(&proof.grovedb_proof, platform_version)
+        .verify_having_range_proof(
+            crate::verify::current_grovedb_proof_bytes(proof)?,
+            platform_version,
+        )
         .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;

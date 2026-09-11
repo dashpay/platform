@@ -41,7 +41,7 @@ pub fn verify_identity_revision_for_identity_id(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, revision_option) = Drive::verify_identity_revision_for_identity_id(
-        &proof_vec,
+        crate::utils::proof::current_grovedb_proof(&proof_vec)?,
         identity_id_bytes,
         verify_subset_of_proof,
         platform_version,

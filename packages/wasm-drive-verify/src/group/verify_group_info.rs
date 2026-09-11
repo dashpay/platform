@@ -44,7 +44,7 @@ pub fn verify_group_info(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, group_option) = Drive::verify_group_info(
-        &proof_vec,
+        crate::utils::proof::current_grovedb_proof(&proof_vec)?,
         Identifier::from(contract_id_bytes),
         group_contract_position,
         is_proof_subset,

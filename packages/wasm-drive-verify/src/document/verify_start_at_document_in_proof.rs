@@ -119,7 +119,7 @@ pub fn verify_start_at_document_in_proof(
 
     let (root_hash, document_option) = query
         .verify_start_at_document_in_proof(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             is_proof_subset,
             document_id_bytes,
             platform_version,

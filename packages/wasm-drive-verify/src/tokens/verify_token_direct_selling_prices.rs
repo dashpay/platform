@@ -62,7 +62,7 @@ pub fn verify_token_direct_selling_prices_vec(
 
     let (root_hash, prices_vec): (RootHash, Vec<([u8; 32], Option<TokenPricingSchedule>)>) =
         drive::drive::Drive::verify_token_direct_selling_prices(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             &token_ids_vec,
             verify_subset_of_proof,
             platform_version,
@@ -171,7 +171,7 @@ pub fn verify_token_direct_selling_prices_map(
 
     let (root_hash, prices_map): (RootHash, BTreeMap<[u8; 32], Option<TokenPricingSchedule>>) =
         drive::drive::Drive::verify_token_direct_selling_prices(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             &token_ids_vec,
             verify_subset_of_proof,
             platform_version,

@@ -95,7 +95,7 @@ impl FromProof<GetTokenPerpetualDistributionLastClaimRequest> for RewardDistribu
                     Some(distribution_type) => {
                         let (root_hash, moment_opt) =
                             Drive::verify_token_perpetual_distribution_last_paid_time(
-                                &proof_msg.grovedb_proof,
+                                crate::verify::current_grovedb_proof_bytes(&proof_msg)?,
                                 token_id,
                                 identity_id,
                                 &distribution_type,

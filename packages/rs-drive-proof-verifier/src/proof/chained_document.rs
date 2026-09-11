@@ -68,7 +68,10 @@ pub fn verify_chained_documents_proof(
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, ChainedDocuments), Error> {
     let (root_hash, result) = query
-        .verify_chained_documents_proof(&proof.grovedb_proof, platform_version)
+        .verify_chained_documents_proof(
+            crate::verify::current_grovedb_proof_bytes(proof)?,
+            platform_version,
+        )
         .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;

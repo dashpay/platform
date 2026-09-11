@@ -42,7 +42,7 @@ pub fn verify_total_credits_in_system(
         || -> Result<CoreBlockHeight, drive::error::Error> { Ok(activation_core_height) };
 
     let (root_hash, total_credits) = Drive::verify_total_credits_in_system(
-        &proof_vec,
+        crate::utils::proof::current_grovedb_proof(&proof_vec)?,
         core_subsidy_halving_interval,
         request_activation_core_height,
         current_core_height,

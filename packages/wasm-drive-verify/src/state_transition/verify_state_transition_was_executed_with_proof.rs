@@ -84,7 +84,7 @@ pub fn verify_state_transition_was_executed_with_proof(
     let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
         &state_transition,
         &block_info,
-        &proof_vec,
+        crate::utils::proof::current_grovedb_proof(&proof_vec)?,
         &contract_lookup_fn,
         platform_version,
     )

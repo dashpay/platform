@@ -119,7 +119,10 @@ pub fn verify_document_proof(
     };
 
     let (root_hash, documents) = query
-        .verify_proof(&proof_vec, platform_version)
+        .verify_proof(
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            platform_version,
+        )
         .map_err(|e| format_result_error(ErrorCategory::VerificationError, e))?;
 
     // Convert documents to JS array

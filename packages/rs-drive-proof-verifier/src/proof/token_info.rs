@@ -57,7 +57,7 @@ impl FromProof<GetIdentityTokenInfosRequest> for IdentityTokenInfos {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_token_infos_for_identity_id(
-            &proof.grovedb_proof,
+            crate::verify::current_grovedb_proof_bytes(&proof)?,
             &token_ids,
             identity_id,
             false,
@@ -116,7 +116,7 @@ impl FromProof<GetIdentitiesTokenInfosRequest> for IdentitiesTokenInfos {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_token_infos_for_identity_ids(
-            &proof.grovedb_proof,
+            crate::verify::current_grovedb_proof_bytes(&proof)?,
             token_id,
             &identity_ids,
             false,

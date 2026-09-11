@@ -80,7 +80,7 @@ pub fn verify_identities_contract_keys(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, keys) = Drive::verify_identities_contract_keys(
-        &proof_vec,
+        crate::utils::proof::current_grovedb_proof(&proof_vec)?,
         &identity_ids_vec,
         &contract_id_bytes,
         document_type_name,

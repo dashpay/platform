@@ -47,7 +47,7 @@ pub fn verify_identity_contract_nonce(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, nonce_option) = Drive::verify_identity_contract_nonce(
-        &proof_vec,
+        crate::utils::proof::current_grovedb_proof(&proof_vec)?,
         identity_id_bytes,
         contract_id_bytes,
         verify_subset_of_proof,
