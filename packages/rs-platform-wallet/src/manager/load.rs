@@ -489,7 +489,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // abandoned rather than broadcasting on behalf of a wallet that is
         // gone.
         for (wallet_id, generation, broadcaster, txs) in pending_resends {
-            let wallets = Arc::clone(&self.wallets);
+            let wallet_manager = Arc::clone(&self.wallet_manager);
             tokio::spawn(async move {
                 if !broadcaster
                     .wait_until_ready(RESEND_TRANSPORT_READY_WAIT)
@@ -502,20 +502,34 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     );
                     return;
                 }
-                let still_live = wallets
-                    .load()
-                    .get(&wallet_id)
-                    .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), &generation));
-                if !still_live {
-                    tracing::info!(
-                        wallet_id = %hex::encode(wallet_id),
-                        pending = txs.len(),
-                        "load: wallet no longer registered; abandoning the re-dispatch"
-                    );
-                    return;
-                }
                 for tx in txs {
                     let txid = tx.txid();
+                    // The lifecycle gate, held across the liveness check AND
+                    // the network step — that pairing is the whole contract
+                    // (`WalletGeneration::payment_guard`). A bare
+                    // `Arc::ptr_eq` is a point-in-time observation, and
+                    // teardown can take the exclusive side between it and the
+                    // broadcast, so a removed wallet's transaction would still
+                    // go out. Re-taken per transaction rather than once around
+                    // the loop: each broadcast waits for an acceptance signal,
+                    // and holding the gate across all of them would stall a
+                    // removal for as long as the whole batch takes.
+                    //
+                    // Lock order is the one the gate documents: this first,
+                    // the wallet-manager read lock second, never the reverse.
+                    let _payment = generation.payment_guard().await;
+                    let still_live = {
+                        let wm = wallet_manager.read().await;
+                        wm.get_wallet_info(&wallet_id)
+                            .is_some_and(|info| Arc::ptr_eq(&info.generation, &generation))
+                    };
+                    if !still_live {
+                        tracing::info!(
+                            wallet_id = %hex::encode(wallet_id),
+                            "load: wallet no longer registered; abandoning the re-dispatch"
+                        );
+                        return;
+                    }
                     match broadcaster.broadcast(&tx).await {
                         Ok(_) => tracing::info!(
                             %txid,
