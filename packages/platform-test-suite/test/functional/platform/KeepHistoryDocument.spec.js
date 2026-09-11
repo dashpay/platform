@@ -187,6 +187,11 @@ describe('Platform', () => {
       // DocumentNotFoundError: a document nothing can read is not there to be
       // deleted again, and a delete never escalates into removing a revision.
       expect(broadcastError.code).to.equal(40101);
+
+      // The refused delete still consumed a contract nonce in a block. Let every
+      // node commit it before the erase fetches that nonce, or a lagging node
+      // hands out the old value and its mempool drops the erase as a duplicate.
+      await waitForSTPropagated();
     });
 
     it('should erase the retained revisions of a deleted note', async () => {
