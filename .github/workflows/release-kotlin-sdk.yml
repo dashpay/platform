@@ -165,8 +165,8 @@ jobs:
             kotlin-sdk-release-cargo-
             kotlin-sdk-cargo-
 
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk --locked
+      - name: Install pinned cargo-ndk v4.1.2 (ephemeral runner)
+        run: cargo install cargo-ndk --version 4.1.2 --locked
 
       - name: Install protoc v32.0 (repo-standard; apt's 3.21 breaks tenderdash-proto)
         run: |

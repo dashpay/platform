@@ -105,16 +105,11 @@ jobs:
         with:
           targets: x86_64-linux-android
 
-      # Pinned: this runner is persistent, so an unpinned `cargo install`
-      # leaves whatever version happened to be current on the day it first ran,
-      # and every later job silently builds with it. Assert after installing so
-      # a drifted host fails here instead of somewhere in the NDK build.
-      - name: Ensure cargo-ndk v4.1.2 is installed
+      # Pinned: this runner is persistent, so cargo-ndk is provisioned in the
+      # image and checked here before the NDK build can start.
+      - name: Verify cargo-ndk v4.1.2
         run: |
           set -euo pipefail
-          if ! cargo ndk --version 2>/dev/null | grep -qx 'cargo-ndk 4.1.2'; then
-            cargo install cargo-ndk --version 4.1.2 --locked --force
-          fi
           cargo ndk --version
           cargo ndk --version | grep -qx 'cargo-ndk 4.1.2'
 

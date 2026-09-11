@@ -150,25 +150,14 @@ jobs:
           cache: false
           components: llvm-tools, rustfmt, clippy
 
-      # Both tools are required by the test steps below. Install only when
-      # missing, and fail HERE, loudly, if the tool still doesn't work
-      # afterwards — the previous `cargo install ... 2>/dev/null || true`
-      # silently swallowed a failed nextest install on a freshly provisioned
-      # runner, and the job then died 10 minutes later in the test step with
-      # "no such command: nextest".
-      - name: Install cargo-llvm-cov
-        run: |
-          if ! cargo llvm-cov --version >/dev/null 2>&1; then
-            cargo install cargo-llvm-cov --locked
-          fi
-          cargo llvm-cov --version
+      # These helpers are part of the pinned runner image. Version checks make
+      # image drift fail before the test phase instead of installing tools from
+      # a job or silently swallowing a failed installation.
+      - name: Verify cargo-llvm-cov v0.9.1
+        run: cargo llvm-cov --version | grep -qx 'cargo-llvm-cov 0.9.1'
 
-      - name: Install cargo-nextest
-        run: |
-          if ! cargo nextest --version >/dev/null 2>&1; then
-            cargo install cargo-nextest --locked
-          fi
-          cargo nextest --version
+      - name: Verify cargo-nextest v0.9.144
+        run: cargo nextest --version | grep -qx 'cargo-nextest 0.9.144'
 
       - name: Check formatting
         run: cargo fmt --check --all
@@ -194,7 +183,7 @@ jobs:
 
       - name: Find unused dependencies
         run: |
-          cargo install cargo-machete 2>/dev/null || true
+          cargo machete --version | grep -qx 'cargo-machete 0.9.2'
           cargo machete
 
       # The transport-free cuts are how embedders with their own networking
