@@ -116,7 +116,7 @@ class GitHub:
         if "per_page=" not in path:
             path += separator + "per_page=100"
         result = self._run(["--method", "GET", path, "--paginate", "--slurp"])
-        if not isinstance(result, list) or not result or any(not isinstance(page, list) for page in result):
+        if not isinstance(result, list) or any(not isinstance(page, list) for page in result):
             raise GitHubError("Expected paginated GitHub list")
         return [item for page in result for item in page]
 

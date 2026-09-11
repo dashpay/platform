@@ -39,6 +39,16 @@ class GitHubTests(unittest.TestCase):
         with self.assertRaises(GitHubError):
             self.api.pages("repos/dashpay/platform/issues")
 
+    @patch("scripts.pr_review.github.subprocess.run")
+    def test_empty_collection_is_valid_but_missing_evidence_is_not(self, run):
+        for output in ['[]', '[[]]']:
+            run.return_value = subprocess.CompletedProcess([], 0, output, "")
+            self.assertEqual(self.api.pages("repos/dashpay/platform/issues"), [])
+        for output in ['null', '']:
+            run.return_value = subprocess.CompletedProcess([], 0, output, "")
+            with self.assertRaises(GitHubError):
+                self.api.pages("repos/dashpay/platform/issues")
+
     def test_should_reject_repository_path_injection(self):
         for name in ("dashpay/platform/../x", "--hostname=evil", "https://github.com/a/b"):
             with self.assertRaises(GitHubError):

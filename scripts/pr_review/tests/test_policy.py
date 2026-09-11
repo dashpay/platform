@@ -137,6 +137,16 @@ class PolicyTests(unittest.TestCase):
         pr['threads'][0]['author'] = 'thepastaclaw'
         self.assertEqual(evaluate(p,pr,NOW,NOW)['state'], 'waiting-bots')
 
+    def test_non_writer_thread_cannot_block_owner_pr(self):
+        for permission in ['read', 'triage', 'none']:
+            for created in ['2026-09-11T10:00:00Z', NOW]:
+                with self.subTest(permission=permission, created=created):
+                    p, pr = fixture()
+                    pr['permissions']['outsider'] = permission
+                    pr['threads'] = [dict(id='thread', is_resolved=False,
+                                          author='outsider', created_at=created)]
+                    self.assertEqual(evaluate(p, pr, NOW, NOW)['state'], 'ready-to-merge')
+
     def test_comment_review_does_not_erase_decisive_approval(self):
         p, pr = fixture()
         pr['author'] = pr['comments'][0]['user'] = 'reviewer'

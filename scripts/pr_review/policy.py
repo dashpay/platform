@@ -238,6 +238,8 @@ def evaluate(policy, pr, admitted_at, nowISO):
         for thread in pr['threads']:
             if not thread['is_resolved'] and thread['author'].lower() not in BOTS:
                 user = thread['author'].lower()
+                if permissions.get(user) not in WRITE:
+                    continue
                 objectors[user] = max(objectors.get(user, thread['created_at']), thread['created_at'],key=_time)
         if any(_time(value) >= _time(self_time) for value in objectors.values()):
             return stop('waiting-author', 'Author response is required after the latest human objection')
