@@ -1,46 +1,64 @@
-//! BLOB-column codec helpers.
+//! BLOB-column codec helpers: thin `bincode::serde` wrappers so every
+//! `_blob` column uses one encoding path. Schema evolution is gated by the
+//! refinery migration version — no per-blob revision tag.
 //!
-//! Thin error-mapping wrappers around `bincode::serde` so every
-//! `_blob` column in the SQLite schema uses one encoding path. Schema
-//! evolution is gated by the refinery migration version on the
-//! database as a whole — there is no per-blob revision tag.
-//!
-//! [`encode_outpoint`] / [`decode_outpoint`] encode a `dashcore::OutPoint`
-//! the same way — via bincode-serde — for the `outpoint` PRIMARY KEY
-//! columns (`core_utxos`, `asset_locks`). The bytes are a stable but not
-//! fixed-length key; both columns are used for exact-match PK lookups, so
-//! variable width is fine (no range scans or byte-order dependence).
+//! [`encode_outpoint`] / [`decode_outpoint`] encode `dashcore::OutPoint`
+//! the same way for the `outpoint` PK columns. The key is variable-width,
+//! which is fine for the exact-match PK lookups (no range scans).
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::sqlite::error::WalletStorageError;
+use platform_wallet::wallet::platform_wallet::WalletId;
+use rusqlite::{params, Connection};
 
-/// Explicit opt-in for the persisted Serde graphs this codec accepts.
-/// Implementations must review custom visitors and nested binary decoders.
-/// The guarded adapter removes sequence/map allocation hints; the row budget
-/// and each graph's domain checks still apply.
-pub trait BlobDecode: DeserializeOwned {}
-
-macro_rules! impl_blob_decode {
-    ($($ty:ty),+ $(,)?) => { $(impl BlobDecode for $ty {})+ };
+/// Sealed-trait machinery enforcing the no-key-material-in-DB invariant at
+/// the type level: only types opting in via [`impl_persistable_blob!`] can
+/// reach [`encode`].
+pub(crate) mod sealed {
+    /// `pub(crate)` supertrait of [`PersistableBlob`] — downstream cannot
+    /// name it, so the trait is sealed.
+    pub trait Sealed {}
 }
 
-// These stored graphs use Serde's collection visitors and fixed-size Core key
-// visitors. AssetLockEntry's nested proof bytes use DPP's untrusted decoder.
-impl_blob_decode!(
-    dashcore::OutPoint,
-    key_wallet::managed_account::transaction_record::TransactionRecord,
-    platform_wallet::changeset::AccountRegistrationEntry,
-    platform_wallet::changeset::AssetLockEntry,
-    platform_wallet::changeset::IdentityEntry,
-    platform_wallet::changeset::PendingContactCrypto,
-    platform_wallet::wallet::identity::ContactRequest,
-    platform_wallet::wallet::identity::DashPayProfile,
-    platform_wallet::wallet::identity::PaymentEntry,
-    Vec<u8>,
-    Vec<u32>,
-);
+/// Marker for types allowed into a `_blob` column. Sealed via
+/// [`sealed::Sealed`] so adding a (possibly key-bearing) type to the
+/// persistence path is an explicit, reviewable `impl` rather than a silent
+/// `T: Serialize` slip.
+pub trait PersistableBlob: Serialize + sealed::Sealed {}
+
+/// Explicit opt-in for the persisted Serde graphs [`decode`] accepts.
+/// Implementations must review custom visitors and nested binary decoders:
+/// the guarded adapter withholds sequence and map allocation hints, and the
+/// row budget plus each graph's own domain checks still apply. Every
+/// [`PersistableBlob`] is admitted by [`impl_persistable_blob!`]; shapes an
+/// older schema wrote that only a migration still reads opt in through
+/// [`impl_blob_decode!`] alone, without also reaching [`encode`].
+pub trait BlobDecode: DeserializeOwned {}
+
+/// Admit decode-only shapes to [`decode`].
+macro_rules! impl_blob_decode {
+    ($($t:ty),+ $(,)?) => {
+        $(
+            impl $crate::sqlite::schema::blob::BlobDecode for $t {}
+        )+
+    };
+}
+pub(crate) use impl_blob_decode;
+
+/// Seal-and-mark a type for [`blob::encode`](encode) and admit it to
+/// [`blob::decode`](decode).
+macro_rules! impl_persistable_blob {
+    ($($t:ty),+ $(,)?) => {
+        $(
+            impl $crate::sqlite::schema::blob::sealed::Sealed for $t {}
+            impl $crate::sqlite::schema::blob::PersistableBlob for $t {}
+            impl $crate::sqlite::schema::blob::BlobDecode for $t {}
+        )+
+    };
+}
+pub(crate) use impl_persistable_blob;
 
 #[derive(serde::Deserialize)]
 #[serde(transparent)]
@@ -48,14 +66,12 @@ struct UntrustedBlob<T>(T);
 
 impl<'de, T: BlobDecode> bincode::serde::DeserializeUntrusted<'de> for UntrustedBlob<T> {}
 
-/// Hard cap on bincode-serde decode allocations. 16 MiB is two orders
-/// of magnitude above any legitimate per-row payload we ship — a
-/// hostile or corrupted backup with an inflated length prefix is
-/// rejected before the allocator wakes up. Applied symmetrically to
-/// encode + decode so we can't write a payload we'd then refuse.
-pub const BLOB_SIZE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
+/// Hard cap on bincode-serde allocations, applied symmetrically to encode +
+/// decode so a crafted length prefix can't OOM the host. Shares the crate-root
+/// [`SIZE_LIMIT_BYTES`](crate::SIZE_LIMIT_BYTES) with the KV value cap.
+pub const BLOB_SIZE_LIMIT_BYTES: usize = crate::SIZE_LIMIT_BYTES;
 
-fn bounded_config() -> bincode::config::Configuration<
+pub(crate) fn bounded_config() -> bincode::config::Configuration<
     bincode::config::LittleEndian,
     bincode::config::Varint,
     bincode::config::Limit<BLOB_SIZE_LIMIT_BYTES>,
@@ -63,8 +79,62 @@ fn bounded_config() -> bincode::config::Configuration<
     bincode::config::standard().with_limit::<BLOB_SIZE_LIMIT_BYTES>()
 }
 
-/// Encode a serde-derived value into a `BLOB` payload.
-pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, WalletStorageError> {
+/// Gate a variable-width blob column BEFORE materializing the `Vec<u8>`.
+/// `len` is the value of `length(<col>)` selected in the same row.
+/// Returns [`WalletStorageError::BlobTooLarge`] when `len` exceeds the cap.
+pub(crate) fn check_size(len: i64) -> Result<(), WalletStorageError> {
+    let len_usize = usize::try_from(len).unwrap_or(usize::MAX);
+    if len_usize > BLOB_SIZE_LIMIT_BYTES {
+        return Err(WalletStorageError::BlobTooLarge {
+            len_bytes: len_usize,
+            limit_bytes: BLOB_SIZE_LIMIT_BYTES,
+        });
+    }
+    Ok(())
+}
+
+/// Gate the largest value selected by a one-column aggregate query.
+pub(crate) fn check_max_column_len(
+    conn: &Connection,
+    sql: &'static str,
+    wallet_id: &WalletId,
+) -> Result<(), WalletStorageError> {
+    let max_len: Option<i64> =
+        conn.query_row(sql, params![wallet_id.as_slice()], |row| row.get(0))?;
+    if let Some(len) = max_len {
+        check_size(len)?;
+    }
+    Ok(())
+}
+
+/// Decode a stored script into an address for `network`.
+pub(crate) fn decode_script_to_address(
+    raw: impl Into<Vec<u8>>,
+    network: dashcore::Network,
+) -> Result<dashcore::Address, WalletStorageError> {
+    let script = dashcore::ScriptBuf::from_bytes(raw.into());
+    Ok(dashcore::Address::from_script(&script, network)?)
+}
+
+/// Gate a fixed-width blob column BEFORE materializing the `Vec<u8>`.
+/// Oversize (`len` past the cap) surfaces as [`WalletStorageError::BlobTooLarge`];
+/// any other deviation from `expected` as [`WalletStorageError::BlobDecode`].
+pub(crate) fn check_fixed_width(
+    len: i64,
+    expected: usize,
+    col: &'static str,
+) -> Result<(), WalletStorageError> {
+    check_size(len)?;
+    if usize::try_from(len).unwrap_or(usize::MAX) != expected {
+        return Err(WalletStorageError::blob_decode(col));
+    }
+    Ok(())
+}
+
+/// Encode a [`PersistableBlob`] value into a `BLOB` payload. The sealed bound
+/// (not a bare `T: Serialize`) guards against unreviewed types reaching a
+/// `_blob` column.
+pub fn encode<T: PersistableBlob>(value: &T) -> Result<Vec<u8>, WalletStorageError> {
     Ok(bincode::serde::encode_to_vec(value, bounded_config())?)
 }
 
@@ -72,7 +142,8 @@ pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, WalletStorageError> {
 /// trailing bytes so a corrupt or forward-incompatible payload fails
 /// loudly instead of decoding a stale prefix. Also caps in-decode
 /// allocations at [`BLOB_SIZE_LIMIT_BYTES`] so a crafted length prefix
-/// can't OOM the host.
+/// can't OOM the host, and decodes through bincode's untrusted Serde adapter so
+/// a collection's declared length is never turned into capacity up front.
 pub fn decode<T: BlobDecode>(blob: &[u8]) -> Result<T, WalletStorageError> {
     if blob.len() > BLOB_SIZE_LIMIT_BYTES {
         return Err(WalletStorageError::BlobTooLarge {
@@ -99,9 +170,11 @@ pub fn decode<T: BlobDecode>(blob: &[u8]) -> Result<T, WalletStorageError> {
     Ok(value)
 }
 
-/// Encode a `dashcore::OutPoint` for an `outpoint` PRIMARY KEY column.
-/// Uses the same bincode-serde path as every other column — a stable
-/// (not fixed-length) key, which the exact-match PK lookups don't mind.
+// An outpoint is a PUBLIC (txid, vout) reference — never key material.
+impl_persistable_blob!(dashcore::OutPoint);
+
+/// Encode a `dashcore::OutPoint` for an `outpoint` PRIMARY KEY column via the
+/// shared [`encode`] path.
 pub fn encode_outpoint(op: &dashcore::OutPoint) -> Result<Vec<u8>, WalletStorageError> {
     encode(op)
 }
@@ -109,7 +182,6 @@ pub fn encode_outpoint(op: &dashcore::OutPoint) -> Result<Vec<u8>, WalletStorage
 /// Decode an outpoint key produced by [`encode_outpoint`]. Rejects
 /// malformed or trailing bytes with a typed [`WalletStorageError`] via
 /// the shared [`decode`] path.
-#[cfg(any(test, feature = "__test-helpers"))]
 pub fn decode_outpoint(bytes: &[u8]) -> Result<dashcore::OutPoint, WalletStorageError> {
     decode(bytes)
 }
@@ -123,8 +195,7 @@ mod tests {
         a: u32,
         b: String,
     }
-
-    impl BlobDecode for Dummy {}
+    impl_persistable_blob!(Dummy);
 
     #[test]
     fn encode_decode_roundtrip() {
@@ -159,7 +230,7 @@ mod tests {
     #[test]
     fn decode_rejects_oversize_blob_with_blob_too_large() {
         let oversize = vec![0u8; BLOB_SIZE_LIMIT_BYTES + 1];
-        let res: Result<Vec<u8>, _> = decode(&oversize);
+        let res: Result<Dummy, _> = decode(&oversize);
         match res {
             Err(WalletStorageError::BlobTooLarge {
                 len_bytes,
@@ -180,6 +251,12 @@ mod tests {
             vout: 9,
         };
         let bytes = encode_outpoint(&op).unwrap();
+        assert_eq!(bytes[0], 32, "bincode prefixes the txid byte-array length");
+        assert_eq!(
+            &bytes[1..33],
+            AsRef::<[u8]>::as_ref(&op.txid),
+            "the txid must occupy SQLite substr bytes 2 through 33"
+        );
         assert_eq!(decode_outpoint(&bytes).unwrap(), op);
     }
 
@@ -196,17 +273,32 @@ mod tests {
         assert_eq!(decode_outpoint(&bytes).unwrap(), op);
     }
 
-    /// A truncated / malformed outpoint key is a typed decode error, not
-    /// a panic — replaces the old fixed-36-byte length check. A 4-byte
-    /// input is too short for the 32-byte txid prefix, so bincode fails
-    /// deterministically with `BincodeDecode` (UnexpectedEnd) before the
-    /// trailing-bytes check.
+    /// A truncated outpoint key is a typed decode error, not a panic: a
+    /// 4-byte input is too short for the 32-byte txid prefix, so bincode
+    /// fails deterministically with `BincodeDecode` (UnexpectedEnd).
     #[test]
     fn decode_outpoint_rejects_malformed_bytes() {
         let res = decode_outpoint(&[0x01u8; 4]);
         assert!(
             matches!(res, Err(WalletStorageError::BincodeDecode { .. })),
             "a 4-byte payload must fail as BincodeDecode, got {res:?}"
+        );
+    }
+
+    /// Pins the encoded layout `V014__single_source_core_confirmation_height`
+    /// depends on: one length-prefix byte, then the 32 txid bytes. That
+    /// migration lifts the txid with `substr(outpoint, 2, 32)`, so a change
+    /// in the encoding must fail here rather than backfill the wrong bytes.
+    #[test]
+    fn encode_outpoint_txid_occupies_bytes_two_to_thirty_three() {
+        use dashcore::hashes::Hash;
+        let txid_bytes = [0x5Au8; 32];
+        let op = dashcore::OutPoint::new(dashcore::Txid::from_byte_array(txid_bytes), 3);
+        let encoded = encode_outpoint(&op).unwrap();
+        assert_eq!(
+            &encoded[1..33],
+            &txid_bytes,
+            "SQL substr(outpoint, 2, 32) must select exactly the txid"
         );
     }
 }

@@ -92,15 +92,28 @@ jobs:
             rm -rf target
           fi
 
-      - name: Install build dependencies (macOS)
+      - name: Verify build dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          echo "/opt/homebrew/bin" >> $GITHUB_PATH
-          echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
-          brew list cmake &>/dev/null || brew install cmake
-          brew list gmp &>/dev/null || brew install gmp
-          brew list llvm &>/dev/null || brew install llvm
-          brew list gnupg &>/dev/null || brew install gnupg
+          # Persistent runners must be provisioned before accepting CI jobs.
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/opt/llvm/bin" >> "$GITHUB_PATH"
+          export PATH="/opt/homebrew/opt/llvm/bin:/opt/homebrew/bin:$PATH"
+
+          missing=0
+          for tool in cmake llvm-config gpg; do
+            if ! "$tool" --version >/dev/null 2>&1; then
+              echo "::error::Missing or unusable $tool. Provision this dependency on the runner before running CI."
+              missing=1
+            fi
+          done
+          for library in /opt/homebrew/opt/gmp/include/gmp.h /opt/homebrew/opt/gmp/lib/libgmp.dylib /opt/homebrew/opt/llvm/lib/libclang.dylib; do
+            if [ ! -r "$library" ]; then
+              echo "::error::Missing or unreadable $library. Provision this dependency on the runner before running CI."
+              missing=1
+            fi
+          done
+          exit "$missing"
 
       # clang, llvm and libsnappy are installed by ./.github/actions/rust on
       # Linux; this covers what the rest of the job needs and what a bare

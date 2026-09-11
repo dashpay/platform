@@ -53,7 +53,7 @@ fn atom_013_open_rejects_corrupt_db() {
         // Push the DB past a few pages with a chunky meta row.
         for i in 0..20u32 {
             conn.execute(
-                "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
+                "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
                 params![vec![i as u8; 32].as_slice(), i as i64],
             )
             .unwrap();
@@ -120,7 +120,7 @@ fn tc_code_016_a_integrity_report_collects_all_rows() {
         let conn = persister.lock_conn_for_test();
         for i in 0..40u32 {
             conn.execute(
-                "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
+                "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
                 params![vec![i as u8; 32].as_slice(), i as i64],
             )
             .unwrap();

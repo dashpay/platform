@@ -46,6 +46,11 @@ jsonschema = { git = "https://github.com/dashpay/jsonschema-rs", branch = "confi
   "draft202012",
 ], optional = true }
 lazy_static = { version = "1.4" }
+# Consensus-critical exact pin: DistributionFunction::evaluate (protocol 14+) pins the output
+# bits of libm::{log, exp, pow} in a golden test. Feature unification via num-traits/fpe may
+# still turn the crate's `arch` feature on; that only swaps sqrt/fma intrinsics, and those are
+# IEEE correctly rounded, so log/exp/pow stay bit-identical across targets either way.
+libm = { version = "=0.2.16", default-features = false }
 num_enum = "0.7"
 bincode = { workspace = true, features = ["serde"] }
 rand = { version = "0.8.5", features = ["small_rng"] }

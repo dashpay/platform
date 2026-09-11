@@ -15,10 +15,18 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use bincode::config::{Configuration, Limit, LittleEndian, Varint};
-use platform_wallet_storage::sqlite::schema::blob::{self, BLOB_SIZE_LIMIT_BYTES};
+use platform_wallet_storage::sqlite::schema::blob::{self, BlobDecode, BLOB_SIZE_LIMIT_BYTES};
 use platform_wallet_storage::WalletStorageError;
 
 struct ObservedAllocator;
+
+/// A byte sequence decoded through Serde's `Vec<u8>` visitor. Local so the
+/// test can admit it to the codec without registering a production shape.
+#[derive(Debug, serde::Deserialize)]
+#[serde(transparent)]
+struct Bytes(#[allow(dead_code)] Vec<u8>); // only ever rejected, never read
+
+impl BlobDecode for Bytes {}
 
 thread_local! {
     static OBSERVING: Cell<bool> = const { Cell::new(false) };
@@ -148,7 +156,7 @@ fn should_reject_truncated_byte_sequence_without_reserving_declared_capacity() {
     let blob = truncated_collection(8_000_000, &[0xAB]);
 
     assert_ordinary_decoding_reserves_capacity::<Vec<u8>>("Vec<u8>", &blob);
-    assert_codec_rejects_within_budget::<Vec<u8>>("Vec<u8>", &blob);
+    assert_codec_rejects_within_budget::<Bytes>("Vec<u8>", &blob);
 }
 
 #[test]
