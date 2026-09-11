@@ -6,6 +6,7 @@ use crate::util::grove_operations::{push_drive_operation_result, BatchDeleteAppl
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::operations::delete::DeleteOptions;
+use grovedb::BackwardReferencesPolicy;
 use grovedb::{GroveDb, TransactionArg};
 use grovedb_path::SubtreePath;
 use grovedb_storage::rocksdb_storage::RocksDbStorage;
@@ -23,7 +24,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         let options = DeleteOptions {
-            propagate_backward_references: false,
+            backward_references_policy: BackwardReferencesPolicy::Maintain,
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,

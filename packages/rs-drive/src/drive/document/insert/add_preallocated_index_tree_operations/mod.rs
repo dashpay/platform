@@ -185,6 +185,7 @@ impl Drive {
                 KeyInfoPath::from_known_owned_path(contract_document_type_path.clone()),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
+                    may_contain_backward_references: false,
                     estimated_layer_count: ApproximateElements(
                         referring_index_structure.sub_levels().len() as u32 + 1,
                     ),
@@ -362,6 +363,7 @@ impl Drive {
                     path_info.clone().convert_to_key_info_path(),
                     EstimatedLayerInformation {
                         tree_type: property_name_tree_type,
+                        may_contain_backward_references: false,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             value_key_estimated_size as u8,
@@ -405,6 +407,7 @@ impl Drive {
                     path_info.clone().convert_to_key_info_path(),
                     EstimatedLayerInformation {
                         tree_type: value_tree_type,
+                        may_contain_backward_references: false,
                         estimated_layer_count: ApproximateElements(
                             sub_level.sub_levels().len() as u32 + 1,
                         ),
@@ -477,6 +480,7 @@ impl Drive {
                 path_info.convert_to_key_info_path(),
                 EstimatedLayerInformation {
                     tree_type: member_tree_type,
+                    may_contain_backward_references: false,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllItems(
                         DEFAULT_HASH_SIZE_U8,

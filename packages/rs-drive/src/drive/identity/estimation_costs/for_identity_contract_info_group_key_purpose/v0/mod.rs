@@ -26,6 +26,7 @@ impl Drive {
             )),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: ApproximateElements(5),
                 estimated_layer_sizes: AllReference(1, KEY_REFERENCE_SIZE, None),
             },

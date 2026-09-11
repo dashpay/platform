@@ -19,6 +19,7 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(unique_key_hashes_path),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllItems(
                     DEFAULT_HASH_160_SIZE_U8,

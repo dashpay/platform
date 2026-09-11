@@ -63,6 +63,7 @@ impl Drive {
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(2, false),
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
             },
@@ -73,6 +74,7 @@ impl Drive {
             KeyInfoPath::from_known_path(tokens_root_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(0, false), // this should be at the top
                 estimated_layer_sizes: AllSubtrees(1, AllBigSumTrees, None),
             },
@@ -82,6 +84,7 @@ impl Drive {
             KeyInfoPath::from_known_path(token_balances_root_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::BigSumTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(10, false), // we can estimate 10 levels deep
                 estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, AllSumTrees, None),
             },
@@ -92,6 +95,7 @@ impl Drive {
             KeyInfoPath::from_known_path(token_balances_path(&token_id)),
             EstimatedLayerInformation {
                 tree_type: TreeType::SumTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, AVERAGE_BALANCE_SIZE, None),
             },

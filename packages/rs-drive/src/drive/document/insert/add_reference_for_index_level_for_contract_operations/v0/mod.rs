@@ -193,6 +193,7 @@ impl Drive {
                     index_path_info.clone().convert_to_key_info_path(),
                     EstimatedLayerInformation {
                         tree_type: reference_tree_type,
+                        may_contain_backward_references: false,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllReference(
                             DEFAULT_HASH_SIZE_U8,
@@ -474,6 +475,7 @@ impl Drive {
                 index_path_info.clone().convert_to_key_info_path(),
                 EstimatedLayerInformation {
                     tree_type: member_tree_type,
+                    may_contain_backward_references: false,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllItems(
                         DEFAULT_HASH_SIZE_U8,

@@ -6,6 +6,7 @@ use crate::util::batch::GroveDbOpBatch;
 use crate::util::grove_operations::push_drive_operation_result;
 use grovedb::batch::estimated_costs::EstimatedCostsType::AverageCaseCostsType;
 use grovedb::batch::{BatchApplyOptions, KeyInfoPath};
+use grovedb::BackwardReferencesPolicy;
 use grovedb::{EstimatedLayerInformation, GroveDb};
 use platform_version::version::drive_versions::DriveVersion;
 use std::collections::HashMap;
@@ -24,7 +25,7 @@ impl Drive {
             AverageCaseCostsType(estimated_layer_info),
             ops.operations,
             Some(BatchApplyOptions {
-                propagate_backward_references: false,
+                backward_references_policy: BackwardReferencesPolicy::Maintain,
                 validate_insertion_does_not_override: validate,
                 validate_insertion_does_not_override_tree: validate,
                 disable_operation_consistency_check: false,

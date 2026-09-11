@@ -46,6 +46,7 @@ impl Drive {
             //todo: revisit
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: ApproximateElements(4), //we can estimate that each security level will only have 4 keys
                 //We can mark these as all subtrees, because the revision will be under
                 estimated_layer_sizes: AllItems(1, KEY_REFERENCE_SIZE, None),

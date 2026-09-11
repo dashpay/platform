@@ -8,6 +8,7 @@ use crate::util::batch::GroveDbOpBatch;
 use crate::util::grove_operations::push_drive_operation_result;
 use crate::util::storage_flags::{MergingOwnersStrategy, StorageFlags};
 use grovedb::batch::{BatchApplyOptions, OpsByLevelPath, QualifiedGroveDbOp};
+use grovedb::BackwardReferencesPolicy;
 use grovedb::TransactionArg;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
 use grovedb_costs::storage_cost::transition::OperationStorageTransitionType;
@@ -48,7 +49,7 @@ impl Drive {
         let cost_context = self.grove.apply_partial_batch_with_element_flags_update(
             ops.operations,
             Some(BatchApplyOptions {
-                propagate_backward_references: false,
+                backward_references_policy: BackwardReferencesPolicy::Maintain,
                 validate_insertion_does_not_override: validate,
                 validate_insertion_does_not_override_tree: validate,
                 disable_operation_consistency_check: false,

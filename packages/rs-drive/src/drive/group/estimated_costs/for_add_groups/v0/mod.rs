@@ -37,6 +37,7 @@ impl Drive {
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(3, false),
                 estimated_layer_sizes: AllSubtrees(
                     1,
@@ -61,6 +62,7 @@ impl Drive {
             KeyInfoPath::from_known_path(group_root_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(10, false), // We estimate that on average we need to update 10 nodes
                 estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
             },
@@ -70,6 +72,7 @@ impl Drive {
             KeyInfoPath::from_known_path(group_contract_path(contract_id.as_slice())),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(1, false),
                 estimated_layer_sizes: AllSubtrees(2, NoSumTrees, None),
             },
@@ -83,6 +86,7 @@ impl Drive {
                 )),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
+                    may_contain_backward_references: false,
                     estimated_layer_count: EstimatedLevel(1, false),
                     estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
                 },
