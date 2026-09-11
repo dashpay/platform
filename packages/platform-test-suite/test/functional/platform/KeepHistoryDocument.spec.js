@@ -22,18 +22,22 @@ const {
  * @param {Object} identity
  * @returns {Promise<{ identityKey: Object, signer: Object }>}
  */
+// Key 1 is the identity's HIGH authentication key: document transitions
+// require a HIGH or CRITICAL key, and key 0 is the MASTER key.
+const DOCUMENT_SIGNING_KEY_ID = 1;
+
 async function evoSignerFor(evo, evoSdk, client, identity) {
   const account = await client.getWalletAccount();
   const { privateKey } = account.identities.getIdentityHDKeyById(
     identity.getId().toString(),
-    0,
+    DOCUMENT_SIGNING_KEY_ID,
   );
 
   const signer = new evo.IdentitySigner();
   signer.addKeyFromWif(privateKey.toWIF());
 
   const fetched = await evoSdk.identities.fetch(identity.getId().toString());
-  const identityKey = fetched.getPublicKeyById(0);
+  const identityKey = fetched.getPublicKeyById(DOCUMENT_SIGNING_KEY_ID);
 
   return { identityKey, signer };
 }
