@@ -305,11 +305,11 @@ struct TransitionInputView: View {
                     return false
                 }
             } else if isEraseOperation {
-                // Only a deletable keep-history type can be erasable; whether
-                // the schema actually sets `canBeErased` is checked by consensus.
+                // Only types whose schema sets `canBeErased` (off by default,
+                // read from the stored schema JSON) can be erased.
                 return dataContracts.filter { contract in
                     if let docTypes = contract.documentTypes {
-                        return docTypes.contains { $0.documentsKeepHistory && $0.documentsCanBeDeleted }
+                        return docTypes.contains { ($0.schema?["canBeErased"] as? Bool) == true }
                     }
                     return false
                 }
@@ -330,7 +330,7 @@ struct TransitionInputView: View {
             } else if isDeleteOperation {
                 return "No contracts with deletable documents"
             } else if isEraseOperation {
-                return "No contracts with deletable keep-history documents"
+                return "No contracts with erasable document types"
             } else {
                 return "No contracts available"
             }
@@ -431,8 +431,8 @@ struct TransitionInputView: View {
                         // For document delete, only show deletable document types
                         return docTypes.filter { $0.documentsCanBeDeleted }
                     } else if isEraseOperation {
-                        // Only a deletable keep-history type can be erasable
-                        return docTypes.filter { $0.documentsKeepHistory && $0.documentsCanBeDeleted }
+                        // Only types whose schema sets `canBeErased`
+                        return docTypes.filter { ($0.schema?["canBeErased"] as? Bool) == true }
                     } else {
                         return Array(docTypes)
                     }
@@ -450,7 +450,7 @@ struct TransitionInputView: View {
                     } else if isDeleteOperation {
                         return "No deletable document types in selected contract"
                     } else if isEraseOperation {
-                        return "No deletable keep-history document types in selected contract"
+                        return "No erasable document types in selected contract"
                     } else {
                         return "No document types in selected contract"
                     }

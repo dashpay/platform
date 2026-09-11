@@ -125,8 +125,6 @@ public struct PathElement: Sendable {
     }
 }
 
-// MARK: - Platform Query Extensions for SDK
-@MainActor
 /// Which revisions of a keep-history document to read. Exactly one
 /// selector applies per `documentGetHistory` call.
 public enum DocumentHistorySelector: Sendable {
@@ -197,25 +195,63 @@ public struct DocumentHistoryLifecycle: Sendable {
     public let erasingFromRevision: UInt64
 
     /// Parses the `lifecycle` dictionary of a `documentGetHistory`
-    /// result; nil when the block or its state is missing or unknown.
+    /// result; nil when the block, its state, or any of its numbers is
+    /// missing, unknown, or not a non-negative integer, so a partial block
+    /// is never read as zeros.
     public init?(json: [String: Any]) {
         guard let stateRaw = json["state"] as? String,
               let state = DocumentLifecycleState(rawValue: stateRaw) else {
             return nil
         }
-        func value(_ key: String) -> UInt64 {
-            if let number = json[key] as? NSNumber { return number.uint64Value }
-            return 0
+        func value(_ key: String) -> UInt64? {
+            guard let number = json[key] as? NSNumber, number.doubleValue >= 0 else {
+                return nil
+            }
+            return number.uint64Value
+        }
+        guard let remainingRevisions = value("remaining_revisions"),
+              let deletedAtMs = value("deleted_at_ms"),
+              let erasingStartedAtMs = value("erasing_started_at_ms"),
+              let erasingFromTimeMs = value("erasing_from_time_ms"),
+              let erasingFromRevision = value("erasing_from_revision") else {
+            return nil
         }
         self.state = state
-        self.remainingRevisions = value("remaining_revisions")
-        self.deletedAtMs = value("deleted_at_ms")
-        self.erasingStartedAtMs = value("erasing_started_at_ms")
-        self.erasingFromTimeMs = value("erasing_from_time_ms")
-        self.erasingFromRevision = value("erasing_from_revision")
+        self.remainingRevisions = remainingRevisions
+        self.deletedAtMs = deletedAtMs
+        self.erasingStartedAtMs = erasingStartedAtMs
+        self.erasingFromTimeMs = erasingFromTimeMs
+        self.erasingFromRevision = erasingFromRevision
+    }
+
+    /// Words for what an erase achieved, from the lifecycle read before it
+    /// was submitted (nil when not read) and the one read after its absence
+    /// was observed. The erase result itself proves only that the document
+    /// is absent from ordinary reads, which it already was, so a document
+    /// still DELETED with the same retained count is reported as not
+    /// established, never as an accepted or completed erase.
+    public static func describeEraseProgress(
+        before: DocumentHistoryLifecycle?,
+        after: DocumentHistoryLifecycle
+    ) -> String {
+        switch after.state {
+        case .absent:
+            return "Erasure complete: no revisions remain and the id is free again."
+        case .erasing:
+            return "Erasure in progress: \(after.remainingRevisions) revisions still retained; submit another erase to continue."
+        case .deleted:
+            if let before, before.state == .deleted, before.remainingRevisions == after.remainingRevisions {
+                return "Not established: the document is still DELETED with \(after.remainingRevisions) revisions retained, so the history shows nothing this erase removed."
+            }
+            return "The document is DELETED with \(after.remainingRevisions) revisions retained; no erasure has been recorded."
+        case .active:
+            return "The document is active; an erase applies only after it has been deleted."
+        }
     }
 }
 
+// MARK: - Platform Query Extensions for SDK
+@MainActor
 extension SDK {
     // Helper to pass non-Sendable pointers across @Sendable closures when safe
     private final class SendablePtr<T>: @unchecked Sendable {
@@ -559,6 +595,28 @@ extension SDK {
     }
 
     // MARK: - Document Queries
+
+    /// Read where a keep-history document stands right now: its lifecycle
+    /// state and the exact number of revisions still retained. A current
+    /// observation, not the outcome of any particular transition.
+    public func documentGetLifecycle(
+        dataContractId: String,
+        documentType: String,
+        documentId: String
+    ) async throws -> DocumentHistoryLifecycle {
+        let page = try await documentGetHistory(
+            dataContractId: dataContractId,
+            documentType: documentType,
+            documentId: documentId,
+            selector: .startAtTime(ms: 0),
+            limit: 1
+        )
+        guard let lifecycleJSON = page["lifecycle"] as? [String: Any],
+              let lifecycle = DocumentHistoryLifecycle(json: lifecycleJSON) else {
+            throw SDKError.serializationError("Document history response carried no complete lifecycle block")
+        }
+        return lifecycle
+    }
 
     /// Get a page of a keep-history document's revision history with its
     /// lifecycle state.
