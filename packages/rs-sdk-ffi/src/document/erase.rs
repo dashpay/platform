@@ -185,13 +185,17 @@ pub unsafe extern "C" fn dash_sdk_document_erase(
     }
 }
 
-/// Erase a chunk of a deleted document's retained revisions and wait for confirmation
+/// Erase a chunk of a deleted document's retained revisions, then wait until
+/// the document's absence is observed under a proof
 ///
-/// The proof Platform returns authenticates that the document is absent from
-/// ordinary reads, which it already was before the erase ran. It says nothing
-/// about how many revisions remain; read the document's history
-/// (`dash_sdk_document_fetch_history`) to observe the lifecycle state and the
-/// remaining revision count, and submit another erase while revisions remain.
+/// Success means the transition was broadcast and Platform proved the document
+/// absent from ordinary reads as of the proof's block. The document already
+/// was absent before the erase ran, so this is an observation of the state the
+/// erase affected, not evidence that this erase removed any revision. Whether
+/// and how far the erasure progressed is read separately from the document's
+/// history (`dash_sdk_document_fetch_history`): its lifecycle block reports
+/// the state and the exact number of revisions still retained. Submit another
+/// erase while revisions remain.
 ///
 /// # Safety
 /// - Same requirements as `dash_sdk_document_erase` regarding pointer validity and lifetimes.
@@ -353,14 +357,14 @@ pub unsafe extern "C" fn dash_sdk_document_erase_and_wait(
 
         info!("[DOCUMENT ERASE] SDK call completed successfully");
 
-        let DocumentEraseResult::Accepted(erased_id) = result;
+        let DocumentEraseResult::AbsentAsOfProof(absent_id) = result;
 
-        Ok(erased_id)
+        Ok(absent_id)
     });
 
     match result {
-        Ok(_erased_id) => {
-            info!("[DOCUMENT ERASE] document erase completed successfully");
+        Ok(_absent_id) => {
+            info!("[DOCUMENT ERASE] erase broadcast; document absence observed under proof");
             DashSDKResult::success(std::ptr::null_mut())
         }
         Err(e) => {
@@ -417,6 +421,7 @@ mod tests {
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
             let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
             assert!(error_msg.contains("null"));
+            crate::dash_sdk_error_free(result.error);
         }
 
         // Clean up
@@ -460,6 +465,7 @@ mod tests {
         unsafe {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            crate::dash_sdk_error_free(result.error);
         }
 
         // Clean up
@@ -504,6 +510,7 @@ mod tests {
         unsafe {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            crate::dash_sdk_error_free(result.error);
         }
 
         // Clean up
@@ -548,6 +555,7 @@ mod tests {
         unsafe {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            crate::dash_sdk_error_free(result.error);
         }
 
         // Clean up
@@ -590,6 +598,7 @@ mod tests {
         unsafe {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            crate::dash_sdk_error_free(result.error);
         }
 
         // Clean up
@@ -632,6 +641,7 @@ mod tests {
         unsafe {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            crate::dash_sdk_error_free(result.error);
         }
 
         // Clean up
@@ -677,6 +687,7 @@ mod tests {
         unsafe {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            crate::dash_sdk_error_free(result.error);
         }
 
         // Clean up
