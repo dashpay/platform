@@ -7565,21 +7565,38 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// `unresolved_asset_lock_tx_records`. Read from the same rows that
     /// buffer selects from, through the same decoder, rather than
     /// re-deriving a txid from the serialized bytes.
-    private func unresolvedAssetLockFundingTxids(walletId: Data) -> Set<Data> {
+    private func unresolvedAssetLockFundingTxids(walletId: Data) -> Set<Data>? {
         let descriptor = FetchDescriptor<PersistentAssetLock>(
             predicate: #Predicate { entry in
                 entry.walletId == walletId && entry.statusRaw < 2
             }
         )
-        guard let locks = try? backgroundContext.fetch(descriptor) else { return [] }
+        // `nil`, not an empty set, when the fetch fails: an empty exclusion
+        // set reads as "this wallet has no unresolved asset locks", which
+        // would let a funding transaction into the ordinary replay even
+        // though `resume_asset_lock` owns it. The caller offers nothing at
+        // all instead — one launch without a replay, rather than a
+        // transaction applied through the wrong path.
+        guard let locks = try? backgroundContext.fetch(descriptor) else { return nil }
         return Set(locks.compactMap { Self.assetLockFundingTxid(outPointHex: $0.outPointHex) })
     }
 
     private func buildUnconfirmedOutgoingTxRecordBuffer(
         rows txos: [PersistentTxo],
         allocation: LoadAllocation,
-        excludingTxids excluded: Set<Data>
+        excludingTxids excluded: Set<Data>?
     ) -> (UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>?, Int) {
+        // Fail closed: without a trustworthy exclusion set we cannot tell an
+        // asset-lock funding transaction from an ordinary send.
+        guard let excluded else {
+            SDKLogger.event(
+                "persistence_unconfirmed_outgoing_skipped",
+                category: .persistence,
+                severity: .error,
+                fields: ["reason": .publicText("asset_lock_exclusion_fetch_failed")]
+            )
+            return (nil, 0)
+        }
         guard !txos.isEmpty else { return (nil, 0) }
 
         // Distinct spenders, still unconfirmed, still ours to replay.
@@ -7608,10 +7625,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         entries.reserveCapacity(ordered.count)
         for row in ordered {
             let txBytes = row.transactionData
+            // Carry the row's identity so Rust can refuse bytes that do not
+            // hash to it. The replay applies the transaction through the
+            // ordinary state-update path, so a stale or partially-written
+            // `transactionData` would move accounting for inputs and outputs
+            // that have nothing to do with this send.
+            guard row.txid.count == 32 else { continue }
             let txBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: txBytes.count)
             txBytes.copyBytes(to: txBuf, count: txBytes.count)
             allocation.scalarBuffers.append((txBuf, txBytes.count))
             var entry = UnconfirmedOutgoingTxRecordFFI()
+            withUnsafeMutableBytes(of: &entry.txid) { raw in
+                raw.copyBytes(from: row.txid)
+            }
             entry.tx_bytes = txBuf
             entry.tx_bytes_len = UInt(txBytes.count)
             entry.first_seen = row.firstSeen

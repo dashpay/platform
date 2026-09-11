@@ -67,8 +67,7 @@ use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, ContactProfileRestoreEntryFFI, IdentityKeyRestoreFFI,
     IdentityRestoreEntryFFI, LoadWalletListFreeFn, PaymentRestoreEntryFFI,
     ProviderSpecialTxRestoreEntryFFI, StandardAccountTypeTagFFI, UnconfirmedOutgoingTxRecordFFI,
-    UnresolvedAssetLockTxRecordFFI,
-    UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
+    UnresolvedAssetLockTxRecordFFI, UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -4853,6 +4852,70 @@ impl Drop for LoadGuard {
     }
 }
 
+/// Decode the unconfirmed outgoing sends the host staged for replay.
+///
+/// Fail-closed on identity: a record must decode AND hash to the txid of the
+/// row it was selected from. The replay applies each transaction through the
+/// ordinary state-update path, so bytes that do not belong to that row would
+/// move accounting for inputs and outputs unrelated to the send — a stale or
+/// partially-written `transactionData` must drop out rather than be applied.
+fn decode_unconfirmed_outgoing(
+    entry: &WalletRestoreEntryFFI,
+) -> Vec<dashcore::blockdata::transaction::Transaction> {
+    use dashcore::consensus::Decodable;
+    use dashcore::hashes::Hash;
+    let recs: &[UnconfirmedOutgoingTxRecordFFI] = if entry.unconfirmed_outgoing_tx_records.is_null()
+        || entry.unconfirmed_outgoing_tx_records_count == 0
+    {
+        &[]
+    } else {
+        unsafe {
+            slice::from_raw_parts(
+                entry.unconfirmed_outgoing_tx_records,
+                entry.unconfirmed_outgoing_tx_records_count,
+            )
+        }
+    };
+    let mut decoded: Vec<(u64, dashcore::blockdata::transaction::Transaction)> =
+        Vec::with_capacity(recs.len());
+    let mut dropped_decode = 0usize;
+    let mut dropped_identity = 0usize;
+    for rec in recs {
+        if rec.tx_bytes.is_null() || rec.tx_bytes_len == 0 {
+            dropped_decode += 1;
+            continue;
+        }
+        let bytes = unsafe { slice::from_raw_parts(rec.tx_bytes, rec.tx_bytes_len) };
+        match dashcore::blockdata::transaction::Transaction::consensus_decode(&mut &bytes[..]) {
+            // The bytes must be the row they were selected from. The
+            // replay runs through the ordinary state-update path, so a
+            // stale or partially-written `transactionData` would apply a
+            // different transaction and move accounting for inputs and
+            // outputs unrelated to this send.
+            Ok(tx) if *tx.txid().as_byte_array() == rec.txid => decoded.push((rec.first_seen, tx)),
+            Ok(tx) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(entry.wallet_id),
+                    expected = %hex::encode(rec.txid),
+                    decoded = %tx.txid(),
+                    "load: unconfirmed outgoing record does not hash to its row; dropped"
+                );
+                dropped_identity += 1;
+            }
+            Err(_) => dropped_decode += 1,
+        }
+    }
+    if dropped_decode > 0 || dropped_identity > 0 {
+        tracing::warn!(
+            wallet_id = %hex::encode(entry.wallet_id),
+            dropped_decode,
+            dropped_identity,
+            "load: unconfirmed outgoing tx records were dropped"
+        );
+    }
+    order_unconfirmed_outgoing(decoded)
+}
+
 /// Put a batch of unconfirmed outgoing sends into replay order.
 ///
 /// `first_seen` establishes the baseline, but the host records it in whole
@@ -4866,8 +4929,7 @@ fn order_unconfirmed_outgoing(
 ) -> Vec<dashcore::blockdata::transaction::Transaction> {
     decoded.sort_by_key(|(first_seen, _)| *first_seen);
 
-    let in_batch: std::collections::HashSet<_> =
-        decoded.iter().map(|(_, tx)| tx.txid()).collect();
+    let in_batch: std::collections::HashSet<_> = decoded.iter().map(|(_, tx)| tx.txid()).collect();
     let mut emitted: std::collections::HashSet<_> = std::collections::HashSet::new();
     let mut ordered = Vec::with_capacity(decoded.len());
     let mut queue: std::collections::VecDeque<_> = decoded.into_iter().collect();
@@ -5539,47 +5601,7 @@ fn build_wallet_start_state(
     // sort only establishes a stable starting order, and a dependency pass
     // then moves any send that spends another send in the same batch behind
     // it.
-    let unconfirmed_outgoing_txs = {
-        use dashcore::consensus::Decodable;
-        let recs: &[UnconfirmedOutgoingTxRecordFFI] = if entry
-            .unconfirmed_outgoing_tx_records
-            .is_null()
-            || entry.unconfirmed_outgoing_tx_records_count == 0
-        {
-            &[]
-        } else {
-            unsafe {
-                slice::from_raw_parts(
-                    entry.unconfirmed_outgoing_tx_records,
-                    entry.unconfirmed_outgoing_tx_records_count,
-                )
-            }
-        };
-        let mut decoded: Vec<(u64, dashcore::blockdata::transaction::Transaction)> =
-            Vec::with_capacity(recs.len());
-        let mut dropped_decode = 0usize;
-        for rec in recs {
-            if rec.tx_bytes.is_null() || rec.tx_bytes_len == 0 {
-                dropped_decode += 1;
-                continue;
-            }
-            let bytes = unsafe { slice::from_raw_parts(rec.tx_bytes, rec.tx_bytes_len) };
-            match dashcore::blockdata::transaction::Transaction::consensus_decode(
-                &mut &bytes[..],
-            ) {
-                Ok(tx) => decoded.push((rec.first_seen, tx)),
-                Err(_) => dropped_decode += 1,
-            }
-        }
-        if dropped_decode > 0 {
-            tracing::warn!(
-                wallet_id = %hex::encode(entry.wallet_id),
-                dropped_decode,
-                "load: unconfirmed outgoing tx records failed to decode"
-            );
-        }
-        order_unconfirmed_outgoing(decoded)
-    };
+    let unconfirmed_outgoing_txs = decode_unconfirmed_outgoing(entry);
 
     let wallet_state = ClientWalletStartState {
         wallet,
@@ -6840,6 +6862,60 @@ mod tests {
                 ordered.iter().map(|tx| tx.txid()).collect::<Vec<_>>(),
                 vec![a.txid(), b.txid(), c.txid()]
             );
+        }
+
+        /// A record whose bytes do not hash to the txid of the row it came
+        /// from is dropped, not replayed.
+        ///
+        /// The replay runs through the ordinary state-update path, so a stale
+        /// or partially-written `transactionData` would not merely be ignored
+        /// — it would move accounting for whatever inputs and outputs those
+        /// bytes happen to describe.
+        #[test]
+        fn a_record_that_does_not_hash_to_its_row_is_dropped() {
+            use crate::wallet_restore_types::{
+                UnconfirmedOutgoingTxRecordFFI, WalletRestoreEntryFFI,
+            };
+            use dashcore::consensus::encode::serialize;
+
+            let honest = root(50_000);
+            let impostor = root(60_000);
+
+            let mut honest_bytes = serialize(&honest);
+            let mut impostor_bytes = serialize(&impostor);
+            let honest_txid = *dashcore::hashes::Hash::as_byte_array(&honest.txid());
+            let impostor_txid = *dashcore::hashes::Hash::as_byte_array(&impostor.txid());
+
+            let records = [
+                UnconfirmedOutgoingTxRecordFFI {
+                    txid: honest_txid,
+                    tx_bytes: honest_bytes.as_mut_ptr(),
+                    tx_bytes_len: honest_bytes.len(),
+                    first_seen: 1_700_000_000,
+                },
+                // Same shape, but the bytes belong to a different transaction.
+                UnconfirmedOutgoingTxRecordFFI {
+                    txid: impostor_txid,
+                    tx_bytes: honest_bytes.as_mut_ptr(),
+                    tx_bytes_len: honest_bytes.len(),
+                    first_seen: 1_700_000_001,
+                },
+            ];
+
+            let entry = WalletRestoreEntryFFI {
+                unconfirmed_outgoing_tx_records: records.as_ptr(),
+                unconfirmed_outgoing_tx_records_count: records.len(),
+                ..Default::default()
+            };
+
+            let decoded = super::super::decode_unconfirmed_outgoing(&entry);
+
+            assert_eq!(
+                decoded.iter().map(|tx| tx.txid()).collect::<Vec<_>>(),
+                vec![honest.txid()],
+                "only the record whose bytes match its row may be replayed"
+            );
+            let _ = impostor_bytes.as_mut_ptr();
         }
 
         /// Sends that do not depend on each other keep the order `first_seen`

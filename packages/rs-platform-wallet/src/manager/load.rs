@@ -107,6 +107,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // boundary with no Swift-side reset path, so transactional
         // semantics matter for this hydration API.
         let mut inserted_in_manager: Vec<WalletId> = Vec::new();
+        // Re-dispatches owed by this load, held until the rollback point has
+        // passed. See the push site for why they cannot be spawned inline.
+        #[allow(clippy::type_complexity)]
+        let mut pending_resends: Vec<(
+            WalletId,
+            Arc<WalletGeneration>,
+            Arc<crate::broadcaster::SpvBroadcaster>,
+            Vec<dashcore::Transaction>,
+        )> = Vec::new();
         // The generation travels with the id: a rollback may only remove the
         // registration THIS call published (see the rollback block below).
         let mut inserted_in_wallets: Vec<(WalletId, Arc<crate::wallet::core::WalletGeneration>)> =
@@ -308,51 +317,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // selectable again and this wallet could sign a conflicting
             // transaction. That is why the two halves ship together.
             if !unconfirmed_outgoing_txs.is_empty() {
-                let broadcaster_for_resend = Arc::clone(&broadcaster);
-                let txs_to_resend = unconfirmed_outgoing_txs.clone();
-                tokio::spawn(async move {
-                    // Zero connected peers makes the send a definitive
-                    // `Rejected` rather than a retry, so wait for the
-                    // transport before offering anything.
-                    if !broadcaster_for_resend
-                        .wait_until_ready(RESEND_TRANSPORT_READY_WAIT)
-                        .await
-                    {
-                        tracing::warn!(
-                            pending = txs_to_resend.len(),
-                            "load: broadcast transport not ready; leaving unconfirmed \
-                             sends for the next launch"
-                        );
-                        return;
-                    }
-                    for tx in txs_to_resend {
-                        let txid = tx.txid();
-                        match broadcaster_for_resend.broadcast(&tx).await {
-                            Ok(_) => tracing::info!(
-                                %txid,
-                                "load: re-dispatched unconfirmed send, accepted"
-                            ),
-                            // Expected for the orphaned case: sent, no
-                            // acceptance signal, now owned by the timer.
-                            Err(BroadcastError::MaybeSent {
-                                reason,
-                            }) => tracing::info!(
-                                %txid,
-                                %reason,
-                                "load: re-dispatched unconfirmed send, no acceptance signal yet — \
-                                 handed to the rebroadcast timer"
-                            ),
-                            // Provably never sent: worth a warning, since
-                            // nothing carried it and the next launch is the
-                            // only remaining chance.
-                            Err(e) => tracing::warn!(
-                                %txid,
-                                error = ?e,
-                                "load: re-dispatch was not sent"
-                            ),
-                        }
-                    }
-                });
+                // Queued, not spawned: a later iteration can still fail and
+                // roll this registration back, and a task already waiting on
+                // transport readiness would outlive it and rebroadcast for a
+                // wallet that no longer exists. Spawned after the rollback
+                // point instead, with the generation carried along so the
+                // task can tell whether the registration it was created for
+                // is still the live one.
+                pending_resends.push((
+                    wallet_id,
+                    Arc::clone(&generation),
+                    Arc::clone(&broadcaster),
+                    unconfirmed_outgoing_txs,
+                ));
             }
 
             let platform_wallet = PlatformWallet::new(
@@ -498,6 +475,71 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 }
             }
             return Err(err);
+        }
+
+        // Past the rollback point: every registration here is one this load
+        // actually committed, so the transactions now have a wallet to belong
+        // to for as long as it stays registered.
+        //
+        // Detached on purpose — nothing may block the load on transport
+        // readiness — which is why each task re-checks that its wallet is
+        // still the live registration before putting anything on the wire. A
+        // wallet removed while the task waits leaves the generation pointer
+        // pointing at nothing the map holds any more, and the re-dispatch is
+        // abandoned rather than broadcasting on behalf of a wallet that is
+        // gone.
+        for (wallet_id, generation, broadcaster, txs) in pending_resends {
+            let wallets = Arc::clone(&self.wallets);
+            tokio::spawn(async move {
+                if !broadcaster
+                    .wait_until_ready(RESEND_TRANSPORT_READY_WAIT)
+                    .await
+                {
+                    tracing::warn!(
+                        pending = txs.len(),
+                        "load: broadcast transport not ready; leaving unconfirmed \
+                         sends for the next launch"
+                    );
+                    return;
+                }
+                let still_live = wallets
+                    .load()
+                    .get(&wallet_id)
+                    .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), &generation));
+                if !still_live {
+                    tracing::info!(
+                        wallet_id = %hex::encode(wallet_id),
+                        pending = txs.len(),
+                        "load: wallet no longer registered; abandoning the re-dispatch"
+                    );
+                    return;
+                }
+                for tx in txs {
+                    let txid = tx.txid();
+                    match broadcaster.broadcast(&tx).await {
+                        Ok(_) => tracing::info!(
+                            %txid,
+                            "load: re-dispatched unconfirmed send, accepted"
+                        ),
+                        // Expected for the orphaned case: sent, no acceptance
+                        // signal, now owned by the rebroadcast timer.
+                        Err(BroadcastError::MaybeSent { reason }) => tracing::info!(
+                            %txid,
+                            %reason,
+                            "load: re-dispatched unconfirmed send, no acceptance signal yet — \
+                             handed to the rebroadcast timer"
+                        ),
+                        // Provably never sent: worth a warning, since nothing
+                        // carried it and the next launch is the only remaining
+                        // chance.
+                        Err(e) => tracing::warn!(
+                            %txid,
+                            error = ?e,
+                            "load: re-dispatch was not sent"
+                        ),
+                    }
+                }
+            });
         }
 
         Ok(())

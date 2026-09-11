@@ -577,6 +577,14 @@ pub struct ProviderSpecialTxRestoreEntryFFI {
 /// replayed at load so its spend effect survives a restart.
 #[repr(C)]
 pub struct UnconfirmedOutgoingTxRecordFFI {
+    /// Wire-order txid of the row this record came from.
+    ///
+    /// The load path decodes `tx_bytes` and requires the result to hash to
+    /// this, then drops the record if it does not. The replay applies the
+    /// transaction through the ordinary state-update path, so bytes that do
+    /// not belong to the row Swift selected would rewrite accounting for
+    /// inputs and outputs nobody asked about. Fail closed instead.
+    pub txid: [u8; 32],
     /// Consensus-encoded transaction body, the same wire format
     /// `dashcore::consensus::encode::serialize` produces. Swift-owned
     /// for the callback window; freed by `LoadWalletListFreeFn`.
