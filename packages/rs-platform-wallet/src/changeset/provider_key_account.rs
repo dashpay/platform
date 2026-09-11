@@ -66,18 +66,25 @@ pub fn rebuild_provider_key_account(
     }
 }
 
+/// A wallet with both a BLS `ProviderOperatorKeys` account and an EdDSA
+/// `ProviderPlatformKeys` account, for exercising [`rebuild_provider_key_account`].
+///
+/// Shared across crates (not just this module's own tests) so
+/// `platform-wallet-storage`'s equivalent rebuild tests don't carry a second,
+/// drifting copy — see `test-utils` in this crate's `Cargo.toml`.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn provider_key_test_wallet() -> key_wallet::wallet::Wallet {
+    key_wallet::wallet::Wallet::from_seed_bytes(
+        [0x42; 64],
+        Network::Testnet,
+        key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+    )
+    .expect("provider key test wallet")
+}
+
 #[cfg(all(test, feature = "bls", feature = "eddsa"))]
 mod tests {
     use super::*;
-
-    fn provider_key_test_wallet() -> key_wallet::wallet::Wallet {
-        key_wallet::wallet::Wallet::from_seed_bytes(
-            [0x42; 64],
-            Network::Testnet,
-            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
-        )
-        .expect("provider key test wallet")
-    }
 
     #[test]
     fn rebuild_provider_key_account_restores_bls_and_eddsa() {

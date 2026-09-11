@@ -101,16 +101,11 @@ pub(super) fn insert_platform_node_pool_entry(
 mod tests {
     use super::*;
     use key_wallet::Network;
+    // Shared with `platform-wallet`'s own `rebuild_provider_key_account` tests
+    // via its `test-utils` feature (see this crate's `[dev-dependencies]`) —
+    // one fixture instead of two drifting copies.
+    use platform_wallet::changeset::provider_key_account::provider_key_test_wallet;
     use platform_wallet::wallet::provider_key_at_index::derive_platform_node_public_keys;
-
-    fn provider_key_test_wallet() -> key_wallet::wallet::Wallet {
-        key_wallet::wallet::Wallet::from_seed_bytes(
-            [0x42; 64],
-            Network::Testnet,
-            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
-        )
-        .expect("provider key test wallet")
-    }
 
     #[test]
     fn insert_used_platform_node_pool_entry_restores_used_bookkeeping() {
