@@ -19,7 +19,8 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         let options = DeleteOptions {
-            backward_references_policy: BackwardReferencesPolicy::Maintain,
+            // Drive stores no backward-reference participants; Skip keeps the released V4 path.
+            backward_references_policy: BackwardReferencesPolicy::Skip,
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,

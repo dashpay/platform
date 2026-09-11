@@ -23,9 +23,7 @@ mod dpns_tests {
     async fn test_dpns_contract_references_with_no_contested_unique_index() {
         run_dpns_contract_references_with_no_contested_unique_index_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            // v14: GroveDB V4 prepares the batch through retained Merk nodes,
-            // which bills slightly fewer reads than the V3 path
-            6_006_380,
+            6_010_380,
         )
         .await;
     }
@@ -36,7 +34,7 @@ mod dpns_tests {
     /// trigger context's add_operation never called on v0). Pinned so
     /// v11 chain history stays bit-for-bit reproducible.
     ///
-    /// Delta at PV12 (6_010_380): 6_010_380 - 5_978_080 = 32_300 credits = T1 + T2
+    /// Delta vs PV12: 6_010_380 - 5_978_080 = 32_300 credits = T1 + T2
     /// query costs across 3 subdomain creates (~10,767 per transition,
     /// or ~5,383 per query).
     #[tokio::test]

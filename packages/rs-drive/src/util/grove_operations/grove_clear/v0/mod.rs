@@ -15,7 +15,8 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         let options = ClearOptions {
-            backward_references_policy: BackwardReferencesPolicy::Maintain,
+            // Drive stores no backward-reference participants; Skip keeps the released V4 path.
+            backward_references_policy: BackwardReferencesPolicy::Skip,
             check_for_subtrees: false,
             allow_deleting_subtrees: false,
             trying_to_clear_with_subtrees_returns_error: false,

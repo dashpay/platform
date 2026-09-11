@@ -213,10 +213,7 @@ mod transfer_tests {
     async fn test_document_transfer_on_document_type_that_is_transferable_before_creator_id() {
         run_document_transfer_on_document_type_that_is_transferable_before_creator_id_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            // v14: GroveDB V4 maintains backward references by default, so the
-            // index subtrees this transition empties are scanned for participants
-            // before the batch removes them
-            3579040,
+            3380960,
         )
         .await;
     }
@@ -501,10 +498,8 @@ mod transfer_tests {
     async fn test_document_transfer_on_document_type_that_is_transferable() {
         run_document_transfer_on_document_type_that_is_transferable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            // v14: transferred documents carry the contract-version stamp, and
-            // GroveDB V4 scans the index subtrees the transfer empties for
-            // backward-reference participants before the batch removes them
-            3841940,
+            // v14: transferred documents carry the contract-version stamp
+            3643860,
         )
         .await;
     }
@@ -802,10 +797,7 @@ mod transfer_tests {
     async fn test_document_transfer_on_document_type_that_is_transferable_contract_v0() {
         run_document_transfer_on_document_type_that_is_transferable_contract_v0_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            // v14: GroveDB V4 maintains backward references by default, so the
-            // index subtrees this transition empties are scanned for participants
-            // before the batch removes them
-            3579040,
+            3380960,
         )
         .await;
     }
@@ -1499,10 +1491,7 @@ mod transfer_tests {
     async fn test_document_delete_after_transfer() {
         run_document_delete_after_transfer_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            // v14: stamped documents (see transferable baseline note); GroveDB V4
-            // scans the index subtrees the transfer empties for backward-reference
-            // participants before the batch removes them
-            4252000,
+            4004720, // v14: stamped documents (see transferable baseline note)
         )
         .await;
     }

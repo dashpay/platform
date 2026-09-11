@@ -64,7 +64,8 @@ impl Drive {
         let cost_context = self.grove.apply_batch_with_element_flags_update(
             ops.operations,
             Some(BatchApplyOptions {
-                backward_references_policy: BackwardReferencesPolicy::Maintain,
+                // Drive stores no backward-reference participants; Skip keeps the released V4 path.
+                backward_references_policy: BackwardReferencesPolicy::Skip,
                 validate_insertion_does_not_override: validate,
                 validate_insertion_does_not_override_tree: validate,
                 disable_operation_consistency_check: !self.config.batching_consistency_verification,
