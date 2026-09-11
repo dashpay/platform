@@ -488,6 +488,49 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertTrue(injector.observedReads.contains("PersistentAccount"))
     }
 
+    /// The heal pass asks the store whether it already holds each engine
+    /// coin. A read that fails there must not read as "absent": that would
+    /// insert a row the store may well hold. The step fails and the run
+    /// stops before any insert.
+    func testTheRunStopsWhenTheHealCannotReadTheStore() throws {
+        let injector = FetchFaultInjector(faulting: PersistentTxo.self)
+        let (handler, container) = try makeHandler(modelFetcher: injector)
+        try seedWallet(in: container)
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0x84))])
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertFalse(report.completed)
+        XCTAssertEqual(report.storeFailures, 1)
+        XCTAssertEqual(report.alreadyPresent, 0, "a failed read is not a hit either")
+        XCTAssertEqual(report.inserted, 0)
+        XCTAssertEqual(try txoCount(container), 0)
+    }
+
+    /// The classify pass re-reads each `knownUncredited` row before it
+    /// flips it. A read that fails there must not read as "stale" and let
+    /// the step report `.done`: the step fails, nothing staged is kept, and
+    /// the row stays as it was. The page read itself is served; only the
+    /// per-row lookup behind it faults.
+    func testTheRunStopsWhenTheFlipLookupCannotRead() throws {
+        let injector = FetchFaultInjector(faulting: PersistentTxo.self, afterServing: 1)
+        let (handler, container) = try makeHandler(modelFetcher: injector)
+        try seedWallet(in: container)
+        try seedUnspentTxo(in: container, txid: txid(0x85))
+        let outpoint = PersistentTxo.makeOutpoint(txid: txid(0x85), vout: 0)
+        let engine = FakeCoreTxoEngine(verdicts: [outpoint: .knownUncredited])
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertFalse(report.completed)
+        XCTAssertEqual(report.storeFailures, 1)
+        XCTAssertEqual(report.storeRows, 1, "the page itself was read")
+        XCTAssertEqual(report.flipped, 0)
+        XCTAssertEqual(report.staleRetries, 0, "a failed read is not a stale page either")
+        let coin = try XCTUnwrap(txo(container, txid: txid(0x85)))
+        XCTAssertFalse(coin.isSpent)
+    }
+
     // MARK: 4. Nothing runs before the scan is complete
 
     func testTheSteadyStateGateRefusesAnUnfinishedScan() {

@@ -2369,6 +2369,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     /// Resolve a `PersistentTxo` by its unique 36-byte `outpoint`.
     private func fetchTxoRow(outpoint: Data) -> PersistentTxo? {
+        try? fetchTxoRowChecked(outpoint: outpoint)
+    }
+
+    /// Throwing core of `fetchTxoRow`: `nil` is a successful miss, a read
+    /// that fails throws. Round writers take the `nil` (a miss and a failed
+    /// read both mean "write the row"); the reconcile passes must not,
+    /// because for them a miss is an insert and a failed read is a stop.
+    private func fetchTxoRowChecked(outpoint: Data) throws -> PersistentTxo? {
         if let known = roundIndex?.txosByOutpoint[outpoint] {
             return known.isDeleted ? nil : known
         }
@@ -2377,7 +2385,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         )
         descriptor.fetchLimit = 1
         if roundIndex != nil { descriptor.includePendingChanges = false }
-        guard let row = (try? backgroundContext.fetch(descriptor))?.first,
+        guard let row = try modelFetcher.fetch(descriptor, in: backgroundContext).first,
               !row.isDeleted else { return nil }
         roundIndex?.txosByOutpoint[outpoint] = row
         return row
@@ -10924,7 +10932,13 @@ extension PlatformWalletPersistenceHandler {
                     continue
                 }
                 let outpoint = row.outpoint
-                if fetchTxoRow(outpoint: outpoint) != nil {
+                let present: PersistentTxo?
+                do {
+                    present = try fetchTxoRowChecked(outpoint: outpoint)
+                } catch {
+                    return reconcileReadFailed(walletId: walletId, error: error)
+                }
+                if present != nil {
                     counts.alreadyPresent += 1
                     continue
                 }
@@ -10932,15 +10946,7 @@ extension PlatformWalletPersistenceHandler {
                 do {
                     accountRow = try findAccountRow(walletId: walletId, key: row.account)
                 } catch {
-                    SDKLogger.event(
-                        "persistence_txo_reconcile_read_failed",
-                        category: .persistence,
-                        severity: .error,
-                        fields: ["wallet_reference": .reference(walletId)],
-                        error: error
-                    )
-                    backgroundContext.rollback()
-                    return .failed
+                    return reconcileReadFailed(walletId: walletId, error: error)
                 }
                 guard let account = accountRow else {
                     counts.skippedUnresolvedAccount += 1
@@ -11124,7 +11130,13 @@ extension PlatformWalletPersistenceHandler {
                 case .notOwned:
                     counts.notOwned += 1
                 case .knownUncredited:
-                    guard let txo = fetchTxoRow(outpoint: row.outpoint), !txo.isSpent else {
+                    let current: PersistentTxo?
+                    do {
+                        current = try fetchTxoRowChecked(outpoint: row.outpoint)
+                    } catch {
+                        return reconcileReadFailed(walletId: walletId, error: error)
+                    }
+                    guard let txo = current, !txo.isSpent else {
                         counts.stale += 1
                         continue
                     }
@@ -11178,6 +11190,22 @@ extension PlatformWalletPersistenceHandler {
                 && identity(row.userIdentityId) == identity(key.userIdentityId)
                 && identity(row.friendIdentityId) == identity(key.friendIdentityId)
         }
+    }
+
+    /// A store read failed inside a reconcile step: log it, drop whatever
+    /// the step had staged so the next Rust round starts on a clean
+    /// context, and fail the step — the run stops and counts a store
+    /// failure. A failed read is never a miss.
+    private func reconcileReadFailed<T>(walletId: Data, error: Error) -> CoreTxoReconcileStep<T> {
+        SDKLogger.event(
+            "persistence_txo_reconcile_read_failed",
+            category: .persistence,
+            severity: .error,
+            fields: ["wallet_reference": .reference(walletId)],
+            error: error
+        )
+        backgroundContext.rollback()
+        return .failed
     }
 
     /// Save one reconcile step's writes, or roll them back so the next
