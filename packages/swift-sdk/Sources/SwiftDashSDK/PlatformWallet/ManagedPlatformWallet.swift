@@ -3907,8 +3907,12 @@ extension ManagedPlatformWallet {
     /// Erase + broadcast a chunk of the retained revisions of the already
     /// deleted `documentId` on `contractId`'s `documentType`, signed with
     /// the explicit AUTHENTICATION + ECDSA key `signingKeyId` of
-    /// `ownerIdentityId`. Returns the erased document's 32-byte id once
-    /// Platform confirms the transition.
+    /// `ownerIdentityId`. Returns the document's 32-byte id once Platform
+    /// has proved it absent from ordinary reads. That absence predates the
+    /// erase, so the return observes the affected state and is not
+    /// evidence that this erase removed a revision; read
+    /// `SDK.documentGetLifecycle` for the state and the exact number of
+    /// revisions still retained.
     ///
     /// Sibling to `deleteDocument`. Routes through
     /// `IdentityWallet::erase_document_with_signer` (via
@@ -3918,8 +3922,7 @@ extension ManagedPlatformWallet {
     /// the document's owner, every later one may be signed by any
     /// identity, so `ownerIdentityId` is the signing identity rather than
     /// necessarily the owner. One erase removes a bounded chunk of
-    /// revisions; read the document's history (`SDK.documentGetHistory`)
-    /// to see how many remain, and erase again while there are any. Erase
+    /// revisions; erase again while the lifecycle reports any. Erase
     /// returns no document body, so there is no canonical JSON.
     public func eraseDocument(
         ownerIdentityId: Identifier,
