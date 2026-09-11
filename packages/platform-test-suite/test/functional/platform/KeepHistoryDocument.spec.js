@@ -129,8 +129,14 @@ describe('Platform', () => {
       await waitForSTPropagated();
 
       for (const message of ['second', 'third']) {
-        note.set('message', message);
-        await client.platform.documents.broadcast({ replace: [note] }, identity);
+        // The SDK signs `revision + 1` from the document it is handed but never
+        // bumps that local copy, so every replace starts from a fresh fetch.
+        const [stored] = await client.platform.documents.get(
+          'notes.note',
+          { where: [['$id', '==', note.getId()]] },
+        );
+        stored.set('message', message);
+        await client.platform.documents.broadcast({ replace: [stored] }, identity);
 
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();
