@@ -62,6 +62,7 @@ impl Drive {
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(3, false),
                 estimated_layer_sizes: AllSubtrees(
                     12, // 32 + 1 + 1 / 3
@@ -85,6 +86,7 @@ impl Drive {
             KeyInfoPath::from_known_path(asset_lock_storage_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllItems(
                     36, //The size of an outpoint

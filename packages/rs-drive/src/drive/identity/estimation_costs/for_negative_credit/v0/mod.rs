@@ -37,6 +37,7 @@ impl Drive {
             KeyInfoPath::from_known_path(identity_tree_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
             },
@@ -54,6 +55,7 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(identity_path_vec(identity_id.as_slice())),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(2, false),
                 //We can mark these as all subtrees, because the revision will be under
                 estimated_layer_sizes: Mix {

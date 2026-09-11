@@ -73,6 +73,7 @@ impl Drive {
                 KeyInfoPath::from_known_owned_path(token_distributions_root_path_vec()),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
+                    may_contain_backward_references: false,
                     estimated_layer_count: EstimatedLevel(1, false), // We should be on the first level
                     estimated_layer_sizes: AllSubtrees(U8_SIZE_U8, NoSumTrees, None),
                 },
@@ -97,6 +98,7 @@ impl Drive {
                 KeyInfoPath::from_known_owned_path(pre_programmed_distributions_path.clone()),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
+                    may_contain_backward_references: false,
                     estimated_layer_count: EstimatedLevel(5, false),
                     estimated_layer_sizes: AllItems(1, 8, None),
                 },

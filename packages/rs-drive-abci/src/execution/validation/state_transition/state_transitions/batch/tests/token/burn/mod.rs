@@ -3959,8 +3959,10 @@ mod token_burn_tests {
         run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
             PlatformVersion::latest().protocol_version,
             // PROTOCOL_VERSION_14: +400 — genesis system documents now carry
-            // the contract-version stamp, shifting byte-billed subtree reads
-            4_368_280,
+            // the contract-version stamp, shifting byte-billed subtree reads;
+            // +56_660: GroveDB V4 maintains backward references by default and
+            // scans the subtrees the confirmer removes for participants first
+            4_424_940,
         )
         .await;
     }

@@ -40,6 +40,7 @@ impl Drive {
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(3, false),
                 estimated_layer_sizes: AllSubtrees(
                     1,
@@ -66,6 +67,7 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(vec![vec![RootTree::ShieldedBalances as u8]]),
             EstimatedLayerInformation {
                 tree_type: TreeType::SumTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(1, false),
                 estimated_layer_sizes: AllSubtrees(
                     1,
@@ -99,6 +101,7 @@ impl Drive {
             KeyInfoPath::from_known_path(shielded_credit_pool_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::SumTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(3, false),
                 estimated_layer_sizes: Mix {
                     subtrees_size: Some((
@@ -131,6 +134,7 @@ impl Drive {
             KeyInfoPath::from_known_path(shielded_credit_pool_notes_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::CommitmentTree(SHIELDED_NOTES_CHUNK_POWER),
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(16, false),
                 estimated_layer_sizes: AllItems(8, AVERAGE_NOTE_VALUE_SIZE, None),
             },
@@ -142,6 +146,7 @@ impl Drive {
             KeyInfoPath::from_known_path(shielded_credit_pool_nullifiers_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::ProvableCountTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(16, false),
                 estimated_layer_sizes: AllItems(NULLIFIER_KEY_SIZE, 0, None),
             },
@@ -153,6 +158,7 @@ impl Drive {
             KeyInfoPath::from_known_path(shielded_credit_pool_anchors_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(7, false),
                 estimated_layer_sizes: AllItems(ANCHOR_KEY_SIZE, ANCHOR_VALUE_SIZE, None),
             },
@@ -164,6 +170,7 @@ impl Drive {
             KeyInfoPath::from_known_path(shielded_credit_pool_anchors_by_height_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(7, false),
                 estimated_layer_sizes: AllItems(
                     ANCHOR_VALUE_SIZE as u8,

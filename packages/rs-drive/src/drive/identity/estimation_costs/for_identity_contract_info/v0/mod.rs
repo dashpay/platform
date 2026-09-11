@@ -20,6 +20,7 @@ impl Drive {
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(1, false),
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
             },
@@ -30,6 +31,7 @@ impl Drive {
             KeyInfoPath::from_known_path(identity_tree_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
             },
@@ -47,6 +49,7 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(identity_path_vec(identity_id.as_slice())),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(2, false),
                 estimated_layer_sizes: Mix {
                     subtrees_size: Some((1, NoSumTrees, None, 2)), // weight of 2 because 1 for keys and 1 for data contract info
@@ -62,6 +65,7 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(identity_contract_info_root_path_vec(identity_id)),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
             },

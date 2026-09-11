@@ -71,6 +71,7 @@ impl Drive {
                 KeyInfoPath::from_known_owned_path(contract_document_type_path.clone()),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
+                    may_contain_backward_references: false,
                     estimated_layer_count: ApproximateElements(sub_level_index_count + 1),
                     estimated_layer_sizes: AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
@@ -218,6 +219,7 @@ impl Drive {
                     KeyInfoPath::from_known_owned_path(index_path.clone()),
                     EstimatedLayerInformation {
                         tree_type: property_name_tree_type,
+                        may_contain_backward_references: false,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             document_top_field_estimated_size as u8,

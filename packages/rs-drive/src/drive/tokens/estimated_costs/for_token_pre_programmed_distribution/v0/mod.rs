@@ -36,6 +36,7 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(token_distributions_root_path_vec()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(1, false), // We should be on the first level
                 estimated_layer_sizes: AllSubtrees(U8_SIZE_U8, NoSumTrees, None),
             },
@@ -46,6 +47,7 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(token_root_pre_programmed_distributions_path_vec()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(10, false), // Just an estimate
                 estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
             },
@@ -58,6 +60,7 @@ impl Drive {
             )),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 // At this level, expect as many children as there are time entries.
                 estimated_layer_count: ApproximateElements(
                     times.as_ref().map(|times| times.len()).unwrap_or(128) as u32,
@@ -75,6 +78,7 @@ impl Drive {
                     ),
                     EstimatedLayerInformation {
                         tree_type: TreeType::SumTree,
+                        may_contain_backward_references: false,
                         estimated_layer_count: EstimatedLevel(3, false), // probably not that many
                         estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, None),
                     },

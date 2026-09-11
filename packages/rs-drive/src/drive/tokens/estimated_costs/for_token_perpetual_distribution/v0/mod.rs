@@ -31,6 +31,7 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(token_distributions_root_path_vec()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(1, false),
                 estimated_layer_sizes: AllSubtrees(U8_SIZE_U8, NoSumTrees, None),
             },
@@ -41,6 +42,7 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(token_root_perpetual_distributions_path_vec()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
+                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(10, false), // Estimated depth
                 estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
             },
@@ -54,6 +56,7 @@ impl Drive {
                 )),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
+                    may_contain_backward_references: false,
                     estimated_layer_count: EstimatedLevel(2, false),
                     estimated_layer_sizes: AllSubtrees(U8_SIZE_U8, NoSumTrees, None),
                 },

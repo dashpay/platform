@@ -11,8 +11,10 @@ mod deletion_tests {
         run_document_delete_on_document_type_that_is_mutable_and_can_be_deleted_at_protocol_version(
             PlatformVersion::latest().protocol_version,
             // v14: the deleted document carries the contract-version stamp
-            // (one stored byte, five estimated), shifting processing costs
-            1699620,
+            // (one stored byte, five estimated), and GroveDB V4 maintains backward
+            // references by default, so the index subtrees the delete empties are
+            // scanned for participants before the batch removes them
+            1868020,
         )
         .await;
     }
@@ -603,7 +605,10 @@ mod deletion_tests {
     async fn test_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted() {
         run_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            2778700,
+            // v14: GroveDB V4 maintains backward references by default, so the
+            // index subtrees this transition empties are scanned for participants
+            // before the batch removes them
+            3407080,
         )
         .await;
     }

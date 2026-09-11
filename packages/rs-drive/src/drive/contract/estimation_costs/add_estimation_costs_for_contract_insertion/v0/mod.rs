@@ -62,6 +62,7 @@ impl Drive {
                     ),
                     EstimatedLayerInformation {
                         tree_type: TreeType::NormalTree,
+                        may_contain_backward_references: false,
                         estimated_layer_count: ApproximateElements(2),
                         estimated_layer_sizes: AllSubtrees(
                             ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
@@ -81,6 +82,7 @@ impl Drive {
                 )),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
+                    may_contain_backward_references: false,
                     estimated_layer_count: EstimatedLevel(0, true),
                     estimated_layer_sizes: AllSubtrees(
                         ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
@@ -104,6 +106,7 @@ impl Drive {
                 )),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
+                    may_contain_backward_references: false,
                     estimated_layer_count: ApproximateElements(AVERAGE_NUMBER_OF_UPDATES as u32),
                     estimated_layer_sizes: Mix {
                         subtrees_size: None,
