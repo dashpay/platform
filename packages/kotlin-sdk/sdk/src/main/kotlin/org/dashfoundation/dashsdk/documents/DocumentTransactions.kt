@@ -221,9 +221,16 @@ class DocumentTransactions internal constructor(
      * type whose schema sets `canBeErased`, and only after the document has
      * been deleted; the first erase must be signed by the document's owner,
      * later ones by any identity. One call removes a bounded chunk of
-     * revisions — read the document's history to see how many remain.
+     * revisions.
      *
-     * @return the erased document's 32-byte id, for confirmation.
+     * A return means the transition was broadcast and Platform proved the
+     * document absent from ordinary reads — which it already was before the
+     * erase — so it observes the affected state rather than proving that
+     * this erase removed a revision. Read `Documents.lifecycle` (or
+     * `Documents.history`) for the current state and the exact number of
+     * revisions still retained, and erase again while there are any.
+     *
+     * @return the document's 32-byte id whose absence was observed.
      */
     suspend fun erase(
         walletHandle: Long,
