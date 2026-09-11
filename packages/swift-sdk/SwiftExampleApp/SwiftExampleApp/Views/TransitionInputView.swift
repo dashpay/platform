@@ -257,6 +257,7 @@ struct TransitionInputView: View {
         let isCreateOperation = input.action?.contains("documentCreate") == true
         let isReplaceOperation = input.action?.contains("documentReplace") == true
         let isDeleteOperation = input.action?.contains("documentDelete") == true
+        let isEraseOperation = input.action?.contains("documentErase") == true
         let isMarketplaceOperation = isPurchaseOperation || isSetPriceOperation
 
         // Filter contracts based on operation type
@@ -303,6 +304,15 @@ struct TransitionInputView: View {
                     }
                     return false
                 }
+            } else if isEraseOperation {
+                // Only a deletable keep-history type can be erasable; whether
+                // the schema actually sets `canBeErased` is checked by consensus.
+                return dataContracts.filter { contract in
+                    if let docTypes = contract.documentTypes {
+                        return docTypes.contains { $0.documentsKeepHistory && $0.documentsCanBeDeleted }
+                    }
+                    return false
+                }
             } else {
                 return dataContracts
             }
@@ -319,6 +329,8 @@ struct TransitionInputView: View {
                 return "No contracts with mutable documents"
             } else if isDeleteOperation {
                 return "No contracts with deletable documents"
+            } else if isEraseOperation {
+                return "No contracts with deletable keep-history documents"
             } else {
                 return "No contracts available"
             }
@@ -389,6 +401,7 @@ struct TransitionInputView: View {
         let isCreateOperation = input.action?.contains("documentCreate") == true
         let isReplaceOperation = input.action?.contains("documentReplace") == true
         let isDeleteOperation = input.action?.contains("documentDelete") == true
+        let isEraseOperation = input.action?.contains("documentErase") == true
         let isMarketplaceOperation = isPurchaseOperation || isSetPriceOperation
 
         if contractId.isEmpty {
@@ -417,6 +430,9 @@ struct TransitionInputView: View {
                     } else if isDeleteOperation {
                         // For document delete, only show deletable document types
                         return docTypes.filter { $0.documentsCanBeDeleted }
+                    } else if isEraseOperation {
+                        // Only a deletable keep-history type can be erasable
+                        return docTypes.filter { $0.documentsKeepHistory && $0.documentsCanBeDeleted }
                     } else {
                         return Array(docTypes)
                     }
@@ -433,6 +449,8 @@ struct TransitionInputView: View {
                         return "No mutable document types in selected contract"
                     } else if isDeleteOperation {
                         return "No deletable document types in selected contract"
+                    } else if isEraseOperation {
+                        return "No deletable keep-history document types in selected contract"
                     } else {
                         return "No document types in selected contract"
                     }
