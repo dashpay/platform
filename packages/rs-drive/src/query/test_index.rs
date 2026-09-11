@@ -150,6 +150,64 @@ mod tests {
     }
 
     #[test]
+    fn test_find_best_index_gapped_equality() {
+        // `d == "2"` binds only the LAST property of the [b, a, d] index.
+        // The v0 matcher (protocol versions <= 13, frozen on chain) scores
+        // it as a set-membership match with difference 2, even though the
+        // positional lowering cannot represent the two-property gap. From
+        // protocol version 14 the bound fields must cover a contiguous
+        // index prefix, so no index matches.
+        let document_type = construct_indexed_document_type();
+        let contract = get_dpns_data_contract_fixture(None, 0, 1).data_contract_owned();
+
+        let query_value = json!({
+            "where": [
+                ["d", "==", "2"]
+            ]
+        });
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+
+        let protocol_v13 = PlatformVersion::get(13).expect("protocol version 13 exists");
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            document_type.as_ref(),
+            &DriveConfig::default(),
+            protocol_v13,
+        )
+        .expect("query should be valid");
+        let index = query
+            .find_best_index(protocol_v13)
+            .expect("v13 must keep matching the gapped candidate");
+        assert_eq!(
+            index,
+            document_type.indexes().iter().nth(3).unwrap().1,
+            "v13 selects the [b, a, d] index on its last property alone"
+        );
+
+        let platform_version = PlatformVersion::latest();
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            document_type.as_ref(),
+            &DriveConfig::default(),
+            platform_version,
+        )
+        .expect("query should be valid");
+        let error = query
+            .find_best_index(platform_version)
+            .expect_err("a gapped binding must not match any index");
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
+            ),
+            "expected WhereClauseOnNonIndexedProperty, got {error:?}"
+        );
+    }
+
+    #[test]
     fn test_find_best_index_error() {
         let document_type = construct_indexed_document_type();
         let contract = get_dpns_data_contract_fixture(None, 0, 1).data_contract_owned();

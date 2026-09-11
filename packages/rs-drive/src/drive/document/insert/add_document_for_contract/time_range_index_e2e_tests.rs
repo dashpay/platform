@@ -1633,3 +1633,209 @@ fn multiple_in_route_refuses_an_in_clause_on_the_bucketed_source() {
         "expected the source-shape rejection, got {error:?}"
     );
 }
+
+/// The update walker's bucketed branch materializes ranking-chain
+/// continuations exactly as the insert walker does — the consensus
+/// property behind the chain-inversion dispatch it shares with the
+/// non-bucketed branch. An update that moves a document to a NEW group
+/// value inside its (unchanged) buckets materializes that group's value
+/// tree and its chain continuation through the update path alone; a
+/// wrapped (zero-contributing) continuation there would pin the new
+/// group's whole-subtree count at zero, and the per-window ranking would
+/// then disagree between a document that arrived by insert and one that
+/// arrived by update — a layout divergence, not just a wrong answer.
+#[test]
+fn ranked_chain_below_bucket_update_materializes_like_insert() {
+    use crate::query::drive_document_ranked_query::index_picker::resolve_ranked_query_for_mode;
+    use crate::query::drive_document_ranked_query::PrefixPin;
+    use crate::query::{DocumentRankedMode, RankedAxis, RankedEntryValue};
+
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+
+    let factory =
+        DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
+    let index_map = vec![
+        (
+            Value::Text("name".to_string()),
+            Value::Text("trendingChain".to_string()),
+        ),
+        (
+            Value::Text("properties".to_string()),
+            Value::Array(vec![
+                platform_value!({"$createdAt": "asc"}),
+                platform_value!({"category": "asc"}),
+                platform_value!({"name": "asc"}),
+            ]),
+        ),
+        (
+            Value::Text("timeRange".to_string()),
+            Value::Map(vec![
+                (
+                    Value::Text("on".to_string()),
+                    Value::Text("$createdAt".to_string()),
+                ),
+                (
+                    Value::Text("range".to_string()),
+                    Value::U64(6 * HOUR_SECONDS),
+                ),
+                (
+                    Value::Text("step".to_string()),
+                    Value::U64(2 * HOUR_SECONDS),
+                ),
+            ]),
+        ),
+        (
+            Value::Text("countable".to_string()),
+            Value::Text("countable".to_string()),
+        ),
+        (Value::Text("rangeCountable".to_string()), Value::Bool(true)),
+        (
+            Value::Text("rankedCountable".to_string()),
+            Value::Map(vec![(
+                Value::Text("at".to_string()),
+                Value::Array(vec![Value::Text("category".to_string())]),
+            )]),
+        ),
+    ];
+    let document_schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "category": {"type": "string", "maxLength": 61, "position": 0},
+            "name": {"type": "string", "maxLength": 61, "position": 1},
+        },
+        "required": ["category", "name", "$createdAt"],
+        "indices": Value::Array(vec![Value::Map(index_map)]),
+        "additionalProperties": false,
+    });
+    let schemas = platform_value!({ "post": document_schema });
+    let contract = factory
+        .create_with_value_config(Identifier::from([202u8; 32]), 0, schemas, None, None)
+        .expect("a ranked at-chain below a bucketed level registers")
+        .data_contract_owned();
+
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let transform = document_type
+        .indexes()
+        .get("trendingChain")
+        .expect("trendingChain index")
+        .time_range
+        .clone()
+        .expect("time range transform");
+
+    let created_at = 7 * HOUR_MS + 123_456;
+    let buckets = transform.containing_buckets(created_at);
+    assert_eq!(buckets, vec![6 * HOUR_MS, 4 * HOUR_MS, 2 * HOUR_MS]);
+
+    let owner_bytes = fixture_bytes(3, created_at, "chain");
+    let mut document = Document::V0(DocumentV0 {
+        id: Identifier::from(fixture_bytes(4, created_at, "chain")),
+        owner_id: Identifier::from(owner_bytes),
+        properties: BTreeMap::from([
+            ("category".to_string(), Value::Text("a".to_string())),
+            ("name".to_string(), Value::Text("x".to_string())),
+        ]),
+        created_at: Some(created_at),
+        revision: Some(1),
+        ..Default::default()
+    });
+
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &document,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(owner_bytes),
+                },
+                contract: &contract,
+                document_type,
+            },
+            false,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("add document");
+
+    // The update materializes category "b" — a value tree that does not
+    // exist yet — inside every containing bucket, together with the
+    // "name" chain continuation below it. This is the exact tree set the
+    // buggy dispatch would have zero-wrapped.
+    document.set("category", Value::Text("b".to_string()));
+    document.set_revision(Some(2));
+    drive
+        .update_document_for_contract(
+            &document,
+            &contract,
+            document_type,
+            Some(owner_bytes),
+            BlockInfo::default(),
+            true,
+            None,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("update document to a new group value");
+
+    for bucket in &buckets {
+        let mode = DocumentRankedMode {
+            axis: RankedAxis::Count,
+            descending: true,
+            k: 10,
+            offset: 0,
+            group_by_property: "category".to_string(),
+            aggregate_field: String::new(),
+            prefix_pins: vec![PrefixPin {
+                field: "$createdAt".to_string(),
+                values: vec![Value::U64(*bucket)],
+            }],
+        };
+        let ranked_query = resolve_ranked_query_for_mode(
+            contract.id().to_buffer(),
+            document_type,
+            "post".to_string(),
+            document_type.indexes(),
+            &mode,
+            &created_at_resolution(document_type),
+            platform_version,
+        )
+        .expect("the bucketed at-chain index covers the pinned request");
+        let page = ranked_query
+            .execute_top_k_no_proof(&drive, None, platform_version)
+            .expect("the per-window group ranking reads");
+        assert_eq!(
+            page.entries.len(),
+            1,
+            "bucket {bucket}: the stale group must be pruned and the new one present"
+        );
+        assert_eq!(
+            page.entries[0].key,
+            b"b".to_vec(),
+            "bucket {bucket}: the group key is the update's new category"
+        );
+        assert_eq!(
+            page.entries[0].value,
+            RankedEntryValue::Count(1),
+            "bucket {bucket}: an update-materialized chain continuation must count \
+             exactly like an insert-created one — zero here means the continuation \
+             was zero-wrapped on the update path"
+        );
+    }
+}

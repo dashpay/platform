@@ -4,6 +4,19 @@ const { expect } = require('chai');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
+const createPlatformProofVerifier = require('../../../lib/test/createPlatformProofVerifier');
+
+function identifierLikeToBase58(evo, value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (value && typeof value.toBase58 === 'function') {
+    return value.toBase58();
+  }
+
+  return evo.Identifier.fromBytes(Array.from(value)).toBase58();
+}
 
 const {
   Errors: {
@@ -54,7 +67,6 @@ describe('Platform', () => {
               position: 1,
             },
           },
-          required: ['hashtag'],
           additionalProperties: false,
         },
         like: {
@@ -70,6 +82,9 @@ describe('Platform', () => {
               countable: 'countable',
               rangeCountable: true,
               rankedCountable: true,
+              // hashtag is this index's skip trigger: a like that omits
+              // it writes no byHashtagPost entry at all
+              skipIfAbsent: true,
             },
             {
               name: 'byPost',
@@ -104,7 +119,7 @@ describe('Platform', () => {
               position: 1,
             },
           },
-          required: ['hashtag', 'postId'],
+          required: ['postId'],
           additionalProperties: false,
         },
       };
@@ -295,11 +310,112 @@ describe('Platform', () => {
       fetchedLike = fullLike;
     });
 
+    it('should fetch liked posts through a chained query with verified proofs', async () => {
+      // The provable semi-join: SELECT * FROM post WHERE $id IN
+      // (SELECT postId FROM like WHERE $ownerId = me). Served by the
+      // dedicated getChainedDocuments endpoint through the WASM SDK,
+      // which verifies ONE merged grovedb proof against the
+      // quorum-signed root, re-deriving the outer query and checking
+      // it against the proven inner values — the node cannot steer
+      // the join.
+      const { evo, sdk: evoSdk } = await createPlatformProofVerifier
+        .getEvoSdkForNetwork(process.env.NETWORK);
+
+      const page = await evoSdk.documents.chained({
+        dataContractId: dataContract.getId().toString(),
+        innerDocumentType: 'like',
+        where: [['$ownerId', '==', identity.getId().toString()]],
+        innerLimit: 10,
+        joinProperty: 'postId',
+        outerDocumentType: 'post',
+      });
+
+      expect(page.innerDocuments).to.have.lengthOf(1);
+      expect(page.outerDocuments).to.have.lengthOf(1);
+
+      const [likedPost] = page.outerDocuments;
+      expect(likedPost.id.toBase58()).to.equal(post.getId().toString());
+      expect(likedPost.properties.message).to.equal('a post worth liking');
+
+      // The inner projection carries the pagination cursor.
+      const [innerLike] = page.innerDocuments;
+      expect(identifierLikeToBase58(evo, innerLike.properties.postId))
+        .to.equal(post.getId().toString());
+    });
+
+    it('should fetch a feed page with its like counts and my likes through a composite query', async () => {
+      // The same owner also likes a post outside this page. Without the
+      // $id-to-postId binding, the owner filter would return both likes.
+      const otherPost = await client.platform.documents.create(
+        'yappr.post',
+        identity,
+        { hashtag: 'otherhashtag', message: 'a post outside the feed page' },
+      );
+      await client.platform.documents.broadcast({ create: [otherPost] }, identity);
+      await waitForSTPropagated();
+
+      const otherLike = await client.platform.documents.create(
+        'yappr.like',
+        identity,
+        { hashtag: 'otherhashtag', postId: otherPost.getId() },
+      );
+      await client.platform.documents.broadcast({ create: [otherLike] }, identity);
+      await waitForSTPropagated();
+
+      // A page plus the sub-queries derived from it, ONE merged proof:
+      // the dash posts, one like count per post (from the countable
+      // [hashtag, postId] index with hashtag fixed), and which of them
+      // I liked (the byLiker index with $ownerId fixed, its postId
+      // terminal bound to the page ids: value-bounded, so no limit).
+      // The WASM SDK bootstraps the page from the proof, re-derives
+      // every sub-query, and verifies the composition against the
+      // quorum-signed root.
+      const { evo, sdk: evoSdk } = await createPlatformProofVerifier
+        .getEvoSdkForNetwork(process.env.NETWORK);
+
+      const page = await evoSdk.documents.composite({
+        dataContractId: dataContract.getId().toString(),
+        documentType: 'post',
+        where: [['hashtag', '==', POST_HASHTAG]],
+        limit: 10,
+        subQueries: [
+          {
+            documentType: 'like',
+            kind: 'counts',
+            where: [['hashtag', '==', POST_HASHTAG]],
+            bind: { sourceProperty: '$id', field: 'postId' },
+          },
+          {
+            documentType: 'like',
+            where: [['$ownerId', '==', identity.getId().toString()]],
+            bind: { sourceProperty: '$id', field: 'postId' },
+          },
+        ],
+      });
+
+      expect(page.pageDocuments).to.have.lengthOf(1);
+      expect(page.subResults).to.have.lengthOf(2);
+
+      const [pagePost] = page.pageDocuments;
+      expect(pagePost.id.toBase58()).to.equal(post.getId().toString());
+
+      const [likeCounts, myLikes] = page.subResults;
+      expect(likeCounts.kind).to.equal('counts');
+      expect(likeCounts.counts.get(post.getId().toString())).to.equal(1n);
+
+      expect(myLikes.kind).to.equal('documents');
+      expect(myLikes.documents).to.have.lengthOf(1);
+      expect(myLikes.documents[0].ownerId.toBase58()).to.equal(identity.getId().toString());
+      expect(identifierLikeToBase58(evo, myLikes.documents[0].properties.postId))
+        .to.equal(pagePost.id.toBase58());
+    });
+
     it('should fail to query a subset-index projection without proofs', async () => {
       // The subset index [postId] synthesizes a projection without the
-      // required hashtag; a partial document cannot be expressed in the
-      // serialized non-proof response, so it only travels the proved read
-      // surface (where the client synthesizes it from the proof itself)
+      // hashtag — and with hashtag optional, serializing it would assert
+      // an absence the index cannot know; partial documents only travel
+      // the proved read surface (where the client synthesizes them from
+      // the proof itself)
       let fetchError;
 
       try {
@@ -312,7 +428,7 @@ describe('Platform', () => {
       }
 
       expect(fetchError).to.exist();
-      expect(fetchError.message).to.match(/does not cover every required property/);
+      expect(fetchError.message).to.match(/does not cover every property/);
     });
 
     it('should fail to fetch an indexOnly document by id', async () => {
@@ -436,6 +552,165 @@ describe('Platform', () => {
         identity.getId().toString(),
         secondIdentity.getId().toString(),
       ]);
+    });
+
+    describe('skipIfAbsent', () => {
+      let untaggedPost;
+      let untaggedLike;
+      let freshTaggedPost;
+
+      it('should create an untagged post and an untagged like under the absence agreement', async () => {
+        // post.hashtag is optional; a post may carry no tag at all
+        untaggedPost = await client.platform.documents.create(
+          'yappr.post',
+          identity,
+          {
+            message: 'a post with no hashtag',
+          },
+        );
+
+        await client.platform.documents.broadcast({
+          create: [untaggedPost],
+        }, identity);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
+
+        // Both sides of the propertyAgreement absent: the like may omit
+        // its hashtag exactly because the post has none — and the
+        // skipIfAbsent byHashtagPost index writes nothing for it
+        untaggedLike = await client.platform.documents.create(
+          'yappr.like',
+          identity,
+          {
+            postId: untaggedPost.getId(),
+          },
+        );
+
+        await client.platform.documents.broadcast({
+          create: [untaggedLike],
+        }, identity);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
+      });
+
+      it('should refuse a hashtag-less like on a tagged post', async () => {
+        // A FRESH tagged post: both identities already hold likes on the
+        // shared `post`, and the create-side duplicate probe would refuse
+        // the colliding byPost entry (40105) before the agreement check
+        // ever ran — the shape under test needs a post this identity has
+        // no like on
+        freshTaggedPost = await client.platform.documents.create(
+          'yappr.post',
+          identity,
+          {
+            hashtag: POST_HASHTAG,
+            message: 'a second tagged post',
+          },
+        );
+
+        await client.platform.documents.broadcast({
+          create: [freshTaggedPost],
+        }, identity);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
+
+        // Referring absent, referenced present: the absence agreement is
+        // strict — a like on a tagged post must carry the tag, or per-tag
+        // aggregates would silently deflate
+        const hashtagLessLike = await client.platform.documents.create(
+          'yappr.like',
+          secondIdentity,
+          {
+            postId: freshTaggedPost.getId(),
+          },
+        );
+
+        let broadcastError;
+
+        try {
+          await client.platform.documents.broadcast({
+            create: [hashtagLessLike],
+          }, secondIdentity);
+        } catch (e) {
+          broadcastError = e;
+        }
+
+        expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+        // ReferencedDocumentPropertyMismatchError
+        expect(broadcastError.code).to.equal(40127);
+      });
+
+      it('should refuse a tagged like on an untagged post', async () => {
+        // Referring present, referenced absent: the mirror mismatch
+        const taggedLike = await client.platform.documents.create(
+          'yappr.like',
+          secondIdentity,
+          {
+            hashtag: POST_HASHTAG,
+            postId: untaggedPost.getId(),
+          },
+        );
+
+        let broadcastError;
+
+        try {
+          await client.platform.documents.broadcast({
+            create: [taggedLike],
+          }, secondIdentity);
+        } catch (e) {
+          broadcastError = e;
+        }
+
+        expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+        // ReferencedDocumentPropertyMismatchError
+        expect(broadcastError.code).to.equal(40127);
+      });
+
+      it('should keep untagged likes out of the hashtag index', async () => {
+        // The skip index is a sparse projection: it holds exactly the
+        // likes that carry a hashtag, so the untagged like is invisible
+        // to per-hashtag queries (which must bind the trigger)
+        const likes = await client.platform.documents.get(
+          'yappr.like',
+          {
+            where: [
+              ['hashtag', '==', POST_HASHTAG],
+              ['postId', '==', untaggedPost.getId()],
+            ],
+          },
+        );
+
+        expect(likes).to.have.lengthOf(0);
+      });
+
+      it('should delete an untagged like by its values', async () => {
+        // The locally created document carries the exact value tuple
+        // (postId only) — the delete recomputes the same skip, removing
+        // entries from the non-skip indexes alone
+        await client.platform.documents.broadcast({
+          delete: [untaggedLike],
+        }, identity);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
+
+        let broadcastError;
+
+        try {
+          await client.platform.documents.broadcast({
+            delete: [untaggedLike],
+          }, identity);
+        } catch (e) {
+          broadcastError = e;
+        }
+
+        expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+        // DocumentNotFoundError: the first delete was exact
+        expect(broadcastError.code).to.equal(40101);
+      });
     });
   });
 });

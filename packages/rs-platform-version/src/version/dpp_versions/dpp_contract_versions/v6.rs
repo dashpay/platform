@@ -19,6 +19,9 @@ use versioned_feature_core::FeatureVersionBounds;
 // it. Generation 3 admits the ranked keywords unconditionally — it exists if
 // and only if the meta-schema is v3, so it needs no version read of its own.
 //
+// Generation 3 also rejects keep-history document types that allow deletion
+// during full validation. Earlier parser generations retain released behavior.
+//
 // `document_type_schema` moves to 3 in the same step: generation 3 and
 // meta-schema v3 are introduced together and pair by construction. Under v2 the
 // ranked keys still fail an index entry's `additionalProperties: false`, so v5
@@ -88,7 +91,18 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             prefunded_voting_balance_for_document: 0,
             contested_vote_poll_for_document: 0,
             estimated_size: 1, // changed: adds the document serialization format 3 contract-version stamp varint (worst case 5 bytes) to the estimate
-            index_for_types: 0,
+            // Changed: v1 requires a query's bound fields to cover a
+            // contiguous prefix of the candidate index (equalities exactly
+            // covering the leading properties, range/in immediately after,
+            // no unused property before an order-by field). v0 matched by
+            // positionless set membership, so a query binding only later
+            // index properties selected an index the positional path
+            // lowering misaligns on — returning cryptographically proven
+            // wrong or empty results. Gapped candidates are now skipped
+            // per-candidate, letting a well-shaped index win or the query
+            // fail with WhereClauseOnNonIndexedProperty. v0 stays frozen
+            // for replay at protocol versions <= 13.
+            index_for_types: 1,
             max_size: 0,
             serialize_value_for_key: 0,
             deserialize_value_for_key: 0,

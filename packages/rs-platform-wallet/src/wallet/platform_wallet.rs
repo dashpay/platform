@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use dashcore::OutPoint;
+use dashcore::{OutPoint, Txid};
+use dpp::prelude::CoreBlockHeight;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 #[cfg(feature = "shielded")]
@@ -228,6 +229,31 @@ fn plan_shield_inputs(
     })
 }
 
+/// One confirmed spend of a tracked asset lock's input, as the
+/// double-spend screen last saw it in live transaction history.
+///
+/// Session-scoped memory, never persisted and never restored: it exists
+/// because `apply_chain_lock` EVICTS a record from history the moment a
+/// chainlock buries it (default `keep-finalized-transactions = OFF`), and
+/// a retry after that eviction would otherwise find nothing and fall back
+/// into the proof wait the screen exists to prevent. The screen writes
+/// entries when it observes a confirmed spender, retracts them when live
+/// history re-observes that spender unconfirmed (a reorg demotes the
+/// record in place), and keeps reporting an entry whose record has LEFT
+/// history: promotion-eviction is the only path that removes a record.
+///
+/// The entry carries no finality: an eviction attests a height-based
+/// promotion, not that the spender's block is on the finalized branch, so
+/// every verdict the screen builds from this memory is the provisional
+/// one. See `wallet::asset_lock::sync::recovery`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObservedInputConflict {
+    /// The confirmed transaction the screen saw spending the input.
+    pub spender: Txid,
+    /// The block height it was seen at.
+    pub height: CoreBlockHeight,
+}
+
 /// Consolidated mutable state for a platform wallet.
 ///
 /// Lives inside `WalletManager<PlatformWalletInfo>.wallet_infos`. The `Wallet`
@@ -257,6 +283,11 @@ pub struct PlatformWalletInfo {
     pub(crate) generation: Arc<WalletGeneration>,
     pub identity_manager: IdentityManager,
     pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
+    /// Session-scoped double-spend evidence for tracked asset locks — see
+    /// [`ObservedInputConflict`]. Interior mutability because the screen
+    /// runs under the manager's read lock; a poisoned mutex degrades to
+    /// "no memory" rather than failing a resume.
+    pub observed_input_conflicts: std::sync::Mutex<BTreeMap<OutPoint, ObservedInputConflict>>,
     /// DPNS name states with sale price (username marketplace), keyed by
     /// domain document id. Session-lifetime working set for the
     /// marketplace sync/orchestration ops; the durable copy is the
@@ -349,10 +380,9 @@ impl PlatformWallet {
 
     /// Access the identity wallet.
     ///
-    /// Covers both identity-lifecycle and DashPay-contract operations —
-    /// these used to be split across `identity()` / `dashpay()`, but the
-    /// two facades were merged (the underlying `ManagedIdentity` state
-    /// was already shared between them). Keeps the single `SpvBroadcaster`
+    /// Covers both identity-lifecycle and DashPay-contract operations in
+    /// one facade, since the underlying `ManagedIdentity` state is shared
+    /// between them. Keeps the single `SpvBroadcaster`
     /// specialization the rest of this wallet uses.
     pub fn identity(&self) -> &IdentityWallet<SpvBroadcaster> {
         &self.identity
@@ -970,10 +1000,10 @@ impl PlatformWallet {
         // and per-subwallet store state is purged only for accounts
         // this registration DROPS or re-keys — accounts that remain
         // bound with the same viewing key keep their in-memory notes
-        // and watermark. A re-bind racing an in-flight sync pass can
-        // therefore no longer wipe the pass's results (the former
-        // unregister-then-register cycle here purged the whole
-        // wallet behind the pass's store lock and then restored a
+        // and watermark. A re-bind racing an in-flight sync pass
+        // therefore cannot wipe the pass's results (an
+        // unregister-then-register cycle here would purge the whole
+        // wallet behind the pass's store lock and then restore a
         // pre-pass snapshot — the "note discovered by sync is
         // unspendable until app restart" / "every pass rescans from
         // 0" failure). Registration also runs BEFORE the restore so
@@ -1363,7 +1393,7 @@ impl PlatformWallet {
     /// address (`"dash1…"` / `"tdash1…"`). Parsed via
     /// `PlatformAddress::from_bech32m_string`; the recipient's HRP is
     /// verified against the wallet's network HRP class here, since the
-    /// network-agnostic decoder no longer enforces it. `seed` supplies
+    /// network-agnostic decoder does not enforce it. `seed` supplies
     /// the transient spend authority (see
     /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
     #[cfg(feature = "shielded")]
@@ -1829,6 +1859,11 @@ impl PlatformWallet {
     }
 
     /// Load persisted state for this wallet.
+    ///
+    /// Calls the backend inline, without the `spawn_blocking` offload that
+    /// [`PlatformWalletManager::load_from_persistor`](crate::manager::PlatformWalletManager::load_from_persistor)
+    /// and wallet registration use. A slow backend blocks the calling thread —
+    /// an async caller's runtime worker included.
     pub fn load_persisted(&self) -> Result<ClientStartState, PersistenceError> {
         self.persister.load()
     }
@@ -1898,6 +1933,9 @@ impl PlatformWallet {
     /// accounts that exist at that point; a second call after
     /// account bootstrap picks up the rest without regressing
     /// anything.
+    ///
+    /// Inherits [`load_persisted`](Self::load_persisted)'s inline read with no
+    /// offload. A host that wants one must wrap this call itself.
     pub async fn load_and_apply_persisted(
         &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -2062,8 +2100,8 @@ mod check_recipient_hrp_tests {
 
     #[test]
     fn devnet_address_into_devnet_wallet_is_accepted() {
-        // The paloma regression: a devnet `tdash1…` recipient must be
-        // accepted by a devnet wallet (it was previously mis-rejected as
+        // A devnet `tdash1…` recipient must be
+        // accepted by a devnet wallet (not mis-rejected as
         // Testnet).
         let addr = recipient(dashcore::Network::Devnet);
         assert!(addr.starts_with("tdash1"));
@@ -2284,19 +2322,19 @@ mod shield_input_selection_tests {
         // Real account snapshot: the leading address is below the reserve, so
         // capacity must come from the usable suffix, not the account total.
         assert!(
-            297_264_780 <= reserve(),
+            197_264_780 <= reserve(),
             "regression shape requires the leading address to stay below the reserve; \
-             re-seed the balances if the versioned reserve drops under 297_264_780"
+             re-seed the balances if the versioned reserve drops under 197_264_780"
         );
         let candidates = vec![
-            (addr(1), 297_264_780),
+            (addr(1), 197_264_780),
             (addr(2), 2_000_000_000),
             (addr(3), 1_623_849_220),
         ];
         let plan = plan(candidates).unwrap();
         let expected_max = 3_623_849_220 - reserve();
 
-        assert_eq!(plan.preflight.account_balance_credits, 3_921_114_000);
+        assert_eq!(plan.preflight.account_balance_credits, 3_821_114_000);
         assert_eq!(plan.preflight.usable_balance_credits, 3_623_849_220);
         assert_eq!(plan.preflight.fee_reserve_credits, reserve());
         assert_eq!(plan.preflight.max_shieldable_credits, expected_max);

@@ -10,7 +10,7 @@ use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v3::STATE_TRANSITION_SERIALIZATION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_versions::v3::STATE_TRANSITION_VERSIONS_V3;
-use crate::version::dpp_versions::dpp_token_versions::v2::TOKEN_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_token_versions::v3::TOKEN_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_validation_versions::v5::DPP_VALIDATION_VERSIONS_V5;
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
@@ -30,9 +30,9 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// v14 hosts five consensus changes:
+/// v14 hosts six consensus changes:
 ///
-/// 1. **Contract-level ranked aggregates** (this branch): an index can
+/// 1. **Contract-level ranked aggregates**: an index can
 ///    declare that its groups are rankable by an aggregate, so a query like
 ///    "top 5 restaurants by average grade" is served from an ordered
 ///    secondary tree in O(log n + k) with a proof, instead of being rejected.
@@ -114,12 +114,31 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    per-document write amplification is capped per index by
 ///    `SystemLimits::max_time_range_overlap_factor`), and the v1
 ///    `getDocuments` handler resolves the new `IN_TIME_RANGE` operator —
-///    bare `"newest"`/`"oldest"` on a single-grid field, or a structured
-///    `[selector, range, step(, phase)]` operand naming one grid — into a
-///    bucket-start equality from committed block time, making "newest
-///    window" trending/leaderboard document and count/sum/avg queries
-///    provable. `unique: true` is admitted only for non-overlapping windows
-///    (`range == step`) sourced from the immutable `$createdAt`.
+///    a typed `TimeRangeSelection` operand: `NEWEST`/`OLDEST` (resolved to
+///    a bucket-start equality from committed block time) or `BY_START`
+///    (naming any window, current or historic, by its grid-aligned start),
+///    with a `grid` member naming one grid where several bucket the field
+///    — making trending/leaderboard document and count/sum/avg queries
+///    provable over the current or any named window. `unique: true` is
+///    admitted only for non-overlapping windows (`range == step`) sourced
+///    from the immutable `$createdAt`.
+/// 6. **Deterministic token reward math**: `DistributionFunction::evaluate`
+///    (logarithmic, inverted-logarithmic, exponential and polynomial perpetual
+///    distributions) computes `ln`/`exp`/`pow` through the pinned pure-Rust
+///    `libm` crate instead of the platform C library. musl's `log` takes an
+///    FMA path on aarch64 and a non-FMA path on x86_64, so the two disagree by
+///    1 ulp on some inputs; a contract owner could pick parameters whose reward
+///    sat within that ulp of an integer, and `floor` then minted different
+///    amounts on the two architectures, splitting the app hash both at claim
+///    time and at contract registration (validation evaluates the start
+///    value). Gated on `distribution_function_evaluate_version` so both
+///    architectures switch at the same height; pre-v14 blocks replay on the
+///    old math byte-for-byte. `log`/`exp` have no architecture dispatch and
+///    `pow`'s only arch-touching call is the correctly-rounded `sqrt`, so the
+///    result is bit-identical on every target Platform builds for. The goal
+///    is determinism, not correct rounding: on a boundary tuple the host
+///    libm (glibc, macOS) can still be 1 ulp away, so anything predicting
+///    rewards with host math may differ from consensus by one unit.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type
@@ -214,7 +233,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
-        token_versions: TOKEN_VERSIONS_V2,
+        token_versions: TOKEN_VERSIONS_V3, // changed: distribution_function_evaluate v1 — deterministic libm for token reward math
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago
         factory_versions: DPP_FACTORY_VERSIONS_V1,

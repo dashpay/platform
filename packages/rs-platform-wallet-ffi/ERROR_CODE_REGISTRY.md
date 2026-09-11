@@ -114,9 +114,11 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 48** — 27–47 are all claimed (27, 29, 31, 34–42
-and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47
-proposed by active #4356 (renumbered from 42 — see its row below); 28, 30,
+**Next allocatable integer: 55** — 27–54 are all claimed (27, 29, 31, 34–42
+and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47 and
+48 proposed by active #4356 (47 renumbered from 42, 48 from 43 — see their
+rows below); 49–54 proposed by active #4586 (the persister
+operation × kind block); 28, 30,
 32 and 33 reserved). **28, 30,
 32 and 33 are RESERVED, not free**: 28 and 30 were vacated when the
 reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
@@ -124,7 +126,8 @@ reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
 unclaimed rather than back-filled, so no number is reused within a single
 review cycle. Rule 1's "do not reuse a gap unless this file marks it free"
 applies — this file does **not** mark any of them free, so the frontier is
-the only allocation source and a new code takes 48. (42 is a cautionary tale:
+the only allocation source; use the next allocatable integer stated above.
+(42 is a cautionary tale:
 merged #4451 minted it while active #4356 held the claim — merged ABI wins,
 the open PR renumbers. 46's near-miss went the other way: caught in review,
 renumbered before merge.)
@@ -149,13 +152,20 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | Code | Name | Owning PR | Status |
 | ---: | --- | --- | --- |
 | 28 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
-| 47 | `ErrorAssetLockInputConflict` | #4356 | Proposed — **47 is reserved for this active PR, but the three-layer renumber is still PENDING.** Merged #4451 took 42 for `ErrorMasternodeWithdrawalUnconfirmed` on 2026-08-22, and merged ABI wins. At the cited #4356 head `7d9be71a08`, Rust still defines and tests `ErrorAssetLockInputConflict = 42`, Swift still declares `errorAssetLockInputConflict = 42`, and Kotlin still maps and tests native 42 — #4356 must move all three layers and their tests together to 47 before it can merge. Rule 1 makes 47 unavailable to any other contributor while #4356 is active |
+| 47 | `ErrorAssetLockInputConflict` | #4356 | Proposed — three-layer renumber from 42 **complete** on the branch (Rust value + pin test, Swift raw case, Kotlin arm + test all at 47). Merged #4451 had taken 42 for `ErrorMasternodeWithdrawalUnconfirmed` on 2026-08-22; merged ABI won and #4356 moved. **Reserved-with-no-emitter**: the wallet currently constructs only the provisional 48 — 47 is the terminal discard-licensing verdict, held for a future finalized-ancestry proof the SPV layer does not yet expose. The number is claimed ABI either way; Rule 1 makes 47 unavailable to any other contributor while #4356 is active |
+| 48 | `ErrorAssetLockInputContested` | #4356 | Proposed — renumbered from 43 (which active #4313 holds) alongside 47's move. The provisional double-spend verdict the conflict screen always emits: the sighting BOUNDS the proof wait rather than replacing it, so the lock is still (re-)broadcast and waited on, and 48 is emitted only when that bounded wait expires with the conflict still standing; carries no discard licence. Rust value + Swift raw case + Kotlin typed arm and tests all at 48 on the branch |
 | 30 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
 | 32 | *(reserved — lapsed)* | — | Owner #4310 (successor of fork-era #4247) closed without merging; RESERVED, not reissuable |
 | 33 | *(reserved — lapsed)* | — | Owner #4311 (successor of fork-era #4256) closed without merging; RESERVED, not reissuable |
 | 43 | `ErrorShieldedInviteAlreadyClaimed` | #4313 | In review — **ACTIVE; the former "on hold — holds no number" row is obsolete.** The branch revived and renumbered to the frontier exactly as that row prescribed. Lineage: fork-era #4204's 32 → 37 move, then 37 **taken by merged #4348** (`ErrorDocumentNotForSale = 37`, ABI since 2026-08-09), then 37 → 43 on revival. `ErrorShieldedInviteAlreadyClaimed = 43` at head `0302b188ab`. **Rule 5 is satisfied at that head**: Swift carries all three edits — the raw case, the `init(ffi:)` arm, and the typed `PlatformWalletError.shieldedInviteAlreadyClaimed` case with its arm in `init(code:message:)` (which `init(result:)` delegates to) — plus `errorDescription`; Kotlin has the typed terminal `PlatformWallet.ShieldedInviteAlreadyClaimed`, the `43 ->` arm in `fromPlatformWalletNative`, and a `DashSdkErrorTest` pin on 43. Swift's 43 mirror predates `0302b188ab` on the branch; the raw-value test pin for 43 is Kotlin's (Swift's `ErrorHandlingTests` pins 44 and 45 only) |
 | 44 | `ErrorShieldedScanBudgetExhausted` | #4313 | In review — claimed from the frontier; carries the #4306 scan-budget semantics (retryable — progress is checkpointed). **Rule 5 is satisfied as of `0302b188ab`, and was not before it.** At that commit's parent Kotlin already mirrored 44 (typed `ShieldedScanBudgetExhausted`, the `fromPlatformWalletNative` arm, a `DashSdkErrorTest` pin) while Swift carried none of rule 5's three edits, so 44 fell to `init(ffi:)`'s `default:` and lost its identity as `.errorUnknown` — one host typed, the other blind, the same failure shape as merged row 29's. `0302b188ab` adds the raw case, the `init(ffi:)` arm, the typed case with its `init(code:message:)` arm and `errorDescription`, and an `ErrorHandlingTests` pin of raw value 44 |
 | 45 | `ErrorShieldedLifecycleBusy` | #4313 | In review — claimed from the frontier. A shielded lifecycle operation refused because teardown/clear holds the wallet (retryable — nothing consumed); the FFI remove path passes the refusal through as 45 instead of flattening it to `ErrorWalletOperation` (6). Same rule-5 history as 44: Kotlin mirrored 45 at the parent commit already; Swift's three edits and an `ErrorHandlingTests` pin of raw value 45 landed in `0302b188ab`. **Rule 5 is satisfied at that head** |
+| 49 | `ErrorPersisterLoadTransient` | #4586 | Proposed — claimed from the frontier (48 at the time of the claim). Reading persisted state failed on a store that classified the failure retryable; nothing was mutated. First of a six-code `operation × kind` block: the wallet's `PersisterLoad` / `PersisterStore` / `PersisterRestore` variants each carry a typed `PersistenceError`, and before this block all three flattened to `ErrorUnknown` (99), so the retry classification died at the C boundary while the Rust API had carried it faithfully |
+| 50 | `ErrorPersisterLoadFatal` | #4586 | Proposed — permanent read failure. `Fatal`, `Constraint` and `LockPoisoned` all fold here: a read cannot violate a constraint, and none of the three is retryable, so splitting them would spend codes hosts would handle identically |
+| 51 | `ErrorPersisterStoreTransient` | #4586 | Proposed — a transient write failure from a backend that attests nothing was applied or retained. For FFI hosts this requires `ATOMIC_CHANGESETS`, both round brackets, and successful rollback of a failed round. A busy database produces 51 only with this attestation; the buffered `SqlitePersister` withholds it and maps to Fatal/52, requiring backend-aware `flush` recovery instead of reissuing `store` (refs #4365) |
+| 52 | `ErrorPersisterStoreFatal` | #4586 | Proposed — permanent write failure, plus `LockPoisoned` (which carries no kind of its own) |
+| 53 | `ErrorPersisterStoreConstraint` | #4586 | Proposed — integrity/foreign-key violation, kept apart from 52 so a host can route "your data is wrong" (caller or schema-mapping bug) differently from "the storage engine is unhappy" (operator/infrastructure). Not retryable either way |
+| 54 | `ErrorPersisterRestore` | #4586 | Proposed — rehydrating persisted platform-address state into a freshly registered wallet failed. One code, not three: the variant wraps a `PlatformWalletError` rather than a `PersistenceError`, so there is no kind to split on |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged
@@ -240,6 +250,15 @@ that was always required was made — onto the wrong integers.
 | 42 | `ErrorPersisterTransient` | #3968 | Contradicts **merged ABI** — 42 is #4451's `ErrorMasternodeWithdrawalUnconfirmed` (merged 2026-08-22). Not a paper conflict: since the 2026-08-25 base merges, #3968's **own tree** carries both variants — a hard E0081 in `error.rs` (`= 42` at both variants) and a duplicate raw value 42 in Swift's `PlatformWalletResultCode` — so the branch does not compile as-is |
 | 43 | `ErrorPersisterFatal` | #3968 | Collides with **active #4313**, whose recorded claim is `ErrorShieldedInviteAlreadyClaimed = 43` (see its proposed row). The silent shape: nothing conflicts textually and neither tree carries both variants, so only this file shows it |
 
+**These two claims are now also redundant, not just misnumbered.** #4586's
+49–54 block covers the same ground with finer granularity — it splits the
+retry classification by *operation* as well as by kind, so
+`ErrorPersisterTransient` / `ErrorPersisterFatal` have no meaning left that
+49–52 do not already carry. If #3968 still needs codes it should adopt the
+existing block rather than take two more integers from the frontier; a
+second, coarser pair of persister codes would leave hosts with two ways to
+learn the same thing and no rule for which one arrives.
+
 PR `#3954`'s `ErrorShutdownIncomplete = 27` used to sit in this table. It is
 gone because that claim **won**: #3954 was closed and superseded by **#4268**,
 which merged 27 into `v4.2-dev` on 2026-08-02. See the collision history below.
@@ -257,8 +276,8 @@ been challenged on day one. Both persister codes must now take fresh integers
 **from the frontier note above, which is the single canonical source; no
 number is copied here because any copy goes stale the moment another PR
 merges** (as the original "46+" copy in this paragraph did when #4465 shipped
-46 — the frontier note reads 48 as of 2026-08-26, so a pair claimed today
-takes 48 and 49, recording the claim there and here in the same PR). 26 and
+46, and as a later "48 and 49" copy did once #4356 took 48 and #4586 took the
+49–54 persister block — read the frontier note, do not copy it). 26 and
 27 need nothing: they are the merged base's own values, correctly inherited,
 and rule 3 keeps them where they are.
 

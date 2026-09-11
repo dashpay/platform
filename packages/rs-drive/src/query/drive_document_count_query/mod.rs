@@ -148,6 +148,43 @@ pub struct DriveDocumentCountQuery<'a> {
     pub where_clauses: Vec<WhereClause>,
 }
 
+/// Turns the `(path, key, element)` triples a point-lookup count path
+/// query yields (see `point_lookup_count_path_query`) into one entry per
+/// count tree. For compound (`In`) shapes the `In` value sits at
+/// `path[base_path_len]` when the walk descended past the base path (the
+/// `In` + trailing `Equal`s shape) and IS the key otherwise (the
+/// `In`-on-terminator shape); `Equal`-only shapes have no per-key
+/// dimension. The element's own count is the per-branch document count
+/// (every countable terminator value tree is a CountTree); an absent
+/// element becomes `count: None`. ONE decoder for every reader of that
+/// layout — the proof verifier, the no-proof executor and composite
+/// queries — so the layout has one owner.
+pub fn point_lookup_count_entries(
+    base_path_len: usize,
+    has_in_clause: bool,
+    elements: impl IntoIterator<Item = (Vec<Vec<u8>>, Vec<u8>, Option<grovedb::Element>)>,
+) -> Vec<SplitCountEntry> {
+    elements
+        .into_iter()
+        .map(|(path, grove_key, element)| {
+            let key = if has_in_clause {
+                if path.len() > base_path_len {
+                    path[base_path_len].clone()
+                } else {
+                    grove_key
+                }
+            } else {
+                Vec::new()
+            };
+            SplitCountEntry {
+                in_key: None,
+                key,
+                count: element.map(|element| element.count_value_or_default()),
+            }
+        })
+        .collect()
+}
+
 /// An entry in a split count result, containing the serialized
 /// key(s) and the count of documents matching them.
 ///

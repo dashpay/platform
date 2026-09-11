@@ -18,6 +18,24 @@ final class SyncGenerationCounter: @unchecked Sendable {
     @discardableResult func bump() -> UInt64 { lock.withLock { value &+= 1; return value } }
 }
 
+/// One-shot claim so a continuation fed by two racing closures (a queue
+/// drain and its timeout) is resumed exactly once. A local function cannot
+/// do this under Swift 6: it would have to be captured by both `@Sendable`
+/// closures along with the mutable state it guards.
+final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+
+    /// `true` for the first caller only.
+    func claim() -> Bool {
+        lock.withLock {
+            if claimed { return false }
+            claimed = true
+            return true
+        }
+    }
+}
+
 /// Per-wallet DashPay "needs unlock / verify failed" status, surfaced for the
 /// UI. One coherent snapshot per wallet (not parallel dictionaries) so a banner
 /// is a pure function of one `Equatable` value.
@@ -69,6 +87,26 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// across restarts. Mirrors
     /// `PersistenceCapabilities::TRACKED_MASTERNODES`.
     public static let trackedMasternodes: UInt64 = 1 << 10
+    /// A round's sweep batches — delivered through the persistence
+    /// extension's size-negotiated sweep callback — are durably applied
+    /// batch by batch and in order: swept transactions and their outputs
+    /// are excluded from every restore and enumeration path (physical
+    /// deletion or a durable marker alike), released outpoints are freed
+    /// unless a surviving claim supersedes, and non-released spend claims
+    /// are retained durably. Mirrors
+    /// `PersistenceCapabilities::CORE_SWEEP_REMOVAL`; Rust only honours
+    /// the declaration when the extension actually carries the callback.
+    public static let coreSweepRemoval: UInt64 = 1 << 11
+    /// DashPay payment rows delivered on a store round
+    /// (`dashpay_payments_overlay`) are durably applied. This is what the
+    /// wallet-event adapter keys on before coupling a sweep's
+    /// `Pending → Failed` payment flip to the sweep's own atomic round —
+    /// a non-attesting host (Android keeps payment recording
+    /// in-memory-only) gets the in-memory flip with nothing
+    /// round-coupled. Mirrors `PersistenceCapabilities::DASHPAY_PAYMENTS`;
+    /// Rust only honours the declaration when the payments callback is
+    /// actually wired.
+    public static let dashpayPayments: UInt64 = 1 << 12
 
     public let version: UInt32
     public let bits: UInt64
@@ -245,6 +283,100 @@ struct PlatformWalletNativeLoadCalls: @unchecked Sendable {
             }
             return (result, walletHandle)
         }
+    )
+}
+
+/// One progress-poll tick's native reads, captured on the poll queue and
+/// applied on the main actor. Every manager-level field is optional because
+/// each read fails independently and a failure keeps the previously
+/// published value (what the inline `try?` did before the reads moved off
+/// the main thread). `spvTipBlockTime` is doubly optional for the same
+/// reason: the outer `nil` is a failed read (keep the published tip), the
+/// inner one the FFI's in-band "no tip" (`0` seconds), which does publish.
+struct PlatformWalletPollSnapshot: Sendable {
+    var spvProgress: PlatformSpvSyncProgress?
+    var spvIsRunning: Bool?
+    var spvPeers: [PlatformSpvPeerInfo]?
+    var platformAddressSyncIsSyncing: Bool?
+    var shieldedSyncIsSyncing: Bool?
+    var dashPaySyncIsSyncing: Bool?
+    var spvTipBlockTime: Date??
+}
+
+/// One wallet's needs-unlock count, tagged with the handle it was read
+/// through. The id alone is not enough: it is a deterministic function of
+/// the mnemonic, so a wallet deleted and re-created while the (parking)
+/// read was in flight has the same id and a different handle, and the old
+/// wallet's count must not land on the new one.
+struct PlatformWalletPendingBuildCount: Sendable {
+    let handle: Handle
+    let count: UInt32
+}
+
+/// The published values a poll tick starts from, captured on the main actor
+/// before the tick hops off it. [`PlatformWalletManager.applyPollSnapshot`]
+/// publishes a field only if its published value still equals this baseline:
+/// a value someone deliberately changed while the tick was parked (a
+/// `stopSpv`, a `resetPlatformAddressPublishedMirror`) is left alone and
+/// re-read by the next tick, instead of being repainted with a stale read.
+struct PlatformWalletPollBaseline: Sendable {
+    var spvProgress: PlatformSpvSyncProgress
+    var spvIsRunning: Bool
+    var spvPeers: [PlatformSpvPeerInfo]
+    var platformAddressSyncIsSyncing: Bool
+    var shieldedSyncIsSyncing: Bool
+    var dashPaySyncIsSyncing: Bool
+    var spvTipBlockTime: Date?
+    /// Published `pendingAccountBuilds` per polled wallet; absent when the
+    /// wallet had no status entry yet.
+    var pendingAccountBuilds: [Data: UInt32]
+}
+
+/// One completed manager-level poll stage.
+struct PlatformWalletManagerPollResult: Sendable {
+    let baseline: PlatformWalletPollBaseline
+    let snapshot: PlatformWalletPollSnapshot
+}
+
+/// One completed per-wallet poll stage.
+struct PlatformWalletWalletPollResult: Sendable {
+    let baseline: PlatformWalletPollBaseline
+    let counts: [Data: PlatformWalletPendingBuildCount]
+}
+
+/// Native reads behind the 1 Hz progress poller; same seam shape as
+/// [`PlatformWalletNativeCreateCalls`]. The closures throw instead of
+/// returning a raw `PlatformWalletFFIResult`: the poller only needs
+/// "succeeded, and the value", and `.check()` frees the Rust-owned message
+/// of a failed read on the poll queue, so it never crosses the
+/// continuation back to the main actor.
+///
+/// Tests with a fake manager handle must inject this table: handles come
+/// from a process-global registry, so an arbitrary non-zero test value is
+/// not guaranteed to miss a live Rust entry owned by another test.
+struct PlatformWalletNativePollCalls: @unchecked Sendable {
+    typealias Read<T> = @Sendable (Handle) throws -> T
+
+    let syncProgress: Read<PlatformSpvSyncProgress>
+    let isSpvRunning: Read<Bool>
+    let connectedSpvPeers: Read<[PlatformSpvPeerInfo]>
+    let spvTipBlockTime: Read<Date?>
+    let isPlatformAddressSyncing: Read<Bool>
+    let isShieldedSyncing: Read<Bool>
+    let isDashPaySyncing: Read<Bool>
+    /// Takes the WALLET handle (`ManagedPlatformWallet.handle`), not the
+    /// manager's.
+    let pendingAccountBuildCount: Read<UInt32>
+
+    static let live = PlatformWalletNativePollCalls(
+        syncProgress: PlatformWalletManager.readSyncProgress,
+        isSpvRunning: PlatformWalletManager.readIsSpvRunning,
+        connectedSpvPeers: PlatformWalletManager.readConnectedSpvPeers,
+        spvTipBlockTime: PlatformWalletManager.readSpvTipBlockTime,
+        isPlatformAddressSyncing: PlatformWalletManager.readIsPlatformAddressSyncing,
+        isShieldedSyncing: PlatformWalletManager.readIsShieldedSyncing,
+        isDashPaySyncing: PlatformWalletManager.readIsDashPaySyncing,
+        pendingAccountBuildCount: PlatformWalletManager.readPendingAccountBuildCount
     )
 }
 
@@ -439,8 +571,16 @@ public class PlatformWalletManager: ObservableObject {
     /// released when its last worker drops), not by this property.
     private var eventHandler: PlatformWalletEventHandler?
 
-    /// Background task that polls SPV progress.
+    /// Background task that polls the manager-level SPV/sync fields.
     private var progressPollTask: Task<Void, Never>?
+
+    /// Background task that polls the per-wallet needs-unlock counts. Its
+    /// own task and queue, not a second half of the progress tick: that
+    /// read parks behind a wallet-manager writer for as long as a slow host
+    /// persistence round runs, and awaiting it in the same loop would stall
+    /// every manager-level update for that whole park — the freeze this
+    /// change exists to remove.
+    private var walletPollTask: Task<Void, Never>?
 
     /// The single in-flight (or completed) [`shutdown()`] operation. Set
     /// exactly once by the first caller that takes a live handle; later
@@ -456,7 +596,7 @@ public class PlatformWalletManager: ObservableObject {
     /// synchronous overloads — so the drain below can terminate without a
     /// synchronous op entering while the MainActor is reentrant at an
     /// `await`.
-    private var shutdownRequested = false
+    private(set) var shutdownRequested = false
 
     /// Async native entrypoints (`createWallet`, `loadFromPersistor`)
     /// between admission and the end of their MainActor epilogue.
@@ -505,6 +645,80 @@ public class PlatformWalletManager: ObservableObject {
     /// overload; same contract as [`nativeTeardownCalls`].
     internal var nativeLoadCalls = PlatformWalletNativeLoadCalls.live
 
+    /// Test seam for the native reads behind the progress poller; same
+    /// contract as [`nativeTeardownCalls`].
+    internal var nativePollCalls = PlatformWalletNativePollCalls.live
+
+    /// Poll period, captured once by [`startProgressPolling`]. Internal so
+    /// the poll test can run ticks quickly.
+    internal var progressPollInterval: Duration = .seconds(1)
+
+    /// Bumped by [`shutdown()`] before the native teardown is dispatched.
+    /// [`performPoll`] re-checks it between reads, so at most the one read
+    /// already in flight can overlap `destroy`, and no new FFI call starts
+    /// against a manager being torn down. `nonisolated` so the poll queue
+    /// can read it without hopping to the main actor.
+    nonisolated let pollEpoch = SyncGenerationCounter()
+
+    /// How long [`shutdown()`] waits for an in-flight poll tick before
+    /// dispatching the native teardown. A tick that finished (the common
+    /// case: the reads take milliseconds) drains well inside this, so
+    /// teardown is serialized after it; a tick parked behind a slow wallet
+    /// writer is left to finish on its own rather than holding termination
+    /// hostage for minutes — the reads are non-mutating and the registry
+    /// answers `NotFound` once `destroy` ran.
+    internal var pollDrainTimeout: Duration = .milliseconds(250)
+
+    // MARK: Core TXO store reconcile state (see PlatformWalletManagerTxoReconcile.swift)
+
+    /// Wallets with a reconcile run in flight; a second run for the same
+    /// wallet is refused rather than overlapped.
+    var coreTxoReconcileInFlight: Set<Data> = []
+    /// When each wallet's last automatic run was scheduled, for the cadence.
+    var coreTxoReconcileLastRunAt: [Data: ContinuousClock.Instant] = [:]
+    /// Whether the last progress tick was in steady state, for the
+    /// rising-edge trigger.
+    var coreTxoReconcileWasSteady = false
+    /// Bumped by [`shutdown()`] and [`deleteWallet`]; an in-flight run
+    /// re-checks it between pages and stops.
+    nonisolated let coreTxoReconcileEpoch = SyncGenerationCounter()
+    /// Dedicated serial queue for the reconcile's engine reads — they park
+    /// on the wallet lock like the poll reads, so never the main thread or
+    /// a cooperative-pool thread, and not [`pollQueue`], whose ticks feed
+    /// the sync indicator and must not wait behind a page walk.
+    nonisolated let coreTxoReconcileQueue = DispatchQueue(
+        label: "org.dash.platform-wallet.txo-reconcile",
+        qos: .utility
+    )
+
+    /// Dedicated serial queue for the poller's native reads. They park the
+    /// calling thread the way teardown and create do — `sync_progress`,
+    /// `spv_connected_peers`, `spv_tip_unix_seconds` and the per-wallet
+    /// `pending_contact_crypto_count` all `block_on` in Rust, and the last
+    /// one waits on `wallet_manager.read()`, which sits behind any writer
+    /// (measured at 89–126 s on the main thread while a writer waited on a
+    /// slow persister commit) — so never the main thread and never a Swift
+    /// Concurrency cooperative-pool thread. Deliberately NOT
+    /// [`destroyQueue`]: a tick parked for minutes must not sit ahead of an
+    /// admitted create or the teardown in that queue's FIFO. Per instance,
+    /// not static: hosts run two managers during a wallet switch, and one
+    /// manager's parked tick must not delay the other's status.
+    /// `.userInitiated`, like [`destroyQueue`]: these reads feed the
+    /// foreground sync indicator, and `.utility` is the tier iOS throttles
+    /// first under Low Power Mode and thermal pressure.
+    nonisolated let pollQueue = DispatchQueue(
+        label: "org.dash.platform-wallet.poll",
+        qos: .userInitiated
+    )
+
+    /// Queue for the per-wallet needs-unlock reads. Separate from
+    /// [`pollQueue`] because it is the one that parks: sharing a serial
+    /// queue would put the manager-level reads behind that park again.
+    nonisolated let walletPollQueue = DispatchQueue(
+        label: "org.dash.platform-wallet.poll.wallets",
+        qos: .userInitiated
+    )
+
     /// Dedicated serial queue for the blocking native teardown AND the
     /// blocking native create (async `createWallet(mnemonic:)` overload).
     /// Both park the calling thread — the Rust `destroy` runs
@@ -542,6 +756,16 @@ public class PlatformWalletManager: ObservableObject {
 
     deinit {
         progressPollTask?.cancel()
+        walletPollTask?.cancel()
+        // Same staleness stop `shutdown()` makes: cancelling the tasks does
+        // not reach work already dispatched on the poll queues, and the
+        // teardown below runs concurrently with it now that the reads no
+        // longer hold the registry guard. Without this bump a tick in
+        // flight would issue its whole remaining set of reads against the
+        // handle being destroyed, safe only by virtue of handles never
+        // being reused — an allocator property, not a guarantee this code
+        // makes.
+        pollEpoch.bump()
         // Emergency fallback ONLY. The supported teardown path is an explicit
         // `await shutdown()` before dropping the last reference — it takes the
         // handle exactly once and runs the blocking native teardown off-main
@@ -562,8 +786,11 @@ public class PlatformWalletManager: ObservableObject {
         if handle != NULL_HANDLE {
             let h = handle
             let calls = nativeTeardownCalls
-            Self.log.warning(
-                "PlatformWalletManager deallocated without shutdown(); scheduling fallback native teardown off-main for handle \(h, privacy: .public)"
+            SDKLogger.event(
+                "manager_deinit_without_shutdown",
+                category: .lifecycle,
+                severity: .warning,
+                fields: ["fallback_teardown_scheduled": .boolean(true)]
             )
             Self.destroyQueue.async {
                 _ = Self.performNativeTeardown(h, calls: calls)
@@ -621,6 +848,12 @@ public class PlatformWalletManager: ObservableObject {
                     ranOffMainThread: false)
             }
             shutdownRequested = true
+            // No new poll tick from here on: both loops check cancellation
+            // before every tick, and `beginPollTick` refuses once the handle
+            // is taken below. A tick already dispatched completes on its own
+            // queue against the registry (see `startProgressPolling`).
+            progressPollTask?.cancel()
+            walletPollTask?.cancel()
             if activeNativeOpCount == 0 { break }
             await withCheckedContinuation { continuation in
                 nativeOpDrainContinuations.append(continuation)
@@ -632,23 +865,55 @@ public class PlatformWalletManager: ObservableObject {
         // and the generation bumps drop any trailing sync event the main
         // actor delivers after this turn.
         let h = handle
+        SDKLogger.event(
+            "manager_shutdown_started",
+            category: .lifecycle,
+            fields: ["wallet_count": .integer(Int64(wallets.count))]
+        )
         handle = NULL_HANDLE
         isConfigured = false
-        progressPollTask?.cancel()
         shieldedSyncGeneration.bump()
         platformAddressSyncGeneration.bump()
         dpnsSyncGeneration.bump()
 
+        // Stop the poller from issuing further FFI. The bump is synchronous
+        // on purpose: everything from the handle take to the `shutdownTask`
+        // assignment below must stay in one main-actor turn, or a second
+        // concurrent `shutdown()` would slip through the take-once check.
+        // The bounded queue drain therefore happens INSIDE the task, before
+        // the teardown, where a suspension is safe.
+        pollEpoch.bump()
+        // An in-flight store reconcile stops between pages the same way.
+        coreTxoReconcileEpoch.bump()
+
         let calls = nativeTeardownCalls
+        let queue = pollQueue
+        let walletQueue = walletPollQueue
+        let drainTimeout = pollDrainTimeout
         let task = Task {
-            await withCheckedContinuation { (continuation: CheckedContinuation<PlatformWalletShutdownMetrics, Never>) in
+            // Let poll work that is merely mid-flight finish before the
+            // native teardown starts; see `pollDrainTimeout` for why these
+            // waits are bounded rather than unconditional.
+            await Self.drainQueue(queue, within: drainTimeout)
+            await Self.drainQueue(walletQueue, within: drainTimeout)
+            return await withCheckedContinuation { (continuation: CheckedContinuation<PlatformWalletShutdownMetrics, Never>) in
                 Self.destroyQueue.async {
                     continuation.resume(returning: Self.performNativeTeardown(h, calls: calls))
                 }
             }
         }
         shutdownTask = task
-        return await task.value
+        let metrics = await task.value
+        SDKLogger.event(
+            "manager_shutdown_completed",
+            category: .lifecycle,
+            fields: [
+                "duration_ms": .integer(Int64(metrics.totalMilliseconds)),
+                "off_main_thread": .boolean(metrics.ranOffMainThread),
+                "step_count": .integer(Int64(metrics.steps.count)),
+            ]
+        )
+        return metrics
     }
 
     /// The blocking native teardown body, shared by [`shutdown()`] and the
@@ -676,8 +941,16 @@ public class PlatformWalletManager: ObservableObject {
             let ms = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
             steps.append(.init(name: name, ffiCode: result.code.rawValue, milliseconds: ms))
             if !result.isSuccess {
-                Self.log.error(
-                    "native teardown step \(name, privacy: .public) failed with \(String(describing: result.code), privacy: .public): \(result.message ?? "<no detail from Rust>", privacy: .public)"
+                SDKLogger.event(
+                    "manager_shutdown_step_failed",
+                    category: .lifecycle,
+                    severity: .error,
+                    fields: [
+                        "duration_ms": .integer(Int64(ms)),
+                        "ffi_code": .integer(Int64(result.code.rawValue)),
+                        "step": .publicText(name),
+                    ],
+                    error: PlatformWalletError(code: result.code, message: result.message)
                 )
             }
         }
@@ -702,11 +975,15 @@ public class PlatformWalletManager: ObservableObject {
             totalMilliseconds: Int((CFAbsoluteTimeGetCurrent() - totalStart) * 1000),
             ranOffMainThread: offMain
         )
-        let stepSummary = steps
-            .map { "\($0.name)=\($0.milliseconds)ms(code \($0.ffiCode))" }
-            .joined(separator: " ")
-        Self.log.info(
-            "native teardown finished in \(metrics.totalMilliseconds, privacy: .public)ms offMain=\(offMain, privacy: .public): \(stepSummary, privacy: .public)"
+        SDKLogger.event(
+            "manager_native_teardown_completed",
+            category: .lifecycle,
+            fields: [
+                "duration_ms": .integer(Int64(metrics.totalMilliseconds)),
+                "failed_steps": .integer(Int64(steps.filter { $0.ffiCode != 0 }.count)),
+                "off_main_thread": .boolean(offMain),
+                "step_count": .integer(Int64(steps.count)),
+            ]
         )
         return metrics
     }
@@ -724,6 +1001,13 @@ public class PlatformWalletManager: ObservableObject {
         let manager = PlatformWalletManager()
         try! manager.configureForTesting(handle: handle, calls: calls)
         return manager
+    }
+
+    /// Test-only: drop every loaded wallet without going through
+    /// `deleteWallet`'s native path, so a test can reach the
+    /// "no wallets loaded" state the per-wallet poll stage skips.
+    func removeAllWalletsForTesting() {
+        wallets.removeAll()
     }
 
     /// Test-only equivalent of a successful native configuration. Keeping it
@@ -775,6 +1059,14 @@ public class PlatformWalletManager: ObservableObject {
         network: Network? = nil
     ) throws {
         try ensureConfigurationAllowed()
+        SDKLogger.event(
+            "manager_configuration_started",
+            category: .lifecycle,
+            fields: [
+                "network": .publicText(network.map { String(describing: $0) } ?? "unknown"),
+                "persistence_enabled": .boolean(modelContainer != nil),
+            ]
+        )
         var handle: Handle = NULL_HANDLE
 
         let handler: PlatformWalletPersistenceHandler?
@@ -828,6 +1120,13 @@ public class PlatformWalletManager: ObservableObject {
             if let context = eventHandlerCallbacks.context {
                 Unmanaged<PlatformWalletEventHandler>.fromOpaque(context).release()
             }
+            SDKLogger.event(
+                "manager_configuration_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["phase": .publicText("native_create")],
+                error: error
+            )
             throw error
         }
 
@@ -843,6 +1142,13 @@ public class PlatformWalletManager: ObservableObject {
             ).check()
         } catch {
             _ = platform_wallet_manager_destroy(handle)
+            SDKLogger.event(
+                "manager_configuration_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["phase": .publicText("persistence_capabilities")],
+                error: error
+            )
             throw error
         }
 
@@ -858,6 +1164,14 @@ public class PlatformWalletManager: ObservableObject {
         self.isConfigured = true
 
         startProgressPolling()
+        SDKLogger.event(
+            "manager_configuration_completed",
+            category: .lifecycle,
+            fields: [
+                "capabilities_version": .unsignedInteger(UInt64(effectiveCapabilities.version)),
+                "persistence_enabled": .boolean(handler != nil),
+            ]
+        )
     }
 
     /// A manager owns at most one configured native lifetime. A no-op shutdown
@@ -933,23 +1247,47 @@ public class PlatformWalletManager: ObservableObject {
         birthHeight: UInt32? = nil
     ) throws -> ManagedPlatformWallet {
         try ensureSyncNativeOpAllowed("createWallet")
+        SDKLogger.event(
+            "wallet_create_started",
+            category: .lifecycle,
+            fields: [
+                "birth_height_provided": .boolean(birthHeight != nil),
+                "network": .publicText(String(describing: network)),
+                "source": .publicText("mnemonic"),
+            ]
+        )
         var walletHandle: Handle = NULL_HANDLE
         var walletId: FFIByteTuple32 =
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
 
         let accountOptions: UInt32 = createDefaultAccounts ? 1 : 0
 
-        try mnemonic.withCString { mnemonicPtr in
-            try platform_wallet_manager_create_wallet_from_mnemonic_with_birth_height(
-                handle,
-                mnemonicPtr,
-                network.ffiValue,
-                accountOptions,
-                birthHeight != nil,
-                birthHeight ?? 0,
-                &walletHandle,
-                &walletId
-            ).check()
+        do {
+            try mnemonic.withCString { mnemonicPtr in
+                try platform_wallet_manager_create_wallet_from_mnemonic_with_birth_height(
+                    handle,
+                    mnemonicPtr,
+                    network.ffiValue,
+                    accountOptions,
+                    birthHeight != nil,
+                    birthHeight ?? 0,
+                    &walletHandle,
+                    &walletId
+                ).check()
+            }
+        } catch {
+            SDKLogger.event(
+                "wallet_create_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: [
+                    "network": .publicText(String(describing: network)),
+                    "source": .publicText("mnemonic"),
+                ],
+                error: error,
+                redacting: [mnemonic]
+            )
+            throw error
         }
 
         let idData = withUnsafeBytes(of: &walletId) { Data($0) }
@@ -958,6 +1296,14 @@ public class PlatformWalletManager: ObservableObject {
         }
         let w = ManagedPlatformWallet(handle: walletHandle, walletId: idData)
         self.wallets[idData] = w
+        SDKLogger.event(
+            "wallet_create_completed",
+            category: .lifecycle,
+            fields: [
+                "source": .publicText("mnemonic"),
+                "wallet_reference": .reference(idData),
+            ]
+        )
         return w
     }
 
@@ -1046,17 +1392,44 @@ public class PlatformWalletManager: ObservableObject {
     ) -> Result<ManagedPlatformWallet, PlatformWalletError> {
         let offMain = !Thread.isMainThread
         let start = CFAbsoluteTimeGetCurrent()
+        SDKLogger.event(
+            "wallet_create_started",
+            category: .lifecycle,
+            fields: [
+                "birth_height_provided": .boolean(params.birthHeight != nil),
+                "network": .publicText(String(describing: params.network)),
+                "off_main_thread": .boolean(offMain),
+                "source": .publicText("mnemonic"),
+            ]
+        )
         let outcome = calls.createFromMnemonic(handle, params)
         let result = PlatformWalletResult(outcome.result)
         let ms = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
         guard result.isSuccess else {
-            Self.log.error(
-                "native create failed in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public) network=\(params.network.rawValue, privacy: .public): \(String(describing: result.code), privacy: .public): \(result.message ?? "<no detail from Rust>", privacy: .public)"
+            SDKLogger.event(
+                "wallet_create_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: [
+                    "duration_ms": .integer(Int64(ms)),
+                    "network": .publicText(String(describing: params.network)),
+                    "off_main_thread": .boolean(offMain),
+                    "source": .publicText("mnemonic"),
+                ],
+                error: PlatformWalletError(code: result.code, message: result.message),
+                redacting: [params.mnemonic]
             )
             return .failure(PlatformWalletError(code: result.code, message: result.message))
         }
-        Self.log.info(
-            "native create finished in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public) network=\(params.network.rawValue, privacy: .public)"
+        SDKLogger.event(
+            "wallet_create_completed",
+            category: .lifecycle,
+            fields: [
+                "duration_ms": .integer(Int64(ms)),
+                "off_main_thread": .boolean(offMain),
+                "source": .publicText("mnemonic"),
+                "wallet_reference": .reference(outcome.walletId),
+            ]
         )
         return .success(
             ManagedPlatformWallet(handle: outcome.walletHandle, walletId: outcome.walletId))
@@ -1081,6 +1454,15 @@ public class PlatformWalletManager: ObservableObject {
                 "seed must be 64 bytes, got \(seed.count)"
             )
         }
+        SDKLogger.event(
+            "wallet_create_started",
+            category: .lifecycle,
+            fields: [
+                "birth_height_provided": .boolean(birthHeight != nil),
+                "network": .publicText(String(describing: network)),
+                "source": .publicText("seed"),
+            ]
+        )
 
         var walletHandle: Handle = NULL_HANDLE
         var walletId: FFIByteTuple32 =
@@ -1088,18 +1470,32 @@ public class PlatformWalletManager: ObservableObject {
 
         let accountOptions: UInt32 = createDefaultAccounts ? 1 : 0
 
-        try seed.withUnsafeBytes { seedPtr in
-            try platform_wallet_manager_create_wallet_from_seed_with_birth_height(
-                handle,
-                network.ffiValue,
-                seedPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                UInt(seed.count),
-                accountOptions,
-                birthHeight != nil,
-                birthHeight ?? 0,
-                &walletHandle,
-                &walletId
-            ).check()
+        do {
+            try seed.withUnsafeBytes { seedPtr in
+                try platform_wallet_manager_create_wallet_from_seed_with_birth_height(
+                    handle,
+                    network.ffiValue,
+                    seedPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    UInt(seed.count),
+                    accountOptions,
+                    birthHeight != nil,
+                    birthHeight ?? 0,
+                    &walletHandle,
+                    &walletId
+                ).check()
+            }
+        } catch {
+            SDKLogger.event(
+                "wallet_create_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: [
+                    "network": .publicText(String(describing: network)),
+                    "source": .publicText("seed"),
+                ],
+                error: error
+            )
+            throw error
         }
 
         let idData = withUnsafeBytes(of: &walletId) { Data($0) }
@@ -1108,6 +1504,14 @@ public class PlatformWalletManager: ObservableObject {
         }
         let w = ManagedPlatformWallet(handle: walletHandle, walletId: idData)
         self.wallets[idData] = w
+        SDKLogger.event(
+            "wallet_create_completed",
+            category: .lifecycle,
+            fields: [
+                "source": .publicText("seed"),
+                "wallet_reference": .reference(idData),
+            ]
+        )
         return w
     }
 
@@ -1142,14 +1546,35 @@ public class PlatformWalletManager: ObservableObject {
         // flight — a second Rust loader running concurrently with the one
         // on the destroy queue races load.rs's two-step hydration.
         try ensureSyncNativeOpAllowed("loadFromPersistor")
+        SDKLogger.event(
+            "wallet_restore_started",
+            category: .lifecycle,
+            fields: ["off_main_thread": .boolean(!Thread.isMainThread)]
+        )
 
-        try platform_wallet_manager_load_from_persistor(handle).check()
+        do {
+            try platform_wallet_manager_load_from_persistor(handle).check()
+        } catch {
+            SDKLogger.event(
+                "wallet_restore_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["phase": .publicText("bulk_load")],
+                error: error
+            )
+            throw error
+        }
 
         // Ask SwiftData for the list of wallet ids we just told Rust
         // to load. We reuse the same container rather than shipping a
         // separate FFI "list ids" entry, because SwiftData already is
         // the source of truth.
         guard let persistenceHandler = persistenceHandler else {
+            SDKLogger.event(
+                "wallet_restore_completed",
+                category: .lifecycle,
+                fields: ["wallet_count": .integer(0)]
+            )
             return []
         }
         let walletIds = persistenceHandler.restorableWalletIds()
@@ -1188,6 +1613,13 @@ public class PlatformWalletManager: ObservableObject {
                 // whole restore. Usually means wallet_id / xpub
                 // disagreement (SwiftData drift vs. Rust recompute).
                 self.lastError = error
+                SDKLogger.event(
+                    "wallet_restore_item_failed",
+                    category: .lifecycle,
+                    severity: .error,
+                    fields: ["wallet_reference": .reference(walletId)],
+                    error: error
+                )
             }
         }
 
@@ -1203,6 +1635,12 @@ public class PlatformWalletManager: ObservableObject {
         // `statusRaw = 3 + proofBytes` back to SwiftData. UI updates
         // reactively via `@Query`.
         catchUpStuckAssetLocks(wallets: restored)
+
+        SDKLogger.event(
+            "wallet_restore_completed",
+            category: .lifecycle,
+            fields: ["wallet_count": .integer(Int64(restored.count))]
+        )
 
         return restored
     }
@@ -1239,12 +1677,25 @@ public class PlatformWalletManager: ObservableObject {
     ) -> OffMainLoadOutcome {
         let started = CFAbsoluteTimeGetCurrent()
         let offMain = !Thread.isMainThread
+        SDKLogger.event(
+            "wallet_restore_started",
+            category: .lifecycle,
+            fields: ["off_main_thread": .boolean(offMain)]
+        )
 
         let bulk = PlatformWalletResult(calls.loadFromPersistor(handle))
         guard bulk.isSuccess else {
             let ms = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
-            Self.log.error(
-                "native load failed in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public): \(String(describing: bulk.code), privacy: .public): \(bulk.message ?? "<no detail from Rust>", privacy: .public)"
+            SDKLogger.event(
+                "wallet_restore_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: [
+                    "duration_ms": .integer(Int64(ms)),
+                    "off_main_thread": .boolean(offMain),
+                    "phase": .publicText("bulk_load"),
+                ],
+                error: PlatformWalletError(code: bulk.code, message: bulk.message)
             )
             return OffMainLoadOutcome(
                 bulkResult: .failure(PlatformWalletError(code: bulk.code, message: bulk.message)),
@@ -1263,9 +1714,17 @@ public class PlatformWalletManager: ObservableObject {
                 // doesn't fail the whole restore. Recorded IN SEQUENCE so
                 // the epilogue's `lastError` replay matches the sync
                 // overload's per-wallet ordering.
-                lookups.append(.skipped(PlatformWalletError(
+                let error = PlatformWalletError(
                     code: lookupResult.code,
-                    message: lookupResult.message)))
+                    message: lookupResult.message)
+                SDKLogger.event(
+                    "wallet_restore_item_failed",
+                    category: .lifecycle,
+                    severity: .error,
+                    fields: ["wallet_reference": .reference(walletId)],
+                    error: error
+                )
+                lookups.append(.skipped(error))
                 continue
             }
             lookups.append(.restored(walletId: walletId, walletHandle: lookup.walletHandle))
@@ -1275,8 +1734,14 @@ public class PlatformWalletManager: ObservableObject {
             if case .restored = entry { count += 1 }
         }
         let ms = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
-        Self.log.info(
-            "native load finished in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public) wallets=\(restoredCount, privacy: .public)"
+        SDKLogger.event(
+            "wallet_restore_native_completed",
+            category: .lifecycle,
+            fields: [
+                "duration_ms": .integer(Int64(ms)),
+                "off_main_thread": .boolean(offMain),
+                "wallet_count": .integer(Int64(restoredCount)),
+            ]
         )
         return OffMainLoadOutcome(bulkResult: .success(()), lookups: lookups)
     }
@@ -1368,8 +1833,13 @@ public class PlatformWalletManager: ObservableObject {
             }
         }
         let unlockMs = Int(unlockSeconds * 1000)
-        Self.log.info(
-            "load unlock loop finished in \(unlockMs, privacy: .public)ms wallets=\(restored.count, privacy: .public)"
+        SDKLogger.event(
+            "wallet_restore_completed",
+            category: .lifecycle,
+            fields: [
+                "unlock_duration_ms": .integer(Int64(unlockMs)),
+                "wallet_count": .integer(Int64(restored.count)),
+            ]
         )
 
         catchUpStuckAssetLocks(wallets: restored)
@@ -1386,13 +1856,13 @@ public class PlatformWalletManager: ObservableObject {
         let walletId = managedWallet.walletId
         do {
             let unlocked = try unlockWalletFromKeychain(managedWallet)
-            // NSLog (not print) so the unlock outcome is observable
-            // off-Xcode — it pairs with the resolver audit line in
-            // MnemonicResolver.resolve for "what touched the seed".
-            NSLog(
-                "🔓 wallet unlock %@: %@",
-                String(walletId.toHexString().prefix(8)),
-                unlocked ? "seed verified" : "no mnemonic — stays watch-only"
+            SDKLogger.event(
+                "wallet_unlock_completed",
+                category: .lifecycle,
+                fields: [
+                    "result": .publicText(unlocked ? "seed_verified" : "watch_only"),
+                    "wallet_reference": .reference(walletId),
+                ]
             )
         } catch let error as PlatformWalletError {
             // Distinguish a wrong-seed binding (Rust `SeedMismatch` →
@@ -1404,18 +1874,39 @@ public class PlatformWalletManager: ObservableObject {
             // Either way the wallet stays external-signable (cannot sign),
             // so no wrong-seed signing can occur.
             if case .invalidParameter = error {
-                print(
-                    "🚫 wallet unlock REJECTED \(walletId.toHexString().prefix(8)): "
-                        + "seed does not bind (mis-mapped Keychain slot?) — stays watch-only"
+                SDKLogger.event(
+                    "wallet_unlock_rejected",
+                    category: .lifecycle,
+                    severity: .error,
+                    fields: [
+                        "reason": .publicText("seed_binding_mismatch"),
+                        "wallet_reference": .reference(walletId),
+                    ],
+                    error: error
                 )
             } else {
                 // Transient (resolver/Keychain unavailable, …) — not
                 // retried this pass; a later signer-present action re-tries.
-                print("⚠️ wallet unlock failed \(walletId.toHexString().prefix(8)) (transient): \(error)")
+                SDKLogger.event(
+                    "wallet_unlock_failed",
+                    category: .lifecycle,
+                    severity: .warning,
+                    fields: [
+                        "transient": .boolean(true),
+                        "wallet_reference": .reference(walletId),
+                    ],
+                    error: error
+                )
             }
             self.lastError = error
         } catch {
-            print("❌ wallet unlock failed \(walletId.toHexString().prefix(8)): \(error)")
+            SDKLogger.event(
+                "wallet_unlock_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["wallet_reference": .reference(walletId)],
+                error: error
+            )
             self.lastError = error
         }
     }
@@ -1604,10 +2095,13 @@ public class PlatformWalletManager: ObservableObject {
                     walletId: walletId,
                     marker: String(cString: ptr)
                 )
-                NSLog(
-                    "🔐 seed binding verified via resolver for %@ — marker "
-                        + "persisted; later launches skip the derivation",
-                    String(walletId.toHexString().prefix(8))
+                SDKLogger.event(
+                    "seed_binding_verified",
+                    category: .lifecycle,
+                    fields: [
+                        "marker_persisted": .boolean(true),
+                        "wallet_reference": .reference(walletId),
+                    ]
                 )
             }
             setDashPaySeedMismatch(walletId, false)
@@ -1655,15 +2149,24 @@ public class PlatformWalletManager: ObservableObject {
             walletHandle, &pendingOps
         )
         if PlatformWalletResultCode(ffi: countResult.code) == .success && pendingOps == 0 {
-            NSLog(
-                "🧵 contact-crypto drain skipped for %@ — no pending ops",
-                String(walletId.toHexString().prefix(8))
+            SDKLogger.event(
+                "contact_crypto_drain_skipped",
+                category: .lifecycle,
+                severity: .debug,
+                fields: [
+                    "reason": .publicText("empty_queue"),
+                    "wallet_reference": .reference(walletId),
+                ]
             )
             return true
         }
-        NSLog(
-            "🧵 contact-crypto drain scheduling for %@ — %u pending op(s)",
-            String(walletId.toHexString().prefix(8)), pendingOps
+        SDKLogger.event(
+            "contact_crypto_drain_scheduled",
+            category: .lifecycle,
+            fields: [
+                "pending_count": .unsignedInteger(UInt64(pendingOps)),
+                "wallet_reference": .reference(walletId),
+            ]
         )
 
         // Don't stack a second drain on an in-flight one: a banner Unlock tap
@@ -1730,17 +2233,24 @@ public class PlatformWalletManager: ObservableObject {
         setDashPayDraining(walletId, false)
         if let drainError {
             lastError = drainError
-            print(
-                "⚠️ contact-crypto drain failed for "
-                    + "\(walletId.toHexString().prefix(8)): \(drainError)"
+            SDKLogger.event(
+                "contact_crypto_drain_failed",
+                category: .lifecycle,
+                severity: .warning,
+                fields: ["wallet_reference": .reference(walletId)],
+                error: drainError
             )
         } else if drained > 0 {
             // `drained` counts cleared queue entries — both completed
             // and permanently-failed (channel-broken) ops — so report
             // it neutrally rather than implying all succeeded.
-            print(
-                "🔑 processed \(drained) deferred contact-crypto op(s) for "
-                    + "\(walletId.toHexString().prefix(8))"
+            SDKLogger.event(
+                "contact_crypto_drain_completed",
+                category: .lifecycle,
+                fields: [
+                    "processed_count": .unsignedInteger(UInt64(drained)),
+                    "wallet_reference": .reference(walletId),
+                ]
             )
         }
     }
@@ -1754,6 +2264,17 @@ public class PlatformWalletManager: ObservableObject {
     /// Called from `loadFromPersistor` after every wallet is
     /// inserted. App-foreground / network-reconnect callers can
     /// invoke this directly to retry whatever was still pending.
+    ///
+    /// Safe to call before SPV is up, and hosts must not add a
+    /// readiness gate of their own here. Load runs before
+    /// `platform_wallet_manager_start_spv`, so a lock still at
+    /// `Built` would otherwise take a never-sent rejection and — with
+    /// nothing rescheduling the catch-up — stay stranded for the
+    /// session. Rust's `resume_asset_lock` gives the SPV transport a
+    /// bounded chance to come up before it broadcasts. Gating here
+    /// would delay the locks that need no broadcast at all, and a gate
+    /// that waited on the same thread pool the host needs to *reach*
+    /// `startSpv` would delay the transport it is waiting for.
     public func catchUpStuckAssetLocks(wallets: [ManagedPlatformWallet]) {
         guard let persistenceHandler = persistenceHandler else { return }
         for wallet in wallets {
@@ -1803,10 +2324,19 @@ public class PlatformWalletManager: ObservableObject {
                 PlatformWalletManager.decodeOutPointForCatchUp($0.outPointHex)
             }
             guard !outpoints.isEmpty else { continue }
+            // A `@MainActor` closure is the only piece of `self` the
+            // detached task needs: it hops back to the main actor to
+            // publish, and capturing it (rather than `self`) keeps the
+            // task's captures Sendable under strict concurrency.
+            let publishConflict: @MainActor @Sendable (PlatformWalletError) -> Void = {
+                [weak self] verdict in
+                self?.lastError = verdict
+            }
             Task.detached(priority: .background) {
-                await withTaskGroup(of: Void.self) { group in
+                await withTaskGroup(of: PlatformWalletError?.self) { group in
                     let maxConcurrent = 4
                     var nextIndex = 0
+                    var published = false
                     // Seed the group with up to `maxConcurrent` tasks.
                     // Each `group.addTask` closure captures
                     // `assetLockManager` — that retain keeps the
@@ -1821,8 +2351,29 @@ public class PlatformWalletManager: ObservableObject {
                         }
                         nextIndex += 1
                     }
-                    // As each finishes, queue the next pending entry.
-                    while await group.next() != nil {
+                    // As each finishes, queue the next pending entry —
+                    // and publish the FIRST double-spend verdict the
+                    // moment its own task returns. A sibling catch-up
+                    // can legitimately sit in its proof wait, and the
+                    // host must not wait on that drain to learn a lock
+                    // is stuck. `lastError` is the manager's one public
+                    // error surface; a UI that explains the stalled lock
+                    // and its pending retry (48 — the only verdict
+                    // emitted; 47 stays reserved) reads it from here.
+                    //
+                    // The verdict arrives at the END of its own lock's
+                    // bounded wait, not ahead of it: Rust deliberately
+                    // does not refuse a resume on a conflict sighting,
+                    // because the sighting can be a restored block record
+                    // that no live event will ever retract, and refusing
+                    // would strand a lock that is free to confirm. The
+                    // wait it runs under is capped below this call's 300s
+                    // ceiling for exactly that case.
+                    while let outcome = await group.next() {
+                        if !published, let verdict = outcome {
+                            published = true
+                            await publishConflict(verdict)
+                        }
                         if nextIndex < outpoints.count {
                             let (txid, vout) = outpoints[nextIndex]
                             group.addTask {
@@ -1849,7 +2400,14 @@ public class PlatformWalletManager: ObservableObject {
     /// `@MainActor`-isolated by default and the detached task body
     /// runs off the main actor — the FFI call is synchronous and
     /// reads no `PlatformWalletManager` state.
-    nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) {
+    /// Returns the typed double-spend verdict when the catch-up hits one —
+    /// the one outcome a host must see so its UI can explain why the lock
+    /// is stuck instead of spinning — and `nil` for every expected failure.
+    /// In practice that verdict is always the provisional
+    /// `assetLockInputContested`; the terminal `assetLockInputConflict` is
+    /// reserved with no emitter and is matched so it would surface intact
+    /// if that ever changes.
+    nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) -> PlatformWalletError? {
         // Build the txid tuple inline so the Task body captures only
         // Sendable values.
         var txidTuple: FFIByteTuple32 =
@@ -1861,9 +2419,13 @@ public class PlatformWalletManager: ObservableObject {
             }
         }
         // Five-minute ceiling matches the `wait_for_proof` deadline
-        // the production resume path uses.
-        let result = asset_lock_manager_catch_up_blocking(
-            assetLockManager.handle, &txidTuple, vout, 300
+        // the production resume path uses. Wrapping the raw struct in
+        // `PlatformWalletResult` frees the Rust-owned message when the
+        // wrapper deinits — the raw struct must never be dropped bare.
+        let result = PlatformWalletResult(
+            asset_lock_manager_catch_up_blocking(
+                assetLockManager.handle, &txidTuple, vout, 300
+            )
         )
         // Timeouts and proof-wait failures (catch-up
         // `errorWalletOperation`) are expected during normal
@@ -1874,13 +2436,18 @@ public class PlatformWalletManager: ObservableObject {
         // valid for the duration of this call. If it surfaces, log it
         // loudly via NSLog so an operator running without `tracing`
         // capture still sees the programmer error.
-        let code = PlatformWalletResultCode(ffi: result.code)
-        if code == .errorInvalidHandle {
+        switch result.code {
+        case .errorInvalidHandle:
             NSLog(
                 "[catch-up] asset_lock_manager_catch_up_blocking returned errorInvalidHandle for outpoint %@:%u — handle invalid despite task-owned wrapper retain",
                 txid.map { String(format: "%02x", $0) }.joined(),
                 vout
             )
+            return nil
+        case .errorAssetLockInputConflict, .errorAssetLockInputContested:
+            return PlatformWalletError(result: result)
+        default:
+            return nil
         }
     }
 
@@ -1973,6 +2540,11 @@ public class PlatformWalletManager: ObservableObject {
         // with the same deterministic id doesn't inherit a stale banner (the
         // poller would also prune it, but not until the next tick).
         dashPayUnlockStatus.removeValue(forKey: walletId)
+        // A store reconcile in flight for any wallet stops between pages:
+        // its next step would read rows `deleteWalletData` is about to
+        // remove. Coarse on purpose — the cadence re-runs the others.
+        coreTxoReconcileEpoch.bump()
+        coreTxoReconcileLastRunAt.removeValue(forKey: walletId)
 
         try persistenceHandler.deleteWalletData(walletId: walletId)
 
@@ -2024,14 +2596,22 @@ public class PlatformWalletManager: ObservableObject {
     /// Count of deferred **account-build** contact-crypto ops queued for the
     /// wallet (the contacts waiting for a signer unlock to finish payment-account
     /// setup). Thin bridge over `platform_wallet_pending_contact_crypto_count`;
-    /// the Rust side decides what counts (account-build ops only). Signerless —
-    /// safe to poll.
+    /// the Rust side decides what counts (account-build ops only). Signerless,
+    /// but NOT free: the read parks the caller behind the wallet-manager lock,
+    /// which is why the progress poller runs it on [`pollQueue`].
     public func pendingAccountBuildCount(for walletId: Data) throws -> UInt32 {
         guard let wallet = wallets[walletId] else {
             throw PlatformWalletError.invalidParameter("unknown wallet")
         }
+        return try Self.readPendingAccountBuildCount(wallet.handle)
+    }
+
+    /// The blocking native read behind [`pendingAccountBuildCount(for:)`],
+    /// on the WALLET handle. Parks the calling thread: the Rust side
+    /// `block_on`s a `wallet_manager.read()` that waits behind any writer.
+    nonisolated static func readPendingAccountBuildCount(_ walletHandle: Handle) throws -> UInt32 {
         var count: UInt32 = 0
-        try platform_wallet_pending_contact_crypto_count(wallet.handle, &count).check()
+        try platform_wallet_pending_contact_crypto_count(walletHandle, &count).check()
         return count
     }
 
@@ -2188,61 +2768,343 @@ public class PlatformWalletManager: ObservableObject {
         }
     }
 
-    /// Starts the SPV progress polling loop. Cancelled on deinit.
+    /// Starts the two polling loops. Cancelled by [`shutdown()`] — as soon
+    /// as it is decided, before the handle is taken — and by `deinit`.
+    ///
+    /// They are independent on purpose. The manager-level reads take
+    /// milliseconds; the per-wallet needs-unlock read parks behind a
+    /// wallet-manager writer for as long as a slow host persistence round
+    /// holds it (89–358 s measured). Run in one loop, that park would stop
+    /// the manager-level updates for its whole duration — the frozen sync
+    /// indicator this change removes — so each stage has its own task and
+    /// its own serial queue.
+    ///
+    /// Both capture their inputs on the main actor (the handle, the wallets
+    /// to read, and a [`PlatformWalletPollBaseline`] of the published
+    /// values), run the reads on their queue (which park the calling
+    /// thread — see [`pollQueue`]), then publish back on the main actor.
+    /// Each loop is sequential in itself: a slow tick delays that loop's
+    /// next tick rather than overlapping it.
+    ///
+    /// Ordering against `shutdown()`: both tasks are cancelled before the
+    /// handle is taken, [`beginPollTick`] returns `nil` once it is gone, and
+    /// [`pollEpoch`] stops work already on a queue from issuing further
+    /// reads, so at most the one read already in flight per queue overlaps
+    /// `destroy`. Its snapshot is dropped by the handle re-check when it
+    /// publishes.
+    ///
+    /// Ordering against deliberate mirror changes (`stopSpv`,
+    /// `resetPlatformAddressPublishedMirror`, …) is the baseline's job — see
+    /// its doc.
     ///
     /// `@Published` assignments are gated on inequality so that identical
     /// snapshots don't trigger SwiftUI re-evaluation. A naive 1 Hz reassignment
     /// of a non-Equatable struct caused every observer (sync screens, memory
     /// explorer, global indicator) to re-evaluate every second, accreting
     /// SwiftUI attribute-graph state and burning CPU long after sync settled.
-    private func startProgressPolling() {
+    ///
+    /// Internal (not private) so the poll test can start them on a
+    /// `configureForTesting` manager, which deliberately does not.
+    func startProgressPolling() {
         progressPollTask?.cancel()
+        walletPollTask?.cancel()
+        let interval = progressPollInterval
+
         progressPollTask = Task { [weak self] in
             while !Task.isCancelled {
-                guard let self = self else { return }
-                if let progress = try? self.syncProgress(), progress != self.spvProgress {
-                    self.spvProgress = progress
-                }
-                if let running = try? self.isSpvRunning(), running != self.spvIsRunning {
-                    self.spvIsRunning = running
-                }
-                if let peers = try? self.connectedSpvPeers(), peers != self.spvPeers {
-                    self.spvPeers = peers
-                }
-                if let isSyncing = try? self.isPlatformAddressSyncing(),
-                   isSyncing != self.platformAddressSyncIsSyncing {
-                    self.platformAddressSyncIsSyncing = isSyncing
-                }
-                if let isSyncing = try? self.isShieldedSyncing(),
-                   isSyncing != self.shieldedSyncIsSyncing {
-                    self.shieldedSyncIsSyncing = isSyncing
-                }
-                if let isSyncing = try? self.isDashPaySyncing(),
-                   isSyncing != self.dashPaySyncIsSyncing {
-                    self.dashPaySyncIsSyncing = isSyncing
-                }
-                let tip = (try? self.currentSpvTipBlockTime()) ?? nil
-                if tip != self.spvTipBlockTime {
-                    self.spvTipBlockTime = tip
-                }
-                // Refresh the per-wallet needs-unlock count (account-build ops).
-                // Per-wallet, so O(wallets)/tick; gated on change per key.
-                for walletId in self.wallets.keys {
-                    if let n = try? self.pendingAccountBuildCount(for: walletId),
-                       n != self.dashPayUnlockStatus[walletId]?.pendingAccountBuilds {
-                        var status = self.dashPayUnlockStatus[walletId] ?? .init()
-                        status.pendingAccountBuilds = n
-                        self.dashPayUnlockStatus[walletId] = status
+                // Everything the tick needs is captured inside the
+                // continuation closure (which runs synchronously in this
+                // main-actor turn) and owned by the dispatched block from
+                // then on, so nothing stays alive in this task's frame
+                // across the suspension.
+                let result: PlatformWalletManagerPollResult? =
+                    await withCheckedContinuation { continuation in
+                        guard let self, let tick = self.beginPollTick() else {
+                            continuation.resume(returning: nil)
+                            return
+                        }
+                        let baseline = self.pollBaseline(for: [])
+                        let epoch = self.pollEpoch
+                        let generation = epoch.current()
+                        let calls = tick.calls
+                        let handle = tick.handle
+                        self.pollQueue.async {
+                            let snapshot = Self.performManagerPoll(
+                                handle,
+                                calls: calls,
+                                isStale: { epoch.current() != generation })
+                            continuation.resume(
+                                returning: PlatformWalletManagerPollResult(
+                                    baseline: baseline, snapshot: snapshot))
+                        }
                     }
-                }
-                // Prune status for wallets no longer loaded (e.g. removed by a
-                // wipe) so a re-created wallet with the same id starts clean.
-                let stale = self.dashPayUnlockStatus.keys.filter { self.wallets[$0] == nil }
-                for walletId in stale {
-                    self.dashPayUnlockStatus.removeValue(forKey: walletId)
-                }
-                try? await Task.sleep(for: .seconds(1))
+                guard let result, !Task.isCancelled else { return }
+                self?.applyManagerSnapshot(result.snapshot, baseline: result.baseline)
+                // Unconditional, every tick: the per-wallet loop below skips
+                // its body when no wallet is loaded, which is exactly when a
+                // status left behind by a removed wallet must still go.
+                self?.pruneStaleUnlockStatus()
+                try? await Task.sleep(for: interval)
             }
+        }
+
+        walletPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                let result: PlatformWalletWalletPollResult? =
+                    await withCheckedContinuation { continuation in
+                        guard let self, let tick = self.beginPollTick(), !tick.wallets.isEmpty
+                        else {
+                            continuation.resume(returning: nil)
+                            return
+                        }
+                        let baseline = self.pollBaseline(for: tick.wallets.map(\.walletId))
+                        let epoch = self.pollEpoch
+                        let generation = epoch.current()
+                        let calls = tick.calls
+                        let wallets = tick.wallets
+                        self.walletPollQueue.async {
+                            // The block owns the wallet array: a wallet the
+                            // main actor dropped meanwhile runs its `deinit`
+                            // → `platform_wallet_destroy` (a registry write)
+                            // here, not on the main thread.
+                            let counts = withExtendedLifetime(wallets) {
+                                Self.performWalletPoll(
+                                    wallets: wallets.map {
+                                        (walletId: $0.walletId, handle: $0.handle)
+                                    },
+                                    calls: calls,
+                                    isStale: { epoch.current() != generation })
+                            }
+                            continuation.resume(
+                                returning: PlatformWalletWalletPollResult(
+                                    baseline: baseline, counts: counts))
+                        }
+                    }
+                if let result, !Task.isCancelled {
+                    self?.applyWalletCounts(result.counts, baseline: result.baseline)
+                }
+                try? await Task.sleep(for: interval)
+            }
+        }
+    }
+
+    /// Wait for `queue` to reach a block enqueued now, or for `timeout` —
+    /// whichever comes first. Returns whether it drained. `nonisolated
+    /// static` so the shutdown task can await it without touching the main
+    /// actor mid-teardown.
+    @discardableResult
+    nonisolated static func drainQueue(_ queue: DispatchQueue, within timeout: Duration) async -> Bool {
+        let milliseconds = Int(timeout / .milliseconds(1))
+        let once = ResumeOnce()
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            queue.async {
+                if once.claim() { continuation.resume(returning: true) }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(milliseconds)) {
+                if once.claim() { continuation.resume(returning: false) }
+            }
+        }
+    }
+
+    /// Main-actor snapshot of what one tick needs; `nil` once the handle is
+    /// gone (the loop then ends).
+    private func beginPollTick() -> (
+        handle: Handle, wallets: [ManagedPlatformWallet],
+        calls: PlatformWalletNativePollCalls, queue: DispatchQueue
+    )? {
+        guard handle != NULL_HANDLE else { return nil }
+        return (handle, Array(wallets.values), nativePollCalls, pollQueue)
+    }
+
+    /// The published values as of now, for [`applyPollSnapshot`]'s
+    /// changed-while-parked check.
+    private func pollBaseline(for walletIds: [Data]) -> PlatformWalletPollBaseline {
+        var pending: [Data: UInt32] = [:]
+        for walletId in walletIds {
+            if let count = dashPayUnlockStatus[walletId]?.pendingAccountBuilds {
+                pending[walletId] = count
+            }
+        }
+        return PlatformWalletPollBaseline(
+            spvProgress: spvProgress,
+            spvIsRunning: spvIsRunning,
+            spvPeers: spvPeers,
+            platformAddressSyncIsSyncing: platformAddressSyncIsSyncing,
+            shieldedSyncIsSyncing: shieldedSyncIsSyncing,
+            dashPaySyncIsSyncing: dashPaySyncIsSyncing,
+            spvTipBlockTime: spvTipBlockTime,
+            pendingAccountBuilds: pending)
+    }
+
+    /// The manager-level native reads of one tick. Pure — no `self`, no
+    /// publishing; every read is independent and a failure leaves its
+    /// field `nil`. `nonisolated static` so tests can drive it with an
+    /// injected call table, mirroring [`performCreateWallet`]. `isStale`
+    /// is the [`pollEpoch`] check: once shutdown bumped it, the remaining
+    /// reads are skipped rather than issued against a manager being torn
+    /// down.
+    nonisolated static func performManagerPoll(
+        _ handle: Handle,
+        calls: PlatformWalletNativePollCalls = .live,
+        isStale: @Sendable () -> Bool = { false }
+    ) -> PlatformWalletPollSnapshot {
+        let start = ContinuousClock.now
+        var snapshot = PlatformWalletPollSnapshot()
+        // Between every read, not once at the top: `sync_progress` parks on
+        // the SPV client lock, and shutdown may bump the epoch while it
+        // does — the remaining reads must not fire against a manager whose
+        // teardown already started.
+        guard !isStale() else { return snapshot }
+        snapshot.spvProgress = try? calls.syncProgress(handle)
+        guard !isStale() else { return snapshot }
+        snapshot.spvIsRunning = try? calls.isSpvRunning(handle)
+        guard !isStale() else { return snapshot }
+        snapshot.spvPeers = try? calls.connectedSpvPeers(handle)
+        guard !isStale() else { return snapshot }
+        snapshot.platformAddressSyncIsSyncing = try? calls.isPlatformAddressSyncing(handle)
+        guard !isStale() else { return snapshot }
+        snapshot.shieldedSyncIsSyncing = try? calls.isShieldedSyncing(handle)
+        guard !isStale() else { return snapshot }
+        snapshot.dashPaySyncIsSyncing = try? calls.isDashPaySyncing(handle)
+        guard !isStale() else { return snapshot }
+        // Not `try?`: it flattens the closure's `Date?` and would turn a
+        // thrown read into the same `nil` as the in-band no-tip.
+        do {
+            snapshot.spvTipBlockTime = .some(try calls.spvTipBlockTime(handle))
+        } catch {
+            snapshot.spvTipBlockTime = nil
+        }
+        logSlowStage("manager", since: start, walletCount: 0)
+        return snapshot
+    }
+
+    /// One line when a poll stage parked well past the routine range
+    /// (0.7–2.6 s during an initial sync), so the field telemetry shows
+    /// which stage waited and for how long, without a warning per tick for
+    /// a whole sync.
+    nonisolated private static func logSlowStage(
+        _ stage: String,
+        since start: ContinuousClock.Instant,
+        walletCount: Int
+    ) {
+        let ms = Int((ContinuousClock.now - start) / .milliseconds(1))
+        guard ms >= 5000 else { return }
+        SDKLogger.event(
+            "progress_poll_slow_tick",
+            category: .lifecycle,
+            severity: .warning,
+            fields: [
+                "stage": .publicText(stage),
+                "duration_ms": .integer(Int64(ms)),
+                "off_main_thread": .boolean(!Thread.isMainThread),
+                "wallet_count": .integer(Int64(walletCount)),
+            ]
+        )
+    }
+
+    /// The per-wallet needs-unlock reads of one tick — the ones that park
+    /// behind a wallet-manager writer. Each count is tagged with the handle
+    /// it was read through so the publish can reject a wallet re-created
+    /// under the same id meanwhile. Only wallets whose read succeeded are
+    /// present.
+    nonisolated static func performWalletPoll(
+        wallets: [(walletId: Data, handle: Handle)],
+        calls: PlatformWalletNativePollCalls = .live,
+        isStale: @Sendable () -> Bool = { false }
+    ) -> [Data: PlatformWalletPendingBuildCount] {
+        let start = ContinuousClock.now
+        var counts: [Data: PlatformWalletPendingBuildCount] = [:]
+        for wallet in wallets {
+            guard !isStale() else { break }
+            if let count = try? calls.pendingAccountBuildCount(wallet.handle) {
+                counts[wallet.walletId] = PlatformWalletPendingBuildCount(
+                    handle: wallet.handle, count: count)
+            }
+        }
+        logSlowStage("wallets", since: start, walletCount: wallets.count)
+        return counts
+    }
+
+    /// Publishes the manager-level fields: per field, only when the read
+    /// succeeded, the published value still equals the tick's `baseline`
+    /// (nobody changed it while the tick was parked), and the value
+    /// actually differs. Re-checks the handle first: a stage in flight when
+    /// [`shutdown()`] took it is dropped whole. Internal so the poll test
+    /// can drive the gating directly.
+    func applyManagerSnapshot(
+        _ snapshot: PlatformWalletPollSnapshot,
+        baseline: PlatformWalletPollBaseline
+    ) {
+        guard handle != NULL_HANDLE else { return }
+        if let value = snapshot.spvProgress,
+           spvProgress == baseline.spvProgress {
+            if value != spvProgress {
+                spvProgress = value
+            }
+            // Every accepted read, not only a changed one: the note is the
+            // reconcile's only clock, and a quiet steady-state wallet's
+            // progress does not change for the whole cadence.
+            noteSpvProgressForCoreTxoReconcile(value)
+        }
+        if let value = snapshot.spvIsRunning,
+           spvIsRunning == baseline.spvIsRunning, value != spvIsRunning {
+            spvIsRunning = value
+        }
+        if let value = snapshot.spvPeers,
+           spvPeers == baseline.spvPeers, value != spvPeers {
+            spvPeers = value
+        }
+        if let value = snapshot.platformAddressSyncIsSyncing,
+           platformAddressSyncIsSyncing == baseline.platformAddressSyncIsSyncing,
+           value != platformAddressSyncIsSyncing {
+            platformAddressSyncIsSyncing = value
+        }
+        if let value = snapshot.shieldedSyncIsSyncing,
+           shieldedSyncIsSyncing == baseline.shieldedSyncIsSyncing,
+           value != shieldedSyncIsSyncing {
+            shieldedSyncIsSyncing = value
+        }
+        if let value = snapshot.dashPaySyncIsSyncing,
+           dashPaySyncIsSyncing == baseline.dashPaySyncIsSyncing,
+           value != dashPaySyncIsSyncing {
+            dashPaySyncIsSyncing = value
+        }
+        if let value = snapshot.spvTipBlockTime,
+           spvTipBlockTime == baseline.spvTipBlockTime, value != spvTipBlockTime {
+            spvTipBlockTime = value
+        }
+    }
+
+    /// Publishes the per-wallet needs-unlock counts, with the same
+    /// changed-while-parked gating, plus an identity check: the count is
+    /// applied only if the wallet under that id is still the one the read
+    /// went through (a delete + re-create from the same mnemonic keeps the
+    /// id and changes the handle). Internal for the poll test.
+    func applyWalletCounts(
+        _ counts: [Data: PlatformWalletPendingBuildCount],
+        baseline: PlatformWalletPollBaseline
+    ) {
+        guard handle != NULL_HANDLE else { return }
+        for (walletId, read) in counts {
+            guard let wallet = wallets[walletId], wallet.handle == read.handle else { continue }
+            let published = dashPayUnlockStatus[walletId]?.pendingAccountBuilds
+            guard published == baseline.pendingAccountBuilds[walletId], published != read.count
+            else { continue }
+            var status = dashPayUnlockStatus[walletId] ?? .init()
+            status.pendingAccountBuilds = read.count
+            dashPayUnlockStatus[walletId] = status
+        }
+    }
+
+    /// Drop `dashPayUnlockStatus` entries for wallets that are no longer
+    /// loaded (removed, wiped, or unloaded), so a wallet re-created under
+    /// the same deterministic id starts clean. Runs on every progress tick,
+    /// including when no wallet is loaded at all — which is exactly when
+    /// the last removed wallet's entry would otherwise be stranded.
+    func pruneStaleUnlockStatus() {
+        let stale = dashPayUnlockStatus.keys.filter { wallets[$0] == nil }
+        for walletId in stale {
+            dashPayUnlockStatus.removeValue(forKey: walletId)
         }
     }
 

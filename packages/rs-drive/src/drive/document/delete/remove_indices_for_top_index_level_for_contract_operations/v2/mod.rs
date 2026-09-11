@@ -132,7 +132,7 @@ impl Drive {
 
             // with the example of the dashpay contract's first index
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
-            let document_top_field = document_and_contract_info
+            let document_top_field = match document_and_contract_info
                 .owned_document_info
                 .document_info
                 .get_raw_for_document_type(
@@ -141,8 +141,26 @@ impl Drive {
                     document_and_contract_info.owned_document_info.owner_id,
                     Some((sub_level, event_id)),
                     platform_version,
-                )?
-                .unwrap_or_default();
+                )? {
+                Some(document_top_field) => document_top_field,
+                // An unrequired top-level property on an indexOnly type is a
+                // skipIfAbsent index's trigger: the insert walker wrote no
+                // entries through this branch for a trigger-absent document,
+                // so its delete removes none — mirroring the insert skip is
+                // what keeps delete-by-values exact. The delete's estimation
+                // dry-run runs on a worst-case document info that always
+                // resolves a value, so estimation sweeps this branch as
+                // written — a deliberate over-estimate that keeps the dry
+                // run an upper bound.
+                None if document_type.index_only()
+                    && !document_type.required_fields().contains(property_name) =>
+                {
+                    continue;
+                }
+                // A stored type's absent value keeps its null-layout empty
+                // key.
+                None => DriveKeyInfo::default(),
+            };
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {

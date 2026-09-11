@@ -111,6 +111,8 @@ impl DocumentTypeV1 {
                 admit_index_terminal: false,
                 // PREALLOCATED: also a generation-3 keyword; not in this grammar.
                 admit_index_preallocated: false,
+                // SKIP IF ABSENT: also a generation-3 keyword; not in this grammar.
+                admit_index_skip_if_absent: false,
             },
             platform_version,
         )

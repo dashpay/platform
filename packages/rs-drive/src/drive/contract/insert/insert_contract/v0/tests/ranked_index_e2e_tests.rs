@@ -799,11 +799,13 @@ fn compound_ranked_index_resolves_its_terminal_level_to_an_indexed_tree() {
         summable: Some("price".to_string()),
         range_summable: true,
         ranked_countable: false,
+        ranked_countable_at: vec![],
         ranked_summable: false,
         ranked_averageable: true,
         time_range: None,
         terminal: None,
         preallocated: false,
+        skip_if_absent: false,
     };
     let index_structure =
         IndexLevel::try_from_indices([&compound_ranked_index], "dish", platform_version())
@@ -1017,11 +1019,13 @@ fn a_null_unsearchable_ranked_level_is_what_makes_a_phantom_group_possible() {
         summable: None,
         range_summable: false,
         ranked_countable: true,
+        ranked_countable_at: vec![],
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,
         terminal: None,
         preallocated: false,
+        skip_if_absent: false,
     };
 
     for null_searchable in [false, true] {
@@ -1585,8 +1589,15 @@ fn verified_ranked_avg_page(
         document_type,
         contract_id: contract.id().to_buffer(),
         document_type_name: "review".to_string(),
-        index: find_ranked_index_for_axis(indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "grade")
-            .expect("the fixture declares rankedAverageable on grade"),
+        index: find_ranked_index_for_axis(
+            indexes,
+            GROUP_PROPERTY,
+            &[],
+            RankedAxis::Avg,
+            "grade",
+            &[],
+        )
+        .expect("the fixture declares rankedAverageable on grade"),
         prefix_branches: vec![vec![]],
         axis: RankedAxis::Avg,
         descending: true,

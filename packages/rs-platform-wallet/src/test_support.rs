@@ -250,6 +250,7 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
 
     let generation = Arc::new(WalletGeneration::new());
     let info = PlatformWalletInfo {
+        observed_input_conflicts: Default::default(),
         core_wallet: ctx.managed_wallet,
         generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
@@ -261,6 +262,64 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
 
     (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
+}
+
+/// The `WalletEvent` the wallet emits when it first observes `tx` spending
+/// its outpoints — the real shape the spend-observation seam
+/// ([`SpendObservationHandler`](crate::wallet::core::SpendObservationHandler))
+/// consumes off the event fan-out.
+///
+/// `input_details` claims EVERY input as ours, which is what upstream
+/// populates for inputs that spent this wallet's outpoints — and the only
+/// part of the record either the in-broadcast fence or
+/// `CoreChangeSet::spent_utxos` reads.
+///
+/// Shared between the broadcast-fence release tests
+/// (`wallet::core::broadcast`) and the manager-level fan-out wiring test
+/// (`manager::tests`), so the two cannot drift onto different event shapes.
+#[cfg(test)]
+pub(crate) fn observed_spend_event(
+    wallet_id: WalletId,
+    tx: &Transaction,
+) -> key_wallet_manager::WalletEvent {
+    use dashcore::Address as DashAddress;
+    use key_wallet::managed_account::transaction_record::{
+        InputDetail, TransactionDirection, TransactionRecord,
+    };
+    use key_wallet::transaction_checking::transaction_router::TransactionType;
+
+    let record = TransactionRecord::new(
+        tx.clone(),
+        key_wallet::account::AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        },
+        TransactionContext::InBlock(BlockInfo::new(
+            1_000,
+            dashcore::BlockHash::from([7u8; 32]),
+            1_234_567_890,
+        )),
+        TransactionType::Standard,
+        TransactionDirection::Outgoing,
+        tx.input
+            .iter()
+            .enumerate()
+            .map(|(index, _)| InputDetail {
+                index: index as u32,
+                value: 0,
+                address: DashAddress::dummy(Network::Testnet, 1),
+            })
+            .collect(),
+        Vec::new(),
+        0,
+    );
+    key_wallet_manager::WalletEvent::TransactionDetected {
+        wallet_id,
+        record: Box::new(record),
+        balance: key_wallet::WalletCoreBalance::default(),
+        account_balances: std::collections::BTreeMap::new(),
+        addresses_derived: Vec::new(),
+    }
 }
 
 /// Funds BOTH standard families — BIP44 account 0 and BIP32 account 0 — each
@@ -320,6 +379,7 @@ pub(crate) async fn funded_wallet_manager_dual_standard(
     };
     let generation = Arc::new(WalletGeneration::new());
     let info = PlatformWalletInfo {
+        observed_input_conflicts: Default::default(),
         core_wallet: ctx.managed_wallet,
         generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
@@ -422,6 +482,7 @@ pub(crate) async fn funded_wallet_manager_with_contact(
     };
     let generation = Arc::new(WalletGeneration::new());
     let info = PlatformWalletInfo {
+        observed_input_conflicts: Default::default(),
         core_wallet: ctx.managed_wallet,
         generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
@@ -498,6 +559,7 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
 
     let generation = Arc::new(WalletGeneration::new());
     let info = PlatformWalletInfo {
+        observed_input_conflicts: Default::default(),
         core_wallet: ctx.managed_wallet,
         generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
@@ -532,6 +594,38 @@ pub async fn funded_spv_core_wallet(
     )
 }
 
+/// Advance `core`'s `last_processed_height` to just past the reservation age
+/// guard bound ([`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS))
+/// but below key-wallet's `ReservationSet` TTL, so a handle finalized at the
+/// current height ages enough to trip the software guard while its underlying
+/// reservation is provably still held (no key-wallet sweep yet). Returns the new
+/// height.
+///
+/// FFI lifecycle tests use this to exercise aged owner-guarded cleanup — the
+/// deinit/GC backstop and the broadcast/abandon failure paths that route their
+/// cleanup through `abandon_transaction`, which releases owner-guarded at any
+/// age (only a token-less build skips its by-outpoint release).
+pub async fn age_core_past_reservation_guard<B>(core: &crate::CoreWallet<B>) -> u32
+where
+    B: crate::broadcaster::TransactionBroadcaster + ?Sized,
+{
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+    let stamped = core
+        .last_processed_height()
+        .await
+        .expect("wallet present in manager");
+    let target = stamped + crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS + 2;
+    {
+        let mut wm = core.wallet_manager.write().await;
+        let (_, info) = wm
+            .get_wallet_and_info_mut(&core.wallet_id())
+            .expect("wallet present in manager");
+        info.core_wallet.update_last_processed_height(target);
+    }
+    target
+}
+
 /// No-op persister satisfying [`PlatformWalletManager`] construction for tests
 /// that need a full [`PlatformWallet`] but no real persistence pipeline.
 pub struct NoopTestPersister;
@@ -556,7 +650,8 @@ impl crate::changeset::PlatformWalletPersistence for NoopTestPersister {
     }
 }
 
-struct NoopTestEventHandler;
+/// Event handler that ignores every event.
+pub(crate) struct NoopTestEventHandler;
 impl crate::events::EventHandler for NoopTestEventHandler {}
 impl crate::events::PlatformEventHandler for NoopTestEventHandler {}
 
@@ -573,7 +668,7 @@ pub async fn test_platform_wallet_manager() -> (
     Arc<crate::PlatformWalletManager<NoopTestPersister>>,
     WalletId,
 ) {
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
     // Canonical all-`abandon` BIP-39 test vector.
@@ -590,8 +685,7 @@ pub async fn test_platform_wallet_manager() -> (
         event_handler,
     ));
 
-    let mnemonic =
-        Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+    let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
     let seed_bytes = mnemonic.to_seed("");
     // `Some(0)` skips the SPV birth-height lookup so the create never hits the
     // network.
@@ -657,9 +751,9 @@ pub(crate) async fn mnemonic_wallet_manager(
 ) {
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::ManagedWalletInfo;
-    use key_wallet::{Language, Mnemonic};
+    use key_wallet::Mnemonic;
 
-    let mnemonic = Mnemonic::from_phrase(phrase, Language::English).expect("valid test mnemonic");
+    let mnemonic = Mnemonic::from_phrase(phrase).expect("valid test mnemonic");
     let wallet = Wallet::from_mnemonic(
         mnemonic,
         Network::Testnet,
@@ -688,6 +782,7 @@ pub(crate) async fn mnemonic_wallet_manager(
         wallet: wallet.clone(),
     };
     let info = PlatformWalletInfo {
+        observed_input_conflicts: Default::default(),
         core_wallet: managed_wallet,
         generation: Arc::new(WalletGeneration::new()),
         identity_manager: IdentityManager::new(),
@@ -704,4 +799,107 @@ pub(crate) async fn mnemonic_wallet_manager(
         signer,
         receive_address,
     )
+}
+
+/// Thread-scoped `tracing` event capture for tests that assert on log output.
+///
+/// Every capturing test must route through the one globally-installed
+/// subscriber here rather than installing its own — see [`RecorderRouter`].
+#[cfg(test)]
+pub(crate) mod tracing_capture {
+    use std::cell::RefCell;
+    use std::sync::{Arc, Mutex, OnceLock};
+
+    use tracing::field::{Field, Visit};
+    use tracing::Level;
+    use tracing_subscriber::layer::{Context, SubscriberExt};
+    use tracing_subscriber::Layer;
+
+    /// Level and message of every event recorded while registered as the
+    /// current thread's active recorder (see [`RecordingGuard`]).
+    #[derive(Clone, Default)]
+    pub(crate) struct RecordedEvents(Arc<Mutex<Vec<(Level, String)>>>);
+
+    impl RecordedEvents {
+        pub(crate) fn entries(&self) -> Vec<(Level, String)> {
+            self.0.lock().expect("recorded events mutex").clone()
+        }
+
+        fn record(&self, event: &tracing::Event<'_>) {
+            struct MessageVisitor(String);
+            impl Visit for MessageVisitor {
+                fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+                    if field.name() == "message" {
+                        self.0 = format!("{value:?}");
+                    }
+                }
+            }
+            let mut visitor = MessageVisitor(String::new());
+            event.record(&mut visitor);
+            self.0
+                .lock()
+                .expect("recorded events mutex")
+                .push((*event.metadata().level(), visitor.0));
+        }
+    }
+
+    thread_local! {
+        /// Where events from THIS thread go. Set only by [`RecordingGuard`].
+        static ACTIVE_RECORDER: RefCell<Option<RecordedEvents>> = const { RefCell::new(None) };
+    }
+
+    /// Routes every event to whichever [`RecordedEvents`] the emitting thread
+    /// registered in [`ACTIVE_RECORDER`]. Installed as the process-wide
+    /// default exactly once — never per-test.
+    ///
+    /// A per-test `tracing::subscriber::set_default` swap is flaky under
+    /// `cargo test`'s parallel harness: tracing's per-callsite `Interest` cache
+    /// is process-global, so a concurrent test's swap/drop can race the
+    /// interest rebuild yours triggers and the event silently never reaches
+    /// your subscriber — even though dispatch stays correctly on your own
+    /// thread (confirmed: emitting and installing thread IDs matched on a
+    /// captured failure). Installing once, before any callsite is hit,
+    /// sidesteps the race: routing then goes through a thread-local this code
+    /// owns rather than tracing's default-swap machinery.
+    struct RecorderRouter;
+
+    impl<S: tracing::Subscriber> Layer<S> for RecorderRouter {
+        fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+            ACTIVE_RECORDER.with(|slot| {
+                if let Some(recorder) = slot.borrow().as_ref() {
+                    recorder.record(event);
+                }
+            });
+        }
+    }
+
+    static GLOBAL_ROUTER_INIT: OnceLock<()> = OnceLock::new();
+
+    /// Scopes [`ACTIVE_RECORDER`] to `recorder` for this thread and lifetime.
+    pub(crate) struct RecordingGuard;
+
+    impl RecordingGuard {
+        pub(crate) fn install(recorder: RecordedEvents) -> Self {
+            GLOBAL_ROUTER_INIT.get_or_init(|| {
+                let subscriber = tracing_subscriber::registry().with(RecorderRouter);
+                // `get_or_init` runs this exactly once, so the only way to
+                // fail is something outside it having installed a process-wide
+                // default first. Discarding that would leave the router
+                // uninstalled while this latch still reports success, and every
+                // guard below would capture nothing at all.
+                tracing::subscriber::set_global_default(subscriber).expect(
+                    "the event-recording subscriber must become the process-wide default: \
+                     another global subscriber is already installed, so no test can capture",
+                );
+            });
+            ACTIVE_RECORDER.with(|slot| *slot.borrow_mut() = Some(recorder));
+            Self
+        }
+    }
+
+    impl Drop for RecordingGuard {
+        fn drop(&mut self) {
+            ACTIVE_RECORDER.with(|slot| *slot.borrow_mut() = None);
+        }
+    }
 }

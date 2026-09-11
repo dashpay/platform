@@ -94,6 +94,23 @@ pub const TERMINAL: &str = "terminal";
 /// `permanentDocument` reference; the doc-type-level validation rejects every
 /// other shape. See [`preallocation`]. Meta-schema v3+ (protocol version 14).
 pub const PREALLOCATED: &str = "preallocated";
+/// Index-level keyword opting the index into **conditional participation**
+/// on an `indexOnly` document type: when `true`, a document that omits the
+/// index's first property writes no entry into this index, and a delete
+/// recomputes the same skip from its carried values. The first property is
+/// the *skip trigger*: it must be a top-level (non-dotted) schema property
+/// NOT listed in `required` — the only way an indexOnly property may be
+/// optional — and every index involving an optional property must be
+/// `skipIfAbsent` with that property first, which is what keeps the write
+/// walkers' required-derived skip and the probes' flag-derived skip
+/// provably equivalent. Every non-trigger property must still appear in at
+/// least one non-skip index (only indexed values exist on an indexOnly
+/// type, and a skip index cannot carry a value for every document), and at
+/// least one `$createdAt`-free index must remain non-skip to serve as the
+/// executed-transition proof index. Only allowed on indexOnly document
+/// types; the doc-type-level validation rejects every other shape.
+/// Meta-schema v3+ (protocol version 14).
+pub const SKIP_IF_ABSENT: &str = "skipIfAbsent";
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
@@ -386,6 +403,31 @@ impl IndexCountability {
     }
 }
 
+/// Deserializer for [`Index::ranked_countable_at`] that accepts, besides
+/// the current array-of-names form, the two legacy spellings the field
+/// had while it was an `Option<String>`: `null` (→ empty) and a bare
+/// string (→ a one-name vector). Serialization always emits the array
+/// form; this only widens what deserializes.
+#[cfg(feature = "serde-conversion")]
+fn deserialize_ranked_countable_at<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum RankedCountableAtCompat {
+        Many(Vec<String>),
+        One(String),
+    }
+    Ok(
+        match Option::<RankedCountableAtCompat>::deserialize(deserializer)? {
+            None => Vec::new(),
+            Some(RankedCountableAtCompat::One(level)) => vec![level],
+            Some(RankedCountableAtCompat::Many(levels)) => levels,
+        },
+    )
+}
+
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
@@ -494,6 +536,46 @@ pub struct Index {
     // deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub ranked_countable: bool,
+    /// When `Some`, the Count ranking axis is placed at the named **prefix**
+    /// property's level instead of the terminal one: that property-name tree
+    /// (whose children are the property's distinct values, each holding the
+    /// whole index subtree beneath it) becomes the indexed tree, and its
+    /// secondary is keyed by each value's **whole-subtree** document count. So
+    /// on `[hashtag, postId]`, `rankedCountable: { "at": "hashtag" }` ranks
+    /// hashtags by total document count across all their posts, where the
+    /// terminal form (`rankedCountable: true`) ranks a pinned hashtag's posts
+    /// by direct member count.
+    ///
+    /// Parsed from the object form `rankedCountable: { "at": … }` — one
+    /// property name or an array of them. Each named property must be one of
+    /// the index's properties; naming the *last* property is canonicalized to
+    /// the terminal form ([`Index::ranked_countable`] `= true`), so this
+    /// vector holds only non-terminal levels, in index-property order
+    /// (canonical, whatever order the contract spelled them in). ANY subset
+    /// of levels may be ranked — `{ "at": ["tag", "region", "postId"] }` on
+    /// `[tag, region, postId]` ranks every level — with each deeper ranked
+    /// tree living inside the chain as a contributing child, its count
+    /// flowing up through every ranked level above it. Mutually exclusive
+    /// with the other ranking axes (`rankedSummable` / `rankedAverageable`)
+    /// — the subtree count chain the prefix levels rank by cannot carry a
+    /// sum axis.
+    ///
+    /// Requires [`Index::range_countable`], like the terminal form. Levels
+    /// from the named property down to the terminal are laid out
+    /// count-bearing so every insert/delete propagates its delta up to the
+    /// prefix level's secondary (see `IndexLevel` for the per-level stamps).
+    //
+    // `serde(default)`: added after the struct's serde shape was in the wild
+    // (see the note on `countable` above), so pre-existing JSON must still
+    // deserialize. The custom deserializer additionally accepts the two
+    // spellings the field had while it was an `Option<String>` — `null`
+    // and a bare string — which derived `Vec` deserialization would
+    // reject; `serde(default)` alone only covers an absent key.
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(default, deserialize_with = "deserialize_ranked_countable_at")
+    )]
+    pub ranked_countable_at: Vec<String>,
     /// Sum-axis counterpart of [`Index::ranked_countable`]: the terminal
     /// property-name tree gains an ordered secondary keyed by each group's sum
     /// of the [`Index::summable`] property, making "top / bottom K groups by
@@ -566,6 +648,19 @@ pub struct Index {
     // deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub preallocated: bool,
+    /// On an indexOnly document type: when `true`, a document that omits this
+    /// index's first property — the skip trigger, which must be an optional
+    /// top-level schema property (see [`SKIP_IF_ABSENT`]) — writes no entry
+    /// into this index, and a delete recomputes the same skip from the
+    /// carried values. The index then holds exactly the documents carrying
+    /// the trigger. An absent trigger is distinct from a present-but-empty
+    /// value, which indexes normally.
+    //
+    // `serde(default)`: added after the struct's serde shape was in the wild
+    // (see the note on `countable` above), so pre-existing JSON must still
+    // deserialize.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub skip_if_absent: bool,
 }
 
 /// Which grammar keywords a document meta-schema generation admits for
@@ -587,6 +682,9 @@ pub(crate) struct IndexGrammarAdmissions {
     /// The `preallocated` keyword (indexOnly document types with a
     /// determining refersTo; generation 3 and later).
     pub(crate) preallocated: bool,
+    /// The `skipIfAbsent` keyword (indexOnly document types; generation 3
+    /// and later).
+    pub(crate) skip_if_absent: bool,
 }
 
 impl IndexGrammarAdmissions {
@@ -600,6 +698,7 @@ impl IndexGrammarAdmissions {
             time_range: generation >= 3,
             terminal: generation >= 3,
             preallocated: generation >= 3,
+            skip_if_absent: generation >= 3,
         }
     }
 }
@@ -743,18 +842,26 @@ impl TryFrom<BTreeMap<String, String>> for IndexProperty {
 }
 
 impl Index {
-    // The matches function will take a slice of an array of strings and an optional sort on value.
-    // An index matches if all the index_names in the slice are consecutively the index's properties
-    // with leftovers permitted.
-    // If a sort_on value is provided it must match the last index property.
-    // The number returned is the number of unused index properties
-
+    // The v0 (protocol versions <= 13, frozen on chain) matching rule:
+    // every index_name must appear SOMEWHERE in the index's properties
+    // (set membership, any order, any position), the order_by fields must
+    // be a contiguous in-index-order run (not necessarily at the end),
+    // and an in field must be the last or before-last property. The
+    // number returned is the number of unused index properties.
+    //
     // A case for example if we have an index on person's name and age
     // where we say name == 'Sam' sort by age
     // there is no field operator on age
     // The return value for name == 'Sam' sort by age would be 0
-    // The return value for name == 'Sam and age > 5 sort by age would be 0
+    // The return value for name == 'Sam' and age > 5 sort by age would be 0
     // the return value for sort by age would be 1
+    //
+    // Because membership is positionless, a query binding only LATER
+    // index properties (leaving a leading/middle property unbound) still
+    // matches here even though the positional path lowering cannot
+    // represent the gap — [`Self::matches_contiguous`] (protocol version
+    // 14+) closes that hole. This function must keep its defective
+    // semantics byte-for-byte for on-chain replay.
     pub fn matches(
         &self,
         index_names: &[&str],
@@ -884,6 +991,173 @@ impl Index {
 
         Some(d as u16)
     }
+
+    /// [`Self::matches`] with the contiguous-prefix requirement the
+    /// positional path lowering depends on (protocol version 14+): the
+    /// equality-bound fields must exactly cover the index's leading
+    /// properties, a range or `in` clause must sit immediately after them
+    /// (in either order when both are present — the lowering nests the
+    /// earlier index property outside), and no unused property may precede
+    /// a field the query names (so order-by-only fields cannot skip over
+    /// an unbound level). Unused TRAILING properties are still permitted
+    /// and still count toward the returned difference.
+    ///
+    /// Fields arrive by role rather than as one flat set because a gapped
+    /// shape can be role-invisible: on the index [a, b, c], the query
+    /// `a == 1 AND c == 3 AND b > 0` names exactly {a, b, c}, yet its
+    /// lowering keys c's equality at b's level and applies b's range at
+    /// c's level.
+    pub fn matches_contiguous(
+        &self,
+        equality_fields: &[&str],
+        range_field: Option<&str>,
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+    ) -> Option<u16> {
+        Self::matches_over_components_contiguous(
+            &self.properties,
+            equality_fields,
+            range_field,
+            in_field_name,
+            order_by,
+        )
+    }
+
+    /// [`Self::matches_contiguous`] with the index's terminal (an
+    /// indexOnly index's member-key property) as a matchable component,
+    /// mirroring [`Self::matches_including_terminal`]: the terminal is
+    /// the entry level itself — ALWAYS the index's deepest component — so
+    /// it is stripped from every role before the prefix properties match
+    /// through the contiguous algorithm. A terminal named in `order_by`
+    /// must be its last (deepest) entry; a terminal range or `in`
+    /// constraint leaves the prefix without one.
+    ///
+    /// Returns `(difference, terminal_used)` with the difference counting
+    /// unused PREFIX properties only, exactly like the v0 variant.
+    pub fn matches_including_terminal_contiguous(
+        &self,
+        equality_fields: &[&str],
+        range_field: Option<&str>,
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+    ) -> Option<(u16, bool)> {
+        let Some(terminal) = self.terminal.as_deref() else {
+            return self
+                .matches_contiguous(equality_fields, range_field, in_field_name, order_by)
+                .map(|difference| (difference, false));
+        };
+
+        let terminal_used = equality_fields.contains(&terminal)
+            || range_field == Some(terminal)
+            || in_field_name == Some(terminal)
+            || order_by.contains(&terminal);
+        let prefix_equality_fields: Vec<&str> = equality_fields
+            .iter()
+            .copied()
+            .filter(|field| *field != terminal)
+            .collect();
+        let prefix_range_field = range_field.filter(|field| *field != terminal);
+        let prefix_in_field = in_field_name.filter(|field| *field != terminal);
+        let prefix_order_by: &[&str] = match order_by.iter().position(|field| *field == terminal) {
+            // Ordering by the terminal is ordering the deepest level —
+            // admissible only as the ordering's last entry.
+            Some(position) if position + 1 == order_by.len() => &order_by[..position],
+            Some(_) => return None,
+            None => order_by,
+        };
+
+        let difference = Self::matches_over_components_contiguous(
+            &self.properties,
+            &prefix_equality_fields,
+            prefix_range_field,
+            prefix_in_field,
+            prefix_order_by,
+        )?;
+        Some((difference, terminal_used))
+    }
+
+    fn matches_over_components_contiguous(
+        properties: &[IndexProperty],
+        equality_fields: &[&str],
+        range_field: Option<&str>,
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+    ) -> Option<u16> {
+        // The flat field set the v0 checks (order-by suffix run, in-field
+        // placement, membership, difference count) run over — assembled
+        // the way `select_best_index` always has, deduplicated.
+        let mut index_names: Vec<&str> = equality_fields.to_vec();
+        for field in [range_field, in_field_name].into_iter().flatten() {
+            if !index_names.contains(&field) {
+                index_names.push(field);
+            }
+        }
+        for field in order_by {
+            if !index_names.contains(field) {
+                index_names.push(field);
+            }
+        }
+
+        let difference =
+            Self::matches_over_components(properties, &index_names, in_field_name, order_by)?;
+
+        // The equality clauses must exactly cover the index's leading
+        // properties: the lowering pairs their serialized values with
+        // `properties[..equality_fields.len()]` positionally.
+        if properties.len() < equality_fields.len() {
+            return None;
+        }
+        if !properties[..equality_fields.len()]
+            .iter()
+            .all(|property| equality_fields.contains(&property.name.as_str()))
+        {
+            return None;
+        }
+
+        // A range or `in` clause becomes the level right below the
+        // equality path, so its field must sit immediately after the
+        // equality prefix; with both present they occupy the next two
+        // positions (the lowering nests whichever is earlier outside).
+        let position_of = |field: &str| {
+            properties
+                .iter()
+                .position(|property| property.name == field)
+        };
+        let equality_len = equality_fields.len();
+        match (range_field, in_field_name) {
+            (Some(range_field), Some(in_field)) => {
+                let range_position = position_of(range_field)?;
+                let in_position = position_of(in_field)?;
+                if range_position.min(in_position) != equality_len
+                    || range_position.max(in_position) != equality_len + 1
+                {
+                    return None;
+                }
+            }
+            (Some(field), None) | (None, Some(field)) => {
+                if position_of(field)? != equality_len {
+                    return None;
+                }
+            }
+            (None, None) => {}
+        }
+
+        // No unused property may precede a named one: every field the
+        // query names (order-by-only fields included) must fall inside
+        // the index prefix of their combined cardinality, leaving unused
+        // properties only as a trailing run.
+        if properties.len() < index_names.len() {
+            return None;
+        }
+        if !properties[..index_names.len()]
+            .iter()
+            .all(|property| index_names.contains(&property.name.as_str()))
+        {
+            return None;
+        }
+
+        Some(difference)
+    }
 }
 
 impl TryFrom<&[(Value, Value)]> for Index {
@@ -904,6 +1178,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                 time_range: false,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
     }
@@ -942,6 +1217,7 @@ impl Index {
             time_range: time_range_allowed,
             terminal: terminal_allowed,
             preallocated: preallocated_allowed,
+            skip_if_absent: skip_if_absent_allowed,
         } = admissions;
         // Decouple the map
         // It contains properties and a unique key
@@ -993,11 +1269,20 @@ impl Index {
         // is no sugar relationship between them, so no explicit-vs-default
         // tracking is needed — nothing ever promotes them.
         let mut ranked_countable = false;
+        // The object form `rankedCountable: { "at": … }` — one property name
+        // or an array of them — held raw until after the loop, because
+        // resolving each (does it name an index property? is it the last
+        // one, i.e. the terminal form spelled longhand?) needs the parsed
+        // property list.
+        let mut ranked_countable_at_levels: Vec<String> = Vec::new();
+        let mut ranked_countable_object_form = false;
+        let mut ranked_countable_at: Vec<String> = Vec::new();
         let mut ranked_summable = false;
         let mut ranked_averageable = false;
         let mut time_range: Option<TimeRangeTransform> = None;
         let mut terminal: Option<String> = None;
         let mut preallocated = false;
+        let mut skip_if_absent = false;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -1230,12 +1515,90 @@ impl Index {
                 // unknown-property arm below — byte-identical to how a node
                 // without this feature rejects it.
                 RANKED_COUNTABLE if ranked_aggregates_allowed => {
-                    ranked_countable =
-                        value_value
-                            .as_bool()
-                            .ok_or(DataContractError::ValueWrongType(
-                                "rankedCountable value must be a boolean".to_string(),
+                    // Two spellings: the boolean form ranks the terminal
+                    // level's groups by direct member count; the object form
+                    // `{ "at": … }` names the level(s) the Count axis
+                    // aggregates at — one property name or an array of them.
+                    // A non-terminal name ranks that property's values by
+                    // whole-subtree count; naming the last property is the
+                    // terminal form spelled longhand, so an array carrying
+                    // both (e.g. `["hashtag", "postId"]` on
+                    // `[hashtag, postId]`) declares BOTH rankings on one
+                    // index — the nested-secondaries shape the storage layer
+                    // maintains as one count-propagation chain.
+                    if let Some(ranked_map) = value_value.as_map() {
+                        let mut at_levels: Option<Vec<String>> = None;
+                        for (rc_key_value, rc_value) in ranked_map {
+                            let rc_key = rc_key_value.to_str().map_err(|e| {
+                                DataContractError::ValueDecodingError(e.to_string())
+                            })?;
+                            match rc_key {
+                                "at" => {
+                                    let levels = if let Some(text) = rc_value.as_text() {
+                                        vec![text.to_owned()]
+                                    } else if let Some(array) = rc_value.as_array() {
+                                        array
+                                            .iter()
+                                            .map(|element| {
+                                                element.as_text().map(|text| text.to_owned()).ok_or(
+                                                    DataContractError::ValueWrongType(
+                                                        "rankedCountable.at array elements \
+                                                         should be strings naming index \
+                                                         properties"
+                                                            .to_string(),
+                                                    ),
+                                                )
+                                            })
+                                            .collect::<Result<Vec<_>, _>>()?
+                                    } else {
+                                        return Err(DataContractError::ValueWrongType(
+                                            "rankedCountable.at should be a string naming an \
+                                             index property, or an array of them"
+                                                .to_string(),
+                                        ));
+                                    };
+                                    at_levels = Some(levels);
+                                }
+                                other => {
+                                    return Err(DataContractError::InvalidContractStructure(
+                                        format!("unexpected rankedCountable field: {}", other),
+                                    ));
+                                }
+                            }
+                        }
+                        let at_levels =
+                            at_levels.ok_or(DataContractError::InvalidContractStructure(
+                                "rankedCountable's object form requires an `at` field naming \
+                                 the index property (or properties) whose levels carry the \
+                                 ranking"
+                                    .to_string(),
                             ))?;
+                        if at_levels.is_empty() {
+                            return Err(DataContractError::InvalidContractStructure(
+                                "rankedCountable.at must name at least one property; an empty \
+                                 array names nothing"
+                                    .to_string(),
+                            ));
+                        }
+                        if at_levels.iter().any(|at| at.is_empty()) {
+                            return Err(DataContractError::InvalidContractStructure(
+                                "rankedCountable.at must name a property; an empty string names \
+                                 nothing"
+                                    .to_string(),
+                            ));
+                        }
+                        ranked_countable_object_form = true;
+                        ranked_countable_at_levels = at_levels;
+                    } else {
+                        ranked_countable =
+                            value_value
+                                .as_bool()
+                                .ok_or(DataContractError::ValueWrongType(
+                                    "rankedCountable value must be a boolean or a map with an \
+                                     `at` field"
+                                        .to_string(),
+                                ))?;
+                    }
                 }
                 RANKED_SUMMABLE if ranked_aggregates_allowed => {
                     ranked_summable =
@@ -1374,6 +1737,22 @@ impl Index {
                                 "preallocated value must be a boolean".to_string(),
                             ))?;
                 }
+                // `skipIfAbsent` is guarded the same way as `terminal` and
+                // `preallocated` above: it joined the grammar at meta-schema
+                // v3, so below that the key falls through to the
+                // unknown-property arm. Whether the declaring document type
+                // is indexOnly and the first property is a legal skip
+                // trigger are doc-type facts this parser cannot see;
+                // `apply_index_only` in `try_from_schema::common` enforces
+                // both.
+                SKIP_IF_ABSENT if skip_if_absent_allowed => {
+                    skip_if_absent =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "skipIfAbsent value must be a boolean".to_string(),
+                            ))?;
+                }
                 "properties" => {
                     let properties =
                         value_value
@@ -1404,6 +1783,61 @@ impl Index {
         if contested_index.is_some() && !unique {
             return Err(DataContractError::InvalidContractStructure(
                 "contest supported only for unique indexes".to_string(),
+            ));
+        }
+
+        // Resolve the object form of `rankedCountable` against the property
+        // list. Naming the *last* property is the terminal form spelled
+        // longhand — folded into the boolean so `ranked_countable_at` holds
+        // only non-terminal levels and downstream code never handles two
+        // spellings of one layout. Any number of levels may be named; the
+        // resolved vector is sorted into index-property order so two
+        // spellings of one declaration parse identically. (The boolean and
+        // object spellings cannot conflict: they are one JSON key.)
+        if ranked_countable_object_form {
+            for (position, at) in ranked_countable_at_levels.iter().enumerate() {
+                if ranked_countable_at_levels[..position].contains(at) {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "rankedCountable.at names \"{}\" twice; each level is one ranking",
+                        at
+                    )));
+                }
+            }
+            let mut at_positions: Vec<(usize, String)> = Vec::new();
+            for at in ranked_countable_at_levels.drain(..) {
+                let Some(position) = index_properties
+                    .iter()
+                    .position(|property| property.name == at)
+                else {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "rankedCountable.at (\"{}\") must name one of the index's properties; \
+                         the ranking is placed at that property's level",
+                        at
+                    )));
+                };
+                if position + 1 == index_properties.len() {
+                    ranked_countable = true;
+                } else {
+                    at_positions.push((position, at));
+                }
+            }
+            at_positions.sort_by_key(|(position, _)| *position);
+            ranked_countable_at = at_positions.into_iter().map(|(_, at)| at).collect();
+        }
+
+        // A prefix-level Count ranking works by making every level from the
+        // named property down to the terminal count-bearing, so each write's
+        // count delta propagates up to the prefix level's secondary. A sum
+        // axis on the same index would need the terminal's sum-bearing tree
+        // to contribute *count* through that chain, which its tree types
+        // cannot express — the combination has no coherent layout. (The
+        // terminal boolean form composes with the other axes as before.)
+        if !ranked_countable_at.is_empty() && (ranked_summable || ranked_averageable) {
+            return Err(DataContractError::InvalidContractStructure(
+                "rankedCountable's `at` form cannot be combined with rankedSummable or \
+                 rankedAverageable: the prefix level ranks by the subtree count chain, which \
+                 cannot carry a sum axis"
+                    .to_string(),
             ));
         }
 
@@ -1533,7 +1967,7 @@ impl Index {
         // aggregate the corresponding range axis already maintains per group,
         // so the range axis is a hard prerequisite: without it the terminal
         // property-name tree carries no per-group aggregate to rank by.
-        if ranked_countable && !range_countable {
+        if (ranked_countable || !ranked_countable_at.is_empty()) && !range_countable {
             return Err(DataContractError::InvalidContractStructure(
                 "rankedCountable requires rangeCountable: true; ranking groups by \
                  count needs the per-group counts the range-count layout \
@@ -1572,7 +2006,12 @@ impl Index {
         // serves — while still paying for an indexed tree and its secondary
         // maintenance on every write. Contested indexes are unique by
         // construction (checked above).
-        if (ranked_countable || ranked_summable || ranked_averageable) && unique {
+        if (ranked_countable
+            || !ranked_countable_at.is_empty()
+            || ranked_summable
+            || ranked_averageable)
+            && unique
+        {
             return Err(DataContractError::InvalidContractStructure(
                 "ranked aggregates are not supported on unique indexes: each \
                  group of a unique index contains at most one document, so \
@@ -1610,7 +2049,12 @@ impl Index {
         // default is `true` — and under `true` the null documents get their
         // real reference and form a legitimate rankable group, which is the
         // combination authors actually want.
-        if (ranked_countable || ranked_summable || ranked_averageable) && !null_searchable {
+        if (ranked_countable
+            || !ranked_countable_at.is_empty()
+            || ranked_summable
+            || ranked_averageable)
+            && !null_searchable
+        {
             return Err(DataContractError::InvalidContractStructure(
                 "ranked aggregates are not supported with nullSearchable: false: a \
                  document missing the indexed property still creates the null group's \
@@ -1683,20 +2127,48 @@ impl Index {
                     "a timeRange index cannot be a contested resource".to_string(),
                 ));
             }
-            // The ranked query surface excludes bucketed indexes — a document
-            // is stored once per containing bucket, so ranking groups keyed by
-            // bucket starts would score each document `overlap_factor` times.
-            // Since no ranked query can ever select such an index, allowing
-            // the flags would only make the contract pay for ranked
-            // secondaries that are unreachable; reject the combination until
-            // bucket-aware ranked semantics are deliberately designed.
-            if ranked_countable || ranked_summable || ranked_averageable {
+            // Ranked axes compose with bucketing BELOW the bucketed level:
+            // a ranked level's per-prefix secondaries live inside their
+            // prefix's subtree, and a bucket start is just another prefix
+            // value — within any single bucket's subtree a document appears
+            // exactly once, so per-window rankings are exact regardless of
+            // window overlap (a document in several windows raises each
+            // window's own honest aggregate; that is the meaning of
+            // overlapping windows, not double counting). Ranked queries pin
+            // the bucket the same way they pin every other leading property
+            // — through a resolved time-range selection.
+            //
+            // What has no designed semantics yet is ranking the bucketed
+            // level ITSELF — ordering the windows by their aggregates. That
+            // needs its own routing shape (no prefix pin above the first
+            // level, a grid named by the query), so exactly that is still
+            // rejected, in its two spellings:
+            // - every ranked flag ranks the terminal level, so on a
+            //   single-property bucketed index the only rankable level IS
+            //   the bucketed one;
+            // - an `at` chain naming the transform's source ranks the
+            //   bucketed level explicitly.
+            let any_ranked_axis = ranked_countable
+                || !ranked_countable_at.is_empty()
+                || ranked_summable
+                || ranked_averageable;
+            if any_ranked_axis && index_properties.len() == 1 {
                 return Err(DataContractError::InvalidContractStructure(
-                    "a timeRange index cannot be ranked (rankedCountable / rankedSummable / \
-                     rankedAverageable): ranked queries have no time-bucket semantics, so the \
-                     ranked secondaries would be maintained but never servable"
+                    "a single-property timeRange index cannot be ranked: its only level is \
+                     the bucketed one, and ranking the windows themselves (ordering bucket \
+                     starts by their aggregates) is not supported yet — add the property to \
+                     rank below the bucketed timestamp, e.g. [timestamp, hashtag]"
                         .to_string(),
                 ));
+            }
+            if ranked_countable_at.iter().any(|at| at == &transform.source) {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "rankedCountable.at cannot name \"{}\", a timeRange index's bucketed \
+                     source: ranking the windows themselves (ordering bucket starts by \
+                     their aggregates) is not supported yet — rank the levels below the \
+                     bucketed timestamp instead",
+                    transform.source
+                )));
             }
             // Same reasoning as the ranked `nullSearchable` rejection above,
             // plus a write-path invariant: the insert, delete and update
@@ -1850,11 +2322,13 @@ impl Index {
             summable,
             range_summable,
             ranked_countable,
+            ranked_countable_at,
             ranked_summable,
             ranked_averageable,
             time_range,
             terminal,
             preallocated,
+            skip_if_absent,
         })
     }
 }
@@ -1923,11 +2397,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }
     }
 
@@ -2009,6 +2485,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("should parse");
@@ -2025,6 +2502,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2041,6 +2519,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2061,6 +2540,7 @@ mod tests {
             time_range: false,
             terminal: false,
             preallocated: true,
+            skip_if_absent: false,
         };
 
         let mut map = index_value_map("postId", None);
@@ -2090,6 +2570,7 @@ mod tests {
                 time_range: false,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2120,6 +2601,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2142,6 +2624,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("should parse");
@@ -2164,6 +2647,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2187,6 +2671,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2211,6 +2696,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("should parse");
@@ -2231,6 +2717,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("should parse");
@@ -2256,6 +2743,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("should parse");
@@ -2281,6 +2769,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2304,6 +2793,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2332,6 +2822,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("the parser applies structural rules only");
@@ -2355,6 +2846,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2374,6 +2866,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2397,6 +2890,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2451,6 +2945,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2487,6 +2982,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("should parse");
@@ -2516,6 +3012,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2547,6 +3044,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2572,6 +3070,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("a non-unique $updatedAt bucketing stays legal");
@@ -2592,6 +3091,7 @@ mod tests {
                 time_range: false,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -3001,6 +3501,211 @@ mod tests {
         let index = make_index("idx", vec![("name", true), ("age", true)], false);
         let result = index.matches(&["name"], Some("email"), &[]);
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_matches_accepts_gapped_binding_frozen_v0_semantics() {
+        // The frozen v0 rule is positionless set membership: binding only
+        // the LAST property of [name, age] still matches with difference
+        // 1, even though the positional lowering cannot represent the
+        // gap. On-chain replay for protocol versions <= 13 depends on
+        // this staying true.
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        assert_eq!(index.matches(&["age"], None, &[]), Some(1));
+    }
+
+    // -----------------------------------------------------------------------
+    // Index::matches_contiguous() tests (protocol version 14+)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_matches_contiguous_agrees_with_v0_on_contiguous_shapes() {
+        let index = make_index(
+            "idx",
+            vec![("name", true), ("age", true), ("city", true)],
+            false,
+        );
+        // Full equality cover.
+        assert_eq!(
+            index.matches_contiguous(&["name", "age", "city"], None, None, &[]),
+            Some(0)
+        );
+        // Equality prefix with trailing unused properties.
+        assert_eq!(
+            index.matches_contiguous(&["name"], None, None, &[]),
+            Some(2)
+        );
+        assert_eq!(
+            index.matches_contiguous(&["name", "age"], None, None, &[]),
+            Some(1)
+        );
+        // Equality prefix + adjacent order-by.
+        assert_eq!(
+            index.matches_contiguous(&["name"], None, None, &["age"]),
+            Some(1)
+        );
+        // Equality fields given in any order still cover the prefix.
+        assert_eq!(
+            index.matches_contiguous(&["age", "name"], None, None, &[]),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn test_matches_contiguous_rejects_gapped_equality() {
+        let index = make_index(
+            "idx",
+            vec![("name", true), ("age", true), ("city", true)],
+            false,
+        );
+        // Last property alone.
+        assert_eq!(index.matches_contiguous(&["city"], None, None, &[]), None);
+        // Middle property alone.
+        assert_eq!(index.matches_contiguous(&["age"], None, None, &[]), None);
+        // First and last, hole in the middle.
+        assert_eq!(
+            index.matches_contiguous(&["name", "city"], None, None, &[]),
+            None
+        );
+    }
+
+    #[test]
+    fn test_matches_contiguous_rejects_role_permutation() {
+        // name == ? AND city == ? AND age > ? names exactly {name, age,
+        // city}, but the range fills the equality hole: the lowering
+        // would key city's equality at age's level. Role-aware matching
+        // must reject it even though the flat set covers the index.
+        let index = make_index(
+            "idx",
+            vec![("name", true), ("age", true), ("city", true)],
+            false,
+        );
+        assert_eq!(
+            index.matches_contiguous(&["name", "city"], Some("age"), None, &["age", "city"]),
+            None
+        );
+        // The well-formed variant of the same flat set passes.
+        assert_eq!(
+            index.matches_contiguous(&["name", "age"], Some("city"), None, &["city"]),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn test_matches_contiguous_range_and_in_adjacency() {
+        let index = make_index(
+            "idx",
+            vec![("name", true), ("age", true), ("city", true)],
+            false,
+        );
+        // Range immediately after the equality prefix.
+        assert_eq!(
+            index.matches_contiguous(&["name"], Some("age"), None, &["age"]),
+            Some(1)
+        );
+        // Range skipping over the unbound middle property.
+        assert_eq!(
+            index.matches_contiguous(&["name"], Some("city"), None, &["city"]),
+            None
+        );
+        // In immediately after the equality prefix (before-last position).
+        assert_eq!(
+            index.matches_contiguous(&["name"], None, Some("age"), &[]),
+            Some(1)
+        );
+        // In on the last property with the middle property unbound.
+        assert_eq!(
+            index.matches_contiguous(&["name"], None, Some("city"), &[]),
+            None
+        );
+        // Range + in filling the two positions after the prefix, in
+        // either index order.
+        assert_eq!(
+            index.matches_contiguous(&["name"], Some("age"), Some("city"), &["age", "city"]),
+            Some(0)
+        );
+        assert_eq!(
+            index.matches_contiguous(&["name"], Some("city"), Some("age"), &["age", "city"]),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn test_matches_contiguous_rejects_order_by_gap() {
+        // An order-by-only field beyond an unbound property claims an
+        // ordering the leftover walk does not deliver.
+        let index = make_index(
+            "idx",
+            vec![("name", true), ("age", true), ("city", true)],
+            false,
+        );
+        assert_eq!(
+            index.matches_contiguous(&["name"], None, None, &["city"]),
+            None
+        );
+        // Ordering by the property right after the prefix is fine, and
+        // may continue into deeper properties.
+        assert_eq!(
+            index.matches_contiguous(&["name"], None, None, &["age", "city"]),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn test_matches_including_terminal_contiguous() {
+        let mut index = make_index("idx", vec![("hashtag", true), ("post", true)], false);
+        index.terminal = Some("owner".to_string());
+
+        // Fully determined prefix + terminal equality.
+        assert_eq!(
+            index.matches_including_terminal_contiguous(
+                &["hashtag", "post", "owner"],
+                None,
+                None,
+                &[]
+            ),
+            Some((0, true))
+        );
+        // Prefix-only cover leaves the terminal unused and costs nothing.
+        assert_eq!(
+            index.matches_including_terminal_contiguous(&["hashtag", "post"], None, None, &[]),
+            Some((0, false))
+        );
+        // An `in` on the terminal strips to a pure prefix match.
+        assert_eq!(
+            index.matches_including_terminal_contiguous(
+                &["hashtag", "post"],
+                None,
+                Some("owner"),
+                &[]
+            ),
+            Some((0, true))
+        );
+        // Ordering by the terminal is only admissible as the deepest
+        // (last) order-by entry.
+        assert_eq!(
+            index.matches_including_terminal_contiguous(
+                &["hashtag"],
+                None,
+                None,
+                &["post", "owner"]
+            ),
+            Some((0, true))
+        );
+        assert_eq!(
+            index.matches_including_terminal_contiguous(
+                &["hashtag"],
+                None,
+                None,
+                &["owner", "post"]
+            ),
+            None
+        );
+        // A gapped prefix is rejected even when the terminal is bound.
+        assert_eq!(
+            index.matches_including_terminal_contiguous(&["post", "owner"], None, None, &[]),
+            None
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -3574,6 +4279,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("all three ranked keywords must parse when the grammar allows them");
@@ -3600,6 +4306,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("index without ranked keywords must parse");
@@ -3642,6 +4349,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("ranked flags on a compound index must be accepted");
@@ -3672,6 +4380,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         );
         assert!(
@@ -3703,6 +4412,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         );
         assert!(
@@ -3732,6 +4442,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         );
         assert!(
@@ -3758,6 +4469,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         );
         assert!(
@@ -3786,6 +4498,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         );
         assert!(
@@ -3814,6 +4527,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         );
         assert!(
@@ -3844,6 +4558,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("rankedAverageable on the averageable sugar form must parse");
@@ -3880,6 +4595,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("rankedAverageable on the explicit longhand form must parse");
@@ -3906,6 +4622,7 @@ mod tests {
                     time_range: true,
                     terminal: true,
                     preallocated: false,
+                    skip_if_absent: false,
                 },
             );
             assert!(result.is_err(), "{key} must reject a non-boolean value");
@@ -3938,6 +4655,7 @@ mod tests {
                         time_range: false,
                         terminal: false,
                         preallocated: false,
+                        skip_if_absent: false,
                     },
                 );
                 assert!(
@@ -3966,6 +4684,450 @@ mod tests {
         assert!(
             result.is_err(),
             "TryFrom is the pre-meta-schema-v3 grammar and must reject ranked keys"
+        );
+    }
+
+    /// Map fixture for a compound countable `[hashtag, postId]` index whose
+    /// `rankedCountable` carries the given value — the shape the prefix-level
+    /// (`{ "at": … }`) tests exercise.
+    fn prefix_ranked_index_map(ranked_countable: Value) -> Vec<(Value, Value)> {
+        vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![
+                    Value::Map(vec![(
+                        Value::Text("hashtag".to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                    Value::Map(vec![(
+                        Value::Text("postId".to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                ]),
+            ),
+            (
+                Value::Text("countable".to_string()),
+                Value::Text("countable".to_string()),
+            ),
+            (Value::Text("rangeCountable".to_string()), Value::Bool(true)),
+            (Value::Text("rankedCountable".to_string()), ranked_countable),
+        ]
+    }
+
+    fn ranked_at(property: &str) -> Value {
+        Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Text(property.to_string()),
+        )])
+    }
+
+    fn v3_admissions() -> IndexGrammarAdmissions {
+        IndexGrammarAdmissions {
+            ranked: true,
+            time_range: true,
+            terminal: true,
+            preallocated: false,
+            skip_if_absent: false,
+        }
+    }
+
+    /// The object form naming a non-terminal property parses into
+    /// `ranked_countable_at` with the boolean terminal axis off.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_prefix_property_parses() {
+        let index_map = prefix_ranked_index_map(ranked_at("hashtag"));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("the prefix-level object form must parse");
+        assert!(!index.ranked_countable);
+        assert_eq!(index.ranked_countable_at, vec!["hashtag".to_string()]);
+    }
+
+    /// Naming the last property is the terminal form spelled longhand and
+    /// canonicalizes to the boolean, so downstream code sees one spelling.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_last_property_canonicalizes() {
+        let index_map = prefix_ranked_index_map(ranked_at("postId"));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("at naming the last property must parse as the terminal form");
+        assert!(index.ranked_countable);
+        assert_eq!(index.ranked_countable_at, Vec::<String>::new());
+    }
+
+    /// The array form naming both the prefix and the last property
+    /// declares BOTH rankings: the terminal boolean turns on alongside
+    /// the prefix level.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_array_declares_both_levels() {
+        let index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![
+                Value::Text("hashtag".to_string()),
+                Value::Text("postId".to_string()),
+            ]),
+        )]));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("the both-levels array form must parse");
+        assert!(index.ranked_countable);
+        assert_eq!(index.ranked_countable_at, vec!["hashtag".to_string()]);
+
+        // Order in the array is irrelevant — each name resolves by its
+        // index position.
+        let index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![
+                Value::Text("postId".to_string()),
+                Value::Text("hashtag".to_string()),
+            ]),
+        )]));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("the reversed array must parse identically");
+        assert!(index.ranked_countable);
+        assert_eq!(index.ranked_countable_at, vec!["hashtag".to_string()]);
+
+        // An array carrying only the last property is the terminal form.
+        let index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![Value::Text("postId".to_string())]),
+        )]));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("a terminal-only array must parse as the boolean form");
+        assert!(index.ranked_countable);
+        assert_eq!(index.ranked_countable_at, Vec::<String>::new());
+    }
+
+    /// Array-form rejections: a duplicate name, more than one
+    /// non-terminal level, an empty array, and a non-string element.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_array_malformed_rejected() {
+        let cases: Vec<(Value, &str)> = vec![
+            (
+                Value::Array(vec![
+                    Value::Text("hashtag".to_string()),
+                    Value::Text("hashtag".to_string()),
+                ]),
+                "duplicate name",
+            ),
+            (Value::Array(vec![]), "empty array"),
+            (
+                Value::Array(vec![Value::Text("hashtag".to_string()), Value::U64(1)]),
+                "non-string element",
+            ),
+        ];
+        for (at_value, label) in cases {
+            let index_map = prefix_ranked_index_map(Value::Map(vec![(
+                Value::Text("at".to_string()),
+                at_value,
+            )]));
+            assert!(
+                Index::try_from_value_map(index_map.as_slice(), v3_admissions()).is_err(),
+                "{label} must be rejected"
+            );
+        }
+    }
+
+    /// Any subset of levels may be ranked: a fully ranked three-property
+    /// index parses with every non-terminal level in `ranked_countable_at`
+    /// (canonical index-property order, whatever the array spelled) and
+    /// the terminal boolean on.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_every_level() {
+        let three_properties = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("hashtag".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("region".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+
+        // All three levels, spelled deepest-first to exercise the
+        // canonical reordering.
+        let mut index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![
+                Value::Text("postId".to_string()),
+                Value::Text("region".to_string()),
+                Value::Text("hashtag".to_string()),
+            ]),
+        )]));
+        index_map[0].1 = three_properties.clone();
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("a fully ranked index must parse");
+        assert!(index.ranked_countable);
+        assert_eq!(
+            index.ranked_countable_at,
+            vec!["hashtag".to_string(), "region".to_string()],
+            "non-terminal levels must come out in index-property order"
+        );
+
+        // Two non-terminal levels without the terminal.
+        let mut index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![
+                Value::Text("hashtag".to_string()),
+                Value::Text("region".to_string()),
+            ]),
+        )]));
+        index_map[0].1 = three_properties;
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("two prefix levels must parse");
+        assert!(!index.ranked_countable);
+        assert_eq!(
+            index.ranked_countable_at,
+            vec!["hashtag".to_string(), "region".to_string()]
+        );
+    }
+
+    /// `at` must name one of the index's properties.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_unknown_property_rejected() {
+        let index_map = prefix_ranked_index_map(ranked_at("author"));
+        let result = Index::try_from_value_map(index_map.as_slice(), v3_admissions());
+        let msg = format!(
+            "{:?}",
+            result.expect_err("unknown at property must be rejected")
+        );
+        assert!(
+            msg.contains("rankedCountable.at") && msg.contains("author"),
+            "error must name the field and the dangling property; got {msg}"
+        );
+    }
+
+    /// Malformed object forms: empty `at`, missing `at`, an unknown field,
+    /// a non-string `at`, and a value that is neither bool nor map.
+    #[test]
+    fn test_index_try_from_ranked_countable_malformed_object_forms_rejected() {
+        let cases: Vec<(Value, &str)> = vec![
+            (ranked_at(""), "empty at"),
+            (Value::Map(vec![]), "missing at"),
+            (
+                Value::Map(vec![
+                    (
+                        Value::Text("at".to_string()),
+                        Value::Text("hashtag".to_string()),
+                    ),
+                    (
+                        Value::Text("axis".to_string()),
+                        Value::Text("count".to_string()),
+                    ),
+                ]),
+                "unknown field",
+            ),
+            (
+                Value::Map(vec![(Value::Text("at".to_string()), Value::U64(1))]),
+                "non-string at",
+            ),
+            (Value::Text("hashtag".to_string()), "bare string value"),
+        ];
+        for (value, label) in cases {
+            let index_map = prefix_ranked_index_map(value);
+            assert!(
+                Index::try_from_value_map(index_map.as_slice(), v3_admissions()).is_err(),
+                "{label} must be rejected"
+            );
+        }
+    }
+
+    /// The prefix form shares the terminal form's `rangeCountable`
+    /// prerequisite: the count-propagation chain is built from the
+    /// range-count layout.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_without_range_countable_rejected() {
+        let mut index_map = prefix_ranked_index_map(ranked_at("hashtag"));
+        index_map.retain(|(key, _)| {
+            key.as_text() != Some("rangeCountable") && key.as_text() != Some("countable")
+        });
+        let result = Index::try_from_value_map(index_map.as_slice(), v3_admissions());
+        let msg = format!(
+            "{:?}",
+            result.expect_err("prefix form without rangeCountable must be rejected")
+        );
+        assert!(
+            msg.contains("rangeCountable"),
+            "error must state the prerequisite; got {msg}"
+        );
+    }
+
+    /// The prefix form cannot be combined with a sum-bearing ranking axis:
+    /// the count-propagation chain cannot carry one.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_with_sum_axis_rejected() {
+        let mut index_map = prefix_ranked_index_map(ranked_at("hashtag"));
+        index_map.push((
+            Value::Text("summable".to_string()),
+            Value::Text("score".to_string()),
+        ));
+        index_map.push((Value::Text("rangeSummable".to_string()), Value::Bool(true)));
+        index_map.push((Value::Text("rankedSummable".to_string()), Value::Bool(true)));
+        let result = Index::try_from_value_map(index_map.as_slice(), v3_admissions());
+        let msg = format!(
+            "{:?}",
+            result.expect_err("prefix form combined with rankedSummable must be rejected")
+        );
+        assert!(
+            msg.contains("rankedSummable"),
+            "error must name the conflicting axis; got {msg}"
+        );
+    }
+
+    /// The prefix form is rejected on unique indexes and with
+    /// `nullSearchable: false`, exactly like the boolean axes.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_unique_and_null_searchable_rejected() {
+        for (key, value, expectation) in [
+            ("unique", Value::Bool(true), "unique"),
+            ("nullSearchable", Value::Bool(false), "nullSearchable"),
+        ] {
+            let mut index_map = prefix_ranked_index_map(ranked_at("hashtag"));
+            index_map.push((Value::Text(key.to_string()), value));
+            assert!(
+                Index::try_from_value_map(index_map.as_slice(), v3_admissions()).is_err(),
+                "prefix form with {expectation} must be rejected"
+            );
+        }
+    }
+
+    /// A timeRange index rejects the prefix form exactly like the boolean
+    /// axes: a bucketed document is stored once per containing bucket, so
+    /// any ranked secondary would score it `overlap_factor` times.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_on_time_range_index_rejected() {
+        let mut index_map = prefix_ranked_index_map(ranked_at("$createdAt"));
+        // Make the fixture a [$createdAt, postId] compound so `at` names the
+        // bucketed leading property — ranking the windows themselves, the one
+        // spelling still deferred.
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("$createdAt".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        index_map.push((Value::Text("timeRange".to_string()), time_range_entry()));
+        let result = Index::try_from_value_map(index_map.as_slice(), v3_admissions());
+        let msg = format!(
+            "{:?}",
+            result.expect_err("at naming the bucketed source must be rejected")
+        );
+        assert!(
+            msg.contains("bucketed source"),
+            "error must state that the bucketed level itself cannot rank; got {msg}"
+        );
+    }
+
+    fn time_range_entry() -> Value {
+        Value::Map(vec![
+            (
+                Value::Text("on".to_string()),
+                Value::Text("$createdAt".to_string()),
+            ),
+            (Value::Text("range".to_string()), Value::U64(21_600)),
+            (Value::Text("step".to_string()), Value::U64(7_200)),
+        ])
+    }
+
+    /// Ranked levels BELOW the bucketed one are legal (any grid — overlap
+    /// included): within one bucket's subtree a document appears once, so
+    /// per-window rankings are exact. Both the at-form on a middle level
+    /// and the canonicalized terminal form must parse.
+    #[test]
+    fn test_index_try_from_ranked_below_bucketed_level_parses() {
+        // [$createdAt, hashtag, postId] with at: "hashtag" — per-window top
+        // hashtags.
+        let mut index_map = prefix_ranked_index_map(ranked_at("hashtag"));
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("$createdAt".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("hashtag".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        index_map.push((Value::Text("timeRange".to_string()), time_range_entry()));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("ranked below the bucketed level must parse");
+        assert_eq!(index.ranked_countable_at, vec!["hashtag".to_string()]);
+        assert!(index.time_range.is_some());
+
+        // [$createdAt, postId] with the terminal boolean — per-window top
+        // posts.
+        let mut index_map = prefix_ranked_index_map(Value::Bool(true));
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("$createdAt".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        index_map.push((Value::Text("timeRange".to_string()), time_range_entry()));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("the terminal ranked form below a bucketed level must parse");
+        assert!(index.ranked_countable);
+        assert!(index.time_range.is_some());
+    }
+
+    /// On a single-property bucketed index the only level IS the bucketed
+    /// one, so every ranked flag would rank the windows themselves — still
+    /// deferred, rejected with its own message.
+    #[test]
+    fn test_index_try_from_single_property_time_range_ranked_rejected() {
+        let mut index_map = prefix_ranked_index_map(Value::Bool(true));
+        index_map[0].1 = Value::Array(vec![Value::Map(vec![(
+            Value::Text("$createdAt".to_string()),
+            Value::Text("asc".to_string()),
+        )])]);
+        index_map.push((Value::Text("timeRange".to_string()), time_range_entry()));
+        let result = Index::try_from_value_map(index_map.as_slice(), v3_admissions());
+        let msg = format!(
+            "{:?}",
+            result.expect_err("a single-property bucketed ranked index must be rejected")
+        );
+        assert!(
+            msg.contains("single-property timeRange"),
+            "error must name the single-property case; got {msg}"
+        );
+    }
+
+    /// Below grammar generation 3 the object form is rejected through the
+    /// unknown-key arm, byte-identical to a node without the feature.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_rejected_when_grammar_disallows() {
+        let index_map = prefix_ranked_index_map(ranked_at("hashtag"));
+        let result = Index::try_from_value_map(
+            index_map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: false,
+                terminal: false,
+                preallocated: false,
+                skip_if_absent: false,
+            },
+        );
+        let msg = format!(
+            "{:?}",
+            result.expect_err("the object form must be rejected below generation 3")
+        );
+        assert!(
+            msg.contains("unexpected property name"),
+            "pre-v3 rejection must be the unknown-key error; got {msg}"
         );
     }
 
@@ -4019,6 +5181,7 @@ mod tests {
                     time_range: true,
                     terminal: true,
                     preallocated: false,
+                    skip_if_absent: false,
                 },
             );
             assert!(
@@ -4047,6 +5210,7 @@ mod tests {
                     time_range: true,
                     terminal: true,
                     preallocated: false,
+                    skip_if_absent: false,
                 },
             )
             .unwrap_or_else(|e| panic!("{axis} with no nullSearchable key must parse: {e:?}"));
@@ -4071,6 +5235,7 @@ mod tests {
                     time_range: true,
                     terminal: true,
                     preallocated: false,
+                    skip_if_absent: false,
                 },
             )
             .unwrap_or_else(|e| {
@@ -4093,6 +5258,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("nullSearchable: false on a plain index must still parse");
@@ -4110,6 +5276,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("nullSearchable: false on a range-averageable index must still parse");
@@ -4592,11 +5759,13 @@ mod json_convertible_tests {
             // prove each flag survives independently, which a uniform
             // all-true / all-false fixture cannot.
             ranked_countable: true,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: true,
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }
     }
 
@@ -4624,15 +5793,50 @@ mod json_convertible_tests {
                 "summable": "price",
                 "range_summable": true,
                 "ranked_countable": true,
+                "ranked_countable_at": serde_json::json!([]),
                 "ranked_summable": false,
                 "ranked_averageable": true,
                 "time_range": serde_json::Value::Null,
                 "terminal": serde_json::Value::Null,
                 "preallocated": false,
+                "skip_if_absent": false,
             })
         );
         let recovered = Index::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+    }
+
+    /// `ranked_countable_at` deserializes all three wire spellings: the
+    /// current array, plus the legacy `null` and bare-string forms from
+    /// its `Option<String>` era. An absent key keeps the `serde(default)`
+    /// path.
+    #[test]
+    fn index_json_accepts_legacy_ranked_countable_at_shapes() {
+        use crate::serialization::JsonConvertible;
+        let mut json = serde_json::to_value(index_fixture()).expect("serialize");
+
+        for (wire_value, expected) in [
+            (serde_json::Value::Null, Vec::<String>::new()),
+            (serde_json::json!("hashtag"), vec!["hashtag".to_string()]),
+            (
+                serde_json::json!(["hashtag", "postId"]),
+                vec!["hashtag".to_string(), "postId".to_string()],
+            ),
+        ] {
+            json["ranked_countable_at"] = wire_value.clone();
+            let recovered = Index::from_json(json.clone())
+                .unwrap_or_else(|e| panic!("{wire_value:?} must deserialize: {e}"));
+            assert_eq!(
+                recovered.ranked_countable_at, expected,
+                "for {wire_value:?}"
+            );
+        }
+
+        let mut object = json.as_object().expect("object").clone();
+        object.remove("ranked_countable_at");
+        let recovered = Index::from_json(serde_json::Value::Object(object))
+            .expect("an absent key must default");
+        assert_eq!(recovered.ranked_countable_at, Vec::<String>::new());
     }
 
     #[test]

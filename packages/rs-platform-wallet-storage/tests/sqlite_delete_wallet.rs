@@ -76,7 +76,7 @@ fn concurrent_store_does_not_resurrect_deleted_wallet() {
     // test; here we only guard against a racing store resurrecting the
     // wallet after the delete commit.
     let conn = persister.lock_conn_for_test();
-    for table in ["wallet_metadata", "core_sync_state"] {
+    for table in ["wallets", "core_sync_state"] {
         let n: i64 = conn
             .query_row(
                 &format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1"),

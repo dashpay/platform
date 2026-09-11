@@ -1,3 +1,94 @@
+## [4.2.0-dev.8](https://github.com/dashpay/platform/compare/v4.2.0-dev.7...v4.2.0-dev.8) (2026-09-02)
+
+
+### Features
+
+* **dapi:** chained document queries on the getDocuments V1 wire ([#4549](https://github.com/dashpay/platform/issues/4549))
+* **dapi:** typed IN_TIME_RANGE operand with BY_START historic window selection ([#4574](https://github.com/dashpay/platform/issues/4574))
+* **drive:** chained document queries — provable semi-join (posts I liked) ([#4547](https://github.com/dashpay/platform/issues/4547))
+* **drive:** ranked windowed top-K — ranked indexes below timeRange buckets, served through time-range selections
+* **platform-wallet:** expose address funding fee estimate
+* **sdk:** chained document queries — ChainedDocuments fetch with composed proof verification ([#4552](https://github.com/dashpay/platform/issues/4552))
+* **swift-sdk:** include critical Swift diagnostics in log exports ([#4544](https://github.com/dashpay/platform/issues/4544))
+* **wasm-sdk:** chained document queries with js-evo-sdk facade and suite coverage ([#4567](https://github.com/dashpay/platform/issues/4567))
+
+
+### Bug Fixes
+
+* **dpp:** surface identifier-typed document properties as base58 in JS ([#4577](https://github.com/dashpay/platform/issues/4577))
+* **platform-wallet:** guard address funding asset locks
+* **platform-wallet:** make asset-lock spends visible to every balance reader ([#4336](https://github.com/dashpay/platform/issues/4336))
+* **platform-wallet:** satisfy address funding clippy lint
+* **platform-wallet:** use dash-spv's own acceptance timeout instead of a 30s override ([#4481](https://github.com/dashpay/platform/issues/4481))
+
+
+### Miscellaneous Chores
+
+* bump grovedb to 33a3ad34 (per-instance query limits) ([#4564](https://github.com/dashpay/platform/issues/4564))
+* bump grovedb to 97250247 (per-instance limit review follow-ups) ([#4566](https://github.com/dashpay/platform/issues/4566))
+
+
+### Tests
+
+* **dashmate:** ignore ANSI in renewal counter assertion
+* **drive-abci:** chained trust-boundary suite — SDK entry points against server proofs ([#4568](https://github.com/dashpay/platform/issues/4568))
+* **platform-suite:** normalize chained cursor identifier
+
+## [4.2.0-dev.7](https://github.com/dashpay/platform/compare/v4.2.0-dev.6...v4.2.0-dev.7) (2026-08-31)
+
+
+### Features
+
+* **drive:** admit plain sibling indexes beside a prefix-ranked chain via NonCounted branches ([#4543](https://github.com/dashpay/platform/issues/4543))
+* **platform-wallet-ffi:** expose external-recipient asset-lock funding entry points
+* **platform-wallet:** add fund_from_asset_lock_external for third-party recipients
+* **swift-sdk:** fundFromAssetLockExternal, recipient discriminator, and tests
+
+
+### Bug Fixes
+
+* **platform-wallet:** fail a double-spending asset lock with a typed terminal error ([#4356](https://github.com/dashpay/platform/issues/4356))
+* **platform-wallet:** keep the fund_from_asset_lock fee-strategy argument
+* **swift-sdk:** drain the persister's autorelease pool per row
+* **swift-sdk:** freeze the v2 asset-lock model and add schema v3
+
+
+### Code Refactoring
+
+* **platform-wallet:** derive the asset-lock fee strategy below the FFI boundary
+
+## [4.2.0-dev.6](https://github.com/dashpay/platform/compare/v4.2.0-dev.5...v4.2.0-dev.6) (2026-08-30)
+
+
+### Features
+
+* **dpp:** rankedCountable at-form for prefix-level count ranking ([#4531](https://github.com/dashpay/platform/issues/4531))
+* **dpp:** skipIfAbsent index keyword for indexOnly document types ([#4522](https://github.com/dashpay/platform/issues/4522))
+* **drive:** serve prefix-pinned count queries off the terminal aggregate ([#4537](https://github.com/dashpay/platform/issues/4537))
+* **drive:** serve ranked and having-range queries at a prefix ranking level ([#4535](https://github.com/dashpay/platform/issues/4535))
+* **drive:** skip absent-property indexes on indexOnly writes ([#4523](https://github.com/dashpay/platform/issues/4523))
+* **drive:** storage layout and maintenance for prefix-level ranked count indexes ([#4533](https://github.com/dashpay/platform/issues/4533))
+* **platform:** propertyAgreement over absent properties ([#4524](https://github.com/dashpay/platform/issues/4524))
+
+
+### Bug Fixes
+
+* **drive:** keep cursor document in descending continuation-page proofs ([#4541](https://github.com/dashpay/platform/issues/4541))
+* **drive:** reject index-gapped document queries at protocol version 14 ([#4526](https://github.com/dashpay/platform/issues/4526))
+* **platform-wallet:** age-guard the finalized-transaction handle broadcast ([#4309](https://github.com/dashpay/platform/issues/4309))
+* **platform-wallet:** fold per-account records into one wallet-level row, owned roles winning collisions ([#4438](https://github.com/dashpay/platform/issues/4438))
+* **platform-wallet:** stop the startup sequence reporting integrity it did not establish ([#4426](https://github.com/dashpay/platform/issues/4426))
+
+
+### Tests
+
+* **swift-sdk:** cover imported-wallet history either side of registration ([#4064](https://github.com/dashpay/platform/issues/4064))
+
+
+### Build System
+
+* bump grovedb to develop 0a3b3f9b (re-key churn as replaced bytes) ([#4528](https://github.com/dashpay/platform/issues/4528))
+
 ## [4.2.0-dev.5](https://github.com/dashpay/platform/compare/4.2.0-dev.4...v4.2.0-dev.5) (2026-08-28)
 
 

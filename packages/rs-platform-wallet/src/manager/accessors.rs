@@ -161,11 +161,10 @@ pub struct TrackedAssetLockSnapshot {
 
 /// Snapshot of the per-account metadata for a single account.
 ///
-/// `is_watch_only` and `custom_name` were dropped after upstream
-/// removed both from `ManagedCoreFundsAccount` / `ManagedCoreKeysAccount`.
-/// Watch-only is now a wallet-level property (read off `Wallet.wallet_type`)
-/// and `AccountMetadata` no longer exists. Re-add fields here only if
-/// the upstream variants gain them again.
+/// Carries no `is_watch_only` or `custom_name`: upstream's
+/// `ManagedCoreFundsAccount` / `ManagedCoreKeysAccount` have neither, and
+/// watch-only is a wallet-level property (read off `Wallet.wallet_type`).
+/// Add such fields here only if the upstream variants gain them.
 #[derive(Debug, Clone, Copy)]
 pub struct AccountMetadataSnapshot {
     pub total_transactions: u64,
@@ -215,6 +214,261 @@ pub struct AccountUtxoSnapshot {
     pub script_pubkey: Vec<u8>,
     pub height: u32,
     pub is_locked: bool,
+}
+
+/// One row of a wallet's UTXO inventory page — see [`wallet_utxos_page`].
+///
+/// Carries the owning account alongside the coin so a store that keys its
+/// rows by account can file a healed row under the right one, and the
+/// address the engine derived from the script so the store never has to
+/// re-derive it. The flags are the engine's own (`Utxo` fields); a coin the
+/// engine holds is by definition unspent from its point of view.
+#[derive(Debug, Clone)]
+pub struct WalletUtxoRow {
+    pub account_type: AccountType,
+    pub outpoint: OutPoint,
+    pub value_duffs: u64,
+    pub script_pubkey: Vec<u8>,
+    /// Base58Check address of `script_pubkey`, as the engine holds it.
+    pub address: String,
+    pub height: u32,
+    pub is_confirmed: bool,
+    pub is_instantlocked: bool,
+    pub is_coinbase: bool,
+    pub is_locked: bool,
+}
+
+/// Cursor for [`wallet_utxos_page`]: the last row of the previous page.
+/// The walk is ordered by `(AccountType, OutPoint)`, so an account is
+/// exhausted before the next one starts and a cursor is exact — no row is
+/// visited twice or skipped because a concurrent round inserted beside it.
+pub type WalletUtxoCursor = (AccountType, OutPoint);
+
+/// Page size [`wallet_utxos_page`] uses when the caller passes 0.
+pub const WALLET_UTXO_PAGE_DEFAULT: usize = 512;
+/// Largest page [`wallet_utxos_page`] returns — enforced here, not trusted
+/// from the caller, because the inventory's size is chain-controlled
+/// (anyone who knows a watched address can grow it with dust).
+pub const WALLET_UTXO_PAGE_MAX: usize = 4096;
+
+/// One store row the store asks the engine to classify — see
+/// [`classify_outpoints`]. `account_type` and `script_pubkey` are the
+/// store's own record of who owns the coin, which the verdict checks
+/// against the engine's pools rather than trusting.
+#[derive(Debug, Clone)]
+pub struct OutpointOwnershipQuery {
+    pub account_type: AccountType,
+    pub outpoint: OutPoint,
+    pub script_pubkey: Vec<u8>,
+}
+
+/// The engine's answer for one [`OutpointOwnershipQuery`].
+///
+/// Only [`Self::KnownUncredited`] is positive evidence a reconciler may act
+/// on: the owning account recorded the funding transaction (its txid is in
+/// the account's records or its finalized set), recognises the output's
+/// script as its own, does not hold the coin, AND a funds account holds a
+/// MINED record whose transaction spends the outpoint. The last condition
+/// is what makes the answer durable. Absence from `utxos` alone is not:
+/// `update_utxos` removes the inputs of a mempool spend that may never
+/// confirm, and a conflict sweep releases a loser's other inputs without
+/// reinserting their coins — both leave the coin absent with its funding
+/// known, and both are states the store deliberately keeps restorable.
+/// Everything else says nothing: `Unknown` covers those, a funding
+/// transaction this session never processed (after a restart the finalized
+/// set is empty), and a spender the engine never recorded at all (the
+/// rust-dashcore#992 shape, which only the emit-time verdict can name);
+/// `NotOwned` a script the account's pools do not monitor, which the engine
+/// could never have credited in the first place.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutpointClass {
+    /// The engine has no opinion.
+    Unknown = 0,
+    /// The coin is in a funds account's live `utxos`.
+    Unspent = 1,
+    /// The owning account knows the funding txid, owns the script, does
+    /// not hold the coin, and a mined record spends the outpoint.
+    KnownUncredited = 2,
+    /// The owning account's pools do not monitor the script.
+    NotOwned = 3,
+}
+
+impl OutpointClass {
+    pub fn as_u8(self) -> u8 {
+        self as u8
+    }
+}
+
+/// Whether `account_type` is a contact's watch-only chain
+/// (`DashpayExternalAccount`): coins there belong to the contact, so the
+/// inventory omits them and the classifier has no verdict for them.
+pub fn is_watch_only_contact(account_type: &AccountType) -> bool {
+    matches!(account_type, AccountType::DashpayExternalAccount { .. })
+}
+
+/// One page of `wallet_id`'s UTXO inventory across every funds account
+/// that is not a contact's watch-only chain, in `(AccountType, OutPoint)`
+/// order, starting strictly after `after`. Returns the rows and whether
+/// more follow. `limit` is clamped to `1..=WALLET_UTXO_PAGE_MAX`, with 0
+/// meaning [`WALLET_UTXO_PAGE_DEFAULT`]. An unknown wallet is an empty
+/// terminal page.
+///
+/// A UTXO set that moves between pages (a round landing mid-walk) can drop
+/// a row out of ONE walk or repeat one; both are benign for the insert-only,
+/// idempotent store reconcile this serves, which re-runs on a cadence.
+pub fn wallet_utxos_page(
+    wm: &key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>,
+    wallet_id: &WalletId,
+    after: Option<&WalletUtxoCursor>,
+    limit: usize,
+) -> (Vec<WalletUtxoRow>, bool) {
+    use std::ops::Bound;
+
+    let limit = if limit == 0 {
+        WALLET_UTXO_PAGE_DEFAULT
+    } else {
+        limit.min(WALLET_UTXO_PAGE_MAX)
+    };
+    let Some(info) = wm.get_wallet_info(wallet_id) else {
+        return (Vec::new(), false);
+    };
+    let mut accounts: Vec<(
+        AccountType,
+        &key_wallet::managed_account::ManagedCoreFundsAccount,
+    )> = info
+        .core_wallet
+        .accounts
+        .all_accounts()
+        .iter()
+        .filter_map(|a| {
+            a.as_funds()
+                .map(|funds| (a.managed_account_type().to_account_type(), funds))
+        })
+        // A contact's watch-only chain is not this wallet's money: its
+        // coins never enter the inventory, so no store ever heals them in
+        // as the user's. Decided here, not by the store, so a renumbered
+        // tag or a new watch-only account type cannot repoint the gate.
+        .filter(|(account_type, _)| !is_watch_only_contact(account_type))
+        .collect();
+    accounts.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut rows = Vec::with_capacity(limit);
+    let mut has_more = false;
+    'accounts: for (account_type, funds) in accounts {
+        let start = match after {
+            Some((cursor_account, cursor_outpoint)) => match account_type.cmp(cursor_account) {
+                std::cmp::Ordering::Less => continue,
+                std::cmp::Ordering::Equal => Bound::Excluded(*cursor_outpoint),
+                std::cmp::Ordering::Greater => Bound::Unbounded,
+            },
+            None => Bound::Unbounded,
+        };
+        for (outpoint, utxo) in funds.utxos.range((start, Bound::Unbounded)) {
+            if rows.len() == limit {
+                has_more = true;
+                break 'accounts;
+            }
+            rows.push(WalletUtxoRow {
+                account_type,
+                outpoint: *outpoint,
+                value_duffs: utxo.txout.value,
+                script_pubkey: utxo.txout.script_pubkey.as_bytes().to_vec(),
+                address: utxo.address.to_string(),
+                height: utxo.height,
+                is_confirmed: utxo.is_confirmed,
+                is_instantlocked: utxo.is_instantlocked,
+                is_coinbase: utxo.is_coinbase,
+                is_locked: utxo.is_locked,
+            });
+        }
+    }
+    (rows, has_more)
+}
+
+/// Classify each query's outpoint for `wallet_id` — see [`OutpointClass`]
+/// for the verdicts and the one a reconciler may act on. Positional:
+/// `result[i]` answers `queries[i]`. An unknown wallet answers `Unknown`
+/// for every query. Cost is `queries × funds accounts`, never the size of
+/// the inventory.
+pub fn classify_outpoints(
+    wm: &key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>,
+    wallet_id: &WalletId,
+    queries: &[OutpointOwnershipQuery],
+) -> Vec<OutpointClass> {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+    let Some(info) = wm.get_wallet_info(wallet_id) else {
+        return vec![OutpointClass::Unknown; queries.len()];
+    };
+    let accounts: Vec<(
+        AccountType,
+        &key_wallet::managed_account::ManagedCoreFundsAccount,
+    )> = info
+        .core_wallet
+        .accounts
+        .all_accounts()
+        .iter()
+        .filter_map(|a| {
+            a.as_funds()
+                .map(|funds| (a.managed_account_type().to_account_type(), funds))
+        })
+        .collect();
+
+    // Durable spend evidence: the inputs of every MINED record in any funds
+    // account. A mempool spend, an IS-locked spend or a released loser input
+    // leaves a coin absent from `utxos` too, and none of those is a verdict.
+    let mined_spends: std::collections::HashSet<OutPoint> = accounts
+        .iter()
+        .flat_map(|(_, funds)| funds.transactions().values())
+        .filter(|record| record.context.block_info().is_some())
+        .flat_map(|record| {
+            record
+                .transaction
+                .input
+                .iter()
+                .map(|input| input.previous_output)
+        })
+        .collect();
+    queries
+        .iter()
+        .map(|query| {
+            // A contact's watch-only chain gets no verdict at all — not
+            // even `Unspent`: its coins are the contact's to spend, never
+            // this wallet's to flip or to count.
+            if is_watch_only_contact(&query.account_type) {
+                return OutpointClass::Unknown;
+            }
+            // Unspent wins outright: a coin the engine holds in one of the
+            // WALLET's funds accounts is a coin, whichever of them the store
+            // filed it under. A contact account holding the outpoint says
+            // nothing about this wallet's row.
+            if accounts
+                .iter()
+                .filter(|(account_type, _)| !is_watch_only_contact(account_type))
+                .any(|(_, funds)| funds.utxos.contains_key(&query.outpoint))
+            {
+                return OutpointClass::Unspent;
+            }
+            let Some((_, owner)) = accounts
+                .iter()
+                .find(|(account_type, _)| *account_type == query.account_type)
+            else {
+                return OutpointClass::Unknown;
+            };
+            let script = dashcore::ScriptBuf::from_bytes(query.script_pubkey.clone());
+            if !owner.contains_script_pub_key(&script) {
+                return OutpointClass::NotOwned;
+            }
+            let txid = &query.outpoint.txid;
+            let funding_known = owner.has_transaction(txid) || owner.transaction_is_finalized(txid);
+            if funding_known && mined_spends.contains(&query.outpoint) {
+                OutpointClass::KnownUncredited
+            } else {
+                OutpointClass::Unknown
+            }
+        })
+        .collect()
 }
 
 /// Snapshot of one transaction row inside an account.
@@ -373,22 +627,31 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 
     /// Get a clone of a wallet by its ID.
+    ///
+    /// The lookup is wait-free since the map became an `ArcSwap`, so this
+    /// suspends at no point; it delegates to the synchronous twin and keeps
+    /// its `async` signature for source compatibility with existing callers.
     pub async fn get_wallet(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
-        let wallets = self.wallets.read().await;
-        wallets.get(wallet_id).cloned()
+        self.get_wallet_blocking(wallet_id)
     }
 
-    /// Blocking twin of [`Self::get_wallet`] for synchronous FFI entry
-    /// points that need to clone the `Arc<PlatformWallet>` out before doing
-    /// network work outside the handle-storage guard.
+    /// Synchronous twin of [`Self::get_wallet`] for FFI entry points that
+    /// need to clone the `Arc<PlatformWallet>` out before doing network work
+    /// outside the handle-storage guard.
+    ///
+    /// Named `_blocking` for the callers it serves, not for what it does: the
+    /// wallets map is an `ArcSwap`, so this load is wait-free and cannot block
+    /// or panic inside a runtime the way the previous `blocking_read` could.
     pub fn get_wallet_blocking(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
-        self.wallets.blocking_read().get(wallet_id).cloned()
+        self.wallets.load().get(wallet_id).cloned()
     }
 
     /// List all wallet IDs.
+    ///
+    /// Wait-free like [`Self::get_wallet`]; delegates to the synchronous
+    /// twin and keeps its `async` signature for source compatibility.
     pub async fn wallet_ids(&self) -> Vec<WalletId> {
-        let wallets = self.wallets.read().await;
-        wallets.keys().copied().collect()
+        self.list_wallet_ids_blocking()
     }
 
     /// Read per-account balance + key-usage snapshots for a wallet.
@@ -410,6 +673,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let Some(info) = wm.get_wallet_info(wallet_id) else {
             return Vec::new();
         };
+        let last_processed_height = info.core_wallet.metadata.last_processed_height;
         info.core_wallet
             .accounts
             .all_accounts()
@@ -418,7 +682,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // Balance lives on the funds-bearing variant only;
                 // keys-only accounts (identity, asset-lock, provider)
                 // never carry UTXOs.
-                let balance = account.as_funds().map(|a| a.balance).unwrap_or_default();
+                //
+                // Computed FRESH from the account's UTXO set — NOT the cached
+                // `a.balance` field. The cache refreshes only when transaction
+                // processing runs `update_balance()`, and a self-authored
+                // asset-lock spend can leave it stale long after the UTXO set
+                // (which coin selection reads) has moved on. Deriving from the
+                // same source selection uses makes disagreement impossible;
+                // the fold is bounded by the account's UTXO count.
+                let balance = account
+                    .as_funds()
+                    .map(|a| computed_core_balance(a, last_processed_height))
+                    .unwrap_or_default();
                 // Walk every pool on the account, sum
                 // `used` + total entries. Cheap — pools are bounded by
                 // the gap limit.
@@ -452,10 +727,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     // -----------------------------------------------------------------
 
     /// Atomic snapshot of every wallet id currently registered on the
-    /// manager. Cheap (`Arc<RwLock>` read + `BTreeMap` key clone).
+    /// manager. Cheap (wait-free `ArcSwap` load + `BTreeMap` key clone).
     pub fn list_wallet_ids_blocking(&self) -> Vec<WalletId> {
-        let wallets = self.wallets.blocking_read();
-        wallets.keys().copied().collect()
+        self.wallets.load().keys().copied().collect()
     }
 
     /// Network a registered wallet belongs to, or `None` when the id is
@@ -476,9 +750,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// registered wallet participates in each pass since the sync
     /// manager doesn't keep a separate watch list.
     pub fn platform_address_sync_config_blocking(&self) -> PlatformAddressSyncConfigSnapshot {
-        let wallets = self.wallets.blocking_read();
-        let count = wallets.len();
-        drop(wallets);
+        let count = self.wallets.load().len();
         let interval = self.platform_address_sync_manager.interval();
         let last = self
             .platform_address_sync_manager
@@ -641,9 +913,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         wallet_id: &WalletId,
     ) -> Option<PlatformAddressProviderStateSnapshot> {
-        let wallets = self.wallets.blocking_read();
-        let wallet = wallets.get(wallet_id)?.clone();
-        drop(wallets);
+        let wallet = self.wallets.load().get(wallet_id)?.clone();
         let provider_lock = wallet.platform().provider_for_diagnostics();
         let guard = provider_lock.blocking_read();
         let Some(provider) = guard.as_ref() else {
@@ -792,6 +1062,45 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .iter()
             .map(|pool| pool_snapshot(pool))
             .collect()
+    }
+
+    /// The shared wallet-manager lock, for callers that must take the
+    /// read lock OUTSIDE another guard — an FFI entry point holds the
+    /// handle registry's read guard only for the duration of its closure,
+    /// and waiting on this lock inside that closure would stall
+    /// `platform_wallet_manager_destroy` (a registry write) and, through
+    /// parking_lot's writer preference, every other registry reader.
+    pub fn wallet_manager_arc(
+        &self,
+    ) -> Arc<
+        tokio::sync::RwLock<
+            key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>,
+        >,
+    > {
+        Arc::clone(&self.wallet_manager)
+    }
+
+    /// [`wallet_utxos_page`] under this manager's read lock. Blocking;
+    /// call from a thread that may park, never from a runtime worker.
+    pub fn wallet_utxos_page_blocking(
+        &self,
+        wallet_id: &WalletId,
+        after: Option<&WalletUtxoCursor>,
+        limit: usize,
+    ) -> (Vec<WalletUtxoRow>, bool) {
+        let wm = self.wallet_manager.blocking_read();
+        wallet_utxos_page(&wm, wallet_id, after, limit)
+    }
+
+    /// [`classify_outpoints`] under this manager's read lock. Blocking;
+    /// call from a thread that may park, never from a runtime worker.
+    pub fn classify_outpoints_blocking(
+        &self,
+        wallet_id: &WalletId,
+        queries: &[OutpointOwnershipQuery],
+    ) -> Vec<OutpointClass> {
+        let wm = self.wallet_manager.blocking_read();
+        classify_outpoints(&wm, wallet_id, queries)
     }
 
     /// Snapshot of every UTXO row on one account.
@@ -1008,10 +1317,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // byte strings for the same G1 point — no collision).
         let mut operator_index: std::collections::HashMap<[u8; 48], u32> =
             std::collections::HashMap::new();
-        // Clone the `Arc<PlatformWallet>` out and drop the `wallets` read
-        // guard before deriving (the derive calls take the wallet's own
-        // state lock — don't hold `wallets` across them).
-        let platform_wallet = self.wallets.blocking_read().get(wallet_id).cloned();
+        // Clone the `Arc<PlatformWallet>` out of the map snapshot before
+        // deriving (the derive calls take the wallet's own state lock).
+        let platform_wallet = self.wallets.load().get(wallet_id).cloned();
         if let Some(platform_wallet) = platform_wallet {
             use crate::wallet::provider_key_at_index::ProviderKeyKind;
             for index in 0..operator_scan_max {
@@ -1183,7 +1491,7 @@ fn tx_record_snapshot(rec: &TransactionRecord) -> AccountTransactionSnapshot {
 mod spv_rescan_tests {
     use std::sync::Arc;
 
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
 
@@ -1197,7 +1505,7 @@ mod spv_rescan_tests {
     const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
          abandon abandon abandon abandon abandon about";
 
-    struct NoopPersister;
+    pub(super) struct NoopPersister;
 
     impl PlatformWalletPersistence for NoopPersister {
         fn store(
@@ -1217,7 +1525,7 @@ mod spv_rescan_tests {
         }
     }
 
-    struct NoopEventHandler;
+    pub(super) struct NoopEventHandler;
     impl EventHandler for NoopEventHandler {}
     impl PlatformEventHandler for NoopEventHandler {}
 
@@ -1230,8 +1538,7 @@ mod spv_rescan_tests {
             Arc::new(NoopPersister),
             event_handler,
         ));
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
         let wallet = manager
             .create_wallet_from_seed_bytes(
                 Network::Testnet,
@@ -1274,5 +1581,576 @@ mod spv_rescan_tests {
         })
         .await
         .expect("blocking accessor task");
+    }
+}
+
+/// Read-only [`WalletCoreBalance`] over an account's live UTXO set, with the
+/// exact bucket rules of `ManagedCoreFundsAccount::update_balance` (which
+/// requires `&mut self` and mutates the cache, so it cannot serve a
+/// read-path): locked, else immature, else confirmed when in a block /
+/// InstantSend-locked / trusted change, else unconfirmed.
+fn computed_core_balance(
+    account: &key_wallet::managed_account::ManagedCoreFundsAccount,
+    last_processed_height: u32,
+) -> key_wallet::wallet::balance::WalletCoreBalance {
+    let mut confirmed = 0u64;
+    let mut unconfirmed = 0u64;
+    let mut immature = 0u64;
+    let mut locked = 0u64;
+    for utxo in account.utxos.values() {
+        let value = utxo.txout.value;
+        if utxo.is_locked {
+            locked += value;
+        } else if !utxo.is_mature(last_processed_height) {
+            immature += value;
+        } else if utxo.is_confirmed || utxo.is_instantlocked || utxo.is_trusted {
+            confirmed += value;
+        } else {
+            unconfirmed += value;
+        }
+    }
+    key_wallet::wallet::balance::WalletCoreBalance::new(confirmed, unconfirmed, immature, locked)
+}
+
+#[cfg(test)]
+mod computed_balance_tests {
+    use super::spv_rescan_tests::{NoopEventHandler, NoopPersister};
+    use super::*;
+    use key_wallet::account::StandardAccountType;
+    use key_wallet_manager::WalletManager;
+    use tokio::sync::RwLock;
+
+    use crate::events::PlatformEventHandler;
+    use crate::wallet::platform_wallet::PlatformWalletInfo;
+
+    /// Buckets of every account row the accessor returns, folded into one
+    /// `(confirmed, unconfirmed, immature, locked)` tuple. Only the funded
+    /// account carries UTXOs, so the fold IS that account's figure — and
+    /// it stays meaningful once the account is drained to nothing.
+    fn folded_buckets(rows: &[AccountBalanceRow]) -> (u64, u64, u64, u64) {
+        rows.iter().fold((0, 0, 0, 0), |(c, u, i, l), row| {
+            (
+                c + row.balance.confirmed(),
+                u + row.balance.unconfirmed(),
+                i + row.balance.immature(),
+                l + row.balance.locked(),
+            )
+        })
+    }
+
+    /// A manager whose wallet-manager IS the funded fixture's, so the
+    /// production accessor reads the very account the test mutates.
+    /// `account_balances_blocking` takes the manager, not a bare
+    /// `WalletManager`, and there is no constructor that adopts one — so
+    /// the fixture's value is moved into the freshly built manager's slot.
+    async fn manager_over_funded_fixture(
+        funded: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    ) -> Arc<PlatformWalletManager<NoopPersister>> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(NoopPersister),
+            event_handler,
+        ));
+        let adopted = std::mem::replace(
+            &mut *funded.write().await,
+            WalletManager::<PlatformWalletInfo>::new(key_wallet::Network::Testnet),
+        );
+        *manager.wallet_manager.write().await = adopted;
+        manager
+    }
+
+    /// `account_balances_blocking` uses `blocking_read`, so it may only be
+    /// called off the async runtime's worker.
+    async fn account_buckets(
+        manager: &Arc<PlatformWalletManager<NoopPersister>>,
+        wallet_id: WalletId,
+    ) -> (u64, u64, u64, u64) {
+        let manager = Arc::clone(manager);
+        tokio::task::spawn_blocking(move || {
+            folded_buckets(&manager.account_balances_blocking(&wallet_id))
+        })
+        .await
+        .expect("blocking accessor task")
+    }
+
+    /// The per-account figure the explorer/FFI reads must come from the
+    /// LIVE UTXO set, not the cached `balance` field: a self-authored
+    /// asset-lock spend can leave the cache stale long after selection —
+    /// which reads the UTXO set — has moved on.
+    ///
+    /// Driven through `account_balances_blocking`, the accessor production
+    /// actually calls, and in three steps because "reports the live truth"
+    /// is more than "reports zero": it must first REPRODUCE a freshly
+    /// updated non-empty balance bucket for bucket (an implementation
+    /// returning `WalletCoreBalance::default()` passes an empty-set-only
+    /// test), then track a live re-classification the cache has not seen,
+    /// then track removal.
+    #[tokio::test]
+    async fn account_balances_blocking_ignores_the_stale_cache() {
+        let (funded, wallet_id, _balance, _signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                StandardAccountType::BIP44Account,
+                &[7_000_000, 3_000_000],
+            )
+            .await;
+        let manager = manager_over_funded_fixture(funded).await;
+
+        // 1. Agreement on a funded account. The accessor's fold and the
+        //    cache are two implementations of the same bucket rules; if
+        //    they disagree here, every later assertion is meaningless.
+        let cached = {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+            let height = info.core_wallet.metadata.last_processed_height;
+            let account = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("bip44 account 0");
+            account.update_balance(height);
+            account.balance
+        };
+        assert_eq!(cached.total(), 10_000_000, "fixture must be funded");
+        assert_eq!(
+            account_buckets(&manager, wallet_id).await,
+            (
+                cached.confirmed(),
+                cached.unconfirmed(),
+                cached.immature(),
+                cached.locked()
+            ),
+            "the accessor must reproduce a freshly updated non-empty balance, bucket for bucket"
+        );
+
+        // 2. Re-classify one UTXO WITHOUT refreshing the cache. The
+        //    accessor must move its value confirmed → locked live; a
+        //    read of the cached `balance` field cannot.
+        let locked_value = {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+            let account = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("bip44 account 0");
+            let first = *account.utxos.keys().next().expect("funded utxo");
+            let utxo = account.utxos.get_mut(&first).expect("funded utxo");
+            utxo.is_locked = true;
+            assert_eq!(
+                account.balance, cached,
+                "precondition: the cache must still hold the pre-lock figure"
+            );
+            utxo.txout.value
+        };
+        assert_eq!(
+            account_buckets(&manager, wallet_id).await,
+            (
+                cached.confirmed() - locked_value,
+                cached.unconfirmed(),
+                cached.immature(),
+                locked_value
+            ),
+            "the accessor must see the live lock: value out of confirmed, into locked"
+        );
+
+        // 3. Remove every UTXO — the shape an unprocessed self-spend
+        //    (the asset-lock drain) leaves behind.
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+            let account = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("bip44 account 0");
+            account.utxos.clear();
+            assert_eq!(
+                account.balance.total(),
+                cached.total(),
+                "precondition: the cache must still hold the stale figure"
+            );
+        }
+        assert_eq!(
+            account_buckets(&manager, wallet_id).await,
+            (0, 0, 0, 0),
+            "the accessor must see the live (empty) UTXO set"
+        );
+    }
+
+    /// Bucket-policy companion to
+    /// [`account_balances_blocking_ignores_the_stale_cache`], asserted
+    /// directly on the fold: `computed_core_balance` duplicates
+    /// `ManagedCoreFundsAccount::update_balance`'s classification rules,
+    /// and nothing in the type system keeps the two in step.
+    #[tokio::test]
+    async fn computed_core_balance_matches_update_balance_bucket_for_bucket() {
+        let (wallet_manager, wallet_id, _balance, _signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                StandardAccountType::BIP44Account,
+                &[7_000_000, 3_000_000],
+            )
+            .await;
+
+        let mut wm = wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+        let height = info.core_wallet.metadata.last_processed_height;
+        let account = info
+            .core_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("bip44 account 0");
+
+        account.update_balance(height);
+        let funded = account.balance;
+        assert_eq!(funded.total(), 10_000_000, "fixture must be funded");
+        assert_eq!(
+            computed_core_balance(account, height),
+            funded,
+            "the fold must reproduce a freshly updated non-empty balance, bucket for bucket"
+        );
+
+        let first = *account.utxos.keys().next().expect("funded utxo");
+        let locked_value = {
+            let utxo = account.utxos.get_mut(&first).expect("funded utxo");
+            utxo.is_locked = true;
+            utxo.txout.value
+        };
+        let live = computed_core_balance(account, height);
+        assert_eq!(
+            live.locked(),
+            locked_value,
+            "the locked UTXO must be bucketed as locked"
+        );
+        assert_eq!(
+            live.confirmed(),
+            funded.confirmed() - locked_value,
+            "and must have left the confirmed bucket"
+        );
+        assert_eq!(
+            live.total(),
+            funded.total(),
+            "locking moves value between buckets, it does not destroy it"
+        );
+
+        account.utxos.clear();
+        assert_eq!(
+            computed_core_balance(account, height).total(),
+            0,
+            "the fold must see the live (empty) UTXO set"
+        );
+    }
+}
+
+#[cfg(test)]
+mod txo_inventory_tests {
+    //! Coverage for [`wallet_utxos_page`] and [`classify_outpoints`] — the
+    //! two engine reads a store reconcile is built on. Drives a real
+    //! `ManagedWalletInfo` through `check_core_transaction` in the exact
+    //! arrival orders that produce each classification.
+
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    use dashcore::hashes::Hash;
+    use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::test_utils::TestWalletContext;
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+    use key_wallet_manager::WalletManager;
+
+    use super::{
+        classify_outpoints, wallet_utxos_page, OutpointClass, OutpointOwnershipQuery,
+        WALLET_UTXO_PAGE_MAX,
+    };
+    use crate::wallet::core::WalletGeneration;
+    use crate::wallet::identity::IdentityManager;
+    use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+
+    fn bip44_account_0() -> AccountType {
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        }
+    }
+
+    fn in_block(height: u32) -> TransactionContext {
+        TransactionContext::InBlock(BlockInfo::new(
+            height,
+            BlockHash::from_slice(&[6u8; 32]).expect("valid block hash"),
+            1_234_567_890,
+        ))
+    }
+
+    fn input(previous_output: OutPoint) -> TxIn {
+        TxIn {
+            previous_output,
+            script_sig: ScriptBuf::new(),
+            sequence: 0xffffffff,
+            witness: Witness::new(),
+        }
+    }
+
+    fn funding(script_pubkey: ScriptBuf, seed: u8, value: u64) -> Transaction {
+        Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![input(OutPoint {
+                txid: Txid::from_slice(&[seed; 32]).expect("valid txid"),
+                vout: 0,
+            })],
+            output: vec![TxOut {
+                value,
+                script_pubkey,
+            }],
+            special_transaction_payload: None,
+        }
+    }
+
+    /// The rust-dashcore#992 shape: one input, one zero-value `OP_RETURN`.
+    fn collateral_burn(coin: OutPoint) -> Transaction {
+        Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![input(coin)],
+            output: vec![TxOut {
+                value: 0,
+                script_pubkey: dashcore::blockdata::script::Builder::new()
+                    .push_opcode(dashcore::opcodes::all::OP_RETURN)
+                    .into_script(),
+            }],
+            special_transaction_payload: None,
+        }
+    }
+
+    fn foreign_script() -> ScriptBuf {
+        const TEST_PUBKEY_G: [u8; 33] = [
+            0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce,
+            0x87, 0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81,
+            0x5b, 0x16, 0xf8, 0x17, 0x98,
+        ];
+        let pubkey =
+            dashcore::PublicKey::from_slice(&TEST_PUBKEY_G).expect("generator point is valid");
+        dashcore::Address::p2pkh(&pubkey, key_wallet::Network::Testnet).script_pubkey()
+    }
+
+    fn manager_with(ctx: TestWalletContext) -> (WalletManager<PlatformWalletInfo>, WalletId) {
+        let info = PlatformWalletInfo {
+            core_wallet: ctx.managed_wallet,
+            generation: Arc::new(WalletGeneration::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+            observed_input_conflicts: Default::default(),
+        };
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+        let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+        (wm, wallet_id)
+    }
+
+    fn query(
+        account_type: AccountType,
+        outpoint: OutPoint,
+        script: &ScriptBuf,
+    ) -> OutpointOwnershipQuery {
+        OutpointOwnershipQuery {
+            account_type,
+            outpoint,
+            script_pubkey: script.as_bytes().to_vec(),
+        }
+    }
+
+    #[tokio::test]
+    async fn pages_walk_every_coin_once_in_order_and_terminate() {
+        let mut ctx = TestWalletContext::new_random();
+        let script = ctx.receive_address.script_pubkey();
+        let address = ctx.receive_address.to_string();
+        let mut coins = Vec::new();
+        for (seed, value) in [(11u8, 1_000u64), (12, 2_000), (13, 3_000)] {
+            let tx = funding(script.clone(), seed, value);
+            assert!(
+                ctx.check_transaction(&tx, in_block(100_000 + seed as u32))
+                    .await
+                    .is_relevant
+            );
+            coins.push(OutPoint {
+                txid: tx.txid(),
+                vout: 0,
+            });
+        }
+        let (wm, wallet_id) = manager_with(ctx);
+
+        let mut walked = Vec::new();
+        let mut cursor = None;
+        let mut pages = 0;
+        loop {
+            let (rows, has_more) = wallet_utxos_page(&wm, &wallet_id, cursor.as_ref(), 2);
+            pages += 1;
+            for row in &rows {
+                assert_eq!(row.account_type, bip44_account_0());
+                assert_eq!(row.address, address);
+                assert_eq!(row.script_pubkey, script.as_bytes());
+                assert!(row.is_confirmed);
+                assert!(row.height >= 100_011);
+                walked.push(row.outpoint);
+            }
+            match rows.last() {
+                Some(last) if has_more => cursor = Some((last.account_type, last.outpoint)),
+                _ => break,
+            }
+        }
+        assert_eq!(pages, 2, "three coins at two per page");
+        let mut expected = coins.clone();
+        expected.sort();
+        assert_eq!(walked, expected, "every coin once, in outpoint order");
+
+        // Limit 0 means the default page; an oversized limit is clamped.
+        let (all, more) = wallet_utxos_page(&wm, &wallet_id, None, 0);
+        assert_eq!(all.len(), 3);
+        assert!(!more);
+        let (all, _) = wallet_utxos_page(&wm, &wallet_id, None, WALLET_UTXO_PAGE_MAX * 4);
+        assert_eq!(all.len(), 3);
+        // An unknown wallet is an empty terminal page.
+        let (none, more) = wallet_utxos_page(&wm, &[0xEEu8; 32], None, 10);
+        assert!(none.is_empty());
+        assert!(!more);
+    }
+
+    /// The four answers, each from the arrival order that produces it.
+    /// `KnownUncredited` needs a mined spender on record: a coin funded and
+    /// then burned while held. The field case — a collateral burn processed
+    /// before its funding is never recorded, the funding is, the coin is
+    /// absent — is `Unknown` here: no record spends it, so absence is not
+    /// durable evidence (the emit-time verdict covers that shape). A coin
+    /// spent only in the mempool is `Unknown` too: `update_utxos` removed
+    /// it, but the spend may never confirm and the store keeps it
+    /// restorable.
+    #[tokio::test]
+    async fn classifies_unspent_known_uncredited_not_owned_and_unknown() {
+        let mut ctx = TestWalletContext::new_random();
+        let script = ctx.receive_address.script_pubkey();
+
+        // A coin the engine holds.
+        let held = funding(script.clone(), 21, 5_000);
+        assert!(
+            ctx.check_transaction(&held, in_block(100_000))
+                .await
+                .is_relevant
+        );
+        let held_coin = OutPoint {
+            txid: held.txid(),
+            vout: 0,
+        };
+
+        // The #992 shape: burn first (irrelevant, unrecorded), funding after.
+        let burned = funding(script.clone(), 22, 19_549);
+        let burned_coin = OutPoint {
+            txid: burned.txid(),
+            vout: 0,
+        };
+        assert!(
+            !ctx.check_transaction(&collateral_burn(burned_coin), in_block(100_002))
+                .await
+                .is_relevant
+        );
+        assert!(
+            ctx.check_transaction(&burned, in_block(100_001))
+                .await
+                .is_relevant
+        );
+
+        // A coin spent the ordinary way: funded, then burned while held.
+        let spent = funding(script.clone(), 23, 7_000);
+        let spent_coin = OutPoint {
+            txid: spent.txid(),
+            vout: 0,
+        };
+        assert!(
+            ctx.check_transaction(&spent, in_block(100_003))
+                .await
+                .is_relevant
+        );
+        assert!(
+            ctx.check_transaction(&collateral_burn(spent_coin), in_block(100_004))
+                .await
+                .is_relevant
+        );
+
+        // A coin spent only in the mempool: absent from `utxos`, funding
+        // known, spender unconfirmed.
+        let mempool_spent = funding(script.clone(), 24, 9_000);
+        let mempool_spent_coin = OutPoint {
+            txid: mempool_spent.txid(),
+            vout: 0,
+        };
+        assert!(
+            ctx.check_transaction(&mempool_spent, in_block(100_005))
+                .await
+                .is_relevant
+        );
+        assert!(
+            ctx.check_transaction(
+                &collateral_burn(mempool_spent_coin),
+                key_wallet::transaction_checking::TransactionContext::Mempool
+            )
+            .await
+            .is_relevant
+        );
+        let (wm, wallet_id) = manager_with(ctx);
+        let never_seen = OutPoint {
+            txid: Txid::from_slice(&[0x99u8; 32]).expect("valid txid"),
+            vout: 0,
+        };
+        let queries = vec![
+            query(bip44_account_0(), held_coin, &script),
+            query(bip44_account_0(), burned_coin, &script),
+            query(bip44_account_0(), spent_coin, &script),
+            query(bip44_account_0(), mempool_spent_coin, &script),
+            query(bip44_account_0(), burned_coin, &foreign_script()),
+            query(bip44_account_0(), never_seen, &script),
+            // The right coin filed under the wrong account: the CoinJoin
+            // account exists but its pools never monitored a BIP44 script,
+            // so ownership fails before the txid is even consulted.
+            query(AccountType::CoinJoin { index: 0 }, burned_coin, &script),
+            // A coin filed under an account the wallet does not have at all.
+            query(AccountType::CoinJoin { index: 7 }, burned_coin, &script),
+            // A held coin filed under a contact's watch-only chain: the
+            // guard answers before the unspent search does.
+            query(
+                AccountType::DashpayExternalAccount {
+                    index: 0,
+                    user_identity_id: [0x11u8; 32],
+                    friend_identity_id: [0x22u8; 32],
+                },
+                held_coin,
+                &script,
+            ),
+        ];
+        let classes = classify_outpoints(&wm, &wallet_id, &queries);
+        assert_eq!(
+            classes,
+            vec![
+                OutpointClass::Unspent,
+                OutpointClass::Unknown,
+                OutpointClass::KnownUncredited,
+                OutpointClass::Unknown,
+                OutpointClass::NotOwned,
+                OutpointClass::Unknown,
+                OutpointClass::NotOwned,
+                OutpointClass::Unknown,
+                OutpointClass::Unknown,
+            ]
+        );
+        // An unknown wallet has no opinion about anything.
+        assert_eq!(
+            classify_outpoints(&wm, &[0xEEu8; 32], &queries[..2]),
+            vec![OutpointClass::Unknown, OutpointClass::Unknown]
+        );
+        assert!(classify_outpoints(&wm, &wallet_id, &[]).is_empty());
     }
 }

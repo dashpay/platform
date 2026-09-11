@@ -6,6 +6,8 @@
 //! (which reuse the same wire entry shape) live here.
 
 mod average;
+mod chained;
+mod composite;
 mod count;
 mod documents;
 mod having;

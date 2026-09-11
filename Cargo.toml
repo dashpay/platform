@@ -53,15 +53,14 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "697bfb7251123e5ad12848631b819668119ef722" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "697bfb7251123e5ad12848631b819668119ef722" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "697bfb7251123e5ad12848631b819668119ef722" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "697bfb7251123e5ad12848631b819668119ef722" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "697bfb7251123e5ad12848631b819668119ef722" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "697bfb7251123e5ad12848631b819668119ef722" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "697bfb7251123e5ad12848631b819668119ef722" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "697bfb7251123e5ad12848631b819668119ef722" }
 tokio-metrics = "0.5"
 
 # Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which
@@ -113,6 +112,13 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.grovedb-commitment-tree]
 opt-level = 3
+# Same reasoning for Argon2id: a debug-built KDF is memory-hard by design, so
+# an unoptimized one costs seconds per derivation and dominates any test that
+# unlocks a `platform-wallet-storage` vault. `platform-wallet-storage` is the
+# only workspace member that compiles argon2, so this override touches nothing
+# else here despite the workspace-global syntax.
+[profile.dev.package.argon2]
+opt-level = 3
 
 [profile.test.package.halo2_proofs]
 opt-level = 3
@@ -126,8 +132,10 @@ opt-level = 3
 opt-level = 3
 [profile.test.package.grovedb-commitment-tree]
 opt-level = 3
+[profile.test.package.argon2]
+opt-level = 3
 
 [workspace.package]
 
-version = "4.2.0-dev.5"
+version = "4.2.0-dev.8"
 rust-version = "1.92"

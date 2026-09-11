@@ -126,6 +126,37 @@ impl IndexLevel {
     /// Returns `None` if all three properties are the same everywhere.
     #[cfg(feature = "validation")]
     pub(super) fn find_first_ranked_change(&self, new: &IndexLevel) -> Option<String> {
+        // The prefix-level ranking markers live on the LEVEL, not on the
+        // terminating info — an index's `rankedCountable: { at }` stamps a
+        // non-terminal level, so moving or toggling it changes these two
+        // flags while every `IndexLevelTypeInfo` stays identical. Same
+        // rebuild-the-secondaries reasoning as the axis flags below.
+        if self.ranked_count_grouping != new.ranked_count_grouping {
+            return Some(format!(
+                "(ranked_count_grouping: {} -> {})",
+                self.ranked_count_grouping, new.ranked_count_grouping,
+            ));
+        }
+        if self.count_propagating != new.count_propagating {
+            return Some(format!(
+                "(count_propagating: {} -> {})",
+                self.count_propagating, new.count_propagating,
+            ));
+        }
+        // The exempt-branch marker decides whether the level's
+        // property-name tree is created `Element::NonCounted`-wrapped
+        // inside the chain's value trees or inserted contributing —
+        // frozen layout like the two chain stamps above. Every flip is
+        // already accompanied by a chain-stamp or countability change
+        // (the marker is derived from them), but the layout flag itself
+        // is what the walkers read, so it gets its own first-class check.
+        if self.count_exempt_branch() != new.count_exempt_branch() {
+            return Some(format!(
+                "(count_exempt_branch: {} -> {})",
+                self.count_exempt_branch(),
+                new.count_exempt_branch(),
+            ));
+        }
         if let (Some(old_info), Some(new_info)) =
             (&self.has_index_with_type, &new.has_index_with_type)
         {

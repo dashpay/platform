@@ -82,6 +82,7 @@ impl<C> Platform<C> {
                 query: SizedQuery {
                     query: Query {
                         read_mode: None,
+                        limit: None,
                         items: vec![QueryItem::Key(vec![SHIELDED_NOTES_KEY])],
                         default_subquery_branch: SubqueryBranch {
                             subquery_path: None,

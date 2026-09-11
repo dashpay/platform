@@ -211,11 +211,13 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
             terminal: Some("$ownerId".to_string()),
             preallocated: true,
+            skip_if_absent: false,
         }
     }
 
