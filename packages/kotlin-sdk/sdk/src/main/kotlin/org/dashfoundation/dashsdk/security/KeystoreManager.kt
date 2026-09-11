@@ -476,6 +476,22 @@ open class KeystoreManager(
         (androidKeyStore().getKey(KEYS_ALIAS, null) as? SecretKey) != null
 
     /**
+     * Whether the never-lock-bound [MASTER_ALIAS_UNBOUND] AES key exists in
+     * THIS device's Keystore.
+     *
+     * Device-local evidence that the false-locked defect was demonstrated
+     * HERE. Keystore keys are non-exportable and never restored by Android
+     * backup or device-to-device transfer, so unlike the DataStore flag that
+     * records the defect this cannot travel to another handset — which is
+     * exactly what [WalletStorage.isMasterKeyLockBindingDefectObserved]
+     * needs to avoid authorizing the lock-gate downgrade on a healthy device
+     * that merely inherited a restored preference. Presence check only: no
+     * crypto, no prompt, and it never generates the key.
+     */
+    open fun hasUnboundMasterKey(): Boolean =
+        (androidKeyStore().getKey(MASTER_ALIAS_UNBOUND, null) as? SecretKey) != null
+
+    /**
      * Whether [KEYS_ALIAS] currently holds the **former RSA identity-keys
      * keypair** from the pre-alias-split scheme (dashpay/platform#4060) — the
      * intermediate scheme that wrapped identity keys as empty-IV RSA/OAEP blobs

@@ -182,6 +182,34 @@ class WalletStorageIdentityKeyLockDefectTest {
     }
 
     @Test
+    fun shouldScrubIdentityKeyPlaintextWhenCancelledDuringMigration() {
+        runBlocking {
+            storage.storePrivateKey(pubkeyHex, privateKey)
+            recordDefectViaMnemonicWrite()
+        }
+        fake.lastIdentityDecryptRef = null
+
+        // migrateToPolicyAlias rethrows CancellationException by design, so a
+        // cancellation inside it unwinds PAST retrievePrivateKey's return and
+        // the owner never gets the buffer to scrub. Covers the legacy
+        // migration and recovery ladder too — they share the helper.
+        fake.onUnboundIdentityEncrypt = {
+            fake.onUnboundIdentityEncrypt = null
+            throw kotlin.coroutines.cancellation.CancellationException("cancelled mid-migration")
+        }
+
+        assertThrows(kotlin.coroutines.cancellation.CancellationException::class.java) {
+            runBlocking { storage.retrievePrivateKey(pubkeyHex) }
+        }
+        val buf = fake.lastIdentityDecryptRef
+        assertNotNull("expected the identity-key plaintext to have been captured", buf)
+        assertTrue(
+            "decrypted identity key must be zeroed when it cannot be returned",
+            buf!!.all { it == 0.toByte() },
+        )
+    }
+
+    @Test
     fun shouldKeepStrandedKeyIntactWhenRewrapFails() = runBlocking {
         storage.storePrivateKey(pubkeyHex, privateKey)
         recordDefectViaMnemonicWrite()
@@ -233,6 +261,21 @@ private class DeviceBoundLockDefectFakeKeystore :
 
     override fun sampleDeviceLockState(): DeviceLockState = lockState
 
+    /** The device-local witness: provisioned by any unbound-alias encrypt. */
+    var unboundMasterKeyProvisioned = false
+
+    /**
+     * Invoked inside the UNBOUND identity-alias encrypt — i.e. inside
+     * `migrateToPolicyAlias`, after the plaintext is in hand and before the
+     * caller can return it.
+     */
+    var onUnboundIdentityEncrypt: (() -> Unit)? = null
+
+    /** The buffer the last identity decrypt handed back (scrub evidence). */
+    var lastIdentityDecryptRef: ByteArray? = null
+
+    override fun hasUnboundMasterKey(): Boolean = unboundMasterKeyProvisioned
+
     override fun effectiveKeySecurityPolicy(): KeySecurityPolicy = keySecurityPolicy
 
     override fun hasIdentityKeysKey(alias: String): Boolean = isIdentityKeysAlias(alias)
@@ -263,6 +306,7 @@ private class DeviceBoundLockDefectFakeKeystore :
             KEYS_ALIAS_DEVICE_BOUND -> deviceBoundEncryptCalls++
             KEYS_ALIAS_DEVICE_BOUND_UNBOUND -> {
                 unboundEncryptCalls++
+                onUnboundIdentityEncrypt?.invoke()
                 val scripted = failUnboundEncrypts > 0
                 if (scripted) failUnboundEncrypts--
                 check(!scripted) { "scripted unbound-alias encrypt failure" }
@@ -285,8 +329,10 @@ private class DeviceBoundLockDefectFakeKeystore :
             }
             EncryptedBlob(iv = ByteArray(12) { 9 }, ciphertext = plaintext.copyOf())
         }
-        MASTER_ALIAS_UNBOUND ->
+        MASTER_ALIAS_UNBOUND -> {
+            unboundMasterKeyProvisioned = true
             EncryptedBlob(iv = ByteArray(12) { 8 }, ciphertext = plaintext.copyOf())
+        }
         else -> error("fake models only the master aliases for AES, got '$alias'")
     }
 
@@ -316,7 +362,7 @@ private class DeviceBoundLockDefectFakeKeystore :
                 "produced by tag ${blob.ciphertext[0]}"
         }
         val len = blob.ciphertext[1].toInt() and 0xFF
-        return blob.ciphertext.copyOfRange(2, 2 + len)
+        return blob.ciphertext.copyOfRange(2, 2 + len).also { lastIdentityDecryptRef = it }
     }
 
     private fun fpOf(alias: String): String = "fake-fp-$alias"
