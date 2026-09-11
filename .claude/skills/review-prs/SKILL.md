@@ -5,10 +5,10 @@ description: "Show PRs across Platform, rust-dashcore, Tenderdash, GroveDB and D
 
 # Review PRs
 
-Use the repository's deterministic policy reporter. Read `docs/PR_REVIEW_ARCHITECTURE.md` for the policy and `docs/PR_REVIEW_OPERATIONS.md` for setup and limitations.
+Use the shared policy reporter in `dashpay/stale_prs_are_bad`. Clone or locate that repository (`$PR_REVIEW_HOME` if set, else `gh repo clone dashpay/stale_prs_are_bad` into a temporary directory) and read its `guides/PR_REVIEW_ARCHITECTURE.md` for the policy and `guides/PR_REVIEW_OPERATIONS.md` for setup and limitations.
 
 1. Resolve the current GitHub user with `gh api user --jq .login`, unless the user names another reviewer.
-2. From the repository root run `python3 -m scripts.pr_review.aggregate report --user USER`. For structured output add `--format json`; to limit repositories add `--repo dashpay/REPOSITORY`. For one PR run `python3 -m scripts.pr_review.main report --repo dashpay/REPOSITORY --repository-root /path/to/target-checkout --pr NUMBER` from the Platform/shared engine checkout; the target checkout supplies its canonical policy.
+2. From that checkout's root run `python3 -m pr_review.aggregate report --user USER`. For structured output add `--format json`; to limit repositories add `--repo dashpay/REPOSITORY`. For one PR run `python3 -m pr_review.main report --repo dashpay/REPOSITORY --pr NUMBER`; the policy comes from that checkout's `policies/`.
 3. Present actionable human reviews first, oldest first, with links, touched areas, and the next action. Separately summarize blockers on the user's own PRs. Use repository-qualified PR identifiers. Distinguish author action, bot work, missing access, and the five-PR admission queue within each repository. Combined totals above five are workload warnings, not a global hard cap.
 4. Waiting time is the current recorded human-review cycle. If no controller state exists, say the age is not recorded. Do not equate total PR age with review waiting time.
 
