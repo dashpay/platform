@@ -351,6 +351,7 @@ mod tests {
             unsafe {
                 let error = &*result.error;
                 assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+                crate::dash_sdk_error_free(result.error);
             }
         }
 
