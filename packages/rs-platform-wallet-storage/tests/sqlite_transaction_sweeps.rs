@@ -48,10 +48,15 @@ fn make_utxo(addr: &Address, txid: Txid, vout: u32, value: u64) -> Utxo {
 
 fn derive_address(conn: &rusqlite::Connection, w: &WalletId, account_index: u32, addr: &Address) {
     conn.execute(
-        "INSERT INTO core_derived_addresses \
-            (wallet_id, account_type, account_index, address, derivation_path, used) \
-         VALUES (?1, 'standard', ?2, ?3, '0/0', 0)",
-        params![w.as_slice(), account_index as i64, addr.to_string()],
+        "INSERT INTO core_address_pool \
+            (wallet_id, account_type, account_index, script, pool_type, address_index, used) \
+         VALUES (?1, 'standard_bip44', ?2, ?3, 0, ?4, 0)",
+        params![
+            w.as_slice(),
+            account_index as i64,
+            addr.script_pubkey().as_bytes(),
+            addr.script_pubkey().as_bytes()[3] as i64
+        ],
     )
     .unwrap();
 }
@@ -2546,16 +2551,16 @@ fn apply_heights(conn: &mut rusqlite::Connection, w: &WalletId, height: u32) {
     tx.commit().unwrap();
 }
 
-/// `(spent, height, winner_mined_height)` of a `core_utxos` row, or `None`
+/// `(spent, is_sweep_placeholder, winner_mined_height)` of a `core_utxos` row, or `None`
 /// when absent.
 fn utxo_row_state(
     conn: &rusqlite::Connection,
     w: &WalletId,
     op: &OutPoint,
-) -> Option<(bool, Option<i64>, Option<i64>)> {
+) -> Option<(bool, bool, Option<i64>)> {
     let bytes = blob::encode_outpoint(op).unwrap();
     conn.query_row(
-        "SELECT spent, height, winner_mined_height FROM core_utxos \
+        "SELECT spent, is_sweep_placeholder, winner_mined_height FROM core_utxos \
          WHERE wallet_id = ?1 AND outpoint = ?2",
         params![w.as_slice(), &bytes[..]],
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -2623,7 +2628,7 @@ fn a_never_materialised_tombstone_is_collected_at_finality_and_not_before() {
 
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, None, Some(i64::from(WINNER_HEIGHT)))),
+        Some((true, true, Some(i64::from(WINNER_HEIGHT)))),
         "sanity: the sweep left a held, never-materialised row stamped with \
          the winner's own mined height — not any observation watermark"
     );
@@ -2727,7 +2732,7 @@ fn a_mempool_context_sweep_preserves_an_unstamped_tombstone() {
         seed_tombstone(&mut conn, &w, p, loser, winner, None);
         assert_eq!(
             utxo_row_state(&conn, &w, &p),
-            Some((true, None, None)),
+            Some((true, true, None)),
             "an unmined IS-locked winner must leave a held, unstamped \
              placeholder for input #{i}"
         );
@@ -2782,7 +2787,7 @@ fn a_mempool_context_sweep_still_spend_marks_a_materialised_coin() {
     seed_tombstone(&mut conn, &w, p, loser, winner, None);
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, Some(10), None)),
+        Some((true, false, None)),
         "a materialised coin is spend-marked by the IS-locked winner, with \
          no stamp — its funding data is real and the collector never sees it"
     );
@@ -2829,7 +2834,7 @@ fn a_funding_output_arriving_after_a_mempool_sweep_and_restart_lands_spent() {
     apply_heights(&mut conn, &w, 25_000);
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, None, None)),
+        Some((true, true, None)),
         "the unstamped hold survives the restart and every boundary"
     );
 
@@ -2852,7 +2857,7 @@ fn a_funding_output_arriving_after_a_mempool_sweep_and_restart_lands_spent() {
     );
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, Some(10), None)),
+        Some((true, false, None)),
         "materialised on the tombstone: real funding height, still spent, \
          permanently outside the collector's reach"
     );
@@ -2932,7 +2937,7 @@ fn a_materialised_claim_is_never_collected() {
     seed_tombstone(&mut conn, &w, p, loser, winner, Some(WINNER_HEIGHT));
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, None, Some(i64::from(WINNER_HEIGHT)))),
+        Some((true, true, Some(i64::from(WINNER_HEIGHT)))),
         "sanity: held, unmaterialised, stamped with the winner's height"
     );
 
@@ -2949,14 +2954,14 @@ fn a_materialised_claim_is_never_collected() {
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, Some(10), None)),
+        Some((true, false, None)),
         "sanity: materialised — real height, stamp cleared, still spent"
     );
 
     apply_heights(&mut conn, &w, 10_000);
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, Some(10), None)),
+        Some((true, false, None)),
         "a materialised claim is the wallet's own coin held spent — no \
          boundary may ever collect it"
     );
@@ -3007,7 +3012,7 @@ fn a_release_frees_a_materialised_claim_in_place() {
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, Some(10), None)),
+        Some((true, false, None)),
         "sanity: materialised — real height, stamp cleared, still spent"
     );
     assert!(
@@ -3033,7 +3038,7 @@ fn a_release_frees_a_materialised_claim_in_place() {
 
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((false, Some(10), None)),
+        Some((false, false, None)),
         "a released materialised claim is freed in place, keeping its funding data"
     );
     assert!(
@@ -3078,7 +3083,7 @@ fn a_tombstone_without_a_winner_height_is_never_collected() {
     apply_heights(&mut conn, &w, 1_000_010);
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, None, None)),
+        Some((true, true, None)),
         "no winner height, no proof of finality — the hold outlasts any boundary"
     );
 }
@@ -3140,7 +3145,7 @@ fn a_repointed_tombstone_is_restamped_to_the_later_winners_height() {
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, None, Some(i64::from(WINNER_HEIGHT + 50)))),
+        Some((true, true, Some(i64::from(WINNER_HEIGHT + 50)))),
         "the re-pointed claim is re-stamped to the later winner's mined height"
     );
 }
@@ -3199,7 +3204,7 @@ fn a_mempool_repointed_tombstone_keeps_its_block_context_stamp() {
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, None, Some(i64::from(WINNER_HEIGHT)))),
+        Some((true, true, Some(i64::from(WINNER_HEIGHT)))),
         "an unmined winner re-points the claim without touching the earlier \
          block-context stamp"
     );
@@ -3235,7 +3240,7 @@ fn an_unstamped_tombstone_restamped_by_a_block_context_sweep_becomes_collectible
     seed_tombstone(&mut conn, &w, p, first_loser, second_loser, None);
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, None, None)),
+        Some((true, true, None)),
         "sanity: held and unstamped"
     );
 
@@ -3266,7 +3271,7 @@ fn an_unstamped_tombstone_restamped_by_a_block_context_sweep_becomes_collectible
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, None, Some(i64::from(WINNER_HEIGHT)))),
+        Some((true, true, Some(i64::from(WINNER_HEIGHT)))),
         "the block-context re-point stamps the previously unstamped hold"
     );
 
@@ -3278,7 +3283,7 @@ fn an_unstamped_tombstone_restamped_by_a_block_context_sweep_becomes_collectible
 }
 
 /// The valve is scoped to the held PLACEHOLDER shape. A materialised coin
-/// (`height` set) is the wallet's own: it knows the funding, and any
+/// (placeholder flag clear) is the wallet's own: it knows the funding, and any
 /// network-final spender of a coin it knows is wallet-relevant (BIP158
 /// matches the input's prevout script), so its view of `spent` is
 /// authoritative. When it re-delivers such a coin unspent — the winner
@@ -3327,7 +3332,7 @@ fn a_materialised_coin_the_wallet_re_delivers_unspent_is_released_from_its_hold(
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &x),
-        Some((true, Some(10), None)),
+        Some((true, false, None)),
         "sanity: the sweep holds the materialised coin, unstamped"
     );
 
@@ -3413,7 +3418,7 @@ fn a_placeholder_stays_held_after_the_trigger_nulls_its_link() {
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &x),
-        Some((true, None, Some(i64::from(WINNER_HEIGHT)))),
+        Some((true, true, Some(i64::from(WINNER_HEIGHT)))),
         "sanity: X is a held, stamped placeholder"
     );
     // W2 sweeps W on Y. W's row goes, the trigger nulls X's link, and W's
@@ -3444,7 +3449,7 @@ fn a_placeholder_stays_held_after_the_trigger_nulls_its_link() {
     assert_eq!(link, None, "sanity: the trigger nulled the link");
     assert_eq!(
         utxo_row_state(&conn, &w, &x),
-        Some((true, None, Some(i64::from(WINNER_HEIGHT)))),
+        Some((true, true, Some(i64::from(WINNER_HEIGHT)))),
         "the hold and its stamp survive the link going"
     );
 
@@ -3520,7 +3525,7 @@ fn a_placeholder_with_a_nulled_link_is_still_collected_at_its_stamp() {
 
 /// A delivery through `spent_utxos` is still a delivery: the wallet knows
 /// the coin and knows it spent. Landing on a held placeholder it must
-/// materialise the row — real funding data, `height` set, stamp cleared —
+/// materialise the row — real funding data, placeholder flag clear, stamp cleared —
 /// not just mark it, or the collector would later delete the only durable
 /// record of the spend and a rescan re-delivery would land the coin
 /// unspent.
@@ -3541,7 +3546,7 @@ fn a_spent_delivery_materialises_a_held_placeholder_out_of_the_collectors_reach(
     seed_tombstone(&mut conn, &w, x, loser, winner, Some(WINNER_HEIGHT));
     assert_eq!(
         utxo_row_state(&conn, &w, &x),
-        Some((true, None, Some(i64::from(WINNER_HEIGHT)))),
+        Some((true, true, Some(i64::from(WINNER_HEIGHT)))),
         "sanity: a stamped placeholder"
     );
 
@@ -3556,8 +3561,8 @@ fn a_spent_delivery_materialises_a_held_placeholder_out_of_the_collectors_reach(
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &x),
-        Some((true, Some(10), None)),
-        "the spent delivery materialises the row: funding height set, stamp cleared"
+        Some((true, false, None)),
+        "the spent delivery materialises the row: placeholder flag clear, stamp cleared"
     );
 
     apply_heights(&mut conn, &w, WINNER_HEIGHT + 100);
@@ -3611,7 +3616,7 @@ fn a_release_naming_an_output_of_a_co_swept_parent_deletes_it_rather_than_freein
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &parent_output),
-        Some((true, Some(10), None)),
+        Some((true, false, None)),
         "sanity: a materialised, spent parent output with no record behind it"
     );
 
@@ -3687,13 +3692,134 @@ fn a_record_and_its_sweep_in_one_round_end_with_the_transaction_gone() {
     tx.commit().unwrap();
 
     assert!(
-        core_state::get_tx_record(&conn, &w, &loser)
-            .unwrap()
-            .is_none(),
+        core_state::get_tx_record(
+            &conn,
+            &w,
+            &loser,
+            &platform_wallet_storage::sqlite::load_ctx::LoadCtx::strict()
+        )
+        .unwrap()
+        .is_none(),
         "the sweep runs last and removes the record written in the same round"
     );
     assert!(
         !row_exists(&conn, &w, &loser_output),
         "and the output the same round delivered goes with it"
     );
+}
+
+#[test]
+fn should_restore_used_addresses_without_decoding_sweep_placeholders() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xE1);
+    ensure_wallet_meta(&persister, &w);
+    let mut conn = persister.lock_conn_for_test();
+    let input = OutPoint::new(Txid::from_byte_array([0x91; 32]), 0);
+    seed_tombstone(
+        &mut conn,
+        &w,
+        input,
+        Txid::from_byte_array([0x92; 32]),
+        Txid::from_byte_array([0x93; 32]),
+        None,
+    );
+    let addresses = core_state::load_used_addresses(&conn, &w, Network::Testnet).unwrap();
+    assert!(addresses.is_empty());
+    let (state, _) = core_state::load_state(
+        &conn,
+        &w,
+        Network::Testnet,
+        &platform_wallet_storage::sqlite::load_ctx::LoadCtx::strict(),
+    )
+    .unwrap();
+    assert!(state.new_utxos.is_empty());
+    assert!(
+        row_exists(&conn, &w, &input),
+        "the held input stays durable"
+    );
+}
+
+#[test]
+fn should_preserve_mainline_sweep_holds_through_rehydration_migrations() {
+    use platform_wallet_storage::sqlite::migrations;
+
+    let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.pragma_update(None, "foreign_keys", true).unwrap();
+    migrations::runner()
+        .set_target(refinery::Target::Version(7))
+        .run(&mut conn)
+        .unwrap();
+    let w = wid(0xE2);
+    conn.execute(
+        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+        params![w.as_slice()],
+    )
+    .unwrap();
+    let input = OutPoint::new(Txid::from_byte_array([0x94; 32]), 0);
+    let encoded = blob::encode_outpoint(&input).unwrap();
+    conn.execute(
+        "INSERT INTO core_utxos (wallet_id, outpoint, value, script, height, account_index, spent, winner_mined_height)
+         VALUES (?1, ?2, 0, X'', NULL, 0, 1, 400)",
+        params![w.as_slice(), encoded],
+    )
+    .unwrap();
+    migrations::run(&mut conn).unwrap();
+    assert_eq!(
+        utxo_row_state(&conn, &w, &input),
+        Some((true, true, Some(400)))
+    );
+    assert!(core_state::load_used_addresses(&conn, &w, Network::Testnet)
+        .unwrap()
+        .is_empty());
+    apply_heights(&mut conn, &w, 399);
+    assert!(row_exists(&conn, &w, &input));
+    apply_heights(&mut conn, &w, 400);
+    assert!(!row_exists(&conn, &w, &input));
+}
+
+#[test]
+fn should_remove_a_swept_height_only_transaction_and_its_outputs() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xE3);
+    ensure_wallet_meta(&persister, &w);
+    let loser = Txid::from_byte_array([0x95; 32]);
+    let utxo = make_utxo(&p2pkh(0x96), loser, 0, 1000);
+    let mut conn = persister.lock_conn_for_test();
+    let tx = conn.transaction().unwrap();
+    core_state::apply(
+        &tx,
+        &w,
+        &CoreChangeSet {
+            new_utxos: vec![utxo.clone()],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    assert!(row_exists(&conn, &w, &utxo.outpoint));
+    let tx = conn.transaction().unwrap();
+    core_state::apply(
+        &tx,
+        &w,
+        &CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser],
+                superseded_by: Txid::from_byte_array([0x97; 32]),
+                winner_mined_height: Some(WINNER_HEIGHT),
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    assert!(!row_exists(&conn, &w, &utxo.outpoint));
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+            params![w.as_slice(), AsRef::<[u8]>::as_ref(&loser)],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 0);
 }

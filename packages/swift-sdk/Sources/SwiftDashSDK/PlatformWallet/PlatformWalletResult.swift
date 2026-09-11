@@ -216,6 +216,36 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// the Rust-side scan cannot see conflicts whose spender was already
     /// pruned.
     case errorAssetLockInputContested = 48
+    /// Reading persisted wallet state failed on a store that reported the
+    /// failure as retryable (`SQLITE_BUSY` and friends). Nothing was
+    /// mutated — a load is a read. Retry later.
+    case errorPersisterLoadTransient = 49
+    /// Reading persisted wallet state failed permanently — a corrupt or
+    /// unreadable store, or a decode that will fail identically next time.
+    /// Do NOT retry; inspect the message. Constraint-class failures fold in
+    /// here too: a read cannot violate one, and neither is retryable.
+    case errorPersisterLoadFatal = 50
+    /// Writing wallet state failed on a busy or momentarily unavailable
+    /// store. **Nothing was committed** — the SDK only reports this when the
+    /// persister rolls a failed changeset round back whole, so re-issuing the
+    /// operation cannot double-apply part of it. Retry later.
+    case errorPersisterStoreTransient = 51
+    /// Writing wallet state failed permanently — a full disk, a corrupt
+    /// schema, an I/O error outside the retryable class. Do NOT retry;
+    /// inspect the message. The wallet rolled its in-memory state back, so
+    /// the operation may be re-attempted once the fault is fixed.
+    case errorPersisterStoreFatal = 52
+    /// A write violated a constraint / foreign key / integrity rule.
+    /// Deliberately distinct from `errorPersisterStoreFatal`: this is "the
+    /// data is wrong" (a caller or schema-mapping bug) rather than "the
+    /// storage engine is unhappy" (an operator problem), and the two route
+    /// to different people. Do NOT retry unchanged; fix the data.
+    case errorPersisterStoreConstraint = 53
+    /// Rehydrating persisted platform-address state into a freshly
+    /// registered wallet failed. One code rather than three: it wraps a
+    /// wallet error, not a store error, so it carries no retry
+    /// classification. The wrapped error's rendering is in the message.
+    case errorPersisterRestore = 54
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -323,6 +353,18 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorAssetLockInputConflict
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONTESTED:
             self = .errorAssetLockInputContested
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_LOAD_TRANSIENT:
+            self = .errorPersisterLoadTransient
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_LOAD_FATAL:
+            self = .errorPersisterLoadFatal
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_STORE_TRANSIENT:
+            self = .errorPersisterStoreTransient
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_STORE_FATAL:
+            self = .errorPersisterStoreFatal
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_STORE_CONSTRAINT:
+            self = .errorPersisterStoreConstraint
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_RESTORE:
+            self = .errorPersisterRestore
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -554,6 +596,28 @@ public enum PlatformWalletError: LocalizedError {
     /// confirmed spender is this wallet's own transaction, so the value
     /// behind the contested input lives on in it.
     case assetLockInputContested(String)
+    /// Reading persisted wallet state failed on a store that classified the
+    /// failure as retryable. Nothing was mutated — retry later. One of the
+    /// two retryable persister cases, alongside `persisterStoreTransient`.
+    case persisterLoadTransient(String)
+    /// Reading persisted wallet state failed permanently. Do NOT retry;
+    /// the store needs repair or re-provisioning.
+    case persisterLoadFatal(String)
+    /// Writing wallet state failed on a busy store, with the whole changeset
+    /// round rolled back — nothing was committed, so re-issuing the
+    /// operation is safe. Retry later.
+    case persisterStoreTransient(String)
+    /// Writing wallet state failed permanently. Do NOT retry until the
+    /// underlying fault is fixed; the wallet rolled its in-memory state back.
+    case persisterStoreFatal(String)
+    /// A write violated a constraint / integrity rule — the data is wrong,
+    /// as opposed to the storage engine being unhappy. Do NOT retry
+    /// unchanged.
+    case persisterStoreConstraint(String)
+    /// Rehydrating persisted platform-address state into a newly registered
+    /// wallet failed. Carries no retry classification: it wraps a wallet
+    /// error rather than a store error.
+    case persisterRestore(String)
     /// The named thing does not exist. For the deferred payment calls this is
     /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
     /// was just signed against) is no longer registered in the manager, so there
@@ -564,9 +628,13 @@ public enum PlatformWalletError: LocalizedError {
     case notFound(String)
     case unknown(String)
 
-    /// Diagnostic detail Rust attached to the originating
-    /// `PlatformWalletFFIResult`, or the context string a Swift-side
-    /// guard chose when constructing the error inline.
+    /// What to show a person. For most cases this is still the diagnostic
+    /// detail Rust attached to the originating `PlatformWalletFFIResult` (or
+    /// the context string a Swift-side guard chose when constructing the
+    /// error inline); the persister cases and the value-carrying marketplace
+    /// rejections compose their own text instead, because theirs is an error
+    /// chain or a JSON payload that reads as gibberish in an alert. The
+    /// persister chain stays available on `failureReason`.
     public var errorDescription: String? {
         switch self {
         case .nullPointer(let m), .invalidHandle(let m), .invalidParameter(let m),
@@ -594,6 +662,20 @@ public enum PlatformWalletError: LocalizedError {
              .assetLockInputContested(let m),
              .notFound(let m), .unknown(let m):
             return m
+        // The persister messages are a nested Rust error chain naming the
+        // operation, the backend classification and the store's own phrasing
+        // ("… changeset: persistence backend error (Transient): database is
+        // locked"). That is log material, not alert material, so these six
+        // state what the person can do and leave the chain on
+        // `failureReason`. Which text applies is the CASE's meaning: a
+        // transient is worth retrying, a read failure and a write failure
+        // must not be described to a user as each other.
+        case .persisterLoadTransient, .persisterStoreTransient:
+            return "The wallet database is busy. Try again in a moment."
+        case .persisterLoadFatal, .persisterRestore:
+            return "The wallet data could not be read and may need to be restored."
+        case .persisterStoreFatal, .persisterStoreConstraint:
+            return "The wallet data could not be saved and may need to be restored."
         // The three value-carrying marketplace rejections compose their
         // description from the typed values, because their FFI message is
         // the machine-readable JSON detail — showing that raw would be
@@ -610,6 +692,20 @@ public enum PlatformWalletError: LocalizedError {
             }
             return "\"\(label)\" is in an active contested-name vote (ends at \(endsAtMs) ms) "
                 + "and cannot be traded until the contest resolves."
+        }
+    }
+
+    /// The raw diagnostic chain behind a case whose `errorDescription` is
+    /// user-facing text — log it, do not display it. `nil` for every case
+    /// that already passes its detail through as the description.
+    public var failureReason: String? {
+        switch self {
+        case .persisterLoadTransient(let m), .persisterLoadFatal(let m),
+             .persisterStoreTransient(let m), .persisterStoreFatal(let m),
+             .persisterStoreConstraint(let m), .persisterRestore(let m):
+            return m
+        default:
+            return nil
         }
     }
 
@@ -718,6 +814,23 @@ public enum PlatformWalletError: LocalizedError {
             self = .assetLockInputConflict(detail)
         case .errorAssetLockInputContested:
             self = .assetLockInputContested(detail)
+        // The persister codes carry the wallet's typed `Display` as the
+        // message. Which operation failed and whether a retry can help is
+        // the CODE's meaning, not the string's — branch on the case, never
+        // on the text, and log the string rather than displaying it
+        // (`errorDescription` holds the user-facing wording).
+        case .errorPersisterLoadTransient:
+            self = .persisterLoadTransient(detail)
+        case .errorPersisterLoadFatal:
+            self = .persisterLoadFatal(detail)
+        case .errorPersisterStoreTransient:
+            self = .persisterStoreTransient(detail)
+        case .errorPersisterStoreFatal:
+            self = .persisterStoreFatal(detail)
+        case .errorPersisterStoreConstraint:
+            self = .persisterStoreConstraint(detail)
+        case .errorPersisterRestore:
+            self = .persisterRestore(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

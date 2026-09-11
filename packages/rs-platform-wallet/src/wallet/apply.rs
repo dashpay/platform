@@ -127,8 +127,7 @@ impl PlatformWalletInfo {
             // mutates its store directly during sync / spend); the
             // canonical in-memory state lives there and the
             // changeset is persistence-side only. Drop here.
-            #[cfg(feature = "shielded")]
-                shielded: _,
+            shielded: _,
         } = cs;
 
         // 1. Core wallet state. In the new event-bus model, a
@@ -154,7 +153,7 @@ impl PlatformWalletInfo {
             for (_id, entry) in identities {
                 self.identity_manager.apply_identity_entry(entry);
             }
-            // Best-effort tombstones across both buckets. Routed
+            // Best-effort removals across both buckets. Routed
             // through `remove_for_apply` so the manager's side-index
             // stays in lockstep with the buckets without us having to
             // reach in and touch the index from out here.

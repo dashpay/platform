@@ -1807,24 +1807,23 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             })
             .collect();
 
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
-                return;
-            };
-            let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
-                tracing::warn!(
-                    owner = %identity_id,
-                    "auto-accept enqueue for a non-resident identity; dropping"
-                );
-                return;
-            };
-            for entry in &entries {
-                upsert_pending_contact_crypto(
-                    managed.dashpay_pending_contact_crypto_mut(),
-                    entry.clone(),
-                );
-            }
+        // Serialize the queue write with identity removal under the same guard.
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+            tracing::warn!(
+                owner = %identity_id,
+                "auto-accept enqueue for a non-resident identity; dropping"
+            );
+            return;
+        };
+        for entry in &entries {
+            upsert_pending_contact_crypto(
+                managed.dashpay_pending_contact_crypto_mut(),
+                entry.clone(),
+            );
         }
         let changeset = PlatformWalletChangeSet {
             pending_contact_crypto_added: entries,
@@ -1996,26 +1995,23 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             },
         ];
 
-        // In-memory upsert onto the owner identity's queue, under the write
-        // lock (released before persisting). All entries share this owner.
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
-                return;
-            };
-            let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
-                tracing::warn!(
-                    identity = %identity_id, contact = %candidate.contact_id,
-                    "deferred contact-crypto enqueue for a non-resident identity; dropping"
-                );
-                return;
-            };
-            for entry in &entries {
-                upsert_pending_contact_crypto(
-                    managed.dashpay_pending_contact_crypto_mut(),
-                    entry.clone(),
-                );
-            }
+        // Serialize the queue write with identity removal under the same guard.
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+            tracing::warn!(
+                identity = %identity_id, contact = %candidate.contact_id,
+                "deferred contact-crypto enqueue for a non-resident identity; dropping"
+            );
+            return;
+        };
+        for entry in &entries {
+            upsert_pending_contact_crypto(
+                managed.dashpay_pending_contact_crypto_mut(),
+                entry.clone(),
+            );
         }
 
         // Persist the add-delta so the queue survives a restart. Best-effort:
@@ -5817,5 +5813,54 @@ mod drain_budget_tests {
         })
         .await;
         assert_eq!(result, None, "the step outlasted the budget");
+    }
+}
+
+#[cfg(test)]
+mod pending_enqueue_tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    #[tokio::test]
+    async fn should_serialize_deferred_enqueue_with_identity_removal() {
+        let (iw, owner, backend) = super::super::pending_crypto_tests::fixture().await;
+        let candidate = AccountBuildCandidate {
+            contact_id: Identifier::from([0xBB; 32]),
+            encrypted_public_key: vec![0; 96],
+            our_decryption_key_index: 0,
+            contact_encryption_key_index: 1,
+        };
+        iw.dashpay()
+            .enqueue_deferred_contact_crypto(&owner, &candidate)
+            .await;
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 2);
+        super::super::pending_crypto_tests::remove_owner(&iw, &owner).await;
+        iw.dashpay()
+            .enqueue_deferred_contact_crypto(&owner, &candidate)
+            .await;
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn should_serialize_auto_accept_enqueue_with_identity_removal() {
+        let (iw, owner, backend) = super::super::pending_crypto_tests::fixture().await;
+        let sender = Identifier::from([0xBB; 32]);
+        let mut request = ContactRequest::new(sender, owner, 0, 0, 0, vec![0; 96], 100, 0);
+        request.auto_accept_proof = Some(vec![0; 70]);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&iw.wallet_id)
+                .unwrap()
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .unwrap()
+                .add_incoming_contact_request(request, &iw.persister)
+                .unwrap();
+        }
+        iw.dashpay().enqueue_pending_auto_accepts(&owner).await;
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 1);
+        super::super::pending_crypto_tests::remove_owner(&iw, &owner).await;
+        iw.dashpay().enqueue_pending_auto_accepts(&owner).await;
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 1);
     }
 }

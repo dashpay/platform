@@ -4,11 +4,13 @@
 //! older binary would otherwise migration::run() no-op past gets
 //! caught at open time.
 
+mod common;
+
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig, WalletStorageError};
 
 #[test]
 fn open_rejects_forward_schema_version() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let db_path = tmp.path().join("wallet.db");
 
     // First open to run the embedded migrations.

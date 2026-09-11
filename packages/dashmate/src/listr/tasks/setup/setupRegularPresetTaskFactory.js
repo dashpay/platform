@@ -153,6 +153,34 @@ export default function setupRegularPresetTaskFactory(
         task: () => configureNodeTask(),
       },
       {
+        title: 'Configure Tor',
+        task: async (ctx, task) => {
+          if (ctx.enableTor === undefined) {
+            ctx.enableTor = await task.prompt({
+              type: 'toggle',
+              header: `  Dashmate runs a Tor sidecar next to Core. Core then reaches onion peers
+  through it and publishes its own onion service, so peers on Tor can reach
+  this node too. Clearnet traffic, including masternode quorum traffic, stays
+  direct, and the node keeps its public IPv4 address: masternodes must still be
+  registered with that address, the onion service is an extra one.\n`,
+              message: 'Enable Tor?',
+              enabled: 'Yes',
+              disabled: 'No',
+              initial: true,
+            });
+          }
+
+          ctx.config.set('core.tor.enabled', ctx.enableTor === true);
+          ctx.config.set('core.tor.control.password', generateRandomString(12));
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = ctx.enableTor ? 'enabled' : 'disabled';
+        },
+        options: {
+          persistentOutput: true,
+        },
+      },
+      {
         enabled: (ctx) => ctx.config && ctx.config.get('platform.enable'),
         task: () => configureSSLCertificateTask(),
       },
