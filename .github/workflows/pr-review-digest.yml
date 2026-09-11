@@ -1,0 +1,44 @@
+name: Daily PR review digest
+on:
+  schedule:
+    - cron: '0 2 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      send_slack:
+        description: Send to the configured Slack webhook
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+concurrency:
+  group: platform-pr-review-digest
+  cancel-in-progress: false
+jobs:
+  report:
+    if: github.repository == 'dashpay/platform'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Generate report and optionally deliver digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_REVIEW_SLACK_ENABLED: ${{ vars.PR_REVIEW_SLACK_ENABLED }}
+          PR_REVIEW_SLACK_WEBHOOK: ${{ secrets.PR_REVIEW_SLACK_WEBHOOK }}
+          DELIVERY_REQUESTED: ${{ github.event_name == 'schedule' || inputs.send_slack }}
+        run: |
+          args=()
+          if [[ "$PR_REVIEW_SLACK_ENABLED" == true && "$DELIVERY_REQUESTED" == true ]]; then
+            args+=(--send-slack)
+          fi
+          python3 -m scripts.pr_review.main report "${args[@]}" > pr-review-report.md
+          cat pr-review-report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pr-review-report
+          path: pr-review-report.md
+          retention-days: 14

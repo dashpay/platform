@@ -1,0 +1,285 @@
+{
+  "version": 1,
+  "repository": "dashpay/platform",
+  "max_active_prs": 5,
+  "target_branches": [
+    "v4.2-dev"
+  ],
+  "fallback": {
+    "owners": [
+      "QuantumExplorer",
+      "shumkov"
+    ],
+    "reviewers": []
+  },
+  "areas": [
+    {
+      "id": "rs-drive",
+      "paths": [
+        "packages/rs-drive/"
+      ],
+      "owners": [
+        "QuantumExplorer"
+      ],
+      "reviewers": [
+        "shumkov"
+      ],
+      "metadata": {
+        "contributors": [
+          "Lukasz"
+        ]
+      }
+    },
+    {
+      "id": "rs-drive-abci",
+      "paths": [
+        "packages/rs-drive-abci/"
+      ],
+      "owners": [
+        "QuantumExplorer"
+      ],
+      "reviewers": [
+        "shumkov"
+      ],
+      "metadata": {
+        "contributors": [
+          "Lukasz"
+        ]
+      }
+    },
+    {
+      "id": "dpp",
+      "paths": [
+        "packages/rs-dpp/"
+      ],
+      "owners": [
+        "QuantumExplorer",
+        "shumkov"
+      ],
+      "reviewers": [],
+      "metadata": {
+        "contributors": [
+          "Lukasz"
+        ]
+      }
+    },
+    {
+      "id": "rs-platform-wallet",
+      "paths": [
+        "packages/rs-platform-wallet/"
+      ],
+      "owners": [
+        "llbartekll"
+      ],
+      "reviewers": [
+        "ZocoLini",
+        "HashEngineering",
+        "romchornyi"
+      ],
+      "metadata": {
+        "contributors": [
+          "Sam",
+          "Lukasz",
+          "Ivan",
+          "Pasta"
+        ]
+      }
+    },
+    {
+      "id": "rs-platform-wallet-ffi",
+      "paths": [
+        "packages/rs-platform-wallet-ffi/"
+      ],
+      "owners": [
+        "llbartekll"
+      ],
+      "reviewers": [
+        "ZocoLini",
+        "HashEngineering",
+        "romchornyi"
+      ],
+      "metadata": {
+        "contributors": [
+          "Sam",
+          "Lukasz",
+          "Ivan",
+          "Pasta"
+        ]
+      }
+    },
+    {
+      "id": "wallet-storage",
+      "paths": [
+        "packages/rs-platform-wallet-storage/"
+      ],
+      "owners": [
+        "lklimek"
+      ],
+      "reviewers": [],
+      "metadata": {
+        "contributors": [
+          "Sam",
+          "Ivan"
+        ]
+      }
+    },
+    {
+      "id": "swift-sdk",
+      "paths": [
+        "packages/swift-sdk/"
+      ],
+      "owners": [
+        "llbartekll",
+        "romchornyi"
+      ],
+      "reviewers": [],
+      "metadata": {
+        "contributors": [
+          "Sam",
+          "Pasta",
+          "Borja",
+          "Brian"
+        ],
+        "qa": [
+          "Andrei"
+        ]
+      }
+    },
+    {
+      "id": "rust-sdk",
+      "paths": [
+        "packages/rs-sdk/"
+      ],
+      "owners": [
+        "lklimek",
+        "shumkov"
+      ],
+      "reviewers": [],
+      "metadata": {
+        "contributors": [
+          "Sam",
+          "Pasta",
+          "Borja"
+        ],
+        "qa": [
+          "thephez"
+        ]
+      }
+    },
+    {
+      "id": "rust-sdk-ffi",
+      "paths": [
+        "packages/rs-sdk-ffi/"
+      ],
+      "owners": [
+        "lklimek",
+        "shumkov"
+      ],
+      "reviewers": [],
+      "metadata": {
+        "contributors": [
+          "Sam"
+        ]
+      }
+    },
+    {
+      "id": "dashmate",
+      "paths": [
+        "packages/dashmate/"
+      ],
+      "owners": [
+        "shumkov"
+      ],
+      "reviewers": [],
+      "unresolved": [
+        "Daniel: GitHub username required"
+      ],
+      "metadata": {
+        "contributors": [
+          "Sam"
+        ],
+        "qa": [
+          "thephez"
+        ]
+      }
+    },
+    {
+      "id": "js-wasm-sdk",
+      "paths": [
+        "packages/js-dash-sdk/",
+        "packages/js-evo-sdk/",
+        "packages/wasm-sdk/"
+      ],
+      "owners": [
+        "shumkov"
+      ],
+      "reviewers": [],
+      "metadata": {
+        "contributors": [
+          "Sam"
+        ],
+        "qa": [
+          "thephez"
+        ]
+      }
+    },
+    {
+      "id": "rust-dapi",
+      "paths": [
+        "packages/rs-dapi/"
+      ],
+      "owners": [
+        "lklimek"
+      ],
+      "reviewers": [
+        "QuantumExplorer",
+        "shumkov"
+      ]
+    },
+    {
+      "id": "system-contracts",
+      "paths": [
+        "packages/data-contracts/",
+        "packages/dashpay-contract/",
+        "packages/dpns-contract/",
+        "packages/masternode-reward-shares-contract/",
+        "packages/withdrawals-contract/",
+        "packages/wallet-utils-contract/",
+        "packages/token-history-contract/",
+        "packages/document-history-contract/",
+        "packages/keyword-search-contract/"
+      ],
+      "owners": [
+        "QuantumExplorer",
+        "shumkov"
+      ],
+      "reviewers": [],
+      "metadata": {
+        "contributors": [
+          "HashEngineering"
+        ]
+      }
+    },
+    {
+      "id": "kotlin-sdk",
+      "paths": [
+        "packages/kotlin-sdk/"
+      ],
+      "owners": [
+        "HashEngineering"
+      ],
+      "reviewers": [],
+      "metadata": {
+        "contributors": [
+          "Sam",
+          "Roman",
+          "Brian"
+        ],
+        "qa": [
+          "Brian",
+          "Andrei"
+        ]
+      }
+    }
+  ]
+}
