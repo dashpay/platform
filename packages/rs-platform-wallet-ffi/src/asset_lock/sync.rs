@@ -9,6 +9,20 @@ use std::ffi::CString;
 use std::os::raw::c_char;
 use std::time::Duration;
 
+const MAX_ASSET_LOCK_PROOF_SIZE_BYTES: usize = 16 * 1024 * 1024;
+
+fn validate_asset_lock_proof_size(proof_len: usize) -> Result<(), PlatformWalletFFIResult> {
+    if proof_len > MAX_ASSET_LOCK_PROOF_SIZE_BYTES {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!(
+                "asset lock proof length {proof_len} exceeds the {MAX_ASSET_LOCK_PROOF_SIZE_BYTES}-byte limit"
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// Largest bound a caller may request, in seconds (one year).
 ///
 /// The wait paths downstream build their deadline as
@@ -347,10 +361,13 @@ pub unsafe extern "C" fn asset_lock_manager_recover(
 
     // Parse optional proof
     let proof = if !proof_bytes.is_null() && proof_len > 0 {
+        // A proof contains one Core transaction and, at most, one InstantLock;
+        // 16 MiB is generous while matching the persisted-blob ceiling.
+        unwrap_result_or_return!(validate_asset_lock_proof_size(proof_len));
         let data = std::slice::from_raw_parts(proof_bytes, proof_len);
         let (p, _) = unwrap_result_or_return!(dpp::bincode::decode_from_slice(
             data,
-            dpp::bincode::config::standard()
+            dpp::bincode::config::standard().with_limit::<MAX_ASSET_LOCK_PROOF_SIZE_BYTES>()
         ));
         Some(p)
     } else {
@@ -376,7 +393,8 @@ pub unsafe extern "C" fn asset_lock_manager_recover(
 mod tests {
     use super::{
         asset_lock_manager_catch_up_blocking, asset_lock_manager_resume, resume_timeout,
-        timeout_probe, MAX_TIMEOUT_SECS,
+        timeout_probe, validate_asset_lock_proof_size, MAX_ASSET_LOCK_PROOF_SIZE_BYTES,
+        MAX_TIMEOUT_SECS,
     };
     use crate::error::PlatformWalletFFIResultCode;
     use crate::handle::{Handle, ASSET_LOCK_MANAGER_STORAGE};
@@ -578,5 +596,18 @@ mod tests {
     #[test]
     fn an_ordinary_timeout_passes_through_unchanged() {
         assert_eq!(resume_timeout(300), Some(Duration::from_secs(300)));
+    }
+
+    #[test]
+    fn should_reject_oversized_asset_lock_proof_before_decode() {
+        assert!(validate_asset_lock_proof_size(MAX_ASSET_LOCK_PROOF_SIZE_BYTES).is_ok());
+
+        let result = validate_asset_lock_proof_size(MAX_ASSET_LOCK_PROOF_SIZE_BYTES + 1)
+            .expect_err("oversized proof must fail");
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
     }
 }
