@@ -374,6 +374,16 @@ pub(crate) fn validate_update_service_values(
             "the service port must not be 0".to_string(),
         ));
     }
+    // `CNetAddr::IsValid` runs before (and independent of) the network's
+    // routability requirement, so the unspecified and broadcast addresses
+    // are rejected on EVERY network — the regtest exemption below covers
+    // only private-but-valid addresses.
+    if ip.is_unspecified() || ip.is_broadcast() {
+        return Err(PlatformWalletError::InvalidParameter(format!(
+            "service address {ip} is not a valid address on any network \
+             (`bad-protx-netinfo-entry`)"
+        )));
+    }
     if network != Network::Regtest && !ipv4_is_routable(ip) {
         return Err(PlatformWalletError::InvalidParameter(format!(
             "service address {ip} is not routable — consensus rejects reserved and private \
@@ -1132,6 +1142,18 @@ mod tests {
         }
 
         check(Network::Regtest, "10.0.0.5:19999").expect("regtest does not require routability");
+
+        // `CNetAddr::IsValid` runs on every network, before the
+        // routability gate: the unspecified and broadcast addresses are
+        // refused even where routability is not required.
+        for service in ["0.0.0.0:19999", "255.255.255.255:19999"] {
+            for network in [Network::Regtest, Network::Testnet] {
+                assert!(
+                    check(network, service).is_err(),
+                    "{service} must be refused on {network:?}"
+                );
+            }
+        }
 
         check(Network::Mainnet, "34.214.48.68:9999")
             .expect("mainnet requires the default Core P2P port");

@@ -337,6 +337,97 @@ mod tests {
         assert!(find_in_summaries(&list, &MasternodeListQuery::ProTxHash([9u8; 32])).is_empty());
     }
 
+    /// The extended-map conversion is what feeds the service-uniqueness
+    /// preflight its secondary endpoints: every socket entry under every
+    /// purpose must be lifted (Core's unique-property index registers each
+    /// one individually), while domain / invalid entries — which have no
+    /// socket form — are skipped. The lifted secondary endpoint must then
+    /// actually collide in the values validator.
+    #[test]
+    fn summary_lifts_every_extended_endpoint() {
+        use super::super::update_service::validate_update_service_values;
+        use dashcore::sml::masternode_list_entry::net_info::{
+            Bip155Network, ExtNetInfo, NetInfoEntry, NetInfoPurpose,
+        };
+        use dashcore::Network;
+
+        let mut ipv6 = [0u8; 16];
+        ipv6[0] = 0x20;
+        ipv6[1] = 0x01;
+        ipv6[15] = 0x01;
+        let entry = MasternodeListEntry {
+            version: 2,
+            pro_reg_tx_hash: ProTxHash::from_byte_array([8u8; 32]),
+            confirmed_hash: None,
+            service_address: MasternodeNetInfo::Extended(ExtNetInfo {
+                version: 1,
+                purposes: vec![
+                    (
+                        NetInfoPurpose::CoreP2P,
+                        vec![
+                            NetInfoEntry::Service {
+                                network: Bip155Network::Ipv4,
+                                addr: vec![34, 214, 48, 68],
+                                port: 19999,
+                            },
+                            NetInfoEntry::Service {
+                                network: Bip155Network::Ipv4,
+                                addr: vec![34, 214, 48, 69],
+                                port: 29999,
+                            },
+                            NetInfoEntry::Domain {
+                                host: "node.example".to_string(),
+                                port: 19999,
+                            },
+                        ],
+                    ),
+                    (
+                        NetInfoPurpose::PlatformHttps,
+                        vec![
+                            NetInfoEntry::Service {
+                                network: Bip155Network::Ipv6,
+                                addr: ipv6.to_vec(),
+                                port: 443,
+                            },
+                            NetInfoEntry::Invalid,
+                        ],
+                    ),
+                ],
+            }),
+            operator_public_key: BLSPublicKey::from([9u8; 48]),
+            key_id_voting: PubkeyHash::from_byte_array([5u8; 20]),
+            is_valid: true,
+            mn_type: EntryMasternodeType::Regular,
+        };
+
+        let summary = MasternodeListSummary::from_entry(&entry);
+        assert!(summary.has_extended_net_info);
+        assert_eq!(
+            summary.service_addresses,
+            vec![
+                "34.214.48.68:19999".parse::<SocketAddr>().unwrap(),
+                "34.214.48.69:29999".parse::<SocketAddr>().unwrap(),
+                "[2001::1]:443".parse::<SocketAddr>().unwrap(),
+            ],
+            "every socket endpoint under every purpose is lifted; \
+             domain and invalid entries are skipped"
+        );
+
+        // A caller-supplied value equal to the extended entry's SECONDARY
+        // endpoint is refused by the uniqueness preflight — the join this
+        // converter exists to feed.
+        let target = masternode(0x60);
+        let summaries = vec![target.clone(), summary];
+        let values = super::super::update_service::UpdateServiceValues {
+            service_address: "34.214.48.69:29999".to_string(),
+            platform_node_id: None,
+            platform_p2p_port: None,
+            platform_http_port: None,
+        };
+        validate_update_service_values(Network::Testnet, &target, &values, &summaries)
+            .expect_err("another entry's secondary extended endpoint must collide");
+    }
+
     #[test]
     fn finds_by_ip_with_or_without_port() {
         let list = vec![masternode(1), masternode(2)];
