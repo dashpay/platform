@@ -17,6 +17,6 @@ permissions:
   statuses: write
 jobs:
   policy:
-    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@5ee27dc4a7d8c18de1a9d1723cc9b7b641cee90a
+    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@25b9369077ef6394ffb5491be718a6f0740e6088
     with:
-      engine_revision: 5ee27dc4a7d8c18de1a9d1723cc9b7b641cee90a
+      engine_revision: 25b9369077ef6394ffb5491be718a6f0740e6088
