@@ -201,8 +201,8 @@ with `rs-` on disk but have shorter names in `Cargo.toml`:
 | `packages/rs-platform-serialization` | `platform-serialization` |
 | `packages/rs-drive-proof-verifier` | `drive-proof-verifier` |
 
-The workspace currently targets Rust 1.92 and protocol version 12 (as of
-v3.0.1). The workspace `Cargo.toml` lists 44 member crates, but the core
+The workspace currently targets Rust 1.92 and protocol version 14 (as of
+4.2.0-dev). The workspace `Cargo.toml` lists 47 member crates, but the core
 platform logic lives in the first eight listed above.
 
 Let's begin with the architecture.

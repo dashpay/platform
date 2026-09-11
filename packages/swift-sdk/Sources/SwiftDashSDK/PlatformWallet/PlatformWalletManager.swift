@@ -596,7 +596,7 @@ public class PlatformWalletManager: ObservableObject {
     /// synchronous overloads — so the drain below can terminate without a
     /// synchronous op entering while the MainActor is reentrant at an
     /// `await`.
-    private var shutdownRequested = false
+    private(set) var shutdownRequested = false
 
     /// Async native entrypoints (`createWallet`, `loadFromPersistor`)
     /// between admission and the end of their MainActor epilogue.
@@ -668,6 +668,28 @@ public class PlatformWalletManager: ObservableObject {
     /// hostage for minutes — the reads are non-mutating and the registry
     /// answers `NotFound` once `destroy` ran.
     internal var pollDrainTimeout: Duration = .milliseconds(250)
+
+    // MARK: Core TXO store reconcile state (see PlatformWalletManagerTxoReconcile.swift)
+
+    /// Wallets with a reconcile run in flight; a second run for the same
+    /// wallet is refused rather than overlapped.
+    var coreTxoReconcileInFlight: Set<Data> = []
+    /// When each wallet's last automatic run was scheduled, for the cadence.
+    var coreTxoReconcileLastRunAt: [Data: ContinuousClock.Instant] = [:]
+    /// Whether the last progress tick was in steady state, for the
+    /// rising-edge trigger.
+    var coreTxoReconcileWasSteady = false
+    /// Bumped by [`shutdown()`] and [`deleteWallet`]; an in-flight run
+    /// re-checks it between pages and stops.
+    nonisolated let coreTxoReconcileEpoch = SyncGenerationCounter()
+    /// Dedicated serial queue for the reconcile's engine reads — they park
+    /// on the wallet lock like the poll reads, so never the main thread or
+    /// a cooperative-pool thread, and not [`pollQueue`], whose ticks feed
+    /// the sync indicator and must not wait behind a page walk.
+    nonisolated let coreTxoReconcileQueue = DispatchQueue(
+        label: "org.dash.platform-wallet.txo-reconcile",
+        qos: .utility
+    )
 
     /// Dedicated serial queue for the poller's native reads. They park the
     /// calling thread the way teardown and create do — `sync_progress`,
@@ -861,6 +883,8 @@ public class PlatformWalletManager: ObservableObject {
         // The bounded queue drain therefore happens INSIDE the task, before
         // the teardown, where a suspension is safe.
         pollEpoch.bump()
+        // An in-flight store reconcile stops between pages the same way.
+        coreTxoReconcileEpoch.bump()
 
         let calls = nativeTeardownCalls
         let queue = pollQueue
@@ -2520,6 +2544,11 @@ public class PlatformWalletManager: ObservableObject {
         // with the same deterministic id doesn't inherit a stale banner (the
         // poller would also prune it, but not until the next tick).
         dashPayUnlockStatus.removeValue(forKey: walletId)
+        // A store reconcile in flight for any wallet stops between pages:
+        // its next step would read rows `deleteWalletData` is about to
+        // remove. Coarse on purpose — the cadence re-runs the others.
+        coreTxoReconcileEpoch.bump()
+        coreTxoReconcileLastRunAt.removeValue(forKey: walletId)
 
         try persistenceHandler.deleteWalletData(walletId: walletId)
 
@@ -3012,8 +3041,14 @@ public class PlatformWalletManager: ObservableObject {
     ) {
         guard handle != NULL_HANDLE else { return }
         if let value = snapshot.spvProgress,
-           spvProgress == baseline.spvProgress, value != spvProgress {
-            spvProgress = value
+           spvProgress == baseline.spvProgress {
+            if value != spvProgress {
+                spvProgress = value
+            }
+            // Every accepted read, not only a changed one: the note is the
+            // reconcile's only clock, and a quiet steady-state wallet's
+            // progress does not change for the whole cadence.
+            noteSpvProgressForCoreTxoReconcile(value)
         }
         if let value = snapshot.spvIsRunning,
            spvIsRunning == baseline.spvIsRunning, value != spvIsRunning {
