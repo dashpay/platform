@@ -182,6 +182,29 @@ mod tests {
         assert_eq!(candidates[0].public_key_bytes.len(), 33);
     }
 
+    /// Regression for the review's wallet-removal race: the candidates
+    /// extern resolves the `PlatformWallet` handle, awaits the masternode
+    /// list, and only then derives — a window in which the host can
+    /// delete the wallet. Derivation must surface that as an error
+    /// through the fallible wallet lookup, not abort on the guard's
+    /// `expect("wallet exists in guard")` at the non-unwinding C
+    /// boundary.
+    #[test]
+    fn removed_wallet_is_an_error_not_a_panic() {
+        let wallet = test_wallet();
+        let summaries = vec![masternode(0x55)];
+
+        wallet
+            .wallet_manager()
+            .blocking_write()
+            .remove_wallet(&wallet.wallet_id())
+            .expect("the test wallet is registered");
+
+        let err = provider_key_candidates(&wallet, &summaries, ProviderKeyKind::Operator, 3)
+            .expect_err("a removed wallet must come back as an error");
+        assert!(matches!(err, PlatformWalletError::WalletNotFound(_)));
+    }
+
     #[test]
     fn unsupported_kinds_zero_counts_and_oversized_counts_are_handled() {
         let wallet = test_wallet();
