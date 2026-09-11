@@ -411,10 +411,7 @@ mod nft_tests {
             PlatformVersion::latest().protocol_version,
             126440160,
             2485600,
-            // v14: GroveDB V4 maintains backward references by default, so the
-            // index subtrees this transition empties are scanned for participants
-            // before the batch removes them
-            4339640,
+            4092360,
         )
         .await;
     }
@@ -837,10 +834,7 @@ mod nft_tests {
             141238960,
             2729120,
             2733160,
-            // v14: GroveDB V4 maintains backward references by default, so the
-            // index subtrees this transition empties are scanned for participants
-            // before the batch removes them
-            4610480,
+            4357440,
         )
         .await;
     }
@@ -1420,10 +1414,7 @@ mod nft_tests {
             PlatformVersion::latest().protocol_version,
             126440160,
             2485600,
-            // v14: GroveDB V4 maintains backward references by default, so the
-            // index subtrees this transition empties are scanned for participants
-            // before the batch removes them
-            4339640,
+            4092360,
         )
         .await;
     }
