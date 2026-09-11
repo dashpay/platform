@@ -247,7 +247,7 @@ class WalletStorage(
      * [MASTER_ALIAS_UNBOUND][KeystoreManager.MASTER_ALIAS_UNBOUND], which
      * no lock state can deny, so there is nothing to preflight.
      */
-    suspend fun ensureMasterKeyNotLockBlocked(operation: String) {
+    internal suspend fun ensureMasterKeyNotLockBlocked(operation: String) {
         val state = keystore.sampleDeviceLockState()
         if (!state.isDeviceLocked) return
         if (isMasterKeyLockBindingDefectObserved()) {
@@ -595,7 +595,20 @@ class WalletStorage(
         // set the flag during the decrypt is the exhausted-ladder recorder
         // above, and that path throws instead of reaching here.
         if (alias == KeystoreManager.MASTER_ALIAS && prefs[MASTER_LOCK_DEFECT_KEY] == true) {
-            rewrapMnemonicUnbound(walletId, plain)
+            try {
+                rewrapMnemonicUnbound(walletId, plain, encoded)
+            } catch (t: Throwable) {
+                // The caller owns [plain] and scrubs it — but only ever
+                // receives it by RETURN. rewrapMnemonicUnbound deliberately
+                // rethrows CancellationException (never swallow structured
+                // concurrency), so a cancellation inside its suspending
+                // store.edit would unwind past the return and strand decrypted
+                // seed bytes on the heap with nobody left to zero them. Scrub
+                // here before propagating. Ordinary re-wrap failures never
+                // reach this — they stay best-effort inside the helper.
+                plain.fill(0)
+                throw t
+            }
         }
         return plain
     }
@@ -612,9 +625,13 @@ class WalletStorage(
      * as before) and the next successful read simply tries again. Never
      * scrubs [plain] — the caller owns that buffer.
      */
-    private suspend fun rewrapMnemonicUnbound(walletId: ByteArray, plain: ByteArray) {
+    private suspend fun rewrapMnemonicUnbound(
+        walletId: ByteArray,
+        plain: ByteArray,
+        sourceEncoded: String,
+    ) {
         try {
-            storeMnemonicUnbound(walletId, plain)
+            rewrapMnemonicUnboundIfUnchanged(walletId, plain, sourceEncoded)
             Log.i(
                 TAG,
                 "re-wrapped a lock-bound master-alias mnemonic blob under the " +
@@ -632,6 +649,40 @@ class WalletStorage(
                     "next successful read will retry",
                 e,
             )
+        }
+    }
+
+    /**
+     * Compare-and-set half of [rewrapMnemonicUnbound]: replace the blob ONLY
+     * while the entry still holds exactly what the read observed.
+     *
+     * [retrieveMnemonicUtf8] runs without any mnemonic lock, so between its
+     * DataStore snapshot and this edit another coroutine can legitimately
+     * [deleteMnemonic] the wallet or [storeMnemonic] a new phrase over it. An
+     * unconditional write would then RESURRECT a just-deleted mnemonic, or
+     * clobber a newer one with the stale ciphertext this read happened to
+     * decrypt — the atomicity of the edit itself does not cover the
+     * read-to-write interval. Guarding on the exact encoded blob AND on the
+     * alias tag still being absent (an untagged entry is the lock-bound
+     * [KeystoreManager.MASTER_ALIAS] default — see [storeMnemonic]) makes the
+     * re-wrap a no-op in both races, which is the correct outcome: the winner
+     * already wrote the state the user asked for.
+     *
+     * The migrateToPolicyAlias discipline, applied to mnemonics.
+     */
+    private suspend fun rewrapMnemonicUnboundIfUnchanged(
+        walletId: ByteArray,
+        plain: ByteArray,
+        sourceEncoded: String,
+    ) {
+        val blob = keystore.encrypt(plain, KeystoreManager.MASTER_ALIAS_UNBOUND)
+        store.edit { prefs ->
+            val stillOriginal = prefs[mnemonicKey(walletId)] == sourceEncoded &&
+                prefs[mnemonicAliasKey(walletId)] == null
+            if (stillOriginal) {
+                prefs[mnemonicKey(walletId)] = encode(blob)
+                prefs[mnemonicAliasKey(walletId)] = KeystoreManager.MASTER_ALIAS_UNBOUND
+            }
         }
     }
 
