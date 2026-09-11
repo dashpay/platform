@@ -36,36 +36,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_REVIEW_AUTOMATION_ENABLED: ${{ vars.PR_REVIEW_AUTOMATION_ENABLED }}
-        run: |
-          python3 - <<'PYTHON'
-          import json
-          import os
-          import subprocess
-          from pathlib import Path
-
-          event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
-          kind = os.environ['GITHUB_EVENT_NAME']
-          numbers = []
-          if kind == 'pull_request_target':
-              numbers = [event['pull_request']['number']]
-          elif kind == 'issue_comment':
-              numbers = [event['issue']['number']]
-          elif kind == 'workflow_run':
-              numbers = [pr['number'] for pr in event['workflow_run']['pull_requests']]
-              if not numbers:
-                  print('No PR associated with review signal; scheduled reconciliation will repair.')
-                  raise SystemExit(0)
-          selectors = numbers or [None]
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
-              for number in selectors:
-                  args = ['python3', '-m', 'scripts.pr_review.main', 'sync']
-                  if os.environ.get('PR_REVIEW_AUTOMATION_ENABLED') == 'true':
-                      args.append('--apply')
-                  if number is None:
-                      args.extend(['--batch-size', '3'])
-                  if number is not None:
-                      if type(number) is not int or number <= 0:
-                          raise ValueError('Invalid event PR number')
-                      args.extend(['--pr', str(number)])
-                  subprocess.run(args, check=True, stdout=summary)
-          PYTHON
+        run: python3 -m scripts.pr_review.event >> "$GITHUB_STEP_SUMMARY"

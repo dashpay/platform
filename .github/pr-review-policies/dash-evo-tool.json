@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "repository": "dashpay/dash-evo-tool",
+  "max_active_prs": 5,
+  "target_branches": [
+    "v1.0-dev"
+  ],
+  "fallback": {
+    "owners": [
+      "QuantumExplorer",
+      "shumkov"
+    ],
+    "reviewers": []
+  },
+  "areas": [
+    {
+      "id": "dash-evo-tool",
+      "paths": [
+        ""
+      ],
+      "owners": [
+        "lklimek"
+      ],
+      "reviewers": []
+    }
+  ]
+}

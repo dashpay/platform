@@ -207,5 +207,46 @@ class PolicyTests(unittest.TestCase):
                 self.assertEqual(evaluate(p,changed,NOW,NOW)['state'],'waiting-bots')
 
 
+    def test_whole_repository_owner_covers_root_files_and_cross_directory_rename(self):
+        policy, pr = fixture()
+        policy['areas'][0]['paths'] = ['']
+        validate_policy(policy)
+        pr['files'] = [{'filename': 'README.md', 'previous_filename': 'nested/old.md'}]
+        self.assertEqual(evaluate(policy, pr, NOW, NOW)['status'], 'success')
+        self.assertEqual(evaluate(policy, pr, NOW, NOW)['areas'], ['drive'])
+        self.assertEqual(codeowners(policy).splitlines()[-1], '* @owner @reviewer')
+
+    def test_whole_repository_prefix_cannot_overlap_other_areas(self):
+        policy, _ = fixture()
+        policy['areas'].append(dict(id='whole', paths=[''], owners=['whole'], reviewers=[]))
+        with self.assertRaisesRegex(ValueError, 'Overlapping'):
+            validate_policy(policy)
+
+    def test_named_area_without_owner_is_explicit_configuration_gap(self):
+        policy, pr = fixture()
+        policy['areas'][0].update(owners=[], unresolved=['Owner missing from source sheet'])
+        validate_policy(policy)
+        pr['author'] = pr['comments'][0]['user'] = 'fallback'
+        result = evaluate(policy, pr, NOW, NOW)
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('Unresolved identities in drive', result['blockers'])
+        self.assertEqual(codeowners(policy).splitlines()[-1], '/packages/drive/ @reviewer')
+
+    def test_empty_unresolved_area_never_emits_native_owner_suppression(self):
+        policy, _ = fixture()
+        policy['areas'][0].update(paths=[''], owners=[], reviewers=[], unresolved=['Owner missing'])
+        validate_policy(policy)
+        self.assertEqual([line for line in codeowners(policy).splitlines() if not line.startswith('#')], ['* @fallback'])
+
+    def test_empty_owner_without_explicit_gap_is_rejected(self):
+        for unresolved in [None, [], [''], 'missing']:
+            policy, _ = fixture()
+            policy['areas'][0]['owners'] = []
+            if unresolved is not None:
+                policy['areas'][0]['unresolved'] = unresolved
+            with self.subTest(unresolved=unresolved), self.assertRaises(ValueError):
+                validate_policy(policy)
+
+
 if __name__ == '__main__':
     unittest.main()

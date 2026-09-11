@@ -60,7 +60,9 @@ def validate_policy(policy, root: Path | None = None):
         if not isinstance(area['id'], str) or not re.fullmatch(r'[a-z0-9][a-z0-9-]*', area['id']) or area['id'] in names or area['id'] == 'fallback':
             raise ValueError('Invalid or duplicate area id')
         names.add(area['id'])
-        _handles(area['owners'], True)
+        _handles(area['owners'])
+        if not area['owners'] and not area.get('unresolved'):
+            raise ValueError('Missing owners require an explicit unresolved identity')
         _handles(area['reviewers'])
         if {x.lower() for x in area['owners']} & {x.lower() for x in area['reviewers']}:
             raise ValueError('Owner and reviewer roles overlap')
@@ -71,7 +73,7 @@ def validate_policy(policy, root: Path | None = None):
         if not isinstance(area['paths'], list) or not area['paths']:
             raise ValueError('Expected literal directory prefixes')
         for prefix in area['paths']:
-            if not isinstance(prefix, str) or not re.fullmatch(r'(?:[A-Za-z0-9_.-]+/)+', prefix) or any(x in {'.', '..'} for x in prefix.split('/')):
+            if not isinstance(prefix, str) or (prefix != '' and not re.fullmatch(r'(?:[A-Za-z0-9_.-]+/)+', prefix)) or any(x in {'.', '..'} for x in prefix.split('/')):
                 raise ValueError('Invalid literal directory prefix')
             if any(prefix.startswith(other) or other.startswith(prefix) for other in prefixes):
                 raise ValueError('Overlapping directory prefixes')
@@ -87,9 +89,10 @@ def codeowners(policy):
              '* ' + ' '.join('@' + x for x in policy['fallback']['owners'] + policy['fallback']['reviewers'])]
     for area in policy['areas']:
         if area.get('unresolved'):
-            lines.append('# Unresolved reviewer identities; see responsibility documentation.')
+            lines.append('# Unresolved ownership or reviewer identities; see responsibility documentation.')
         people = ' '.join('@' + x for x in area['owners'] + area['reviewers'])
-        lines.extend('/' + path + ' ' + people for path in area['paths'])
+        if people:
+            lines.extend(('/' + path if path else '*') + ' ' + people for path in area['paths'])
     return '\n'.join(lines) + '\n'
 
 

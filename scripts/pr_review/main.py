@@ -4,11 +4,11 @@ import argparse
 import hashlib
 import json
 import os
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 import sys
-import urllib.request
 
 from .github import GitHub, GitHubError, parse_controller_state
 from .policy import admit, codeowners, effective_admission, evaluate, fingerprint, validate_policy
@@ -16,6 +16,8 @@ from .policy import admit, codeowners, effective_admission, evaluate, fingerprin
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / '.github' / 'pr-review-policy.json'
 CONTEXT = 'Platform PR policy'
+REPOSITORIES = {'dashpay/platform', 'dashpay/rust-dashcore', 'dashpay/tenderdash',
+                'dashpay/grovedb', 'dashpay/dash-evo-tool'}
 
 
 def utc_now():
@@ -262,52 +264,38 @@ def render_report(rows, now, user=None):
     return '\n'.join(lines) + '\n'
 
 
-def slack_payload(rows, now):
-    # Plain text prevents PR-controlled titles from creating Slack mentions/links.
-    blocks = [{'type': 'section', 'text': {'type': 'plain_text',
-               'text': f'Platform review queue — {now}', 'emoji': False}}]
-    pending = [r for r in rows if r['state'] == 'ready-for-human']
-    for r in pending[:48]:
-        value = (f"#{r['number']} {r.get('title', '')[:300]}\n"
-                 f"Reviewers: {', '.join(r.get('reviewers', []))}\n"
-                 f"Waiting: {age(r.get('ready_since'), now)}\n{r.get('url', '')}")
-        blocks.append({'type': 'section', 'text': {'type': 'plain_text', 'text': value[:2900], 'emoji': False}})
-    if not pending:
-        blocks.append({'type': 'section', 'text': {'type': 'plain_text', 'text': 'No PRs currently ready for human review.'}})
-    elif len(pending) > 48:
-        blocks.append({'type': 'section', 'text': {'type': 'plain_text',
-                       'text': f'{len(pending) - 48} additional PRs are in the full report.'}})
-    return {'text': 'Platform PR review queue', 'blocks': blocks, 'unfurl_links': False, 'unfurl_media': False}
-
-
-def send_slack(payload):
-    if os.environ.get('PR_REVIEW_SLACK_ENABLED') != 'true':
-        raise GitHubError('Slack delivery is disabled; set PR_REVIEW_SLACK_ENABLED=true after setup')
-    url = os.environ.get('PR_REVIEW_SLACK_WEBHOOK', '')
-    if not url.startswith('https://hooks.slack.com/services/'):
-        raise GitHubError('A valid Slack incoming webhook is required')
-    request = urllib.request.Request(url, data=json.dumps(payload).encode(),
-                                     headers={'Content-Type': 'application/json'}, method='POST')
-    # Never retry delivery automatically: an ambiguous response may already be sent.
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            if response.status != 200 or response.read().strip() != b'ok':
-                raise GitHubError('Slack did not acknowledge delivery')
-    except Exception:
-        raise GitHubError('Slack delivery failed or is uncertain; inspect before retrying') from None
+def evaluate_snapshots(policy, context, candidates, snapshots, now):
+    """Use the same policy decisions for local enforcement and combined reports."""
+    admissions = admit(policy, candidates, now)
+    conflicts = admission_conflicts(policy, candidates)
+    rows = []
+    head_counts = Counter(pr['head'] for pr in context)
+    for pr in snapshots:
+        result = evaluate(policy, pr, admissions.get(pr['number']), now)
+        if pr['author'].lower() in conflicts:
+            result.update(state='configuration-error', status='error', reviewers=[], ready_since=None)
+            result['admitted_at'] = effective_admission(pr)
+            result['blockers'].append('More than five persisted author admissions; repair inconsistent history explicitly')
+        if head_counts[pr['head']] > 1:
+            result.update(state='configuration-error', status='error', reviewers=[], ready_since=None)
+            result['blockers'].append('Another open PR shares this head; commit-scoped status is ambiguous')
+        result['repository'] = policy['repository']
+        rows.append(result)
+    return rows
 
 
 def run(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['validate', 'codeowners', 'report', 'sync'])
     parser.add_argument('--repo', default='dashpay/platform')
+    parser.add_argument('--repository-root', type=Path)
+    parser.add_argument('--policy', type=Path)
     parser.add_argument('--pr', type=int)
     parser.add_argument('--batch-size', type=int)
     parser.add_argument('--user')
-    parser.add_argument('--format', choices=['markdown', 'json', 'slack'], default='markdown')
+    parser.add_argument('--format', choices=['markdown', 'json'], default='markdown')
     parser.add_argument('--check', action='store_true')
     parser.add_argument('--apply', action='store_true')
-    parser.add_argument('--send-slack', action='store_true')
     args = parser.parse_args(argv)
     if args.pr is not None and args.pr <= 0:
         parser.error('--pr must be positive')
@@ -315,16 +303,18 @@ def run(argv=None):
         parser.error('--batch-size requires sync, a positive size, and no --pr')
     if args.apply and args.command != 'sync':
         parser.error('--apply is only valid for sync')
-    if args.send_slack and args.command != 'report':
-        parser.error('--send-slack is only valid for report')
-    if args.apply and (args.repo != 'dashpay/platform'
+    if args.apply and (args.repo not in REPOSITORIES
                        or os.environ.get('GITHUB_ACTIONS') != 'true'
                        or os.environ.get('GITHUB_REPOSITORY') != args.repo
                        or os.environ.get('PR_REVIEW_AUTOMATION_ENABLED') != 'true'):
         parser.error('apply is restricted to the enabled repository Actions workflow')
+    repository_root = args.repository_root.resolve() if args.repository_root else ROOT
+    policy_path = args.policy or (repository_root / '.github/pr-review-policy.json' if args.repository_root else POLICY)
+    if args.apply and args.policy and args.policy.resolve() != repository_root / '.github/pr-review-policy.json':
+        parser.error('apply requires the canonical policy in the target repository checkout')
     try:
-        policy = json.loads(POLICY.read_text())
-        validate_policy(policy, ROOT)
+        policy = json.loads(policy_path.read_text())
+        validate_policy(policy, repository_root)
         if policy['repository'] != args.repo:
             raise ValueError('Repository must match the checked-out policy')
     except (ValueError, OSError):
@@ -352,7 +342,10 @@ def run(argv=None):
     if args.command == 'codeowners':
         generated = codeowners(policy)
         if args.check:
-            if (ROOT / 'CODEOWNERS').read_text() != generated:
+            locations = [repository_root / path for path in
+                         ('.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS')]
+            effective = next((path for path in locations if path.is_file()), locations[0])
+            if effective.read_text() != generated:
                 raise GitHubError('CODEOWNERS differs from canonical policy; regenerate it')
         else:
             print(generated, end='')
@@ -362,19 +355,8 @@ def run(argv=None):
     context, candidates, snapshots = collect(api, policy, args.pr, apply=args.apply,
                                            reconcile_author=args.command == 'sync', batch_size=args.batch_size)
     now = utc_now()
-    admissions = admit(policy, candidates, now)
-    conflicts = admission_conflicts(policy, candidates)
-    rows = []
-    for pr in snapshots:
-        result = evaluate(policy, pr, admissions.get(pr['number']), now)
-        if pr['author'].lower() in conflicts:
-            result.update(state='configuration-error', status='error', reviewers=[], ready_since=None)
-            result['admitted_at'] = effective_admission(pr)
-            result['blockers'].append('More than five persisted author admissions; repair inconsistent history explicitly')
-        if sum(p['head'] == pr['head'] for p in context) > 1:
-            result.update(state='configuration-error', status='error', reviewers=[], ready_since=None)
-            result['blockers'].append('Another open PR shares this head; commit-scoped status is ambiguous')
-        rows.append(result)
+    rows = evaluate_snapshots(policy, context, candidates, snapshots, now)
+    for pr, result in zip(snapshots, rows):
         if args.command == 'sync':
             try:
                 if args.apply:
@@ -390,12 +372,8 @@ def run(argv=None):
                     api.post_status(pr['head'], 'error', 'Policy reconciliation failed; inspect workflow log')
                 raise
     rows.sort(key=lambda r: (r['state'] != 'ready-for-human', r.get('ready_since') or now, r['number']))
-    if args.send_slack:
-        send_slack(slack_payload(selected_rows(rows, args.user), now))
     if args.format == 'json':
         print(json.dumps({'generated_at': now, 'pull_requests': selected_rows(rows, args.user)}, indent=2))
-    elif args.format == 'slack':
-        print(json.dumps(slack_payload(selected_rows(rows, args.user), now), indent=2))
     else:
         print(render_report(rows, now, args.user), end='')
     return 0

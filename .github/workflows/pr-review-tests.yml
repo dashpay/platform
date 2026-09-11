@@ -3,7 +3,8 @@ on:
   pull_request:
     paths:
       - 'scripts/pr_review/**'
-      - '.github/pr-review-policy.json'
+      - '.github/pr-review-*.json'
+      - '.github/pr-review-policies/**'
       - '.github/workflows/pr-review-*.yml'
       - '.claude/skills/review-prs/**'
       - 'CODEOWNERS'

@@ -46,12 +46,6 @@ class PublicationTests(unittest.TestCase):
         self.api.post_status.assert_not_called()
         self.api.upsert_state.assert_not_called()
 
-    def test_slack_payload_does_not_interpret_pr_title_mentions(self):
-        rows = [dict(self.result, title='<!channel> unsafe <url|text>', url='https://github.com/dashpay/platform/pull/1')]
-        payload = main.slack_payload(rows, '2026-09-11T00:00:00Z')
-        self.assertTrue(all(b['text']['type'] == 'plain_text' for b in payload['blocks']))
-        self.assertNotIn('mrkdwn', str(payload))
-
     def test_user_report_includes_pending_author_work_and_review_requests(self):
         rows = [dict(self.result, state='waiting-bots', title='Owned PR', url='u'),
                 dict(self.result, number=2, author='bob', state='ready-for-human', reviewers=['alice'], title='Review PR', url='v')]

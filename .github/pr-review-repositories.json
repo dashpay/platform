@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "repositories": [
+    {
+      "repository": "dashpay/platform",
+      "policy": ".github/pr-review-policy.json",
+      "mode": "preview"
+    },
+    {
+      "repository": "dashpay/rust-dashcore",
+      "policy": ".github/pr-review-policies/rust-dashcore.json",
+      "mode": "preview"
+    },
+    {
+      "repository": "dashpay/tenderdash",
+      "policy": ".github/pr-review-policies/tenderdash.json",
+      "mode": "preview"
+    },
+    {
+      "repository": "dashpay/grovedb",
+      "policy": ".github/pr-review-policies/grovedb.json",
+      "mode": "preview"
+    },
+    {
+      "repository": "dashpay/dash-evo-tool",
+      "policy": ".github/pr-review-policies/dash-evo-tool.json",
+      "mode": "preview"
+    }
+  ]
+}

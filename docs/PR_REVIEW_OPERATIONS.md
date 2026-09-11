@@ -1,66 +1,77 @@
-# Platform PR review operations
+# PR review operations
 
-The implementation is initially a preview. Existing GitHub approval rules still apply, including to owner-authored PRs. No permissions are granted by these files. The design and roster are in [CODEOWNERS_PR4449_SPEC.md](CODEOWNERS_PR4449_SPEC.md).
+All five repository configurations start in preview. The implementation does not grant permissions or change protection settings. The ownership rules and repository boundaries are described in [PR_REVIEW_ARCHITECTURE.md](PR_REVIEW_ARCHITECTURE.md).
 
-## Local commands
+## Read the queue
 
-Use Python 3.10 or newer and an authenticated `gh` CLI with access to repository review evidence and collaborator permissions. From the repository root:
+Use Python 3.10 or newer and an authenticated `gh` CLI. Run from Platform's checkout:
 
 ```sh
+python3 -m scripts.pr_review.aggregate report
+python3 -m scripts.pr_review.aggregate report --user shumkov
+python3 -m scripts.pr_review.aggregate report --repo dashpay/rust-dashcore --format json
+python3 -m scripts.pr_review.aggregate report --format deliveries
+```
+
+`/review-prs` uses this reporter. It combines repository-qualified PRs, actionable reviews, waiting times and author blockers. Counts include open, non-draft PRs on configured target branches. Five slots are enforced per repository; combined totals above five are workload warnings. Missing repository evidence is explicitly unavailable and totals are partial. The command exits nonzero for incomplete collection while preserving its report.
+
+`.github/pr-review-repositories.json` selects the five repositories. In `preview` mode it uses the local seed manifest and labels results as preview. Switch an entry to `active` only after its policy is merged and verified; active collection reads that repository's canonical `.github/pr-review-policy.json` from its current default branch. It never substitutes a seed when an active repository cannot be read.
+
+## Owner, reviewer and author flow
+
+1. Keep unfinished work in draft. The oldest eligible PRs fill up to five author slots, preserving existing admissions. The sixth waits; automation does not prevent PR creation.
+2. Finish final review by thepastaclaw and CodeRabbit on the current head, address outstanding bot changes requests and resolve bot threads.
+3. Inspect the final diff and verification yourself. Post exactly `/self-reviewed FULL_HEAD_SHA` as an unedited issue comment after both bot outcomes. New commits or later bot completion require a new attestation.
+4. Humans are invited for areas that still need approval. Owners satisfy their own area's human requirement; reviewers cannot do so on their own PRs. Existing CI and native protections continue to apply.
+5. Human objections still block merging. Renew self-review after addressing an objection so its reviewer is invited back; the objection/thread must also be cleared before merge.
+
+The computed `ready-for-human` label is an output, not independent proof of readiness. Waiting time is the current recorded review cycle, not total PR age. Native or manual review requests may arrive earlier until native automatic routing is explicitly disabled during activation.
+
+## Shared implementation and repository-local rollout
+
+The evaluator is shared through `.github/workflows/pr-review-reusable.yml`. Repository callers pin a full Platform commit SHA; the callee checks out that engine revision separately from the caller's trusted default-branch policy. The caller's GITHUB_TOKEN can mutate only its own repository. Target repository code is not executed with the write token.
+
+Prepare reviewable rollout files after committing the shared implementation:
+
+```sh
+python3 -m scripts.pr_review.rollout --repo dashpay/tenderdash --engine-revision FULL_PLATFORM_COMMIT_SHA --output /tmp/tenderdash-review-policy
+```
+
+Repeat for GroveDB, Dash Evo Tool and rust-dashcore. The destination must not exist. Packets contain the policy, native CODEOWNERS, a pinned caller workflow and the review-signal workflow; they contain no copied evaluator. The referenced Platform commit must be published before another repository can call it. Inspect and apply packet files in a clean target checkout; the generator never overwrites a target repository itself.
+
+Each repository needs its own review before activation:
+
+- Confirm roster identities and repository permissions. Keep strophy and Silvanassss excluded and broad teams unchanged. Daniel remains unresolved in Platform; rust-dashcore has explicit missing-owner and cropped-scope gaps.
+- Confirm configured target branches, existing CODEOWNERS precedence, native approval rules and both bot producers. Tenderdash currently disables automatic CodeRabbit reviews. rust-dashcore's existing readiness automation needs an explicit migration. Do not silently replace either.
+- Merge under existing protections and run preview from the default branch. Verify complete evidence reads, token permissions and API usage.
+- Create `ready-for-human`, then opt into writes with repository variable `PR_REVIEW_AUTOMATION_ENABLED=true`.
+- Verify real current-head statuses, comments and requests before requiring `Platform PR policy`. Remove conflicting native approval/code-owner rules only when the owner exemption is approved and the replacement is working. Keep CI requirements.
+- To suppress native early invitations, replace the effective CODEOWNERS with a comment-only `.github/CODEOWNERS` during that separate activation. Generated native routing is not delayed routing.
+
+Events reevaluate the affected PR and changes to its author's slot assignments. Selector-less workflow invocations rotate three PRs at a time; the scheduled repair runs every 15 minutes. A stable 68-PR queue takes up to six hours to cover if event signals are missed. Pagination and event bursts can still exhaust quota; errors remain visible. Full local `sync` is an explicit unbounded sweep.
+
+## Combined daily Slack delivery
+
+One scheduled job at 02:00 UTC every day collects a single snapshot for the channel summary and all personal digests. GitHub schedules may be delayed. Each distinct mapped Slack user gets one combined DM, even if several GitHub identities map to that person. Empty personal digests are skipped; unavailable evidence is reported. The channel gets the actionable queue, author/bot blockers and workload warnings.
+
+Configure a GitHub App installed only on these five repositories with read access to contents, pull requests, issues and metadata. Set repository variable `PR_REVIEW_APP_ID` and secret `PR_REVIEW_APP_PRIVATE_KEY` in Platform. The workflow creates and revokes short-lived selected-repository tokens. It requests no write or administrator permissions. Without this app, the job falls back to its repository token and must report any external repositories it cannot read as unavailable.
+
+Configure a Slack app with `chat:write`, invite it to the shared channel, and set secret `PR_REVIEW_SLACK_BOT_TOKEN`. Fill `.github/pr-review-slack.json` with the exact channel ID and GitHub-login-to-Slack-user-ID mappings. Null values intentionally block sending and appear in delivery previews. No directory/email lookup or guessed identity is used. Set `PR_REVIEW_SLACK_ENABLED=true` only after inspecting the delivery preview and confirming recipients.
+
+Test through workflow dispatch with `send_slack=true`. Enabled scheduled runs send automatically. Personal or repository filters cannot be combined with sending. Messages use plain-text blocks to prevent PR-controlled text from pinging channels. A missing mapping blocks all sends; partial repository evidence is disclosed in any delivered summary, never described as a complete empty queue.
+
+Delivery is attempted once per destination and is not automatically retried. An error or uncertain acknowledgement stops later destinations and records which were delivered, uncertain or not attempted. Inspect Slack and those receipts before rerunning: a manual rerun is a new invocation and can duplicate earlier successful deliveries. The generated report is retained even when delivery fails.
+
+## Verification and recovery
+
+```sh
+python3 -m unittest discover -s scripts/pr_review/tests -v
 python3 -m scripts.pr_review.main validate
 python3 -m scripts.pr_review.main codeowners --check
-python3 -m unittest discover -s scripts/pr_review/tests -v
-python3 -m scripts.pr_review.main report --pr 4449
-python3 -m scripts.pr_review.main report --user shumkov
-python3 -m scripts.pr_review.main sync
 ```
 
-All commands above are read-only. `sync --apply` additionally requires the enabled repository's Actions context. `/review-prs` uses the same reporter. A report failure means readiness could not be verified, not that the queue is empty.
+Edit seed ownership manifests and regenerate CODEOWNERS deliberately. An empty owner list is permitted only when the named area carries an explicit unresolved configuration blocker. It never grants owner powers to its reviewers.
 
-Edit `.github/pr-review-policy.json` to change responsibility assignments, then regenerate the root file:
+The Actions solution assumes trusted repository writers. It shares an app identity across workflows, and GitHub offers no atomic read-and-publish transaction. Existing administrator bypass remains. These limitations are not solved by adding a shared collector.
 
-```sh
-python3 -m scripts.pr_review.main codeowners > CODEOWNERS
-```
-
-Owners and reviewers appear together in native CODEOWNERS. Their distinct self-merge rules exist in the policy evaluator. All assigned identities must have verified repository write access; missing access blocks the area and does not trigger provisioning. Dashmate's Daniel identity remains unresolved. Confirm it before activation.
-
-## Author and reviewer flow
-
-1. Keep work in draft while preparing it. Up to five non-draft PRs per author targeting `v4.2-dev` are admitted, preserving existing admitted PRs. The sixth waits; automation never closes it or prevents creation.
-2. Finish the current-head final review by both thepastaclaw and CodeRabbit, address outstanding bot changes requests, and resolve bot threads.
-3. Inspect the final diff and verification yourself. Post an unedited issue comment containing exactly `/self-reviewed FULL_HEAD_SHA`, after both bot outcomes. A new commit or later bot completion requires a fresh attestation.
-4. Automation requests eligible humans for areas needing approval. Owners can satisfy their own area's human requirement. A reviewer cannot satisfy that requirement on their own PR. Other CI and protection rules still apply.
-5. Human objections block merge. After addressing them, renew self-review after the objection; the objector returns to the review queue. Their objection or thread still needs resolution before merge.
-
-`ready-for-human` is an output, never authorization by itself. The report gives the current review cycle's waiting time when recorded. Requests made manually or by native CODEOWNERS can arrive earlier until native routing is disabled during activation.
-
-## Activation checklist
-
-Activation changes live behavior and must be reviewed separately from this build:
-
-- Confirm Daniel and every owner's/reviewer's current account and access. Keep strophy and Silvanassss excluded; do not grant existing broad teams write access.
-- Inspect the preview's initial five-slot allocation and bot-format compatibility on representative PRs. Resolve configuration errors.
-- Merge the reviewed implementation under current protections. Ensure it is present on the repository default branch: privileged workflows explicitly execute that checkout. Scheduled workflows also require default-branch installation.
-- Run the default-branch workflows in preview. Verify the Actions token can read collaborator permissions and complete review threads, and measure API use and runtime with the actual open queue.
-- Create the `ready-for-human` label. Set `PR_REVIEW_AUTOMATION_ENABLED=true` only after verifying the preview.
-- Observe controller comments, requests and `Platform PR policy` statuses on real PRs. Require this status on target branches while retaining existing CI.
-- For delayed human invitations, place a comment-only `.github/CODEOWNERS` in the target branch, which takes precedence over root CODEOWNERS. Remove conflicting native required-code-owner/approval settings only when the replacement is verified and the owner exemption is accepted. Native routing and native approval settings are separate controls.
-
-GitHub Actions shares an app identity across repository workflows. This setup assumes trusted repository writers and retains existing administrator authority; it is not an adversarial merge-permission boundary. A GitHub read followed by a write is not atomic. Events and scheduled reconciliation repair changes observed afterward. Duplicate open PRs with the same head are blocked because a commit status cannot distinguish their policy contexts.
-
-## Daily report and optional Slack
-
-The digest workflow produces a Markdown job summary and artifact at 02:00 UTC on weekdays. GitHub schedules may be delayed. Reports include author blockers; Slack includes only PRs ready for humans.
-
-To enable delivery, configure an incoming webhook for the agreed Slack channel as secret `PR_REVIEW_SLACK_WEBHOOK` and set repository variable `PR_REVIEW_SLACK_ENABLED=true`. Test with the workflow dispatch's `send_slack` input. Once enabled, scheduled runs send automatically. Confirm the destination and schedule before setting the variable. Slack delivery is never retried automatically; an ambiguous error may mean Slack already received the message. Inspect before manually rerunning.
-
-## Recovery
-
-A configuration/API error must be investigated before treating the policy as satisfied. Missing permissions, deleted users, malformed/duplicate controller comments, truncated GitHub evidence, or changed bot marker formats cannot be interpreted as approval. Do not edit an author attestation to repair it; the author must post a new one.
-
-A controller comment stores admission and review-cycle age. Deleting it loses that recorded history; the next run recomputes admission. More than five persisted admissions for an author is inconsistent state and requires investigation. Never delete unrelated comments as a recovery shortcut.
-
-The evaluator is serialized repository-wide. Events reconcile the affected author; scheduled runs rotate through three PRs every 15 minutes as missed-event repair. A stable 68-PR queue takes up to six hours to cover. `sync --batch-size 3` reproduces the scheduled selection; unbatched `sync` explicitly evaluates the full queue. Read-only reports and privileged revalidation can consume substantial GitHub API quota on a large queue; check workflow runtime and rate limits before activation. An API outage cannot guarantee revocation of a previously written success when the status endpoint is also unavailable.
-
-For rollback, restore the previously recorded native approval/routing settings first, then remove the required custom status and disable `PR_REVIEW_AUTOMATION_ENABLED`. Disabling writes alone leaves old statuses and labels in place. Disable Slack independently with `PR_REVIEW_SLACK_ENABLED=false`.
+For rollback, restore the recorded native approval/routing settings before removing the required custom status and disabling evaluator writes. Disabling writes alone leaves old statuses and labels. Disable Slack separately with `PR_REVIEW_SLACK_ENABLED=false`. Never repair an attestation by editing it for the author; require a new author comment. Investigate malformed or conflicting controller history rather than deleting unrelated comments.

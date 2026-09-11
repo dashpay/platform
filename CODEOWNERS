@@ -10,7 +10,7 @@
 /packages/swift-sdk/ @llbartekll @romchornyi
 /packages/rs-sdk/ @lklimek @shumkov
 /packages/rs-sdk-ffi/ @lklimek @shumkov
-# Unresolved reviewer identities; see responsibility documentation.
+# Unresolved ownership or reviewer identities; see responsibility documentation.
 /packages/dashmate/ @shumkov
 /packages/js-dash-sdk/ @shumkov
 /packages/js-evo-sdk/ @shumkov
