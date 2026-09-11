@@ -2652,4 +2652,178 @@ mod tests {
             "expected overflow error when summing large components"
         );
     }
+
+    // ---------------------------------------------------------------
+    // 9. consume_to_fees_v0 — refunds and the fee history requirement
+    // ---------------------------------------------------------------
+
+    mod consume_to_fees_v0 {
+        use super::*;
+        use dpp::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
+        use intmap::IntMap;
+        use platform_version::version::fee::v1::FEE_VERSION1;
+
+        const EPOCHS_PER_ERA: u16 = 20;
+        const CURRENT_EPOCH: u16 = 15;
+        const IDENTITY: [u8; 32] = [3; 32];
+
+        /// Storage rate of the first registered generation.
+        const FIRST_GENERATION_RATE: Credits = 27000;
+
+        /// A second storage table that is not registered anywhere, so a rate boundary in the
+        /// fee history is observable. Its number is not 1, which makes Drive require the
+        /// history to price refunds.
+        const SYNTHETIC_RATE: Credits = 54000;
+        static SYNTHETIC_FEE_VERSION_2: FeeVersion = FeeVersion {
+            fee_version_number: 2,
+            storage: FeeStorageVersion {
+                storage_disk_usage_credit_per_byte: SYNTHETIC_RATE,
+                ..FEE_VERSION1.storage
+            },
+            ..FEE_VERSION1
+        };
+
+        /// Fee history with a rate boundary at epoch 10.
+        fn boundary_history() -> CachedEpochIndexFeeVersions {
+            BTreeMap::from([
+                (0, FeeVersion::get(1).expect("registered")),
+                (10, &SYNTHETIC_FEE_VERSION_2),
+            ])
+        }
+
+        /// One identity removing 100 bytes stored at epoch 5 and 100 bytes stored at epoch 12,
+        /// plus 40 system bytes with an unknown storage epoch.
+        fn removal_operation() -> LowLevelDriveOperation {
+            let mut removal = BTreeMap::new();
+            removal.insert(
+                IDENTITY,
+                IntMap::from_iter([(5u16, 100u32), (12u16, 100u32)]),
+            );
+            removal.insert(
+                Identifier::default(),
+                IntMap::from_iter([(u16::MAX, 40u32)]),
+            );
+            CalculatedCostOperation(OperationCost {
+                storage_cost: StorageCost {
+                    added_bytes: 0,
+                    replaced_bytes: 0,
+                    removed_bytes: SectionedStorageRemoval(removal),
+                },
+                ..Default::default()
+            })
+        }
+
+        fn expected_refund(bytes: u32, rate: Credits, storage_epoch: u16) -> Credits {
+            let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(
+                bytes as Credits * rate,
+                storage_epoch,
+                CURRENT_EPOCH,
+                EPOCHS_PER_ERA,
+            )
+            .expect("refund amount");
+            amount
+        }
+
+        fn refunds_of(fee_result: &FeeResult) -> BTreeMap<u16, Credits> {
+            fee_result
+                .fee_refunds
+                .get(&IDENTITY)
+                .expect("identity has refunds")
+                .iter()
+                .map(|(epoch_index, credits)| (*epoch_index, *credits))
+                .collect()
+        }
+
+        #[test]
+        fn should_refund_through_the_legacy_empty_history_path_when_the_fee_version_number_is_one()
+        {
+            let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
+            let mut results = LowLevelDriveOperation::consume_to_fees_v0(
+                vec![removal_operation()],
+                &epoch,
+                EPOCHS_PER_ERA,
+                &FEE_VERSION1,
+                None,
+            )
+            .expect("number 1 never needs the fee history");
+            let fee_result = results.remove(0);
+
+            assert_eq!(fee_result.removed_bytes_from_system, 40);
+            assert_eq!(fee_result.storage_fee, 0);
+            assert_eq!(
+                refunds_of(&fee_result),
+                BTreeMap::from([
+                    (5, expected_refund(100, FIRST_GENERATION_RATE, 5)),
+                    (12, expected_refund(100, FIRST_GENERATION_RATE, 12)),
+                ])
+            );
+        }
+
+        #[test]
+        fn should_require_fee_history_when_the_fee_version_number_is_not_one() {
+            let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
+            let error = LowLevelDriveOperation::consume_to_fees_v0(
+                vec![removal_operation()],
+                &epoch,
+                EPOCHS_PER_ERA,
+                &SYNTHETIC_FEE_VERSION_2,
+                None,
+            )
+            .expect_err("a later generation cannot price refunds without the history");
+            assert!(
+                matches!(error, Error::Drive(DriveError::CorruptedCodeExecution(_))),
+                "unexpected error {error}"
+            );
+        }
+
+        #[test]
+        fn should_refund_at_the_storage_epoch_rate_across_a_history_boundary_when_the_fee_version_number_is_not_one(
+        ) {
+            let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
+            let history = boundary_history();
+            let mut results = LowLevelDriveOperation::consume_to_fees_v0(
+                vec![removal_operation()],
+                &epoch,
+                EPOCHS_PER_ERA,
+                &SYNTHETIC_FEE_VERSION_2,
+                Some(&history),
+            )
+            .expect("history supplied");
+            let fee_result = results.remove(0);
+
+            assert_eq!(
+                refunds_of(&fee_result),
+                BTreeMap::from([
+                    (5, expected_refund(100, FIRST_GENERATION_RATE, 5)),
+                    (12, expected_refund(100, SYNTHETIC_RATE, 12)),
+                ]),
+                "each epoch refunds at the rate its bytes were charged"
+            );
+        }
+
+        #[test]
+        fn should_ignore_fee_history_when_the_fee_version_number_is_one() {
+            // Shipped replay path: every schedule a released protocol version references
+            // carries number 1, and that branch prices refunds against an empty history.
+            let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
+            let history = boundary_history();
+            let mut results = LowLevelDriveOperation::consume_to_fees_v0(
+                vec![removal_operation()],
+                &epoch,
+                EPOCHS_PER_ERA,
+                &FEE_VERSION1,
+                Some(&history),
+            )
+            .expect("number 1 accepts but does not read the history");
+            let fee_result = results.remove(0);
+
+            assert_eq!(
+                refunds_of(&fee_result),
+                BTreeMap::from([
+                    (5, expected_refund(100, FIRST_GENERATION_RATE, 5)),
+                    (12, expected_refund(100, FIRST_GENERATION_RATE, 12)),
+                ])
+            );
+        }
+    }
 }
