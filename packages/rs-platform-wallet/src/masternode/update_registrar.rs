@@ -380,12 +380,16 @@ pub(crate) fn verify_owner_secret(
     owner: &OwnerSecret,
 ) -> Result<(), PlatformWalletError> {
     let secp = Secp256k1::new();
-    let secret = SecretKey::from_byte_array(&owner.secret).map_err(|_| {
+    let mut secret = SecretKey::from_byte_array(&owner.secret).map_err(|_| {
         PlatformWalletError::InvalidParameter(
             "the owner key is not a valid secp256k1 private key".to_string(),
         )
     })?;
     let public = secret.public_key(&secp);
+    // `SecretKey` is `Copy` with no erasing destructor — scrub this local
+    // scalar (the `Zeroizing` on `OwnerSecret.secret` covers only the
+    // caller's bytes) as soon as the public key is out, on every path.
+    secret.non_secure_erase();
     let serialized: Vec<u8> = if owner.compressed {
         public.serialize().to_vec()
     } else {
@@ -536,7 +540,7 @@ pub(crate) fn owner_compact_signature(
     owner: &OwnerSecret,
 ) -> Result<Vec<u8>, PlatformWalletError> {
     let secp = Secp256k1::new();
-    let secret = SecretKey::from_byte_array(&owner.secret).map_err(|_| {
+    let mut secret = SecretKey::from_byte_array(&owner.secret).map_err(|_| {
         PlatformWalletError::InvalidParameter(
             "the owner key is not a valid secp256k1 private key".to_string(),
         )
@@ -544,6 +548,10 @@ pub(crate) fn owner_compact_signature(
     let digest = payload.base_payload_hash().to_byte_array();
     let message = Message::from_digest(digest);
     let recoverable = secp.sign_ecdsa_recoverable(&message, &secret);
+    // `SecretKey` is `Copy` with no erasing destructor — scrub this local
+    // scalar (the `Zeroizing` on `OwnerSecret.secret` covers only the
+    // caller's bytes) as soon as the signature is made.
+    secret.non_secure_erase();
     let (recovery_id, compact) = recoverable.serialize_compact();
     let mut signature = Vec::with_capacity(65);
     signature.push(27 + i32::from(recovery_id) as u8 + if owner.compressed { 4 } else { 0 });
