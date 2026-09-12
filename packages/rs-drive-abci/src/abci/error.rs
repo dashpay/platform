@@ -54,6 +54,14 @@ pub enum AbciError {
     #[error("bad commit signature: {0}")]
     BadCommitSignature(String),
 
+    /// Invalid state sync request received from Tenderdash or a peer
+    #[error("bad request state sync: {0}")]
+    StateSyncBadRequest(String),
+
+    /// Internal error during state sync
+    #[error("internal error state sync: {0}")]
+    StateSyncInternalError(String),
+
     /// The chain lock received was invalid
     #[error("invalid chain lock: {0}")]
     InvalidChainLock(String),
@@ -90,6 +98,12 @@ pub enum AbciError {
     /// Generic with code should only be used in tests
     #[error("invalid state transition error: {0}")]
     InvalidStateTransition(#[from] ConsensusError),
+
+    /// The current state was restored via state sync and carries no block id hash or
+    /// quorum signature yet, so a proof built from it could never authenticate; the
+    /// metadata arrives with the first block finalized after the restore.
+    #[error("state sync proof metadata not yet available: {0}")]
+    StateSyncProofMetadataUnavailable(String),
 }
 
 #[cfg(test)]

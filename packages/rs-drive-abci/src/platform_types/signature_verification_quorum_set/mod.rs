@@ -7,8 +7,8 @@ use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v0:
 use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v1::SignatureVerificationQuorumSetForSavingV1;
 use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v2::SignatureVerificationQuorumSetForSavingV2;
 pub use crate::platform_types::signature_verification_quorum_set::v0::quorum_set::{
-    QuorumConfig, QuorumsWithConfig, SelectedQuorumSetIterator, SignatureVerificationQuorumSetV0,
-    SignatureVerificationQuorumSetV0Methods, SIGN_OFFSET,
+    PreviousPastQuorums, QuorumConfig, QuorumsWithConfig, SelectedQuorumSetIterator,
+    SignatureVerificationQuorumSetV0, SignatureVerificationQuorumSetV0Methods, SIGN_OFFSET,
 };
 pub use crate::platform_types::signature_verification_quorum_set::v0::quorums::{
     Quorum, Quorums, SigningQuorum, ThresholdBlsPublicKey, VerificationQuorum,
@@ -73,6 +73,29 @@ impl SignatureVerificationQuorumSetV0Methods for SignatureVerificationQuorumSet 
     fn has_previous_past_quorums(&self) -> bool {
         match self {
             Self::V0(v0) => v0.has_previous_past_quorums(),
+        }
+    }
+
+    fn previous_past_quorums(&self) -> Option<PreviousPastQuorums<'_>> {
+        match self {
+            Self::V0(v0) => v0.previous_past_quorums(),
+        }
+    }
+
+    fn restore_previous_past_quorums(
+        &mut self,
+        previous_quorums: Quorums<VerificationQuorum>,
+        last_active_core_height: u32,
+        updated_at_core_height: u32,
+        previous_change_height: Option<u32>,
+    ) {
+        match self {
+            Self::V0(v0) => v0.restore_previous_past_quorums(
+                previous_quorums,
+                last_active_core_height,
+                updated_at_core_height,
+                previous_change_height,
+            ),
         }
     }
 

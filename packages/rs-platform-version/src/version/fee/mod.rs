@@ -29,6 +29,12 @@ pub mod vote_resolution_fund_fees;
 
 pub type FeeVersionNumber = u32;
 
+/// The fee schedules [`FeeVersion::get`] can resolve, indexed by `fee_version_number - 1`.
+///
+/// Every `FeeVersion` needs a unique `fee_version_number` and an entry here at the index
+/// that number implies, because only the number is persisted.
+///
+/// BUG(#4647): incomplete. `FEE_VERSION2` is missing and reuses number 1; see its doc comment.
 pub const FEE_VERSIONS: &[FeeVersion] = &[FEE_VERSION1];
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
@@ -114,5 +120,51 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
             ),
             vote_resolution_fund_fees: value.vote_resolution_fund_fees,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::version::fee::v2::FEE_VERSION2;
+
+    /// Every `FeeVersion` constant needs a distinct `fee_version_number` that resolves
+    /// back to it through `FEE_VERSIONS`, because only the number is persisted. Fails
+    /// today (`FEE_VERSION2` reuses number 1, see its doc comment); un-ignore with the fix.
+    #[test]
+    #[ignore = "known defect: FEE_VERSION2 reuses fee_version_number 1 and is absent from \
+                FEE_VERSIONS; fixing it is protocol-visible - see the FEE_VERSION2 docs"]
+    fn fee_version_numbers_are_unique_and_resolvable() {
+        let all_fee_versions = [&FEE_VERSION1, &FEE_VERSION2];
+
+        for fee_version in all_fee_versions {
+            let resolved = FeeVersion::get(fee_version.fee_version_number).unwrap_or_else(|_| {
+                panic!(
+                    "fee version number {} does not resolve through FEE_VERSIONS",
+                    fee_version.fee_version_number
+                )
+            });
+            assert_eq!(
+                resolved, fee_version,
+                "FeeVersion::get({}) returned a DIFFERENT fee schedule than the constant \
+                 declaring that number. Every number-only round trip - a node restarting, a \
+                 node state-syncing - would substitute this wrong schedule.",
+                fee_version.fee_version_number
+            );
+        }
+
+        let mut numbers: Vec<FeeVersionNumber> = all_fee_versions
+            .iter()
+            .map(|fee_version| fee_version.fee_version_number)
+            .collect();
+        numbers.sort_unstable();
+        let mut deduped = numbers.clone();
+        deduped.dedup();
+        assert_eq!(
+            deduped.len(),
+            numbers.len(),
+            "two FeeVersion constants share a fee_version_number: {:?}",
+            numbers
+        );
     }
 }

@@ -11,6 +11,10 @@ use crate::config::DriveConfig;
 use arc_swap::ArcSwap;
 #[cfg(feature = "server")]
 use dpp::prelude::{BlockHeight, TimestampMillis};
+#[cfg(feature = "server")]
+use dpp::util::deserializer::ProtocolVersion;
+#[cfg(feature = "server")]
+use dpp::version::PlatformVersion;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::GroveDb;
 use std::fmt;
@@ -104,6 +108,47 @@ impl Checkpoint {
             path,
             marked_for_deletion: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// Returns true if this checkpoint contains the reduced platform state
+    /// (`Misc/reduced_saved_state`), which a state-syncing node needs to reconstruct the
+    /// platform state. Checkpoints taken before the protocol version that introduced the
+    /// reduced state lack the key and cannot be offered as state sync snapshots.
+    pub fn has_reduced_platform_state(
+        &self,
+        grove_version: &grovedb_version::version::GroveVersion,
+    ) -> Result<bool, Error> {
+        self.grove_db
+            .get_raw_optional(
+                (&crate::drive::system::misc_path()).into(),
+                crate::drive::platform_state::REDUCED_PLATFORM_STATE_KEY,
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .map(|maybe_element| maybe_element.is_some())
+            .map_err(Error::from)
+    }
+
+    /// The Platform protocol version the chain was running at when this checkpoint was
+    /// taken, as recorded in the checkpoint's own aux storage.
+    ///
+    /// State sync must serve and consume a snapshot under the version table the snapshot
+    /// was PRODUCED with — the consuming node is typically a fresh node whose in-memory
+    /// version is still the initial one — so this is the authoritative source for it.
+    pub fn current_protocol_version(&self) -> Result<Option<ProtocolVersion>, Error> {
+        Drive::fetch_current_protocol_version_with_grovedb(&self.grove_db, None)
+    }
+
+    /// The Platform version this checkpoint must be read under, or `None` when the
+    /// checkpoint records no protocol version or one this binary does not know.
+    ///
+    /// Both are reasons not to serve the checkpoint as a state sync snapshot rather than
+    /// errors: an unknown version is simply a newer node's checkpoint.
+    pub fn platform_version(&self) -> Result<Option<&'static PlatformVersion>, Error> {
+        Ok(self
+            .current_protocol_version()?
+            .and_then(|protocol_version| PlatformVersion::get(protocol_version).ok()))
     }
 
     /// Marks this checkpoint for deletion when it is dropped.

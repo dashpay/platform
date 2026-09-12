@@ -8,6 +8,7 @@ use tenderdash_abci::proto::types::ConsensusParams;
 
 mod v0;
 mod v1;
+mod v2;
 
 pub(crate) fn consensus_params_update(
     network: Network,
@@ -33,9 +34,15 @@ pub(crate) fn consensus_params_update(
             new_platform_version,
             epoch_info,
         )),
+        2 => Ok(v2::consensus_params_update_v2(
+            network,
+            original_platform_version,
+            new_platform_version,
+            epoch_info,
+        )),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "consensus_params_update".to_string(),
-            known_versions: vec![0, 1],
+            known_versions: vec![0, 1, 2],
             received: version,
         })),
     }
@@ -143,7 +150,7 @@ mod tests {
                     received,
                 })) => {
                     assert_eq!(method, "consensus_params_update");
-                    assert_eq!(known_versions, vec![0, 1]);
+                    assert_eq!(known_versions, vec![0, 1, 2]);
                     assert_eq!(received, 99);
                 }
                 other => panic!("expected UnknownVersionMismatch error, got: {:?}", other),
@@ -585,6 +592,74 @@ mod tests {
                 consensus_params_update(Network::Devnet, platform_v1, platform_v1, &epoch_info)
                     .expect("should not error");
             assert!(result.is_none());
+        }
+    }
+
+    mod v2_evidence_params {
+        use super::*;
+
+        /// Crossing to v15 (whose method table selects consensus_params_update v2) must
+        /// emit both the new app version and the evidence params from issue #2512.
+        #[test]
+        fn crossing_to_v15_emits_evidence_params() {
+            let platform_v14 = PlatformVersion::get(14).expect("v14 exists");
+            let platform_v15 = PlatformVersion::get(15).expect("v15 exists");
+            let epoch_info = epoch_change_to(10);
+
+            let params =
+                consensus_params_update(Network::Devnet, platform_v14, platform_v15, &epoch_info)
+                    .expect("should not error")
+                    .expect("crossing to v15 must emit consensus params");
+
+            let version = params.version.expect("version params must be set");
+            assert_eq!(version.app_version, 15);
+
+            let evidence = params.evidence.expect("evidence params must be set");
+            assert_eq!(evidence.max_age_num_blocks, 15_000);
+            assert_eq!(
+                evidence
+                    .max_age_duration
+                    .expect("max age duration must be set")
+                    .seconds,
+                20 * 24 * 60 * 60
+            );
+            assert_eq!(evidence.max_bytes, 1_048_576);
+        }
+
+        /// Once the network is on v15, a block without a version change emits nothing:
+        /// the evidence params are a one-shot emission on the activation block.
+        #[test]
+        fn steady_state_v15_emits_nothing() {
+            let platform_v15 = PlatformVersion::get(15).expect("v15 exists");
+            let epoch_info = mid_epoch(11);
+
+            let result =
+                consensus_params_update(Network::Devnet, platform_v15, platform_v15, &epoch_info)
+                    .expect("should not error");
+            assert!(result.is_none());
+        }
+
+        /// A version change that does not cross the v15 boundary must not attach
+        /// evidence params even when dispatched through v2.
+        #[test]
+        fn non_crossing_version_change_has_no_evidence_params() {
+            let platform_v13 = PlatformVersion::get(13).expect("v13 exists");
+            let platform_v14 = PlatformVersion::get(14).expect("v14 exists");
+            let epoch_info = epoch_change_to(9);
+
+            let params = v2::consensus_params_update_v2(
+                Network::Devnet,
+                platform_v13,
+                platform_v14,
+                &epoch_info,
+            )
+            .expect("version change must emit consensus params");
+
+            assert!(params.version.is_some());
+            assert!(
+                params.evidence.is_none(),
+                "evidence params are only for the v15 crossing"
+            );
         }
     }
 }

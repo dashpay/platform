@@ -17,6 +17,12 @@ use drive::drive::credit_pools::operations::update_unpaid_epoch_index_operation;
 use platform_version::version::PlatformVersion;
 use std::sync::Arc;
 
+/// Placeholder block signature for hand-built `ExtendedBlockInfo` test fixtures.
+///
+/// Any non-zero value works: an all-zero signature marks a state restored via state
+/// sync, from which proofs are refused until the next block finalizes.
+pub(crate) const TEST_BLOCK_SIGNATURE: [u8; 96] = [1u8; 96];
+
 pub(crate) fn fast_forward_to_block(
     platform: &TempPlatform<MockCoreRPCLike>,
     time_ms: u64,
@@ -51,7 +57,7 @@ pub(crate) fn fast_forward_to_block(
             quorum_hash: [0u8; 32],
             block_id_hash: [0u8; 32],
             proposer_pro_tx_hash: [0u8; 32],
-            signature: [0u8; 96],
+            signature: TEST_BLOCK_SIGNATURE,
             round: 0,
         }
         .into(),

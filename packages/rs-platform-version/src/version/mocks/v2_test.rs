@@ -23,6 +23,7 @@ use crate::version::drive_abci_versions::drive_abci_query_versions::{
     DriveAbciQueryShieldedVersions, DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions,
     DriveAbciQueryValidatorVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
 };
+use crate::version::drive_abci_versions::drive_abci_state_sync_versions::v1::DRIVE_ABCI_STATE_SYNC_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v1::DRIVE_ABCI_VALIDATION_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v1::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V1;
@@ -128,6 +129,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             platform_state: DrivePlatformStateMethodVersions {
                 fetch_platform_state_bytes: 0,
                 store_platform_state_bytes: 0,
+                fetch_reduced_platform_state_bytes: 0,
+                store_reduced_platform_state_bytes: 0,
             },
             fetch: DriveFetchMethodVersions { fetch_elements: 0 },
             prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
@@ -478,6 +481,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             },
         },
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
+        state_sync: DRIVE_ABCI_STATE_SYNC_VERSIONS_V1,
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,

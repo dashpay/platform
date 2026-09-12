@@ -566,4 +566,52 @@ mod tests {
             "the cached context must be the one prepare proposal built"
         );
     }
+
+    /// CONSENSUS PIN: the app hash must not depend on the consensus round.
+    ///
+    /// Tenderdash re-proposes a block that reached a prevote majority but did not commit
+    /// with the SAME header at a later round, and re-runs ProcessProposal for every round,
+    /// requiring the returned app hash to equal the header's. If anything round-specific
+    /// reached the replicated state (as the reduced platform state written by
+    /// `run_block_proposal` v1 once did), every validator would reject the re-proposal
+    /// and the chain would halt at that height.
+    #[tokio::test]
+    async fn process_proposal_of_the_same_block_at_a_later_round_must_return_the_same_app_hash() {
+        let config = config();
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            5,
+            strategy(),
+            config,
+            7,
+            &mut None,
+            &mut None,
+        )
+        .await;
+
+        let at_round_0 = next_block_request(&outcome, 1, [0x42u8; 32], 0);
+        let mut at_round_3 = at_round_0.clone();
+        at_round_3.round = 3;
+
+        let response_round_0 = outcome
+            .abci_app
+            .process_proposal(at_round_0)
+            .expect("the block processes at round 0");
+        assert_eq!(response_round_0.status, ProposalStatus::Accept as i32);
+
+        let response_round_3 = outcome
+            .abci_app
+            .process_proposal(at_round_3)
+            .expect("the same block processes again at round 3");
+        assert_eq!(response_round_3.status, ProposalStatus::Accept as i32);
+
+        assert_eq!(
+            response_round_0.app_hash, response_round_3.app_hash,
+            "the same block re-proposed at a later round must produce the same app hash"
+        );
+    }
 }

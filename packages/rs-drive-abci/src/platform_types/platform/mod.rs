@@ -10,6 +10,9 @@ use std::fmt::{Debug, Formatter};
 
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
+use crate::platform_types::snapshot::{
+    clear_restore_sentinel, restore_sentinel_exists, wipe_drive_for_restore,
+};
 use arc_swap::ArcSwap;
 use dpp::prelude::BlockHeight;
 use dpp::serialization::PlatformDeserializableFromVersionedStructure;
@@ -124,6 +127,20 @@ impl Platform<DefaultCoreRPC> {
 }
 
 impl<C> Platform<C> {
+    /// Drop the in-memory state that was derived from a database before a failed
+    /// state-sync restore. The database wipe leaves an empty chain, so retaining the
+    /// old state would make the next `info` call compare unrelated roots and panic.
+    pub fn reset_state_after_wipe(&self) -> Result<(), Error> {
+        let initial = INITIAL_PROTOCOL_VERSION;
+        let state = PlatformState::default_with_protocol_versions(initial, initial, &self.config)?;
+        self.state.store(Arc::new(state));
+        self.committed_block_height_guard
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.checkpoint_platform_states
+            .store(Arc::new(BTreeMap::new()));
+        Ok(())
+    }
+
     /// Open Platform with Drive and block execution context.
     pub fn open_with_client<P: AsRef<Path>>(
         path: P,
@@ -144,8 +161,58 @@ impl<C> Platform<C> {
             }
         };
 
-        let (drive, current_platform_version) =
-            Drive::open(&config.db_path, Some(config.drive.clone())).map_err(Error::Drive)?;
+        // Checkpoints are created under the operator-configured `CHECKPOINTS_PATH`
+        // (defaulting to `<db_path>/checkpoints`); startup MUST read them back from the
+        // same place, or a node with a custom path comes up with an empty registry:
+        // it would stop advertising the snapshots it retained and could never prune the
+        // directories it wrote.
+        let checkpoints_path = config
+            .abci
+            .state_sync
+            .resolved_checkpoints_path(&config.db_path);
+
+        let (drive, current_platform_version) = Drive::open_with_checkpoints_path(
+            &config.db_path,
+            Some(config.drive.clone()),
+            &checkpoints_path,
+        )
+        .map_err(Error::Drive)?;
+
+        // A state sync restore that never finished leaves grovedb holding state the
+        // platform state knows nothing about. That is not recoverable by restarting —
+        // the `info` handler panics on the mismatch, so the node would crash-loop — and it
+        // cannot be told apart from corruption without a marker. `offer_snapshot` writes
+        // one before it wipes; if it is still here, the restore did not finish.
+        //
+        // Recovery is to become an empty node: wipe, drop the caches derived from what was
+        // wiped, and come up as if freshly installed, so Tenderdash can offer another
+        // snapshot or fall back to block sync. Clearing the marker afterwards is safe
+        // precisely because an empty database with no saved state is self-consistent.
+        let current_platform_version = if restore_sentinel_exists(&config.db_path) {
+            tracing::warn!(
+                db_path = ?config.db_path,
+                "[state_sync] an unfinished state sync restore was found on startup; wiping \
+                 and coming up empty so the node can sync again",
+            );
+
+            wipe_drive_for_restore(&drive).map_err(Error::Drive)?;
+            drive
+                .grove
+                .flush()
+                .map_err(|error| Error::Drive(error.into()))?;
+            clear_restore_sentinel(&config.db_path).map_err(|e| {
+                Error::Drive(drive::error::Error::IOErrorWithInfoString(
+                    e.into(),
+                    "trying to clear the state sync restore sentinel".to_owned(),
+                ))
+            })?;
+
+            // The wipe removed the stored protocol version along with everything else, so
+            // the saved-state branch below must not be taken.
+            None
+        } else {
+            current_platform_version
+        };
 
         if let Some(platform_version) = current_platform_version {
             let Some(execution_state) =
@@ -160,9 +227,7 @@ impl<C> Platform<C> {
             let mut checkpoint_platform_states = BTreeMap::new();
             let checkpoints = drive.checkpoints.load();
             for (&block_height, _checkpoint_info) in checkpoints.iter() {
-                let checkpoint_state_path = config
-                    .db_path
-                    .join("checkpoints")
+                let checkpoint_state_path = checkpoints_path
                     .join(block_height.to_string())
                     .join("platform_state.bin");
 

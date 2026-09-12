@@ -94,6 +94,7 @@ impl StateTransitionStateValidation for MasternodeVoteTransition {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::helpers::fast_forward_to_block::TEST_BLOCK_SIGNATURE;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
@@ -3065,7 +3066,7 @@ mod tests {
                         offset: None,
                         limit: None,
                         start_at: None,
-                        order_ascending: true,
+                        order_ascending,
                     };
 
                 let (_, voters) = resolved_contested_document_vote_poll_drive_query
@@ -4214,7 +4215,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -4406,7 +4407,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -4561,7 +4562,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -4604,7 +4605,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -4823,7 +4824,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -4866,7 +4867,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -4987,7 +4988,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -5030,7 +5031,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -5148,7 +5149,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -5191,7 +5192,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -5325,7 +5326,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -5995,7 +5996,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -6218,7 +6219,7 @@ mod tests {
                             quorum_hash: [0u8; 32],
                             block_id_hash: [0u8; 32],
                             proposer_pro_tx_hash: [0u8; 32],
-                            signature: [0u8; 96],
+                            signature: TEST_BLOCK_SIGNATURE,
                             round: 0,
                         }
                         .into(),
@@ -6505,7 +6506,7 @@ mod tests {
                             quorum_hash: [0u8; 32],
                             block_id_hash: [0u8; 32],
                             proposer_pro_tx_hash: [0u8; 32],
-                            signature: [0u8; 96],
+                            signature: TEST_BLOCK_SIGNATURE,
                             round: 0,
                         }
                         .into(),
@@ -6951,7 +6952,7 @@ mod tests {
                             quorum_hash: [0u8; 32],
                             block_id_hash: [0u8; 32],
                             proposer_pro_tx_hash: [0u8; 32],
-                            signature: [0u8; 96],
+                            signature: TEST_BLOCK_SIGNATURE,
                             round: 0,
                         }
                         .into(),
@@ -7074,7 +7075,7 @@ mod tests {
                             quorum_hash: [0u8; 32],
                             block_id_hash: [0u8; 32],
                             proposer_pro_tx_hash: [0u8; 32],
-                            signature: [0u8; 96],
+                            signature: TEST_BLOCK_SIGNATURE,
                             round: 0,
                         }
                         .into(),
@@ -7434,7 +7435,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -7652,7 +7653,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -7865,7 +7866,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -8067,7 +8068,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -8285,7 +8286,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -8499,7 +8500,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -8694,7 +8695,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -8889,7 +8890,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -9193,7 +9194,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -9383,7 +9384,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -9448,7 +9449,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -9718,7 +9719,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -9777,7 +9778,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -9971,7 +9972,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -10289,7 +10290,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -10481,7 +10482,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -10558,7 +10559,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -10757,7 +10758,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -10984,7 +10985,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
@@ -11502,7 +11503,7 @@ mod tests {
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
                         proposer_pro_tx_hash: [0u8; 32],
-                        signature: [0u8; 96],
+                        signature: TEST_BLOCK_SIGNATURE,
                         round: 0,
                     }
                     .into(),
