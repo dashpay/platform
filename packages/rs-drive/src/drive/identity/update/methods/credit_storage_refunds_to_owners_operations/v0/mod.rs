@@ -1,5 +1,6 @@
 use crate::drive::identity::update::storage_refund_credit_outcome::StorageRefundCreditOutcome;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::fee::fee_result::refunds::FeeRefunds;
@@ -24,6 +25,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<StorageRefundCreditOutcome, Error> {
         let mut credited: BTreeMap<Identifier, Credits> = BTreeMap::new();
+        let mut repaid_debt: Credits = 0;
         let mut routed_to_processing_pool: Credits = 0;
 
         for (owner_id, credits_per_epoch) in fee_refunds.iter() {
@@ -52,7 +54,27 @@ impl Drive {
                 platform_version,
             )?;
 
-            if existing_balance.is_some() {
+            if let Some(existing_balance) = existing_balance {
+                // `add_to_identity_balance_operations` clears negative credit before
+                // raising a zero balance. That portion never reaches the sum trees,
+                // so it is measured here for the caller's processing pool write.
+                let owner_repaid_debt = if existing_balance == 0 {
+                    let debt = self
+                        .fetch_identity_negative_balance_operations(
+                            *owner_id,
+                            true,
+                            transaction,
+                            drive_operations,
+                            platform_version,
+                        )?
+                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                            "an identity with a balance element always has a negative credit element",
+                        )))?;
+                    debt.min(credits)
+                } else {
+                    0
+                };
+
                 let mut estimated_costs_only_with_layer_info =
                     None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>;
 
@@ -64,7 +86,17 @@ impl Drive {
                     platform_version,
                 )?);
 
-                credited.insert(Identifier::from(*owner_id), credits);
+                repaid_debt =
+                    repaid_debt
+                        .checked_add(owner_repaid_debt)
+                        .ok_or(ProtocolError::Overflow(
+                            "storage refund credits repaying identity debt overflow",
+                        ))?;
+
+                let reached_balance = credits - owner_repaid_debt;
+                if reached_balance > 0 {
+                    credited.insert(Identifier::from(*owner_id), reached_balance);
+                }
             } else {
                 routed_to_processing_pool = routed_to_processing_pool.checked_add(credits).ok_or(
                     ProtocolError::Overflow(
@@ -76,6 +108,7 @@ impl Drive {
 
         Ok(StorageRefundCreditOutcome {
             credited,
+            repaid_debt,
             routed_to_processing_pool,
         })
     }
@@ -84,7 +117,6 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::drive::DriveError;
     use crate::util::batch::DriveOperation;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
@@ -120,6 +152,150 @@ mod tests {
             )
             .expect("expected to insert the identity");
         identity
+    }
+
+    /// An identity with a zero balance and `debt` of negative credit, the
+    /// state an identity is left in after paying a processing fee it could
+    /// not fully cover.
+    fn insert_identity_with_debt(
+        drive: &Drive,
+        seed: u64,
+        debt: Credits,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Identity {
+        let mut identity = Identity::random_identity(3, Some(seed), platform_version)
+            .expect("expected a random identity");
+        identity.set_balance(0);
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                Some(transaction),
+                platform_version,
+            )
+            .expect("expected to insert the identity");
+        apply(
+            drive,
+            vec![
+                drive.update_identity_negative_credit_operation_v0(identity.id().to_buffer(), debt)
+            ],
+            transaction,
+            platform_version,
+        );
+        identity
+    }
+
+    fn debt(
+        drive: &Drive,
+        identity_id: [u8; 32],
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Option<Credits> {
+        drive
+            .fetch_identity_negative_balance_operations(
+                identity_id,
+                true,
+                Some(transaction),
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected to fetch the negative credit")
+    }
+
+    /// Settles a refund for an identity with a zero balance and `debt` of
+    /// negative credit exactly as a lifecycle caller would (credits, one pool
+    /// write for the pool share, pending refunds recorded) and returns the
+    /// outcome, the identity's balance and debt afterwards, and whether the
+    /// credit sum is balanced.
+    fn settle_refund_against_debt(
+        debt_amount: Credits,
+        refund: Credits,
+    ) -> (
+        StorageRefundCreditOutcome,
+        Option<Credits>,
+        Option<Credits>,
+        bool,
+    ) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+        let epoch = Epoch::new(0).expect("epoch 0");
+
+        let owner =
+            insert_identity_with_debt(&drive, 8, debt_amount, &transaction, platform_version);
+        let owner_id = owner.id().to_buffer();
+
+        let seed_operation = drive
+            .add_epoch_processing_credits_for_distribution_operation(
+                &epoch,
+                PROCESSING_POOL_SEED,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected the pool seed operation");
+        apply(&drive, vec![seed_operation], &transaction, platform_version);
+        drive
+            .add_to_system_credits(PROCESSING_POOL_SEED, Some(&transaction), platform_version)
+            .expect("expected to record the system credits");
+
+        let fee_refunds = refunds(&[(owner_id, &[(0, refund)])]);
+        let mut operations = vec![];
+        let outcome = drive
+            .credit_storage_refunds_to_owners_operations(
+                &fee_refunds,
+                None,
+                Some(&transaction),
+                &mut operations,
+                platform_version,
+            )
+            .expect("expected to settle the refund");
+        operations.push(
+            drive
+                .add_epoch_processing_credits_for_distribution_operation(
+                    &epoch,
+                    outcome
+                        .processing_pool_share()
+                        .expect("expected the pool share"),
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected the pool write"),
+        );
+        apply(&drive, operations, &transaction, platform_version);
+
+        let mut pending_refund_operations: Vec<DriveOperation> = vec![];
+        Drive::add_update_pending_epoch_refunds_operations(
+            &mut pending_refund_operations,
+            fee_refunds.sum_per_epoch(),
+            &platform_version.drive,
+        )
+        .expect("expected the pending refund operations");
+        drive
+            .apply_drive_operations(
+                pending_refund_operations,
+                true,
+                &BlockInfo::default(),
+                Some(&transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to record the pending refunds");
+
+        let balanced = drive
+            .calculate_total_credits_balance(Some(&transaction), &platform_version.drive)
+            .expect("expected the balance")
+            .ok()
+            .expect("expected a well-formed balance");
+
+        (
+            outcome,
+            balance(&drive, owner_id, &transaction, platform_version),
+            debt(&drive, owner_id, &transaction, platform_version),
+            balanced,
+        )
     }
 
     fn refunds(entries: &RefundsByOwner) -> FeeRefunds {
@@ -194,6 +370,7 @@ mod tests {
             outcome,
             StorageRefundCreditOutcome {
                 credited: BTreeMap::from([(first.id(), 1_001), (second.id(), 5_000)]),
+                repaid_debt: 0,
                 routed_to_processing_pool: 0,
             }
         );
@@ -242,6 +419,7 @@ mod tests {
             outcome,
             StorageRefundCreditOutcome {
                 credited: BTreeMap::from([(existing.id(), 400)]),
+                repaid_debt: 0,
                 routed_to_processing_pool: 300,
             }
         );
@@ -399,7 +577,9 @@ mod tests {
             drive
                 .add_epoch_processing_credits_for_distribution_operation(
                     &epoch,
-                    outcome.routed_to_processing_pool,
+                    outcome
+                        .processing_pool_share()
+                        .expect("expected the pool share"),
                     Some(&transaction),
                     platform_version,
                 )
@@ -452,6 +632,97 @@ mod tests {
             total.ok().expect("expected a well-formed balance"),
             "credits moved between the pools and an identity balance must stay conserved: {:?}",
             total
+        );
+    }
+
+    #[test]
+    fn should_report_a_refund_below_the_owners_debt_as_repaid_debt() {
+        let (outcome, balance, debt, balanced) = settle_refund_against_debt(100, 60);
+
+        assert_eq!(
+            outcome,
+            StorageRefundCreditOutcome {
+                credited: BTreeMap::new(),
+                repaid_debt: 60,
+                routed_to_processing_pool: 0,
+            },
+            "nothing reaches the balance; the whole refund clears debt"
+        );
+        assert_eq!(balance, Some(0));
+        assert_eq!(debt, Some(40));
+        assert!(balanced, "the repaid debt went to the processing pool");
+    }
+
+    #[test]
+    fn should_report_a_refund_equal_to_the_owners_debt_as_repaid_debt() {
+        let (outcome, balance, debt, balanced) = settle_refund_against_debt(100, 100);
+
+        assert_eq!(
+            outcome,
+            StorageRefundCreditOutcome {
+                credited: BTreeMap::new(),
+                repaid_debt: 100,
+                routed_to_processing_pool: 0,
+            }
+        );
+        assert_eq!(balance, Some(0));
+        assert_eq!(debt, Some(0));
+        assert!(balanced);
+    }
+
+    #[test]
+    fn should_split_a_refund_above_the_owners_debt_between_debt_and_balance() {
+        let (outcome, balance, debt, balanced) = settle_refund_against_debt(100, 150);
+
+        let owner = Identity::random_identity(3, Some(8), PlatformVersion::latest())
+            .expect("expected the same random identity")
+            .id();
+        assert_eq!(
+            outcome,
+            StorageRefundCreditOutcome {
+                credited: BTreeMap::from([(owner, 50)]),
+                repaid_debt: 100,
+                routed_to_processing_pool: 0,
+            },
+            "only the remainder above the debt is reported as credited"
+        );
+        assert_eq!(outcome.processing_pool_share(), Some(100));
+        assert_eq!(outcome.total(), Some(150));
+        assert_eq!(balance, Some(50));
+        assert_eq!(debt, Some(0));
+        assert!(balanced);
+    }
+
+    #[test]
+    fn should_not_touch_debt_when_the_owner_has_a_positive_balance() {
+        // The shipped helper repays debt only from a zero balance; an owner
+        // that is in debt yet holds a balance cannot exist through the fee
+        // path, but the primitive must still report what the helper does.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+
+        let owner = insert_identity(&drive, 9, &transaction, platform_version);
+        let owner_id = owner.id().to_buffer();
+
+        let fee_refunds = refunds(&[(owner_id, &[(0, 250)])]);
+        let mut operations = vec![];
+        let outcome = drive
+            .credit_storage_refunds_to_owners_operations(
+                &fee_refunds,
+                None,
+                Some(&transaction),
+                &mut operations,
+                platform_version,
+            )
+            .expect("expected to credit the owner");
+        apply(&drive, operations, &transaction, platform_version);
+
+        assert_eq!(outcome.repaid_debt, 0);
+        assert_eq!(outcome.credited, BTreeMap::from([(owner.id(), 250)]));
+        assert_eq!(
+            balance(&drive, owner_id, &transaction, platform_version),
+            Some(IDENTITY_BALANCE + 250)
         );
     }
 
