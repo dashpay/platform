@@ -650,6 +650,13 @@ final class ErrorHandlingTests: XCTestCase {
     // MARK: - Core broadcast outcome mapping
 
     func testCoreBroadcastOutcomeMapping() throws {
+        XCTAssertEqual(PlatformWalletResultCode.errorTransactionBroadcastRejected.rawValue, 26)
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_REJECTED
+            ),
+            .errorTransactionBroadcastRejected
+        )
         XCTAssertEqual(
             try CoreTransactionBroadcastOutcome(
                 resultCode: .success,
