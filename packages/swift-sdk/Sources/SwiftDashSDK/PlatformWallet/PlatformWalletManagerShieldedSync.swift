@@ -473,6 +473,11 @@ extension PlatformWalletManager {
         /// processing) this transition adds on top of its GroveDB-metered
         /// storage, so storage is never double-counted.
         case shieldFromIdentity = 3
+        /// IdentityTopUpFromShieldedPool
+        /// (`compute_shielded_identity_top_up_fee`): the base flat fee plus
+        /// the flat identity-balance write cost, carved from the value
+        /// balance so the pool pays it.
+        case identityTopUpFromPool = 4
     }
 
     /// Consensus-pinned flat shielded fee (in credits) for a pool-paid
@@ -969,7 +974,7 @@ extension PlatformWalletManager {
 
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
-            // Guaranteed resolver keepalive across the FFI call —
+            // Guaranteed resolver keepalive across the FFI call :
             // same rationale as `shieldedTransfer`.
             try withExtendedLifetime(resolver) {
                 try walletId.withUnsafeBytes { widRaw in
@@ -980,6 +985,79 @@ extension PlatformWalletManager {
                     try toPlatformAddress.withCString { addrCStr in
                         try platform_wallet_manager_shielded_unshield(
                             handle, widPtr, resolverHandle, account, addrCStr, amount
+                        ).check()
+                    }
+                }
+            }
+        }.value
+    }
+
+    /// Shielded → an EXISTING identity's balance. The Type 22
+    /// `IdentityTopUpFromShieldedPool` transition: notes from
+    /// `walletId`'s shielded balance on `account` are spent so that
+    /// `identityId` receives `amount` credits. The flat pool-paid fee
+    /// (`estimateShieldedFee(kind: .identityTopUpFromPool)`) is spent
+    /// from the notes on top of `amount`.
+    ///
+    /// The identity only has to exist on Platform; it does NOT have to
+    /// be managed by this wallet, and no identity-side signer is
+    /// involved: the only spend authority is the Orchard one `resolver`
+    /// supplies per operation (see [`shieldedTransfer`]), exactly as for
+    /// [`shieldedUnshield`].
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed: the spend may already be on chain, so the caller must
+    /// NOT retry (the spent notes stay reserved Rust-side; the next
+    /// shielded sync reconciles them).
+    public func shieldedIdentityTopUpFromPool(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32 = 0,
+        identityId: Data,
+        amount: UInt64
+    ) async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be exactly 32 bytes"
+            )
+        }
+        guard let resolverHandle = resolver.handle else {
+            throw PlatformWalletError.invalidParameter(
+                "MnemonicResolver has no handle"
+            )
+        }
+
+        let handle = self.handle
+        try await Task.detached(priority: .userInitiated) {
+            // Guaranteed resolver keepalive across the FFI call :
+            // same rationale as `shieldedTransfer`.
+            try withExtendedLifetime(resolver) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try identityId.withUnsafeBytes { idRaw in
+                        guard let idPtr = idRaw.baseAddress?
+                            .assumingMemoryBound(to: UInt8.self)
+                        else {
+                            throw PlatformWalletError.invalidParameter(
+                                "identityId baseAddress is nil"
+                            )
+                        }
+                        try platform_wallet_manager_shielded_identity_top_up_from_pool(
+                            handle, widPtr, resolverHandle, account, idPtr, amount
                         ).check()
                     }
                 }
@@ -1026,7 +1104,7 @@ extension PlatformWalletManager {
 
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
-            // Guaranteed resolver keepalive across the FFI call —
+            // Guaranteed resolver keepalive across the FFI call :
             // same rationale as `shieldedTransfer`.
             try withExtendedLifetime(resolver) {
                 try walletId.withUnsafeBytes { widRaw in

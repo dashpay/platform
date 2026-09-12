@@ -89,8 +89,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_proverI
 
 /// The flat shielded fee in credits for a transition of the given `kind`
 /// (`0` = ShieldedTransfer/Shield, `1` = Unshield, `2` = ShieldedWithdrawal,
-/// `3` = ShieldFromIdentity: the compute-only floor, no storage component)
-/// and Orchard action `count` (a single-note spend with change is 2
+/// `3` = ShieldFromIdentity: the compute-only floor, no storage component,
+/// `4` = IdentityTopUpFromShieldedPool: base + the flat identity-balance
+/// write cost) and Orchard action `count` (a single-note spend with change is 2
 /// actions), computed at `managerHandle`'s network-tracked platform
 /// version — the same version the shielded builders carve fees with. No
 /// network round-trip. Throws on an unknown kind, an invalid manager
@@ -1030,6 +1031,57 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
                 resolver_handle as *mut MnemonicResolverHandle,
                 account as u32,
                 to_addr.as_ptr(),
+                amount as u64,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Shielded to existing-identity top-up (Type 22), bridging
+/// `platform_wallet_manager_shielded_identity_top_up_from_pool`.
+///
+/// Mirrors Swift's `PlatformWalletManager.shieldedIdentityTopUpFromPool`
+/// (`PlatformWalletManagerShieldedSync.swift`): spends notes from
+/// `account` on `walletId` and credits `amount` to the EXISTING identity
+/// `identity_id` (32 bytes). The identity only has to exist on Platform;
+/// it does not have to be one this wallet manages. The flat pool-paid fee
+/// (`estimateShieldedFee` kind 4) is spent from the notes on top of
+/// `amount`. `resolver_handle` supplies the transient spend authority
+/// exactly as for [`Java_..._shieldedUnshield`].
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedIdentityTopUpFromPool(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    account: jint,
+    identity_id: JByteArray,
+    amount: jlong,
+) {
+    guard(&mut env, (), |env| {
+        if amount <= 0 {
+            throw_sdk_exception(env, 1, "amount must be positive");
+            return;
+        }
+        if account < 0 {
+            throw_sdk_exception(env, 1, "account must be non-negative");
+            return;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        let Some(ident) = read_id32(env, &identity_id, "identityId") else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_identity_top_up_from_pool(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                account as u32,
+                ident.as_ptr(),
                 amount as u64,
             )
         };

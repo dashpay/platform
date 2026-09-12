@@ -1,6 +1,7 @@
 use crate::fee::Credits;
 use crate::shielded::{
-    SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES, SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES,
+    SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES, SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES,
+    SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES,
 };
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -222,6 +223,35 @@ pub fn compute_shielded_unshield_fee_v0(
 ///
 /// All arithmetic is checked: an overflow (only reachable via pathological fee constants or key
 /// counts) surfaces as `ProtocolError::Overflow` instead of silently wrapping.
+/// Flat fee for `IdentityTopUpFromShieldedPool`: the base shielded minimum plus the flat
+/// identity-balance write component, mirroring `compute_shielded_unshield_fee_v0`'s address
+/// write component (the top-up writes one balance element, priced like an address write).
+pub fn compute_shielded_identity_top_up_fee_v0(
+    num_actions: usize,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    let storage = &platform_version.fee_version.storage;
+
+    let base_fee = compute_minimum_shielded_fee_v0(num_actions, platform_version)?;
+
+    let per_byte_rate = storage
+        .storage_disk_usage_credit_per_byte
+        .checked_add(storage.storage_processing_credit_per_byte)
+        .ok_or(ProtocolError::Overflow(
+            "shielded storage per-byte rate overflow",
+        ))?;
+    let identity_balance_storage_fee = SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES
+        .checked_mul(per_byte_rate)
+        .ok_or(ProtocolError::Overflow(
+            "shielded identity top up balance storage fee overflow",
+        ))?;
+    base_fee
+        .checked_add(identity_balance_storage_fee)
+        .ok_or(ProtocolError::Overflow(
+            "shielded identity top up fee overflow",
+        ))
+}
+
 pub fn compute_shielded_identity_create_fee_v0(
     num_actions: usize,
     num_keys: usize,

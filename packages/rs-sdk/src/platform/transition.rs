@@ -10,6 +10,8 @@ pub(crate) mod broadcast_identity;
 pub mod broadcast_request;
 #[cfg(feature = "shielded")]
 pub mod identity_create_from_shielded_pool;
+/// Shielded pool to an existing identity's balance.
+pub mod identity_top_up_from_shielded_pool;
 pub mod masternode_vote_keys;
 pub mod purchase_document;
 pub mod put_contract;

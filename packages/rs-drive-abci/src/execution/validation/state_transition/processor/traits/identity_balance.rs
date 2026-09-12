@@ -82,6 +82,7 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
             | StateTransition::AddressCreditWithdrawal(_)
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
+            | StateTransition::IdentityTopUpFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_)
