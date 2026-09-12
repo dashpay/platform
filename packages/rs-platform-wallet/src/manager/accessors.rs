@@ -1211,10 +1211,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         wallet_id: &WalletId,
     ) -> Option<ProviderMasternodeTxs> {
+        use crate::wallet::provider_key_at_index::PROVIDER_KEY_WINDOW;
         use key_wallet::managed_account::address_pool::PublicKeyType;
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-        // Default provider-key pre-derivation / scan window.
-        const PROVIDER_KEY_WINDOW: u32 = 20;
 
         // Scope the wallet-manager read lock so it's released before we
         // acquire the SPV client / engine locks for the DML snapshot — the

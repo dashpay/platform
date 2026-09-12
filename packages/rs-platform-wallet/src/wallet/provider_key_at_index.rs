@@ -94,6 +94,12 @@ use crate::error::PlatformWalletError;
 /// screen has a full first page to show from persistence alone.
 pub const PLATFORM_NODE_KEY_PREDERIVE_COUNT: u32 = 20;
 
+/// Default provider-key pre-derivation / scan window: how many operator
+/// (BLS) indices the managed provider pool tracks — and the
+/// derive-and-compare ownership scan covers — for a wallet whose pool was
+/// never extended past registration.
+pub const PROVIDER_KEY_WINDOW: u32 = 20;
+
 /// Derive the first `count` platform-node (Ed25519) public keys from a
 /// **seed-bearing** [`Wallet`](key_wallet::wallet::Wallet), returning
 /// the 32-byte public key + 20-byte Tenderdash node id
@@ -387,6 +393,41 @@ fn checked_operator_private_bytes_at(
 }
 
 impl PlatformWallet {
+    /// One past the highest operator-key index the wallet's managed
+    /// provider pool tracks: its `highest_generated` watermark plus one,
+    /// floored at [`PROVIDER_KEY_WINDOW`] — the exact window the
+    /// derive-and-compare ownership scan
+    /// (`provider_masternode_txs_blocking`) covers. A rotation must select
+    /// inside it: a beyond-window index derives a perfectly valid key that
+    /// the wallet's ownership lookup could never attribute back to this
+    /// wallet afterwards.
+    ///
+    /// Blocking (wallet-manager `blocking_read` — never call from an async
+    /// runtime worker); errors when the wallet was concurrently removed.
+    pub fn provider_operator_tracked_window(&self) -> Result<u32, PlatformWalletError> {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+        let wm = self.wallet_manager().blocking_read();
+        let info = wm
+            .get_wallet_info(&self.wallet_id())
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
+        Ok(info
+            .core_wallet
+            .accounts
+            .provider_operator_keys
+            .as_ref()
+            .and_then(|acct| {
+                acct.managed_account_type()
+                    .address_pools()
+                    .iter()
+                    .filter_map(|pool| pool.highest_generated)
+                    .max()
+            })
+            .map(|highest| highest.saturating_add(1))
+            .unwrap_or(PROVIDER_KEY_WINDOW)
+            .max(PROVIDER_KEY_WINDOW))
+    }
+
     /// Derive this wallet's provider key of `kind` at `index`.
     ///
     /// Public-only when `resolved_seed` is `None` and `include_private`
