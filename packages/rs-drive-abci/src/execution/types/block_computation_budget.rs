@@ -77,7 +77,12 @@ pub struct BlockComputationBudgetExceeded {
 /// ledger with its own identity: the clone continues the accounting from the same state, but
 /// reservations the original issued before the clone can only be settled into the original,
 /// and reservations the clone issues only into the clone. The two never share a hold.
-#[derive(Debug, PartialEq, Eq)]
+///
+/// The ledger has no equality: two ledgers with the same counters are still different ledgers
+/// (their reservations are not interchangeable), and equality that included the identity would
+/// make a ledger unequal to its own clone, which `Clone` and `Eq` together promise not to
+/// happen. Compare `limit()`, `consumed()` and `remaining()` instead.
+#[derive(Debug)]
 pub struct BlockComputationBudget {
     id: LedgerId,
     limit: ComputationUnits,
@@ -217,9 +222,8 @@ mod tests {
     #[test]
     fn should_not_exist_before_the_5_0_protocol_version() {
         let platform_version_14 = PlatformVersion::get(14).expect("protocol version 14 exists");
-        assert_eq!(
-            BlockComputationBudget::for_platform_version(platform_version_14),
-            None,
+        assert!(
+            BlockComputationBudget::for_platform_version(platform_version_14).is_none(),
             "protocol version 14 predates smart contracts and must have no computation ledger"
         );
 
@@ -355,7 +359,7 @@ mod tests {
             (1_000, 0, 700),
             "a clone continues from the same counters"
         );
-        assert_ne!(original, cloned, "a clone is a distinct ledger");
+        assert_ne!(original.id, cloned.id, "a clone is a distinct ledger");
 
         // A reservation issued before the clone belongs to the original only.
         let result = cloned.settle(before_clone, 100);
