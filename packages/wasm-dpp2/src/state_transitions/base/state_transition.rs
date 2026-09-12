@@ -18,7 +18,7 @@ use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
 use dpp::state_transition::StateTransition::{
     Batch, DataContractCreate, DataContractUpdate, IdentityCreditTransfer,
-    IdentityCreditWithdrawal, IdentityUpdate, MasternodeVote,
+    IdentityCreditWithdrawal, IdentityUpdate, MasternodeVote, ShieldFromIdentity,
 };
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
@@ -206,6 +206,17 @@ impl StateTransitionWasm {
                 st.verify_public_key_is_enabled(&public_key.clone().into())?;
             }
             MasternodeVote(st) => {
+                st.verify_public_key_level_and_purpose(
+                    &public_key.clone().into(),
+                    StateTransitionSigningOptions {
+                        allow_signing_with_any_security_level,
+                        allow_signing_with_any_purpose,
+                    },
+                )?;
+
+                st.verify_public_key_is_enabled(&public_key.clone().into())?;
+            }
+            ShieldFromIdentity(st) => {
                 st.verify_public_key_level_and_purpose(
                     &public_key.clone().into(),
                     StateTransitionSigningOptions {

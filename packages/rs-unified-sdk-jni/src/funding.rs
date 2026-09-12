@@ -718,8 +718,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 /// Shield from a Platform IDENTITY's balance, Type 21 (bridges
 /// `platform_wallet_manager_shielded_shield_from_identity`).
 ///
-/// Sibling of [`Java_..._shieldedShield`] with the identity: not the
-/// transparent Platform-Payment addresses: as the funding side: `amount`
+/// Sibling of [`Java_..._shieldedShield`] with the identity, rather than the
+/// transparent Platform-Payment addresses, as the funding side: `amount`
 /// credits move straight out of `identity_id`'s balance into this wallet's
 /// own bound shielded pool (`shielded_account`), and the identity is debited
 /// `amount` + the metered fee + the shielded compute fee. The identity must

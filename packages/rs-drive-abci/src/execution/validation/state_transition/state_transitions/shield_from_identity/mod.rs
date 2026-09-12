@@ -27,12 +27,12 @@ impl StateTransitionActionTransformer for ShieldFromIdentityTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        _block_info: &BlockInfo,
+        block_info: &BlockInfo,
         _remaining_address_input_balances: &Option<
             BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         >,
         _validation_mode: ValidationMode,
-        _execution_context: &mut StateTransitionExecutionContext,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -44,7 +44,13 @@ impl StateTransitionActionTransformer for ShieldFromIdentityTransition {
             .shield_from_identity_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform.drive, tx, platform_version),
+            0 => self.transform_into_action_v0(
+                platform.drive,
+                tx,
+                block_info,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "shield from identity transition: transform_into_action".to_string(),
                 known_versions: vec![0],

@@ -56,10 +56,13 @@ impl ShieldFromIdentityTransitionMethodsV0 for ShieldFromIdentityTransitionV0 {
                     );
                 }
             }
+            // Only a CRITICAL transfer key can sign this transition (see
+            // `identity_signed.rs`), so restrict the automatic lookup to keys
+            // `sign_external` will accept instead of failing on the first match.
             None => identity
                 .get_first_public_key_matching(
                     Purpose::TRANSFER,
-                    SecurityLevel::full_range().into(),
+                    [SecurityLevel::CRITICAL].into(),
                     KeyType::all_key_types().into(),
                     true,
                 )

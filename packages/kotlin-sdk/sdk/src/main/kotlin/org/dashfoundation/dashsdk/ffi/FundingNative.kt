@@ -143,8 +143,8 @@ internal object FundingNative {
     /**
      * Shield from a Platform IDENTITY's balance, Type 21 (bridges
      * `platform_wallet_manager_shielded_shield_from_identity`). Sibling of
-     * [shieldedShield] with the identity: not the transparent
-     * Platform-Payment addresses: as the funding side: [amount] credits move
+     * [shieldedShield] with the identity, rather than the transparent
+     * Platform-Payment addresses, as the funding side: [amount] credits move
      * straight out of [identityId]'s balance into this wallet's own bound
      * shielded pool ([shieldedAccount]), and the identity is debited [amount]
      * plus the metered fee plus the shielded compute fee. The identity must

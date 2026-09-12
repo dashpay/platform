@@ -61,7 +61,7 @@ pub async fn build_shield_from_identity_transition<
 mod tests {
     use super::*;
     use crate::address_funds::AddressWitness;
-    use crate::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+    use crate::identity::accessors::IdentityGettersV0;
     use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use crate::identity::{KeyType, Purpose, SecurityLevel};
     use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};

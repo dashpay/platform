@@ -1634,16 +1634,18 @@ class PlatformWalletManager(
 
     /**
      * Shield from a Platform IDENTITY's balance (Type 21). Sibling of
-     * [shieldedShield] with the identity: not the transparent
-     * Platform-Payment addresses: as the funding side: [amount] credits move
+     * [shieldedShield] with the identity, rather than the transparent
+     * Platform-Payment addresses, as the funding side: [amount] credits move
      * straight out of [identityId]'s balance into this wallet's own bound
      * shielded pool ([shieldedAccount]), and the identity is debited [amount]
      * plus the metered fee plus the shielded compute fee
      * ([ShieldedProver.FeeKind.ShieldFromIdentity]). The identity must be
      * managed by this wallet. Signed by the Keystore identity signer
-     * ([signerHandle]) with the identity's TRANSFER key: the same handle
+     * ([signerHandle]) with the identity's TRANSFER key, the same handle
      * [org.dashfoundation.dashsdk.credits.IdentityCredits.transferToAddresses]
-     * threads through. Self-shield only (Rust always targets this wallet's own
+     * threads through. Swift counterpart:
+     * `PlatformWalletManager.shieldedShieldFromIdentity` in
+     * packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletManagerShieldedSync.swift. Self-shield only (Rust always targets this wallet's own
      * default Orchard address, so there is no recipient parameter). Blocks for
      * the ~30s Halo 2 proof; the note arrives on the next shielded sync pass.
      *
