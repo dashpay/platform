@@ -36,12 +36,11 @@ object ShieldedProver {
         Withdrawal(2),
 
         /**
-         * ShieldFromIdentity (Type 21): the shielded COMPUTE fee floor
-         * (`compute_shielded_verification_fee`: proof verification + per-action
-         * processing). Unlike the pool-paid kinds above it carries no storage
-         * term: the identity-funded shield meters its writes through GroveDB
-         * against the identity balance, so only the compute portion is flat.
-         * Backs
+         * ShieldFromIdentity (Type 21): the conservative complete-fee floor
+         * (`compute_shielded_identity_balance_write_fee`: compute + note storage
+         * allowance + identity write allowance) consensus requires the identity
+         * to hold on top of the amount. The exact fee is metered through GroveDB
+         * against the identity balance at execution. Backs
          * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedShieldFromIdentity].
          */
         ShieldFromIdentity(3),

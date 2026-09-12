@@ -40,16 +40,22 @@ use std::sync::Arc;
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::identity_create_from_shielded_pool::IdentityCreateFromShieldedPool;
+use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::IdentityNonceFetcher;
 use dpp::address_funds::{
     AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, OrchardAddress, PlatformAddress,
 };
 use dpp::fee::Credits;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::core_script::CoreScript;
+use dpp::identity::identity_nonce::{
+    IDENTITY_NONCE_VALUE_FILTER, IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES,
+    MAX_MISSING_IDENTITY_REVISIONS, MISSING_IDENTITY_REVISIONS_FILTER,
+};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
-use dpp::prelude::Identifier;
+use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::shielded::builder::{
     build_identity_create_from_shielded_pool_transition,
     build_identity_top_up_from_shielded_pool_transition, build_shield_from_identity_transition,
@@ -813,13 +819,25 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
 /// value (the FFI reports it as such), so the consensus floor must not stand in
 /// for it.
 ///
-/// Returns the identity's proven post-debit balance. The activity row is only
-/// confirmed by the identity's own `VerifiedPartialIdentity` proof carrying a
-/// balance (the SDK's `ShieldFromIdentity` check); a proof for another identity,
-/// one without a balance, or any other result leaves the row pending and
-/// reports [`PlatformWalletError::ShieldedSpendUnconfirmed`], since the wallet
-/// cannot tell from it whether the transition executed. The caller owns the
-/// managed identity and persists the balance
+/// Failure verdicts are reconciled before the row is marked `Failed`. An identity
+/// shield has no input nullifier, so a rebuilt retry would debit the identity
+/// AGAIN under a fresh nonce; a DAPI that relayed the transition and then
+/// returned a rejection could therefore turn one shield into two. Every
+/// "definitive" failure (a rejected broadcast, a consensus error in the result
+/// wait) is checked against the identity's PROVEN nonce: only when the proof
+/// shows `nonce` was never merged is the row marked `Failed` and the error
+/// returned; otherwise the row stays pending and the caller receives
+/// [`PlatformWalletError::ShieldedSpendUnconfirmed`] and must not rebuild.
+///
+/// Returns the identity's proven post-debit balance, which requires the
+/// identity's own `VerifiedPartialIdentity` proof carrying a balance (the SDK's
+/// `ShieldFromIdentity` check); a proof for another identity, one without a
+/// balance, or any other result reports `ShieldedSpendUnconfirmed`. That balance
+/// proof is an affected-state snapshot: it binds neither this transition nor the
+/// created note, so it does NOT confirm the activity row. The row stays `Pending`
+/// until the shielded scan observes the note commitments on-chain (the
+/// coordinator's confirmation pass), exactly like the ambiguous post-broadcast
+/// paths. The caller owns the managed identity and persists the balance
 /// (`PlatformWallet::shielded_shield_from_identity`).
 #[allow(clippy::too_many_arguments)]
 pub async fn shield_from_identity_to<
@@ -919,17 +937,21 @@ pub async fn shield_from_identity_to<
     match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
         Err(e) if broadcast_definitely_failed(&e) => {
-            record_activity_status(
+            // Unauthenticated verdict: settle it against the proven nonce.
+            return Err(settle_identity_shield_failure(
+                sdk,
                 store,
                 persister,
                 wallet_id,
                 id,
                 &pending_entry,
-                ShieldedActivityStatus::Failed,
-                None,
+                identity_id,
+                nonce,
+                account,
+                e,
+                &enrich,
             )
-            .await;
-            return Err(enrich(&e));
+            .await);
         }
         Err(e) => {
             warn!(
@@ -944,8 +966,8 @@ pub async fn shield_from_identity_to<
     // The proof authenticates the identity's post-debit balance (an affected-state
     // snapshot, not execution evidence); a consensus rejection surfaces as an error.
     // `wait_for_affected_state` only converts the proof generically, so the variant
-    // and the identity are enforced here: only this identity's balance proof may
-    // confirm the activity.
+    // and the identity are enforced here: only this identity's balance proof is
+    // accepted as the post-debit balance.
     let proof_outcome: Result<Credits, String> = match state_transition
         .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
         .await
@@ -966,17 +988,22 @@ pub async fn shield_from_identity_to<
         )),
         Err(wait_err) => {
             if carries_consensus_rejection(&wait_err) {
-                record_activity_status(
+                // The wait-side error envelope is unauthenticated too: settle it
+                // against the proven nonce before recording a failure.
+                return Err(settle_identity_shield_failure(
+                    sdk,
                     store,
                     persister,
                     wallet_id,
                     id,
                     &pending_entry,
-                    ShieldedActivityStatus::Failed,
-                    None,
+                    identity_id,
+                    nonce,
+                    account,
+                    wait_err,
+                    &enrich,
                 )
-                .await;
-                return Err(enrich(&wait_err));
+                .await);
             }
             Err(wait_err.to_string())
         }
@@ -997,18 +1024,173 @@ pub async fn shield_from_identity_to<
         }
     };
 
-    record_activity_status(
-        store,
-        persister,
-        wallet_id,
-        id,
-        &pending_entry,
-        ShieldedActivityStatus::Confirmed,
-        None,
-    )
-    .await;
-    info!(account, credits = amount, identity = %identity_id, "ShieldFromIdentity broadcast succeeded");
+    // Not confirmed here: the balance proof does not bind this transition or its
+    // note, so the row stays `Pending` until the scan's confirmation pass observes
+    // the note commitments on-chain (see the function docs).
+    info!(
+        account,
+        credits = amount,
+        identity = %identity_id,
+        "ShieldFromIdentity admitted with a proven post-debit balance; the activity row \
+         awaits on-chain confirmation by the shielded scan"
+    );
     Ok(new_balance)
+}
+
+/// Whether a proven identity nonce word shows that `used` was never merged into the
+/// identity's nonce history, so a transition carrying `used` cannot have executed.
+///
+/// Platform stores the identity nonce as the highest merged value (the low
+/// `IDENTITY_NONCE_VALUE_FILTER` bits) plus a bitmask of the up to
+/// `MAX_MISSING_IDENTITY_REVISIONS` values below it that were skipped (bit
+/// `position - 1 + IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES` set means `tip - position`
+/// is still missing). `used` is proven unmerged when it lies above the tip, or when it
+/// lies within the window below the tip and its missing bit is set. A value older than
+/// the window can no longer be told apart from a merged one, so it is treated as
+/// possibly used.
+pub(crate) fn identity_nonce_proves_unused(stored: IdentityNonce, used: IdentityNonce) -> bool {
+    let tip = stored & IDENTITY_NONCE_VALUE_FILTER;
+    if used > tip {
+        return true;
+    }
+    if used == tip {
+        return false;
+    }
+    let position = tip - used;
+    if position > MAX_MISSING_IDENTITY_REVISIONS {
+        return false;
+    }
+    let missing = stored & MISSING_IDENTITY_REVISIONS_FILTER;
+    missing & (1u64 << (position - 1 + IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES)) != 0
+}
+
+/// Settle an UNAUTHENTICATED failure verdict for an identity shield (a rejected
+/// broadcast or a consensus error in the result wait) against the identity's proven
+/// nonce. The identity nonce is fetched with a proof: when it shows `nonce` was never
+/// merged, the transition cannot have executed, the activity row is marked `Failed`,
+/// and the verdict is returned through `enrich`. Otherwise the transition may have
+/// executed despite the verdict (a relaying DAPI can forge one after the debit
+/// committed), so the row stays pending and the caller receives
+/// [`PlatformWalletError::ShieldedSpendUnconfirmed`]: it must NOT rebuild, because a
+/// fresh nonce would debit the identity again.
+#[allow(clippy::too_many_arguments)]
+async fn settle_identity_shield_failure<
+    S: ShieldedStore,
+    F: Fn(&dash_sdk::Error) -> PlatformWalletError + Sync,
+>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    identity_id: Identifier,
+    nonce: IdentityNonce,
+    account: u32,
+    verdict: dash_sdk::Error,
+    enrich: &F,
+) -> PlatformWalletError {
+    let proven_nonce = IdentityNonceFetcher::fetch(sdk, identity_id)
+        .await
+        .map(|fetched| fetched.map(|fetcher| fetcher.0).unwrap_or_default());
+    match proven_nonce {
+        Ok(stored) if identity_nonce_proves_unused(stored, nonce) => {
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                pending_entry,
+                ShieldedActivityStatus::Failed,
+                None,
+            )
+            .await;
+            enrich(&verdict)
+        }
+        Ok(stored) => {
+            warn!(
+                account,
+                identity = %identity_id,
+                nonce,
+                proven_nonce = stored,
+                verdict = %verdict,
+                "ShieldFromIdentity reported failed, but the proven identity nonce shows the \
+                 transition's nonce as merged; leaving the activity row pending"
+            );
+            PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "shield from identity",
+                reason: format!(
+                    "{verdict}; the identity nonce {nonce} is already merged on Platform, so \
+                     the transition may have executed (do not resubmit)"
+                ),
+            }
+        }
+        Err(fetch_err) => {
+            warn!(
+                account,
+                identity = %identity_id,
+                nonce,
+                verdict = %verdict,
+                error = %fetch_err,
+                "ShieldFromIdentity reported failed, but the identity nonce could not be \
+                 verified; leaving the activity row pending"
+            );
+            PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "shield from identity",
+                reason: format!(
+                    "{verdict}; the identity nonce could not be verified ({fetch_err}), so the \
+                     transition may have executed (do not resubmit)"
+                ),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod identity_nonce_proves_unused_tests {
+    use super::*;
+
+    fn missing_bit(position: u64) -> u64 {
+        1u64 << (position - 1 + IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES)
+    }
+
+    /// Above the tip: never merged. At the tip: merged.
+    #[test]
+    fn tip_comparisons() {
+        assert!(
+            identity_nonce_proves_unused(0, 1),
+            "fresh identity, nonce 1 unused"
+        );
+        assert!(identity_nonce_proves_unused(5, 6));
+        assert!(!identity_nonce_proves_unused(5, 5));
+    }
+
+    /// Below the tip within the window: unused only when its missing bit is set.
+    #[test]
+    fn window_below_tip_reads_the_missing_mask() {
+        let tip = 10u64;
+        // nonce 8 is two below the tip: position 2.
+        assert!(!identity_nonce_proves_unused(tip, 8), "no mask: merged");
+        assert!(identity_nonce_proves_unused(tip | missing_bit(2), 8));
+        assert!(
+            !identity_nonce_proves_unused(tip | missing_bit(3), 8),
+            "a different position's bit must not count"
+        );
+    }
+
+    /// Older than the window: cannot be told apart from merged, so possibly used.
+    #[test]
+    fn older_than_window_is_possibly_used() {
+        let tip = 100u64;
+        assert!(!identity_nonce_proves_unused(
+            tip,
+            tip - MAX_MISSING_IDENTITY_REVISIONS - 1
+        ));
+        assert!(identity_nonce_proves_unused(
+            tip | missing_bit(MAX_MISSING_IDENTITY_REVISIONS),
+            tip - MAX_MISSING_IDENTITY_REVISIONS
+        ));
+    }
 }
 
 /// Map a `ShieldFromIdentity` builder failure. The builder signs with the

@@ -468,10 +468,11 @@ extension PlatformWalletManager {
         case unshield = 1
         /// ShieldedWithdrawal (`compute_shielded_withdrawal_fee`).
         case withdrawal = 2
-        /// ShieldFromIdentity (`compute_shielded_verification_fee`): the
-        /// compute-only floor (Halo 2 verification + per-action
-        /// processing) this transition adds on top of its GroveDB-metered
-        /// storage, so storage is never double-counted.
+        /// ShieldFromIdentity (`compute_shielded_identity_balance_write_fee`):
+        /// the conservative complete-fee floor (compute + note storage
+        /// allowance + identity write allowance) consensus requires the
+        /// identity to hold on top of the amount; the exact fee is metered
+        /// at execution.
         case shieldFromIdentity = 3
         /// IdentityTopUpFromShieldedPool
         /// (`compute_shielded_identity_top_up_fee`): the base flat fee plus

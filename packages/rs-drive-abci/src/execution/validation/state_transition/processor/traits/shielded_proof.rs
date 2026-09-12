@@ -55,6 +55,10 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
         // is done inside transform_into_action because a failed proof must penalize
         // the asset lock (via PartiallyUseAssetLockAction). Moving it here would let
         // attackers spam bad proofs without burning their asset lock.
+        // ShieldFromIdentity is excluded for the same reason: its transform verifies
+        // the proof and turns a failure into a paid, nonce-consuming penalty on the
+        // funding identity (BumpIdentityNonceAction), so a rejected proof never leaves
+        // the identity's nonce and balance reusable for free.
         matches!(
             self,
             StateTransition::Shield(_)
@@ -63,7 +67,6 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_)
-                | StateTransition::ShieldFromIdentity(_)
         )
     }
 
@@ -495,22 +498,6 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                             )
                         }
                     },
-                    StateTransition::ShieldFromIdentity(st) => match st {
-                        ShieldFromIdentityTransition::V0(v0) => {
-                            // Outputs-only bundle entering the pool, exactly like `Shield`. The
-                            // identity ECDSA signature already binds every bundle field to the
-                            // identity and nonce, so no extra sighash data is needed.
-                            reconstruct_and_verify_bundle(
-                                &v0.actions,
-                                FLAGS_OUTPUTS_ONLY,
-                                -(v0.amount as i64),
-                                &v0.anchor,
-                                v0.proof.as_slice(),
-                                &v0.binding_signature,
-                                &[],
-                            )
-                        }
-                    },
                     StateTransition::ShieldedTransfer(st) => match st {
                         dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
                             reconstruct_and_verify_bundle(
@@ -614,8 +601,9 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                             )
                         }
                     },
-                    // ShieldFromAssetLock retains proof verification in transform_into_action
-                    // (penalty comes from the asset lock, which is safe)
+                    // ShieldFromAssetLock and ShieldFromIdentity retain proof verification in
+                    // transform_into_action (their penalties come from the asset lock and the
+                    // funding identity respectively, which is safe)
                     _ => return Ok(SimpleConsensusValidationResult::new()),
                 };
 

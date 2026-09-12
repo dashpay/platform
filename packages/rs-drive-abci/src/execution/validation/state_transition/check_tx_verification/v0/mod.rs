@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::shield_from_asset_lock::StateTransitionShieldFromAssetLockTransitionActionTransformer;
+use crate::execution::validation::state_transition::shield_from_identity::StateTransitionShieldFromIdentityTransitionActionTransformer;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -49,6 +50,17 @@ fn transform_into_action_for_check_tx<C: CoreRPCLike>(
                 platform,
                 state_transition.signable_bytes()?,
                 validation_mode,
+                platform.state.last_block_info(),
+                execution_context,
+                Some(proof_verifier),
+                None,
+            ),
+        // Same shape as ShieldFromAssetLock: the proof is verified inside the transform so
+        // block processing can turn a failure into a paid penalty; CheckTx passes its
+        // admission budget and rejects on failure.
+        StateTransition::ShieldFromIdentity(transition) => transition
+            .transform_into_action_for_shield_from_identity_transition(
+                platform,
                 platform.state.last_block_info(),
                 execution_context,
                 Some(proof_verifier),

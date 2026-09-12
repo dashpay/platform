@@ -1,7 +1,7 @@
 use crate::fee::Credits;
 use crate::shielded::{
-    SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES, SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES,
-    SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES,
+    SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES, SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES,
+    SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES, SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES,
 };
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -192,6 +192,46 @@ pub fn compute_shielded_unshield_fee_v0(
         .ok_or(ProtocolError::Overflow("shielded unshield fee overflow"))
 }
 
+/// v0 of the `ShieldFromIdentity` **admission floor**:
+///
+///   `floor = compute_minimum_shielded_fee_v0(num_actions)
+///            + SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES × (disk + processing) credits/byte`
+///
+/// [`compute_minimum_shielded_fee_v0`] plus one flat storage component for the identity balance
+/// write, the same shape as [`compute_shielded_unshield_fee_v0`]'s address-write component. The
+/// transition's real fee is metered at execution (note inserts plus the identity balance and
+/// nonce updates); this floor is the conservative stand-in the stateless balance pre-check uses
+/// so that a short identity is refused before the Orchard proof is verified, and the client-side
+/// estimate of the total fee.
+///
+/// All arithmetic is checked: an overflow (only reachable via pathological fee constants)
+/// surfaces as `ProtocolError::Overflow` instead of silently wrapping.
+pub fn compute_shielded_identity_balance_write_fee_v0(
+    num_actions: usize,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    let storage = &platform_version.fee_version.storage;
+
+    let base_fee = compute_minimum_shielded_fee_v0(num_actions, platform_version)?;
+
+    let per_byte_rate = storage
+        .storage_disk_usage_credit_per_byte
+        .checked_add(storage.storage_processing_credit_per_byte)
+        .ok_or(ProtocolError::Overflow(
+            "shielded storage per-byte rate overflow",
+        ))?;
+    let identity_write_fee = SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES
+        .checked_mul(per_byte_rate)
+        .ok_or(ProtocolError::Overflow(
+            "shielded identity balance write fee overflow",
+        ))?;
+    base_fee
+        .checked_add(identity_write_fee)
+        .ok_or(ProtocolError::Overflow(
+            "shielded identity balance write floor overflow",
+        ))
+}
+
 /// v0 of the shielded **identity-create** fee formula:
 ///
 ///   `identity_create_fee = compute_minimum_shielded_fee_v0(num_actions)
@@ -289,6 +329,30 @@ mod tests {
     /// version's own constant tables, and must decompose as
     /// `compute_fee + num_actions × storage_allowance` — the component split the pool-paid
     /// booking and the fee-floor tests rely on.
+    /// The `ShieldFromIdentity` admission floor is the minimum fee plus the flat
+    /// identity-write allowance at the storage rate, and strictly above the compute fee.
+    #[test]
+    fn compute_shielded_identity_balance_write_fee_v0_adds_identity_write_allowance() {
+        let platform_version = PlatformVersion::latest();
+        let storage = &platform_version.fee_version.storage;
+        let per_byte_rate =
+            storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte;
+        for num_actions in [1usize, 2, 5] {
+            let floor =
+                compute_shielded_identity_balance_write_fee_v0(num_actions, platform_version)
+                    .expect("floor");
+            let minimum =
+                compute_minimum_shielded_fee_v0(num_actions, platform_version).expect("minimum");
+            let compute = compute_shielded_verification_fee_v0(num_actions, platform_version)
+                .expect("compute");
+            assert_eq!(
+                floor,
+                minimum + SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES * per_byte_rate
+            );
+            assert!(floor > compute);
+        }
+    }
+
     #[test]
     fn compute_minimum_shielded_fee_v0_equals_historical_formula() {
         let platform_version = PlatformVersion::latest();
