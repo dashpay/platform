@@ -369,7 +369,7 @@ jobs:
             --locked \
             -E 'not test(~shield) and (not binary_id(=drive-abci::strategy_tests) or test(~comprehensive_mixed_operations) or test(~process_proposal_collision))'
         env:
-          RUST_MIN_STACK: 4194304
+          RUST_MIN_STACK: 8388608
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
@@ -425,7 +425,7 @@ jobs:
             --locked \
             -- shield
         env:
-          RUST_MIN_STACK: 4194304
+          RUST_MIN_STACK: 8388608
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 

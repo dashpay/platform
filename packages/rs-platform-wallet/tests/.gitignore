@@ -1,0 +1,6 @@
+# Operator-local E2E config and its backups must never be committed —
+# they carry funding-wallet mnemonics. The root .gitignore covers `.env`;
+# this guards the per-network backups (`.env.paloma.bak`, etc.) too.
+.env
+*.env*.bak
+.env.paloma.bak

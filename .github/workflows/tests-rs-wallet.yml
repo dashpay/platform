@@ -236,7 +236,7 @@ jobs:
             --no-tests fail \
             -E 'not test(~wallet::shielded::)'
         env:
-          RUST_MIN_STACK: 4194304
+          RUST_MIN_STACK: 8388608
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
@@ -253,6 +253,6 @@ jobs:
             --all-features \
             --locked
         env:
-          RUST_MIN_STACK: 4194304
+          RUST_MIN_STACK: 8388608
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"

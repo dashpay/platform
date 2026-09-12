@@ -1,3 +1,8 @@
+# Debug-build e2e setup async-frame inflation needs ~8 MiB: tokio-shared-rt block_on polls the root future on the libtest caller, not a sized worker.
+# force prevents a smaller shell-exported RUST_MIN_STACK from overriding this empirically measured workspace value.
+[env]
+RUST_MIN_STACK = { value = "8388608", force = true }
+
 [target.aarch64-unknown-linux-musl]
 rustflags = ["-C", "target-feature=-crt-static"]
 

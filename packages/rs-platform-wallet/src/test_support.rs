@@ -682,7 +682,7 @@ pub async fn test_platform_wallet_manager() -> (
     let manager = Arc::new(crate::PlatformWalletManager::new(
         sdk,
         persister,
-        event_handler,
+        vec![event_handler],
     ));
 
     let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");

@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use dpp::identity::accessors::IdentitySettersV0;
+use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::signer::Signer;
 use dpp::prelude::Identifier;
 
@@ -97,13 +97,15 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
+                let prev_balance = managed.identity.balance();
                 managed.identity.set_balance(new_balance);
-                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                    tracing::error!(
-                        identity = %identity_id,
-                        error = %e,
-                        "Failed to persist identity balance update after top_up_from_addresses"
-                    );
+                if let Err(source) = self.persister.store(managed.snapshot_changeset().into()) {
+                    managed.identity.set_balance(prev_balance);
+                    return Err(PlatformWalletError::PersistedAfterOnChainSuccess {
+                        identity: *identity_id,
+                        op: "top_up_from_addresses",
+                        source,
+                    });
                 }
             }
         }

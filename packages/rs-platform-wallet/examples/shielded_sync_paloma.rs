@@ -211,7 +211,7 @@ async fn main() {
     let manager = Arc::new(PlatformWalletManager::new(
         Arc::clone(&sdk),
         persister,
-        event_handler,
+        vec![event_handler],
     ));
 
     let shielded_db_dir = std::env::temp_dir().join(format!(

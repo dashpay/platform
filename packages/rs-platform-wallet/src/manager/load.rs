@@ -493,7 +493,7 @@ mod idempotent_load_tests {
         Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::new(persister),
-            event_handler,
+            vec![event_handler],
         ))
     }
 
@@ -613,7 +613,7 @@ mod idempotent_load_tests {
                 wallet: ctx.wallet,
                 managed: ctx.managed_wallet,
             }),
-            event_handler,
+            vec![event_handler],
         ));
 
         let result = manager.load_from_persistor().await;

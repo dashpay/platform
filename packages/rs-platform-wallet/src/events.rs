@@ -4,14 +4,12 @@
 //! platform-specific events. Applications implement this trait to receive
 //! all events by reference (no cloning).
 //!
-//! [`PlatformEventManager`] dispatches events to registered handlers.
-//! It implements [`EventHandler`] so it can be passed directly to
-//! `DashSpvClient`, and supports dynamic handler registration via
-//! lock-free `ArcSwap`.
+//! [`PlatformEventManager`] dispatches events to a fixed handler set
+//! provided at construction. It implements [`EventHandler`] so it can
+//! be passed directly to `DashSpvClient`, mirroring dash-spv's own
+//! immutable `event_handlers` model.
 
 use std::sync::Arc;
-
-use arc_swap::ArcSwap;
 
 pub use dash_spv::EventHandler;
 pub use key_wallet_manager::WalletEvent;
@@ -104,40 +102,29 @@ pub trait PlatformEventHandler: EventHandler {
     fn on_shielded_tree_progress(&self, _leaves_committed: u64, _total_target: u64) {}
 }
 
-/// Dispatches events to all registered [`PlatformEventHandler`]s.
+/// Dispatches events to a fixed set of [`PlatformEventHandler`]s.
 ///
 /// Passed to `DashSpvClient` as the `EventHandler` (via `Arc<Self>`).
-/// Supports dynamic handler registration via [`add_handler`](Self::add_handler).
-///
-/// Read path (every event): one atomic pointer load, then iterate.
-/// Write path (add_handler): clone Vec + atomic swap — rare, not on SPV hot path.
+/// The handler set is supplied once at construction and never mutated,
+/// matching the immutable `event_handlers` the wrapped dash-spv layer
+/// consumes. Read path (every event): iterate the boxed slice.
 pub struct PlatformEventManager {
-    handlers: ArcSwap<Vec<Arc<dyn PlatformEventHandler>>>,
+    handlers: Arc<[Arc<dyn PlatformEventHandler>]>,
 }
 
 impl PlatformEventManager {
-    /// Create a new event manager with initial handlers.
+    /// Create a new event manager with the full handler set.
     pub fn new(handlers: Vec<Arc<dyn PlatformEventHandler>>) -> Self {
         Self {
-            handlers: ArcSwap::from_pointee(handlers),
+            handlers: handlers.into(),
         }
-    }
-
-    /// Register an additional handler. Lock-free for readers.
-    pub fn add_handler(&self, handler: Arc<dyn PlatformEventHandler>) {
-        self.handlers.rcu(|current| {
-            let mut new = (**current).clone();
-            new.push(handler.clone());
-            new
-        });
     }
 
     /// Dispatch a platform-address sync completion to every handler.
     ///
     /// Not on the SPV hot path — called once per sync pass (~15s).
     pub fn on_platform_address_sync_completed(&self, summary: &PlatformAddressSyncSummary) {
-        let handlers = self.handlers.load();
-        for h in handlers.iter() {
+        for h in self.handlers.iter() {
             h.on_platform_address_sync_completed(summary);
         }
     }
@@ -147,8 +134,7 @@ impl PlatformEventManager {
     /// Not on the SPV hot path — called once per DPNS sync pass
     /// (~60s by default).
     pub fn on_dpns_marketplace_sync_completed(&self, summary: &DpnsSyncPassSummary) {
-        let handlers = self.handlers.load();
-        for h in handlers.iter() {
+        for h in self.handlers.iter() {
             h.on_dpns_marketplace_sync_completed(summary);
         }
     }
@@ -159,8 +145,7 @@ impl PlatformEventManager {
     /// (~60s by default).
     #[cfg(feature = "shielded")]
     pub fn on_shielded_sync_completed(&self, summary: &ShieldedSyncPassSummary) {
-        let handlers = self.handlers.load();
-        for h in handlers.iter() {
+        for h in self.handlers.iter() {
             h.on_shielded_sync_completed(summary);
         }
     }
@@ -172,8 +157,7 @@ impl PlatformEventManager {
     /// path during a cold sync.
     #[cfg(feature = "shielded")]
     pub fn on_shielded_sync_progress(&self, cumulative_scanned: u64, block_height: u64) {
-        let handlers = self.handlers.load();
-        for h in handlers.iter() {
+        for h in self.handlers.iter() {
             h.on_shielded_sync_progress(cumulative_scanned, block_height);
         }
     }
@@ -188,8 +172,7 @@ impl PlatformEventManager {
     /// frequent path during a cold sync.
     #[cfg(feature = "shielded")]
     pub fn on_shielded_tree_progress(&self, leaves_committed: u64, total_target: u64) {
-        let handlers = self.handlers.load();
-        for h in handlers.iter() {
+        for h in self.handlers.iter() {
             h.on_shielded_tree_progress(leaves_committed, total_target);
         }
     }
@@ -197,36 +180,31 @@ impl PlatformEventManager {
 
 impl EventHandler for PlatformEventManager {
     fn on_sync_event(&self, event: &dash_spv::sync::SyncEvent) {
-        let handlers = self.handlers.load();
-        for h in handlers.iter() {
+        for h in self.handlers.iter() {
             h.on_sync_event(event);
         }
     }
 
     fn on_network_event(&self, event: &dash_spv::network::NetworkEvent) {
-        let handlers = self.handlers.load();
-        for h in handlers.iter() {
+        for h in self.handlers.iter() {
             h.on_network_event(event);
         }
     }
 
     fn on_progress(&self, progress: &dash_spv::sync::SyncProgress) {
-        let handlers = self.handlers.load();
-        for h in handlers.iter() {
+        for h in self.handlers.iter() {
             h.on_progress(progress);
         }
     }
 
     fn on_wallet_event(&self, event: &WalletEvent) {
-        let handlers = self.handlers.load();
-        for h in handlers.iter() {
+        for h in self.handlers.iter() {
             h.on_wallet_event(event);
         }
     }
 
     fn on_error(&self, error: &str) {
-        let handlers = self.handlers.load();
-        for h in handlers.iter() {
+        for h in self.handlers.iter() {
             h.on_error(error);
         }
     }

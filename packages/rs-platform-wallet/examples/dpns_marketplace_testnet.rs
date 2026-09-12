@@ -573,7 +573,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let manager = Arc::new(PlatformWalletManager::new(
         Arc::clone(&sdk),
         Arc::new(NoopPersister),
-        Arc::new(NoopEventHandler),
+        vec![Arc::new(NoopEventHandler)],
     ));
     let wallet = manager
         .create_wallet_from_mnemonic(
