@@ -85,7 +85,7 @@ pub async fn execute_masternode_update_registrar<S: TransactionSigner + ?Sized +
     signer: &S,
 ) -> Result<Txid, PlatformWalletError> {
     let signed = prepare_masternode_update_registrar(wallet, spv, params, owner, signer).await?;
-    wallet.core().broadcast_finalized_transaction(&signed).await
+    super::update_service::broadcast_special_transaction_guarded(wallet.core(), &signed).await
 }
 
 /// Everything [`execute_masternode_update_registrar`] does except the
