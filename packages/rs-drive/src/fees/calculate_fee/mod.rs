@@ -9,6 +9,7 @@ use dpp::version::PlatformVersion;
 use enum_map::EnumMap;
 
 mod v0;
+mod v1;
 
 impl Drive {
     /// Calculates fees for the given operations. Returns the storage and processing costs.
@@ -47,9 +48,17 @@ impl Drive {
                 &platform_version.fee_version,
                 previous_fee_versions,
             ),
+            1 => Self::calculate_fee_v1(
+                base_operations,
+                drive_operations,
+                epoch,
+                epochs_per_era,
+                &platform_version.fee_version,
+                previous_fee_versions,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "Drive::calculate_fee".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
