@@ -219,6 +219,34 @@ out to proposers.
 There is a **dust limit**: refunds below 32 bytes worth of storage credits are
 discarded to prevent micro-refund spam.
 
+### Fee history and refund ownership (protocol version 15 onward)
+
+A refund is priced with the fee history of the block that removes the bytes:
+the `previous_fee_versions` map platform state carries, which the epoch change
+hook extends whenever the fee version number changes. `Drive::calculate_fee`
+v1 (`DRIVE_VERSION_V10`) consults that history for every owner-attributed
+storage removal, on every fee version number, and returns an internal error
+when a caller passes none. Earlier generations priced fee version number 1
+against an empty history, so a caller that forgot the history silently
+refunded at the first generation's storage rates; from protocol version 15
+that omission halts instead of mispricing. Every shipped schedule shares fee
+version number 1 and the same storage rates, so the credits themselves are
+unchanged for every shipped input.
+
+Refunds follow the recorded owner in the element's storage flags.
+`Drive::credit_storage_refunds_to_owners_operations` credits each owner that
+has a balance element without consulting any key or permission, so a frozen
+but existing owner still receives its bookkeeping refund, and reports the
+amount whose owner has no balance element (the native stand-in for a wiped
+owner) for the caller to move into the current epoch's processing pool with a
+single pool write. The caller records every refund against its storage epoch
+in the pending epoch refunds, so the credit conservation check stays balanced.
+Block lifecycle paths that remove owner-attributed bytes settle their refunds
+this way in the block that removes them. The protocol 12 schema migration,
+which shrank stored contracts without refunding the stripped bytes, ran once
+at that activation and is the recorded historical exception; it replays
+exactly as executed.
+
 ## Epoch-Based Fee Distribution
 
 Fees do not go directly to the block proposer. Instead, they accumulate in
@@ -291,6 +319,15 @@ pub struct FeeVersion {
 Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The
 `uses_version_fee_multiplier_permille` field allows a global scaling factor
 (permille = divide by 1000; a value of 1000 means no change).
+
+`fee_version_number` keys the persisted fee history that refunds are priced
+against. A schedule that changes storage rates needs a new number, because the
+refund code resolves the schedule for an epoch through the history and (in
+generations before protocol version 15) shortcut number 1 to the first
+generation's rates. `FEE_VERSION1` and `FEE_VERSION2` share number 1 because
+only a non-storage group changed between them; a test in `rs-drive`'s fee
+operation module pins that every shipped schedule keeps the first generation's
+storage rates.
 
 ## Key Source Files
 
