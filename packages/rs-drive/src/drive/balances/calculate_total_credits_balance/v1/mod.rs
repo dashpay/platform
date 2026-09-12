@@ -80,6 +80,10 @@ impl Drive {
             // pre-v12 chains the tree does not exist, so v1 does not read
             // it and leaves the field zeroed.
             total_in_shielded_balances: 0,
+            // v1 also predates the ContractCredits root tree (introduced at
+            // protocol v17 / drive v10 alongside the v3 calculator), so it
+            // leaves that field zeroed too.
+            total_in_contract_credits: 0,
         })
     }
 }

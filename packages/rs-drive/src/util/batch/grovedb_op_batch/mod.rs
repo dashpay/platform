@@ -73,6 +73,7 @@ enum KnownPath {
     GroupActionsRoot,                                                 //Level 1
     SingleUseKeyBalancesRoot,                                         //Level 1
     ShieldedBalancesRoot,                                             //Level 1
+    ContractCreditsRoot,                                              //Level 1
 }
 
 impl From<RootTree> for KnownPath {
@@ -99,6 +100,7 @@ impl From<RootTree> for KnownPath {
             RootTree::GroupActions => KnownPath::GroupActionsRoot,
             RootTree::AddressBalances => KnownPath::SingleUseKeyBalancesRoot,
             RootTree::ShieldedBalances => KnownPath::ShieldedBalancesRoot,
+            RootTree::ContractCredits => KnownPath::ContractCreditsRoot,
         }
     }
 }
@@ -141,13 +143,17 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                     ),
                     None,
                 ),
-                KnownPath::DataContractAndDocumentsRoot if key.len() == 32 => (
-                    format!(
-                        "ContractId(bs58::{})",
-                        Identifier::from_vec(key.clone()).unwrap()
-                    ),
-                    None,
-                ),
+                KnownPath::DataContractAndDocumentsRoot | KnownPath::ContractCreditsRoot
+                    if key.len() == 32 =>
+                {
+                    (
+                        format!(
+                            "ContractId(bs58::{})",
+                            Identifier::from_vec(key.clone()).unwrap()
+                        ),
+                        None,
+                    )
+                }
                 KnownPath::DataContractAndDocumentsRoot if key.len() == 1 => match key[0] {
                     0 => (
                         "DataContractStorage(0)".to_string(),
