@@ -212,6 +212,22 @@ pub(crate) fn assemble_update_registrar_placeholder(
     // the caller rotates, the live entry's values where it keeps.
     let operator_public_key = match params.new_operator_key_index {
         Some(index) => {
+            // Candidate discovery derives up to 256 indices, but the
+            // managed provider pool — and with it the ownership scan that
+            // later attributes an observed operator key back to a wallet
+            // index — only tracks up to its `highest_generated` watermark
+            // (floored at the default window). A beyond-window key would
+            // sign and broadcast fine and then never be recognized as the
+            // wallet's own, defeating the point of rotating into a wallet
+            // key. Refuse before any funding.
+            let tracked = wallet.provider_operator_tracked_window()?;
+            if index >= tracked {
+                return Err(PlatformWalletError::InvalidParameter(format!(
+                    "operator key index {index} is outside the wallet's tracked provider \
+                     pool (indices 0..{tracked}): the key would derive, but the wallet \
+                     could never recognize it as its own afterwards — pick a lower index"
+                )));
+            }
             let derived = wallet.derive_provider_key_at_index(
                 ProviderKeyKind::Operator,
                 index,
@@ -963,6 +979,41 @@ mod tests {
                 owner_key_hash().to_byte_array()
             );
         });
+    }
+
+    /// A rotation must not select an operator index the managed provider
+    /// pool doesn't track: the derive-and-compare ownership scan
+    /// (`provider_masternode_txs_blocking`) covers only the pool window,
+    /// so a beyond-window key would broadcast fine and then never be
+    /// attributed back to this wallet.
+    #[test]
+    fn beyond_window_operator_indices_are_refused() {
+        let wallet = crate::test_support::sync_test_platform_wallet();
+        let window = wallet
+            .provider_operator_tracked_window()
+            .expect("tracked window");
+        let summaries = vec![masternode(0x11)];
+        let params = MasternodeUpdateRegistrarParams {
+            pro_tx_hash: [0x11; 32],
+            new_operator_key_index: Some(window),
+            new_voting_key_index: None,
+            payout_address: DashAddress::dummy(Network::Mainnet, 3).to_string(),
+        };
+        let collateral = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0xAB; 20]));
+
+        let err = assemble_update_registrar_placeholder(
+            &wallet,
+            &summaries,
+            &test_registration(),
+            &collateral,
+            &params,
+            &owner(),
+        )
+        .expect_err("an untracked operator index is refused before funding");
+        assert!(
+            err.to_string().contains("tracked provider pool"),
+            "unexpected error: {err}"
+        );
     }
 
     /// Regression for the review's async-context panic: key derivation

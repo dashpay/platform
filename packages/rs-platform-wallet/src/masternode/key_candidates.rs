@@ -40,6 +40,19 @@ pub struct ProviderKeyCandidate {
 /// matched against entry voting key ids); other kinds are refused — owner
 /// keys are immutable and never candidates, platform-node keys need the
 /// seed.
+///
+/// Blocking, like
+/// [`wallet_masternodes_blocking`](crate::PlatformWalletManager::wallet_masternodes_blocking):
+/// every derivation takes the wallet-manager lock via tokio's
+/// `blocking_read`, so call this from a plain or blocking thread — from
+/// async code, wrap it in `tokio::task::spawn_blocking`. (The candidates
+/// FFI extern awaits the masternode list on the runtime and then calls
+/// this on its plain calling thread for exactly this reason.)
+///
+/// # Panics
+/// Called on an async runtime worker with a supported kind and a nonzero
+/// `count` — tokio's `blocking_read` panics in an asynchronous execution
+/// context, even uncontended, instead of returning an error.
 pub fn provider_key_candidates(
     wallet: &PlatformWallet,
     summaries: &[MasternodeListSummary],

@@ -47,11 +47,25 @@ extension PlatformWalletManager {
 
     // MARK: - Key candidates
 
+    /// Serializes the blocking candidates FFI call on a GCD worker rather
+    /// than a Swift cooperative-executor thread: the extern parks on the
+    /// masternode-list read and then derives candidates on the calling
+    /// thread behind the wallet-manager lock, so a contended lock or slow
+    /// list operation would otherwise park a cooperative worker for its
+    /// whole duration (same rationale as `pollQueue` and the DPNS
+    /// active-contests queue; a `Task.detached` closure still runs ON the
+    /// cooperative pool).
+    nonisolated private static let candidatesQueue = DispatchQueue(
+        label: "org.dash.platform-wallet.rotation-candidates",
+        qos: .userInitiated
+    )
+
     /// The wallet's first `count` provider keys of `kind`, each joined
     /// against the live masternode list. Throws
     /// `.masternodeListUnavailable` before the list has synced — "unused"
     /// cannot be asserted without it. The FFI blocks (derivation + list
-    /// join), so it runs on a detached task.
+    /// join), so it runs on [`candidatesQueue`] and resumes the async
+    /// caller through a continuation.
     public func providerKeyCandidates(
         walletId: Data,
         kind: RotationKeyKind,
@@ -64,41 +78,49 @@ extension PlatformWalletManager {
                 "Manager not configured, wallet id not 32 bytes, or count above the candidates maximum")
         }
         let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) { () -> [ProviderKeyCandidate] in
-            var outEntries: UnsafeMutablePointer<ProviderKeyCandidateFFI>?
-            var outCount: UInt = 0
-            let ffiResult = walletId.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
-                platform_wallet_manager_provider_key_candidates(
-                    handle,
-                    raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                    kind.rawValue,
-                    count,
-                    &outEntries,
-                    &outCount)
-            }
-            let result = PlatformWalletResult(ffiResult)
-            guard result.isSuccess else {
-                throw PlatformWalletError(result: result)
-            }
-            guard let entries = outEntries, outCount > 0 else { return [] }
-            defer { platform_wallet_manager_free_provider_key_candidates(entries, outCount) }
-            return (0..<Int(outCount)).map { i in
-                let entry = entries[i]
-                var publicKeyTuple = entry.public_key
-                let publicKey = Swift.withUnsafeBytes(of: &publicKeyTuple) {
-                    Data($0.prefix(Int(entry.public_key_len)))
+        return try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<[ProviderKeyCandidate], Error>) in
+            Self.candidatesQueue.async {
+                var outEntries: UnsafeMutablePointer<ProviderKeyCandidateFFI>?
+                var outCount: UInt = 0
+                let ffiResult = walletId.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+                    platform_wallet_manager_provider_key_candidates(
+                        handle,
+                        raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        kind.rawValue,
+                        count,
+                        &outEntries,
+                        &outCount)
                 }
-                var usedByTuple = entry.used_by_pro_tx_hash
-                let usedBy = entry.used
-                    ? Swift.withUnsafeBytes(of: &usedByTuple) { Data($0) }
-                    : nil
-                return ProviderKeyCandidate(
-                    index: entry.index,
-                    publicKey: publicKey,
-                    address: entry.address.map { String(cString: $0) },
-                    usedByProTxHash: usedBy)
+                let result = PlatformWalletResult(ffiResult)
+                guard result.isSuccess else {
+                    continuation.resume(throwing: PlatformWalletError(result: result))
+                    return
+                }
+                guard let entries = outEntries, outCount > 0 else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                defer { platform_wallet_manager_free_provider_key_candidates(entries, outCount) }
+                let candidates = (0..<Int(outCount)).map { i -> ProviderKeyCandidate in
+                    let entry = entries[i]
+                    var publicKeyTuple = entry.public_key
+                    let publicKey = Swift.withUnsafeBytes(of: &publicKeyTuple) {
+                        Data($0.prefix(Int(entry.public_key_len)))
+                    }
+                    var usedByTuple = entry.used_by_pro_tx_hash
+                    let usedBy = entry.used
+                        ? Swift.withUnsafeBytes(of: &usedByTuple) { Data($0) }
+                        : nil
+                    return ProviderKeyCandidate(
+                        index: entry.index,
+                        publicKey: publicKey,
+                        address: entry.address.map { String(cString: $0) },
+                        usedByProTxHash: usedBy)
+                }
+                continuation.resume(returning: candidates)
             }
-        }.value
+        }
     }
 
     // MARK: - Registrar update (key rotation)
