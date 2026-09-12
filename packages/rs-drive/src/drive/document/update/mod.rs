@@ -3476,7 +3476,7 @@ mod tests {
                 storage_flags,
                 None,
                 platform_version,
-                None,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("key-changing update on aggregate index must succeed");
 
