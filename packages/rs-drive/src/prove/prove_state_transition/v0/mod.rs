@@ -507,6 +507,12 @@ impl Drive {
                     &platform_version.drive.grove_version,
                 )?
             }
+            StateTransition::ShieldFromIdentity(st) => {
+                // The identity's post-debit balance; the shielded note is not proven
+                // (the client learns it through shielded sync, as after `Shield`).
+                use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
+                Drive::identity_balance_query(&st.identity_id().to_buffer())
+            }
         };
 
         let proof = self.grove_get_proved_path_query(

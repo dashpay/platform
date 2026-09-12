@@ -108,6 +108,13 @@ impl StateTransitionIdentityNonceValidationV0 for StateTransition {
                 execution_context,
                 platform_version,
             ),
+            StateTransition::ShieldFromIdentity(st) => st.validate_identity_nonces(
+                platform,
+                block_info,
+                tx,
+                execution_context,
+                platform_version,
+            ),
             StateTransition::AddressCreditWithdrawal(_)
             | StateTransition::AddressFundingFromAssetLock(_)
             | StateTransition::IdentityCreateFromAddresses(_)
@@ -161,6 +168,7 @@ impl StateTransitionHasIdentityNonceValidationV0 for StateTransition {
                     | StateTransition::IdentityCreditTransfer(_)
                     | StateTransition::IdentityCreditWithdrawal(_)
                     | StateTransition::MasternodeVote(_)
+                    | StateTransition::ShieldFromIdentity(_)
                     | StateTransition::IdentityCreditTransferToAddresses(_) => true,
                     StateTransition::IdentityCreate(_)
                     | StateTransition::IdentityTopUp(_)

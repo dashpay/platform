@@ -253,6 +253,14 @@ impl StateTransitionActionTransformer for StateTransition {
             StateTransition::ShieldedTransfer(st) => {
                 st.transform_into_action_for_shielded_transfer_transition(platform, tx)
             }
+            StateTransition::ShieldFromIdentity(st) => st.transform_into_action(
+                platform,
+                block_info,
+                remaining_address_input_balances,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
             StateTransition::Unshield(st) => {
                 st.transform_into_action_for_unshield_transition(platform, tx)
             }

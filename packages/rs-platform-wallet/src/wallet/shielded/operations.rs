@@ -51,9 +51,9 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
 use dpp::shielded::builder::{
-    build_identity_create_from_shielded_pool_transition, build_shield_transition,
-    build_shielded_transfer_transition, build_shielded_withdrawal_transition,
-    build_unshield_transition, OrchardProver, SpendableNote,
+    build_identity_create_from_shielded_pool_transition, build_shield_from_identity_transition,
+    build_shield_transition, build_shielded_transfer_transition,
+    build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver, SpendableNote,
 };
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -265,6 +265,7 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
     use dpp::state_transition::shielded_transfer_transition::accessors::ShieldedTransferTransitionAccessorsV0;
     use dpp::state_transition::shielded_withdrawal_transition::accessors::ShieldedWithdrawalTransitionAccessorsV0;
     use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+    use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
     use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAccessorsV0;
 
     match st {
@@ -274,6 +275,7 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
         StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(v0)) => &v0.actions,
         StateTransition::ShieldedWithdrawal(t) => t.actions(),
         StateTransition::IdentityCreateFromShieldedPool(t) => t.actions(),
+        StateTransition::ShieldFromIdentity(t) => t.actions(),
         _ => &[],
     }
 }
@@ -786,6 +788,196 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
     .await;
     info!(account, credits = amount, "Shield broadcast succeeded");
     Ok(())
+}
+
+// -------------------------------------------------------------------------
+// ShieldFromIdentity: identity balance -> shielded pool (Type 21)
+// -------------------------------------------------------------------------
+
+/// Shield credits from a Platform identity's balance straight into the shielded
+/// pool, with the resulting note assigned to `account`'s default Orchard address
+/// (`recipient` `None`) or to a third-party Orchard address.
+///
+/// Unlike [`shield_to`] there are no transparent inputs, no fee strategy, and no
+/// address witnesses: the identity's TRANSFER key signs the whole transition and
+/// consensus debits `amount` plus the metered fee (note writes + identity writes)
+/// plus the shielded compute fee from the identity balance. `nonce` is fetched
+/// from Platform here, so the caller only supplies the identity.
+///
+/// Returns the identity's proven post-debit balance when the result proof carried
+/// it (`None` when the wait confirmed execution without a balance).
+#[allow(clippy::too_many_arguments)]
+pub async fn shield_from_identity_to<
+    S: ShieldedStore,
+    Sig: Signer<IdentityPublicKey>,
+    P: OrchardProver,
+>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &AccountViewingKeys,
+    account: u32,
+    recipient: Option<&PaymentAddress>,
+    identity: &Identity,
+    amount: u64,
+    memo: [u8; 36],
+    signer: &Sig,
+    prover: &P,
+) -> Result<Option<Credits>, PlatformWalletError> {
+    let ShieldRecipient {
+        address: recipient_addr,
+        counterparty: external_counterparty,
+        kind,
+        direction,
+    } = resolve_shield_recipient(keys, recipient)?;
+    let id = SubwalletId::new(wallet_id, account);
+    let identity_id = identity.id();
+
+    // A self-shield funded by an identity is its own activity kind so the
+    // history shows which identity paid; a third-party recipient stays `Sent`.
+    let kind = match kind {
+        ShieldedActivityKind::Shield => ShieldedActivityKind::ShieldFromIdentity {
+            identity_id: identity_id.to_buffer(),
+        },
+        other => other,
+    };
+
+    // The metered part of the fee is only known at execution; the shielded
+    // compute fee is the consensus floor and what the activity row records.
+    let fee_floor =
+        dpp::shielded::compute_shielded_verification_fee(SHIELD_NUM_ACTIONS, sdk.version())
+            .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+
+    let nonce = sdk
+        .get_identity_nonce(identity_id, true, None)
+        .await
+        .map_err(|e| {
+            PlatformWalletError::ShieldedBuildError(format!("fetch identity nonce: {e}"))
+        })?;
+
+    info!(
+        account,
+        credits = amount,
+        identity = %identity_id,
+        external = external_counterparty.is_some(),
+        "ShieldFromIdentity: building proof"
+    );
+
+    let state_transition = build_shield_from_identity_transition(
+        identity,
+        &recipient_addr,
+        amount,
+        nonce,
+        signer,
+        None,
+        0, // user_fee_increase
+        prover,
+        memo,
+        Some(keys.outgoing_viewing_key.clone()),
+        sdk.version(),
+    )
+    .await
+    .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+
+    trace!("ShieldFromIdentity: state transition built, broadcasting...");
+
+    let pending_entry = record_pending_activity(
+        store,
+        persister,
+        wallet_id,
+        id,
+        keys,
+        LiveEntryParams {
+            kind,
+            direction,
+            amount,
+            fee: Some(fee_floor),
+            counterparty: external_counterparty,
+            memo: non_zero_memo(&memo),
+            actions: shielded_actions(&state_transition),
+            spent_notes: &[],
+        },
+    )
+    .await;
+
+    let enrich = |e: &dash_sdk::Error| -> PlatformWalletError {
+        crate::error::promote_address_nonce_error(e)
+            .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))
+    };
+
+    match state_transition.broadcast(sdk, None).await {
+        Ok(()) => {}
+        Err(e) if broadcast_definitely_failed(&e) => {
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                ShieldedActivityStatus::Failed,
+                None,
+            )
+            .await;
+            return Err(enrich(&e));
+        }
+        Err(e) => {
+            warn!(
+                account,
+                error = %e,
+                "ShieldFromIdentity broadcast returned no verdict; the transition may have \
+                 been admitted; falling through to the result wait"
+            );
+        }
+    }
+
+    // The proof authenticates the identity's post-debit balance (an affected-state
+    // snapshot, not execution evidence); a consensus rejection surfaces as an error.
+    let new_balance = match state_transition
+        .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
+        .await
+    {
+        Ok(StateTransitionProofResult::VerifiedPartialIdentity(partial)) => partial.balance,
+        Ok(_) => None,
+        Err(wait_err) => {
+            if carries_consensus_rejection(&wait_err) {
+                record_activity_status(
+                    store,
+                    persister,
+                    wallet_id,
+                    id,
+                    &pending_entry,
+                    ShieldedActivityStatus::Failed,
+                    None,
+                )
+                .await;
+                return Err(enrich(&wait_err));
+            }
+            warn!(
+                account,
+                error = %wait_err,
+                "ShieldFromIdentity broadcast accepted but result confirmation failed; \
+                 leaving the activity row pending"
+            );
+            return Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "shield from identity",
+                reason: wait_err.to_string(),
+            });
+        }
+    };
+
+    record_activity_status(
+        store,
+        persister,
+        wallet_id,
+        id,
+        &pending_entry,
+        ShieldedActivityStatus::Confirmed,
+        None,
+    )
+    .await;
+    info!(account, credits = amount, identity = %identity_id, "ShieldFromIdentity broadcast succeeded");
+    Ok(new_balance)
 }
 
 // -------------------------------------------------------------------------

@@ -45,8 +45,8 @@ use std::os::raw::c_char;
 use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
 use dpp::shielded::{
-    compute_minimum_shielded_fee, compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
-    ShieldedMemo,
+    compute_minimum_shielded_fee, compute_shielded_unshield_fee, compute_shielded_verification_fee,
+    compute_shielded_withdrawal_fee, ShieldedMemo,
 };
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
@@ -61,6 +61,8 @@ use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::{block_on_worker, runtime};
 use crate::shielded_types::ShieldedShieldPreflightFFI;
+use crate::types::read_identifier;
+use crate::unwrap_result_or_return;
 
 /// A serialized `PlatformAddress` is exactly 21 bytes (1-byte variant tag + 20-byte hash).
 const PLATFORM_ADDRESS_LEN: usize = 21;
@@ -170,6 +172,7 @@ fn shielded_fee_formula(
         0 => Some(compute_minimum_shielded_fee),
         1 => Some(compute_shielded_unshield_fee),
         2 => Some(compute_shielded_withdrawal_fee),
+        3 => Some(compute_shielded_verification_fee),
         _ => None,
     }
 }
@@ -216,7 +219,7 @@ pub unsafe extern "C" fn platform_wallet_shielded_estimate_fee(
     let Some(formula) = shielded_fee_formula(kind) else {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            format!("unknown shielded fee kind {kind} (expected 0/1/2)"),
+            format!("unknown shielded fee kind {kind} (expected 0/1/2/3)"),
         );
     };
     let Some(platform_version) =
@@ -1158,6 +1161,80 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
             .await
     });
     map_spend_result(result, "shielded shield")
+}
+
+/// Shield credits from one of the wallet's Platform identities straight into
+/// the wallet's shielded pool: the Type 21 `ShieldFromIdentity` transition.
+/// The note lands on `shielded_account`'s default Orchard address; the identity
+/// is debited `amount` plus the metered fee plus the shielded compute fee.
+///
+/// `identity_id` is the 32-byte identity id; the identity must be managed by
+/// this wallet. `signer_identity_handle` is a `*const SignerHandle` produced by
+/// `dash_sdk_signer_create_with_ctx` that can sign with the identity's TRANSFER
+/// key (the same handle credit transfers use). The caller retains ownership.
+///
+/// `out_new_balance`, when non-null, receives the identity's proven
+/// post-debit balance (0 when the result proof carried none).
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `identity_id` must point to 32 readable bytes.
+/// - `signer_identity_handle` must be a valid, non-destroyed `*const SignerHandle`
+///   that outlives this call and points at a `VTableSigner` with the callback
+///   variant.
+/// - `out_new_balance` must be null or point to writable `u64` storage.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    shielded_account: u32,
+    identity_id: *const u8,
+    amount: u64,
+    signer_identity_handle: *const SignerHandle,
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(identity_id);
+    check_ptr!(signer_identity_handle);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let identity_id = unwrap_result_or_return!(read_identifier(identity_id));
+
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+
+    // Same pointer round-trip as `platform_wallet_manager_shielded_shield`: the
+    // borrow is re-materialized inside the synchronously-awaited worker task.
+    let signer_addr = signer_identity_handle as usize;
+
+    let result = block_on_worker(async move {
+        // SAFETY: valid for the duration of this synchronously-awaited task per
+        // the caller's documented lifetime contract.
+        let identity_signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+        let prover = CachedOrchardProver::new();
+        wallet
+            .shielded_shield_from_identity(
+                &coordinator,
+                shielded_account,
+                &identity_id,
+                amount,
+                identity_signer,
+                &prover,
+            )
+            .await
+    });
+    match result {
+        Ok(new_balance) => {
+            if !out_new_balance.is_null() {
+                *out_new_balance = new_balance.unwrap_or(0);
+            }
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => map_spend_result(Err(e), "shielded shield from identity"),
+    }
 }
 
 /// Shield: spend credits from a Platform Payment account into a

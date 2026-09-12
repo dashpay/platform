@@ -37,6 +37,7 @@ use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTr
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
+use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionSigningOptions,
 };
@@ -314,6 +315,7 @@ impl StateTransitionWasm {
             ShieldFromAssetLock(_) => 18,
             ShieldedWithdrawal(_) => 19,
             IdentityCreateFromShieldedPool(_) => 20,
+            ShieldFromIdentity(_) => 21,
         }
     }
 
@@ -393,6 +395,7 @@ impl StateTransitionWasm {
             IdentityCreditTransfer(_) => None,
             MasternodeVote(_) => None,
             IdentityCreditTransferToAddresses(_)
+            | ShieldFromIdentity(_)
             | IdentityCreateFromAddresses(_)
             | IdentityTopUpFromAddresses(_)
             | AddressFundsTransfer(_)
@@ -421,6 +424,7 @@ impl StateTransitionWasm {
             IdentityCreditTransfer(credit_transfer) => Some(credit_transfer.nonce()),
             MasternodeVote(mn_vote) => Some(mn_vote.nonce()),
             IdentityCreditTransferToAddresses(ct) => Some(ct.nonce()),
+            ShieldFromIdentity(st) => Some(st.nonce()),
             IdentityCreateFromAddresses(_) => None,
             IdentityTopUpFromAddresses(_) => None,
             AddressFundsTransfer(_)
@@ -552,6 +556,10 @@ impl StateTransitionWasm {
                 ct.set_identity_id(owner_id);
                 self.0 = IdentityCreditTransferToAddresses(ct);
             }
+            ShieldFromIdentity(mut st) => {
+                st.set_identity_id(owner_id);
+                self.0 = ShieldFromIdentity(st);
+            }
             IdentityCreateFromAddresses(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set owner for identity create transition",
@@ -638,6 +646,7 @@ impl StateTransitionWasm {
                 ));
             }
             IdentityCreditTransferToAddresses(_)
+            | ShieldFromIdentity(_)
             | IdentityCreateFromAddresses(_)
             | IdentityTopUpFromAddresses(_)
             | AddressFundsTransfer(_)
@@ -727,6 +736,10 @@ impl StateTransitionWasm {
             IdentityCreditTransferToAddresses(mut transfer) => {
                 transfer.set_nonce(nonce);
                 transfer.into()
+            }
+            ShieldFromIdentity(mut st) => {
+                st.set_nonce(nonce);
+                st.into()
             }
             IdentityCreateFromAddresses(_) => {
                 return Err(WasmDppError::invalid_argument(
