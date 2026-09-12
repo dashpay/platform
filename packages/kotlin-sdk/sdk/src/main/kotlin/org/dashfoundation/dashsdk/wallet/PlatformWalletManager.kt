@@ -2387,24 +2387,36 @@ class PlatformWalletManager(
         require(budgetSecs >= 0) { "budgetSecs must be non-negative, got $budgetSecs" }
         require(gapLimit >= 0) { "gapLimit must be non-negative, got $gapLimit" }
         withContext(Dispatchers.IO) {
+            // Each handle is guarded from the moment it exists: the signer's
+            // constructor can throw (Keystore unlock, DAO access), and a single
+            // try covering both would leak the resolver's native handle when it
+            // does. Closed in reverse construction order.
             val startupResolver = MnemonicResolverAndPersister(walletStorage)
-            val startupSigner =
-                KeystoreSigner(walletStorage, network, biometricGate, database.platformAddressDao())
             try {
-                val blob = mapNativeErrors {
-                    WalletManagerNative.startWalletSubsystems(
-                        managerHandle,
-                        walletId,
-                        startupResolver.nativeHandle,
-                        startupSigner.nativeHandle,
-                        budgetSecs,
-                        gapLimit,
+                val startupSigner =
+                    KeystoreSigner(
+                        walletStorage,
+                        network,
+                        biometricGate,
+                        database.platformAddressDao(),
                     )
+                try {
+                    val blob = mapNativeErrors {
+                        WalletManagerNative.startWalletSubsystems(
+                            managerHandle,
+                            walletId,
+                            startupResolver.nativeHandle,
+                            startupSigner.nativeHandle,
+                            budgetSecs,
+                            gapLimit,
+                        )
+                    }
+                    WalletStartupOutcome.decode(blob)
+                } finally {
+                    runCatching { startupSigner.close() }
                 }
-                WalletStartupOutcome.decode(blob)
             } finally {
                 runCatching { startupResolver.close() }
-                runCatching { startupSigner.close() }
             }
         }
     }
