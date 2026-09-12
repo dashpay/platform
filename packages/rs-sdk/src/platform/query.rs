@@ -293,6 +293,14 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
             get_document_history_request_v1::{Cursor, Selector},
             GetDocumentHistoryRequestV1,
         };
+        // Every history fetch verifies the two GroveDB proofs; there is no
+        // unproved decoding path, so a proof-disabled request would only fail
+        // after the round trip.
+        if !settings.prove {
+            return Err(Error::Generic(
+                "document history queries require proofs".to_owned(),
+            ));
+        }
         let limit = self
             .limit
             .map(u16::try_from)
@@ -1505,6 +1513,27 @@ mod history_query_tests {
                 if message == "history limit out of bounds")
             );
         }
+    }
+
+    #[test]
+    fn should_reject_proof_disabled_history_queries_before_sending() {
+        let request_settings = Default::default();
+        let settings = QuerySettings {
+            request_settings: &request_settings,
+            protocol_version: PlatformVersion::get(14).unwrap(),
+            prove: false,
+        };
+        let query = DocumentHistoryQuery {
+            data_contract_id: [1; 32].into(),
+            document_type_name: "note".into(),
+            document_id: [2; 32].into(),
+            selector: DocumentHistorySelector::StartAtTime(0),
+            limit: Some(1),
+        };
+        assert!(
+            matches!(query.query(&settings), Err(Error::Generic(message))
+            if message == "document history queries require proofs")
+        );
     }
 
     #[test]
