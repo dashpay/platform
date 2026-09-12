@@ -268,8 +268,14 @@ fn should_reject_a_binding_to_a_missing_export_and_a_signature_mismatch() {
             importer: name("app"),
             target: name("lib"),
             export: "helper".to_owned(),
-            imported: FuncSignature::new(vec![ValueType::I64], vec![ValueType::I32]),
-            exported: FuncSignature::new(vec![ValueType::I32], vec![ValueType::I32]),
+            imported: Box::new(FuncSignature::new(
+                vec![ValueType::I64],
+                vec![ValueType::I32]
+            )),
+            exported: Box::new(FuncSignature::new(
+                vec![ValueType::I32],
+                vec![ValueType::I32]
+            )),
         }
     );
 }

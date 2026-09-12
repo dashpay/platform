@@ -96,8 +96,8 @@ pub fn validate_and_prepare_bundle(
                     importer: module.name.clone(),
                     target: import.target.clone(),
                     export: import.export.clone(),
-                    imported: import.signature.clone(),
-                    exported: export.signature.clone(),
+                    imported: Box::new(import.signature.clone()),
+                    exported: Box::new(export.signature.clone()),
                 }
                 .into());
             }

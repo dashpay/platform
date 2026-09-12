@@ -50,8 +50,8 @@ pub(crate) fn interface_of_submitted(
             };
             if *expected != signature {
                 return Err(refuse(ImportRejection::HostSignature {
-                    expected: expected.clone(),
-                    actual: signature,
+                    expected: Box::new(expected.clone()),
+                    actual: Box::new(signature),
                 }));
             }
             host_imports.push(HostImport {
@@ -62,7 +62,7 @@ pub(crate) fn interface_of_submitted(
         }
         if let Some(target) = import.module.strip_prefix(INTERNAL_MODULE_PREFIX) {
             let target = ModuleName::parse(target, profile.limits.max_module_name_bytes)
-                .map_err(|error| refuse(ImportRejection::InvalidTargetName(error)))?;
+                .map_err(|error| refuse(ImportRejection::InvalidTargetName(Box::new(error))))?;
             internal_imports.push(InternalImport {
                 target,
                 export: import.name.clone(),

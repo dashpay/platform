@@ -149,13 +149,13 @@ pub enum ImportRejection {
     #[error("host function signature {actual} does not match {expected}")]
     HostSignature {
         /// The signature the envelope defines.
-        expected: FuncSignature,
+        expected: Box<FuncSignature>,
         /// The signature the module imports.
-        actual: FuncSignature,
+        actual: Box<FuncSignature>,
     },
     /// The target module name of an internal binding is not a valid module name.
     #[error("invalid binding target name: {0}")]
-    InvalidTargetName(BundleError),
+    InvalidTargetName(Box<BundleError>),
 }
 
 /// Why an export was refused.
@@ -336,9 +336,9 @@ pub enum BundleError {
         /// The export name.
         export: String,
         /// The importer's signature.
-        imported: FuncSignature,
+        imported: Box<FuncSignature>,
         /// The target's signature.
-        exported: FuncSignature,
+        exported: Box<FuncSignature>,
     },
     /// The declared binding list differs from the bindings the code establishes.
     #[error("declared bindings do not match the module imports: {detail}")]

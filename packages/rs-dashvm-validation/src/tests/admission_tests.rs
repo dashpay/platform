@@ -626,8 +626,14 @@ fn should_apply_the_import_allowlist() {
             "dash_host",
             "response_len",
             ImportRejection::HostSignature {
-                expected: FuncSignature::new(vec![ValueType::I32], vec![ValueType::I32]),
-                actual: FuncSignature::new(vec![ValueType::I64], vec![ValueType::I32]),
+                expected: Box::new(FuncSignature::new(
+                    vec![ValueType::I32],
+                    vec![ValueType::I32],
+                )),
+                actual: Box::new(FuncSignature::new(
+                    vec![ValueType::I64],
+                    vec![ValueType::I32],
+                )),
             },
         ),
     ];
