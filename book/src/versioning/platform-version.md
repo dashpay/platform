@@ -108,6 +108,17 @@ record, and the next consensus change creates `v15.rs`. There is never a
 `v14.rs` that means one thing on a node built last month and another on a node
 built today.
 
+Because the array is indexed by number, a version cannot be registered without
+every number below it. The 5.0 development branch therefore carries protocol
+version 17 (its own) together with 15 and 16, which the allocation register
+reserves for the 4.3 and 4.4 releases. Until those branches merge their real
+`v15.rs` and `v16.rs` forward, the two files are placeholders written as
+struct updates over their predecessor
+(`PlatformVersion { protocol_version: PROTOCOL_VERSION_15, ..PLATFORM_V14 }`).
+A forward merge that brings the real file is resolved by taking the incoming
+file; because 16 and 17 are struct updates too, every table the incoming
+version changes flows into them without a second edit.
+
 ## What a Version Snapshot Looks Like
 
 Here is the very first version, `PLATFORM_V1`, slightly abbreviated:
