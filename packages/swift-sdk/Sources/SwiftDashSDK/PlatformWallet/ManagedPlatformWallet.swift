@@ -2505,6 +2505,39 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Reserve a fresh Core payout address for a DashPay contact without
+    /// requiring transparent funds. Call only after confirming a withdrawal:
+    /// each successful call permanently consumes an address shared with Core
+    /// sends. The SDK persists the reservation before returning it.
+    /// This does not submit a payment or record its history.
+    public func reserveDashPayPaymentAddress(
+        fromIdentityId: Identifier,
+        toContactIdentityId: Identifier
+    ) async throws -> String {
+        let handle = self.handle
+        let fromBytes = fromIdentityId.withFFIBytes { Array(UnsafeBufferPointer(start: $0, count: 32)) }
+        let toBytes = toContactIdentityId.withFFIBytes { Array(UnsafeBufferPointer(start: $0, count: 32)) }
+        let resolver = MnemonicResolver()
+        return try await Task.detached(priority: .userInitiated) { () -> String in
+            var address: UnsafeMutablePointer<CChar>?
+            let result = withExtendedLifetime(resolver) {
+                fromBytes.withUnsafeBufferPointer { from in
+                    toBytes.withUnsafeBufferPointer { to in
+                        platform_wallet_reserve_dashpay_payment_address(
+                            handle, from.baseAddress!, to.baseAddress!, resolver.handle, &address
+                        )
+                    }
+                }
+            }
+            try result.check()
+            guard let address else {
+                throw PlatformWalletError.invalidParameter("Missing reserved DashPay address")
+            }
+            defer { platform_wallet_string_free(address) }
+            return String(cString: address)
+        }.value
+    }
+
     /// Send a Dash payment to an established DashPay contact.
     /// `amountDuffs` is in duffs (1 DASH = 100_000_000 duffs).
     /// Returns the 32-byte transaction id plus the exact network fee
