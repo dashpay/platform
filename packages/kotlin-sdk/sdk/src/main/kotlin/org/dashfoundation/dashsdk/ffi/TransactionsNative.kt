@@ -144,6 +144,26 @@ internal object TransactionsNative {
     ): ByteArray
 
     /**
+     * Erase + broadcast a chunk of the retained revisions of the already
+     * deleted [documentId] on [contractId]'s [documentType], signed via
+     * [signerHandle] with key [signingKeyId] of [ownerId]. Bridges
+     * `platform_wallet_document_erase` (Swift
+     * `ManagedPlatformWallet.eraseDocument`). The first erase of a document
+     * must be signed by its owner; later ones may be signed by any
+     * identity. Erase returns no document body, so this returns the erased
+     * document's 32-byte id for confirmation.
+     */
+    external fun documentErase(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        documentId: ByteArray,
+        signingKeyId: Int,
+        signerHandle: Long,
+    ): ByteArray
+
+    /**
      * Transfer + broadcast [documentId] on [contractId]'s [documentType],
      * from [ownerId] to [recipientId], signed via [signerHandle] with key
      * [signingKeyId]. Bridges `platform_wallet_document_transfer` (Swift

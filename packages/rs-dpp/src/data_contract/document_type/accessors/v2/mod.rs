@@ -30,6 +30,11 @@ pub trait DocumentTypeV2Getters {
     /// each terminating in an `Item` keyed by the index's `terminal`
     /// property. Only what is in the indexes exists and is recoverable.
     fn index_only(&self) -> bool;
+
+    /// Returns whether a deleted document of this type may have its retained
+    /// revisions purged by an erase transition. Always false for document
+    /// types parsed by an earlier grammar, which has no such keyword.
+    fn documents_can_be_erased(&self) -> bool;
 }
 
 /// Trait providing setters for DocumentTypeV2-specific fields.

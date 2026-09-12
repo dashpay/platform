@@ -23,7 +23,8 @@ use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransi
 use crate::state_transition::batch_transition::BatchTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::{
-    BatchTransition, DocumentDeleteTransition, DocumentIndexOnlyDeleteTransition,
+    BatchTransition, DocumentDeleteTransition, DocumentEraseTransition,
+    DocumentIndexOnlyDeleteTransition,
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
@@ -182,6 +183,54 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
     }
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_document_erase_transition_from_document<S: Signer<IdentityPublicKey>>(
+        document: Document,
+        document_type: DocumentTypeRef<'_>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let owner_id = document.owner_id();
+        let resolved_options = options.unwrap_or_default();
+        // Erase never carries a token payment: it acts on a document whose
+        // deletion cost was already charged.
+        let erase_transition: DocumentTransition = DocumentEraseTransition::from_document(
+            document,
+            document_type,
+            None,
+            identity_contract_nonce,
+            platform_version,
+            resolved_options.method_feature_version,
+            resolved_options.base_feature_version,
+        )?
+        .into();
+        let documents_batch_transition: BatchTransition = BatchTransitionV0 {
+            owner_id,
+            transitions: vec![erase_transition],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+        let mut state_transition: StateTransition = documents_batch_transition.into();
+        let required_security_level = document_type.security_level_requirement();
+        state_transition
+            .sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(required_security_level)),
+                resolved_options.signing_options,
+            )
+            .await?;
+        Ok(state_transition)
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     async fn new_document_transfer_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
         document_type: DocumentTypeRef<'_>,

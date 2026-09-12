@@ -125,6 +125,144 @@ public struct PathElement: Sendable {
     }
 }
 
+/// Which revisions of a keep-history document to read. Exactly one
+/// selector applies per `documentGetHistory` call.
+public enum DocumentHistorySelector: Sendable {
+    /// Revisions written at or after the time, oldest first. Zero reads
+    /// the first page of the whole history.
+    case startAtTime(ms: UInt64)
+    /// Revisions after the complete cursor of the last entry received.
+    case startAfter(timeMs: UInt64, revision: UInt64)
+    /// Revisions from the history sequence number onwards.
+    case startAtRevision(UInt64)
+    /// Exactly the revision at the history sequence number; the limit
+    /// must be one.
+    case revision(UInt64)
+
+    var ffiValue: DashSDKDocumentHistorySelector {
+        // DashSDKDocumentHistorySelector is a C enum; Swift doesn't always
+        // import named cases, so the raw values are spelled out.
+        switch self {
+        case .startAtTime: return DashSDKDocumentHistorySelector(rawValue: 0)
+        case .startAfter: return DashSDKDocumentHistorySelector(rawValue: 1)
+        case .startAtRevision: return DashSDKDocumentHistorySelector(rawValue: 2)
+        case .revision: return DashSDKDocumentHistorySelector(rawValue: 3)
+        }
+    }
+
+    var timeMs: UInt64 {
+        switch self {
+        case .startAtTime(let ms): return ms
+        case .startAfter(let timeMs, _): return timeMs
+        case .startAtRevision, .revision: return 0
+        }
+    }
+
+    var revisionValue: UInt64 {
+        switch self {
+        case .startAtTime: return 0
+        case .startAfter(_, let revision): return revision
+        case .startAtRevision(let revision), .revision(let revision): return revision
+        }
+    }
+}
+
+/// Where a keep-history document stands in its lifecycle, as history v1
+/// authenticates it.
+public enum DocumentLifecycleState: String, Sendable {
+    /// Visible to ordinary reads.
+    case active = "ACTIVE"
+    /// Deleted with its revisions retained.
+    case deleted = "DELETED"
+    /// An authorized erasure has begun and revisions are being removed.
+    case erasing = "ERASING"
+    /// Nothing is left.
+    case absent = "ABSENT"
+}
+
+/// The `lifecycle` block of a `documentGetHistory` result.
+public struct DocumentHistoryLifecycle: Sendable {
+    public let state: DocumentLifecycleState
+    /// Exact count of revisions still retained (zero when absent).
+    public let remainingRevisions: UInt64
+    /// Zero unless the document has been deleted.
+    public let deletedAtMs: UInt64
+    /// Zero unless an authorized erasure has begun.
+    public let erasingStartedAtMs: UInt64
+    /// Timestamp of the newest revision retained when the erasure began.
+    public let erasingFromTimeMs: UInt64
+    /// History sequence number of that revision.
+    public let erasingFromRevision: UInt64
+
+    /// Parses the `lifecycle` dictionary of a `documentGetHistory`
+    /// result; nil when the block, its state, or any of its numbers is
+    /// missing, unknown, or not a non-negative integer, so a partial block
+    /// is never read as zeros.
+    public init?(json: [String: Any]) {
+        guard let stateRaw = json["state"] as? String,
+              let state = DocumentLifecycleState(rawValue: stateRaw) else {
+            return nil
+        }
+        func value(_ key: String) -> UInt64? {
+            // JSONSerialization bridges JSON booleans and fractional numbers to
+            // NSNumber too, so a bare sign check would let `true` and `1.5`
+            // through and truncate them into lifecycle metadata. Accept only a
+            // whole, non-negative number that UInt64 can hold: the upper bound
+            // is strict because `Double(UInt64.max)` rounds up to 2^64, which
+            // `uint64Value` cannot represent.
+            guard let number = json[key] as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID() else {
+                return nil
+            }
+            let asDouble = number.doubleValue
+            guard asDouble >= 0,
+                  asDouble < Double(UInt64.max),
+                  asDouble == asDouble.rounded(.towardZero) else {
+                return nil
+            }
+            return number.uint64Value
+        }
+        guard let remainingRevisions = value("remaining_revisions"),
+              let deletedAtMs = value("deleted_at_ms"),
+              let erasingStartedAtMs = value("erasing_started_at_ms"),
+              let erasingFromTimeMs = value("erasing_from_time_ms"),
+              let erasingFromRevision = value("erasing_from_revision") else {
+            return nil
+        }
+        self.state = state
+        self.remainingRevisions = remainingRevisions
+        self.deletedAtMs = deletedAtMs
+        self.erasingStartedAtMs = erasingStartedAtMs
+        self.erasingFromTimeMs = erasingFromTimeMs
+        self.erasingFromRevision = erasingFromRevision
+    }
+
+    /// Words for what an erase achieved, from the lifecycle read before it
+    /// was submitted (nil when not read) and the one read after its absence
+    /// was observed. The erase result itself proves only that the document
+    /// is absent from ordinary reads, which it already was, so a document
+    /// still DELETED with the same retained count is reported as not
+    /// established, never as an accepted or completed erase.
+    public static func describeEraseProgress(
+        before: DocumentHistoryLifecycle?,
+        after: DocumentHistoryLifecycle
+    ) -> String {
+        switch after.state {
+        case .absent:
+            return "Erasure complete: no revisions remain and the id is free again."
+        case .erasing:
+            return "Erasure in progress: \(after.remainingRevisions) revisions still retained; submit another erase to continue."
+        case .deleted:
+            if let before, before.state == .deleted, before.remainingRevisions == after.remainingRevisions {
+                return "Not established: the document is still DELETED with \(after.remainingRevisions) revisions retained, so the history shows nothing this erase removed."
+            }
+            return "The document is DELETED with \(after.remainingRevisions) revisions retained; no erasure has been recorded."
+        case .active:
+            return "The document is active; an erase applies only after it has been deleted."
+        }
+    }
+}
+
 // MARK: - Platform Query Extensions for SDK
 @MainActor
 extension SDK {
@@ -470,6 +608,61 @@ extension SDK {
     }
 
     // MARK: - Document Queries
+
+    /// Read where a keep-history document stands right now: its lifecycle
+    /// state and the exact number of revisions still retained. A current
+    /// observation, not the outcome of any particular transition.
+    public func documentGetLifecycle(
+        dataContractId: String,
+        documentType: String,
+        documentId: String
+    ) async throws -> DocumentHistoryLifecycle {
+        let page = try await documentGetHistory(
+            dataContractId: dataContractId,
+            documentType: documentType,
+            documentId: documentId,
+            selector: .startAtTime(ms: 0),
+            limit: 1
+        )
+        guard let lifecycleJSON = page["lifecycle"] as? [String: Any],
+              let lifecycle = DocumentHistoryLifecycle(json: lifecycleJSON) else {
+            throw SDKError.serializationError("Document history response carried no complete lifecycle block")
+        }
+        return lifecycle
+    }
+
+    /// Get a page of a keep-history document's revision history with its
+    /// lifecycle state.
+    ///
+    /// Returns the FFI's JSON object: `entries` (each with `time_ms`,
+    /// `revision` and the canonical `document`) and `lifecycle` (see
+    /// `DocumentHistoryLifecycle`). Pass the last entry's `time_ms` and
+    /// `revision` back as `.startAfter` for the next page. At most ten
+    /// entries per page; `limit` nil takes the default.
+    public func documentGetHistory(
+        dataContractId: String,
+        documentType: String,
+        documentId: String,
+        selector: DocumentHistorySelector = .startAtTime(ms: 0),
+        limit: UInt32? = nil
+    ) async throws -> [String: Any] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+
+        let result = dash_sdk_document_fetch_history(
+            handle,
+            dataContractId,
+            documentType,
+            documentId,
+            selector.ffiValue,
+            selector.timeMs,
+            selector.revisionValue,
+            limit ?? 0
+        )
+
+        return try processJSONResult(result)
+    }
 
     /// List documents
     public func documentList(

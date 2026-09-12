@@ -4,4 +4,8 @@ mod add_estimation_costs_for_add_document_to_primary_storage;
 
 mod add_estimation_costs_for_add_contested_document_to_primary_storage;
 
+mod add_estimation_costs_for_document_lifecycle;
+
+mod add_estimation_costs_for_erase_document;
+
 pub(crate) mod estimated_sum_trees_for_value_tree_type;

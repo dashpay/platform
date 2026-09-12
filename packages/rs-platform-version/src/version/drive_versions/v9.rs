@@ -9,7 +9,7 @@ use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_ID
 use crate::version::drive_versions::drive_state_transition_method_versions::v4::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_structure_version::v1::DRIVE_STRUCTURE_V1;
 use crate::version::drive_versions::drive_token_method_versions::v1::DRIVE_TOKEN_METHOD_VERSIONS_V1;
-use crate::version::drive_versions::drive_verify_method_versions::v2::DRIVE_VERIFY_METHOD_VERSIONS_V2;
+use crate::version::drive_versions::drive_verify_method_versions::v3::DRIVE_VERIFY_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_vote_method_versions::v2::DRIVE_VOTE_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
@@ -66,7 +66,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             remove_from_system_credits_operations: 0,
             calculate_total_credits_balance: 2, // ShieldedBalances root tree adds a fifth term to the equation
         },
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V4, // changed in v9: v2 index walkers + v1 update walker (shared-prefix aggregate indexes become insertable) and the detect_ranked_mode slot
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V4, // changed in v9: v2 index walkers + v1 update walker (shared-prefix aggregate indexes become insertable) and the detect_ranked_mode slot; structure B history storage, estimation and queries
         vote: DRIVE_VOTE_METHOD_VERSIONS_V2,
         contract: DRIVE_CONTRACT_METHOD_VERSIONS_V3, // changed in v8: count-tree-aware contract-insertion cost estimation (v12+ countable/range_countable doctypes)
         fees: DriveFeesMethodVersions { calculate_fee: 0 },
@@ -81,7 +81,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             add_estimation_costs_for_adding_asset_lock: 0,
             fetch_asset_lock_outpoint_info: 0,
         },
-        verify: DRIVE_VERIFY_METHOD_VERSIONS_V2, // changed in v8: compacted address-balance proof envelope (verify v1)
+        verify: DRIVE_VERIFY_METHOD_VERSIONS_V3, // changed: document history v1 with composite entries and lifecycle proofs
         identity: DRIVE_IDENTITY_METHOD_VERSIONS_V2, // changed in v9: v1 withdrawal-by-transaction-index query builder (structural, identical lowering)
         token: DRIVE_TOKEN_METHOD_VERSIONS_V1,
         platform_system: DrivePlatformSystemMethodVersions {

@@ -15,8 +15,7 @@
 //! index-key length ceilings, and the constants they are derived from.
 
 use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
+
 // Only the ranked key-length rule below names `Index`, and it is validation-only.
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::index::Index;
@@ -25,7 +24,7 @@ use crate::data_contract::document_type::index::IndexGrammarAdmissions;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::DocumentType;
-use crate::data_contract::errors::DataContractError;
+
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
@@ -227,9 +226,13 @@ const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
 ///
 /// This parser is only reachable from protocol version 14+ (via
 /// CONTRACT_VERSIONS_V6).
-/// Full validation rejects keep-history document types that allow deletion.
-/// Stored contracts bypass this check so legacy contradictory schemas remain
-/// readable and can be repaired by setting `canBeDeleted: false` on update.
+///
+/// Generation 3 admits `documentsKeepHistory: true` together with
+/// `canBeDeleted: true`: a delete on such a type removes the document from
+/// ordinary reads while its retained revisions stay readable. It also admits
+/// the `canBeErased` keyword, which additionally allows a deleted document's
+/// revisions to be purged, and it refuses a keep-history type that carries a
+/// contested index.
 #[allow(clippy::too_many_arguments)]
 fn try_from_schema_generation_3(
     data_contract_id: Identifier,
@@ -248,6 +251,7 @@ fn try_from_schema_generation_3(
     // consumes `schema`.
     let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)?;
     let index_only = common::parse_index_only_keyword(&schema)?;
+    let can_be_erased = common::parse_can_be_erased_keyword(&schema)?;
 
     let v1 = common::parse_document_type_core(
         data_contract_id,
@@ -309,20 +313,15 @@ fn try_from_schema_generation_3(
     // aggregate flags (they describe the primary-key tree, which an
     // indexOnly type does not have), so it has to see them already applied.
     common::apply_index_only(&mut v2, index_only, name)?;
-
-    // The flags are read from the parsed result (not the raw schema) so
-    // the check sees `canBeDeleted` resolved against the contract config
-    // default (`true` when the key is omitted).
-    if full_validation && v2.documents_keep_history() && v2.documents_can_be_deleted() {
-        return Err(consensus_or_protocol_data_contract_error(
-            DataContractError::InvalidContractStructure(format!(
-                "document type \"{}\" sets both `documentsKeepHistory: true` and \
-                 `canBeDeleted: true`, but the storage layer unconditionally refuses to \
-                 delete a document whose type keeps history. Set `canBeDeleted` to false or \
-                 disable `documentsKeepHistory`.",
-                name,
-            )),
-        ));
+    // Reads `canBeDeleted` off the parsed result rather than the raw schema, so
+    // it sees the value resolved against the contract config default (`true`
+    // when the key is omitted).
+    common::apply_can_be_erased(&mut v2, can_be_erased, name)?;
+    // A registration-time rule only: a contract that already carries this
+    // combination was registered under an earlier protocol, and the structural
+    // parse that loads stored contracts must keep reading it.
+    if full_validation {
+        common::reject_contested_keep_history(&v2, name)?;
     }
 
     Ok(v2)

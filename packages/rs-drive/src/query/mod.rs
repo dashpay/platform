@@ -1824,8 +1824,20 @@ impl<'a> DriveDocumentQuery<'a> {
 
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Operations to construct a path query.
-    pub fn start_at_document_path_and_key(&self, starts_at: &[u8; 32]) -> (Vec<Vec<u8>>, Vec<u8>) {
-        if self.document_type.documents_keep_history() {
+    pub fn start_at_document_path_and_key(
+        &self,
+        starts_at: &[u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> (Vec<Vec<u8>>, Vec<u8>) {
+        if self.document_type.documents_keep_history()
+            && platform_version
+                .drive
+                .methods
+                .document
+                .insert
+                .add_document_to_primary_storage
+                == 0
+        {
             let document_holding_path = self.contract.documents_with_history_primary_key_path(
                 self.document_type.name().as_str(),
                 starts_at,
@@ -1907,6 +1919,21 @@ impl<'a> DriveDocumentQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        if self.document_type.documents_keep_history()
+            && self.block_time_ms.is_some()
+            && platform_version
+                .drive
+                .methods
+                .document
+                .insert
+                .add_document_to_primary_storage
+                == 1
+        {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "point-in-time reads are unavailable for history-keeping document types"
+                    .to_string(),
+            )));
+        }
         self.validate_in_clause_shape(platform_version)?;
         // indexOnly documents have no primary-key tree: nothing is ever
         // addressed by document id, so a by-id query has no tree to land on.
@@ -1961,7 +1988,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 // from the backing store
 
                 let (start_at_document_path, start_at_document_key) =
-                    self.start_at_document_path_and_key(starts_at);
+                    self.start_at_document_path_and_key(starts_at, platform_version);
                 let start_at_document = drive
                     .grove_get(
                         start_at_document_path.as_slice().into(),
@@ -2072,6 +2099,21 @@ impl<'a> DriveDocumentQuery<'a> {
         starts_at_document: Option<Document>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        if self.document_type.documents_keep_history()
+            && self.block_time_ms.is_some()
+            && platform_version
+                .drive
+                .methods
+                .document
+                .insert
+                .add_document_to_primary_storage
+                == 1
+        {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "point-in-time reads are unavailable for history-keeping document types"
+                    .to_string(),
+            )));
+        }
         self.validate_in_clause_shape(platform_version)?;
         // indexOnly documents have no primary-key tree: nothing is ever
         // addressed by document id, so a by-id query has no tree to land on.
@@ -2156,7 +2198,15 @@ impl<'a> DriveDocumentQuery<'a> {
             )?;
             query.insert_key(key);
 
-            if self.document_type.documents_keep_history() {
+            if self.document_type.documents_keep_history()
+                && platform_version
+                    .drive
+                    .methods
+                    .document
+                    .insert
+                    .add_document_to_primary_storage
+                    == 0
+            {
                 // if the documents keep history then we should insert a subquery
                 if let Some(block_time) = self.block_time_ms {
                     let encoded_block_time = encode_u64(block_time);
@@ -2235,7 +2285,15 @@ impl<'a> DriveDocumentQuery<'a> {
                     }
                 }
 
-                if self.document_type.documents_keep_history() {
+                if self.document_type.documents_keep_history()
+                    && platform_version
+                        .drive
+                        .methods
+                        .document
+                        .insert
+                        .add_document_to_primary_storage
+                        == 0
+                {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time_ms {
                         //todo
@@ -2276,7 +2334,15 @@ impl<'a> DriveDocumentQuery<'a> {
                     },
                 }
 
-                if self.document_type.documents_keep_history() {
+                if self.document_type.documents_keep_history()
+                    && platform_version
+                        .drive
+                        .methods
+                        .document
+                        .insert
+                        .add_document_to_primary_storage
+                        == 0
+                {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time_ms {
                         return Err(Error::Query(QuerySyntaxError::Unsupported(

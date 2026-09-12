@@ -86,12 +86,13 @@ struct DocumentsView: View {
     }
 }
 
-/// The five ownership-gated document state-transition actions, carrying
+/// The six ownership-gated document state-transition actions, carrying
 /// the document they operate on. `Identifiable` so it can drive a single
 /// hoisted `sheet(item:)` on `DocumentsView`.
 enum DocumentActionMode: Identifiable {
     case replace(PersistentDocument)
     case delete(PersistentDocument)
+    case erase(PersistentDocument)
     case transfer(PersistentDocument)
     case setPrice(PersistentDocument)
     case purchase(PersistentDocument)
@@ -100,6 +101,7 @@ enum DocumentActionMode: Identifiable {
         switch self {
         case .replace(let d): return "replace-\(d.documentId)"
         case .delete(let d): return "delete-\(d.documentId)"
+        case .erase(let d): return "erase-\(d.documentId)"
         case .transfer(let d): return "transfer-\(d.documentId)"
         case .setPrice(let d): return "setPrice-\(d.documentId)"
         case .purchase(let d): return "purchase-\(d.documentId)"
@@ -108,7 +110,7 @@ enum DocumentActionMode: Identifiable {
 
     var document: PersistentDocument {
         switch self {
-        case .replace(let d), .delete(let d), .transfer(let d),
+        case .replace(let d), .delete(let d), .erase(let d), .transfer(let d),
              .setPrice(let d), .purchase(let d):
             return d
         }
@@ -283,6 +285,12 @@ struct DocumentDetailView: View {
         if ownerIsControlled {
             actions.append(.replace)
             actions.append(.delete)
+            // Erase applies to a keep-history document that has already
+            // been deleted, on a type whose schema sets `canBeErased` (off
+            // by default); the sheet spells out the precondition.
+            if (docType?.schema?["canBeErased"] as? Bool) == true {
+                actions.append(.erase)
+            }
             if docType?.documentsTransferable == true {
                 actions.append(.transfer)
             }
@@ -315,13 +323,14 @@ struct DocumentDetailView: View {
     }
 }
 
-// MARK: - Document actions (replace / delete / transfer / set-price / purchase)
+// MARK: - Document actions (replace / delete / erase / transfer / set-price / purchase)
 
 /// The menu entries the gated action menu surfaces. Maps to a
 /// `DocumentActionMode` once a concrete document is in hand.
 enum DocumentAction: String, Identifiable, CaseIterable {
     case replace
     case delete
+    case erase
     case transfer
     case setPrice
     case purchase
@@ -332,6 +341,7 @@ enum DocumentAction: String, Identifiable, CaseIterable {
         switch self {
         case .replace: return "Replace…"
         case .delete: return "Delete…"
+        case .erase: return "Erase History…"
         case .transfer: return "Transfer…"
         case .setPrice: return "Set Price…"
         case .purchase: return "Purchase…"
@@ -342,6 +352,7 @@ enum DocumentAction: String, Identifiable, CaseIterable {
         switch self {
         case .replace: return "pencil"
         case .delete: return "trash"
+        case .erase: return "trash.slash"
         case .transfer: return "arrow.left.arrow.right"
         case .setPrice: return "tag"
         case .purchase: return "cart"
@@ -352,6 +363,7 @@ enum DocumentAction: String, Identifiable, CaseIterable {
         switch self {
         case .replace: return .replace(document)
         case .delete: return .delete(document)
+        case .erase: return .erase(document)
         case .transfer: return .transfer(document)
         case .setPrice: return .setPrice(document)
         case .purchase: return .purchase(document)
@@ -370,6 +382,8 @@ struct DocumentActionSheet: View {
             ReplaceDocumentView(document: doc)
         case .delete(let doc):
             DeleteDocumentView(document: doc)
+        case .erase(let doc):
+            EraseDocumentView(document: doc)
         case .transfer(let doc):
             TransferDocumentView(document: doc)
         case .setPrice(let doc):
@@ -791,6 +805,192 @@ struct DeleteDocumentView: View {
                     confirmedId = deletedId.toBase58String()
                     isSubmitting = false
                     didComplete = true
+                }
+            } catch {
+                await MainActor.run {
+                    actionError = .init(message: error.localizedDescription)
+                    isSubmitting = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: Erase
+
+/// Erases the retained revisions of a keep-history document that has
+/// already been deleted, one bounded chunk per broadcast. The row is still
+/// local because the deletion happened elsewhere (another device, the
+/// Settings builder), or the document is still active, in which case
+/// consensus refuses the erase as a paid rejection; the footer says so.
+///
+/// The erase result only observes that the document is absent from
+/// ordinary reads, which it already was, so the sheet reads the lifecycle
+/// before and after each broadcast and shows what that read says. It stays
+/// open with the same id so further chunks can be submitted, and removes
+/// the local row only once the lifecycle reports the document absent.
+struct EraseDocumentView: View {
+    let document: PersistentDocument
+
+    @EnvironmentObject var appState: AppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) var dismiss
+
+    @Query private var identities: [PersistentIdentity]
+
+    @State private var isSubmitting = false
+    @State private var submissions = 0
+    @State private var lifecycle: DocumentHistoryLifecycle?
+    @State private var progress: String?
+    @State private var persistWarning: String?
+    @State private var actionError: DocumentActionErrorBox?
+
+    private var canSubmitAnother: Bool {
+        guard let lifecycle else { return submissions == 0 }
+        return lifecycle.state == .erasing || lifecycle.state == .deleted
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    DetailRow(label: "Document ID", value: document.documentId)
+                    DetailRow(label: "Type", value: document.documentType)
+                    if let lifecycle {
+                        DetailRow(label: "Lifecycle", value: lifecycle.state.rawValue)
+                        DetailRow(label: "Revisions retained", value: String(lifecycle.remainingRevisions))
+                    }
+                } footer: {
+                    Text("Removes up to 100 retained revisions of a document that has already been deleted on Platform. The document type must allow erasure, and only the owner may start it. Erasing a document that is still active is rejected by consensus and still charges a fee. A broadcast only observes that the document is absent from ordinary reads; the lifecycle read after it says what remains. This cannot be undone.")
+                }
+                if submissions > 0 {
+                    Section {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Erase submitted, absence observed", systemImage: "checkmark.seal")
+                                .foregroundColor(.green)
+                                .font(.headline)
+                            if let progress {
+                                Text(progress)
+                                    .font(.caption)
+                                    .accessibilityIdentifier("documentErase.progress")
+                            }
+                            if let warning = persistWarning {
+                                Label(warning, systemImage: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                }
+                Section {
+                    if canSubmitAnother {
+                        Button(role: .destructive) {
+                            submit()
+                        } label: {
+                            HStack {
+                                if isSubmitting {
+                                    ProgressView().controlSize(.small)
+                                    Text("Broadcasting…")
+                                } else {
+                                    Text(submissions == 0 ? "Erase / Broadcast" : "Erase next chunk")
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("documentErase.submitButton")
+                        .disabled(isSubmitting)
+                    }
+                    if submissions > 0 {
+                        Button("Done") { dismiss() }
+                            .frame(maxWidth: .infinity)
+                            .accessibilityIdentifier("documentErase.doneButton")
+                            .disabled(isSubmitting)
+                    }
+                }
+            }
+            .navigationTitle("Erase Document History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }.disabled(isSubmitting)
+                }
+            }
+            .interactiveDismissDisabled(isSubmitting)
+            .alert(item: $actionError) { err in
+                Alert(title: Text("Erase failed"), message: Text(err.message), dismissButton: .default(Text("OK")))
+            }
+        }
+    }
+
+    private func ownerIdentity() -> PersistentIdentity? {
+        identities.first {
+            $0.network == appState.currentNetwork
+                && $0.wallet != nil
+                && $0.identityIdBase58 == document.ownerIdBase58
+        }
+    }
+
+    private func submit() {
+        guard let owner = ownerIdentity() else {
+            actionError = .init(message: DocumentActionError.identityNotFound.localizedDescription)
+            return
+        }
+        let docType = document.documentType_relation
+        let wallet: ManagedPlatformWallet
+        let signingKeyId: UInt32
+        do {
+            (wallet, signingKeyId) = try DocumentActionRunner.resolveSigning(
+                for: owner, documentType: docType, walletManager: walletManager
+            )
+        } catch {
+            actionError = .init(message: error.localizedDescription)
+            return
+        }
+
+        isSubmitting = true
+        let signer = KeychainSigner(modelContainer: modelContext.container)
+        let ownerId = owner.identityId
+        let contractId = document.contractIdData
+        let contractIdBase58 = document.contractIdBase58
+        let typeName = document.documentType
+        let docId = document.id
+        let docIdBase58 = document.documentId
+        let sdk = appState.sdk
+
+        Task {
+            do {
+                let before = try? await sdk?.documentGetLifecycle(
+                    dataContractId: contractIdBase58, documentType: typeName, documentId: docIdBase58
+                )
+                _ = try await wallet.eraseDocument(
+                    ownerIdentityId: ownerId,
+                    contractId: contractId,
+                    documentType: typeName,
+                    documentId: docId,
+                    signingKeyId: signingKeyId,
+                    signer: signer
+                )
+                _ = signer
+                let after = try? await sdk?.documentGetLifecycle(
+                    dataContractId: contractIdBase58, documentType: typeName, documentId: docIdBase58
+                )
+                await MainActor.run {
+                    submissions += 1
+                    lifecycle = after
+                    if let after {
+                        progress = DocumentHistoryLifecycle.describeEraseProgress(before: before, after: after)
+                        if after.state == .absent {
+                            persistWarning = DocumentPersistence.applyDelete(
+                                document: document,
+                                modelContext: modelContext
+                            )
+                        }
+                    } else {
+                        progress = "Lifecycle not read; use Platform Queries → Get Document History to see what remains."
+                    }
+                    isSubmitting = false
                 }
             } catch {
                 await MainActor.run {

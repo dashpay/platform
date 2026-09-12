@@ -170,6 +170,28 @@ impl DocumentTypeRef<'_> {
             );
         }
 
+        // Erasability is immutable in both directions. Widening it would give
+        // an operation over already-stored revisions to a type registered
+        // without it; narrowing it after a first erase chunk has irreversibly
+        // removed revisions would strand a partially erased, invisible
+        // document forever. A document type parsed by an earlier grammar has
+        // no such keyword and reports false on both sides, so this check is
+        // inert before protocol version 14.
+        if new_document_type.documents_can_be_erased() != self.documents_can_be_erased() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether its documents can be erased: changing from {} to {}",
+                        self.documents_can_be_erased(),
+                        new_document_type.documents_can_be_erased()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
         if new_document_type.documents_keep_history() != self.documents_keep_history() {
             return SimpleConsensusValidationResult::new_with_error(
                 DocumentTypeUpdateError::new(

@@ -204,6 +204,7 @@ impl Drive {
             document,
             document_and_contract_info.document_type,
             storage_flags,
+            &platform_version.drive,
         );
 
         // next we need to get the old document from storage
@@ -347,6 +348,7 @@ impl Drive {
                     document_and_contract_info.document_type,
                     sum_value,
                     storage_flags,
+                    &platform_version.drive,
                 )
             } else {
                 document_reference.clone()

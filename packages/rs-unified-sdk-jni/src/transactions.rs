@@ -665,6 +665,71 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     })
 }
 
+/// Erase + broadcast a chunk of the retained revisions of the already
+/// deleted `documentId` on `contractId`'s `documentType`, signed via
+/// `signerHandle` with key `signingKeyId` of `ownerId` — the JNI bridge
+/// over `platform_wallet_document_erase` (Swift
+/// `ManagedPlatformWallet.eraseDocument`). The first erase of a document
+/// must be signed by its owner; later ones may be signed by any identity.
+///
+/// Erase returns no document body, so this returns the document's 32-byte
+/// id as a `byte[]` once its absence is observed under a proof (which it
+/// already was before the erase; progress is read from the history).
+/// Null after throwing on error.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_documentErase(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    owner_id: JByteArray,
+    contract_id: JByteArray,
+    document_type: JString,
+    document_id: JByteArray,
+    signing_key_id: jint,
+    signer_handle: jlong,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if signing_key_id < 0 {
+            throw_sdk_exception(env, 1, "signingKeyId must be non-negative");
+            return ptr::null_mut();
+        }
+        let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
+            return ptr::null_mut();
+        };
+        let Some(contract) = read_id32(env, &contract_id, "contractId") else {
+            return ptr::null_mut();
+        };
+        let Some(doc_id) = read_id32(env, &document_id, "documentId") else {
+            return ptr::null_mut();
+        };
+        let Some(doc_type) = read_cstring(env, &document_type, "documentType") else {
+            return ptr::null_mut();
+        };
+
+        let mut out_id = [0u8; 32];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_document_erase(
+                wallet_handle as Handle,
+                owner.as_ptr(),
+                contract.as_ptr(),
+                doc_type.as_ptr(),
+                doc_id.as_ptr(),
+                signing_key_id as u32,
+                signer_handle as *mut SignerHandle,
+                out_id.as_mut_ptr(),
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        env.byte_array_from_slice(&out_id)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
 /// Transfer + broadcast `documentId` on `contractId`'s `documentType`,
 /// from `ownerId` to `recipientId`, signed via `signerHandle` with key
 /// `signingKeyId` — the JNI bridge over `platform_wallet_document_transfer`

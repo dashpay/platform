@@ -252,10 +252,14 @@ fn validate_document_type_references_v0(
                     ));
                 };
 
-                // Only document types whose documents can never be deleted may be
-                // referenced: `canBeDeleted` is immutable on contract updates and
-                // document types can not be removed, so a reference validated here
-                // can never dangle
+                // Only document types whose documents can never be deleted may
+                // be referenced. A contract update may withdraw deletion but
+                // never grant it, and document types can not be removed, so a
+                // type that is referenceable when a reference is validated
+                // stays referenceable and the reference can never dangle.
+                // Erasure is out of the question for the same reason: it
+                // applies to deleted documents only, and a type that allows it
+                // must allow deletion.
                 if referenced_document_type.documents_can_be_deleted() {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         ReferencedDocumentTypeDeletableError::new(

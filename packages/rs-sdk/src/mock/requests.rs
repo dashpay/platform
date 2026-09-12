@@ -228,6 +228,170 @@ impl MockResponse for Document {
     }
 }
 
+/// Entries as (time, revision, document bytes); the lifecycle as its state
+/// discriminant, the remaining revision count and the four lifecycle times,
+/// so a mocked deleted or erasing history round-trips with its metadata.
+type MockDocumentHistory = (
+    Vec<(u64, u64, Vec<u8>)>,
+    Option<(u8, u64, u64, u64, u64, u64)>,
+);
+
+impl MockResponse for drive_proof_verifier::types::DocumentHistoryProofInfo {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        use dapi_grpc::Message;
+        bincode::encode_to_vec(
+            (
+                self.history.mock_serialize(sdk),
+                self.response.encode_to_vec(),
+            ),
+            BINCODE_CONFIG,
+        )
+        .expect("encode document history proof info")
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self {
+        use dapi_grpc::Message;
+        let ((history, response), _): ((Vec<u8>, Vec<u8>), _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG)
+                .expect("decode document history proof info");
+        Self {
+            history: drive_proof_verifier::types::DocumentHistory::mock_deserialize(sdk, &history),
+            response: dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV1::decode(response.as_slice())
+                .expect("decode document history response"),
+        }
+    }
+}
+
+impl MockResponse for drive_proof_verifier::types::DocumentHistory {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        use drive_proof_verifier::types::DocumentHistoryState;
+        let entries = self
+            .entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.time_ms,
+                    entry.revision,
+                    entry.document.mock_serialize(sdk),
+                )
+            })
+            .collect::<Vec<_>>();
+        let lifecycle = self.lifecycle.as_ref().map(|lifecycle| {
+            let state = match lifecycle.state {
+                DocumentHistoryState::Active => 0u8,
+                DocumentHistoryState::Deleted => 1,
+                DocumentHistoryState::Erasing => 2,
+                DocumentHistoryState::Absent => 3,
+            };
+            (
+                state,
+                lifecycle.remaining_revisions,
+                lifecycle.times.deleted_at_ms,
+                lifecycle.times.erasing_started_at_ms,
+                lifecycle.times.erasing_from_time_ms,
+                lifecycle.times.erasing_from_revision,
+            )
+        });
+        bincode::encode_to_vec((entries, lifecycle), BINCODE_CONFIG)
+            .expect("encode document history")
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self {
+        use drive_proof_verifier::types::{
+            DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryLifecycleTimes,
+            DocumentHistoryState,
+        };
+        let ((entries, lifecycle), _): (MockDocumentHistory, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode document history");
+        Self {
+            entries: entries
+                .into_iter()
+                .map(|(time_ms, revision, bytes)| DocumentHistoryEntry {
+                    time_ms,
+                    revision,
+                    document: Document::mock_deserialize(sdk, &bytes),
+                })
+                .collect(),
+            lifecycle: lifecycle.map(
+                |(
+                    state,
+                    remaining_revisions,
+                    deleted_at_ms,
+                    erasing_started_at_ms,
+                    erasing_from_time_ms,
+                    erasing_from_revision,
+                )| DocumentHistoryLifecycle {
+                    state: match state {
+                        0 => DocumentHistoryState::Active,
+                        1 => DocumentHistoryState::Deleted,
+                        2 => DocumentHistoryState::Erasing,
+                        _ => DocumentHistoryState::Absent,
+                    },
+                    remaining_revisions,
+                    times: DocumentHistoryLifecycleTimes {
+                        deleted_at_ms,
+                        erasing_started_at_ms,
+                        erasing_from_time_ms,
+                        erasing_from_revision,
+                    },
+                },
+            ),
+        }
+    }
+}
+
+#[cfg(test)]
+mod document_history_mock_tests {
+    use super::*;
+    use drive_proof_verifier::types::{
+        DocumentHistory, DocumentHistoryLifecycle, DocumentHistoryLifecycleTimes,
+        DocumentHistoryState,
+    };
+
+    /// Every lifecycle state and every lifecycle time survives the mock
+    /// round trip, so a mocked deleted or erasing history looks to the caller
+    /// exactly as the verified one would.
+    #[test]
+    fn should_round_trip_every_lifecycle_state_with_its_times() {
+        let mut sdk = crate::SdkBuilder::default()
+            .with_version(dpp::version::PlatformVersion::get(14).unwrap())
+            .build()
+            .unwrap();
+        let mock = sdk.mock();
+        let sdk: &MockDashPlatformSdk = &mock;
+        for (state, remaining_revisions) in [
+            (DocumentHistoryState::Active, 3),
+            (DocumentHistoryState::Deleted, 3),
+            (DocumentHistoryState::Erasing, 1),
+            (DocumentHistoryState::Absent, 0),
+        ] {
+            let history = DocumentHistory {
+                entries: vec![],
+                lifecycle: Some(DocumentHistoryLifecycle {
+                    state,
+                    remaining_revisions,
+                    times: DocumentHistoryLifecycleTimes {
+                        deleted_at_ms: 5_000,
+                        erasing_started_at_ms: 6_000,
+                        erasing_from_time_ms: 4_000,
+                        erasing_from_revision: 3,
+                    },
+                }),
+            };
+            let recovered = DocumentHistory::mock_deserialize(sdk, &history.mock_serialize(sdk));
+            assert_eq!(recovered, history, "{state:?} did not round-trip");
+        }
+        let without_lifecycle = DocumentHistory {
+            entries: vec![],
+            lifecycle: None,
+        };
+        assert_eq!(
+            DocumentHistory::mock_deserialize(sdk, &without_lifecycle.mock_serialize(sdk)),
+            without_lifecycle
+        );
+    }
+}
+
 impl MockResponse for Element {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         // Create a bincode configuration

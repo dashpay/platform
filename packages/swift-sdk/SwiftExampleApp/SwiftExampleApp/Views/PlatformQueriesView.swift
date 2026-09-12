@@ -174,7 +174,8 @@ struct QueryCategoryDetailView: View {
         case .documents:
             return [
                 QueryDefinition(name: "getDocuments", label: "Get Documents", description: "Query documents from a data contract"),
-                QueryDefinition(name: "getDocument", label: "Get Document", description: "Fetch a specific document by ID")
+                QueryDefinition(name: "getDocument", label: "Get Document", description: "Fetch a specific document by ID"),
+                QueryDefinition(name: "getDocumentHistory", label: "Get Document History", description: "Read a keep-history document's revisions and lifecycle state")
             ]
 
         case .dpns:

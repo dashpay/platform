@@ -230,6 +230,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
     fn index_only(&self) -> bool {
         self.index_only
     }
+
+    fn documents_can_be_erased(&self) -> bool {
+        self.documents_can_be_erased
+    }
 }
 
 impl DocumentTypeV2Setters for DocumentTypeV2 {

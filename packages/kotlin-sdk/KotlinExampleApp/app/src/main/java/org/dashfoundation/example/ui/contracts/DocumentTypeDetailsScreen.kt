@@ -160,6 +160,10 @@ fun DocumentTypeDetailsScreen(
                     if (capabilities.canBeDeleted) "Yes" else "No",
                 )
                 LabeledContent(
+                    "Can Be Erased",
+                    if (capabilities.canBeErased) "Yes" else "No",
+                )
+                LabeledContent(
                     "Transferable",
                     if ((schema.intField("transferable") ?: 0) > 0) "Yes" else "No",
                 )

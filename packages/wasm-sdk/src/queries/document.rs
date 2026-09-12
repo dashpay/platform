@@ -1,5 +1,5 @@
 use crate::queries::utils::deserialize_required_query;
-use crate::queries::ProofMetadataResponseWasm;
+use crate::queries::{ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataWasm};
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -7,12 +7,14 @@ use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::drive::query::SelectProjection;
-use dash_sdk::platform::documents::document_history_query::DocumentHistoryQuery;
+use dash_sdk::platform::documents::document_history_query::{
+    DocumentHistoryQuery, DocumentHistorySelector,
+};
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
 use drive::query::{OrderClause, TimeRangeGridSpec, TimeRangeSelector, WhereClause, WhereOperator};
-use drive_proof_verifier::types::DocumentHistory;
+use drive_proof_verifier::types::{DocumentHistory, DocumentHistoryProofInfo};
 use drive_proof_verifier::{DocumentSplitAverages, DocumentSplitCounts, DocumentSplitSums};
 use js_sys::{BigInt, Map};
 use serde::Deserialize;
@@ -174,22 +176,40 @@ export interface DocumentHistoryQuery {
   documentId: IdentifierLike
 
   /**
-   * Millisecond timestamp (exclusive) to start after.
-   * @default 0
+   * Inclusive lower time bound. Supply exactly one selector.
+   *
+   * Every selector is an exact u64: a `number` is accepted only up to
+   * `Number.MAX_SAFE_INTEGER`, and anything larger must be a `bigint`, since
+   * JavaScript would have rounded it before the query is built.
    */
-  startAtMs?: number;
-
-  /**
-   * Maximum number of entries to return.
-   * @default undefined
-   */
+  startAtMs?: bigint | number;
+  /** Complete exclusive cursor returned by a previous page. */
+  startAfter?: { timeMs: bigint | number; revision: bigint | number };
+  startAtRevision?: bigint | number;
+  revision?: bigint | number;
+  /** Maximum ten entries. A single revision requires limit one. */
   limit?: number;
+}
 
-  /**
-   * Offset for pagination through the document history.
-   * @default undefined
-   */
-  offset?: number;
+export interface DocumentHistoryResult {
+  entries: { timeMs: bigint; revision: bigint; document: Document }[];
+  lifecycle: {
+    /**
+     * ACTIVE while the document is visible to ordinary reads, DELETED once it
+     * has been deleted and its revisions are retained, ERASING once an
+     * authorized erasure has begun, ABSENT when nothing is left.
+     */
+    state: "ACTIVE" | "DELETED" | "ERASING" | "ABSENT";
+    remainingRevisions: bigint;
+    /** Zero unless the document has been deleted. */
+    deletedAtMs: bigint;
+    /** Zero unless an authorized erasure has begun. */
+    erasingStartedAtMs: bigint;
+    /** Timestamp of the newest revision retained when the erasure began. */
+    erasingFromTimeMs: bigint;
+    /** History sequence of that revision. */
+    erasingFromRevision: bigint;
+  };
 }
 "#;
 
@@ -235,17 +255,76 @@ pub(super) struct DocumentsQueryInput {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DocumentHistoryQueryInput {
     data_contract_id: IdentifierWasm,
     document_type_name: String,
     document_id: IdentifierWasm,
-    #[serde(default)]
-    start_at_ms: Option<u64>,
-    #[serde(default)]
+    start_at_ms: Option<ExactU64>,
+    start_after: Option<DocumentHistoryCursorInput>,
+    start_at_revision: Option<ExactU64>,
+    revision: Option<ExactU64>,
     limit: Option<u32>,
-    #[serde(default)]
-    offset: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DocumentHistoryCursorInput {
+    time_ms: ExactU64,
+    revision: ExactU64,
+}
+
+/// A `u64` selector that a JavaScript caller may pass as a `bigint` or as a
+/// `number`, where a `number` is accepted only while it is a safe integer.
+///
+/// JavaScript has already rounded any `number` past `Number.MAX_SAFE_INTEGER`
+/// by the time it reaches Rust, so silently converting it would query and
+/// verify a different timestamp or revision than the caller asked for. A
+/// `bigint` carries the exact value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ExactU64(u64);
+
+impl<'de> serde::Deserialize<'de> for ExactU64 {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+
+        impl serde::de::Visitor<'_> for Visitor {
+            type Value = ExactU64;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a non-negative integer: a bigint, or a number no larger than Number.MAX_SAFE_INTEGER")
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(ExactU64(value))
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                u64::try_from(value)
+                    .map(ExactU64)
+                    .map_err(|_| E::custom("history selectors cannot be negative"))
+            }
+
+            fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+                const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+                if value.fract() != 0.0 || !(0.0..=MAX_SAFE_INTEGER).contains(&value) {
+                    return Err(E::custom(
+                        "history selectors must be non-negative integers; pass a bigint for \
+                         values past Number.MAX_SAFE_INTEGER",
+                    ));
+                }
+                Ok(ExactU64(value as u64))
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
+impl From<ExactU64> for u64 {
+    fn from(value: ExactU64) -> Self {
+        value.0
+    }
 }
 
 fn parse_document_history_query(
@@ -253,15 +332,102 @@ fn parse_document_history_query(
 ) -> Result<DocumentHistoryQuery, WasmSdkError> {
     let input: DocumentHistoryQueryInput =
         deserialize_required_query(query, "Query object is required", "document history query")?;
-
+    let selectors = [
+        input.start_at_ms.is_some(),
+        input.start_after.is_some(),
+        input.start_at_revision.is_some(),
+        input.revision.is_some(),
+    ];
+    if selectors.into_iter().filter(|present| *present).count() != 1 {
+        return Err(WasmSdkError::invalid_argument(
+            "exactly one history selector is required",
+        ));
+    }
+    let selector = if let Some(time) = input.start_at_ms {
+        DocumentHistorySelector::StartAtTime(time.into())
+    } else if let Some(cursor) = input.start_after {
+        DocumentHistorySelector::StartAfter {
+            time_ms: cursor.time_ms.into(),
+            revision: cursor.revision.into(),
+        }
+    } else if let Some(revision) = input.start_at_revision {
+        DocumentHistorySelector::StartAtRevision(revision.into())
+    } else {
+        DocumentHistorySelector::Revision(input.revision.expect("one selector was checked").into())
+    };
     Ok(DocumentHistoryQuery {
         data_contract_id: input.data_contract_id.into(),
         document_type_name: input.document_type_name,
         document_id: input.document_id.into(),
-        start_at_ms: input.start_at_ms.unwrap_or(0),
+        selector,
         limit: input.limit,
-        offset: input.offset,
     })
+}
+
+fn document_history_to_js(
+    history: DocumentHistory,
+    contract_id: Identifier,
+    document_type_name: &str,
+) -> Result<JsValue, WasmSdkError> {
+    use drive_proof_verifier::types::DocumentHistoryState;
+    use js_sys::{Array, Object, Reflect};
+    let set = |object: &Object, key: &str, value: &JsValue| {
+        Reflect::set(object, &JsValue::from_str(key), value).map_err(|_| {
+            WasmSdkError::invalid_argument("could not construct document history result")
+        })
+    };
+    let entries = Array::new();
+    for entry in history.entries {
+        let object = Object::new();
+        set(&object, "timeMs", &BigInt::from(entry.time_ms).into())?;
+        set(&object, "revision", &BigInt::from(entry.revision).into())?;
+        set(
+            &object,
+            "document",
+            &DocumentWasm::new(
+                entry.document,
+                contract_id,
+                document_type_name.to_owned(),
+                None,
+            )
+            .into(),
+        )?;
+        entries.push(&object);
+    }
+    let lifecycle = history.lifecycle.ok_or_else(|| {
+        WasmSdkError::invalid_argument("history response did not authenticate lifecycle metadata")
+    })?;
+    let metadata = Object::new();
+    set(
+        &metadata,
+        "state",
+        &JsValue::from_str(match lifecycle.state {
+            DocumentHistoryState::Active => "ACTIVE",
+            DocumentHistoryState::Deleted => "DELETED",
+            DocumentHistoryState::Erasing => "ERASING",
+            DocumentHistoryState::Absent => "ABSENT",
+        }),
+    )?;
+    set(
+        &metadata,
+        "remainingRevisions",
+        &BigInt::from(lifecycle.remaining_revisions).into(),
+    )?;
+    // Exact BigInts, like every other timestamp and revision this query
+    // returns: a JavaScript number cannot hold a millisecond timestamp
+    // without losing precision.
+    for (key, value) in [
+        ("deletedAtMs", lifecycle.times.deleted_at_ms),
+        ("erasingStartedAtMs", lifecycle.times.erasing_started_at_ms),
+        ("erasingFromTimeMs", lifecycle.times.erasing_from_time_ms),
+        ("erasingFromRevision", lifecycle.times.erasing_from_revision),
+    ] {
+        set(&metadata, key, &BigInt::from(value).into())?;
+    }
+    let result = Object::new();
+    set(&result, "entries", &entries.into())?;
+    set(&result, "lifecycle", &metadata.into())?;
+    Ok(result.into())
 }
 
 pub(super) async fn build_documents_query(
@@ -688,81 +854,57 @@ pub(super) fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, Wasm
 impl WasmSdk {
     #[wasm_bindgen(
         js_name = "getDocumentHistory",
-        unchecked_return_type = "Map<bigint, Document>"
+        unchecked_return_type = "DocumentHistoryResult"
     )]
     pub async fn get_document_history(
         &self,
         query: DocumentHistoryQueryJs,
-    ) -> Result<Map, WasmSdkError> {
+    ) -> Result<JsValue, WasmSdkError> {
         let query = parse_document_history_query(query)?;
         let contract_id = query.data_contract_id;
         let document_type_name = query.document_type_name.clone();
-
-        let data_contract = self.get_or_fetch_contract(contract_id).await?;
-        data_contract
+        let contract = self.get_or_fetch_contract(contract_id).await?;
+        contract
             .document_type_for_name(&document_type_name)
-            .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
-
-        let history_result = DocumentHistory::fetch(self.as_ref(), query).await?;
-        let history_map = Map::new();
-
-        if let Some(history) = history_result {
-            for (block_time_ms, document) in history {
-                let document_js = JsValue::from(DocumentWasm::new(
-                    document,
-                    contract_id,
-                    document_type_name.clone(),
-                    None,
-                ));
-                let key = JsValue::from(BigInt::from(block_time_ms));
-
-                history_map.set(&key, &document_js);
-            }
-        }
-
-        Ok(history_map)
+            .map_err(|error| {
+                WasmSdkError::not_found(format!("Document type not found: {error}"))
+            })?;
+        let history = DocumentHistory::fetch(self.as_ref(), query)
+            .await?
+            .ok_or_else(|| WasmSdkError::not_found("document history response is missing"))?;
+        document_history_to_js(history, contract_id, &document_type_name)
     }
 
     #[wasm_bindgen(
         js_name = "getDocumentHistoryWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<bigint, Document>>"
+        unchecked_return_type = "DocumentHistoryProofMetadataResponseTyped"
     )]
     pub async fn get_document_history_with_proof_info(
         &self,
         query: DocumentHistoryQueryJs,
-    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+    ) -> Result<DocumentHistoryProofMetadataResponseWasm, WasmSdkError> {
         let query = parse_document_history_query(query)?;
         let contract_id = query.data_contract_id;
         let document_type_name = query.document_type_name.clone();
-
-        let data_contract = self.get_or_fetch_contract(contract_id).await?;
-        data_contract
+        let contract = self.get_or_fetch_contract(contract_id).await?;
+        contract
             .document_type_for_name(&document_type_name)
-            .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
-
-        let (history_result, metadata, proof) =
-            DocumentHistory::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
-        let history_map = Map::new();
-
-        if let Some(history) = history_result {
-            for (block_time_ms, document) in history {
-                let document_js = JsValue::from(DocumentWasm::new(
-                    document,
-                    contract_id,
-                    document_type_name.clone(),
-                    None,
-                ));
-                let key = JsValue::from(BigInt::from(block_time_ms));
-
-                history_map.set(&key, &document_js);
-            }
-        }
-
-        Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            history_map,
-            metadata,
-            proof,
-        ))
+            .map_err(|error| {
+                WasmSdkError::not_found(format!("Document type not found: {error}"))
+            })?;
+        let result = DocumentHistoryProofInfo::fetch(self.as_ref(), query)
+            .await?
+            .ok_or_else(|| WasmSdkError::not_found("document history response is missing"))?;
+        Ok(DocumentHistoryProofMetadataResponseWasm {
+            data: document_history_to_js(result.history, contract_id, &document_type_name)?,
+            metadata: result.response.metadata.expect("verified metadata").into(),
+            entries_proof: result.response.entries_proof.map(Into::into),
+            metadata_proof: result
+                .response
+                .metadata_proof
+                .expect("verified metadata proof")
+                .into(),
+        })
     }
 
     #[wasm_bindgen(
@@ -1348,5 +1490,217 @@ mod tests {
             "grid": { "range": 21_600, "step": 7_200, "phase": 0.5 },
         }))
         .expect_err("a fractional phase is not a contract-declared value");
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod history_wasm_tests {
+    use super::*;
+    use drive_proof_verifier::types::{
+        DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryState,
+    };
+    use js_sys::{Array, Reflect};
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[wasm_bindgen_test]
+    fn should_export_both_history_proofs_without_combining_them() {
+        let make_proof = |bytes| {
+            ProofInfoWasm::from(dash_sdk::platform::proto::Proof {
+                grovedb_proof: bytes,
+                ..Default::default()
+            })
+        };
+        let result = DocumentHistoryProofMetadataResponseWasm {
+            data: JsValue::NULL,
+            metadata: dash_sdk::platform::proto::ResponseMetadata::default().into(),
+            entries_proof: Some(make_proof(vec![1, 2])),
+            metadata_proof: make_proof(vec![3, 4]),
+        };
+        let result = JsValue::from(result);
+        let entries = Reflect::get(&result, &"entriesProof".into()).unwrap();
+        let metadata = Reflect::get(&result, &"metadataProof".into()).unwrap();
+        assert_eq!(
+            js_sys::Uint8Array::new(&Reflect::get(&entries, &"grovedbProof".into()).unwrap())
+                .to_vec(),
+            vec![1, 2]
+        );
+        assert_eq!(
+            js_sys::Uint8Array::new(&Reflect::get(&metadata, &"grovedbProof".into()).unwrap())
+                .to_vec(),
+            vec![3, 4]
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn should_preserve_same_time_revisions_and_exact_lifecycle_counts_in_javascript() {
+        let count = (1u64 << 53) + 1;
+        let history = DocumentHistory {
+            entries: [1, 2]
+                .into_iter()
+                .map(|revision| DocumentHistoryEntry {
+                    time_ms: 2000,
+                    revision,
+                    document: Document::V0(Default::default()),
+                })
+                .collect(),
+            lifecycle: Some(DocumentHistoryLifecycle {
+                state: DocumentHistoryState::Active,
+                remaining_revisions: count,
+                times: Default::default(),
+            }),
+        };
+        let result = document_history_to_js(history, [1; 32].into(), "note").unwrap();
+        let entries = Array::from(&Reflect::get(&result, &"entries".into()).unwrap());
+        assert_eq!(entries.length(), 2);
+        for (index, revision) in [1u64, 2].into_iter().enumerate() {
+            assert_eq!(
+                Reflect::get(&entries.get(index as u32), &"revision".into()).unwrap(),
+                JsValue::from(revision)
+            );
+        }
+        let lifecycle = Reflect::get(&result, &"lifecycle".into()).unwrap();
+        assert_eq!(
+            Reflect::get(&lifecycle, &"remainingRevisions".into()).unwrap(),
+            JsValue::from(count)
+        );
+        assert_eq!(
+            Reflect::get(&lifecycle, &"state".into()).unwrap(),
+            JsValue::from_str("ACTIVE")
+        );
+    }
+
+    /// Every lifecycle time crosses into JavaScript as an exact BigInt, like
+    /// the counts and revisions beside them: a millisecond timestamp does not
+    /// survive a JavaScript number.
+    #[wasm_bindgen_test]
+    fn should_report_the_erasing_state_and_its_times_exactly_in_javascript() {
+        use drive::drive::document::history::DocumentHistoryLifecycleTimes;
+
+        let started_at = (1u64 << 53) + 3;
+        let history = DocumentHistory {
+            entries: vec![],
+            lifecycle: Some(DocumentHistoryLifecycle {
+                state: DocumentHistoryState::Erasing,
+                remaining_revisions: 7,
+                times: DocumentHistoryLifecycleTimes {
+                    deleted_at_ms: 1_700_000_000_001,
+                    erasing_started_at_ms: started_at,
+                    erasing_from_time_ms: 1_700_000_000_002,
+                    erasing_from_revision: 42,
+                },
+            }),
+        };
+        let result = document_history_to_js(history, [1; 32].into(), "note").unwrap();
+        let lifecycle = Reflect::get(&result, &"lifecycle".into()).unwrap();
+        assert_eq!(
+            Reflect::get(&lifecycle, &"state".into()).unwrap(),
+            JsValue::from_str("ERASING")
+        );
+        for (key, expected) in [
+            ("deletedAtMs", 1_700_000_000_001u64),
+            ("erasingStartedAtMs", started_at),
+            ("erasingFromTimeMs", 1_700_000_000_002),
+            ("erasingFromRevision", 42),
+        ] {
+            assert_eq!(
+                Reflect::get(&lifecycle, &key.into()).unwrap(),
+                JsValue::from(expected),
+                "{key} must survive as an exact BigInt"
+            );
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_reject_conflicting_selectors_and_public_offsets() {
+        let base = r#"{"dataContractId":"GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec","documentTypeName":"note","documentId":"4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah""#;
+        for fields in [
+            "",
+            ",\"startAtMs\":0,\"revision\":1",
+            ",\"startAtMs\":0,\"offset\":1",
+        ] {
+            let input = js_sys::JSON::parse(&format!("{base}{fields}}}")).unwrap();
+            assert!(parse_document_history_query(input.unchecked_into()).is_err());
+        }
+        let input = js_sys::JSON::parse(&format!(
+            "{base},\"startAfter\":{{\"timeMs\":2000,\"revision\":22}}}}"
+        ))
+        .unwrap();
+        let query = parse_document_history_query(input.unchecked_into()).unwrap();
+        assert_eq!(
+            query.selector,
+            DocumentHistorySelector::StartAfter {
+                time_ms: 2000,
+                revision: 22
+            }
+        );
+    }
+}
+
+/// History page with the two independently reusable proofs and their shared metadata.
+#[wasm_bindgen(js_name = DocumentHistoryProofMetadataResponse)]
+pub struct DocumentHistoryProofMetadataResponseWasm {
+    data: JsValue,
+    metadata: ResponseMetadataWasm,
+    entries_proof: Option<ProofInfoWasm>,
+    metadata_proof: ProofInfoWasm,
+}
+
+#[wasm_bindgen(js_class = DocumentHistoryProofMetadataResponse)]
+impl DocumentHistoryProofMetadataResponseWasm {
+    #[wasm_bindgen(getter)]
+    pub fn data(&self) -> JsValue {
+        self.data.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn metadata(&self) -> ResponseMetadataWasm {
+        self.metadata.clone()
+    }
+    #[wasm_bindgen(getter = entriesProof)]
+    pub fn entries_proof(&self) -> Option<ProofInfoWasm> {
+        self.entries_proof.clone()
+    }
+    #[wasm_bindgen(getter = metadataProof)]
+    pub fn metadata_proof(&self) -> ProofInfoWasm {
+        self.metadata_proof.clone()
+    }
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const DOCUMENT_HISTORY_PROOF_INFO_TS: &str = r#"
+export type DocumentHistoryProofMetadataResponseTyped = DocumentHistoryProofMetadataResponse & { data: DocumentHistoryResult };
+"#;
+
+#[cfg(test)]
+mod exact_u64_tests {
+    use super::ExactU64;
+
+    /// A safe integer passes whether it arrives as an integer or as a whole
+    /// floating-point number; anything a JavaScript `number` has already
+    /// rounded, and anything fractional or negative, is refused.
+    #[test]
+    fn should_accept_only_exact_non_negative_integers() {
+        assert_eq!(
+            serde_json::from_str::<ExactU64>("12").unwrap(),
+            ExactU64(12)
+        );
+        assert_eq!(
+            serde_json::from_str::<ExactU64>("9007199254740991").unwrap(),
+            ExactU64(9_007_199_254_740_991)
+        );
+        assert_eq!(
+            serde_json::from_str::<ExactU64>("18446744073709551615").unwrap(),
+            ExactU64(u64::MAX)
+        );
+        assert_eq!(
+            serde_json::from_str::<ExactU64>("12.0").unwrap(),
+            ExactU64(12)
+        );
+        for rejected in ["12.5", "-1", "-1.0", "9007199254740992.0", "1e300"] {
+            assert!(
+                serde_json::from_str::<ExactU64>(rejected).is_err(),
+                "{rejected} must be refused"
+            );
+        }
     }
 }

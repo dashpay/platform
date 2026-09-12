@@ -56,6 +56,10 @@ impl Drive {
             document_id,
             contract,
             document_type_name,
+            &block_info,
+            // These fee-applying wrappers carry no signer, so a lifecycle record
+            // they write belongs to no identity and refunds nobody.
+            None,
             estimated_costs_only_with_layer_info,
             transaction,
             &mut drive_operations,

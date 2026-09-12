@@ -4,6 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
 
 use dpp::data_contract::DataContract;
 
@@ -34,6 +35,8 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type_name: &str,
+        block_info: &BlockInfo,
+        deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -52,6 +55,8 @@ impl Drive {
                 document_id,
                 contract,
                 document_type_name,
+                block_info,
+                deleter_id,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
