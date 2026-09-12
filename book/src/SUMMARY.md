@@ -115,6 +115,7 @@
 - [Ranked Index Examples](drive/ranked-index-examples.md)
 - [Time-Range Index TTL](drive/time-range-ttl.md)
 - [Index-Only Document Types](drive/index-only-document-types.md)
+- [Contract Credit Buckets](drive/contract-credit-buckets.md)
 
 # Testing
 
