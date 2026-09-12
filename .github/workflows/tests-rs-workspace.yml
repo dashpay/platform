@@ -347,6 +347,7 @@ jobs:
             --package dpp \
             --package drive-abci \
             --package dash-sdk \
+            --package dash-platform-queries \
             --package dash-async \
             --package platform-value \
             --package rs-dapi \
