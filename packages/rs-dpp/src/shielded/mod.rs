@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 // Re-exported so the public path stays `dpp::shielded::compute_minimum_shielded_fee` (the
 // module and the function share a name but live in different namespaces).
 pub use compute_minimum_shielded_fee::{
-    compute_minimum_shielded_fee, compute_shielded_identity_create_fee,
-    compute_shielded_unshield_fee, compute_shielded_verification_fee,
-    compute_shielded_withdrawal_fee,
+    compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
+    compute_shielded_identity_create_fee, compute_shielded_unshield_fee,
+    compute_shielded_verification_fee, compute_shielded_withdrawal_fee,
 };
 
 // Re-exported so the public paths stay `dpp::shielded::<name>` after moving the sighash preimage
@@ -75,6 +75,20 @@ pub const SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES: u64 = 4100;
 /// evolves, exactly like the per-action note storage does. See
 /// [`compute_minimum_shielded_fee::compute_shielded_unshield_fee`].
 pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
+
+/// Flat storage allowance (in effective bytes) for the identity balance write that
+/// `ShieldFromIdentity` performs on top of its per-action note writes.
+///
+/// The transition's real fee is metered (note inserts plus the identity balance and nonce
+/// updates) and only known at execution, so its stateless admission floor needs a conservative
+/// stand-in for that metered part: [`compute_minimum_shielded_fee`] (compute plus the per-action
+/// note storage allowance) plus this identity-write allowance, priced at the same per-byte storage
+/// rate. The figure mirrors `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES`: a balance-tree write of the
+/// same shape as the transparent address write, ≈222 effective bytes. Admission below
+/// `amount + floor` is refused BEFORE the Orchard proof is verified, so a short identity can
+/// never occupy a proof-verification slot. See
+/// [`compute_minimum_shielded_fee::compute_shielded_identity_balance_write_fee`].
+pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 222;
 
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///

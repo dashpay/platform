@@ -45,8 +45,8 @@ use std::os::raw::c_char;
 use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
 use dpp::shielded::{
-    compute_minimum_shielded_fee, compute_shielded_unshield_fee, compute_shielded_verification_fee,
-    compute_shielded_withdrawal_fee, ShieldedMemo,
+    compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
+    compute_shielded_unshield_fee, compute_shielded_withdrawal_fee, ShieldedMemo,
 };
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::ProtocolError;
@@ -176,7 +176,7 @@ fn shielded_fee_formula(
         0 => Some(compute_minimum_shielded_fee),
         1 => Some(compute_shielded_unshield_fee),
         2 => Some(compute_shielded_withdrawal_fee),
-        3 => Some(compute_shielded_verification_fee),
+        3 => Some(compute_shielded_identity_balance_write_fee),
         _ => None,
     }
 }
@@ -192,9 +192,10 @@ fn shielded_fee_formula(
 ///   `AddBalanceToAddress` output-write cost),
 /// - `2` → ShieldedWithdrawal (`compute_shielded_withdrawal_fee` — base +
 ///   the flat Core withdrawal-document cost),
-/// - `3` → ShieldFromIdentity (`compute_shielded_verification_fee`: the
-///   compute-only floor; the note and identity writes are metered at
-///   execution and charged to the identity on top of it).
+/// - `3` → ShieldFromIdentity (`compute_shielded_identity_balance_write_fee`:
+///   the conservative complete-fee floor, compute + note storage allowance +
+///   identity write allowance, that consensus requires the identity to hold on
+///   top of the amount; the exact fee is metered at execution).
 ///
 /// `num_actions` is the Orchard action count of the bundle the host will
 /// build (a single-note spend with change is 2 actions). The fee is
@@ -1203,8 +1204,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
 ///
 /// `out_new_balance`, when non-null, receives the identity's proven
 /// post-debit balance; the wallet's managed identity is updated and persisted
-/// with it before this returns. A result proof that is not this identity's
-/// balance proof is reported as `ErrorShieldedSpendUnconfirmed` (the
+/// with it before this returns. The activity row stays pending until the
+/// shielded scan observes the note on-chain. A result proof that is not this
+/// identity's balance proof, or a failure verdict the proven identity nonce
+/// cannot rule out, is reported as `ErrorShieldedSpendUnconfirmed` (the
 /// transition may have executed; do not resubmit, the next sync reconciles).
 ///
 /// A signer that reports the TRANSFER key unavailable surfaces as code 31

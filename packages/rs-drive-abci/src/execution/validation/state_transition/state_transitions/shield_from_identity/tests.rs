@@ -205,6 +205,53 @@ mod tests {
         }
     }
 
+    /// `process_transition` with the transaction COMMITTED, so the paid-failure
+    /// effects (nonce bump, fee debit) can be read back from state.
+    fn process_transition_and_commit(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        transition: StateTransition,
+        platform_version: &PlatformVersion,
+    ) -> crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult
+    {
+        let transition_bytes = transition
+            .serialize_to_bytes()
+            .expect("should serialize transition");
+        let platform_state = platform.state.load();
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![transition_bytes],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+        result
+    }
+
+    fn identity_nonce(platform: &TempPlatform<MockCoreRPCLike>, identity: &Identity) -> u64 {
+        platform
+            .drive
+            .fetch_identity_nonce(
+                identity.id().to_buffer(),
+                true,
+                None,
+                PlatformVersion::latest(),
+            )
+            .expect("fetch nonce")
+            .unwrap_or_default()
+    }
+
     fn identity_balance(platform: &TempPlatform<MockCoreRPCLike>, identity: &Identity) -> u64 {
         platform
             .drive
@@ -316,6 +363,54 @@ mod tests {
         );
     }
 
+    /// The stateless floor is the conservative complete fee (compute + note storage
+    /// allowance + identity write allowance), not the compute fee alone: an identity that
+    /// covers `amount + compute fee` but not the floor is refused before the (dummy)
+    /// proof is ever verified, and pays nothing.
+    #[tokio::test]
+    async fn test_balance_below_admission_floor_is_rejected_before_proof_verification() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = setup_platform();
+        let mut rng = StdRng::seed_from_u64(31);
+        let amount = 1_000u64;
+        let num_actions = dummy_bundle().actions.len();
+        let compute_fee =
+            dpp::shielded::compute_shielded_verification_fee(num_actions, platform_version)
+                .expect("compute fee");
+        let floor = dpp::shielded::compute_shielded_identity_balance_write_fee(
+            num_actions,
+            platform_version,
+        )
+        .expect("floor");
+        assert!(floor > compute_fee, "the floor must exceed the compute fee");
+        // Enough for amount + compute fee, short of amount + floor.
+        let balance = amount + compute_fee + 1;
+        let (identity, signer) =
+            create_identity_with_transfer_key([31u8; 32], balance, &mut rng, platform_version);
+        add_identity_to_drive(&mut platform, &identity);
+
+        let st = create_signed_transition(
+            &identity,
+            &signer,
+            dummy_bundle(),
+            amount,
+            1,
+            0,
+            platform_version,
+        )
+        .await;
+        let result = process_transition_and_commit(&platform, st, platform_version);
+
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(_))
+            )]
+        );
+        assert_eq!(identity_balance(&platform, &identity), balance);
+        assert_eq!(identity_nonce(&platform, &identity), 0);
+    }
+
     #[tokio::test]
     async fn test_invalid_identity_signature_is_rejected() {
         let platform_version = PlatformVersion::latest();
@@ -362,13 +457,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_invalid_orchard_proof_is_rejected() {
+    /// An invalid Orchard proof is a PAID failure, not a free rejection: the identity
+    /// nonce is consumed and the identity is charged at least the versioned
+    /// `shielded_proof_verification_failure` penalty, so a funded identity cannot
+    /// resubmit invalid proofs at no cost. The shielded pool is untouched.
+    async fn test_invalid_orchard_proof_is_a_paid_penalty() {
         let platform_version = PlatformVersion::latest();
         let mut platform = setup_platform();
         let mut rng = StdRng::seed_from_u64(5);
+        let initial_balance = dash_to_credits!(1.0);
         let (identity, signer) = create_identity_with_transfer_key(
             [5u8; 32],
-            dash_to_credits!(1.0),
+            initial_balance,
             &mut rng,
             platform_version,
         );
@@ -384,14 +484,40 @@ mod tests {
             platform_version,
         )
         .await;
-        let result = process_transition(&platform, st, platform_version);
+        let result = process_transition_and_commit(&platform, st, platform_version);
 
-        assert_matches!(
-            result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::UnpaidConsensusError(
-                ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
-            )]
+        let penalty = platform_version
+            .drive_abci
+            .validation_and_processing
+            .penalties
+            .shielded_proof_verification_failure;
+        let charged = match result.execution_results().as_slice() {
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                actual_fees,
+                ..
+            }] => actual_fees.total_base_fee(),
+            other => panic!("expected a paid invalid-proof failure, got {other:?}"),
+        };
+        assert!(
+            charged >= penalty,
+            "the charged fee ({charged}) must cover the proof-failure penalty ({penalty})"
         );
+        assert_eq!(
+            identity_balance(&platform, &identity),
+            initial_balance - charged,
+            "the identity must be debited exactly the charged penalty (no shield amount)"
+        );
+        assert_eq!(
+            identity_nonce(&platform, &identity),
+            1,
+            "the failed transition must consume the identity nonce"
+        );
+        let pool_total = platform
+            .drive
+            .read_shielded_pool_total_balance(None, &mut vec![], platform_version)
+            .expect("fetch pool total");
+        assert_eq!(pool_total, 0, "a failed proof must not credit the pool");
     }
 
     #[tokio::test]
@@ -423,11 +549,14 @@ mod tests {
         .await;
         let result = process_transition(&platform, st, platform_version);
 
+        // A bundle that verifies against another amount is an invalid proof for this
+        // transition and pays the same penalty as a garbage proof.
         assert_matches!(
             result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::UnpaidConsensusError(
-                ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
-            )]
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                ..
+            }]
         );
     }
 

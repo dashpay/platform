@@ -1850,7 +1850,10 @@ impl PlatformWallet {
     /// compute fee. Returns the proven post-debit balance, which is also applied
     /// to the managed identity and persisted. A result proof that is not this
     /// identity's balance proof reports the spend as unconfirmed
-    /// ([`PlatformWalletError::ShieldedSpendUnconfirmed`]).
+    /// ([`PlatformWalletError::ShieldedSpendUnconfirmed`]), as does any failure
+    /// verdict the proven identity nonce cannot rule out (do not rebuild on it).
+    /// The activity row stays pending until the shielded scan observes the note
+    /// on-chain; the balance proof alone does not confirm it.
     #[cfg(feature = "shielded")]
     pub async fn shielded_shield_from_identity<S, P>(
         &self,

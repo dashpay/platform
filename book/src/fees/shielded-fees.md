@@ -108,12 +108,26 @@ identity_balance_after = identity_balance_before - amount - fee
 ```
 
 `user_fee_increase` applies to the metered processing portion. The stateless
-floor requires `identity_balance >= amount + shielded_verification_fee`; the
-authoritative gate is the identity-paid fee validation of the execution event
-(`Paid`), which rejects with `IdentityInsufficientBalanceError`. The identity
-balance and the pool total are both terms of the block conservation equation, so
-the converter emits no `AddToSystemCredits` (the same rule `Unshield` and
-`IdentityCreateFromShieldedPool` follow).
+floor requires `identity_balance >= amount + compute_shielded_identity_balance_write_fee`,
+the conservative complete fee (`compute_minimum_shielded_fee` plus a flat
+`SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES` identity-write allowance at the
+storage rate), so an identity that could not pay the complete fee is refused before
+the Orchard proof is verified. The authoritative gate is the identity-paid fee
+validation of the execution event (`Paid`), which rejects with
+`IdentityInsufficientBalanceError`. The identity balance and the pool total are
+both terms of the block conservation equation, so the converter emits no
+`AddToSystemCredits` (the same rule `Unshield` and `IdentityCreateFromShieldedPool`
+follow).
+
+A failed Orchard proof is a **paid failure**, not a free rejection. Like
+`ShieldFromAssetLock`, the proof is verified inside the transition's own transform
+rather than in the shared stateless proof step: on failure the transition executes
+as a `BumpIdentityNonceAction`, consuming the identity nonce and charging the
+identity the versioned `shielded_proof_verification_failure` penalty on top of the
+processing metered so far. This closes the path where a funded identity could
+resubmit invalid proofs indefinitely with its nonce and balance left untouched.
+CheckTx never charges; it admits the verification under its node-local proof
+budget only after the cheap checks passed, and rejects on failure.
 
 ### ShieldFromAssetLock
 
