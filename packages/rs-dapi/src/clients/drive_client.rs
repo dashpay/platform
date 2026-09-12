@@ -64,7 +64,11 @@ impl DriveClient {
         // Compression (gzip) is intentionally DISABLED at rs-dapi level; Envoy handles it.
         info!("Drive client compression: disabled (handled by Envoy)");
         const MAX_DECODING_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
-        const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
+        // `waitForStateTransitionResult` re-sends the whole transaction to Drive inside a
+        // `GetProofsRequest`, so the outbound cap must exceed the largest state transition
+        // family cap (`max_contract_code_state_transition_size`, 32 MiB from protocol
+        // version 17) plus the protobuf framing around it.
+        const MAX_ENCODING_BYTES: usize = 34 * 1024 * 1024; // 34 MiB
 
         let client = Self {
             base_url: Arc::new(uri.to_string()),
@@ -188,5 +192,99 @@ mod tests {
         // - Request method and timing
         // - Response status and duration
         // - Error classification (technical vs service errors)
+    }
+
+    mod message_size_boundary {
+        use super::*;
+        use dapi_grpc::drive::v0::drive_internal_server::{DriveInternal, DriveInternalServer};
+        use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
+        use dapi_grpc::tonic::transport::Server;
+        use dapi_grpc::tonic::transport::server::TcpIncoming;
+        use dapi_grpc::tonic::{Request, Response, Status};
+        use dpp::version::PlatformVersion;
+        use tokio::net::TcpListener;
+
+        /// A `getProofs` server that answers with an empty response and records the size of
+        /// the transaction it received.
+        struct RecordingDriveInternal {
+            received_len: std::sync::Mutex<Option<usize>>,
+        }
+
+        #[dapi_grpc::tonic::async_trait]
+        impl DriveInternal for RecordingDriveInternal {
+            async fn get_proofs(
+                &self,
+                request: Request<GetProofsRequest>,
+            ) -> Result<Response<GetProofsResponse>, Status> {
+                *self.received_len.lock().expect("lock") =
+                    Some(request.into_inner().state_transition.len());
+                Ok(Response::new(GetProofsResponse {
+                    proof: None,
+                    metadata: None,
+                }))
+            }
+        }
+
+        /// The rs-dapi to Drive client re-sends the whole transaction inside a
+        /// `GetProofsRequest`, so its outbound cap decides whether a proof can ever be fetched
+        /// for a transition at the family cap. A local server behind the configured client
+        /// receives one at the cap intact, and one above the client's own cap never reaches
+        /// the server: the encoder refuses it and the stream is reset on the client side
+        /// (tonic reports the refusal as a transport error, not as a status the server sent).
+        #[tokio::test]
+        async fn get_proofs_request_carrying_a_family_cap_transaction_is_sent_intact() {
+            let family_cap = PlatformVersion::latest()
+                .system_limits
+                .max_contract_code_state_transition_size
+                .expect("the latest version bounds contract code envelopes")
+                as usize;
+
+            let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+            let address = listener.local_addr().expect("local address");
+            let service = Arc::new(RecordingDriveInternal {
+                received_len: std::sync::Mutex::new(None),
+            });
+            let server_service = Arc::clone(&service);
+            let server = tokio::spawn(async move {
+                Server::builder()
+                    .add_service(
+                        DriveInternalServer::from_arc(server_service)
+                            .max_decoding_message_size(64 * 1024 * 1024),
+                    )
+                    .serve_with_incoming(TcpIncoming::from(listener))
+                    .await
+                    .expect("test server");
+            });
+
+            let client = DriveClient::new(&format!("http://{address}"))
+                .await
+                .expect("client");
+            let mut internal_client = client.get_internal_client();
+
+            internal_client
+                .get_proofs(GetProofsRequest {
+                    state_transition: vec![7u8; family_cap],
+                })
+                .await
+                .expect("a transaction at the family cap must reach Drive");
+            assert_eq!(
+                *service.received_len.lock().expect("lock"),
+                Some(family_cap)
+            );
+
+            internal_client
+                .get_proofs(GetProofsRequest {
+                    state_transition: vec![7u8; 34 * 1024 * 1024 + 1],
+                })
+                .await
+                .expect_err("a transaction above the client's outbound cap is refused");
+            assert_eq!(
+                *service.received_len.lock().expect("lock"),
+                Some(family_cap),
+                "the oversized request must be refused before the server sees it"
+            );
+
+            server.abort();
+        }
     }
 }

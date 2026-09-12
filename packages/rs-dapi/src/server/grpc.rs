@@ -42,10 +42,12 @@ impl DapiServer {
         // envelope overhead, so that oversized-but-parseable requests reach
         // the app-layer validators and get their precise errors instead of
         // dying here with tonic's generic decode-limit status. The largest
-        // legitimate payloads are `getPathElements` (MAX_PATH_QUERY_BYTES,
-        // 64 KiB of raw components, ~65 KiB encoded) and broadcast state
-        // transitions (`max_state_transition_size`, 20 KiB).
-        const MAX_PLATFORM_DECODING_BYTES: usize = 128 * 1024; // 128 KiB
+        // legitimate payload is a broadcast of a contract-code capable state
+        // transition (`max_contract_code_state_transition_size`, 32 MiB from
+        // protocol version 17); `getPathElements` (MAX_PATH_QUERY_BYTES,
+        // 64 KiB of raw components, ~65 KiB encoded) and every other family
+        // (`max_state_transition_size`, 20 KiB) sit far below it.
+        const MAX_PLATFORM_DECODING_BYTES: usize = 34 * 1024 * 1024; // 34 MiB
         // Same principle for Core: sized above the largest app-layer budget
         // (raw transaction wire cap, 400 KB) plus envelope overhead.
         const MAX_CORE_DECODING_BYTES: usize = 512 * 1024; // 512 KiB
