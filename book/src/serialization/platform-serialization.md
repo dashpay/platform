@@ -253,6 +253,63 @@ fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
 
 The `claim_container_read` call tells the decoder "I am about to read `len` elements of type `T`" and the decoder checks whether this fits within the remaining byte budget. If not, it returns an error before any allocation happens.
 
+## Allocation-only guest profile
+
+DashVM guest code runs inside a sandbox with no operating system, no threads
+and no access to the native `PlatformVersion` registry. It still has to read
+and write the same value bytes as the node. `platform-serialization` and
+`platform-value` therefore build in two profiles selected by Cargo features:
+
+| Crate | Feature | What it adds |
+|---|---|---|
+| `platform-serialization` | `std` | bincode's std readers and writers |
+| `platform-serialization` | `platform-version` | `PlatformVersionEncode`, `PlatformVersionedDecode`, the free functions and every standard-type impl above |
+| `platform-value` | `std` | the thread-local decode depth scope, patch diffing (`treediff`), the `indexmap` and `HashSet` helpers |
+| `platform-value` | `random` | `Identifier::random`, `Identifier::random_with_rng`, `Bytes32::random_with_rng` (implies `std`) |
+| `platform-value` | `platform-version` | the `PlatformVersion` aware impls for `Identifier` |
+| `platform-value` | `json`, `cbor` | the JSON and CBOR converters (both imply `std`) |
+
+Default features enable everything, so no native consumer changes. With
+`--no-default-features` both crates are `#![no_std]` plus `alloc`, and CI
+builds them for `wasm32v1-none`, a target with no std library at all, so a
+std leak in the alloc profile is a compile error rather than a surprise when a
+guest is first built.
+
+The alloc profile keeps the `Value` type, its derived `Encode` and the
+iterative `Decode` impl, the serde `to_value` and `from_value` conversions and
+the `platform_value!` macro. What it does not have is ambient state: there is
+no thread-local depth limit to read. The plain `Decode` impl therefore always
+applies `DEFAULT_MAX_VALUE_DECODE_DEPTH`, and anything that needs other limits
+uses the bounded pair instead:
+
+```rust
+use platform_serialization::bounded::CodecBounds;
+use platform_value::Value;
+
+let bounds = CodecBounds { max_bytes: 64 * 1024, max_depth: 256, max_elements: 65_536 };
+let value = Value::decode_bounded(&bytes, &bounds)?;
+let again = value.encode_bounded(&bounds)?;
+assert_eq!(again, bytes);
+```
+
+`CodecBounds` lives in `packages/rs-platform-serialization/src/bounded.rs`
+together with `CodecBudget` (the running counters), `BoundsError` (fixed-width
+fields only, so it can become wire-visible later without depending on the word
+size), `BoundedSliceReader` (a slice reader that reports its unread remainder),
+`canonical_config()` (the same big-endian varint configuration as the native
+path) and `bounded_decode_from_slice`, which rejects trailing bytes.
+
+The bounded decoder runs the same state machine as the native `Decode` impl,
+so accepted inputs produce identical values, but it treats every declared
+length as untrusted. Container counts, byte strings, text and string lists are
+checked against the unread input and the budget before anything is allocated;
+byte leaves then allocate exactly the declared length, and containers start
+empty and grow by push. Depth and element counts are charged at the container
+header. Because the input is at most `max_bytes`, total allocation on the
+bounded path is bounded by the caller. The native path is untouched: it keeps
+the thread-local limit, bincode's own leaf decoders and pre-sized containers,
+because shipped protocol versions decode through it.
+
 ## The `BincodeContext` type alias
 
 You will see `crate::BincodeContext` throughout the code:

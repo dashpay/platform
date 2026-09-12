@@ -47,8 +47,9 @@ crate that has what the change needs, and no lower.
 | A client API | `packages/rs-sdk` | Follow the query checklist in `packages/rs-sdk/README.md`. |
 | A JavaScript binding | `packages/wasm-dpp2`, `packages/wasm-sdk` | Mirror the Rust shape; never validate. See `packages/wasm-dpp2/CONVENTIONS.md`. |
 | Mobile orchestration (sync, identity registration, DashPay) | `packages/rs-platform-wallet` | The FFI crates and the Swift and Kotlin SDKs marshal; they do not decide. |
+| A guest-visible value or codec rule | `packages/rs-platform-value` alloc profile, `packages/rs-platform-serialization/src/bounded.rs` | Builds for `wasm32v1-none` with `--no-default-features`; no `platform-version`, `dpp`, `drive` or entropy. |
 
-Three boundaries are enforced by CI and worth knowing by name:
+Four boundaries are enforced by CI and worth knowing by name:
 
 - **The verify-only cut.** `packages/wasm-drive-verify` builds `drive` with
   `default-features = false, features = ["verify"]`. Anything under
@@ -65,6 +66,14 @@ Three boundaries are enforced by CI and worth knowing by name:
   crates and their known dependents. Adding a dependency on a wallet crate from
   a new place fails the build until the closure list in
   `.github/scripts/check-wallet-closure.py` is updated deliberately.
+- **The guest alloc-only cut.** `platform-value` and `platform-serialization`
+  build with `--no-default-features` for `wasm32v1-none`, a target with no std
+  library, because DashVM guest code consumes them as `no_std` + `alloc`.
+  Anything reachable without the `std`, `random` or `platform-version` feature
+  must use `core` and `alloc` only, must not read thread-local or process
+  state, and must not pull `platform-version`, `dpp`, `drive` or an entropy
+  source. Guest-visible decoding takes explicit `CodecBounds`; see the
+  [Serialization](../serialization/platform-serialization.md) chapter.
 
 ## Versioned behaviour
 

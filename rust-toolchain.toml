@@ -2,4 +2,7 @@
 # Rust version the same as in /README.md
 channel = "1.92"
 
-targets = ["wasm32-unknown-unknown"]
+# wasm32v1-none has no std library at all: the guest alloc-only cut in CI
+# uses it so any std leak in platform-value or platform-serialization is a
+# compile error rather than a runtime surprise.
+targets = ["wasm32-unknown-unknown", "wasm32v1-none"]
