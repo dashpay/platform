@@ -18,6 +18,7 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         private var recordedEvents: [String] = []
         private var recordedWalletIds: [Data] = []
         private var recordedOffMain: [Bool] = []
+        private var recordedReadTimedOut = false
 
         init(
             rows: [ShieldedLocalAccountBalanceFFI] = [],
@@ -36,6 +37,7 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         var events: [String] { lock.withLock { recordedEvents } }
         var walletIds: [Data] { lock.withLock { recordedWalletIds } }
         var offMain: [Bool] { lock.withLock { recordedOffMain } }
+        var readTimedOut: Bool { lock.withLock { recordedReadTimedOut } }
 
         func record(_ event: String) {
             lock.withLock { recordedEvents.append(event) }
@@ -50,7 +52,9 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
             }
             if let gate {
                 // A broken test must not leave the shared native queue hung.
-                _ = gate.wait(timeout: .now() + 5)
+                if gate.wait(timeout: .now() + 5) == .timedOut {
+                    lock.withLock { recordedReadTimedOut = true }
+                }
             }
             let entries: UnsafeMutablePointer<ShieldedLocalAccountBalanceFFI>?
             if rows.isEmpty {
@@ -88,7 +92,11 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         let manager = PlatformWalletManager.makeForTesting(
             handle: Handle.max,
             calls: PlatformWalletNativeTeardownCalls(
-                spvStop: step, platformAddressSyncStop: step, shieldedSyncStop: step,
+                spvStop: step, platformAddressSyncStop: step,
+                shieldedSyncStop: { _ in
+                    fixture.record("shielded_stop")
+                    return PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+                },
                 dashPaySyncStop: step, dpnsSyncStop: step, destroy: step))
         manager.nativeShieldedLocalBalanceCalls = PlatformWalletNativeShieldedLocalBalanceCalls(
             read: { handle, walletId in fixture.read(handle: handle, walletId: walletId) },
@@ -209,6 +217,62 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         await manager.shutdown()
     }
 
+    /// Models a native snapshot waiting behind a scan's store lock. Only
+    /// stopping shielded sync releases that lock on the successful path.
+    func testShouldStopShieldedSyncBeforeDrainingBlockedSnapshotExactlyOnce() async throws {
+        let scanLock = DispatchSemaphore(value: 0)
+        let allowStopToFinish = DispatchSemaphore(value: 0)
+        let stopStarted = expectation(description: "Shielded stop runs while the snapshot is blocked")
+        let fixture = NativeFixture(rows: [row(0, credits: 900)], gate: scanLock)
+        let manager = makeManager(fixture)
+        let calls = manager.nativeTeardownCalls
+        manager.nativeTeardownCalls = PlatformWalletNativeTeardownCalls(
+            spvStop: calls.spvStop,
+            platformAddressSyncStop: calls.platformAddressSyncStop,
+            shieldedSyncStop: { handle in
+                XCTAssertEqual(handle, Handle.max)
+                XCTAssertFalse(Thread.isMainThread)
+                fixture.record("shielded_stop")
+                stopStarted.fulfill()
+                XCTAssertEqual(allowStopToFinish.wait(timeout: .now() + 5), .success)
+                scanLock.signal()
+                return PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+            },
+            dashPaySyncStop: calls.dashPaySyncStop,
+            dpnsSyncStop: calls.dpnsSyncStop,
+            destroy: calls.destroy)
+        let read = Task { try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId) }
+        try await waitForRead(fixture)
+        let first = Task { await manager.shutdown() }
+        await fulfillment(of: [stopStarted], timeout: 1)
+        let secondStarted = expectation(description: "Concurrent shutdown joins the early stop")
+        let second = Task {
+            secondStarted.fulfill()
+            return await manager.shutdown()
+        }
+        await fulfillment(of: [secondStarted], timeout: 1)
+        XCTAssertEqual(manager.handle, Handle.max)
+        XCTAssertTrue(manager.isConfigured)
+        XCTAssertFalse(fixture.events.contains("free"))
+        XCTAssertFalse(fixture.events.contains("teardown"))
+        allowStopToFinish.signal()
+
+        let state = try await read.value
+        let firstMetrics = await first.value
+        let secondMetrics = await second.value
+
+        XCTAssertFalse(fixture.readTimedOut, "Shutdown must release the scan before draining the blocked read")
+        XCTAssertEqual(state, .ready(ShieldedLocalBalanceSnapshot(accounts: [
+            0: ShieldedLocalAccountBalance(spendableCredits: 900, lastScannedIndex: nil, source: .restored)
+        ])))
+        XCTAssertEqual(Array(fixture.events.prefix(3)), ["read:\(Handle.max)", "shielded_stop", "free"])
+        XCTAssertEqual(fixture.events.filter { $0 == "shielded_stop" }.count, 1)
+        XCTAssertEqual(fixture.events.filter { $0 == "teardown" }.count, 5)
+        XCTAssertEqual(firstMetrics.steps.map(\.name), secondMetrics.steps.map(\.name))
+        XCTAssertEqual(firstMetrics.totalMilliseconds, secondMetrics.totalMilliseconds)
+        XCTAssertEqual(manager.handle, NULL_HANDLE)
+    }
+
     func testShouldDrainAdmittedReadAndRejectNewReadsDuringShutdown() async throws {
         let gate = DispatchSemaphore(value: 0)
         let fixture = NativeFixture(rows: [row(0, credits: 900)], gate: gate)
@@ -237,7 +301,9 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         ])))
         _ = await shutdown.value
         XCTAssertEqual(fixture.walletIds.count, 1)
-        XCTAssertEqual(Array(fixture.events.prefix(3)), ["read:\(Handle.max)", "free", "teardown"])
+        let finalTeardown = fixture.events.filter { $0 != "shielded_stop" }
+        XCTAssertEqual(Array(finalTeardown.prefix(3)), ["read:\(Handle.max)", "free", "teardown"])
+        XCTAssertEqual(fixture.events.filter { $0 == "shielded_stop" }.count, 1)
         XCTAssertEqual(manager.handle, NULL_HANDLE)
 
         do {
@@ -311,7 +377,9 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         var manager: PlatformWalletManager? = makeManager(fixture)
         weak var retainedManager: PlatformWalletManager?
         retainedManager = manager
-        let read = Task { try await manager!.localShieldedBalanceSnapshot(walletId: Self.walletId) }
+        let read = Task { [manager] in
+            try await manager!.localShieldedBalanceSnapshot(walletId: Self.walletId)
+        }
         defer { gate.signal() }
         try await waitForRead(fixture)
         manager = nil

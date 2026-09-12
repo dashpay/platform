@@ -219,13 +219,14 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
             "the drained create must have completed its publish")
         XCTAssertEqual(manager.handle, NULL_HANDLE)
         XCTAssertEqual(metrics.steps.count, 6)
-        // The full ordering is in the shared event log: the create ended
-        // before the first teardown step began.
+        // The early shielded stop may overlap create, but every remaining
+        // teardown step must wait until create finishes and publishes.
+        let afterShieldedStop = log.events.filter { $0 != "teardown:shielded_sync_stop" }
         XCTAssertEqual(
-            log.events.prefix(2), ["create:begin", "create:end"],
+            afterShieldedStop.prefix(2), ["create:begin", "create:end"],
             "unexpected event order: \(log.events)")
         XCTAssertEqual(log.events.count, 8)
-        XCTAssertEqual(log.events[2], "teardown:spv_stop")
+        XCTAssertEqual(afterShieldedStop[2], "teardown:spv_stop")
     }
 
     /// New async and synchronous creates arriving while a shutdown is draining
