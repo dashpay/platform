@@ -1,9 +1,13 @@
+pub mod smart_contract;
 pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
-#[derive(Clone, Debug, Default)]
+use crate::version::system_limits::smart_contract::SmartContractComputationLimits;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SystemLimits {
     pub estimated_contract_max_serialized_size: u16,
     pub max_field_value_size: u32,
@@ -100,6 +104,18 @@ pub struct SystemLimits {
     /// time-range indexes (nothing to bound: the `timeRange` keyword does not
     /// parse there).
     pub max_time_range_overlap_factor: Option<u64>,
+    /// The consensus limits on smart-contract computation, counted in computation units by
+    /// one contract-only counter: how much one outer invocation may consume and how much all
+    /// invocations in a block may consume together. Read by the per-block computation ledger
+    /// in `drive-abci` (`BlockComputationBudget`) and handed to the runtime as the budget of
+    /// each invocation; the fee schedule's `dashvm` group prices the units. Independent of
+    /// every native budget (proposer timer, withdrawal and shielded per-block caps, Tenderdash
+    /// block gas), none of which changes.
+    ///
+    /// `None` for the protocol versions that predate smart contracts: those versions meter,
+    /// price and budget nothing, and a code path that reads `None` skips the contract path
+    /// entirely. See `SmartContractComputationLimits`.
+    pub smart_contract_computation: Option<SmartContractComputationLimits>,
 }
 
 #[cfg(test)]

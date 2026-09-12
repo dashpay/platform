@@ -13,7 +13,7 @@ pub mod fee;
 #[cfg(feature = "mock-versions")]
 pub mod mocks;
 pub mod system_data_contract_versions;
-mod system_limits;
+pub mod system_limits;
 pub mod v1;
 pub mod v10;
 pub mod v11;
