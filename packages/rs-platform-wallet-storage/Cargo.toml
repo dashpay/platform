@@ -181,6 +181,17 @@ serial_test = "3"
 # so `secrets_mock_store_test_util.rs` proves the feature gate from the
 # outside — `cfg(test)` alone would satisfy it from within the crate.
 platform-wallet-storage = { path = ".", default-features = false, features = ["sqlite", "cli", "secrets", "kv", "__test-helpers", "test-util"] }
+# `test-utils` exposes `platform_wallet::test_support::funded_wallet_manager`,
+# which `sqlite_sent_payment_verdict_durability.rs` needs to stand up a real
+# `WalletManager` and drive the wallet-event adapter against this crate's
+# SQLite persister. Additive over the production dep above.
+platform-wallet = { path = "../rs-platform-wallet", features = ["test-utils"] }
+# The adapter is a tokio task; the durability test drives it and awaits its
+# join handle. Current-thread runtime only — nothing here needs threads.
+tokio = { version = "1", features = ["rt", "macros", "sync"] }
+# The adapter's cancellation handle — the test passes a never-fired token, but
+# the parameter is part of the public signature.
+tokio-util = { version = "0.7", default-features = false }
 tempfile = "3"
 # `sqlite_hardening_3625.rs`, `sqlite_persist_roundtrip.rs`, and
 # `sqlite_load_reconstruction.rs` import `dash_sdk::platform::address_sync::AddressFunds`.
