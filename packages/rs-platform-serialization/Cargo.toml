@@ -8,5 +8,20 @@ rust-version.workspace = true
 license = "MIT"
 
 [dependencies]
-bincode = { version = "=2.0.1", features = ["serde"] }
-platform-version = { path = "../rs-platform-version" }
+bincode = { version = "=2.0.1", default-features = false, features = ["alloc", "serde"] }
+platform-version = { path = "../rs-platform-version", optional = true }
+
+### FEATURES #################################################################
+
+[features]
+default = ["std", "platform-version"]
+
+# Native profile: bincode's std readers and writers. Without it the crate is
+# `no_std` + `alloc` and offers only the bounded codec seam plus the bincode
+# re-exports; that is the profile DashVM guest code builds against.
+std = ["bincode/std"]
+
+# The historical `PlatformVersion`-dispatched traits and free functions. Guest
+# codecs receive explicit `CodecBounds` instead of the native version registry,
+# so this stays optional.
+platform-version = ["dep:platform-version"]

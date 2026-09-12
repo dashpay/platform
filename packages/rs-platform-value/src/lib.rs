@@ -5,13 +5,19 @@
 //! Forked from ciborium value
 //!
 //!
-extern crate core;
+#![cfg_attr(not(any(test, feature = "std")), no_std)]
+
+#[macro_use]
+extern crate alloc;
+#[cfg(any(test, feature = "std"))]
+extern crate std;
 
 pub mod btreemap_extensions;
 pub mod converter;
 pub mod display;
 mod eq;
 mod error;
+pub mod guest_bounds;
 mod index;
 mod inner_array_value;
 pub mod inner_value;
@@ -27,8 +33,13 @@ mod value_map;
 mod value_serialization;
 
 pub use crate::value_map::{ValueMap, ValueMapHelper};
+use alloc::borrow::ToOwned;
+use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use core::any;
+use core::mem;
 pub use error::Error;
-use std::collections::BTreeMap;
 
 pub type Hash256 = [u8; 32];
 
@@ -48,9 +59,16 @@ use bincode::error::{AllowedEnumVariants, DecodeError};
 use bincode::{Decode, Encode};
 pub use patch::{patch, Patch};
 
+/// Items the `platform_value!` macro expands to. Not part of the public API.
+#[doc(hidden)]
+pub mod __private {
+    pub use alloc::vec;
+}
+
 /// The defensive nesting limit used when decoding a [`Value`] without an explicit scope.
 pub const DEFAULT_MAX_VALUE_DECODE_DEPTH: usize = 256;
 
+#[cfg(feature = "std")]
 std::thread_local! {
     static VALUE_DECODE_DEPTH_LIMIT: std::cell::Cell<Option<usize>> =
         const { std::cell::Cell::new(Some(DEFAULT_MAX_VALUE_DECODE_DEPTH)) };
@@ -61,6 +79,11 @@ std::thread_local! {
 /// This is used by version-aware protocol decoders so historical versions can retain their
 /// original behavior while current versions reject excessive nesting before constructing a
 /// recursive value tree.
+///
+/// Only the native profile has this thread-local scope. The allocation-only profile decodes
+/// with [`DEFAULT_MAX_VALUE_DECODE_DEPTH`] through the plain [`Decode`] impl and takes explicit
+/// bounds through [`Value::decode_bounded`].
+#[cfg(feature = "std")]
 pub fn with_value_decode_depth_limit<T>(max_depth: Option<usize>, decode: impl FnOnce() -> T) -> T {
     struct RestoreDepthLimit(Option<usize>);
 
@@ -151,6 +174,11 @@ pub enum Value {
     Map(ValueMap),
 }
 
+/// The variant index of [`Value::Array`] on the wire. Fixed by the derived `Encode`.
+pub(crate) const VALUE_ARRAY_VARIANT: u32 = 21;
+/// The variant index of [`Value::Map`] on the wire. Fixed by the derived `Encode`.
+pub(crate) const VALUE_MAP_VARIANT: u32 = 22;
+
 enum ValueDecodeFrame {
     Array {
         values: Vec<Value>,
@@ -163,6 +191,44 @@ enum ValueDecodeFrame {
     },
 }
 
+/// Reads the variable-length parts of a [`Value`] on behalf of the shared iterative decoder.
+///
+/// The decoder state machine in [`decode_value_with`] owns the wire grammar: variant indices,
+/// frame bookkeeping and bincode's own byte accounting. Everything that allocates from a decoded
+/// length goes through this trait, so the native path can keep bincode's allocating decoders and
+/// the guest path can route every length through an explicit budget instead.
+pub(crate) trait ValueLeafReader<D: Decoder> {
+    /// The error the leaf reader produces; the state machine's own errors are `DecodeError`.
+    type Error: From<DecodeError>;
+
+    /// Reads an array length header. `depth` counts the array being entered, so the outermost
+    /// container is depth 1. Returns the length and the storage the elements are pushed into.
+    fn array_header(
+        &mut self,
+        decoder: &mut D,
+        depth: usize,
+    ) -> Result<(usize, Vec<Value>), Self::Error>;
+
+    /// Reads a map length header; see [`ValueLeafReader::array_header`].
+    fn map_header(
+        &mut self,
+        decoder: &mut D,
+        depth: usize,
+    ) -> Result<(usize, ValueMap), Self::Error>;
+
+    /// Called once for every container whose header was read, when it is complete.
+    fn container_end(&mut self);
+
+    /// Reads the payload of [`Value::Bytes`] or [`Value::EnumU8`].
+    fn bytes(&mut self, decoder: &mut D) -> Result<Vec<u8>, Self::Error>;
+
+    /// Reads the payload of [`Value::Text`].
+    fn text(&mut self, decoder: &mut D) -> Result<String, Self::Error>;
+
+    /// Reads the payload of [`Value::EnumString`].
+    fn string_list(&mut self, decoder: &mut D) -> Result<Vec<String>, Self::Error>;
+}
+
 fn decode_value_container_len<Context, D>(decoder: &mut D) -> Result<usize, DecodeError>
 where
     D: Decoder<Context = Context>,
@@ -172,138 +238,206 @@ where
         .map_err(|_| DecodeError::OutsideUsizeRange(len))
 }
 
-fn validate_value_decode_depth(depth: usize) -> Result<(), DecodeError> {
-    VALUE_DECODE_DEPTH_LIMIT.with(|limit| match limit.get() {
+fn check_value_decode_depth(depth: usize, limit: Option<usize>) -> Result<(), DecodeError> {
+    match limit {
         Some(max_depth) if depth > max_depth => Err(DecodeError::OtherString(format!(
             "value nesting depth {depth} exceeds maximum {max_depth}"
         ))),
         _ => Ok(()),
-    })
+    }
+}
+
+#[cfg(feature = "std")]
+fn validate_value_decode_depth(depth: usize) -> Result<(), DecodeError> {
+    VALUE_DECODE_DEPTH_LIMIT.with(|limit| check_value_decode_depth(depth, limit.get()))
+}
+
+/// Without `std` there is no thread-local scope, so the plain [`Decode`] impl always applies
+/// [`DEFAULT_MAX_VALUE_DECODE_DEPTH`]. Guests that need other limits use [`Value::decode_bounded`].
+#[cfg(not(feature = "std"))]
+fn validate_value_decode_depth(depth: usize) -> Result<(), DecodeError> {
+    check_value_decode_depth(depth, Some(DEFAULT_MAX_VALUE_DECODE_DEPTH))
+}
+
+/// The leaf reader behind the blanket [`Decode`] impl: bincode's own allocating decoders, the
+/// historical depth limit, and pre-sized container storage. Shipped protocol versions decode
+/// through this path, so its behaviour is frozen.
+struct NativeLeaves;
+
+impl<D: Decoder> ValueLeafReader<D> for NativeLeaves {
+    type Error = DecodeError;
+
+    fn array_header(
+        &mut self,
+        decoder: &mut D,
+        depth: usize,
+    ) -> Result<(usize, Vec<Value>), DecodeError> {
+        validate_value_decode_depth(depth)?;
+        let len = decode_value_container_len(decoder)?;
+        decoder.claim_container_read::<Value>(len)?;
+        Ok((len, Vec::with_capacity(len)))
+    }
+
+    fn map_header(
+        &mut self,
+        decoder: &mut D,
+        depth: usize,
+    ) -> Result<(usize, ValueMap), DecodeError> {
+        validate_value_decode_depth(depth)?;
+        let len = decode_value_container_len(decoder)?;
+        decoder.claim_container_read::<(Value, Value)>(len)?;
+        Ok((len, Vec::with_capacity(len)))
+    }
+
+    fn container_end(&mut self) {}
+
+    fn bytes(&mut self, decoder: &mut D) -> Result<Vec<u8>, DecodeError> {
+        Decode::decode(decoder)
+    }
+
+    fn text(&mut self, decoder: &mut D) -> Result<String, DecodeError> {
+        Decode::decode(decoder)
+    }
+
+    fn string_list(&mut self, decoder: &mut D) -> Result<Vec<String>, DecodeError> {
+        Decode::decode(decoder)
+    }
+}
+
+/// Decodes one [`Value`] without recursion. Containers are kept as an explicit frame stack whose
+/// length is the current nesting depth; `leaves` reads every length-prefixed payload.
+pub(crate) fn decode_value_with<D, L>(decoder: &mut D, leaves: &mut L) -> Result<Value, L::Error>
+where
+    D: Decoder,
+    L: ValueLeafReader<D>,
+{
+    let mut frames = Vec::<ValueDecodeFrame>::new();
+    let mut completed_value = None;
+
+    loop {
+        if let Some(value) = completed_value.take() {
+            let Some(frame) = frames.last_mut() else {
+                return Ok(value);
+            };
+
+            match frame {
+                ValueDecodeFrame::Array { values, remaining } => {
+                    values.push(value);
+                    *remaining -= 1;
+
+                    if *remaining == 0 {
+                        let ValueDecodeFrame::Array { values, .. } =
+                            frames.pop().expect("the array frame was just observed")
+                        else {
+                            unreachable!("the observed frame changed")
+                        };
+                        leaves.container_end();
+                        completed_value = Some(Value::Array(values));
+                    } else {
+                        decoder.unclaim_bytes_read(mem::size_of::<Value>());
+                    }
+                }
+                ValueDecodeFrame::Map {
+                    entries,
+                    remaining,
+                    pending_key,
+                } => {
+                    if pending_key.is_none() {
+                        *pending_key = Some(value);
+                    } else {
+                        let key = pending_key
+                            .take()
+                            .expect("the map frame was expecting a value");
+                        entries.push((key, value));
+                        *remaining -= 1;
+
+                        if *remaining == 0 {
+                            let ValueDecodeFrame::Map { entries, .. } =
+                                frames.pop().expect("the map frame was just observed")
+                            else {
+                                unreachable!("the observed frame changed")
+                            };
+                            leaves.container_end();
+                            completed_value = Some(Value::Map(entries));
+                        } else {
+                            decoder.unclaim_bytes_read(mem::size_of::<(Value, Value)>());
+                        }
+                    }
+                }
+            }
+
+            continue;
+        }
+
+        let variant_index = <u32 as Decode<D::Context>>::decode(decoder)?;
+        completed_value = Some(match variant_index {
+            0 => Value::U128(Decode::decode(decoder)?),
+            1 => Value::I128(Decode::decode(decoder)?),
+            2 => Value::U64(Decode::decode(decoder)?),
+            3 => Value::I64(Decode::decode(decoder)?),
+            4 => Value::U32(Decode::decode(decoder)?),
+            5 => Value::I32(Decode::decode(decoder)?),
+            6 => Value::U16(Decode::decode(decoder)?),
+            7 => Value::I16(Decode::decode(decoder)?),
+            8 => Value::U8(Decode::decode(decoder)?),
+            9 => Value::I8(Decode::decode(decoder)?),
+            10 => Value::Bytes(leaves.bytes(decoder)?),
+            11 => Value::Bytes20(Decode::decode(decoder)?),
+            12 => Value::Bytes32(Decode::decode(decoder)?),
+            13 => Value::Bytes36(Decode::decode(decoder)?),
+            14 => Value::EnumU8(leaves.bytes(decoder)?),
+            15 => Value::EnumString(leaves.string_list(decoder)?),
+            16 => Value::Identifier(Decode::decode(decoder)?),
+            17 => Value::Float(Decode::decode(decoder)?),
+            18 => Value::Text(leaves.text(decoder)?),
+            19 => Value::Bool(Decode::decode(decoder)?),
+            20 => Value::Null,
+            VALUE_ARRAY_VARIANT => {
+                let (len, values) = leaves.array_header(decoder, frames.len() + 1)?;
+
+                if len == 0 {
+                    leaves.container_end();
+                    Value::Array(values)
+                } else {
+                    frames.push(ValueDecodeFrame::Array {
+                        values,
+                        remaining: len,
+                    });
+                    decoder.unclaim_bytes_read(mem::size_of::<Value>());
+                    continue;
+                }
+            }
+            VALUE_MAP_VARIANT => {
+                let (len, entries) = leaves.map_header(decoder, frames.len() + 1)?;
+
+                if len == 0 {
+                    leaves.container_end();
+                    Value::Map(entries)
+                } else {
+                    frames.push(ValueDecodeFrame::Map {
+                        entries,
+                        remaining: len,
+                        pending_key: None,
+                    });
+                    decoder.unclaim_bytes_read(mem::size_of::<(Value, Value)>());
+                    continue;
+                }
+            }
+            found => {
+                return Err(DecodeError::UnexpectedVariant {
+                    type_name: any::type_name::<Value>(),
+                    allowed: &AllowedEnumVariants::Range { min: 0, max: 22 },
+                    found,
+                }
+                .into());
+            }
+        });
+    }
 }
 
 impl<Context> Decode<Context> for Value {
     fn decode<D: Decoder<Context = Context>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let mut frames = Vec::<ValueDecodeFrame>::new();
-        let mut completed_value = None;
-
-        loop {
-            if let Some(value) = completed_value.take() {
-                let Some(frame) = frames.last_mut() else {
-                    return Ok(value);
-                };
-
-                match frame {
-                    ValueDecodeFrame::Array { values, remaining } => {
-                        values.push(value);
-                        *remaining -= 1;
-
-                        if *remaining == 0 {
-                            let ValueDecodeFrame::Array { values, .. } =
-                                frames.pop().expect("the array frame was just observed")
-                            else {
-                                unreachable!("the observed frame changed")
-                            };
-                            completed_value = Some(Value::Array(values));
-                        } else {
-                            decoder.unclaim_bytes_read(std::mem::size_of::<Value>());
-                        }
-                    }
-                    ValueDecodeFrame::Map {
-                        entries,
-                        remaining,
-                        pending_key,
-                    } => {
-                        if pending_key.is_none() {
-                            *pending_key = Some(value);
-                        } else {
-                            let key = pending_key
-                                .take()
-                                .expect("the map frame was expecting a value");
-                            entries.push((key, value));
-                            *remaining -= 1;
-
-                            if *remaining == 0 {
-                                let ValueDecodeFrame::Map { entries, .. } =
-                                    frames.pop().expect("the map frame was just observed")
-                                else {
-                                    unreachable!("the observed frame changed")
-                                };
-                                completed_value = Some(Value::Map(entries));
-                            } else {
-                                decoder.unclaim_bytes_read(std::mem::size_of::<(Value, Value)>());
-                            }
-                        }
-                    }
-                }
-
-                continue;
-            }
-
-            let variant_index = <u32 as Decode<Context>>::decode(decoder)?;
-            completed_value = Some(match variant_index {
-                0 => Value::U128(Decode::decode(decoder)?),
-                1 => Value::I128(Decode::decode(decoder)?),
-                2 => Value::U64(Decode::decode(decoder)?),
-                3 => Value::I64(Decode::decode(decoder)?),
-                4 => Value::U32(Decode::decode(decoder)?),
-                5 => Value::I32(Decode::decode(decoder)?),
-                6 => Value::U16(Decode::decode(decoder)?),
-                7 => Value::I16(Decode::decode(decoder)?),
-                8 => Value::U8(Decode::decode(decoder)?),
-                9 => Value::I8(Decode::decode(decoder)?),
-                10 => Value::Bytes(Decode::decode(decoder)?),
-                11 => Value::Bytes20(Decode::decode(decoder)?),
-                12 => Value::Bytes32(Decode::decode(decoder)?),
-                13 => Value::Bytes36(Decode::decode(decoder)?),
-                14 => Value::EnumU8(Decode::decode(decoder)?),
-                15 => Value::EnumString(Decode::decode(decoder)?),
-                16 => Value::Identifier(Decode::decode(decoder)?),
-                17 => Value::Float(Decode::decode(decoder)?),
-                18 => Value::Text(Decode::decode(decoder)?),
-                19 => Value::Bool(Decode::decode(decoder)?),
-                20 => Value::Null,
-                21 => {
-                    validate_value_decode_depth(frames.len() + 1)?;
-                    let len = decode_value_container_len(decoder)?;
-                    decoder.claim_container_read::<Value>(len)?;
-
-                    if len == 0 {
-                        Value::Array(Vec::new())
-                    } else {
-                        frames.push(ValueDecodeFrame::Array {
-                            values: Vec::with_capacity(len),
-                            remaining: len,
-                        });
-                        decoder.unclaim_bytes_read(std::mem::size_of::<Value>());
-                        continue;
-                    }
-                }
-                22 => {
-                    validate_value_decode_depth(frames.len() + 1)?;
-                    let len = decode_value_container_len(decoder)?;
-                    decoder.claim_container_read::<(Value, Value)>(len)?;
-
-                    if len == 0 {
-                        Value::Map(Vec::new())
-                    } else {
-                        frames.push(ValueDecodeFrame::Map {
-                            entries: Vec::with_capacity(len),
-                            remaining: len,
-                            pending_key: None,
-                        });
-                        decoder.unclaim_bytes_read(std::mem::size_of::<(Value, Value)>());
-                        continue;
-                    }
-                }
-                found => {
-                    return Err(DecodeError::UnexpectedVariant {
-                        type_name: std::any::type_name::<Self>(),
-                        allowed: &AllowedEnumVariants::Range { min: 0, max: 22 },
-                        found,
-                    });
-                }
-            });
-        }
+        decode_value_with(decoder, &mut NativeLeaves)
     }
 }
 

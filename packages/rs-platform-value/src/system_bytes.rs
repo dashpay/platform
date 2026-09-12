@@ -2,6 +2,9 @@ use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 use base64::{alphabet, Engine};
 
 use crate::{BinaryData, Bytes20, Bytes32, Bytes36, Error, Identifier, Value};
+use alloc::borrow::ToOwned;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 
 pub const PADDING_INDIFFERENT: GeneralPurposeConfig = GeneralPurposeConfig::new()
     .with_encode_padding(false)

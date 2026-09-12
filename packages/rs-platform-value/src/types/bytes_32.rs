@@ -1,14 +1,18 @@
 use crate::string_encoding::Encoding;
 use crate::types::encoding_string_to_encoding;
 use crate::{string_encoding, Error, Value};
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use bincode::{Decode, Encode};
+use core::fmt;
+#[cfg(feature = "random")]
 use rand::rngs::StdRng;
+#[cfg(feature = "random")]
 use rand::Rng;
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy, Encode, Decode)]
 pub struct Bytes32(pub [u8; 32]);
@@ -31,6 +35,7 @@ impl Bytes32 {
         Ok(Bytes32::new(buffer))
     }
 
+    #[cfg(feature = "random")]
     pub fn random_with_rng(rng: &mut StdRng) -> Self {
         Bytes32(rng.gen())
     }
@@ -245,6 +250,7 @@ impl From<&Bytes32> for String {
 #[allow(clippy::needless_borrows_for_generic_args)]
 mod tests {
     use super::*;
+    #[cfg(feature = "random")]
     use rand::SeedableRng;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -639,6 +645,7 @@ mod tests {
     // ---------------------------------------------------------------
 
     #[test]
+    #[cfg(feature = "random")]
     fn random_with_rng_produces_non_zero() {
         let mut rng = StdRng::seed_from_u64(12345);
         let b = Bytes32::random_with_rng(&mut rng);
@@ -647,6 +654,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "random")]
     fn random_with_rng_deterministic_with_same_seed() {
         let mut rng1 = StdRng::seed_from_u64(42);
         let mut rng2 = StdRng::seed_from_u64(42);
@@ -656,6 +664,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "random")]
     fn random_with_rng_different_seeds_differ() {
         let mut rng1 = StdRng::seed_from_u64(1);
         let mut rng2 = StdRng::seed_from_u64(2);

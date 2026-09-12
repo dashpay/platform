@@ -1,5 +1,6 @@
 use crate::{Error, Value};
-use std::collections::BTreeMap;
+use alloc::collections::BTreeMap;
+use alloc::string::String;
 
 pub trait BTreeValueRemoveInnerValueFromMapHelper {
     fn remove_optional_inner_value_array<I: FromIterator<Value>>(

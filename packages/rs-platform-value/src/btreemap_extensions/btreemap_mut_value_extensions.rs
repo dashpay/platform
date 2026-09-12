@@ -1,6 +1,7 @@
 use crate::{Error, Value};
-use std::borrow::BorrowMut;
-use std::collections::BTreeMap;
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+use core::borrow::BorrowMut;
 
 pub trait BTreeMutValueMapHelper {
     fn get_optional_inner_map_in_array_mut<

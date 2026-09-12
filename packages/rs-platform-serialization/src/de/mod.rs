@@ -1,12 +1,16 @@
 //! Decoder-based structs and traits.
 
+#[cfg(feature = "platform-version")]
 mod impl_core;
+#[cfg(feature = "platform-version")]
 mod impl_tuples;
+#[cfg(feature = "platform-version")]
 mod impls;
 
 pub use bincode::de::{BorrowDecoder, Decoder};
 pub use bincode::error::DecodeError;
 pub use bincode::{BorrowDecode, Decode};
+#[cfg(feature = "platform-version")]
 use platform_version::version::PlatformVersion;
 
 /// Decode with the default `()` context to avoid repeated generic arguments.
@@ -104,6 +108,7 @@ impl<'de, T> DefaultBorrowDecode<'de> for T where
 /// # }
 /// # bincode::impl_borrow_decode!(Foo);
 /// ```
+#[cfg(feature = "platform-version")]
 pub trait PlatformVersionedDecode: Sized {
     /// Attempt to decode this type with the given [Decode].
     fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
@@ -117,6 +122,7 @@ pub trait PlatformVersionedDecode: Sized {
 /// This trait should be implemented for types that contain borrowed data, like `&str` and `&[u8]`. If your type does not have borrowed data, consider implementing [Decode] instead.
 ///
 /// This trait will be automatically implemented if you enable the `derive` feature and add `#[derive(bincode::Decode)]` to a type with a lifetime.
+#[cfg(feature = "platform-version")]
 pub trait PlatformVersionedBorrowDecode<'de>: Sized {
     /// Attempt to decode this type with the given [BorrowDecode].
     fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
@@ -126,6 +132,7 @@ pub trait PlatformVersionedBorrowDecode<'de>: Sized {
 }
 
 /// Helper macro to implement `PlatformVersionedBorrowDecode` for any type that implements `PlatformVersionedDecode`.
+#[cfg(feature = "platform-version")]
 #[macro_export]
 macro_rules! impl_platform_versioned_borrow_decode {
     ($ty:ty) => {
@@ -149,6 +156,7 @@ macro_rules! impl_platform_versioned_borrow_decode {
 }
 
 /// Decodes only the option variant from the decoder. Will not read any more data than that.
+#[cfg(feature = "platform-version")]
 #[inline]
 pub(crate) fn decode_option_variant<D: Decoder<Context = crate::BincodeContext>>(
     decoder: &mut D,
@@ -181,9 +189,11 @@ pub(crate) fn decode_option_variant<D: Decoder<Context = crate::BincodeContext>>
 ///   well within OS limits (1 Mi × 64 bytes = 64 MiB).
 /// - This is a last-resort guard; the primary protection is the per-type
 ///   byte-budget configured via `#[platform_serialize(limit = N)]`.
+#[cfg(feature = "platform-version")]
 const MAX_COLLECTION_LEN: u64 = 1024 * 1024;
 
 /// Decodes the length of any slice, container, etc from the decoder
+#[cfg(feature = "platform-version")]
 #[inline]
 pub(crate) fn decode_slice_len<D: Decoder<Context = crate::BincodeContext>>(
     decoder: &mut D,
@@ -197,7 +207,7 @@ pub(crate) fn decode_slice_len<D: Decoder<Context = crate::BincodeContext>>(
     v.try_into().map_err(|_| DecodeError::OutsideUsizeRange(v))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "platform-version"))]
 mod tests {
     use super::*;
     use bincode::config;
