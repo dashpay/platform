@@ -26,7 +26,9 @@ use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore_rpc::json::MasternodeListItem;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
 use dpp::util::hash::hash_double;
+use dpp::version::fee::FeeVersion;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 
@@ -130,6 +132,20 @@ impl PlatformState {
     ) -> Result<PlatformState, Error> {
         let platform_version = PlatformVersion::get(current_protocol_version_in_consensus)?;
 
+        // Record the genesis fee generation. The epoch-change hook only records a
+        // generation on the first non-genesis epoch change, so without this entry
+        // bytes stored in epoch 0 of a network whose genesis schedule is not
+        // generation 1 would be refunded at generation 1 rates forever (the lookup
+        // falls back to the first registered generation below the earliest entry).
+        // Unobservable on every existing network: their genesis generation is 1,
+        // which is exactly the fallback, and the map lives in the saved state, not
+        // in the app hash. Saved states created before this entry was recorded
+        // keep working through the same fallback. The value is the registry entry
+        // rather than the schedule reference so the in-memory map equals the map
+        // after a saved-state round trip, which resolves numbers through the
+        // registry.
+        let genesis_fee_version = FeeVersion::get(platform_version.fee_version.fee_version_number)?;
+
         let state = PlatformState {
             last_committed_block_info: None,
             current_protocol_version_in_consensus,
@@ -148,7 +164,10 @@ impl PlatformState {
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
             genesis_block_info: None,
-            previous_fee_versions: Default::default(),
+            previous_fee_versions: CachedEpochIndexFeeVersions::from([(
+                GENESIS_EPOCH_INDEX,
+                genesis_fee_version,
+            )]),
         };
 
         Ok(state)
@@ -262,6 +281,126 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod fee_history {
+        use super::*;
+        use crate::config::PlatformConfig;
+        use dpp::block::epoch::Epoch;
+        use dpp::fee::default_costs::{EpochCosts, KnownCostItem};
+        use platform_version::version::mocks::fee_doubled_storage_test::{
+            TEST_FEE_VERSION_DOUBLED_STORAGE, TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE,
+        };
+        use platform_version::version::mocks::v4_test::{
+            TEST_PLATFORM_V4, TEST_PROTOCOL_VERSION_4,
+        };
+
+        const COST_ITEMS: [KnownCostItem; 5] = [
+            KnownCostItem::StorageDiskUsageCreditPerByte,
+            KnownCostItem::StorageProcessingCreditPerByte,
+            KnownCostItem::StorageLoadCreditPerByte,
+            KnownCostItem::NonStorageLoadCreditPerByte,
+            KnownCostItem::StorageSeekCost,
+        ];
+
+        fn fresh_state(protocol_version: ProtocolVersion) -> PlatformState {
+            PlatformState::default_with_protocol_versions(
+                protocol_version,
+                protocol_version,
+                &PlatformConfig::default(),
+            )
+            .expect("expected a default platform state")
+        }
+
+        #[test]
+        fn should_record_the_genesis_fee_generation_in_a_fresh_state() {
+            let platform_version = PlatformVersion::latest();
+            let state = fresh_state(platform_version.protocol_version);
+
+            let expected = FeeVersion::get(platform_version.fee_version.fee_version_number)
+                .expect("the genesis schedule's number is registered");
+            assert_eq!(
+                state.previous_fee_versions,
+                CachedEpochIndexFeeVersions::from([(GENESIS_EPOCH_INDEX, expected)])
+            );
+
+            for epoch_index in [GENESIS_EPOCH_INDEX, 7] {
+                let epoch = Epoch::new(epoch_index).expect("epoch");
+                assert_eq!(
+                    epoch.active_fee_version(&state.previous_fee_versions),
+                    expected,
+                    "epoch {epoch_index} must resolve to the genesis generation"
+                );
+            }
+        }
+
+        #[test]
+        fn should_record_the_genesis_fee_generation_of_a_mock_version() {
+            let state = fresh_state(TEST_PROTOCOL_VERSION_4);
+
+            assert_eq!(
+                state.previous_fee_versions,
+                CachedEpochIndexFeeVersions::from([(
+                    GENESIS_EPOCH_INDEX,
+                    &TEST_FEE_VERSION_DOUBLED_STORAGE
+                )])
+            );
+            let epoch = Epoch::new(GENESIS_EPOCH_INDEX).expect("epoch");
+            assert_eq!(
+                epoch.cost_for_known_cost_item(
+                    &state.previous_fee_versions,
+                    KnownCostItem::StorageDiskUsageCreditPerByte
+                ),
+                2 * PlatformVersion::latest()
+                    .fee_version
+                    .storage
+                    .storage_disk_usage_credit_per_byte,
+                "genesis-epoch bytes of a chain started at the mock are priced at the doubled rate"
+            );
+        }
+
+        #[test]
+        fn should_round_trip_the_test_fee_generation_number_through_saved_state() {
+            let mut state = fresh_state(TEST_PROTOCOL_VERSION_4);
+            let first = &PlatformVersion::latest().fee_version;
+            state.previous_fee_versions = CachedEpochIndexFeeVersions::from([
+                (GENESIS_EPOCH_INDEX, first.as_static()),
+                (3, &TEST_FEE_VERSION_DOUBLED_STORAGE),
+            ]);
+
+            let bytes = state.serialize_to_bytes().expect("state serializes");
+            let restored = PlatformState::versioned_deserialize(&bytes, &TEST_PLATFORM_V4)
+                .expect("state with a test fee generation number deserializes");
+
+            let numbers = |state: &PlatformState| {
+                state
+                    .previous_fee_versions
+                    .iter()
+                    .map(|(epoch_index, fee_version)| {
+                        (*epoch_index, fee_version.fee_version_number)
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(numbers(&restored), numbers(&state));
+            assert_eq!(
+                numbers(&restored),
+                vec![
+                    (GENESIS_EPOCH_INDEX, first.fee_version_number),
+                    (3, TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE)
+                ]
+            );
+
+            for epoch_index in 0..=5 {
+                let epoch = Epoch::new(epoch_index).expect("epoch");
+                for cost_item in COST_ITEMS {
+                    assert_eq!(
+                        epoch.cost_for_known_cost_item(&restored.previous_fee_versions, cost_item),
+                        epoch.cost_for_known_cost_item(&state.previous_fee_versions, cost_item),
+                        "epoch {epoch_index} costs must survive the saved-state round trip"
+                    );
+                }
+            }
+        }
+    }
 
     mod versioned_deserialize {
         use super::*;
