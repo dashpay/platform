@@ -35,7 +35,6 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(identity_query_keys_tree_path_vec(identity_id)),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: ApproximateElements(4), //we can estimate that an identity will have amount 50 keys
                 //We can mark these as all subtrees, because the revision will be under
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),

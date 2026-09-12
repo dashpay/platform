@@ -34,7 +34,6 @@ impl Drive {
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(3, false),
                 estimated_layer_sizes: AllSubtrees(
                     12, // about 32 + 1 + 1 / 3
@@ -59,7 +58,6 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(misc_path_vec()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: ApproximateElements(1),
                 estimated_layer_sizes: AllItems(1, 8, None),
             },

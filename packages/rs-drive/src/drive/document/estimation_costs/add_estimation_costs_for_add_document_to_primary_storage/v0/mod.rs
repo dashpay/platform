@@ -87,7 +87,6 @@ impl Drive {
                 KeyInfoPath::from_known_path(primary_key_path),
                 EstimatedLayerInformation {
                     tree_type: primary_key_tree_type,
-                    may_contain_backward_references: false,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
@@ -148,7 +147,6 @@ impl Drive {
                 KeyInfoPath::from_known_path(document_id_in_primary_path),
                 EstimatedLayerInformation {
                     tree_type: per_doc_subtree_tree_type,
-                    may_contain_backward_references: false,
                     estimated_layer_count: ApproximateElements(AVERAGE_NUMBER_OF_UPDATES as u32),
                     estimated_layer_sizes: Mix {
                         subtrees_size: None,
@@ -183,7 +181,6 @@ impl Drive {
                 KeyInfoPath::from_known_path(primary_key_path),
                 EstimatedLayerInformation {
                     tree_type: primary_key_tree_type,
-                    may_contain_backward_references: false,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllItems(
                         DEFAULT_HASH_SIZE_U8,

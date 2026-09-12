@@ -21,7 +21,6 @@ impl Drive {
             )),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: ApproximateElements(2),
                 estimated_layer_sizes: Mix {
                     subtrees_size: Some((1, NoSumTrees, None, 1)),

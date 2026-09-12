@@ -498,8 +498,10 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_mutable() {
         run_document_replace_on_document_type_that_is_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            // v14: replaced documents carry the contract-version stamp
-            1433220,
+            // v14: replaced documents carry the contract-version stamp, and
+            // GroveDB V4 writes through the Merk node it retains from reading
+            // the old value, billing slightly fewer reads than the V3 path
+            1428320,
         )
         .await;
     }

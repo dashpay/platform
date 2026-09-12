@@ -26,7 +26,6 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(token_timed_distributions_path_vec()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(0, false), // 0 because ms is on top
                 estimated_layer_sizes: AllSubtrees(U8_SIZE_U8, NoSumTrees, None),
             },
@@ -37,7 +36,6 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(token_ms_timed_distributions_path_vec()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(10, false), // we can have a lot of times
                 estimated_layer_sizes: AllSubtrees(U64_SIZE_U8, NoSumTrees, None),
             },
@@ -52,7 +50,6 @@ impl Drive {
                 key,
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
-                    may_contain_backward_references: false,
                     // We assume a shallow sum tree for the distribution entries at a given time.
                     estimated_layer_count: EstimatedLevel(1, false),
                     // Each distribution entry is estimated with a fixed size.

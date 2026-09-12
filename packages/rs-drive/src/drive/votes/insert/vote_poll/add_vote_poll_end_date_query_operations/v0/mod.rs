@@ -53,7 +53,6 @@ impl Drive {
                 KeyInfoPath::from_known_path(vote_end_date_queries_tree_path()),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
-                    may_contain_backward_references: false,
                     // We can estimate that there is at least a vote concluding every block, and we put blocks at 6 seconds.
                     estimated_layer_count: ApproximateElements(201_600),
                     estimated_layer_sizes: AllSubtrees(
@@ -70,7 +69,6 @@ impl Drive {
                 ),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
-                    may_contain_backward_references: false,
                     // We can estimate that there is 2 votes ending per block.
                     estimated_layer_count: ApproximateElements(2),
                     estimated_layer_sizes: AllItems(

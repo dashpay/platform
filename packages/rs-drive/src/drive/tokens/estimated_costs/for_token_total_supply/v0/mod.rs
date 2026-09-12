@@ -62,7 +62,6 @@ impl Drive {
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(3, false),
                 // 17 because we have 2 layers at 32 and two layers at 2
                 estimated_layer_sizes: AllSubtrees(
@@ -88,7 +87,6 @@ impl Drive {
             KeyInfoPath::from_known_path(misc_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(2, false),
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
             },
@@ -99,7 +97,6 @@ impl Drive {
             KeyInfoPath::from_known_path(total_tokens_root_supply_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::BigSumTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(10, false),
                 estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, None),
             },
