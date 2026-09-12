@@ -2341,6 +2341,86 @@ class PlatformWalletManager(
         }
     }
 
+    // ── Ordered wallet bring-up ───────────────────────────────────────
+
+    /**
+     * Bring one wallet's DashPay state up in dependency order — identity →
+     * contacts → contact-account drain — then return so the caller can
+     * start Core SPV. Port of Swift's `startWalletSubsystems`
+     * (`PlatformWalletManagerStartup.swift`); the ordering, the retry
+     * policy and the budget all live Rust-side
+     * (`platform_wallet::manager::startup`) — this is a thin bridge.
+     *
+     * A contact's DIP-15 payment addresses are derived from its contact
+     * account, and an address the wallet is not watching when the
+     * compact-filter scan passes its funding height produces no
+     * transaction at all. Call this once per wallet load, immediately
+     * before [startSpv], so the first filter set already covers them —
+     * a restored wallet then needs no receival-payment rescan at all.
+     *
+     * Budget expiry is reported in the outcome, never thrown: Core sync is
+     * the wallet's primary function and must not be held hostage to
+     * Platform being slow. Start SPV regardless of the returned status;
+     * inspect [WalletStartupOutcome.contactAccountsPending] for
+     * diagnostics.
+     *
+     * Key material follows the drain's per-call contract: the mnemonic
+     * resolver and identity signer are built for this call and closed when
+     * it returns — Rust borrows and never retains them. An auth-gated
+     * signing failure (identity keys are biometric-gated on Android)
+     * leaves the affected entries queued; the recurring sweep self-heals.
+     *
+     * Throws only for a malformed request (bad wallet id, negative
+     * arguments, unknown wallet, torn-down manager).
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param budgetSecs ceiling for the whole sequence in seconds; 0 = SDK
+     *   default (20s). Never unbounded — this call gates Core SPV.
+     * @param gapLimit identity-discovery gap limit; 0 = SDK default.
+     */
+    suspend fun startWalletSubsystems(
+        walletId: ByteArray,
+        budgetSecs: Long = 0,
+        gapLimit: Int = 0,
+    ): WalletStartupOutcome = teardownGate.op {
+        require(walletId.size == 32) { "walletId must be 32 bytes, got ${walletId.size}" }
+        require(budgetSecs >= 0) { "budgetSecs must be non-negative, got $budgetSecs" }
+        require(gapLimit >= 0) { "gapLimit must be non-negative, got $gapLimit" }
+        withContext(Dispatchers.IO) {
+            // Each handle is guarded from the moment it exists: the signer's
+            // constructor can throw (Keystore unlock, DAO access), and a single
+            // try covering both would leak the resolver's native handle when it
+            // does. Closed in reverse construction order.
+            val startupResolver = MnemonicResolverAndPersister(walletStorage)
+            try {
+                val startupSigner =
+                    KeystoreSigner(
+                        walletStorage,
+                        network,
+                        biometricGate,
+                        database.platformAddressDao(),
+                    )
+                try {
+                    val blob = mapNativeErrors {
+                        WalletManagerNative.startWalletSubsystems(
+                            managerHandle,
+                            walletId,
+                            startupResolver.nativeHandle,
+                            startupSigner.nativeHandle,
+                            budgetSecs,
+                            gapLimit,
+                        )
+                    }
+                    WalletStartupOutcome.decode(blob)
+                } finally {
+                    runCatching { startupSigner.close() }
+                }
+            } finally {
+                runCatching { startupResolver.close() }
+            }
+        }
+    }
+
     // ── Lifecycle ─────────────────────────────────────────────────────
 
     val isClosed: Boolean get() = bundleRef.get() == 0L
