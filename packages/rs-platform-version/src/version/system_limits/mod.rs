@@ -1,9 +1,13 @@
+pub mod smart_contract;
 pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
-#[derive(Clone, Debug, Default)]
+use crate::version::system_limits::smart_contract::SmartContractComputationLimits;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SystemLimits {
     pub estimated_contract_max_serialized_size: u16,
     pub max_field_value_size: u32,
@@ -100,11 +104,27 @@ pub struct SystemLimits {
     /// time-range indexes (nothing to bound: the `timeRange` keyword does not
     /// parse there).
     pub max_time_range_overlap_factor: Option<u64>,
+    /// The consensus limits on smart-contract computation, counted in computation units by
+    /// one contract-only counter: how much one outer invocation may consume and how much all
+    /// invocations in a block may consume together. Read by the per-block computation ledger
+    /// in `drive-abci` (`BlockComputationBudget`) and handed to the runtime as the budget of
+    /// each invocation; the fee schedule's `dashvm` group prices the units. Independent of
+    /// every native budget (proposer timer, withdrawal and shielded per-block caps, Tenderdash
+    /// block gas), none of which changes.
+    ///
+    /// `None` for the protocol versions that predate smart contracts: those versions meter,
+    /// price and budget nothing, and a code path that reads `None` skips the contract path
+    /// entirely. See `SmartContractComputationLimits`.
+    pub smart_contract_computation: Option<SmartContractComputationLimits>,
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::version::fee::FeeVersion;
     use crate::version::protocol_version::PLATFORM_VERSIONS;
+    use crate::version::system_limits::SystemLimits;
+    use crate::version::v16::PLATFORM_V16;
+    use crate::version::v17::{PLATFORM_V17, PROTOCOL_VERSION_17};
     use crate::version::{PlatformVersion, LATEST_VERSION};
 
     /// The cap is what keeps two document operations out of a shared GroveDB batch, and with
@@ -172,6 +192,133 @@ mod tests {
                 1,
                 "mock platform version {} allows more than one transition per documents \
                  batch; see SystemLimits::max_transitions_in_documents_batch",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    /// The computation limits and the computation price are two tables that only make sense
+    /// together: limits without a price would let an activated version meter contract work for
+    /// free, a price without limits would leave the per-block ledger nothing to reserve against
+    /// and the runtime no budget, so every invocation would be refused. This pins the
+    /// cross-table invariant on every registered version rather than restating either literal:
+    /// both `Some` or both `None`, the limits enforceable, the price non-zero, and nothing
+    /// before the 5.0 protocol version carrying either.
+    #[test]
+    fn smart_contract_computation_limits_and_pricing_activate_together() {
+        assert_eq!(
+            PLATFORM_VERSIONS.len(),
+            LATEST_VERSION as usize,
+            "the protocol version registry does not hold every declared version"
+        );
+        for platform_version in PLATFORM_VERSIONS {
+            let limits = platform_version
+                .system_limits
+                .smart_contract_computation
+                .as_ref();
+            let price = platform_version.fee_version.dashvm.as_ref();
+            assert_eq!(
+                limits.is_some(),
+                price.is_some(),
+                "protocol version {} carries smart-contract computation limits without a price \
+                 or a price without limits",
+                platform_version.protocol_version
+            );
+            if platform_version.protocol_version < PROTOCOL_VERSION_17 {
+                assert!(
+                    limits.is_none(),
+                    "protocol version {} predates smart contracts and must not bound their \
+                     computation",
+                    platform_version.protocol_version
+                );
+            }
+            if let Some(limits) = limits {
+                assert!(
+                    limits.is_well_formed(),
+                    "protocol version {} has smart-contract computation limits that cannot be \
+                     enforced: {limits:?}",
+                    platform_version.protocol_version
+                );
+            }
+            if let Some(price) = price {
+                assert_ne!(
+                    price.credits_per_computation_unit, 0,
+                    "protocol version {} prices smart-contract computation at zero",
+                    platform_version.protocol_version
+                );
+            }
+        }
+    }
+
+    /// The 5.0 protocol version is a struct update over its predecessor that overrides exactly
+    /// two tables, and the placeholders for 4.3 and 4.4 are struct updates too, so a forward
+    /// merge that brings a real v15 or v16 must flow into v17 without a second edit. This pins
+    /// the delta v17 adds rather than the tables themselves: it fails when v16 gains a limit or
+    /// fee group that v17 does not inherit, or when a merge keeps this branch's generation over
+    /// an incoming one. A later 5.0 change that widens the delta extends the expected delta here
+    /// as part of its own change.
+    #[test]
+    fn the_5_0_protocol_version_changes_only_the_smart_contract_computation_tables() {
+        assert!(
+            PLATFORM_V17
+                .system_limits
+                .smart_contract_computation
+                .is_some(),
+            "the 5.0 protocol version must bound smart-contract computation"
+        );
+        assert!(
+            PLATFORM_V17.fee_version.dashvm.is_some(),
+            "the 5.0 protocol version must price smart-contract computation"
+        );
+        assert_eq!(
+            SystemLimits {
+                smart_contract_computation: None,
+                ..PLATFORM_V17.system_limits.clone()
+            },
+            PLATFORM_V16.system_limits,
+            "the 5.0 protocol version changes a system limit other than the smart-contract \
+             computation limits without inheriting it from v16"
+        );
+        assert_eq!(
+            FeeVersion {
+                dashvm: None,
+                ..PLATFORM_V17.fee_version.clone()
+            },
+            PLATFORM_V16.fee_version,
+            "the 5.0 protocol version changes a fee group other than the smart-contract \
+             pricing without inheriting it from v16"
+        );
+    }
+
+    /// The mock versions execute state transitions in drive-abci's protocol-upgrade suite and
+    /// one of them hand-writes its `SystemLimits`, so it is the one place the registry loop
+    /// above cannot reach. A mock that bounded contract computation would carry limits into a
+    /// suite that has no runtime to enforce them.
+    #[cfg(feature = "mock-versions")]
+    #[test]
+    fn mock_platform_versions_have_no_smart_contract_computation_limits() {
+        use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
+        use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
+        use crate::version::protocol_version::PLATFORM_TEST_VERSIONS;
+
+        let versions =
+            PLATFORM_TEST_VERSIONS.get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+        assert!(
+            !versions.is_empty(),
+            "the mock version registry is empty; this test would assert nothing"
+        );
+        for platform_version in versions {
+            assert!(
+                platform_version
+                    .system_limits
+                    .smart_contract_computation
+                    .is_none(),
+                "mock platform version {} bounds smart-contract computation",
+                platform_version.protocol_version
+            );
+            assert!(
+                platform_version.fee_version.dashvm.is_none(),
+                "mock platform version {} prices smart-contract computation",
                 platform_version.protocol_version
             );
         }

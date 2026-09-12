@@ -177,6 +177,11 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::fee::default_costs::EpochCosts;
+    use dpp::fee::smart_contract_computation::computation_units_to_credits;
+    use dpp::serialization::{PlatformDeserializableFromVersionedStructure, PlatformSerializable};
+    use dpp::version::v16::PROTOCOL_VERSION_16;
+    use dpp::version::v17::PROTOCOL_VERSION_17;
     use dpp::version::PlatformVersion;
 
     #[test]
@@ -463,5 +468,132 @@ mod tests {
             let counter = platform.drive.cache.protocol_versions_counter.read();
             assert!(counter.get(&platform_version.protocol_version).is_ok());
         }
+    }
+
+    /// The 5.0 protocol version prices smart-contract computation through a fee schedule that
+    /// keeps `fee_version_number` 1, because no rate the epoch fee history serves changes. This
+    /// pins what that means end to end: upgrading 16 to 17 on an epoch change records nothing new
+    /// in the history, the history keeps resolving to the registered generation without contract
+    /// pricing, saving and reloading the upgraded state keeps it that way, and the price is
+    /// nevertheless available on every one of those paths through the active protocol version.
+    /// A schedule that reached the history would mean a storage rate changed, which is a
+    /// different change with its own number.
+    #[test]
+    fn test_upgrade_to_the_5_0_protocol_version_keeps_the_fee_history_and_prices_computation_from_the_active_version(
+    ) {
+        let previous_version =
+            PlatformVersion::get(PROTOCOL_VERSION_16).expect("protocol version 16 exists");
+        let upgraded_version =
+            PlatformVersion::get(PROTOCOL_VERSION_17).expect("protocol version 17 exists");
+        assert_eq!(
+            previous_version.fee_version.fee_version_number,
+            upgraded_version.fee_version.fee_version_number,
+            "the 5.0 schedule must keep the number of the generation it agrees with"
+        );
+
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(PROTOCOL_VERSION_16)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let epoch_info = EpochInfo::V0(EpochInfoV0 {
+            current_epoch_index: 3,
+            previous_epoch_index: Some(2),
+            is_epoch_change: true,
+        });
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 300,
+            core_height: 100,
+            epoch: Epoch::new(3).expect("expected epoch"),
+        };
+
+        // A history as a network that ran protocol version 16 would have it: one entry, the
+        // registered generation, recorded at its first epoch change.
+        let last_committed_state = platform.state.load();
+        let mut block_platform_state = last_committed_state.as_ref().clone();
+        block_platform_state.previous_fee_versions_mut().clear();
+        block_platform_state
+            .previous_fee_versions_mut()
+            .insert(1, previous_version.fee_version.as_static());
+
+        // The upgrade vote carried: this block runs at 17 while the last committed state is 16.
+        block_platform_state.set_current_protocol_version_in_consensus(PROTOCOL_VERSION_17);
+
+        platform
+            .upgrade_protocol_version_on_epoch_change_v0(
+                &block_info,
+                &epoch_info,
+                &last_committed_state,
+                &mut block_platform_state,
+                &transaction,
+                upgraded_version,
+            )
+            .expect("the upgrade hook must succeed on the epoch change");
+
+        let history = block_platform_state.previous_fee_versions();
+        assert_eq!(
+            history.len(),
+            1,
+            "a schedule that changes no rate the history serves records no new entry"
+        );
+        let served = block_info.epoch.active_fee_version(history);
+        assert_eq!(served.fee_version_number, 1);
+        assert!(
+            served.dashvm.is_none(),
+            "the fee history never carries contract pricing"
+        );
+        assert_eq!(
+            served.storage, upgraded_version.fee_version.storage,
+            "the history serves the same storage rates the upgraded version charges"
+        );
+
+        // Restart: the state goes through the saving format, which stores the history as
+        // numbers, and comes back.
+        let saved = block_platform_state
+            .serialize_to_bytes()
+            .expect("the upgraded state serializes");
+        let reloaded = PlatformState::versioned_deserialize(&saved, upgraded_version)
+            .expect("the upgraded state deserializes");
+
+        assert_eq!(
+            reloaded.current_protocol_version_in_consensus(),
+            PROTOCOL_VERSION_17
+        );
+        let reloaded_history = reloaded.previous_fee_versions();
+        assert_eq!(reloaded_history.len(), 1);
+        let reloaded_served = block_info.epoch.active_fee_version(reloaded_history);
+        assert_eq!(reloaded_served.fee_version_number, 1);
+        assert!(reloaded_served.dashvm.is_none());
+
+        // The price is read from the active protocol version, which is what block execution
+        // obtains from platform state, before and after the restart alike.
+        let active_version = reloaded
+            .current_platform_version()
+            .expect("the reloaded state names a known protocol version");
+        let price = active_version
+            .fee_version
+            .dashvm
+            .as_ref()
+            .expect("the 5.0 protocol version prices smart-contract computation");
+        assert_eq!(
+            computation_units_to_credits(1_000, active_version)
+                .expect("the active version prices computation"),
+            1_000 * price.credits_per_computation_unit
+        );
+        assert_eq!(
+            computation_units_to_credits(1_000, active_version).ok(),
+            computation_units_to_credits(
+                1_000,
+                block_platform_state
+                    .current_platform_version()
+                    .expect("the upgraded state names a known protocol version"),
+            )
+            .ok(),
+            "the price is the same before and after the restart"
+        );
     }
 }
