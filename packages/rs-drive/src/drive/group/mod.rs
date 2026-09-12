@@ -14,6 +14,10 @@ mod queries;
 #[cfg(feature = "server")]
 mod tests {
     use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
+    use crate::util::batch::drive_op_batch::GroupOperationType;
+    use crate::util::batch::DriveOperation;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -25,6 +29,8 @@ mod tests {
     use dpp::data_contract::group::Group;
     use dpp::data_contract::v1::DataContractV1;
     use dpp::data_contract::DataContract;
+    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+    use dpp::fee::fee_result::FeeResult;
     use dpp::group::action_event::GroupActionEvent;
     use dpp::group::group_action::v0::GroupActionV0;
     use dpp::group::group_action::GroupAction;
@@ -34,8 +40,51 @@ mod tests {
     use dpp::identity::Identity;
     use dpp::serialization::PlatformDeserializable;
     use dpp::tokens::token_event::TokenEvent;
+    use dpp::version::fee::FeeVersion;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
+
+    /// Closing a group action moves signer-flagged items out of the active
+    /// tree, and pricing that removal needs the fee history of the removing
+    /// block. Production reaches the closing branch only through
+    /// `apply_drive_operations`, which forwards the block's history; the
+    /// tests below use the same funnel.
+    fn fee_history() -> CachedEpochIndexFeeVersions {
+        BTreeMap::from([(0, FeeVersion::first())])
+    }
+
+    /// Closes `action_id` the way production does: as a group operation
+    /// applied through `apply_drive_operations` with the fee history.
+    #[allow(clippy::too_many_arguments)]
+    fn close_group_action_through_production_funnel(
+        drive: &Drive,
+        contract_id: Identifier,
+        initialize_with_insert_action_info: Option<GroupAction>,
+        action_id: Identifier,
+        signer_identity_id: Identifier,
+        signer_power: u32,
+        platform_version: &PlatformVersion,
+    ) -> Result<FeeResult, Error> {
+        let history = fee_history();
+        drive.apply_drive_operations(
+            vec![DriveOperation::GroupOperation(
+                GroupOperationType::AddGroupAction {
+                    contract_id,
+                    group_contract_position: 0,
+                    initialize_with_insert_action_info,
+                    action_id,
+                    signer_identity_id,
+                    signer_power,
+                    closes_group_action: true,
+                },
+            )],
+            true,
+            &BlockInfo::default(),
+            None,
+            platform_version,
+            Some(&history),
+        )
+    }
 
     /// Helper to create a standard test contract with groups and tokens.
     fn create_test_contract_with_groups(
@@ -573,22 +622,18 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         // Add second signer to bring total power to 3 (meets required_power)
-        // and close the action
-        drive
-            .add_group_action(
-                contract_id,
-                0,
-                None, // no new action info, existing one will be moved
-                true, // closes_group_action
-                action_id,
-                identity_2_id,
-                2,
-                &BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-            )
-            .expect("expected to close group action");
+        // and close the action. Closing moves signer-flagged items, so it goes
+        // through the production funnel that carries the fee history.
+        close_group_action_through_production_funnel(
+            &drive,
+            contract_id,
+            None, // no new action info, existing one will be moved
+            action_id,
+            identity_2_id,
+            2,
+            platform_version,
+        )
+        .expect("expected to close group action");
 
         // Verify the action is now closed
         let is_closed = drive
@@ -676,6 +721,104 @@ mod tests {
             *closed_action, expected_action,
             "closed action info should match the originally inserted action"
         );
+    }
+
+    #[test]
+    fn should_refund_signer_bytes_when_a_group_action_closes() {
+        let (drive, contract_id, identity_1_id, identity_2_id, action_id) =
+            setup_drive_with_contract_and_action();
+        let platform_version = PlatformVersion::latest();
+
+        // identity_1 opened the action: its signer sum item and the action
+        // info are flagged with identity_1 at epoch 0. Closing moves both out
+        // of the active tree into unflagged closed items, so identity_1 is
+        // refunded for the removed flagged bytes; identity_2's closing signer
+        // item is written unflagged and never refundable.
+        let fee_result = close_group_action_through_production_funnel(
+            &drive,
+            contract_id,
+            None,
+            action_id,
+            identity_2_id,
+            2,
+            platform_version,
+        )
+        .expect("expected to close group action");
+
+        let identity_1_refunds = fee_result
+            .fee_refunds
+            .get(identity_1_id.as_bytes())
+            .expect("the opening signer's flagged bytes must be refunded");
+        assert!(
+            identity_1_refunds
+                .get(&0)
+                .is_some_and(|credits| *credits > 0),
+            "the refund is recorded against the storage epoch of the moved items: {:?}",
+            identity_1_refunds
+        );
+        assert!(
+            fee_result
+                .fee_refunds
+                .get(identity_2_id.as_bytes())
+                .is_none(),
+            "the closing signer never stored flagged bytes"
+        );
+    }
+
+    #[test]
+    fn should_reject_closing_a_group_action_through_the_bare_wrapper_without_fee_history() {
+        // The bare fee-returning wrapper passes no fee history. Production
+        // never closes an action through it (the state transition funnel
+        // forwards the block's history), so from protocol version 15 a
+        // closing call through the wrapper is a misuse the strict refund rule
+        // surfaces; the frozen generation keeps pricing at the first
+        // generation's rates.
+        let (drive, contract_id, _identity_1_id, identity_2_id, action_id) =
+            setup_drive_with_contract_and_action();
+        let platform_version = PlatformVersion::latest();
+
+        let result = drive.add_group_action(
+            contract_id,
+            0,
+            None,
+            true,
+            action_id,
+            identity_2_id,
+            2,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ),
+            "closing without fee history must be rejected at the latest version, got {:?}",
+            result
+        );
+
+        let (drive, contract_id, _identity_1_id, identity_2_id, action_id) =
+            setup_drive_with_contract_and_action();
+        let frozen_platform_version = PlatformVersion::get(14).expect("protocol version 14");
+
+        drive
+            .add_group_action(
+                contract_id,
+                0,
+                None,
+                true,
+                action_id,
+                identity_2_id,
+                2,
+                &BlockInfo::default(),
+                true,
+                None,
+                frozen_platform_version,
+            )
+            .expect("protocol version 14 prices the shipped shortcut without a history");
     }
 
     #[test]
