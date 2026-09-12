@@ -74,6 +74,10 @@ wasm-dpp2:
   - packages/wasm-dpp2/Cargo.toml
   - *dpp
 
+dashvm-validation: &dashvm_validation
+  - packages/rs-dashvm-validation/**
+  - packages/rs-platform-version/**
+
 drive: &drive
   - packages/rs-drive/**
   - *dpp
