@@ -125,6 +125,32 @@ extension PlatformWalletManager {
 
     // MARK: - Registrar update (key rotation)
 
+    /// Serial queue for the rotation transaction externs: prepare and
+    /// execute both park the calling thread through the FFI (network
+    /// reads, key derivation, resolver-served signing and, for execute
+    /// paths, the broadcast), so they must park a GCD worker — never a
+    /// Swift cooperative-executor thread (a `Task.detached` closure still
+    /// runs ON the cooperative pool). Separate from [`candidatesQueue`] so
+    /// a long-parked transaction never delays a picker refresh.
+    nonisolated private static let rotationTransactionQueue = DispatchQueue(
+        label: "org.dash.platform-wallet.rotation-transactions",
+        qos: .userInitiated
+    )
+
+    /// Run one synchronous rotation FFI call on
+    /// [`rotationTransactionQueue`], resuming the async caller through a
+    /// continuation. `body` runs entirely on the queue — resolvers and
+    /// borrowed buffers stay alive inside it until the FFI call returns.
+    private static func onRotationQueue<T: Sendable>(
+        _ body: @escaping @Sendable () throws -> T
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            rotationTransactionQueue.async {
+                continuation.resume(with: Result(catching: body))
+            }
+        }
+    }
+
     /// Rotate a wallet-owned masternode's operator and/or voting key to
     /// fresh wallet keys with an owner-signed ProUpRegTx. Pure bridge — the
     /// preflights (owner key vs the ProRegTx, network-wide operator-key
@@ -153,7 +179,7 @@ extension PlatformWalletManager {
         }
         try requireNoEmbeddedNul(payoutAddress, "payout address")
         let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) { () -> Data in
+        return try await Self.onRotationQueue { () -> Data in
             let resolver = MnemonicResolver()
             var txidTuple = zeroTxidTuple()
             let ffiResult = withExtendedLifetime(resolver) { () -> PlatformWalletFFIResult in
@@ -179,7 +205,7 @@ extension PlatformWalletManager {
                 throw PlatformWalletError(result: result)
             }
             return Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
-        }.value
+        }
     }
 
     /// Prepare-only sibling of `masternodeUpdateRegistrar` for the
@@ -201,7 +227,7 @@ extension PlatformWalletManager {
         }
         try requireNoEmbeddedNul(payoutAddress, "payout address")
         let handle = self.handle
-        let transactionHandle = try await Task.detached(priority: .userInitiated) { () -> Handle in
+        let transactionHandle = try await Self.onRotationQueue { () -> Handle in
             let resolver = MnemonicResolver()
             var outHandle: Handle = NULL_HANDLE
             let ffiResult = withExtendedLifetime(resolver) { () -> PlatformWalletFFIResult in
@@ -227,7 +253,7 @@ extension PlatformWalletManager {
                 throw PlatformWalletError(result: result)
             }
             return outHandle
-        }.value
+        }
         return try FinalizedCoreTransaction(handle: transactionHandle)
     }
 
@@ -251,7 +277,7 @@ extension PlatformWalletManager {
         try requireNoEmbeddedNul(ownerKey, "owner key")
         try requireNoEmbeddedNul(payoutAddress, "payout address")
         let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) { () -> Data in
+        return try await Self.onRotationQueue { () -> Data in
             let resolver = MnemonicResolver()
             var txidTuple = zeroTxidTuple()
             let ffiResult = withExtendedLifetime(resolver) { () -> PlatformWalletFFIResult in
@@ -279,7 +305,7 @@ extension PlatformWalletManager {
                 throw PlatformWalletError(result: result)
             }
             return Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
-        }.value
+        }
     }
 
     /// Prepare-only sibling of `trackedMasternodeUpdateRegistrar`.
@@ -300,7 +326,7 @@ extension PlatformWalletManager {
         try requireNoEmbeddedNul(ownerKey, "owner key")
         try requireNoEmbeddedNul(payoutAddress, "payout address")
         let handle = self.handle
-        let transactionHandle = try await Task.detached(priority: .userInitiated) { () -> Handle in
+        let transactionHandle = try await Self.onRotationQueue { () -> Handle in
             let resolver = MnemonicResolver()
             var outHandle: Handle = NULL_HANDLE
             let ffiResult = withExtendedLifetime(resolver) { () -> PlatformWalletFFIResult in
@@ -328,7 +354,7 @@ extension PlatformWalletManager {
                 throw PlatformWalletError(result: result)
             }
             return outHandle
-        }.value
+        }
         return try FinalizedCoreTransaction(handle: transactionHandle)
     }
 
@@ -363,7 +389,7 @@ extension PlatformWalletManager {
             try requireNoEmbeddedNul(operatorPayoutAddress, "operator payout address")
         }
         let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) { () -> Data in
+        return try await Self.onRotationQueue { () -> Data in
             let resolver = MnemonicResolver()
             var txidTuple = zeroTxidTuple()
             let ffiResult = withExtendedLifetime(resolver) { () -> PlatformWalletFFIResult in
@@ -395,7 +421,7 @@ extension PlatformWalletManager {
                 throw PlatformWalletError(result: result)
             }
             return Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
-        }.value
+        }
     }
 
     /// Prepare-only sibling of `masternodeUpdateServiceWithValues`.
@@ -421,7 +447,7 @@ extension PlatformWalletManager {
             try requireNoEmbeddedNul(operatorPayoutAddress, "operator payout address")
         }
         let handle = self.handle
-        let transactionHandle = try await Task.detached(priority: .userInitiated) { () -> Handle in
+        let transactionHandle = try await Self.onRotationQueue { () -> Handle in
             let resolver = MnemonicResolver()
             var outHandle: Handle = NULL_HANDLE
             let ffiResult = withExtendedLifetime(resolver) { () -> PlatformWalletFFIResult in
@@ -453,7 +479,7 @@ extension PlatformWalletManager {
                 throw PlatformWalletError(result: result)
             }
             return outHandle
-        }.value
+        }
         return try FinalizedCoreTransaction(handle: transactionHandle)
     }
 

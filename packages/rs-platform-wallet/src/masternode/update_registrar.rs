@@ -257,6 +257,21 @@ pub(crate) fn assemble_update_registrar_placeholder(
     };
     let voting_key_hash = match params.new_voting_key_index {
         Some(index) => {
+            // Voting ownership joins against the managed pool's ACTUAL
+            // entries — key-wallet's voting matcher walks the pool's
+            // address index, and hosts join persisted address rows; there
+            // is no derive-and-compare scan like the operator side. An
+            // unregistered index would sign and broadcast fine and then
+            // always show as an external voting key. Refuse before
+            // funding.
+            let tracked = wallet.provider_voting_tracked_window()?;
+            if index >= tracked {
+                return Err(PlatformWalletError::InvalidParameter(format!(
+                    "voting key index {index} is outside the wallet's registered \
+                     provider-voting pool (indices 0..{tracked}): the wallet could never \
+                     recognize the rotated key as its own afterwards — pick a lower index"
+                )));
+            }
             let derived =
                 wallet.derive_provider_key_at_index(ProviderKeyKind::Voting, index, None, false)?;
             hash160::Hash::hash(&derived.public_key_bytes).to_byte_array()
@@ -1012,6 +1027,37 @@ mod tests {
         .expect_err("an untracked operator index is refused before funding");
         assert!(
             err.to_string().contains("tracked provider pool"),
+            "unexpected error: {err}"
+        );
+
+        // Voting keys have the tighter bound: ownership joins against the
+        // managed pool's actual entries, so only registered indices pass.
+        let voting_window = wallet
+            .provider_voting_tracked_window()
+            .expect("voting window");
+        assert!(
+            voting_window > 0,
+            "the fixture registers a provider-voting pool"
+        );
+        // Operator index 0 is valid (the fixture's synthetic kept-key
+        // bytes would not reparse), so the voting gate is what fires.
+        let params = MasternodeUpdateRegistrarParams {
+            pro_tx_hash: [0x11; 32],
+            new_operator_key_index: Some(0),
+            new_voting_key_index: Some(voting_window),
+            payout_address: DashAddress::dummy(Network::Mainnet, 3).to_string(),
+        };
+        let err = assemble_update_registrar_placeholder(
+            &wallet,
+            &summaries,
+            &test_registration(),
+            &collateral,
+            &params,
+            &owner(),
+        )
+        .expect_err("an unregistered voting index is refused before funding");
+        assert!(
+            err.to_string().contains("registered provider-voting pool"),
             "unexpected error: {err}"
         );
     }
