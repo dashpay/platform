@@ -378,7 +378,7 @@ mod document_history_mock_tests {
                     },
                 }),
             };
-            let recovered = DocumentHistory::mock_deserialize(&sdk, &history.mock_serialize(&sdk));
+            let recovered = DocumentHistory::mock_deserialize(sdk, &history.mock_serialize(sdk));
             assert_eq!(recovered, history, "{state:?} did not round-trip");
         }
         let without_lifecycle = DocumentHistory {
@@ -386,7 +386,7 @@ mod document_history_mock_tests {
             lifecycle: None,
         };
         assert_eq!(
-            DocumentHistory::mock_deserialize(&sdk, &without_lifecycle.mock_serialize(&sdk)),
+            DocumentHistory::mock_deserialize(sdk, &without_lifecycle.mock_serialize(sdk)),
             without_lifecycle
         );
     }
