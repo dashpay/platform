@@ -2724,4 +2724,307 @@ mod tests {
             "expected overflow error when summing large components"
         );
     }
+
+    // ---------------------------------------------------------------
+    // consume_to_fees_v1: fee history required and consulted for
+    // owner-attributed storage removals
+    // ---------------------------------------------------------------
+
+    mod storage_refund_fee_history {
+        use super::*;
+        use dpp::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
+        use dpp::fee::epoch::DEFAULT_EPOCHS_PER_ERA;
+        use grovedb_costs::storage_cost::removal::StorageRemovalPerEpochByIdentifier;
+        use platform_version::version::fee::storage::v1::FEE_STORAGE_VERSION1;
+        use platform_version::version::fee::v1::FEE_VERSION1;
+        use platform_version::version::PLATFORM_VERSIONS;
+
+        const OWNER: [u8; 32] = [7; 32];
+        const OTHER_OWNER: [u8; 32] = [9; 32];
+
+        /// A schedule no protocol version references, with doubled storage
+        /// rates, so a test can tell "the history was consulted" apart from
+        /// "the first generation's rates were used".
+        static SYNTHETIC_FEE_VERSION_2: FeeVersion = FeeVersion {
+            fee_version_number: 2,
+            storage: FeeStorageVersion {
+                storage_disk_usage_credit_per_byte: 2 * FEE_STORAGE_VERSION1
+                    .storage_disk_usage_credit_per_byte,
+                ..FEE_STORAGE_VERSION1
+            },
+            ..FEE_VERSION1
+        };
+
+        /// One removed element whose bytes are attributed per owner and per
+        /// storage epoch, the shape grovedb reports for an element carrying
+        /// owner storage flags.
+        fn sectioned_removal(
+            bytes_by_owner: &[([u8; 32], &[(u16, u32)])],
+        ) -> LowLevelDriveOperation {
+            let mut removal = StorageRemovalPerEpochByIdentifier::default();
+            for (owner, bytes_per_epoch) in bytes_by_owner {
+                let owner_bytes = removal.entry(*owner).or_default();
+                for (epoch_index, bytes) in bytes_per_epoch.iter() {
+                    owner_bytes.insert(*epoch_index, *bytes);
+                }
+            }
+            CalculatedCostOperation(OperationCost {
+                seek_count: 1,
+                storage_cost: StorageCost {
+                    added_bytes: 0,
+                    replaced_bytes: 0,
+                    removed_bytes: StorageRemovedBytes::SectionedStorageRemoval(removal),
+                },
+                storage_loaded_bytes: 0,
+                hash_node_calls: 0,
+                sinsemilla_hash_calls: 0,
+            })
+        }
+
+        fn basic_removal(bytes: u32) -> LowLevelDriveOperation {
+            CalculatedCostOperation(OperationCost {
+                seek_count: 1,
+                storage_cost: StorageCost {
+                    added_bytes: 0,
+                    replaced_bytes: 0,
+                    removed_bytes: StorageRemovedBytes::BasicStorageRemoval(bytes),
+                },
+                storage_loaded_bytes: 0,
+                hash_node_calls: 0,
+                sinsemilla_hash_calls: 0,
+            })
+        }
+
+        fn epoch(index: u16) -> Epoch {
+            Epoch::new(index).expect("test epoch index fits")
+        }
+
+        fn refund_for(fee_results: &[FeeResult], owner: &[u8; 32], storage_epoch: u16) -> Credits {
+            *fee_results
+                .iter()
+                .find_map(|fee_result| fee_result.fee_refunds.get(owner))
+                .expect("the owner should be refunded")
+                .get(&storage_epoch)
+                .expect("the storage epoch should be refunded")
+        }
+
+        #[test]
+        fn should_reject_a_sectioned_removal_without_fee_history_in_v1() {
+            let operations = vec![sectioned_removal(&[(OWNER, &[(3, 1000)])])];
+
+            let result = LowLevelDriveOperation::consume_to_fees_v1(
+                operations,
+                &epoch(5),
+                DEFAULT_EPOCHS_PER_ERA,
+                &FEE_VERSION1,
+                None,
+            );
+
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+                ),
+                "v1 must refuse to price an owner-attributed removal without the fee history, got {:?}",
+                result
+            );
+
+            // v0 keeps its shipped shortcut for fee version number 1.
+            let operations = vec![sectioned_removal(&[(OWNER, &[(3, 1000)])])];
+            LowLevelDriveOperation::consume_to_fees_v0(
+                operations,
+                &epoch(5),
+                DEFAULT_EPOCHS_PER_ERA,
+                &FEE_VERSION1,
+                None,
+            )
+            .expect("v0 prices fee version number 1 against an empty history");
+        }
+
+        #[test]
+        fn should_reject_a_removal_of_unowned_flagged_bytes_without_fee_history_in_v1() {
+            // Bytes flagged with an epoch but no owner land in the system
+            // bucket; they are never refunded, but the removal is still
+            // sectioned and the rule is deliberately uniform: every
+            // sectioned removal carries the history of the removing block.
+            let operations = vec![sectioned_removal(&[(Identifier::default(), &[(3, 1000)])])];
+
+            let result = LowLevelDriveOperation::consume_to_fees_v1(
+                operations,
+                &epoch(5),
+                DEFAULT_EPOCHS_PER_ERA,
+                &FEE_VERSION1,
+                None,
+            );
+
+            assert!(matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ));
+        }
+
+        #[test]
+        fn should_not_need_fee_history_in_v1_for_unflagged_removals() {
+            let operations = vec![basic_removal(1000)];
+
+            let fee_results = LowLevelDriveOperation::consume_to_fees_v1(
+                operations,
+                &epoch(5),
+                DEFAULT_EPOCHS_PER_ERA,
+                &FEE_VERSION1,
+                None,
+            )
+            .expect("unflagged bytes are removed from the system, no refund is priced");
+
+            assert_eq!(fee_results.len(), 1);
+            assert_eq!(fee_results[0].removed_bytes_from_system, 1000);
+            assert_eq!(fee_results[0].fee_refunds, FeeRefunds::default());
+        }
+
+        #[test]
+        fn should_consult_the_fee_history_in_v1_even_for_fee_version_number_one() {
+            // The history says a doubled schedule has been active since epoch 10.
+            // The bytes were stored at epoch 12 and are removed at epoch 15 under
+            // a fee version whose number is 1, the exact case v0 shortcuts.
+            let history: CachedEpochIndexFeeVersions =
+                BTreeMap::from([(10u16, &SYNTHETIC_FEE_VERSION_2)]);
+            let stored_bytes = 1000u32;
+            let storage_epoch = 12u16;
+            let removal_epoch = 15u16;
+
+            let v0_results = LowLevelDriveOperation::consume_to_fees_v0(
+                vec![sectioned_removal(&[(
+                    OWNER,
+                    &[(storage_epoch, stored_bytes)],
+                )])],
+                &epoch(removal_epoch),
+                DEFAULT_EPOCHS_PER_ERA,
+                &FEE_VERSION1,
+                Some(&history),
+            )
+            .expect("v0 prices");
+            let v1_results = LowLevelDriveOperation::consume_to_fees_v1(
+                vec![sectioned_removal(&[(
+                    OWNER,
+                    &[(storage_epoch, stored_bytes)],
+                )])],
+                &epoch(removal_epoch),
+                DEFAULT_EPOCHS_PER_ERA,
+                &FEE_VERSION1,
+                Some(&history),
+            )
+            .expect("v1 prices with the history");
+
+            let (expected_v0, _) = calculate_storage_fee_refund_amount_and_leftovers(
+                stored_bytes as Credits * FEE_STORAGE_VERSION1.storage_disk_usage_credit_per_byte,
+                storage_epoch,
+                removal_epoch,
+                DEFAULT_EPOCHS_PER_ERA,
+            )
+            .expect("refund math");
+            let (expected_v1, _) = calculate_storage_fee_refund_amount_and_leftovers(
+                stored_bytes as Credits
+                    * SYNTHETIC_FEE_VERSION_2
+                        .storage
+                        .storage_disk_usage_credit_per_byte,
+                storage_epoch,
+                removal_epoch,
+                DEFAULT_EPOCHS_PER_ERA,
+            )
+            .expect("refund math");
+
+            assert_eq!(
+                refund_for(&v0_results, &OWNER, storage_epoch),
+                expected_v0,
+                "v0 ignores the history for fee version number 1 and prices at the first generation"
+            );
+            assert_eq!(
+                refund_for(&v1_results, &OWNER, storage_epoch),
+                expected_v1,
+                "v1 prices with the schedule the history resolves for the epoch"
+            );
+            assert!(expected_v1 > expected_v0);
+        }
+
+        #[test]
+        fn should_credit_the_same_refunds_in_v1_as_in_v0_for_every_shipped_platform_version() {
+            // Every shipped schedule shares fee version number 1 and the same
+            // storage rates (pinned below), so for every history the epoch
+            // change hook can build from the shipped versions, v1's credits
+            // equal v0's: the boundary changes what a missing history does,
+            // not what a present one yields.
+            let removal_epoch = 15u16;
+            let bytes_by_owner: &[([u8; 32], &[(u16, u32)])] = &[
+                (OWNER, &[(0, 900), (3, 1200), (7, 64), (12, 5000)]),
+                (OTHER_OWNER, &[(5, 31), (11, 2048)]),
+                (Identifier::default(), &[(2, 700)]),
+            ];
+
+            for platform_version in PLATFORM_VERSIONS {
+                for history_epoch in [0u16, 1, 5, 12, 15] {
+                    let history: CachedEpochIndexFeeVersions =
+                        BTreeMap::from([(history_epoch, &platform_version.fee_version)]);
+
+                    let v0_results = LowLevelDriveOperation::consume_to_fees_v0(
+                        vec![sectioned_removal(bytes_by_owner), basic_removal(40)],
+                        &epoch(removal_epoch),
+                        DEFAULT_EPOCHS_PER_ERA,
+                        &platform_version.fee_version,
+                        Some(&history),
+                    )
+                    .expect("v0 prices");
+                    let v1_results = LowLevelDriveOperation::consume_to_fees_v1(
+                        vec![sectioned_removal(bytes_by_owner), basic_removal(40)],
+                        &epoch(removal_epoch),
+                        DEFAULT_EPOCHS_PER_ERA,
+                        &platform_version.fee_version,
+                        Some(&history),
+                    )
+                    .expect("v1 prices");
+
+                    assert_eq!(
+                        v0_results, v1_results,
+                        "protocol version {} with a history entry at epoch {} must refund identically in v0 and v1",
+                        platform_version.protocol_version, history_epoch
+                    );
+                    assert!(
+                        v1_results[0].fee_refunds.get(&OWNER).is_some(),
+                        "the owner's bytes must be refunded"
+                    );
+                    assert!(
+                        v1_results[0]
+                            .fee_refunds
+                            .get(&Identifier::default())
+                            .is_none(),
+                        "system bytes are never refunded"
+                    );
+                    assert_eq!(v1_results[0].removed_bytes_from_system, 700);
+                }
+            }
+        }
+
+        /// The premise of the equality above. A shipped schedule that kept
+        /// fee version number 1 but changed its storage rates would make v0
+        /// (which prices number 1 at the first generation) and v1 (which
+        /// prices at the schedule the history resolves) diverge on the same
+        /// input; such a change needs a new fee version number, which both
+        /// generations already look up in the history.
+        #[test]
+        fn should_keep_every_shipped_schedule_on_the_first_generation_storage_rates() {
+            for platform_version in PLATFORM_VERSIONS {
+                assert_eq!(
+                    platform_version.fee_version.fee_version_number,
+                    FeeVersion::first().fee_version_number,
+                    "protocol version {} changed its fee version number",
+                    platform_version.protocol_version
+                );
+                assert_eq!(
+                    platform_version.fee_version.storage,
+                    FeeVersion::first().storage,
+                    "protocol version {} changed its storage rates without a new fee version number",
+                    platform_version.protocol_version
+                );
+            }
+        }
+    }
 }
