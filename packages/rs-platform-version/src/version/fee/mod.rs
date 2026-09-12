@@ -14,6 +14,10 @@ use crate::version::fee::state_transition_min_fees::{
 use crate::version::fee::storage::FeeStorageVersion;
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
+#[cfg(feature = "mock-versions")]
+use crate::version::mocks::fee_doubled_storage_test::TEST_FEE_VERSIONS;
+#[cfg(feature = "mock-versions")]
+use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
 use bincode::{Decode, Encode};
 
 pub mod data_contract_registration;
@@ -52,6 +56,22 @@ impl FeeVersion {
     }
     pub fn get<'a>(version: FeeVersionNumber) -> Result<&'a Self, PlatformVersionError> {
         if version > 0 {
+            #[cfg(feature = "mock-versions")]
+            {
+                // Test fee generations share the mock protocol versions' shifted
+                // number range, so a number with the test bit set is resolved by
+                // number in the test registry and never reaches the production one.
+                if version >> TEST_PROTOCOL_VERSION_SHIFT_BYTES > 0 {
+                    return TEST_FEE_VERSIONS
+                        .iter()
+                        .find(|fee_version| fee_version.fee_version_number == version)
+                        .ok_or_else(|| {
+                            PlatformVersionError::UnknownVersionError(format!(
+                                "no test fee version {version}"
+                            ))
+                        });
+                }
+            }
             FEE_VERSIONS.get(version as usize - 1).ok_or_else(|| {
                 PlatformVersionError::UnknownVersionError(format!("no fee version {version}"))
             })
@@ -64,6 +84,14 @@ impl FeeVersion {
 
     pub fn get_optional<'a>(version: FeeVersionNumber) -> Option<&'a Self> {
         if version > 0 {
+            #[cfg(feature = "mock-versions")]
+            {
+                if version >> TEST_PROTOCOL_VERSION_SHIFT_BYTES > 0 {
+                    return TEST_FEE_VERSIONS
+                        .iter()
+                        .find(|fee_version| fee_version.fee_version_number == version);
+                }
+            }
             FEE_VERSIONS.get(version as usize - 1)
         } else {
             None
@@ -114,5 +142,68 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
             ),
             vote_resolution_fund_fees: value.vote_resolution_fund_fees,
         }
+    }
+}
+
+#[cfg(all(test, feature = "mock-versions"))]
+mod mock_fee_generation_tests {
+    use super::{FeeStorageVersion, FeeVersion, FEE_VERSIONS};
+    use crate::version::mocks::fee_doubled_storage_test::{
+        TEST_FEE_VERSION_DOUBLED_STORAGE, TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE,
+    };
+    use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
+    use crate::version::PlatformVersion;
+
+    #[test]
+    fn should_resolve_the_test_fee_generation_only_through_the_shifted_number_range() {
+        let resolved = FeeVersion::get(TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE)
+            .expect("the test fee generation resolves by its number");
+        assert_eq!(resolved, &TEST_FEE_VERSION_DOUBLED_STORAGE);
+        assert_eq!(
+            FeeVersion::get_optional(TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE),
+            Some(&TEST_FEE_VERSION_DOUBLED_STORAGE)
+        );
+
+        let unregistered = (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 2;
+        assert!(
+            FeeVersion::get(unregistered).is_err(),
+            "a shifted number with no test generation is an error, not a fallback"
+        );
+        assert!(FeeVersion::get_optional(unregistered).is_none());
+
+        assert!(
+            FEE_VERSIONS
+                .iter()
+                .all(|fee_version| fee_version.fee_version_number
+                    >> TEST_PROTOCOL_VERSION_SHIFT_BYTES
+                    == 0),
+            "the production registry must never carry a shifted number"
+        );
+    }
+
+    #[test]
+    fn should_keep_the_test_fee_generation_aligned_with_the_latest_schedule_except_storage_disk_usage(
+    ) {
+        let latest = &PlatformVersion::latest().fee_version;
+        let doubled = &TEST_FEE_VERSION_DOUBLED_STORAGE;
+
+        assert_eq!(
+            doubled.storage.storage_disk_usage_credit_per_byte,
+            2 * latest.storage.storage_disk_usage_credit_per_byte
+        );
+
+        // Everything but the generation number and the disk usage rate is the
+        // latest schedule, so a fee difference across the boundary is storage.
+        let aligned = FeeVersion {
+            fee_version_number: latest.fee_version_number,
+            storage: FeeStorageVersion {
+                storage_disk_usage_credit_per_byte: latest
+                    .storage
+                    .storage_disk_usage_credit_per_byte,
+                ..doubled.storage.clone()
+            },
+            ..doubled.clone()
+        };
+        assert_eq!(&aligned, latest);
     }
 }
