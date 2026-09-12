@@ -83,4 +83,9 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_document_expirations_per_block: 0,
     max_document_expiration_weight_per_block: 0,
     minimum_grovedb_proof_envelope_version: 0, // V0 envelopes stay accepted until v14
+    // contract code bundles arrive with the 5.0 protocol version
+    max_contract_code_state_transition_size: None,
+    max_contract_code_state_transition_decode_budget: None,
+    max_contract_code_bundle_bytes: None,
+    max_contract_code_modules_per_bundle: None,
 };

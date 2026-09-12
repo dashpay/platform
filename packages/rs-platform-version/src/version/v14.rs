@@ -1565,6 +1565,8 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
+        block_max_bytes: None,
+        block_max_gas: None,
     },
 };
 
