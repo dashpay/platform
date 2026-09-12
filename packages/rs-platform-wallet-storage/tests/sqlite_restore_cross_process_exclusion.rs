@@ -286,9 +286,13 @@ fn restore_excludes_peer_creating_missing_destination() {
 
         let observed = wait_for_staged_copy(&destination, &existing, &restore)
             && probe_while_restore_runs(&restore, || {
-                let peer = rusqlite::Connection::open(&destination)?;
+                let mut peer = rusqlite::Connection::open(&destination)?;
                 peer.busy_timeout(Duration::ZERO)?;
-                peer.execute_batch("CREATE TABLE peer_write (value INTEGER)")
+                // A late probe may succeed after restore releases its lock.
+                // Roll back the write so the next probe can create the table again.
+                let tx = peer.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                tx.execute_batch("CREATE TABLE peer_write (value INTEGER)")?;
+                tx.rollback()
             });
 
         restore.join().unwrap().expect("restore succeeds");
