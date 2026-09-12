@@ -3,7 +3,7 @@ use crate::masternodes::{GenerateTestMasternodeUpdates, MasternodeListItemWithUp
 use crate::query::ProofVerification;
 use crate::strategy::{
     ChainExecutionOutcome, ChainExecutionParameters, CoreHeightIncrease, NetworkStrategy,
-    StrategyRandomness, ValidatorVersionMigration,
+    ProposalConsensusParamUpdates, StrategyRandomness, ValidatorVersionMigration,
 };
 use crate::verify_state_transitions::verify_state_transitions_were_or_were_not_executed;
 use dpp::block::block_info::BlockInfo;
@@ -978,6 +978,7 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
 
     let mut state_transitions_per_block = BTreeMap::new();
     let mut state_transition_results_per_block = BTreeMap::new();
+    let mut consensus_param_updates_per_block = BTreeMap::new();
     let mut shielded_state: Option<crate::strategy::ShieldedState> = None;
 
     for block_height in block_start..(block_start + block_count) {
@@ -1116,11 +1117,21 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
             block_id_hash: block_hash,
             signature,
             app_version,
+            consensus_param_updates,
+            process_proposal_consensus_param_updates,
         } = block_execution_outcome.unwrap();
 
         if let Some(validator_set_update) = validator_set_update {
             validator_set_updates.insert(block_height, validator_set_update);
         }
+
+        consensus_param_updates_per_block.insert(
+            block_height,
+            ProposalConsensusParamUpdates {
+                prepare_proposal: consensus_param_updates,
+                process_proposal: process_proposal_consensus_param_updates,
+            },
+        );
 
         if strategy.dont_finalize_block() {
             continue;
@@ -1245,6 +1256,7 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
         withdrawals: total_withdrawals,
         validator_set_updates,
         state_transition_results_per_block,
+        consensus_param_updates_per_block,
         instant_lock_quorums,
         signer,
     }

@@ -141,6 +141,7 @@ use strategy_tests::transitions::{
 };
 use strategy_tests::Strategy;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
+use tenderdash_abci::proto::types::ConsensusParams;
 
 // TODO: Re-enable when OperationType has shielded variants
 // /// Cached Orchard proving key for strategy tests (~30s to build, reused across tests).
@@ -3098,7 +3099,18 @@ pub struct ChainExecutionOutcome<'a> {
     /// height to the validator set update at that height
     pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
     pub state_transition_results_per_block: BTreeMap<u64, Vec<(StateTransition, ExecTxResult)>>,
+    /// height to the consensus parameter update each proposal path returned at that height:
+    /// the proposer's (`prepare_proposal`) and, when `independent_process_proposal_verification`
+    /// is on, the validator's (`process_proposal`)
+    pub consensus_param_updates_per_block: BTreeMap<u64, ProposalConsensusParamUpdates>,
     pub signer: SimpleSigner,
+}
+
+/// The consensus parameter update each proposal path of one block returned.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ProposalConsensusParamUpdates {
+    pub prepare_proposal: Option<ConsensusParams>,
+    pub process_proposal: Option<ConsensusParams>,
 }
 
 impl ChainExecutionOutcome<'_> {
