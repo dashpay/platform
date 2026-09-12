@@ -29,6 +29,14 @@ use serde::{Deserialize, Serialize};
 
 pub type IdentityCreditTransferTransitionLatest = IdentityCreditTransferTransitionV0;
 
+/// Minimum credit-transfer amount enforced both client-side by the SDK
+/// constructor and server-side by drive-abci's
+/// `IdentityCreditTransferStateTransitionStructureValidationV0`.
+///
+/// Defined once here so both sides agree on the value and any future change is
+/// a single edit.
+pub const MIN_TRANSFER_AMOUNT: u64 = 100_000;
+
 #[cfg_attr(
     all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
@@ -75,6 +83,25 @@ impl IdentityCreditTransferTransition {
                 known_versions: vec![0],
                 received: version,
             }),
+        }
+    }
+}
+
+#[cfg(any(
+    feature = "state-transition-validation",
+    feature = "state-transition-signing"
+))]
+impl IdentityCreditTransferTransition {
+    /// Shared single source of truth for the v0 basic-structure rules of an
+    /// identity credit transfer. Delegates to
+    /// `IdentityCreditTransferTransitionV0::validate_basic_structure_v0` so
+    /// the client-side SDK constructor and drive-abci's structure validator
+    /// enforce the exact same self-transfer and `MIN_TRANSFER_AMOUNT` checks.
+    pub fn validate_basic_structure_v0(
+        &self,
+    ) -> crate::validation::SimpleConsensusValidationResult {
+        match self {
+            IdentityCreditTransferTransition::V0(v0) => v0.validate_basic_structure_v0(),
         }
     }
 }

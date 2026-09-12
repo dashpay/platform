@@ -118,6 +118,18 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub common_validation_methods: DriveAbciStateTransitionCommonValidationVersions,
     pub max_asset_lock_usage_attempts: u16,
     pub identity_create_state_transition: DriveAbciStateTransitionValidationVersion,
+    /// Legacy drive-abci validation versions for the identity-update state transition.
+    ///
+    /// The `basic_structure` subfield of this struct is legacy/deprecated for
+    /// identity-update basic-structure dispatch: drive-abci no longer reads it as the
+    /// dispatch source. The DPP-owned
+    /// `platform_version.dpp.state_transitions.identities.identity_update.basic_structure`
+    /// field is the source of truth used for dispatch.
+    ///
+    /// The remaining intentional consumer of this field is the rs-dpp lockstep assertion,
+    /// which cross-checks that the legacy drive-abci value matches the DPP-owned value until
+    /// the legacy field can be removed/migrated. Do not wire new dispatch logic to this
+    /// field.
     pub identity_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_credit_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,

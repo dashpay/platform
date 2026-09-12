@@ -197,6 +197,340 @@ mod test {
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
+
+    /// Verifies that `try_from_identity_with_signer` rejects an invalid TRANSFER+HIGH
+    /// added key client-side via the structural public-key validation, returning
+    /// `ProtocolError::ConsensusError(InvalidIdentityPublicKeySecurityLevelError)`
+    /// before any signing work is attempted.
+    #[cfg(feature = "state-transition-signing")]
+    #[tokio::test]
+    async fn try_from_identity_with_signer_rejects_transfer_high_added_key() {
+        use crate::address_funds::AddressWitness;
+        use crate::consensus::basic::BasicError;
+        use crate::consensus::ConsensusError;
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use crate::identity::signer::Signer;
+        use crate::identity::v0::IdentityV0;
+        use crate::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+        use crate::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
+        use crate::version::PlatformVersion;
+        use crate::ProtocolError;
+        use async_trait::async_trait;
+        use std::collections::BTreeMap;
+
+        /// A signer that should never be invoked: pre-signing validation must fail
+        /// before this signer is asked to sign anything.
+        #[derive(Debug)]
+        struct UnreachableSigner;
+
+        #[async_trait]
+        impl Signer<IdentityPublicKey> for UnreachableSigner {
+            async fn sign(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                panic!(
+                    "UnreachableSigner::sign must not be called when pre-signing validation rejects the transition"
+                );
+            }
+
+            async fn sign_create_witness(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                panic!(
+                    "UnreachableSigner::sign_create_witness must not be called when pre-signing validation rejects the transition"
+                );
+            }
+
+            fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+                false
+            }
+        }
+
+        let platform_version = PlatformVersion::latest();
+
+        // Master key on the existing identity (not used here, but the constructor expects
+        // an identity to read id/revision from).
+        let master_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            disabled_at: None,
+        }
+        .into();
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::default(),
+            public_keys: BTreeMap::from([(0, master_key)]),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+
+        // Invalid combination: TRANSFER purpose only allows CRITICAL security level.
+        let invalid_transfer_high_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![1u8; 33]),
+            disabled_at: None,
+        }
+        .into();
+
+        let result = IdentityUpdateTransitionV0::try_from_identity_with_signer(
+            &identity,
+            &0,
+            vec![invalid_transfer_high_key],
+            vec![],
+            1,
+            0,
+            &UnreachableSigner,
+            platform_version,
+            None,
+        )
+        .await;
+
+        match result {
+            Err(ProtocolError::ConsensusError(boxed)) => match *boxed {
+                ConsensusError::BasicError(
+                    BasicError::InvalidIdentityPublicKeySecurityLevelError(err),
+                ) => {
+                    assert_eq!(err.purpose(), Purpose::TRANSFER);
+                    assert_eq!(err.security_level(), SecurityLevel::HIGH);
+                }
+                other => panic!(
+                    "expected InvalidIdentityPublicKeySecurityLevelError, got {:?}",
+                    other
+                ),
+            },
+            other => panic!(
+                "expected ConsensusError(InvalidIdentityPublicKeySecurityLevelError), got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    #[tokio::test]
+    async fn try_from_identity_with_signer_checks_master_key_before_basic_structure() {
+        use crate::address_funds::AddressWitness;
+        use crate::consensus::signature::SignatureError;
+        use crate::consensus::ConsensusError;
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use crate::identity::signer::Signer;
+        use crate::identity::v0::IdentityV0;
+        use crate::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+        use crate::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
+        use crate::version::PlatformVersion;
+        use crate::ProtocolError;
+        use async_trait::async_trait;
+        use std::collections::BTreeMap;
+
+        #[derive(Debug)]
+        struct UnreachableSigner;
+
+        #[async_trait]
+        impl Signer<IdentityPublicKey> for UnreachableSigner {
+            async fn sign(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                panic!("sign should not run when master key lookup fails")
+            }
+
+            async fn sign_create_witness(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                panic!("sign_create_witness should not run when master key lookup fails")
+            }
+
+            fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+                false
+            }
+        }
+
+        let platform_version = PlatformVersion::latest();
+        let identity: Identity = IdentityV0 {
+            id: Identifier::default(),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+        let invalid_transfer_high_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![1u8; 33]),
+            disabled_at: None,
+        }
+        .into();
+
+        let result = IdentityUpdateTransitionV0::try_from_identity_with_signer(
+            &identity,
+            &999,
+            vec![invalid_transfer_high_key],
+            vec![],
+            1,
+            0,
+            &UnreachableSigner,
+            platform_version,
+            None,
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ConsensusError(boxed))
+                if matches!(
+                    *boxed,
+                    ConsensusError::SignatureError(SignatureError::MissingPublicKeyError(_))
+                )
+        ));
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    #[tokio::test]
+    async fn try_from_identity_with_signer_rejects_bad_added_public_key_signature_locally() {
+        use crate::address_funds::AddressWitness;
+        use crate::consensus::signature::SignatureError;
+        use crate::consensus::ConsensusError;
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use crate::identity::signer::Signer;
+        use crate::identity::v0::IdentityV0;
+        use crate::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+        use crate::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
+        use crate::version::PlatformVersion;
+        use crate::ProtocolError;
+        use async_trait::async_trait;
+        use dashcore::secp256k1::{PublicKey as RawPublicKey, Secp256k1, SecretKey};
+        use std::collections::BTreeMap;
+
+        #[derive(Debug)]
+        struct WrongIdentityKeySigner {
+            wrong_secret_key: SecretKey,
+        }
+
+        #[async_trait]
+        impl Signer<IdentityPublicKey> for WrongIdentityKeySigner {
+            async fn sign(
+                &self,
+                _key: &IdentityPublicKey,
+                data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                Ok(BinaryData::new(
+                    dashcore::signer::sign(data, &self.wrong_secret_key.secret_bytes())
+                        .expect("wrong-key signing should succeed")
+                        .to_vec(),
+                ))
+            }
+
+            async fn sign_create_witness(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                panic!("identity public key signer should not create address witnesses")
+            }
+
+            fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+                true
+            }
+        }
+
+        let secp = Secp256k1::new();
+        let master_secret_key =
+            SecretKey::from_slice(&[1u8; 32]).expect("valid master key secret key");
+        let correct_added_secret_key =
+            SecretKey::from_slice(&[2u8; 32]).expect("valid added key secret key");
+        let wrong_secret_key =
+            SecretKey::from_slice(&[3u8; 32]).expect("valid alternate secret key");
+        let master_public_key = RawPublicKey::from_secret_key(&secp, &master_secret_key);
+        let correct_added_public_key =
+            RawPublicKey::from_secret_key(&secp, &correct_added_secret_key);
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::default(),
+            public_keys: BTreeMap::from([(
+                0,
+                IdentityPublicKeyV0 {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::MASTER,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(master_public_key.serialize().to_vec()),
+                    disabled_at: None,
+                }
+                .into(),
+            )]),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+
+        let added_public_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(correct_added_public_key.serialize().to_vec()),
+            disabled_at: None,
+        }
+        .into();
+
+        let result = IdentityUpdateTransitionV0::try_from_identity_with_signer(
+            &identity,
+            &0,
+            vec![added_public_key],
+            vec![],
+            1,
+            0,
+            &WrongIdentityKeySigner { wrong_secret_key },
+            PlatformVersion::latest(),
+            None,
+        )
+        .await;
+
+        match result {
+            Err(ProtocolError::ConsensusError(boxed)) => match *boxed {
+                ConsensusError::SignatureError(SignatureError::BasicECDSAError(_)) => {}
+                other => panic!("expected SignatureError(BasicECDSAError), got {:?}", other),
+            },
+            Err(ProtocolError::ConsensusErrors(errors)) => {
+                assert_eq!(errors.len(), 1, "expected a single consensus error");
+                assert!(matches!(
+                    errors.as_slice(),
+                    [ConsensusError::SignatureError(
+                        SignatureError::BasicECDSAError(_)
+                    )]
+                ));
+            }
+            other => panic!(
+                "expected ConsensusError/ConsensusErrors with BasicECDSAError, got {:?}",
+                other
+            ),
+        }
+    }
 }
 
 /// if the property isn't present the empty list is returned. If property is defined, the function

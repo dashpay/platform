@@ -386,26 +386,53 @@ impl AddressesWithBalance {
         range: &AmountRange,
         rng: &mut R,
     ) -> Option<BTreeMap<PlatformAddress, (AddressNonce, Credits)>> {
+        self.take_random_amounts_with_range_and_min_per_input(range, 1, rng)
+    }
+
+    /// Like `take_random_amounts_with_range`, but enforces a minimum amount per
+    /// individual input. This is needed when client-side validation rejects
+    /// inputs below `min_input_amount`.
+    ///
+    /// # Atomicity
+    ///
+    /// On any failure path (insufficient funds, picker exhaustion, inability to
+    /// satisfy `min_per_input` for a step) the staged map is restored to the
+    /// state it had on entry. Callers that treat `None` as "no transition
+    /// emitted" therefore never observe partially staged balances/nonces.
+    ///
+    /// # Availability
+    ///
+    /// The upfront availability check counts only the funds the picker is
+    /// allowed to draw from — committed addresses not already staged. Funds in
+    /// `addresses_in_block_with_new_balance` are deliberately excluded because
+    /// the picker cannot reuse those addresses within the same block (one
+    /// transaction per address per block, for nonce safety).
+    pub fn take_random_amounts_with_range_and_min_per_input<R: Rng + ?Sized>(
+        &mut self,
+        range: &AmountRange,
+        min_per_input: Credits,
+        rng: &mut R,
+    ) -> Option<BTreeMap<PlatformAddress, (AddressNonce, Credits)>> {
         let range_min = *range.start();
         let range_max = *range.end();
         if range_min == 0 {
             return None;
         }
 
-        // 1. Compute total available effective balance
-        let mut total_available: Credits = 0;
+        // Snapshot the staged map so we can roll back on any failure path,
+        // keeping this helper atomic from the caller's point of view.
+        let staged_snapshot = self.addresses_in_block_with_new_balance.clone();
 
-        // in-block first (overrides)
-        for (_nonce, credits) in self.addresses_in_block_with_new_balance.values() {
-            total_available += *credits;
-        }
-
-        // committed, skipping overridden
-        for (addr, (_nonce, credits)) in &self.addresses_with_balance {
-            if !self.addresses_in_block_with_new_balance.contains_key(addr) {
-                total_available += *credits;
-            }
-        }
+        // 1. Compute total available effective balance from the same set the
+        //    picker will draw from: committed addresses not already staged.
+        //    Staged funds are excluded because the picker won't reuse those
+        //    addresses this block (nonce safety).
+        let total_available: Credits = self
+            .addresses_with_balance
+            .iter()
+            .filter(|(addr, _)| !self.addresses_in_block_with_new_balance.contains_key(*addr))
+            .map(|(_, (_, credits))| *credits)
+            .fold(0, |acc, b| acc.saturating_add(b));
 
         if total_available < range_min {
             return None;
@@ -416,6 +443,7 @@ impl AddressesWithBalance {
 
         let mut taken_total: Credits = 0;
         let mut result: BTreeMap<PlatformAddress, (AddressNonce, Credits)> = BTreeMap::new();
+        let mut failed = false;
 
         loop {
             // If we've hit the absolute upper bound, we must stop.
@@ -426,30 +454,37 @@ impl AddressesWithBalance {
             // Remaining room we are allowed to take
             let remaining_max = global_max - taken_total;
 
-            // While we haven't reached the minimum yet, we must ensure we don't
-            // choose too tiny amounts. Once we hit range_min, we can be looser.
+            // Per-step min must be at least `min_per_input` (validation floor)
+            // AND at least enough that future picks can reach `range_min`. We
+            // never clamp it down to `remaining_max`: doing so would let the
+            // picker take a sub-`min_per_input` input, which the caller's
+            // client-side validation would reject.
             let remaining_to_min = range_min.saturating_sub(taken_total);
+            let step_min = remaining_to_min.max(min_per_input);
 
-            // Per-step min:
-            //   - at least 1
-            //   - at least enough so we can eventually reach range_min
-            //   - but not more than remaining_max
-            let step_min = remaining_to_min.max(1).min(remaining_max);
-
-            // Per-step max is whatever room is left
-            let step_max = remaining_max;
-
-            if step_min == 0 || step_min > step_max {
-                // Can't take any more without violating bounds
+            if step_min > remaining_max {
+                // We can't take another input without either dropping below
+                // `min_per_input` or exceeding `global_max`. If we already met
+                // `range_min` this is a clean stop; otherwise we cannot reach
+                // it from here and must fail.
+                if taken_total < range_min {
+                    failed = true;
+                }
                 break;
             }
+
+            let step_max = remaining_max;
 
             // Use the internal bounded helper for this step
             let maybe = self.take_random_amount_with_bounds(step_min, step_max, rng);
             let (addr, new_nonce, taken) = match maybe {
                 Some(triplet) => triplet,
                 None => {
-                    // No address can satisfy this step; bail out
+                    // No address can satisfy this step. If we still haven't
+                    // reached `range_min`, the overall call has failed.
+                    if taken_total < range_min {
+                        failed = true;
+                    }
                     break;
                 }
             };
@@ -467,10 +502,10 @@ impl AddressesWithBalance {
             }
         }
 
-        if taken_total < range_min {
-            // We failed to reach the minimum; you could roll back changes here
-            // if you keep a snapshot of balances, but for now just signal None.
-            // NOTE: if you *need* strict atomicity, we should add snapshot/rollback.
+        if failed || taken_total < range_min {
+            // Restore staged state so the caller (which treats `None` as
+            // "no transition emitted") never sees corrupted balances/nonces.
+            self.addresses_in_block_with_new_balance = staged_snapshot;
             return None;
         }
 
@@ -590,6 +625,116 @@ impl AddressesWithBalance {
     ) {
         for (address, (nonce, balance)) in platform_states {
             self.set_address_state(address, nonce, balance);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
+
+    fn addr(byte: u8) -> PlatformAddress {
+        PlatformAddress::P2pkh([byte; 20])
+    }
+
+    /// `min_per_input` must always be honoured by the picker. Old code computed
+    /// `step_min = remaining_to_min.max(min_per_input).min(remaining_max)`,
+    /// which clamped `step_min` *below* `min_per_input` whenever
+    /// `remaining_max < min_per_input`. The picker would then happily return an
+    /// input below the validation floor. This test pins that down: with
+    /// `range_max < min_per_input` and an address barely above `range_max`,
+    /// old code would hand back a 70_000 input despite a 100_000 floor.
+    #[test]
+    fn min_per_input_is_never_violated_when_remaining_room_is_small() {
+        let mut tracker = AddressesWithBalance::new();
+        tracker.addresses_with_balance.insert(addr(1), (0, 80_000));
+
+        let mut rng = StdRng::seed_from_u64(0xA11CE);
+        let range: AmountRange = 50_000..=70_000;
+        let result =
+            tracker.take_random_amounts_with_range_and_min_per_input(&range, 100_000, &mut rng);
+
+        // No way to take >= 100_000 without exceeding range_max=70_000.
+        assert!(result.is_none());
+        // Staged map must be untouched on failure.
+        assert!(tracker.addresses_in_block_with_new_balance.is_empty());
+        // Committed map must also be untouched.
+        assert_eq!(
+            tracker.addresses_with_balance.get(&addr(1)),
+            Some(&(0, 80_000))
+        );
+    }
+
+    /// When the first input does not by itself reach `range_min` and no other
+    /// committed address can satisfy `min_per_input`, the helper must roll back.
+    #[test]
+    fn failure_is_atomic_when_second_input_unavailable() {
+        let mut tracker = AddressesWithBalance::new();
+        tracker.addresses_with_balance.insert(addr(1), (5, 150_000));
+        tracker.addresses_with_balance.insert(addr(2), (7, 80_000));
+
+        let snapshot_committed = tracker.addresses_with_balance.clone();
+
+        let mut rng = StdRng::seed_from_u64(0xBEEF);
+        let range: AmountRange = 200_000..=300_000;
+        let result =
+            tracker.take_random_amounts_with_range_and_min_per_input(&range, 100_000, &mut rng);
+
+        assert!(result.is_none());
+        assert!(tracker.addresses_in_block_with_new_balance.is_empty());
+        assert_eq!(tracker.addresses_with_balance, snapshot_committed);
+    }
+
+    /// Availability accounting must match what the picker can actually draw
+    /// from. Staged-only funds must not make the upfront check pass when no
+    /// committed eligible funds remain.
+    #[test]
+    fn availability_excludes_staged_only_funds() {
+        let mut tracker = AddressesWithBalance::new();
+        // Plenty of staged funds — but the picker won't reuse staged addresses
+        // this block (nonce safety), so they must not count toward availability.
+        tracker
+            .addresses_in_block_with_new_balance
+            .insert(addr(9), (3, 500_000));
+        // Only committed eligible balance — far below `range_min`.
+        tracker.addresses_with_balance.insert(addr(1), (0, 50_000));
+
+        let staged_before = tracker.addresses_in_block_with_new_balance.clone();
+
+        let mut rng = StdRng::seed_from_u64(0xCAFE);
+        let range: AmountRange = 200_000..=300_000;
+        let result =
+            tracker.take_random_amounts_with_range_and_min_per_input(&range, 100_000, &mut rng);
+
+        assert!(result.is_none());
+        // Staged map untouched: no spurious mutations.
+        assert_eq!(tracker.addresses_in_block_with_new_balance, staged_before);
+        // Committed map untouched.
+        assert_eq!(
+            tracker.addresses_with_balance.get(&addr(1)),
+            Some(&(0, 50_000))
+        );
+    }
+
+    /// Sanity check the success path is unaffected by the new atomicity logic.
+    #[test]
+    fn success_path_returns_inputs_above_min_per_input() {
+        let mut tracker = AddressesWithBalance::new();
+        tracker.addresses_with_balance.insert(addr(1), (0, 200_000));
+        tracker.addresses_with_balance.insert(addr(2), (0, 200_000));
+
+        let mut rng = StdRng::seed_from_u64(0xD00D);
+        let range: AmountRange = 150_000..=250_000;
+        let result = tracker
+            .take_random_amounts_with_range_and_min_per_input(&range, 100_000, &mut rng)
+            .expect("should succeed");
+
+        let total: Credits = result.values().map(|(_, c)| *c).sum();
+        assert!(total >= 150_000 && total <= 250_000);
+        for (_, taken) in result.values() {
+            assert!(*taken >= 100_000, "input {} below min_per_input", taken);
         }
     }
 }

@@ -38,7 +38,7 @@ impl ShieldTransitionMethodsV0 for ShieldTransitionV0 {
     ) -> Result<StateTransition, ProtocolError> {
         // Create the unsigned transition (empty witnesses)
         let mut shield_transition = ShieldTransitionV0 {
-            inputs: inputs.clone(),
+            inputs,
             actions,
             amount,
             anchor,
@@ -54,8 +54,9 @@ impl ShieldTransitionMethodsV0 for ShieldTransitionV0 {
         let signable_bytes = state_transition.signable_bytes()?;
 
         // Sign each input address
-        let mut input_witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
-        for address in inputs.keys() {
+        let mut input_witnesses: Vec<AddressWitness> =
+            Vec::with_capacity(shield_transition.inputs.len());
+        for address in shield_transition.inputs.keys() {
             input_witnesses.push(signer.sign_create_witness(address, &signable_bytes).await?);
         }
         shield_transition.input_witnesses = input_witnesses;

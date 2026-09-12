@@ -89,6 +89,18 @@ pub enum ProtocolError {
         /// requested core height
         received: FeatureVersion,
     },
+
+    /// The method is not active at the current DPP version (the version field
+    /// is `None`). Mirrors drive-abci's `ExecutionError::VersionNotActive` so
+    /// the SDK can express the same condition without relying on an
+    /// `UnknownVersionMismatch` sentinel value.
+    #[error("{method} not active for dpp version")]
+    VersionNotActive {
+        /// method
+        method: String,
+        /// the versions of this method that exist (even if currently inactive)
+        known_versions: Vec<FeatureVersion>,
+    },
     #[error("current platform version not initialized")]
     CurrentProtocolVersionNotInitialized,
     #[error("unknown version error {0}")]
@@ -130,6 +142,9 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     ConsensusError(Box<ConsensusError>),
+
+    #[error("Multiple consensus errors: {0:?}")]
+    ConsensusErrors(Vec<ConsensusError>),
 
     #[error(transparent)]
     Document(Box<DocumentError>),
@@ -341,6 +356,21 @@ impl From<String> for ProtocolError {
 impl From<ConsensusError> for ProtocolError {
     fn from(e: ConsensusError) -> Self {
         ProtocolError::ConsensusError(Box::new(e))
+    }
+}
+
+impl From<Vec<ConsensusError>> for ProtocolError {
+    fn from(mut errors: Vec<ConsensusError>) -> Self {
+        debug_assert!(
+            !errors.is_empty(),
+            "ProtocolError::from(Vec<ConsensusError>) expects a non-empty error list"
+        );
+
+        match errors.len() {
+            0 => ProtocolError::ConsensusErrors(errors),
+            1 => ProtocolError::ConsensusError(Box::new(errors.remove(0))),
+            _ => ProtocolError::ConsensusErrors(errors),
+        }
     }
 }
 
