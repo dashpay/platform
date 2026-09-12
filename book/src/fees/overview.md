@@ -292,6 +292,11 @@ Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The
 `uses_version_fee_multiplier_permille` field allows a global scaling factor
 (permille = divide by 1000; a value of 1000 means no change).
 
+The platform state keeps a fee history keyed by epoch: the genesis generation
+is recorded when the chain is initialised, and each later generation at the
+epoch change that activates it, so refunds can find the schedule that priced
+the bytes being removed.
+
 ## Key Source Files
 
 | File | Contents |
