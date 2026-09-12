@@ -35,11 +35,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.queries.DocumentLifecycle
 import org.dashfoundation.dashsdk.queries.describeEraseProgress
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -629,27 +631,21 @@ fun DocumentActionsScreen(
                         ) {
                             val (wallet, mgr, signingKeyId) = resolveSigning(container, signer)
                             val docIdB58 = Base58.encode(docIdBytes)
-                            // The erase result only observes that the document is
-                            // absent from ordinary reads, which it already was; what
-                            // the erase achieved is read from the lifecycle before
-                            // and after.
-                            val before = sdk?.documents?.lifecycle(contractIdBase58, typeName, docIdB58)
-                            mgr.documentTransactions.erase(
-                                walletHandle = wallet,
-                                ownerId = signer.identityId,
-                                contractId = contractIdBytes,
-                                documentType = typeName,
-                                documentId = docIdBytes,
-                                signingKeyId = signingKeyId,
-                                signerHandle = mgr.signerHandle,
-                            )
-                            val after = sdk?.documents?.lifecycle(contractIdBase58, typeName, docIdB58)
-                            eraseSuccess = "Erase submitted; document absence observed. " +
-                                if (after != null) {
-                                    describeEraseProgress(before, after)
-                                } else {
-                                    "Lifecycle not read; query the document history to see what remains."
-                                }
+                            eraseSuccess = eraseAndDescribe(
+                                readLifecycle = {
+                                    sdk?.documents?.lifecycle(contractIdBase58, typeName, docIdB58)
+                                },
+                            ) {
+                                mgr.documentTransactions.erase(
+                                    walletHandle = wallet,
+                                    ownerId = signer.identityId,
+                                    contractId = contractIdBytes,
+                                    documentType = typeName,
+                                    documentId = docIdBytes,
+                                    signingKeyId = signingKeyId,
+                                    signerHandle = mgr.signerHandle,
+                                )
+                            }
                         }
                     },
                     modifier = Modifier.testTag("eraseDocument.confirm"),
@@ -662,6 +658,42 @@ fun DocumentActionsScreen(
     }
 
     ErrorAlertDialog(message = error, onDismiss = { error = null })
+}
+
+/**
+ * Submit the erase, then say what it achieved, from the lifecycle read before
+ * it and the one read after. Extracted from [DocumentActionsScreen] so the
+ * failure split is unit-testable.
+ *
+ * Only [erase] decides whether the submission succeeded. The erase result
+ * itself observes only that the document is absent from ordinary reads, which
+ * it already was, so the lifecycle is the account of what was removed — but it
+ * is an observation of an already-broadcast, already-confirmed transition. A
+ * read that fails therefore leaves the erase successful and merely unreported;
+ * surfacing it as a failure would invite a second, fee-bearing erase. A
+ * [CancellationException] still propagates so structured concurrency is intact.
+ */
+internal suspend fun eraseAndDescribe(
+    readLifecycle: suspend () -> DocumentLifecycle?,
+    erase: suspend () -> Unit,
+): String {
+    suspend fun observe(): DocumentLifecycle? = try {
+        readLifecycle()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
+
+    val before = observe()
+    erase()
+    val after = observe()
+    return "Erase submitted; document absence observed. " +
+        if (after != null) {
+            describeEraseProgress(before, after)
+        } else {
+            "Lifecycle not read; query the document history to see what remains."
+        }
 }
 
 /** The owner + current field values [DocumentActionsScreen]'s probe reads. */
