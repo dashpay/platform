@@ -12,12 +12,11 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
 ///   new generation pushes `ConsensusParams.block` (`max_bytes`, `max_gas`) whenever the new
 ///   protocol version sets `ConsensusVersions::block_max_bytes` to a value the previous one did
 ///   not carry, so every validator raises the Tenderdash block size at the same height.
-/// * `state_transition_processing.decode_raw_state_transitions` becomes 1: the raw length is
+/// * `state_transition_processing.decode_raw_state_transitions` becomes 2: the raw length is
 ///   compared with the cap of the family the wire prefix names (the contract-code capable
 ///   generations read `SystemLimits::max_contract_code_state_transition_size`, everything else
-///   `max_state_transition_size`), the envelope is decoded under that family's bincode budget,
-///   and a variant the active version does not admit is classified as an unpaid consensus
-///   rejection rather than a node fault.
+///   `max_state_transition_size`) and the envelope is decoded under that family's bincode
+///   budget, on top of the untrusted, exact decode of version 1.
 ///
 /// Everything else matches v10.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMethodVersions {
@@ -26,7 +25,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.engine
     },
     state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
-        decode_raw_state_transitions: 1, // changed in v17: family-specific size cap and decode budget from the wire prefix
+        decode_raw_state_transitions: 2, // changed in v17: family-specific size cap and decode budget from the wire prefix
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.state_transition_processing
     },
     ..DRIVE_ABCI_METHOD_VERSIONS_V10

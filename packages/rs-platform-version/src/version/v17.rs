@@ -17,7 +17,7 @@ pub const PROTOCOL_VERSION_17: ProtocolVersion = 17;
 /// * `SYSTEM_LIMITS_V5` bounds the contract-code capable generations of the contract create and
 ///   update transitions: 32 MiB on the wire, a 64 MiB decode budget, 16 modules and 16 MiB of
 ///   canonical code per bundle. Every other family keeps the 20 KiB cap.
-/// * `DRIVE_ABCI_METHOD_VERSIONS_V11` selects `decode_raw_state_transitions` v1, which reads the
+/// * `DRIVE_ABCI_METHOD_VERSIONS_V11` selects `decode_raw_state_transitions` v2, which reads the
 ///   family cap from the wire prefix before decoding, and `consensus_params_update` v2, which
 ///   pushes the block parameters below to Tenderdash at the activation boundary.
 /// * `DRIVE_ABCI_QUERY_VERSIONS_V3` selects `proofs_query` v1, which decodes the transition of a
