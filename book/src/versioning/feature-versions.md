@@ -338,14 +338,22 @@ pub struct SystemLimits {
     pub max_token_redemption_cycles: u32,
     pub max_shielded_transition_actions: u16,
     pub max_time_range_overlap_factor: Option<u64>,
+    // ...
+    pub smart_contract_computation: Option<SmartContractComputationLimits>,
 }
 ```
 
-There are four `SYSTEM_LIMITS_V*` constants, one for each protocol version at
+There are five `SYSTEM_LIMITS_V*` constants, one for each protocol version at
 which a limit changed. The `Option` fields show the idiom for a parameter that
 did not exist before some version: `None` in the tables of the versions that
 predate the rule, `Some(value)` from the version that introduced it. It is the
 parameter-shaped twin of `OptionalFeatureVersion`.
+
+Nested optional groups follow the same rule as optional method versions:
+`smart_contract_computation` is `None` on every protocol version that predates
+smart contracts and carries the per-invocation and per-block computation
+limits from protocol version 17. Consumers pass the group as one value, and
+later limits of the same family extend the group rather than the flat table.
 
 The same shape recurs wherever a subsystem owns tunables:
 
