@@ -7,7 +7,7 @@ use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::prelude::IdentityNonce;
 use crate::validation::SimpleConsensusValidationResult;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Identifier;
 
 pub const IDENTITY_NONCE_VALUE_FILTER: u64 = 0xFFFFFFFFFF;
@@ -17,7 +17,16 @@ pub const MISSING_IDENTITY_REVISIONS_MAX_BYTES: u64 = MAX_MISSING_IDENTITY_REVIS
 pub const IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES: u64 = 40;
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    DecodeUntrusted,
 )]
 /// The result of the merge of the identity contract nonce
 pub enum MergeIdentityNonceResult {

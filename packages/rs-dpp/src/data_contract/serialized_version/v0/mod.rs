@@ -7,7 +7,7 @@ use crate::data_contract::v1::DataContractV1;
 use crate::data_contract::{DataContract, DefinitionName, DocumentName};
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use platform_version::FromPlatformVersioned;
@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode, DecodeUntrusted)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractInSerializationFormatV0 {
     /// A unique identifier for the data contract.

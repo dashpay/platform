@@ -2,14 +2,25 @@ use crate::consensus::basic::data_contract::UnknownStorageKeyRequirementsError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use serde_repr::*;
 use std::convert::TryFrom;
 
 /// The Storage Key requirements
 // @append_only
 #[repr(u8)]
-#[derive(Serialize_repr, Deserialize_repr, Debug, PartialEq, Eq, Copy, Clone, Encode, Decode)]
+#[derive(
+    Serialize_repr,
+    Deserialize_repr,
+    Debug,
+    PartialEq,
+    Eq,
+    Copy,
+    Clone,
+    Encode,
+    Decode,
+    DecodeUntrusted,
+)]
 pub enum StorageKeyRequirements {
     Unique = 0,
     Multiple = 1,

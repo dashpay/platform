@@ -1,5 +1,5 @@
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -117,7 +117,15 @@ use crate::data_contract::errors::DataContractError;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(
-    Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, PartialEq, Clone,
+    Error,
+    Debug,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Encode,
+    Decode,
+    PartialEq,
+    Clone,
+    DecodeUntrusted,
 )]
 pub enum BasicError {
     /*

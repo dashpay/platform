@@ -2,13 +2,22 @@ use crate::balances::credits::TokenAmount;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    DecodeUntrusted,
 )]
 #[error(
     "Identity has not agreed to pay the required token amount for token {}: required {}, min offer {:?}, max offer {:?}, action: {}",

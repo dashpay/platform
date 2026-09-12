@@ -7,10 +7,19 @@ use crate::identity::SecurityLevel;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    DecodeUntrusted,
 )]
 #[error("Invalid security level {public_key_security_level}. This state transition requires at least {required_security_level}")]
 #[platform_serialize(unversioned)]

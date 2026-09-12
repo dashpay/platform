@@ -5,7 +5,7 @@ mod version;
 
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_value::BinaryData;
 #[cfg(feature = "serde-conversion")]
@@ -20,7 +20,7 @@ use crate::{
 };
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
+#[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -53,21 +53,39 @@ mod test {
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::identity_credit_withdrawal_transition::v0::Pooling;
     use crate::ProtocolError;
-    use bincode::{Decode, Encode};
+    use bincode::{Decode, DecodeUntrusted, Encode};
     use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
     use platform_value::{BinaryData, Identifier};
     use rand::Rng;
     use std::fmt::Debug;
 
     // Structure with 1 property
-    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[derive(
+        Debug,
+        Clone,
+        Encode,
+        Decode,
+        PlatformDeserialize,
+        PlatformSerialize,
+        PartialEq,
+        DecodeUntrusted,
+    )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV01 {
         pub identity_id: Identifier,
     }
 
     // Structure with 2 properties
-    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[derive(
+        Debug,
+        Clone,
+        Encode,
+        Decode,
+        PlatformDeserialize,
+        PlatformSerialize,
+        PartialEq,
+        DecodeUntrusted,
+    )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV02 {
         pub identity_id: Identifier,
@@ -75,7 +93,16 @@ mod test {
     }
 
     // Structure with 3 properties
-    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[derive(
+        Debug,
+        Clone,
+        Encode,
+        Decode,
+        PlatformDeserialize,
+        PlatformSerialize,
+        PartialEq,
+        DecodeUntrusted,
+    )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV03 {
         pub identity_id: Identifier,
@@ -84,7 +111,16 @@ mod test {
     }
 
     // Structure with 4 properties
-    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[derive(
+        Debug,
+        Clone,
+        Encode,
+        Decode,
+        PlatformDeserialize,
+        PlatformSerialize,
+        PartialEq,
+        DecodeUntrusted,
+    )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV04 {
         pub identity_id: Identifier,
@@ -94,7 +130,16 @@ mod test {
     }
 
     // Structure with 5 properties
-    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[derive(
+        Debug,
+        Clone,
+        Encode,
+        Decode,
+        PlatformDeserialize,
+        PlatformSerialize,
+        PartialEq,
+        DecodeUntrusted,
+    )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV05 {
         pub identity_id: Identifier,
@@ -105,7 +150,16 @@ mod test {
     }
 
     // Structure with 6 properties
-    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[derive(
+        Debug,
+        Clone,
+        Encode,
+        Decode,
+        PlatformDeserialize,
+        PlatformSerialize,
+        PartialEq,
+        DecodeUntrusted,
+    )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV06 {
         pub identity_id: Identifier,
@@ -117,7 +171,16 @@ mod test {
     }
 
     // Structure with 7 properties
-    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[derive(
+        Debug,
+        Clone,
+        Encode,
+        Decode,
+        PlatformDeserialize,
+        PlatformSerialize,
+        PartialEq,
+        DecodeUntrusted,
+    )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV07 {
         pub identity_id: Identifier,
@@ -130,7 +193,16 @@ mod test {
     }
 
     // Structure with 8 properties
-    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[derive(
+        Debug,
+        Clone,
+        Encode,
+        Decode,
+        PlatformDeserialize,
+        PlatformSerialize,
+        PartialEq,
+        DecodeUntrusted,
+    )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV08 {
         pub identity_id: Identifier,
@@ -144,7 +216,16 @@ mod test {
     }
 
     // Structure with 9 properties
-    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[derive(
+        Debug,
+        Clone,
+        Encode,
+        Decode,
+        PlatformDeserialize,
+        PlatformSerialize,
+        PartialEq,
+        DecodeUntrusted,
+    )]
     #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV09 {
         pub identity_id: Identifier,

@@ -1,6 +1,6 @@
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, Encode, DecodeUntrusted};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,18 @@ use crate::prelude::TimestampMillis;
 /// - `PreProgrammed`: A scheduled distribution with predefined rules.
 /// - `Perpetual`: A continuous or recurring distribution.
 #[derive(
-    Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default,
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Default,
+    DecodeUntrusted,
 )]
 pub enum TokenDistributionType {
     /// A pre-programmed distribution scheduled for a specific time.
@@ -28,7 +39,9 @@ pub enum TokenDistributionType {
 ///
 /// - `PreProgrammed(Identifier)`: A predefined recipient for a scheduled distribution.
 /// - `Perpetual(TokenDistributionResolvedRecipient)`: A resolved recipient for an ongoing distribution.
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd, DecodeUntrusted,
+)]
 #[serde(
     into = "TokenDistributionTypeWithResolvedRecipientRepr",
     from = "TokenDistributionTypeWithResolvedRecipientRepr"
@@ -89,7 +102,9 @@ impl From<TokenDistributionTypeWithResolvedRecipientRepr>
 /// - `PreProgrammed(TimestampMillis, Identifier)`: A scheduled distribution with a timestamp and recipient.
 /// - `Perpetual(RewardDistributionMoment, RewardDistributionMoment, TokenDistributionResolvedRecipient)`:
 ///   A perpetual distribution with previous and next distribution moments, along with the resolved recipient.
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd, DecodeUntrusted,
+)]
 #[serde(into = "TokenDistributionInfoRepr", from = "TokenDistributionInfoRepr")]
 pub enum TokenDistributionInfo {
     /// A pre-programmed token distribution set for a specific time.
@@ -197,6 +212,7 @@ impl fmt::Display for TokenDistributionType {
     Clone,
     PartialEq,
     Eq,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 pub struct TokenDistributionKey {

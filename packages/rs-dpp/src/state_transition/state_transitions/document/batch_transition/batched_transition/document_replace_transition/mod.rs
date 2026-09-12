@@ -7,7 +7,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::{Display, From};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
@@ -15,7 +15,7 @@ use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 pub use v0::*;
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

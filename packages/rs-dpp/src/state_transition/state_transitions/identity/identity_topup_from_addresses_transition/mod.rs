@@ -19,7 +19,7 @@ use crate::state_transition::identity_topup_from_addresses_transition::v0::Ident
 use crate::state_transition::StateTransitionFieldTypes;
 
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::PlatformVersion;
@@ -38,6 +38,7 @@ use serde::{Deserialize, Serialize};
     PlatformVersioned,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 use std::convert::TryInto;
 
@@ -71,6 +71,7 @@ pub use v1::*;
     PlatformSignable,
     PlatformVersioned,
     From,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

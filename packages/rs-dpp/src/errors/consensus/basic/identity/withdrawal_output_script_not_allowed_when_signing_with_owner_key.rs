@@ -7,10 +7,19 @@ use crate::consensus::ConsensusError;
 use crate::identity::core_script::CoreScript;
 
 use crate::identity::KeyID;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    DecodeUntrusted,
 )]
 #[error("Withdrawal output script not allowed when signing with owner key {key_id}")]
 #[platform_serialize(unversioned)]

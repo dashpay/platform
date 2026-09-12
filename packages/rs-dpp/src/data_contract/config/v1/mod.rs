@@ -9,14 +9,16 @@ use crate::data_contract::storage_requirements::keys_for_document_type::StorageK
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, DecodeUntrusted,
+)]
 #[serde(rename_all = "camelCase", default)]
 pub struct DataContractConfigV1 {
     /// Can the contract ever be deleted. If the contract is deleted, so should be all

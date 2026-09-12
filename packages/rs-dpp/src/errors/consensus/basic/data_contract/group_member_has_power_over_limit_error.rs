@@ -3,12 +3,21 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::group::GroupMemberPower;
 use crate::errors::ProtocolError;
 use crate::identifier::Identifier;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    DecodeUntrusted,
 )]
 #[error(
     "Member {member_id} has a power of {power}, which exceeds the allowed limit of {max_power}"

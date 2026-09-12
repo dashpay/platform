@@ -23,7 +23,7 @@ use crate::state_transition::identity_credit_withdrawal_transition::v1::{
     IdentityCreditWithdrawalTransitionV1, IdentityCreditWithdrawalTransitionV1Signable,
 };
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE;
 use derive_more::From;
 use fields::*;
@@ -69,6 +69,7 @@ pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTran
     PlatformVersioned,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

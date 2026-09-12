@@ -87,8 +87,8 @@ impl FromAttribute for ContainerAttributes {
                 }
                 ParsedAttribute::Property(key, _)
                     if ["limit"].contains(&key.to_string().as_str()) => {}
-                ParsedAttribute::Tag(i) if ["derive_bincode"].contains(&i.to_string().as_str()) => {
-                }
+                ParsedAttribute::Tag(i)
+                    if ["derive_bincode", "trusted"].contains(&i.to_string().as_str()) => {}
                 ParsedAttribute::Tag(i) => {
                     return Err(Error::custom_at(
                         "Unknown field attribute for tag",

@@ -4,7 +4,7 @@ use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use crate::tokens::status::v0::TokenStatusV0;
 use crate::ProtocolError;
-use bincode::Encode;
+use bincode::{DecodeUntrusted, Encode};
 use derive_more::From;
 use platform_serialization::de::Decode;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -27,6 +27,7 @@ pub mod v0;
     PlatformVersioned,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

@@ -4,10 +4,18 @@ use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
-    Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq,
+    Error,
+    Debug,
+    Clone,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    PartialEq,
+    DecodeUntrusted,
 )]
 #[error("Invalid asset lock transaction: {message}")]
 #[platform_serialize(unversioned)]

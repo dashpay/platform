@@ -8,7 +8,7 @@ use std::ops::RangeInclusive;
 use platform_value::{BinaryData, Identifier};
 pub use state_transition_types::*;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(any(
     feature = "state-transition-signing",
     feature = "state-transition-validation"
@@ -432,6 +432,7 @@ macro_rules! call_errorable_method_identity_signed {
     PlatformSignable,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 // `tag = "$type"` matches the system-field convention: every serde-injected
 // discriminator key in this crate carries a `$` prefix so it never collides

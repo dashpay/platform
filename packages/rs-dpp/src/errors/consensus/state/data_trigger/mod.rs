@@ -4,7 +4,7 @@ use crate::consensus::state::data_trigger::data_trigger_invalid_result_error::Da
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -13,7 +13,15 @@ pub mod data_trigger_execution_error;
 pub mod data_trigger_invalid_result_error;
 
 #[derive(
-    Error, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
+    Error,
+    Debug,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Clone,
+    DecodeUntrusted,
 )]
 pub enum DataTriggerError {
     /*

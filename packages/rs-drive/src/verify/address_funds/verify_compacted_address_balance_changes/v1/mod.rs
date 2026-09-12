@@ -46,7 +46,7 @@ impl Drive {
             .with_limit::<MAX_COMPACTED_PROOF_DECODE_BYTES>();
 
         let (proof_envelope, consumed): (CompactedAddressBalanceProof, usize) =
-            bincode::decode_from_slice(proof, proof_decode_config).map_err(|e| {
+            bincode::decode_from_slice_untrusted(proof, proof_decode_config).map_err(|e| {
                 Error::Proof(ProofError::CorruptedProof(format!(
                     "cannot decode compacted address balance proof: {}",
                     e
@@ -168,12 +168,14 @@ impl Drive {
             let (address_balances, consumed): (
                 BTreeMap<PlatformAddress, BlockAwareCreditOperation>,
                 usize,
-            ) = bincode::decode_from_slice(&serialized_data, row_decode_config).map_err(|e| {
-                Error::Proof(ProofError::CorruptedProof(format!(
-                    "cannot decode compacted address balances: {}",
-                    e
-                )))
-            })?;
+            ) = bincode::decode_from_slice_untrusted(&serialized_data, row_decode_config).map_err(
+                |e| {
+                    Error::Proof(ProofError::CorruptedProof(format!(
+                        "cannot decode compacted address balances: {}",
+                        e
+                    )))
+                },
+            )?;
             if consumed != serialized_data.len() {
                 return Err(Error::Proof(ProofError::CorruptedProof(
                     "compacted address balance row contains trailing bytes".to_string(),
@@ -603,10 +605,10 @@ mod tests {
 
         let envelope_config = bincode::config::standard().with_big_endian();
         let (before_envelope, _): (CompactedAddressBalanceProof, usize) =
-            bincode::decode_from_slice(&proof_before, envelope_config)
+            bincode::decode_from_slice_untrusted(&proof_before, envelope_config)
                 .expect("decode earlier envelope");
         let (after_envelope, _): (CompactedAddressBalanceProof, usize) =
-            bincode::decode_from_slice(&proof_after, envelope_config)
+            bincode::decode_from_slice_untrusted(&proof_after, envelope_config)
                 .expect("decode later envelope");
 
         let spliced = bincode::encode_to_vec(

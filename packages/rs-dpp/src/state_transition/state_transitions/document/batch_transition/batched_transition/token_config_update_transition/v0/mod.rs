@@ -6,13 +6,13 @@ use crate::data_contract::associated_token::token_configuration_item::TokenConfi
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::Display;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

@@ -1,6 +1,6 @@
 use crate::block::epoch::EpochIndex;
 use crate::prelude::{BlockHeight, TimestampMillis};
-use bincode::{Decode, Encode};
+use bincode::{Decode, Encode, DecodeUntrusted};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -22,6 +22,7 @@ use crate::ProtocolError;
     PartialEq,
     Eq,
     PartialOrd,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 // serde routes through `RewardDistributionMomentRepr` to get internal `type`

@@ -6,10 +6,19 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::identity::core_script::CoreScript;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    DecodeUntrusted,
 )]
 #[error("Output script must be either p2pkh or p2sh")]
 #[platform_serialize(unversioned)]

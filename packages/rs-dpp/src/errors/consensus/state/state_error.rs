@@ -1,5 +1,5 @@
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -72,7 +72,15 @@ use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFound
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
 #[derive(
-    Error, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
+    Error,
+    Debug,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Clone,
+    DecodeUntrusted,
 )]
 pub enum StateError {
     /*

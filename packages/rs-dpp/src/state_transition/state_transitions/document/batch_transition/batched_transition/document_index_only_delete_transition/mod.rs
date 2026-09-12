@@ -2,7 +2,7 @@ mod from_document;
 pub mod v0;
 pub mod v0_methods;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::{Display, From};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ pub use v0::*;
 /// self-authorizing values) and validation pipeline, which is exactly the
 /// distinction the repo models as separate `DocumentTransition` kinds.
 /// The ABCI structure gates pair each kind with its storage mode.
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

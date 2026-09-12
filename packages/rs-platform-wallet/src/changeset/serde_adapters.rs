@@ -135,7 +135,7 @@ pub mod optional_asset_lock_proof {
         bytes
             .map(|b| {
                 let (proof, consumed) =
-                    dpp::bincode::decode_from_slice(&b, dpp::bincode::config::standard())
+                    dpp::bincode::decode_from_slice_untrusted(&b, dpp::bincode::config::standard())
                         .map_err(serde::de::Error::custom)?;
                 // `decode_from_slice` stops at the value's end without
                 // rejecting trailing bytes — but this blob holds exactly

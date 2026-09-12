@@ -3,14 +3,16 @@ use crate::serialization::json_safe_fields;
 use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+#[derive(
+    Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq, DecodeUntrusted,
+)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

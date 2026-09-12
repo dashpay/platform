@@ -13,6 +13,10 @@ use rusqlite::{params, Transaction};
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::{accounts, blob, core_pool, id32, wallets};
 
+// Legacy v8 rows only: read here once during migration, never written again,
+// so the shape is admitted to `blob::decode` without becoming persistable.
+blob::impl_blob_decode!(AccountAddressPoolEntry);
+
 fn invalid(reason: &'static str) -> WalletStorageError {
     WalletStorageError::blob_decode(reason)
 }

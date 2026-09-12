@@ -35,7 +35,9 @@ struct IdentityKeyWire {
 }
 
 // PUBLIC material only reaching `entry_blob`: the wire shape carries
-// bincode-encoded public keys + public-key hashes. No private bytes.
+// bincode-encoded public keys + public-key hashes. No private bytes. The wire
+// graph uses Serde collections; the nested public key bytes are decoded
+// separately through DPP's untrusted native implementation below.
 crate::sqlite::schema::blob::impl_persistable_blob!(IdentityKeyWire);
 
 impl IdentityKeyWire {
@@ -53,7 +55,7 @@ impl IdentityKeyWire {
 
     fn into_entry(self) -> Result<IdentityKeyEntry, WalletStorageError> {
         let (public_key, consumed): (IdentityPublicKey, usize) =
-            bincode::decode_from_slice(&self.public_key_bincode, blob::bounded_config())?;
+            bincode::decode_from_slice_untrusted(&self.public_key_bincode, blob::bounded_config())?;
         // Reject a valid-prefix + trailing-garbage payload (bincode stops
         // after the typed length); mirrors the outer blob::decode guard.
         if consumed != self.public_key_bincode.len() {

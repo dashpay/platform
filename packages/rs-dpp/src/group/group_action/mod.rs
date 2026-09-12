@@ -8,7 +8,7 @@ use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 #[cfg(feature = "serde-conversion")]
@@ -19,7 +19,16 @@ use serde::{Deserialize, Serialize};
     derive(JsonConvertible)
 )]
 #[derive(
-    Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
+    Debug,
+    PartialEq,
+    PartialOrd,
+    Clone,
+    Eq,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

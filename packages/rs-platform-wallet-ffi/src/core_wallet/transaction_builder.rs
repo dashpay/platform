@@ -891,26 +891,30 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
     check_ptr!(payload_bytes);
 
     let bytes = std::slice::from_raw_parts(payload_bytes, payload_len);
-    let payload: TransactionPayload =
-        match bincode::decode_from_slice(bytes, bincode::config::standard()) {
-            Ok((p, consumed)) => {
-                if consumed != payload_len {
-                    return PlatformWalletFFIResult::err(
-                        PlatformWalletFFIResultCode::ErrorDeserialization,
-                        format!(
-                        "trailing bytes after payload: decoded {consumed} of {payload_len} bytes"
-                    ),
-                    );
-                }
-                p
-            }
-            Err(e) => {
+    // Upstream TransactionPayload does not implement DecodeUntrusted yet.
+    // Its derived decoders can reserve collections from their length headers,
+    // so use Core's existing decode limit until those decoders opt in.
+    let config =
+        bincode::config::standard().with_limit::<{ dashcore::consensus::encode::MAX_VEC_SIZE }>();
+    let payload: TransactionPayload = match bincode::decode_from_slice(bytes, config) {
+        Ok((p, consumed)) => {
+            if consumed != payload_len {
                 return PlatformWalletFFIResult::err(
                     PlatformWalletFFIResultCode::ErrorDeserialization,
-                    format!("invalid special payload: {e}"),
+                    format!(
+                        "trailing bytes after payload: decoded {consumed} of {payload_len} bytes"
+                    ),
                 );
             }
-        };
+            p
+        }
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorDeserialization,
+                format!("invalid special payload: {e}"),
+            );
+        }
+    };
 
     let b = (*builder).take_builder();
     let b = b.set_special_payload(payload);
@@ -1039,6 +1043,50 @@ pub unsafe extern "C" fn core_wallet_transaction_free(tx: *mut FFICoreTransactio
 
     tx.tx_bytes = std::ptr::null_mut();
     tx.tx_len = 0;
+}
+
+#[cfg(test)]
+mod payload_decode_tests {
+    use super::*;
+    use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
+    use std::ffi::CStr;
+
+    #[test]
+    fn should_reject_unbounded_payload_collection_and_keep_builder_usable() {
+        let payload = TransactionPayload::AssetLockPayloadType(AssetLockPayload::new(vec![]));
+        let valid = bincode::encode_to_vec(payload, bincode::config::standard())
+            .expect("encode an asset lock payload");
+        let mut malformed = valid.clone();
+        // Replace the empty credit_outputs count with an oversized declaration,
+        // without supplying any output bytes.
+        assert_eq!(malformed.pop(), Some(0));
+        malformed.extend(
+            bincode::encode_to_vec(u64::MAX, bincode::config::standard())
+                .expect("encode a collection length"),
+        );
+
+        unsafe {
+            let builder = core_wallet_tx_builder_new(FFINetwork::Testnet);
+            let rejected = core_wallet_tx_builder_set_special_payload(
+                builder,
+                malformed.as_ptr(),
+                malformed.len(),
+            );
+            let accepted =
+                core_wallet_tx_builder_set_special_payload(builder, valid.as_ptr(), valid.len());
+            core_wallet_tx_builder_destroy(builder);
+
+            assert_eq!(
+                rejected.code,
+                PlatformWalletFFIResultCode::ErrorDeserialization
+            );
+            assert!(CStr::from_ptr(rejected.message)
+                .to_str()
+                .expect("UTF-8 error message")
+                .contains("LimitExceeded"));
+            assert_eq!(accepted.code, PlatformWalletFFIResultCode::Success);
+        }
+    }
 }
 
 #[cfg(test)]

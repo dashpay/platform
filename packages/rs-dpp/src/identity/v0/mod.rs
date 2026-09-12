@@ -22,13 +22,16 @@ use platform_value::Value;
 use crate::errors::ProtocolError;
 use crate::identifier::Identifier;
 #[cfg(feature = "identity-serialization")]
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "identity-serialization", derive(Encode, Decode))]
+#[cfg_attr(
+    feature = "identity-serialization",
+    derive(Encode, Decode, DecodeUntrusted)
+)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),

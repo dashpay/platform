@@ -1,13 +1,21 @@
 use crate::errors::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
 use crate::errors::consensus::ConsensusError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use thiserror::Error;
 
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 #[derive(
-    Error, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
+    Error,
+    Debug,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Clone,
+    DecodeUntrusted,
 )]
 pub enum FeeError {
     /*

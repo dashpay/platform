@@ -4,7 +4,7 @@ use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Identifier;
 
 #[derive(
@@ -18,6 +18,7 @@ use platform_value::Identifier;
     Decode,
     PlatformSerialize,
     PlatformDeserialize,
+    DecodeUntrusted,
 )]
 #[error(
     "position field is not present for document type \"{}\"",

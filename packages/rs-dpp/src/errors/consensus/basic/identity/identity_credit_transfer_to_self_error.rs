@@ -1,7 +1,7 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -16,6 +16,7 @@ use thiserror::Error;
     PlatformSerialize,
     PlatformDeserialize,
     Default,
+    DecodeUntrusted,
 )]
 #[error("Credits transfer recipient must be another identity")]
 #[platform_serialize(unversioned)]

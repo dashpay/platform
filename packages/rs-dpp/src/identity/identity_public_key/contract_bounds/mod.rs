@@ -7,7 +7,7 @@ use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use serde::{Deserialize, Serialize};
 
 pub type ContractBoundsType = u8;
@@ -21,7 +21,18 @@ pub type ContractBoundsType = u8;
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[repr(u8)]
 #[derive(
-    Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, Ord, PartialOrd, Hash,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    Ord,
+    PartialOrd,
+    Hash,
+    DecodeUntrusted,
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[serde(tag = "$type", rename_all = "camelCase")]

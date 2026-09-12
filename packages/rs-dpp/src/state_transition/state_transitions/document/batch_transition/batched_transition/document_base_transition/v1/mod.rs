@@ -4,7 +4,7 @@ pub mod v1_methods;
 #[cfg(feature = "value-conversion")]
 use std::collections::BTreeMap;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::Display;
 
 #[cfg(feature = "value-conversion")]
@@ -23,7 +23,7 @@ use platform_value::Value;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display)]
+#[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display, DecodeUntrusted)]
 // See `DocumentBaseTransitionV0` for json_safe_fields rationale.
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(

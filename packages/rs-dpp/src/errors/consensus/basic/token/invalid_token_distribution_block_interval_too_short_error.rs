@@ -2,12 +2,21 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::prelude::BlockHeightInterval;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    DecodeUntrusted,
 )]
 #[error("BlockBasedDistribution interval is too short: {interval}. It is below the network-required minimum.")]
 #[platform_serialize(unversioned)]

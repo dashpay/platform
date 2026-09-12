@@ -9,7 +9,7 @@ use crate::state_transition::batch_transition::document_base_transition::v0::Doc
 use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 #[cfg(any(feature = "value-conversion", feature = "json-conversion"))]
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::{Display, From};
 pub use fields::*;
 #[cfg(any(feature = "value-conversion", feature = "json-conversion"))]
@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
 // the flattened base) keeps the entire transition wire shape flat —
 // matching the convention every consumer reads (`tx["$id"]`,
 // `tx["$identity-contract-nonce"]`, etc.).
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

@@ -3,13 +3,22 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::TokenContractPosition;
 use crate::identity::TimestampMillis;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    DecodeUntrusted,
 )]
 #[error(
     "Pre-programmed token distribution time {pre_programmed_timestamp}ms is in the past for token {token_position} in data contract {data_contract_id}. Current block time is {current_timestamp}.",

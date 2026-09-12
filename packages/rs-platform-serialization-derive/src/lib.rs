@@ -24,6 +24,7 @@ struct VersionAttributes {
     platform_serialize_limit: Option<usize>,
     untagged: bool,
     unversioned: bool,
+    trusted: bool,
     platform_serialize_into: Option<Path>,
     platform_version_path: Option<LitStr>,
     #[allow(dead_code)] // TODO this is never read
@@ -112,6 +113,7 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
     let mut platform_serialize_limit = None;
     let mut untagged = false;
     let mut unversioned = false;
+    let mut trusted = false;
     let mut platform_serialize_into = None;
     let mut platform_version_path = None;
     let mut crate_name: Ident = Ident::new("crate", Span::call_site()); // default value is "crate"
@@ -131,6 +133,8 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
                     crate_name = syn::parse_str(&crate_name_str.value()).unwrap();
                 } else if meta.path.is_ident("passthrough") {
                     passthrough = true;
+                } else if meta.path.is_ident("trusted") {
+                    trusted = true;
                 } else if meta.path.is_ident("unversioned") {
                     unversioned = true;
                 } else if meta.path.is_ident("allow_prepend_version") {
@@ -184,6 +188,7 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
         platform_serialize_limit,
         untagged,
         unversioned,
+        trusted,
         platform_serialize_into,
         platform_version_path,
         allow_prepend_version,
@@ -219,6 +224,15 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
     }
 }
 
+/// Derive Platform deserialization using bincode's untrusted native decoder.
+///
+/// Serialized types and their fields need `DecodeUntrusted`, including when
+/// decoding through the no-limit entry point. Existing configured budgets and
+/// domain validation still apply; untrusted decoding adds no universal budget.
+/// Local mock formats containing ordinary-only foreign types may explicitly use
+/// `#[platform_serialize(unversioned, trusted)]`. Do not use that exception for
+/// network input or imported data. The separate `PlatformVersionedDecode` APIs
+/// retain their ordinary decoding contract for existing internal and mock callers.
 #[proc_macro_derive(
     PlatformDeserialize,
     attributes(platform_error_type, platform_serialize)
@@ -247,6 +261,7 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
 
     let mut passthrough = false;
     let mut unversioned = false;
+    let mut trusted = false;
     let mut platform_serialize_limit = None;
     let mut untagged = false;
     let mut platform_serialize_into = None;
@@ -268,6 +283,8 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
                     crate_name = syn::parse_str(&crate_name_str.value()).unwrap();
                 } else if meta.path.is_ident("passthrough") {
                     passthrough = true;
+                } else if meta.path.is_ident("trusted") {
+                    trusted = true;
                 } else if meta.path.is_ident("unversioned") {
                     unversioned = true;
                 } else if meta.path.is_ident("allow_prepend_version") {
@@ -321,6 +338,7 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
         platform_serialize_limit,
         untagged,
         unversioned,
+        trusted,
         platform_serialize_into,
         platform_version_path,
         allow_prepend_version,

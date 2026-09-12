@@ -278,15 +278,35 @@ jobs:
             '
           }
 
+          # A derive list is not part of a structure's wire layout: adding or
+          # reordering a derive cannot change how the existing fields or
+          # variants serialize, while the fields, the variants and the
+          # attributes that do shape the encoding (serde, repr,
+          # platform_serialize) are still compared verbatim. Drop
+          # `#[derive(...)]` attributes, single- or multi-line, before diffing.
+          strip_derives() {
+            awk '
+              skipping {
+                if (index($0, ")]")) { skipping=0 }
+                next
+              }
+              /^[[:space:]]*#\[derive\(/ {
+                if (!index($0, ")]")) { skipping=1 }
+                next
+              }
+              { print }
+            '
+          }
+
           for file in $CHANGED_RS; do
             if [ ! -f "$file" ]; then continue; fi
             BASE_CONTENT=$(git show "$BASE_PARENT":"$file" 2>/dev/null || true)
             if [ -z "$BASE_CONTENT" ]; then continue; fi
 
-            BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only")
-            PR_APPEND=$(extract_tagged_block "@append_only" < "$file")
-            BASE_IMMUTABLE=$(echo "$BASE_CONTENT" | extract_tagged_block "@immutable")
-            PR_IMMUTABLE=$(extract_tagged_block "@immutable" < "$file")
+            BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only" | strip_derives)
+            PR_APPEND=$(extract_tagged_block "@append_only" < "$file" | strip_derives)
+            BASE_IMMUTABLE=$(echo "$BASE_CONTENT" | extract_tagged_block "@immutable" | strip_derives)
+            PR_IMMUTABLE=$(extract_tagged_block "@immutable" < "$file" | strip_derives)
 
             if [ -n "$BASE_APPEND" ]; then
               # Check for deletions, ignoring comment-only lines and the tag itself

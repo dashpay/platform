@@ -4,7 +4,7 @@ use crate::errors::ProtocolError;
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
@@ -32,6 +32,7 @@ pub mod v0;
     Eq,
     PartialOrd,
     From,
+    DecodeUntrusted,
 )]
 #[serde(tag = "$formatVersion")]
 #[platform_serialize(unversioned)]

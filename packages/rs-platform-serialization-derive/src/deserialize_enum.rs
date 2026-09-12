@@ -15,12 +15,20 @@ pub(super) fn derive_platform_deserialize_enum(
     let VersionAttributes {
         passthrough,
         unversioned,
+        trusted,
         platform_version_path,
         platform_serialize_limit,
         untagged,
         crate_name,
         ..
     } = version_attributes;
+
+    // Ordinary decoding is an explicit opt-in for locally generated fixtures.
+    let decode_from_slice = if trusted {
+        quote! { bincode::decode_from_slice }
+    } else {
+        quote! { bincode::decode_from_slice_untrusted }
+    };
 
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
@@ -112,7 +120,7 @@ pub(super) fn derive_platform_deserialize_enum(
                     quote! {
                         #index => {
                             let config = bincode::config::standard().with_big_endian().with_no_limit();
-                            let deserialized : #versioned_variant_name = bincode::decode_from_slice(&data, config)#map_err?;
+                            let deserialized : #versioned_variant_name = #decode_from_slice(&data, config)#map_err?;
                             deserialized.into()
                         },
                     }
@@ -156,7 +164,7 @@ pub(super) fn derive_platform_deserialize_enum(
                         quote! {
                         #index => {
                             let config = bincode::config::standard().with_big_endian().with_big_endian().with_limit::<{ #limit }>();
-                            let deserialized : #versioned_variant_name = bincode::decode_from_slice(&data, config)#map_err?;
+                            let deserialized : #versioned_variant_name = #decode_from_slice(&data, config)#map_err?;
                             deserialized.into()
                         },
                     }
@@ -220,7 +228,7 @@ pub(super) fn derive_platform_deserialize_enum(
                 where
                     Self: Sized {
                     let config = bincode::config::standard().with_big_endian().with_limit::<{ #limit }>();
-                    bincode::decode_from_slice(&data, config).map(|(a,_)| a)#limit_map_err
+                    #decode_from_slice(&data, config).map(|(a,_)| a)#limit_map_err
                 }
 
                 fn deserialize_from_bytes_no_limit(
@@ -229,7 +237,7 @@ pub(super) fn derive_platform_deserialize_enum(
                 where
                     Self: Sized {
                     let config = bincode::config::standard().with_big_endian().with_no_limit();
-                    bincode::decode_from_slice(&data, config).map(|(a,_)| a)#map_err
+                    #decode_from_slice(&data, config).map(|(a,_)| a)#map_err
                 }
             }
         }
@@ -242,7 +250,7 @@ pub(super) fn derive_platform_deserialize_enum(
                 where
                     Self: Sized {
                     let config = bincode::config::standard().with_big_endian().with_no_limit();
-                    bincode::decode_from_slice(&data, config).map(|(a,_)| a)#map_err
+                    #decode_from_slice(&data, config).map(|(a,_)| a)#map_err
                 }
 
                 fn deserialize_from_bytes_no_limit(
@@ -251,7 +259,7 @@ pub(super) fn derive_platform_deserialize_enum(
                 where
                     Self: Sized {
                     let config = bincode::config::standard().with_big_endian().with_no_limit();
-                    bincode::decode_from_slice(&data, config).map(|(a,_)| a)#map_err
+                    #decode_from_slice(&data, config).map(|(a,_)| a)#map_err
                 }
             }
         }

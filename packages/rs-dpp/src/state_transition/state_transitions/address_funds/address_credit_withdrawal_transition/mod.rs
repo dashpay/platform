@@ -19,7 +19,7 @@ use crate::state_transition::StateTransitionFieldTypes;
 
 use crate::balances::credits::CREDITS_PER_DUFF;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE;
 use derive_more::From;
 use fields::*;
@@ -59,6 +59,7 @@ const _: () = assert!(
     PlatformVersioned,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

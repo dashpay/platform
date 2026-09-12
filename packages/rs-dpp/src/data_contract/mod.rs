@@ -179,7 +179,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
             .with_big_endian()
             .with_no_limit();
         let data_contract_in_serialization_format: DataContractInSerializationFormat =
-            bincode::borrow_decode_from_slice(data, config)
+            bincode::borrow_decode_from_slice_untrusted(data, config)
                 .map_err(|e| {
                     PlatformDeserializationError(format!(
                         "unable to deserialize DataContract: {}",
@@ -208,13 +208,14 @@ impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
         let config = bincode::config::standard()
             .with_big_endian()
             .with_no_limit();
-        let (data_contract_in_serialization_format, len) = bincode::borrow_decode_from_slice::<
-            DataContractInSerializationFormat,
-            Configuration<BigEndian>,
-        >(data, config)
-        .map_err(|e| {
-            PlatformDeserializationError(format!("unable to deserialize DataContract: {}", e))
-        })?;
+        let (data_contract_in_serialization_format, len) =
+            bincode::borrow_decode_from_slice_untrusted::<
+                DataContractInSerializationFormat,
+                Configuration<BigEndian>,
+            >(data, config)
+            .map_err(|e| {
+                PlatformDeserializationError(format!("unable to deserialize DataContract: {}", e))
+            })?;
         Ok((
             DataContract::try_from_platform_versioned(
                 data_contract_in_serialization_format,
@@ -239,7 +240,7 @@ impl PlatformLimitDeserializableFromVersionedStructure for DataContract {
             .with_big_endian()
             .with_limit::<CONTRACT_DESERIALIZATION_LIMIT>();
         let data_contract_in_serialization_format: DataContractInSerializationFormat =
-            bincode::borrow_decode_from_slice(data, config)
+            bincode::borrow_decode_from_slice_untrusted(data, config)
                 .map_err(|e| {
                     PlatformDeserializationError(format!(
                         "unable to deserialize DataContract with limit: {}",

@@ -1,7 +1,7 @@
 use crate::asset_lock::reduced_asset_lock_value::v0::AssetLockValueV0;
 use crate::fee::Credits;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Bytes32;
@@ -22,6 +22,7 @@ pub use v0::{AssetLockValueGettersV0, AssetLockValueSettersV0};
     PartialEq,
     serde::Serialize,
     serde::Deserialize,
+    DecodeUntrusted,
 )]
 // Stored asset-lock values are decoded from GroveDB proof elements on the
 // client before the quorum signature is checked, so the byte budget must be

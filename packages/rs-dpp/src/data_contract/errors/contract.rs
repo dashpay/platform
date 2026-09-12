@@ -1,7 +1,7 @@
 use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
 use crate::consensus::basic::decode::DecodingError;
 use crate::consensus::basic::BasicError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -12,7 +12,15 @@ use crate::ProtocolError;
 
 // @append_only
 #[derive(
-    Error, Debug, PartialEq, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone,
+    Error,
+    Debug,
+    PartialEq,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Encode,
+    Decode,
+    Clone,
+    DecodeUntrusted,
 )]
 pub enum DataContractError {
     #[error(transparent)]

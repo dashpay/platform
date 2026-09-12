@@ -28,16 +28,43 @@ pub(crate) mod sealed {
 /// `T: Serialize` slip.
 pub trait PersistableBlob: Serialize + sealed::Sealed {}
 
-/// Seal-and-mark a type for [`blob::encode`](encode).
+/// Explicit opt-in for the persisted Serde graphs [`decode`] accepts.
+/// Implementations must review custom visitors and nested binary decoders:
+/// the guarded adapter withholds sequence and map allocation hints, and the
+/// row budget plus each graph's own domain checks still apply. Every
+/// [`PersistableBlob`] is admitted by [`impl_persistable_blob!`]; shapes an
+/// older schema wrote that only a migration still reads opt in through
+/// [`impl_blob_decode!`] alone, without also reaching [`encode`].
+pub trait BlobDecode: DeserializeOwned {}
+
+/// Admit decode-only shapes to [`decode`].
+macro_rules! impl_blob_decode {
+    ($($t:ty),+ $(,)?) => {
+        $(
+            impl $crate::sqlite::schema::blob::BlobDecode for $t {}
+        )+
+    };
+}
+pub(crate) use impl_blob_decode;
+
+/// Seal-and-mark a type for [`blob::encode`](encode) and admit it to
+/// [`blob::decode`](decode).
 macro_rules! impl_persistable_blob {
     ($($t:ty),+ $(,)?) => {
         $(
             impl $crate::sqlite::schema::blob::sealed::Sealed for $t {}
             impl $crate::sqlite::schema::blob::PersistableBlob for $t {}
+            impl $crate::sqlite::schema::blob::BlobDecode for $t {}
         )+
     };
 }
 pub(crate) use impl_persistable_blob;
+
+#[derive(serde::Deserialize)]
+#[serde(transparent)]
+struct UntrustedBlob<T>(T);
+
+impl<'de, T: BlobDecode> bincode::serde::DeserializeUntrusted<'de> for UntrustedBlob<T> {}
 
 /// Hard cap on bincode-serde allocations, applied symmetrically to encode +
 /// decode so a crafted length prefix can't OOM the host. Shares the crate-root
@@ -115,24 +142,26 @@ pub fn encode<T: PersistableBlob>(value: &T) -> Result<Vec<u8>, WalletStorageErr
 /// trailing bytes so a corrupt or forward-incompatible payload fails
 /// loudly instead of decoding a stale prefix. Also caps in-decode
 /// allocations at [`BLOB_SIZE_LIMIT_BYTES`] so a crafted length prefix
-/// can't OOM the host.
-pub fn decode<T: DeserializeOwned>(blob: &[u8]) -> Result<T, WalletStorageError> {
+/// can't OOM the host, and decodes through bincode's untrusted Serde adapter so
+/// a collection's declared length is never turned into capacity up front.
+pub fn decode<T: BlobDecode>(blob: &[u8]) -> Result<T, WalletStorageError> {
     if blob.len() > BLOB_SIZE_LIMIT_BYTES {
         return Err(WalletStorageError::BlobTooLarge {
             len_bytes: blob.len(),
             limit_bytes: BLOB_SIZE_LIMIT_BYTES,
         });
     }
-    let (value, consumed) = match bincode::serde::decode_from_slice(blob, bounded_config()) {
-        Ok(v) => v,
-        Err(bincode::error::DecodeError::LimitExceeded) => {
-            return Err(WalletStorageError::BlobTooLarge {
-                len_bytes: blob.len(),
-                limit_bytes: BLOB_SIZE_LIMIT_BYTES,
-            });
-        }
-        Err(other) => return Err(WalletStorageError::from(other)),
-    };
+    let (UntrustedBlob(value), consumed) =
+        match bincode::serde::decode_from_slice_untrusted(blob, bounded_config()) {
+            Ok(v) => v,
+            Err(bincode::error::DecodeError::LimitExceeded) => {
+                return Err(WalletStorageError::BlobTooLarge {
+                    len_bytes: blob.len(),
+                    limit_bytes: BLOB_SIZE_LIMIT_BYTES,
+                });
+            }
+            Err(other) => return Err(WalletStorageError::from(other)),
+        };
     if consumed != blob.len() {
         return Err(WalletStorageError::blob_decode(
             "unexpected trailing bytes in blob payload",
@@ -201,7 +230,7 @@ mod tests {
     #[test]
     fn decode_rejects_oversize_blob_with_blob_too_large() {
         let oversize = vec![0u8; BLOB_SIZE_LIMIT_BYTES + 1];
-        let res: Result<Vec<u8>, _> = decode(&oversize);
+        let res: Result<Dummy, _> = decode(&oversize);
         match res {
             Err(WalletStorageError::BlobTooLarge {
                 len_bytes,

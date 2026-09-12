@@ -2,12 +2,12 @@ use crate::consensus::basic::data_contract::UnknownGasFeesPaidByError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::Display;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display)]
+#[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display, DecodeUntrusted)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum GasFeesPaidBy {
     /// The user pays the gas fees

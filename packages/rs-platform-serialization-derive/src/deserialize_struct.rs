@@ -15,10 +15,18 @@ pub(super) fn derive_platform_deserialize_struct(
     let VersionAttributes {
         crate_name,
         unversioned,
+        trusted,
         platform_serialize_limit,
         platform_serialize_into,
         ..
     } = version_attributes;
+
+    // Ordinary decoding is an explicit opt-in for locally generated fixtures.
+    let decode_from_slice = if trusted {
+        quote! { bincode::decode_from_slice }
+    } else {
+        quote! { bincode::decode_from_slice_untrusted }
+    };
 
     // Extract the generics.
     let generics = &input.generics;
@@ -54,7 +62,7 @@ pub(super) fn derive_platform_deserialize_struct(
     let deserialize_into = match platform_serialize_into {
         Some(inner) => quote! {
             #config
-            let inner: #inner = bincode::decode_from_slice(bytes, config).map(|(a, _)| a)?;
+            let inner: #inner = #decode_from_slice(bytes, config).map(|(a, _)| a)?;
             Ok(inner.into())
         },
         None => {
@@ -66,7 +74,7 @@ pub(super) fn derive_platform_deserialize_struct(
             } else {
                 quote! {
                     #config
-                        bincode::decode_from_slice(bytes, config).map(|(a,_)| a)
+                        #decode_from_slice(bytes, config).map(|(a,_)| a)
                         #limit_err
                 }
             }

@@ -6,7 +6,7 @@ use crate::core_types::validator_set::v0::{
 #[cfg(feature = "core-types-serialization")]
 use crate::ProtocolError;
 #[cfg(feature = "core-types-serialization")]
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::{ProTxHash, QuorumHash};
 #[cfg(feature = "core-types-serialization")]
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -28,7 +28,13 @@ pub mod v0;
 )]
 #[cfg_attr(
     feature = "core-types-serialization",
-    derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
+    derive(
+        Encode,
+        Decode,
+        DecodeUntrusted,
+        PlatformDeserialize,
+        PlatformSerialize
+    ),
     platform_serialize(limit = 15000, unversioned)
 )]
 pub enum ValidatorSet {

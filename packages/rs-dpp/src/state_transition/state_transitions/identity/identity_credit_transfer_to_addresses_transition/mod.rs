@@ -19,7 +19,7 @@ use crate::state_transition::StateTransitionFieldTypes;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
@@ -42,6 +42,7 @@ pub type IdentityCreditTransferToAddressesTransitionLatest =
     PlatformVersioned,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",
