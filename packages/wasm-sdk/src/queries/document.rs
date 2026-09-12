@@ -175,7 +175,13 @@ export interface DocumentHistoryQuery {
    */
   documentId: IdentifierLike
 
-  /** Inclusive lower time bound. Supply exactly one selector. */
+  /**
+   * Inclusive lower time bound. Supply exactly one selector.
+   *
+   * Every selector is an exact u64: a `number` is accepted only up to
+   * `Number.MAX_SAFE_INTEGER`, and anything larger must be a `bigint`, since
+   * JavaScript would have rounded it before the query is built.
+   */
   startAtMs?: bigint | number;
   /** Complete exclusive cursor returned by a previous page. */
   startAfter?: { timeMs: bigint | number; revision: bigint | number };
@@ -254,18 +260,71 @@ struct DocumentHistoryQueryInput {
     data_contract_id: IdentifierWasm,
     document_type_name: String,
     document_id: IdentifierWasm,
-    start_at_ms: Option<u64>,
+    start_at_ms: Option<ExactU64>,
     start_after: Option<DocumentHistoryCursorInput>,
-    start_at_revision: Option<u64>,
-    revision: Option<u64>,
+    start_at_revision: Option<ExactU64>,
+    revision: Option<ExactU64>,
     limit: Option<u32>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DocumentHistoryCursorInput {
-    time_ms: u64,
-    revision: u64,
+    time_ms: ExactU64,
+    revision: ExactU64,
+}
+
+/// A `u64` selector that a JavaScript caller may pass as a `bigint` or as a
+/// `number`, where a `number` is accepted only while it is a safe integer.
+///
+/// JavaScript has already rounded any `number` past `Number.MAX_SAFE_INTEGER`
+/// by the time it reaches Rust, so silently converting it would query and
+/// verify a different timestamp or revision than the caller asked for. A
+/// `bigint` carries the exact value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ExactU64(u64);
+
+impl<'de> serde::Deserialize<'de> for ExactU64 {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+
+        impl serde::de::Visitor<'_> for Visitor {
+            type Value = ExactU64;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a non-negative integer: a bigint, or a number no larger than Number.MAX_SAFE_INTEGER")
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(ExactU64(value))
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                u64::try_from(value)
+                    .map(ExactU64)
+                    .map_err(|_| E::custom("history selectors cannot be negative"))
+            }
+
+            fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+                const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+                if value.fract() != 0.0 || !(0.0..=MAX_SAFE_INTEGER).contains(&value) {
+                    return Err(E::custom(
+                        "history selectors must be non-negative integers; pass a bigint for \
+                         values past Number.MAX_SAFE_INTEGER",
+                    ));
+                }
+                Ok(ExactU64(value as u64))
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
+impl From<ExactU64> for u64 {
+    fn from(value: ExactU64) -> Self {
+        value.0
+    }
 }
 
 fn parse_document_history_query(
@@ -285,16 +344,16 @@ fn parse_document_history_query(
         ));
     }
     let selector = if let Some(time) = input.start_at_ms {
-        DocumentHistorySelector::StartAtTime(time)
+        DocumentHistorySelector::StartAtTime(time.into())
     } else if let Some(cursor) = input.start_after {
         DocumentHistorySelector::StartAfter {
-            time_ms: cursor.time_ms,
-            revision: cursor.revision,
+            time_ms: cursor.time_ms.into(),
+            revision: cursor.revision.into(),
         }
     } else if let Some(revision) = input.start_at_revision {
-        DocumentHistorySelector::StartAtRevision(revision)
+        DocumentHistorySelector::StartAtRevision(revision.into())
     } else {
-        DocumentHistorySelector::Revision(input.revision.expect("one selector was checked"))
+        DocumentHistorySelector::Revision(input.revision.expect("one selector was checked").into())
     };
     Ok(DocumentHistoryQuery {
         data_contract_id: input.data_contract_id.into(),
@@ -1611,3 +1670,37 @@ impl DocumentHistoryProofMetadataResponseWasm {
 const DOCUMENT_HISTORY_PROOF_INFO_TS: &str = r#"
 export type DocumentHistoryProofMetadataResponseTyped = DocumentHistoryProofMetadataResponse & { data: DocumentHistoryResult };
 "#;
+
+#[cfg(test)]
+mod exact_u64_tests {
+    use super::ExactU64;
+
+    /// A safe integer passes whether it arrives as an integer or as a whole
+    /// floating-point number; anything a JavaScript `number` has already
+    /// rounded, and anything fractional or negative, is refused.
+    #[test]
+    fn should_accept_only_exact_non_negative_integers() {
+        assert_eq!(
+            serde_json::from_str::<ExactU64>("12").unwrap(),
+            ExactU64(12)
+        );
+        assert_eq!(
+            serde_json::from_str::<ExactU64>("9007199254740991").unwrap(),
+            ExactU64(9_007_199_254_740_991)
+        );
+        assert_eq!(
+            serde_json::from_str::<ExactU64>("18446744073709551615").unwrap(),
+            ExactU64(u64::MAX)
+        );
+        assert_eq!(
+            serde_json::from_str::<ExactU64>("12.0").unwrap(),
+            ExactU64(12)
+        );
+        for rejected in ["12.5", "-1", "-1.0", "9007199254740992.0", "1e300"] {
+            assert!(
+                serde_json::from_str::<ExactU64>(rejected).is_err(),
+                "{rejected} must be refused"
+            );
+        }
+    }
+}
