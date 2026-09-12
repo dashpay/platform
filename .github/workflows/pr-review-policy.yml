@@ -1,0 +1,22 @@
+name: PR review policy
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed, edited]
+  issue_comment:
+    types: [created, edited, deleted]
+  workflow_run:
+    workflows: [PR review signal]
+    types: [completed]
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: write
+jobs:
+  policy:
+    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@cc4d18484ceabf121886e47606b4b10628aafefa
+    with:
+      engine_revision: cc4d18484ceabf121886e47606b4b10628aafefa
