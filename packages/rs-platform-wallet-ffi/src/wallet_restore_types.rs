@@ -573,6 +573,29 @@ pub struct ProviderSpecialTxRestoreEntryFFI {
     pub first_seen: u64,
 }
 
+/// One outgoing transaction the host still holds as unconfirmed,
+/// replayed at load so its spend effect survives a restart.
+#[repr(C)]
+pub struct UnconfirmedOutgoingTxRecordFFI {
+    /// Wire-order txid of the row this record came from.
+    ///
+    /// The load path decodes `tx_bytes` and requires the result to hash to
+    /// this, then drops the record if it does not. The replay applies the
+    /// transaction through the ordinary state-update path, so bytes that do
+    /// not belong to the row Swift selected would rewrite accounting for
+    /// inputs and outputs nobody asked about. Fail closed instead.
+    pub txid: [u8; 32],
+    /// Consensus-encoded transaction body, the same wire format
+    /// `dashcore::consensus::encode::serialize` produces. Swift-owned
+    /// for the callback window; freed by `LoadWalletListFreeFn`.
+    pub tx_bytes: *mut u8,
+    pub tx_bytes_len: usize,
+    /// Host's `firstSeen` for the row, in seconds. The load path
+    /// replays in ascending order so a parent send is applied before a
+    /// child that spends its change.
+    pub first_seen: u64,
+}
+
 /// Per-wallet entry returned by `on_load_wallet_list_fn`.
 ///
 /// `accounts` points to a contiguous array of length `accounts_count`.
@@ -644,6 +667,16 @@ pub struct WalletRestoreEntryFFI {
     /// unresolved asset locks.
     pub unresolved_asset_lock_tx_records: *const UnresolvedAssetLockTxRecordFFI,
     pub unresolved_asset_lock_tx_records_count: usize,
+    /// Outgoing transactions the host still holds as unconfirmed
+    /// (mempool context, no block height), oldest `first_seen` first.
+    ///
+    /// Replayed at load through the ordinary mempool check so their
+    /// spend effect is restored — see
+    /// [`UnconfirmedOutgoingTxRecordFFI`]. `null` / `0` when the wallet
+    /// has none. Each entry's `tx_bytes` buffer is Swift-owned and
+    /// freed by `LoadWalletListFreeFn`.
+    pub unconfirmed_outgoing_tx_records: *const UnconfirmedOutgoingTxRecordFFI,
+    pub unconfirmed_outgoing_tx_records_count: usize,
     /// Persisted provider special transactions (ProRegTx / ProUpServTx /
     /// ProUpRegTx / ProUpRevTx) re-staged onto the wallet's provider-key
     /// accounts so rust-dashcore #876 retention keeps them resident and
@@ -702,6 +735,8 @@ impl Default for WalletRestoreEntryFFI {
             tracked_asset_locks_count: 0,
             unresolved_asset_lock_tx_records: std::ptr::null(),
             unresolved_asset_lock_tx_records_count: 0,
+            unconfirmed_outgoing_tx_records: std::ptr::null(),
+            unconfirmed_outgoing_tx_records_count: 0,
             provider_special_txs: std::ptr::null(),
             provider_special_txs_count: 0,
             core_address_pools: std::ptr::null(),

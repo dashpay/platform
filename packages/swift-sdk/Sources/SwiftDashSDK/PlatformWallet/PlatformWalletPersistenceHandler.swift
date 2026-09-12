@@ -7142,6 +7142,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             entry.unresolved_asset_lock_tx_records = unresolvedBuf.map { UnsafePointer($0) }
             entry.unresolved_asset_lock_tx_records_count = UInt(unresolvedCount)
 
+            // Sends still unconfirmed on the host. Replayed Rust-side so
+            // their spend effect survives the restart; without it the
+            // input comes back spendable and the balance re-counts the
+            // coin — permanently, for a send that never reached the
+            // network. Asset-lock funding rows are excluded here because
+            // they already ride the array above and `resume_asset_lock`
+            // owns them.
+            let (unconfirmedBuf, unconfirmedCount) =
+                buildUnconfirmedOutgoingTxRecordBuffer(
+                    rows: unspentBuckets[w.walletId] ?? [],
+                    allocation: allocation,
+                    excludingTxids: unresolvedAssetLockFundingTxids(walletId: w.walletId)
+                )
+            entry.unconfirmed_outgoing_tx_records = unconfirmedBuf.map { UnsafePointer($0) }
+            entry.unconfirmed_outgoing_tx_records_count = UInt(unconfirmedCount)
+
             // Provider special transactions (ProRegTx / ProUpServTx /
             // ProUpRegTx / ProUpRevTx) re-staged onto the provider-key
             // accounts so #876 retention keeps them and the masternode
@@ -7643,6 +7659,127 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// transaction table) are skipped — the Rust side has no way to
     /// reconstruct a transaction without its consensus bytes, so
     /// projecting an empty row would just bloat the FFI surface.
+    /// Project the sends this wallet still holds as unconfirmed into the
+    /// FFI restore array, so the Rust load path can replay their spend
+    /// effect (see `ClientWalletStartState::unconfirmed_outgoing_txs`).
+    ///
+    /// Why this is needed at all: `spendIsInBlock` deliberately withholds
+    /// `isSpent` from an input whose spender is only in the mempool,
+    /// because that sighting is reversible by eviction. The UTXO restore
+    /// therefore hands the input back as spendable, and the balance
+    /// re-counts the coin. A running app never showed this — it held the
+    /// spend in memory — and a restart used to recover it only by
+    /// re-observing the transaction on the network, which never happens
+    /// for a send that did not reach the network in the first place.
+    ///
+    /// The selection is driven from the TXO side rather than the
+    /// transaction side, which makes the liveness rule fall out for free:
+    /// a row is offered only while one of *our* outputs still points at it
+    /// as its spender and is still unspent. A send that already lost a
+    /// conflict has had its inputs flipped by the winning spender, so it
+    /// drops out on its own — important, because the FFI restore does not
+    /// rebuild `observed_spent`, so Rust could not make that judgement.
+    ///
+    /// Asset-lock funding transactions are excluded: they ride
+    /// `unresolved_asset_lock_tx_records` and already have an owner in
+    /// `resume_asset_lock`. One owner per transaction.
+    ///
+    /// Takes the bucketed `isSpent == false` rows the caller already
+    /// fetched rather than querying by `walletId` again: that bucketing
+    /// routes a legacy row whose `walletId` was never backfilled through
+    /// `account.wallet.walletId`, and it prefetches `spendingTransaction`,
+    /// which this pass reads for every row.
+    /// Wire-order txids of the funding transactions already carried by
+    /// `unresolved_asset_lock_tx_records`. Read from the same rows that
+    /// buffer selects from, through the same decoder, rather than
+    /// re-deriving a txid from the serialized bytes.
+    private func unresolvedAssetLockFundingTxids(walletId: Data) -> Set<Data>? {
+        let descriptor = FetchDescriptor<PersistentAssetLock>(
+            predicate: #Predicate { entry in
+                entry.walletId == walletId && entry.statusRaw < 2
+            }
+        )
+        // `nil`, not an empty set, when the fetch fails: an empty exclusion
+        // set reads as "this wallet has no unresolved asset locks", which
+        // would let a funding transaction into the ordinary replay even
+        // though `resume_asset_lock` owns it. The caller offers nothing at
+        // all instead — one launch without a replay, rather than a
+        // transaction applied through the wrong path.
+        guard let locks = try? backgroundContext.fetch(descriptor) else { return nil }
+        return Set(locks.compactMap { Self.assetLockFundingTxid(outPointHex: $0.outPointHex) })
+    }
+
+    private func buildUnconfirmedOutgoingTxRecordBuffer(
+        rows txos: [PersistentTxo],
+        allocation: LoadAllocation,
+        excludingTxids excluded: Set<Data>?
+    ) -> (UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>?, Int) {
+        // Fail closed: without a trustworthy exclusion set we cannot tell an
+        // asset-lock funding transaction from an ordinary send.
+        guard let excluded else {
+            SDKLogger.event(
+                "persistence_unconfirmed_outgoing_skipped",
+                category: .persistence,
+                severity: .error,
+                fields: ["reason": .publicText("asset_lock_exclusion_fetch_failed")]
+            )
+            return (nil, 0)
+        }
+        guard !txos.isEmpty else { return (nil, 0) }
+
+        // Distinct spenders, still unconfirmed, still ours to replay.
+        var candidates: [Data: PersistentTransaction] = [:]
+        for txo in txos {
+            guard let spender = txo.spendingTransaction else { continue }
+            // Mirror `spendIsInBlock` exactly: it withholds `isSpent` for
+            // every context below `inBlock`, so an InstantSend-locked send
+            // (context 1) leaves its input unspent in the store too and needs
+            // the same replay. Filtering on `== 0` covered only half of that.
+            guard spender.context < TransactionContextType.inBlock.rawValue,
+                  spender.blockHeight == 0
+            else { continue }
+            guard !spender.transactionData.isEmpty else { continue }
+            guard !excluded.contains(spender.txid) else { continue }
+            candidates[spender.txid] = spender
+        }
+        guard !candidates.isEmpty else { return (nil, 0) }
+
+        // Ascending `firstSeen`: a parent send must be replayed before a
+        // child that spends its change, or the child finds no input and is
+        // discarded as irrelevant.
+        let ordered = candidates.values.sorted { $0.firstSeen < $1.firstSeen }
+
+        var entries: [UnconfirmedOutgoingTxRecordFFI] = []
+        entries.reserveCapacity(ordered.count)
+        for row in ordered {
+            let txBytes = row.transactionData
+            // Carry the row's identity so Rust can refuse bytes that do not
+            // hash to it. The replay applies the transaction through the
+            // ordinary state-update path, so a stale or partially-written
+            // `transactionData` would move accounting for inputs and outputs
+            // that have nothing to do with this send.
+            guard row.txid.count == 32 else { continue }
+            let txBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: txBytes.count)
+            txBytes.copyBytes(to: txBuf, count: txBytes.count)
+            allocation.scalarBuffers.append((txBuf, txBytes.count))
+            var entry = UnconfirmedOutgoingTxRecordFFI()
+            withUnsafeMutableBytes(of: &entry.txid) { raw in
+                raw.copyBytes(from: row.txid)
+            }
+            entry.tx_bytes = txBuf
+            entry.tx_bytes_len = UInt(txBytes.count)
+            entry.first_seen = row.firstSeen
+            entries.append(entry)
+        }
+
+        let buf = UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>.allocate(
+            capacity: entries.count
+        )
+        buf.initialize(from: entries, count: entries.count)
+        allocation.unconfirmedOutgoingTxRecordArrays.append((buf, entries.count))
+        return (buf, entries.count)
+    }
+
     private func buildUnresolvedAssetLockTxRecordBuffer(
         walletId: Data,
         allocation: LoadAllocation
@@ -8782,6 +8919,10 @@ private final class LoadAllocation {
     /// so the next chain-lock event can cascade-promote them. The
     /// `tx_bytes` buffer each row references lives in `scalarBuffers`.
     var unresolvedAssetLockTxRecordArrays: [(UnsafeMutablePointer<UnresolvedAssetLockTxRecordFFI>, Int)] = []
+    /// `UnconfirmedOutgoingTxRecordFFI` arrays per wallet. The `tx_bytes`
+    /// each entry points at are staged on `scalarBuffers`, like the
+    /// asset-lock records above.
+    var unconfirmedOutgoingTxRecordArrays: [(UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>, Int)] = []
     /// Per-wallet `ProviderSpecialTxRestoreEntryFFI` arrays — provider
     /// special txs re-staged so #876 retention keeps them resident after a
     /// restart. The `tx_bytes` buffer each row references lives in
@@ -8859,6 +9000,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in unresolvedAssetLockTxRecordArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in unconfirmedOutgoingTxRecordArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }

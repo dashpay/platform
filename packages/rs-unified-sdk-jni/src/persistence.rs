@@ -2582,6 +2582,11 @@ fn build_wallet_restore_entry(
         tracked_asset_locks_count: 0,
         unresolved_asset_lock_tx_records: ptr::null(),
         unresolved_asset_lock_tx_records_count: 0,
+        // Android does not stage unconfirmed outgoing sends yet: the replay
+        // that consumes them is wired on the iOS path only. Null/0 leaves it
+        // inert here, exactly as it was before the field existed.
+        unconfirmed_outgoing_tx_records: ptr::null(),
+        unconfirmed_outgoing_tx_records_count: 0,
         core_address_pools: ptr::null(),
         core_address_pools_count: 0,
         last_applied_chain_lock_bytes: ptr::null(),
