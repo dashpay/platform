@@ -1,4 +1,5 @@
 use crate::error::PlatformVersionError;
+use crate::version::fee::dashvm::FeeDashVmVersion;
 use crate::version::fee::data_contract_registration::v1::FEE_DATA_CONTRACT_REGISTRATION_VERSION1;
 use crate::version::fee::data_contract_registration::FeeDataContractRegistrationVersion;
 use crate::version::fee::data_contract_validation::FeeDataContractValidationVersion;
@@ -16,6 +17,7 @@ use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
 use bincode::{Decode, Encode};
 
+pub mod dashvm;
 pub mod data_contract_registration;
 mod data_contract_validation;
 mod hashing;
@@ -25,6 +27,7 @@ pub mod state_transition_min_fees;
 pub mod storage;
 pub mod v1;
 pub mod v2;
+pub mod v3;
 pub mod vote_resolution_fund_fees;
 
 pub type FeeVersionNumber = u32;
@@ -44,6 +47,8 @@ pub struct FeeVersion {
     pub data_contract_registration: FeeDataContractRegistrationVersion,
     pub state_transition_min_fees: StateTransitionMinFees,
     pub vote_resolution_fund_fees: VoteResolutionFundFees,
+    /// Prices of smart-contract work; `None` on every schedule that predates smart contracts.
+    pub dashvm: Option<FeeDashVmVersion>,
 }
 
 impl FeeVersion {
@@ -113,6 +118,7 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
                 value.state_transition_min_fees,
             ),
             vote_resolution_fund_fees: value.vote_resolution_fund_fees,
+            dashvm: None,
         }
     }
 }
