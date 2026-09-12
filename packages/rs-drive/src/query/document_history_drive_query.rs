@@ -335,15 +335,26 @@ impl DocumentHistoryDriveQuery {
         if record.is_some() && count.unwrap_or_default() == 0 {
             return Err(corrupt("a lifecycle record survives its retained history"));
         }
+        // A by-revision read maps the revision onto a position, which only
+        // holds while the retained revisions number one through the latest
+        // without a gap. A current document says so through its revision; a
+        // deleted one through what its record kept from the moment of
+        // deletion, since an erase only ever removes the newest revisions and
+        // so cannot open a gap afterwards.
         if matches!(
             self.filter,
             DocumentHistoryFilter::Revision(_) | DocumentHistoryFilter::StartAtRevision(_)
-        ) && active
-            && latest_revision != count
-        {
-            return Err(invalid(
-                "retained history contains a revision gap; use time pagination",
-            ));
+        ) {
+            let gapped = match (active, &record) {
+                (true, _) => latest_revision != count,
+                (false, Some(record)) => !record.revisions_are_contiguous(),
+                (false, None) => false,
+            };
+            if gapped {
+                return Err(invalid(
+                    "retained history contains a revision gap; use time pagination",
+                ));
+            }
         }
         let state = match (active, &record) {
             (true, _) => DocumentHistoryState::Active,
