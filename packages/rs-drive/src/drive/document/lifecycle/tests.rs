@@ -1639,3 +1639,177 @@ fn should_read_revisions_by_position_after_a_partial_erasure() {
         "a removed revision must not be answered with the one that took its place"
     );
 }
+
+/// A history that protocol 13 left gapped keeps refusing by-revision reads
+/// after the document is deleted: a revision no longer maps onto a position,
+/// and an empty page for a revision that exists would otherwise verify as an
+/// authenticated absence.
+#[test]
+fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
+    let old = PlatformVersion::get(13).unwrap();
+    let new = PlatformVersion::get(14).unwrap();
+    let drive = setup_drive_with_initial_state_structure(None);
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
+        false,
+        old,
+    )
+    .unwrap();
+    drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, old)
+        .unwrap();
+    let document_type = contract.document_type_for_name("profile").unwrap();
+    let owner = [9u8; 32];
+    let mut document = json_document_to_document(
+        "tests/supporting_files/contract/dashpay/profile0.json",
+        Some(owner.into()),
+        document_type,
+        old,
+    )
+    .unwrap();
+    // Two writes in one block under protocol 13 overwrite each other's
+    // revision, so revision 2 is lost and the retained history is [1, 3].
+    for (revision, time) in [(1, 1_000), (2, 2_000), (3, 2_000)] {
+        document.set_revision(Some(revision));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefInfo((
+                            &document,
+                            Some(Cow::Owned(StorageFlags::new_single_epoch(0, Some(owner)))),
+                        )),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                true,
+                BlockInfo::default_with_time(time),
+                true,
+                None,
+                old,
+                None,
+            )
+            .unwrap();
+    }
+    let transaction = drive.grove.start_transaction();
+    drive
+        .migrate_document_history_storage(&transaction, new)
+        .expect("expected the migration to run");
+    drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .expect("expected the migration to commit");
+    let id = document.id();
+
+    let query = |selector| DocumentHistoryQueryV1 {
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "profile".into(),
+        document_id: id.to_buffer(),
+        // A single-revision read is capped at one entry by the selector's
+        // own rule; the page selectors take the full page.
+        limit: Some(match selector {
+            DocumentHistorySelector::Revision(_) => 1,
+            _ => 10,
+        }),
+        selector,
+    };
+    let by_revision = [
+        DocumentHistorySelector::Revision(3),
+        DocumentHistorySelector::StartAtRevision(3),
+        DocumentHistorySelector::Revision(2),
+    ];
+    let is_gap_refusal = |error: Error| {
+        let message = error.to_string();
+        assert!(
+            message.contains("revision gap"),
+            "expected the gap refusal, got {message}"
+        );
+    };
+
+    // While the document is current the gap already refuses both selectors.
+    for selector in by_revision.clone() {
+        is_gap_refusal(
+            drive
+                .fetch_document_history_v1(&query(selector), document_type, None, new)
+                .expect_err("a gapped history refuses by-revision reads"),
+        );
+    }
+
+    let apply = |batch: Vec<crate::fees::op::LowLevelDriveOperation>| {
+        drive
+            .apply_batch_low_level_drive_operations(None, None, batch, &mut vec![], &new.drive)
+            .expect("expected to apply the operations");
+    };
+    apply(
+        drive
+            .delete_document_for_contract_operations(
+                id,
+                &contract,
+                document_type,
+                &BlockInfo::default_with_time(5_000),
+                Some(Identifier::new(owner)),
+                None,
+                &mut None,
+                None,
+                new,
+            )
+            .expect("expected to build the delete"),
+    );
+    let page = drive
+        .fetch_document_history_v1(
+            &query(DocumentHistorySelector::StartAtTime(0)),
+            document_type,
+            None,
+            new,
+        )
+        .expect("time pagination still reads a deleted gapped history");
+    assert_eq!(page.lifecycle.state, DocumentHistoryState::Deleted);
+    assert_eq!(page.lifecycle.remaining_revisions, 2);
+    assert_eq!(
+        page.entries
+            .iter()
+            .map(|entry| entry.revision)
+            .collect::<Vec<_>>(),
+        vec![1, 3]
+    );
+    for selector in by_revision.clone() {
+        let query = query(selector.clone());
+        is_gap_refusal(
+            drive
+                .fetch_document_history_v1(&query, document_type, None, new)
+                .expect_err("a deleted gapped history refuses by-revision reads"),
+        );
+        is_gap_refusal(
+            drive
+                .prove_document_history_v1(&query, document_type, None, new)
+                .expect_err("a deleted gapped history cannot be proved by revision"),
+        );
+    }
+
+    // Two revisions fit in one erase chunk, so the erasure finishes at once
+    // and the id is unused again: a by-revision read of an unused id is an
+    // ordinary empty page, authenticated as an absence rather than refused.
+    apply(
+        drive
+            .erase_document_for_contract_operations(
+                id,
+                &contract,
+                document_type,
+                &BlockInfo::default_with_time(6_000),
+                &mut None,
+                None,
+                new,
+            )
+            .expect("expected to build the erase"),
+    );
+    for selector in by_revision {
+        let page = drive
+            .fetch_document_history_v1(&query(selector), document_type, None, new)
+            .expect("an unused id reads as an authenticated absence");
+        assert_eq!(page.lifecycle.state, DocumentHistoryState::Absent);
+        assert!(page.entries.is_empty());
+    }
+}
