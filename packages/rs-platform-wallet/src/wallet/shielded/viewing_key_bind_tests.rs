@@ -22,7 +22,10 @@ use crate::changeset::{ClientStartState, PlatformWalletChangeSet, ShieldedSubwal
 use crate::test_support::funded_wallet_manager;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
 use crate::wallet::shielded::store::ShieldedStore;
-use crate::wallet::shielded::{FileBackedShieldedStore, NetworkShieldedCoordinator, SubwalletId};
+use crate::wallet::shielded::{
+    FileBackedShieldedStore, NetworkShieldedCoordinator, ShieldedBalanceSource,
+    ShieldedLocalBalanceState, ShieldedNote, SubwalletId,
+};
 
 /// Persister double for both halves of the round trip:
 /// - `store` captures every queued changeset (the persist half);
@@ -45,6 +48,7 @@ struct CapturingPersistence {
     /// handshake a test waits on to know a bind has actually reached the
     /// gate rather than merely having been spawned.
     load_entries: Mutex<usize>,
+    fail_next_load: Mutex<bool>,
 }
 
 impl CapturingPersistence {
@@ -116,6 +120,11 @@ impl PlatformWalletPersistence for CapturingPersistence {
 
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         *self.load_entries.lock().expect("load_entries lock") += 1;
+        if std::mem::take(&mut *self.fail_next_load.lock().expect("failure lock")) {
+            return Err(PersistenceError::backend(
+                "injected local restore load failure",
+            ));
+        }
         // Take the gate before blocking on it, so a second load() isn't
         // stuck behind the mutex of the one being held.
         let gate = self.load_gate.lock().expect("load_gate lock").take();
@@ -200,6 +209,45 @@ async fn bind_fails_closed_without_fvk_restart_capabilities() {
     assert!(!wallet.is_shielded_bound().await);
 }
 
+#[tokio::test]
+async fn local_balance_bind_load_error_surfaces_and_retry_hydrates() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("local_load_retry"));
+    *persister.fail_next_load.lock().unwrap() = true;
+    let error = wallet
+        .bind_shielded(&[42; 64], &[0], &coordinator)
+        .await
+        .expect_err("local storage failure must fail binding");
+    assert!(error
+        .to_string()
+        .contains("injected local restore load failure"));
+    assert_eq!(
+        coordinator
+            .local_balance_snapshot(wallet.wallet_id())
+            .await
+            .unwrap(),
+        ShieldedLocalBalanceState::Unbound
+    );
+    assert!(!wallet.is_shielded_bound().await);
+
+    wallet
+        .bind_shielded(&[42; 64], &[0], &coordinator)
+        .await
+        .expect("retry bind");
+    let ShieldedLocalBalanceState::Ready(snapshot) = coordinator
+        .local_balance_snapshot(wallet.wallet_id())
+        .await
+        .unwrap()
+    else {
+        panic!("retry must hydrate")
+    };
+    assert_eq!(
+        snapshot.accounts[&0].source,
+        ShieldedBalanceSource::NoHistory
+    );
+}
+
 /// The full launch contract in one pass:
 /// 1. the seed bind persists one 96-byte FVK row per account;
 /// 2. a "restarted" wallet (fresh handle + fresh coordinator, no seed
@@ -256,7 +304,49 @@ async fn bind_persists_viewing_keys_and_restart_rebinds_seedlessly() {
         })
         .collect();
     persister2.serve_viewing_keys(restored_rows);
-    let coordinator2 = coordinator_at(&temp_dir("session2"));
+    let session2_dir = temp_dir("session2");
+    let coordinator2 = coordinator_at(&session2_dir);
+    let subwallet = SubwalletId::new(wallet2.wallet_id(), 0);
+    persister2.serve_subwallets(BTreeMap::from([(
+        subwallet,
+        ShieldedSubwalletStartState {
+            notes: [100, 200]
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| ShieldedNote {
+                    position: index as u64,
+                    cmx: [index as u8 + 1; 32],
+                    nullifier: [index as u8 + 1; 32],
+                    value,
+                    block_height: 12,
+                    is_spent: false,
+                    note_data: vec![0; 115],
+                })
+                .collect(),
+            has_sync_state: true,
+            last_synced_index: 2,
+            ..Default::default()
+        },
+    )]));
+    coordinator2
+        .store()
+        .write()
+        .await
+        .arm_redrive(
+            subwallet,
+            crate::wallet::shielded::store::PendingRedrive {
+                activity_id: [7; 32],
+                anchor: [8; 32],
+                nullifiers: vec![[2; 32]],
+                st_bytes: vec![9; 32],
+                attempts: 0,
+            },
+        )
+        .expect("persist pending reservation");
+    // Opening the durable tree recreates reservations from its redrive rows,
+    // exactly as on launch, before the host's notes have been restored.
+    drop(coordinator2);
+    let coordinator2 = coordinator_at(&session2_dir);
 
     let rebound = wallet2
         .bind_shielded_from_persisted(&accounts, &coordinator2)
@@ -282,15 +372,27 @@ async fn bind_persists_viewing_keys_and_restart_rebinds_seedlessly() {
         );
     }
 
-    // Sync capability: the coordinator-backed balance read works for
-    // every rebound account (empty store → zero balances, not errors).
+    // Local startup is complete before any network scan: notes from the
+    // host snapshot are hydrated, and pending inputs remain unavailable.
     let balances = wallet2
         .shielded_balances(&coordinator2)
         .await
         .expect("balance read over rebound viewing keys");
-    for &account in &accounts {
-        assert_eq!(balances.get(&account), Some(&0));
-    }
+    assert_eq!(balances.get(&0), Some(&100));
+    assert_eq!(balances.get(&1), Some(&0));
+    let ShieldedLocalBalanceState::Ready(local) = coordinator2
+        .local_balance_snapshot(wallet2.wallet_id())
+        .await
+        .expect("local snapshot")
+    else {
+        panic!("seedless bind must hydrate the local ledger")
+    };
+    assert_eq!(local.accounts[&0].spendable_credits, 100);
+    assert_eq!(local.accounts[&0].last_scanned_index, Some(2));
+    assert_eq!(local.accounts[&0].source, ShieldedBalanceSource::Restored);
+    assert_eq!(local.accounts[&1].spendable_credits, 0);
+    assert_eq!(local.accounts[&1].last_scanned_index, None);
+    assert_eq!(local.accounts[&1].source, ShieldedBalanceSource::NoHistory);
 
     // No seed-backed bind ran in session 2, so nothing re-persisted:
     // the persister captured no viewing-key rows of its own.
