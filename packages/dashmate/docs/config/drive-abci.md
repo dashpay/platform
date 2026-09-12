@@ -124,6 +124,18 @@ These settings control developer and debugging tools:
 - Tokio Console: A debugging tool for Rust's async runtime
 - GroveDB Visualizer: A visualization tool for the GroveDB database structure
 
+## State Sync Snapshots
+
+These settings control the serving side of state sync: Drive periodically takes GroveDB checkpoints and hands them to Tenderdash, which offers them to peers bootstrapping via state sync. The consuming side is configured on Tenderdash (see [Tenderdash configuration](./tenderdash.md#state-sync)).
+
+| Option | Description | Default | Example |
+|--------|-------------|---------|---------|
+| `platform.drive.abci.stateSync.snapshots.enabled` | Take and serve state sync snapshots | `true` | `false` |
+| `platform.drive.abci.stateSync.snapshots.frequencySeconds` | How often to take a snapshot, in seconds, at least 60 | `600` | `3600` |
+| `platform.drive.abci.stateSync.snapshots.maxCount` | Snapshots kept before pruning the oldest, at least 2 | `6` | `10` |
+
+Checkpoints are stored inside the Drive data volume under `db/checkpoints`. They hard-link unchanged data, so keeping several costs only a fraction of the database size. The local preset disables snapshots along with state sync consumption.
+
 ## Other options
 
 | Option | Description | Default | Example |
