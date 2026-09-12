@@ -271,6 +271,9 @@ mod tests {
         use dpp::block::epoch::{Epoch, EpochIndex};
         use dpp::fee::default_costs::{EpochCosts, KnownCostItem};
         use dpp::version::fee::{FeeVersion, FEE_VERSIONS};
+        use dpp::version::mocks::fee_test::{
+            TEST_FEE_VERSION_DOUBLED_STORAGE_RATE, TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE_RATE,
+        };
         use platform_version::version::v3::PLATFORM_V3;
         use platform_version::version::v9::PLATFORM_V9;
         use platform_version::version::LATEST_VERSION;
@@ -397,6 +400,62 @@ mod tests {
                     FeeVersion::get(fee_version.fee_version_number).expect("registered")
                 );
             }
+        }
+
+        #[test]
+        fn should_round_trip_a_fee_version_number_that_is_not_a_registry_position() {
+            // The mock generation's number lives above the test shift, so it is never a position
+            // in the shipped registry. It must come back from saved state through a lookup by
+            // carried number, and the reloaded entry must price storage at its own rate.
+            let mut state = latest_state();
+            let mock = TEST_FEE_VERSION_DOUBLED_STORAGE_RATE
+                .as_static()
+                .expect("mock generation is registered");
+            state
+                .previous_fee_versions_mut()
+                .insert(0, FeeVersion::get(1).expect("registered"));
+            state.previous_fee_versions_mut().insert(10, mock);
+
+            let saving = PlatformStateForSavingV1::try_from(state.clone()).expect("saving form");
+            assert_eq!(
+                saving.previous_fee_versions.get(&10).copied(),
+                Some(TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE_RATE),
+                "the stored number is the carried number, not a position"
+            );
+
+            let reloaded = round_trip(&state);
+            let reloaded_mock = reloaded
+                .previous_fee_versions()
+                .get(&10)
+                .expect("boundary entry survives the round trip");
+            assert_eq!(
+                reloaded_mock.fee_version_number,
+                TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE_RATE
+            );
+            assert_eq!(*reloaded_mock, mock);
+            for epoch_index in [9, 10, 11] {
+                let epoch = Epoch::new(epoch_index).expect("epoch");
+                assert_eq!(
+                    epoch.cost_for_known_cost_item(
+                        reloaded.previous_fee_versions(),
+                        KnownCostItem::StorageDiskUsageCreditPerByte
+                    ),
+                    epoch.cost_for_known_cost_item(
+                        state.previous_fee_versions(),
+                        KnownCostItem::StorageDiskUsageCreditPerByte
+                    ),
+                    "epoch {epoch_index} prices storage the same before and after reload"
+                );
+            }
+            assert_eq!(
+                Epoch::new(10).expect("epoch").cost_for_known_cost_item(
+                    reloaded.previous_fee_versions(),
+                    KnownCostItem::StorageDiskUsageCreditPerByte
+                ),
+                TEST_FEE_VERSION_DOUBLED_STORAGE_RATE
+                    .storage
+                    .storage_disk_usage_credit_per_byte
+            );
         }
 
         #[test]

@@ -14,6 +14,8 @@ use crate::version::fee::state_transition_min_fees::{
 use crate::version::fee::storage::FeeStorageVersion;
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
+#[cfg(feature = "mock-versions")]
+use crate::version::mocks::fee_test::FEE_TEST_VERSIONS;
 use bincode::{Decode, Encode};
 
 pub mod data_contract_registration;
@@ -67,6 +69,17 @@ const fn registry_numbers_are_contiguous_from_one(registry: &[FeeVersion]) -> bo
     true
 }
 
+/// Finds the entry that carries `number` in a registry slice.
+///
+/// Only the carried number is compared. The position of an entry in the slice is never used,
+/// so a registry whose numbers do not line up with positions still resolves correctly and a
+/// number that no entry carries is `None`.
+fn find_registered(registry: &[FeeVersion], number: FeeVersionNumber) -> Option<&FeeVersion> {
+    registry
+        .iter()
+        .find(|fee_version| fee_version.fee_version_number == number)
+}
+
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
 pub struct FeeVersion {
     pub fee_version_number: FeeVersionNumber,
@@ -105,10 +118,15 @@ impl FeeVersion {
 
     /// Resolves a fee version number to its registered generation, or `None` when the number
     /// is zero or not registered.
+    ///
+    /// With the `mock-versions` feature the mock generations are consulted after the shipped
+    /// registry. Their numbers live above the test shift, so they can never shadow a shipped one.
     pub fn get_optional<'a>(version: FeeVersionNumber) -> Option<&'a Self> {
-        FEE_VERSIONS
-            .iter()
-            .find(|fee_version| fee_version.fee_version_number == version)
+        #[cfg(feature = "mock-versions")]
+        if let Some(mock_fee_version) = find_registered(FEE_TEST_VERSIONS, version) {
+            return Some(mock_fee_version);
+        }
+        find_registered(FEE_VERSIONS, version)
     }
 
     /// The earliest registered generation. This is what an empty fee history resolves to.
@@ -166,6 +184,10 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
 mod tests {
     use super::*;
     #[cfg(feature = "mock-versions")]
+    use crate::version::mocks::fee_test::{
+        TEST_FEE_VERSION_DOUBLED_STORAGE_RATE, TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE_RATE,
+    };
+    #[cfg(feature = "mock-versions")]
     use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
     #[cfg(feature = "mock-versions")]
     use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
@@ -199,6 +221,75 @@ mod tests {
             assert_eq!(resolved, registered);
             assert_eq!(FeeVersion::get_optional(number), Some(registered));
         }
+    }
+
+    #[test]
+    fn should_find_entries_by_carried_number_regardless_of_position() {
+        // A registry whose numbers do not line up with positions: number 3 sits at position 0
+        // and number 1 at position 1. Position-based lookup would return the wrong entry for 1
+        // and nothing for 3; matching on the carried number must find both and reject 2.
+        let registry = [
+            FeeVersion {
+                fee_version_number: 3,
+                ..FEE_VERSION1
+            },
+            FeeVersion {
+                fee_version_number: 1,
+                ..FEE_VERSION1
+            },
+        ];
+
+        let found_one = find_registered(&registry, 1).expect("number 1 is carried");
+        assert!(std::ptr::eq(found_one, &registry[1]));
+        let found_three = find_registered(&registry, 3).expect("number 3 is carried");
+        assert!(std::ptr::eq(found_three, &registry[0]));
+        assert!(find_registered(&registry, 2).is_none());
+        assert!(find_registered(&registry, 0).is_none());
+
+        // The contrast a position-based lookup would have produced.
+        assert_ne!(registry[1 - 1].fee_version_number, 1);
+        assert!(registry.get(3 - 1).is_none());
+    }
+
+    #[cfg(feature = "mock-versions")]
+    #[test]
+    fn should_resolve_a_mock_generation_whose_number_is_not_a_registry_position() {
+        let number = TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE_RATE;
+        // The mock number lives above the test shift, so no position in the shipped registry
+        // corresponds to it; only a lookup by carried number can find it.
+        assert!(FEE_VERSIONS.get(number as usize - 1).is_none());
+        assert!(!FEE_VERSIONS.contains(&TEST_FEE_VERSION_DOUBLED_STORAGE_RATE));
+
+        let resolved = FeeVersion::get(number).expect("mock generation is registered");
+        assert_eq!(resolved.fee_version_number, number);
+        assert_eq!(*resolved, TEST_FEE_VERSION_DOUBLED_STORAGE_RATE);
+        assert_eq!(
+            FeeVersion::get_optional(number),
+            Some(&TEST_FEE_VERSION_DOUBLED_STORAGE_RATE)
+        );
+        assert_eq!(
+            TEST_FEE_VERSION_DOUBLED_STORAGE_RATE
+                .as_static()
+                .expect("mock generation resolves"),
+            resolved
+        );
+        assert_eq!(
+            resolved.storage.storage_disk_usage_credit_per_byte,
+            2 * FeeVersion::get(1)
+                .expect("registered")
+                .storage
+                .storage_disk_usage_credit_per_byte
+        );
+
+        // Neighbours of the mock number are not registered, and the mock never becomes the
+        // first or latest shipped generation.
+        assert!(FeeVersion::get(number - 1).is_err());
+        assert!(FeeVersion::get(number + 1).is_err());
+        assert_eq!(FeeVersion::first().fee_version_number, 1);
+        assert_eq!(
+            FeeVersion::latest(),
+            FEE_VERSIONS.last().expect("non-empty")
+        );
     }
 
     #[test]
