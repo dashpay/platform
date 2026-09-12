@@ -54,11 +54,12 @@ describe('IdentityTopUpFromShieldedPoolTransition', () => {
 
   describe('toBytes() / fromBytes()', () => {
     it('round-trips via bytes, base64 and hex', () => {
+      const T = wasm.IdentityTopUpFromShieldedPoolTransition;
       const t = createTransition();
       const bytes = t.toBytes();
-      expect(Buffer.from(wasm.IdentityTopUpFromShieldedPoolTransition.fromBytes(bytes).toBytes())).to.deep.equal(Buffer.from(bytes));
-      expect(Buffer.from(wasm.IdentityTopUpFromShieldedPoolTransition.fromBase64(t.toBase64()).toBytes())).to.deep.equal(Buffer.from(bytes));
-      expect(Buffer.from(wasm.IdentityTopUpFromShieldedPoolTransition.fromHex(t.toHex()).toBytes())).to.deep.equal(Buffer.from(bytes));
+      expect(Buffer.from(T.fromBytes(bytes).toBytes())).to.deep.equal(Buffer.from(bytes));
+      expect(Buffer.from(T.fromBase64(t.toBase64()).toBytes())).to.deep.equal(Buffer.from(bytes));
+      expect(Buffer.from(T.fromHex(t.toHex()).toBytes())).to.deep.equal(Buffer.from(bytes));
     });
   });
 
