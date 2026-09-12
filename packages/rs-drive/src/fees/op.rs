@@ -2742,6 +2742,9 @@ mod tests {
         const OWNER: [u8; 32] = [7; 32];
         const OTHER_OWNER: [u8; 32] = [9; 32];
 
+        /// Removed bytes per storage epoch, per owner.
+        type BytesByOwner<'a> = [([u8; 32], &'a [(u16, u32)])];
+
         /// A schedule no protocol version references, with doubled storage
         /// rates, so a test can tell "the history was consulted" apart from
         /// "the first generation's rates were used".
@@ -2758,9 +2761,7 @@ mod tests {
         /// One removed element whose bytes are attributed per owner and per
         /// storage epoch, the shape grovedb reports for an element carrying
         /// owner storage flags.
-        fn sectioned_removal(
-            bytes_by_owner: &[([u8; 32], &[(u16, u32)])],
-        ) -> LowLevelDriveOperation {
+        fn sectioned_removal(bytes_by_owner: &BytesByOwner) -> LowLevelDriveOperation {
             let mut removal = StorageRemovalPerEpochByIdentifier::default();
             for (owner, bytes_per_epoch) in bytes_by_owner {
                 let owner_bytes = removal.entry(*owner).or_default();
@@ -2954,7 +2955,7 @@ mod tests {
             // equal v0's: the boundary changes what a missing history does,
             // not what a present one yields.
             let removal_epoch = 15u16;
-            let bytes_by_owner: &[([u8; 32], &[(u16, u32)])] = &[
+            let bytes_by_owner: &BytesByOwner = &[
                 (OWNER, &[(0, 900), (3, 1200), (7, 64), (12, 5000)]),
                 (OTHER_OWNER, &[(5, 31), (11, 2048)]),
                 (Identifier::default(), &[(2, 700)]),

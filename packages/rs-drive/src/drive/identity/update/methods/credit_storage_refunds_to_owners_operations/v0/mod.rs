@@ -97,6 +97,9 @@ mod tests {
     const IDENTITY_BALANCE: Credits = 10_000_000;
     const PROCESSING_POOL_SEED: Credits = 1_000_000;
 
+    /// Refund credits per storage epoch, per owner.
+    type RefundsByOwner<'a> = [([u8; 32], &'a [(u16, Credits)])];
+
     fn insert_identity(
         drive: &Drive,
         seed: u64,
@@ -119,7 +122,7 @@ mod tests {
         identity
     }
 
-    fn refunds(entries: &[([u8; 32], &[(u16, Credits)])]) -> FeeRefunds {
+    fn refunds(entries: &RefundsByOwner) -> FeeRefunds {
         let mut fee_refunds = FeeRefunds::default();
         for (owner, credits_per_epoch) in entries {
             let mut epochs = CreditsPerEpoch::default();
