@@ -312,6 +312,81 @@ impl LowLevelDriveOperation {
             .collect()
     }
 
+    /// Returns a list of the costs of the Drive operations, refunding removed bytes at the
+    /// storage rate active when they were stored.
+    /// Should only be used by Calculate fee (generation 1).
+    ///
+    /// Identical to `consume_to_fees_v0` except that refunds go through
+    /// `FeeRefunds::from_storage_removal_v1`. The fee version number 1 arm keeps pricing against
+    /// an empty history, so on every schedule shipped so far the two generations agree.
+    pub fn consume_to_fees_v1(
+        drive_operations: Vec<LowLevelDriveOperation>,
+        epoch: &Epoch,
+        epochs_per_era: u16,
+        fee_version: &FeeVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
+    ) -> Result<Vec<FeeResult>, Error> {
+        drive_operations
+            .into_iter()
+            .map(|operation| match operation {
+                PreCalculatedFeeResult(f) => Ok(f),
+                FunctionOperation(op) => Ok(FeeResult {
+                    processing_fee: op.cost(fee_version),
+                    ..Default::default()
+                }),
+                _ => {
+                    let cost = operation.operation_cost()?;
+                    // There is no need for a checked multiply here because added bytes are u64 and
+                    // storage disk usage credit per byte should never be high enough to cause an overflow
+                    let storage_fee = cost.storage_cost.added_bytes as u64 * fee_version.storage.storage_disk_usage_credit_per_byte;
+                    let processing_fee = cost.ephemeral_cost(fee_version)?;
+                    let (fee_refunds, removed_bytes_from_system) =
+                        match cost.storage_cost.removed_bytes {
+                            NoStorageRemoval => (FeeRefunds::default(), 0),
+                            BasicStorageRemoval(amount) => {
+                                // this is not always considered an error
+                                (FeeRefunds::default(), amount)
+                            }
+                            SectionedStorageRemoval(mut removal_per_epoch_by_identifier) => {
+
+                                let system_amount = removal_per_epoch_by_identifier
+                                    .remove(&Identifier::default())
+                                    .map_or(0, |a| a.values().sum());
+                                if fee_version.fee_version_number == 1 {
+                                    (
+                                        FeeRefunds::from_storage_removal_v1(
+                                            removal_per_epoch_by_identifier,
+                                            epoch.index,
+                                            epochs_per_era,
+                                            &BTreeMap::default(),
+                                        )?,
+                                        system_amount,
+                                    )
+                                } else {
+                                    let previous_fee_versions = previous_fee_versions.ok_or(Error::Drive(DriveError::CorruptedCodeExecution("expected previous epoch index fee versions to be able to offer refunds")))?;
+                                    (
+                                        FeeRefunds::from_storage_removal_v1(
+                                            removal_per_epoch_by_identifier,
+                                            epoch.index,
+                                            epochs_per_era,
+                                            previous_fee_versions,
+                                        )?,
+                                        system_amount,
+                                    )
+                                }
+                            }
+                        };
+                    Ok(FeeResult {
+                        storage_fee,
+                        processing_fee,
+                        fee_refunds,
+                        removed_bytes_from_system,
+                    })
+                }
+            })
+            .collect()
+    }
+
     /// Returns the cost of this operation
     pub fn operation_cost(self) -> Result<OperationCost, Error> {
         match self {
@@ -2651,5 +2726,203 @@ mod tests {
             result.is_err(),
             "expected overflow error when summing large components"
         );
+    }
+
+    // ---------------------------------------------------------------
+    // 9. consume_to_fees_v0 / consume_to_fees_v1 — refunds and the fee history requirement
+    // ---------------------------------------------------------------
+
+    mod consume_to_fees {
+        use super::*;
+        use dpp::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
+        use intmap::IntMap;
+        use platform_version::version::fee::v1::FEE_VERSION1;
+
+        const EPOCHS_PER_ERA: u16 = 20;
+        const CURRENT_EPOCH: u16 = 15;
+        const IDENTITY: [u8; 32] = [3; 32];
+
+        /// Storage rate of the first registered generation.
+        const FIRST_GENERATION_RATE: Credits = 27000;
+
+        /// A second storage table that is not registered anywhere, so a rate boundary in the
+        /// fee history is observable. Its number is not 1, which makes Drive require the
+        /// history to price refunds.
+        const SYNTHETIC_RATE: Credits = 54000;
+        static SYNTHETIC_FEE_VERSION_2: FeeVersion = FeeVersion {
+            fee_version_number: 2,
+            storage: FeeStorageVersion {
+                storage_disk_usage_credit_per_byte: SYNTHETIC_RATE,
+                ..FEE_VERSION1.storage
+            },
+            ..FEE_VERSION1
+        };
+
+        /// Fee history with a rate boundary at epoch 10.
+        fn boundary_history() -> CachedEpochIndexFeeVersions {
+            BTreeMap::from([
+                (0, FeeVersion::get(1).expect("registered")),
+                (10, &SYNTHETIC_FEE_VERSION_2),
+            ])
+        }
+
+        /// One identity removing 100 bytes stored at epoch 5 and 100 bytes stored at epoch 12,
+        /// plus 40 system bytes with an unknown storage epoch.
+        fn removal_operation() -> LowLevelDriveOperation {
+            let mut removal = BTreeMap::new();
+            removal.insert(
+                IDENTITY,
+                IntMap::from_iter([(5u16, 100u32), (12u16, 100u32)]),
+            );
+            removal.insert(
+                Identifier::default(),
+                IntMap::from_iter([(u16::MAX, 40u32)]),
+            );
+            CalculatedCostOperation(OperationCost {
+                storage_cost: StorageCost {
+                    added_bytes: 0,
+                    replaced_bytes: 0,
+                    removed_bytes: SectionedStorageRemoval(removal),
+                },
+                ..Default::default()
+            })
+        }
+
+        fn expected_refund(bytes: u32, rate: Credits, storage_epoch: u16) -> Credits {
+            let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(
+                bytes as Credits * rate,
+                storage_epoch,
+                CURRENT_EPOCH,
+                EPOCHS_PER_ERA,
+            )
+            .expect("refund amount");
+            amount
+        }
+
+        fn refunds_of(fee_result: &FeeResult) -> BTreeMap<u16, Credits> {
+            fee_result
+                .fee_refunds
+                .get(&IDENTITY)
+                .expect("identity has refunds")
+                .iter()
+                .map(|(epoch_index, credits)| (*epoch_index, *credits))
+                .collect()
+        }
+
+        /// Runs the requested generation of `consume_to_fees`.
+        fn consume(
+            generation: u16,
+            fee_version: &FeeVersion,
+            previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
+        ) -> Result<FeeResult, Error> {
+            let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
+            let results = match generation {
+                0 => LowLevelDriveOperation::consume_to_fees_v0(
+                    vec![removal_operation()],
+                    &epoch,
+                    EPOCHS_PER_ERA,
+                    fee_version,
+                    previous_fee_versions,
+                ),
+                1 => LowLevelDriveOperation::consume_to_fees_v1(
+                    vec![removal_operation()],
+                    &epoch,
+                    EPOCHS_PER_ERA,
+                    fee_version,
+                    previous_fee_versions,
+                ),
+                other => panic!("no consume_to_fees generation {other}"),
+            }?;
+            Ok(results
+                .into_iter()
+                .next()
+                .expect("one operation, one result"))
+        }
+
+        #[test]
+        fn should_refund_through_the_legacy_empty_history_path_when_the_fee_version_number_is_one()
+        {
+            for generation in [0, 1] {
+                let fee_result = consume(generation, &FEE_VERSION1, None)
+                    .expect("number 1 never needs the fee history");
+
+                assert_eq!(fee_result.removed_bytes_from_system, 40);
+                assert_eq!(fee_result.storage_fee, 0);
+                assert_eq!(
+                    refunds_of(&fee_result),
+                    BTreeMap::from([
+                        (5, expected_refund(100, FIRST_GENERATION_RATE, 5)),
+                        (12, expected_refund(100, FIRST_GENERATION_RATE, 12)),
+                    ]),
+                    "generation {generation}"
+                );
+            }
+        }
+
+        #[test]
+        fn should_require_fee_history_when_the_fee_version_number_is_not_one() {
+            for generation in [0, 1] {
+                let error = consume(generation, &SYNTHETIC_FEE_VERSION_2, None)
+                    .expect_err("a later generation cannot price refunds without the history");
+                assert!(
+                    matches!(error, Error::Drive(DriveError::CorruptedCodeExecution(_))),
+                    "generation {generation}: unexpected error {error}"
+                );
+            }
+        }
+
+        #[test]
+        fn should_price_every_removed_epoch_at_the_current_epoch_rate_in_generation_zero() {
+            // Shipped rule: the rate active at the removal epoch (15, past the boundary) prices
+            // every removed epoch, including bytes stored at epoch 5 before the boundary.
+            let history = boundary_history();
+            let fee_result =
+                consume(0, &SYNTHETIC_FEE_VERSION_2, Some(&history)).expect("history supplied");
+
+            assert_eq!(
+                refunds_of(&fee_result),
+                BTreeMap::from([
+                    (5, expected_refund(100, SYNTHETIC_RATE, 5)),
+                    (12, expected_refund(100, SYNTHETIC_RATE, 12)),
+                ])
+            );
+        }
+
+        #[test]
+        fn should_refund_at_the_storage_epoch_rate_across_a_history_boundary_in_generation_one() {
+            let history = boundary_history();
+            let fee_result =
+                consume(1, &SYNTHETIC_FEE_VERSION_2, Some(&history)).expect("history supplied");
+
+            assert_eq!(
+                refunds_of(&fee_result),
+                BTreeMap::from([
+                    (5, expected_refund(100, FIRST_GENERATION_RATE, 5)),
+                    (12, expected_refund(100, SYNTHETIC_RATE, 12)),
+                ]),
+                "each epoch refunds at the rate its bytes were charged"
+            );
+        }
+
+        #[test]
+        fn should_ignore_fee_history_when_the_fee_version_number_is_one() {
+            // Shipped replay path: every schedule a released protocol version references
+            // carries number 1, and that branch prices refunds against an empty history in
+            // both generations.
+            let history = boundary_history();
+            for generation in [0, 1] {
+                let fee_result = consume(generation, &FEE_VERSION1, Some(&history))
+                    .expect("number 1 accepts but does not read the history");
+
+                assert_eq!(
+                    refunds_of(&fee_result),
+                    BTreeMap::from([
+                        (5, expected_refund(100, FIRST_GENERATION_RATE, 5)),
+                        (12, expected_refund(100, FIRST_GENERATION_RATE, 12)),
+                    ]),
+                    "generation {generation}"
+                );
+            }
+        }
     }
 }

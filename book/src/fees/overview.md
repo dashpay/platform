@@ -219,6 +219,18 @@ out to proposers.
 There is a **dust limit**: refunds below 32 bytes worth of storage credits are
 discarded to prevent micro-refund spam.
 
+Refund pricing is versioned through `Drive::calculate_fee`. Generation 0, which
+every released protocol version selects, prices every removed byte at the storage
+rate active at the removal epoch (`FeeRefunds::from_storage_removal`). Generation
+1 prices each removed epoch at the storage table that was active when the bytes
+were written: `FeeRefunds::from_storage_removal_v1` resolves that rate through
+the fee history at the storage epoch (the epoch recorded in the element's storage
+flags), and the current epoch only fixes how many era shares of the original fee
+were already paid out to proposers. Every schedule shipped so far carries the same
+storage table, so the two generations agree on every reachable input; generation
+1 is switched on by the unreleased protocol version that registers a schedule
+with new storage rates under a new fee version number.
+
 ## Epoch-Based Fee Distribution
 
 Fees do not go directly to the block proposer. Instead, they accumulate in
@@ -291,6 +303,27 @@ pub struct FeeVersion {
 Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The
 `uses_version_fee_multiplier_permille` field allows a global scaling factor
 (permille = divide by 1000; a value of 1000 means no change).
+
+`fee_version_number` names a fee-history generation: the set of values the
+persisted fee history can serve through `KnownCostItem` (storage, processing,
+hashing and signature costs). It is what the epoch change hook records in
+platform state and what saved state stores. `FEE_VERSIONS` is the registry of
+those generations, keyed by that number; `FeeVersion::get` resolves a number by
+matching it, never by array position, and a number that is not registered is an
+error. A saved state that stores an unknown number therefore fails to load with
+a descriptive error instead of aborting the node.
+
+Several schedules may share one number when they differ only in groups the
+history never serves: `FEE_VERSION1` and `FEE_VERSION2` both carry number 1
+because only `data_contract_registration` changed between them. A schedule that
+changes storage rates must be registered under a new number, because that
+number is what prices refunds of bytes written while it was active. Unit tests
+in `rs-platform-version` pin that every schedule a protocol version references
+is registered and agrees with the registered generation on every served value.
+
+An empty fee history resolves to the first registered generation. This is
+deliberate: the hook records a generation only on the first non-genesis epoch
+change, so genesis epoch costs always take that path.
 
 ## Key Source Files
 

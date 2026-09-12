@@ -1,3 +1,4 @@
+pub mod fee_test;
 pub mod v2_test;
 pub mod v3_test;
 

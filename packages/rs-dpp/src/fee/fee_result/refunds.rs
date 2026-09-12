@@ -34,6 +34,10 @@ pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
 
 impl FeeRefunds {
     /// Create fee refunds from GroveDB's StorageRemovalPerEpochByIdentifier
+    ///
+    /// Shipped generation: every removed epoch is priced at the storage rate active at the
+    /// current epoch. Selected by `calculate_fee` version 0, which every released protocol
+    /// version uses. Frozen; see `from_storage_removal_v1` for the corrected rule.
     pub fn from_storage_removal<I, C, E>(
         storage_removal: I,
         current_epoch_index: EpochIndex,
@@ -58,6 +62,65 @@ impl FeeRefunds {
 
                         let credits: Credits = (bytes as Credits)
                             .checked_mul(Epoch::new(current_epoch_index)?.cost_for_known_cost_item(previous_fee_versions, StorageDiskUsageCreditPerByte))
+                            .ok_or(ProtocolError::Overflow("storage written bytes cost overflow"))?;
+
+                        let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(
+                            credits,
+                            epoch_index,
+                            current_epoch_index,
+                            epochs_per_era,
+                        )?;
+
+                        Ok((epoch_index, amount))
+                    })
+                    .collect::<Result<CreditsPerEpoch, ProtocolError>>()
+                    .map(|credits_per_epochs| (identifier, credits_per_epochs))
+            })
+            .collect::<Result<CreditsPerEpochByIdentifier, ProtocolError>>()?;
+
+        Ok(Self(refunds_per_epoch_by_identifier))
+    }
+
+    /// Create fee refunds from GroveDB's StorageRemovalPerEpochByIdentifier, pricing each
+    /// removed epoch at the storage rate that was active when the bytes were stored.
+    ///
+    /// A refund is the unpaid remainder of the storage fee originally charged for the removed
+    /// bytes. That fee was priced with the storage table active when the bytes were written, so
+    /// the rate is resolved at the storage epoch (the key of each removal entry) through the fee
+    /// history. The current epoch only decides how many era shares of that fee were already paid
+    /// out to proposers.
+    ///
+    /// Generation 1 of the refund pricing rule, selected by `calculate_fee` version 1. No
+    /// released protocol version selects it yet; the protocol version that registers a schedule
+    /// under a new fee version number is the boundary at which it takes effect. Until then every
+    /// registered generation shares one storage table, so both rules produce identical refunds.
+    pub fn from_storage_removal_v1<I, C, E>(
+        storage_removal: I,
+        current_epoch_index: EpochIndex,
+        epochs_per_era: u16,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
+    ) -> Result<Self, ProtocolError>
+    where
+        I: IntoIterator<Item = ([u8; 32], C)>,
+        C: IntoIterator<Item = (E, u32)>,
+        E: TryInto<u16>,
+    {
+        let refunds_per_epoch_by_identifier = storage_removal
+            .into_iter()
+            .map(|(identifier, bytes_per_epochs)| {
+                bytes_per_epochs
+                    .into_iter()
+                    .filter(|(_, bytes)| bytes >= &MIN_REFUND_LIMIT_BYTES)
+                    .map(|(encoded_epoch_index, bytes)| {
+                        let epoch_index : u16 = encoded_epoch_index.try_into().map_err(|_| ProtocolError::Overflow("can't fit u64 epoch index from StorageRemovalPerEpochByIdentifier to u16 EpochIndex"))?;
+
+                        // TODO Add in multipliers once they have been made
+
+                        let storage_rate = Epoch::new(epoch_index)?
+                            .cost_for_known_cost_item(previous_fee_versions, StorageDiskUsageCreditPerByte);
+
+                        let credits: Credits = (bytes as Credits)
+                            .checked_mul(storage_rate)
                             .ok_or(ProtocolError::Overflow("storage written bytes cost overflow"))?;
 
                         let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(
@@ -177,15 +240,91 @@ impl IntoIterator for FeeRefunds {
 mod tests {
     use super::*;
     use once_cell::sync::Lazy;
+    use platform_version::version::fee::storage::FeeStorageVersion;
+    use platform_version::version::fee::v1::FEE_VERSION1;
     use platform_version::version::fee::FeeVersion;
 
     static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
         Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
+    /// Storage rate of the first registered generation, which priced every byte written so far.
+    const FIRST_GENERATION_RATE: Credits = 27000;
+
+    /// A second storage table that is not registered anywhere. It exists only so a rate boundary
+    /// in the fee history is observable in these tests.
+    const SYNTHETIC_RATE: Credits = 54000;
+
+    static SYNTHETIC_FEE_VERSION_2: FeeVersion = FeeVersion {
+        fee_version_number: 2,
+        storage: FeeStorageVersion {
+            storage_disk_usage_credit_per_byte: SYNTHETIC_RATE,
+            ..FEE_VERSION1.storage
+        },
+        ..FEE_VERSION1
+    };
+
     mod from_storage_removal {
         use super::*;
         use nohash_hasher::IntMap;
         use std::iter::FromIterator;
+
+        const EPOCHS_PER_ERA: u16 = 20;
+
+        fn expected_refund(
+            bytes: u32,
+            rate: Credits,
+            storage_epoch: EpochIndex,
+            current_epoch: EpochIndex,
+        ) -> Credits {
+            let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(
+                bytes as Credits * rate,
+                storage_epoch,
+                current_epoch,
+                EPOCHS_PER_ERA,
+            )
+            .expect("refund amount");
+            amount
+        }
+
+        /// Which generation of the pricing rule a test drives.
+        #[derive(Clone, Copy)]
+        enum Generation {
+            /// `from_storage_removal`: the shipped rule, priced at the current epoch.
+            Shipped,
+            /// `from_storage_removal_v1`: priced at the storage epoch.
+            V1,
+        }
+
+        fn refunds_for_one_identity(
+            generation: Generation,
+            bytes_per_epoch: IntMap<u16, u32>,
+            current_epoch: EpochIndex,
+            fee_history: &CachedEpochIndexFeeVersions,
+        ) -> CreditsPerEpoch {
+            let identity_id = [7; 32];
+            let storage_removal =
+                BytesPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
+
+            let refunds = match generation {
+                Generation::Shipped => FeeRefunds::from_storage_removal(
+                    storage_removal,
+                    current_epoch,
+                    EPOCHS_PER_ERA,
+                    fee_history,
+                ),
+                Generation::V1 => FeeRefunds::from_storage_removal_v1(
+                    storage_removal,
+                    current_epoch,
+                    EPOCHS_PER_ERA,
+                    fee_history,
+                ),
+            };
+            refunds
+                .expect("should create fee refunds")
+                .get(&identity_id)
+                .expect("identity has refunds")
+                .clone()
+        }
 
         #[test]
         fn should_filter_out_refunds_under_the_limit() {
@@ -195,18 +334,169 @@ mod tests {
             let storage_removal =
                 BytesPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
 
-            let fee_refunds = FeeRefunds::from_storage_removal(
-                storage_removal,
-                3,
-                20,
-                &EPOCH_CHANGE_FEE_VERSION_TEST,
-            )
-            .expect("should create fee refunds");
+            for fee_refunds in [
+                FeeRefunds::from_storage_removal(
+                    storage_removal.clone(),
+                    3,
+                    20,
+                    &EPOCH_CHANGE_FEE_VERSION_TEST,
+                )
+                .expect("should create fee refunds"),
+                FeeRefunds::from_storage_removal_v1(
+                    storage_removal.clone(),
+                    3,
+                    20,
+                    &EPOCH_CHANGE_FEE_VERSION_TEST,
+                )
+                .expect("should create fee refunds"),
+            ] {
+                let credits_per_epoch = fee_refunds.get(&identity_id).expect("should exists");
 
-            let credits_per_epoch = fee_refunds.get(&identity_id).expect("should exists");
+                assert!(credits_per_epoch.get(&0).is_none());
+                assert!(credits_per_epoch.get(&1).is_some());
+            }
+        }
 
-            assert!(credits_per_epoch.get(&0).is_none());
-            assert!(credits_per_epoch.get(&1).is_some());
+        #[test]
+        fn should_keep_pricing_every_removed_epoch_at_the_current_epoch_rate_in_the_shipped_generation(
+        ) {
+            // Frozen replay behaviour of `from_storage_removal`: the rate is the one active at
+            // the removal epoch, whatever epoch the bytes were stored in. Selected by
+            // `calculate_fee` version 0 on every released protocol version.
+            let fee_history: CachedEpochIndexFeeVersions = BTreeMap::from([
+                (0, FeeVersion::get(1).expect("registered")),
+                (10, &SYNTHETIC_FEE_VERSION_2),
+            ]);
+            let current_epoch = 15;
+
+            let refunds = refunds_for_one_identity(
+                Generation::Shipped,
+                IntMap::from_iter([(5, 100), (12, 100)]),
+                current_epoch,
+                &fee_history,
+            );
+
+            assert_eq!(
+                refunds.get(&5).copied(),
+                Some(expected_refund(100, SYNTHETIC_RATE, 5, current_epoch))
+            );
+            assert_eq!(
+                refunds.get(&12).copied(),
+                Some(expected_refund(100, SYNTHETIC_RATE, 12, current_epoch))
+            );
+        }
+
+        #[test]
+        fn should_price_each_removed_epoch_at_the_storage_table_active_when_the_bytes_were_stored()
+        {
+            // Rate boundary at epoch 10: bytes written before it were charged at the first
+            // generation's rate, bytes written from it on at the synthetic rate.
+            let fee_history: CachedEpochIndexFeeVersions = BTreeMap::from([
+                (0, FeeVersion::get(1).expect("registered")),
+                (10, &SYNTHETIC_FEE_VERSION_2),
+            ]);
+            let current_epoch = 15;
+
+            let refunds = refunds_for_one_identity(
+                Generation::V1,
+                IntMap::from_iter([(5, 100), (12, 100)]),
+                current_epoch,
+                &fee_history,
+            );
+
+            assert_eq!(
+                refunds.get(&5).copied(),
+                Some(expected_refund(
+                    100,
+                    FIRST_GENERATION_RATE,
+                    5,
+                    current_epoch
+                )),
+                "bytes stored before the boundary refund at the rate they were charged"
+            );
+            assert_eq!(
+                refunds.get(&12).copied(),
+                Some(expected_refund(100, SYNTHETIC_RATE, 12, current_epoch)),
+                "bytes stored after the boundary refund at the new rate"
+            );
+            assert_ne!(
+                refunds.get(&5).copied(),
+                Some(expected_refund(100, SYNTHETIC_RATE, 5, current_epoch)),
+                "pre-boundary bytes must not be re-priced at the current epoch's rate"
+            );
+        }
+
+        #[test]
+        fn should_price_removals_before_the_earliest_history_entry_with_the_first_generation() {
+            let fee_history: CachedEpochIndexFeeVersions =
+                BTreeMap::from([(10, &SYNTHETIC_FEE_VERSION_2)]);
+            let current_epoch = 12;
+
+            let refunds = refunds_for_one_identity(
+                Generation::V1,
+                IntMap::from_iter([(3, 100)]),
+                current_epoch,
+                &fee_history,
+            );
+
+            assert_eq!(
+                refunds.get(&3).copied(),
+                Some(expected_refund(
+                    100,
+                    FIRST_GENERATION_RATE,
+                    3,
+                    current_epoch
+                ))
+            );
+        }
+
+        #[test]
+        fn should_match_the_current_epoch_rate_whenever_every_generation_shares_one_storage_table()
+        {
+            // Every shipped input: an empty history (the fee version number 1 path in Drive) or a
+            // history whose entries all resolve to number 1. The storage epoch and the current
+            // epoch then resolve to the same rate, so both generations of the rule produce the
+            // same refunds.
+            let same_table_histories: [CachedEpochIndexFeeVersions; 2] = [
+                BTreeMap::default(),
+                BTreeMap::from([
+                    (0, FeeVersion::get(1).expect("registered")),
+                    (7, FeeVersion::get(1).expect("registered")),
+                ]),
+            ];
+            let current_epoch = 9;
+
+            for fee_history in &same_table_histories {
+                let shipped = refunds_for_one_identity(
+                    Generation::Shipped,
+                    IntMap::from_iter([(2, 100), (8, 100)]),
+                    current_epoch,
+                    fee_history,
+                );
+                let refunds = refunds_for_one_identity(
+                    Generation::V1,
+                    IntMap::from_iter([(2, 100), (8, 100)]),
+                    current_epoch,
+                    fee_history,
+                );
+                assert_eq!(shipped, refunds, "both generations agree on shipped inputs");
+                let current_epoch_rate = Epoch::new(current_epoch)
+                    .expect("epoch")
+                    .cost_for_known_cost_item(fee_history, StorageDiskUsageCreditPerByte);
+                assert_eq!(current_epoch_rate, FIRST_GENERATION_RATE);
+
+                for storage_epoch in [2, 8] {
+                    assert_eq!(
+                        refunds.get(&storage_epoch).copied(),
+                        Some(expected_refund(
+                            100,
+                            current_epoch_rate,
+                            storage_epoch,
+                            current_epoch
+                        ))
+                    );
+                }
+            }
         }
     }
 }

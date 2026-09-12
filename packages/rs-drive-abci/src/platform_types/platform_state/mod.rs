@@ -245,7 +245,7 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
             }
             PlatformStateForSaving::V1(v1) => {
                 match platform_version.drive_abci.structs.platform_state_structure {
-                    0 => Ok(PlatformState::from(v1)),
+                    0 => PlatformState::try_from(v1),
                     version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                         method:
                             "PlatformState::try_from_platform_versioned(PlatformStateForSavingV1)"
@@ -268,9 +268,65 @@ mod tests {
         use crate::test::fixture::platform_state::{
             PLATFORM_STATE_V3_TESTNET, PLATFORM_STATE_V8_DEVNET,
         };
+        use dpp::block::epoch::{Epoch, EpochIndex};
+        use dpp::fee::default_costs::{EpochCosts, KnownCostItem};
+        use dpp::version::fee::{FeeVersion, FEE_VERSIONS};
+        use dpp::version::mocks::fee_test::{
+            TEST_FEE_VERSION_DOUBLED_STORAGE_RATE, TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE_RATE,
+        };
         use platform_version::version::v3::PLATFORM_V3;
         use platform_version::version::v9::PLATFORM_V9;
+        use platform_version::version::LATEST_VERSION;
         use std::ops::Deref;
+
+        /// Every `KnownCostItem` variant, with a few sizes for the two sized variants.
+        fn every_known_cost_item() -> Vec<KnownCostItem> {
+            let mut items = vec![
+                KnownCostItem::StorageDiskUsageCreditPerByte,
+                KnownCostItem::StorageProcessingCreditPerByte,
+                KnownCostItem::StorageLoadCreditPerByte,
+                KnownCostItem::NonStorageLoadCreditPerByte,
+                KnownCostItem::StorageSeekCost,
+                KnownCostItem::FetchIdentityBalanceProcessingCost,
+                KnownCostItem::FetchSingleIdentityKeyProcessingCost,
+                KnownCostItem::VerifySignatureEcdsaSecp256k1,
+                KnownCostItem::VerifySignatureBLS12_381,
+                KnownCostItem::VerifySignatureEcdsaHash160,
+                KnownCostItem::VerifySignatureBip13ScriptHash,
+                KnownCostItem::VerifySignatureEddsa25519Hash160,
+            ];
+            for size in [0, 1, 64] {
+                items.push(KnownCostItem::SingleSHA256(size));
+                items.push(KnownCostItem::Blake3(size));
+            }
+            items
+        }
+
+        fn latest_state() -> PlatformState {
+            PlatformState::default_with_protocol_versions(
+                LATEST_VERSION,
+                LATEST_VERSION,
+                &PlatformConfig::default_testnet(),
+            )
+            .expect("default state")
+        }
+
+        fn round_trip(state: &PlatformState) -> PlatformState {
+            let bytes = state.serialize_to_bytes().expect("serialize state");
+            PlatformState::versioned_deserialize(&bytes, PlatformVersion::latest())
+                .expect("deserialize state")
+        }
+
+        fn assert_every_entry_is_fee_version_one(state: &PlatformState) {
+            let registered = FeeVersion::get(1).expect("number 1 is registered");
+            for (epoch_index, fee_version) in state.previous_fee_versions() {
+                assert_eq!(
+                    fee_version.fee_version_number, 1,
+                    "epoch {epoch_index} must resolve to fee version number 1"
+                );
+                assert_eq!(*fee_version, registered);
+            }
+        }
 
         #[test]
         fn should_deserialize_state_stored_in_version_0_from_testnet() {
@@ -288,6 +344,165 @@ mod tests {
 
             PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V9)
                 .expect("failed to deserialize state");
+        }
+
+        #[test]
+        fn should_still_load_legacy_v0_states_as_fee_version_one() {
+            // The pre-1.4 format stored whole fee version structs. Only number 1 existed then,
+            // so every stored epoch maps to the first registered generation.
+            let serialized_state =
+                hex::decode(PLATFORM_STATE_V3_TESTNET.deref()).expect("failed to decode hex");
+            let state = PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V3)
+                .expect("failed to deserialize state");
+
+            assert_every_entry_is_fee_version_one(&state);
+        }
+
+        #[test]
+        fn should_resolve_stored_numbers_in_v1_states_to_registered_fee_versions() {
+            let serialized_state =
+                hex::decode(PLATFORM_STATE_V8_DEVNET.deref()).expect("failed to decode hex");
+            let state = PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V9)
+                .expect("failed to deserialize state");
+
+            assert_every_entry_is_fee_version_one(&state);
+        }
+
+        #[test]
+        fn should_round_trip_every_registered_fee_version_number_through_saved_state() {
+            let mut state = latest_state();
+            for registered in FEE_VERSIONS {
+                let epoch_index = registered.fee_version_number as EpochIndex;
+                state
+                    .previous_fee_versions_mut()
+                    .insert(epoch_index, registered);
+            }
+
+            let reloaded = round_trip(&state);
+
+            assert_eq!(
+                reloaded.previous_fee_versions().len(),
+                FEE_VERSIONS.len(),
+                "every registered number survives the round trip"
+            );
+            for (epoch_index, fee_version) in state.previous_fee_versions() {
+                let reloaded_fee_version = reloaded
+                    .previous_fee_versions()
+                    .get(epoch_index)
+                    .expect("epoch entry survives the round trip");
+                assert_eq!(
+                    reloaded_fee_version.fee_version_number,
+                    fee_version.fee_version_number
+                );
+                assert_eq!(*reloaded_fee_version, *fee_version);
+                assert_eq!(
+                    *reloaded_fee_version,
+                    FeeVersion::get(fee_version.fee_version_number).expect("registered")
+                );
+            }
+        }
+
+        #[test]
+        fn should_round_trip_a_fee_version_number_that_is_not_a_registry_position() {
+            // The mock generation's number lives above the test shift, so it is never a position
+            // in the shipped registry. It must come back from saved state through a lookup by
+            // carried number, and the reloaded entry must price storage at its own rate.
+            let mut state = latest_state();
+            let mock = TEST_FEE_VERSION_DOUBLED_STORAGE_RATE
+                .as_static()
+                .expect("mock generation is registered");
+            state
+                .previous_fee_versions_mut()
+                .insert(0, FeeVersion::get(1).expect("registered"));
+            state.previous_fee_versions_mut().insert(10, mock);
+
+            let saving = PlatformStateForSavingV1::try_from(state.clone()).expect("saving form");
+            assert_eq!(
+                saving.previous_fee_versions.get(&10).copied(),
+                Some(TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE_RATE),
+                "the stored number is the carried number, not a position"
+            );
+
+            let reloaded = round_trip(&state);
+            let reloaded_mock = reloaded
+                .previous_fee_versions()
+                .get(&10)
+                .expect("boundary entry survives the round trip");
+            assert_eq!(
+                reloaded_mock.fee_version_number,
+                TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE_RATE
+            );
+            assert_eq!(*reloaded_mock, mock);
+            for epoch_index in [9, 10, 11] {
+                let epoch = Epoch::new(epoch_index).expect("epoch");
+                assert_eq!(
+                    epoch.cost_for_known_cost_item(
+                        reloaded.previous_fee_versions(),
+                        KnownCostItem::StorageDiskUsageCreditPerByte
+                    ),
+                    epoch.cost_for_known_cost_item(
+                        state.previous_fee_versions(),
+                        KnownCostItem::StorageDiskUsageCreditPerByte
+                    ),
+                    "epoch {epoch_index} prices storage the same before and after reload"
+                );
+            }
+            assert_eq!(
+                Epoch::new(10).expect("epoch").cost_for_known_cost_item(
+                    reloaded.previous_fee_versions(),
+                    KnownCostItem::StorageDiskUsageCreditPerByte
+                ),
+                TEST_FEE_VERSION_DOUBLED_STORAGE_RATE
+                    .storage
+                    .storage_disk_usage_credit_per_byte
+            );
+        }
+
+        #[test]
+        fn should_agree_with_the_in_memory_fee_history_on_every_known_cost_item_after_reload() {
+            // The epoch change hook stores a reference into the platform version table, not the
+            // registry entry. After a reload the map holds the registry entry. Both must serve
+            // the same values for every epoch and every cost item.
+            let mut state = latest_state();
+            state
+                .previous_fee_versions_mut()
+                .insert(1, &PlatformVersion::latest().fee_version);
+
+            let reloaded = round_trip(&state);
+
+            assert_eq!(
+                reloaded.previous_fee_versions().keys().collect::<Vec<_>>(),
+                state.previous_fee_versions().keys().collect::<Vec<_>>()
+            );
+            for epoch_index in 0..=3 {
+                let epoch = Epoch::new(epoch_index).expect("epoch");
+                for item in every_known_cost_item() {
+                    assert_eq!(
+                        epoch.cost_for_known_cost_item(state.previous_fee_versions(), item),
+                        epoch.cost_for_known_cost_item(reloaded.previous_fee_versions(), item),
+                        "epoch {epoch_index} disagrees after reload"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn should_reject_a_saved_state_that_stores_an_unknown_fee_version_number() {
+            let state = latest_state();
+            let mut saving = PlatformStateForSavingV1::try_from(state).expect("saving form");
+            saving.previous_fee_versions.insert(3, 99);
+            let config = config::standard().with_big_endian().with_no_limit();
+            let bytes = bincode::encode_to_vec(PlatformStateForSaving::V1(saving), config)
+                .expect("encode saving form");
+
+            let error = PlatformState::versioned_deserialize(&bytes, PlatformVersion::latest())
+                .expect_err("an unknown fee version number must not load");
+            let message = error.to_string();
+            assert!(message.contains("99"), "error names the number: {message}");
+            assert!(
+                message.contains("epoch 3"),
+                "error names the epoch: {message}"
+            );
         }
     }
 }
