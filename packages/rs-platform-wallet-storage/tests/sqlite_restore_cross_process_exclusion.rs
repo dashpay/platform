@@ -29,42 +29,129 @@ fn seed_one_row(persister: &SqlitePersister, w: &[u8; 32]) {
     persister.store(*w, cs).unwrap();
 }
 
-fn pad_backup_for_observable_restore(backup_path: &Path) {
+/// Padding is added in 16 MiB chunks; each entry is one scenario attempt.
+/// A restore that finishes before any probe lands in the exclusion window
+/// is rerun with more padding so a failure is never a matter of timing.
+const PADDING_CHUNKS_PER_ATTEMPT: [usize; 3] = [4, 8, 12];
+const PADDING_CHUNK_BYTES: i64 = 16 * 1024 * 1024;
+
+fn pad_backup_for_observable_restore(backup_path: &Path, chunks: usize) {
     let conn = rusqlite::Connection::open(backup_path).unwrap();
     conn.execute_batch("CREATE TABLE restore_padding (payload BLOB NOT NULL)")
         .unwrap();
-    for _ in 0..4 {
+    for _ in 0..chunks {
         conn.execute(
             "INSERT INTO restore_padding VALUES (zeroblob(?1))",
-            [16_i64 * 1024 * 1024],
+            [PADDING_CHUNK_BYTES],
         )
         .unwrap();
     }
 }
 
+fn snapshot_dir(dir: &Path) -> HashSet<std::ffi::OsString> {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect()
+}
+
+/// Wait until restore has staged its temp copy next to `destination`.
+///
+/// The destination and its `-wal`/`-shm`/`-journal` siblings are ignored:
+/// for a missing destination, restore creates an owner-only placeholder
+/// BEFORE it takes `BEGIN EXCLUSIVE`, so treating that placeholder as the
+/// staged copy would let a probe run in the pre-lock window and succeed.
+/// The staged temp is only created once the lock is held.
+///
+/// Returns `false` when restore finished before a staged copy was seen,
+/// so the caller can rerun the scenario with more padding.
 fn wait_for_staged_copy<T>(
-    dir: &Path,
+    destination: &Path,
     existing: &HashSet<std::ffi::OsString>,
     restore: &std::thread::JoinHandle<T>,
-) {
+) -> bool {
+    let dir = destination.parent().unwrap();
+    let destination_name = destination.file_name().unwrap().to_os_string();
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let staged_file_exists = std::fs::read_dir(dir).unwrap().any(|entry| {
             let name = entry.unwrap().file_name();
             !existing.contains(&name)
-                && !name.to_string_lossy().ends_with("-wal")
-                && !name.to_string_lossy().ends_with("-shm")
+                && !name
+                    .as_encoded_bytes()
+                    .starts_with(destination_name.as_encoded_bytes())
         });
         if staged_file_exists {
-            return;
+            return true;
         }
-        assert!(!restore.is_finished(), "restore finished before lock probe");
+        if restore.is_finished() {
+            return false;
+        }
         assert!(
             Instant::now() < deadline,
             "timed out waiting for staged copy"
         );
         std::thread::yield_now();
     }
+}
+
+fn is_busy_or_locked<T>(result: &rusqlite::Result<T>) -> bool {
+    matches!(
+        result,
+        Err(rusqlite::Error::SqliteFailure(ref error, _))
+            if matches!(
+                error.code,
+                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+            )
+    )
+}
+
+/// Run `probe` against the destination repeatedly while `restore` is still
+/// running. Returns `true` as soon as one probe observes busy/locked.
+///
+/// A probe that succeeds while restore is still running landed outside
+/// the exclusion window (restore releases its lock just before the atomic
+/// rename, see `restore_from`), so it is retried. Returns `false` once
+/// restore finished without any probe being excluded; the caller then
+/// reruns the scenario with more padding rather than guessing at timing.
+/// Any other error is a real failure and panics.
+fn probe_while_restore_runs<T, R: std::fmt::Debug>(
+    restore: &std::thread::JoinHandle<T>,
+    mut probe: impl FnMut() -> rusqlite::Result<R>,
+) -> bool {
+    loop {
+        if restore.is_finished() {
+            return false;
+        }
+        let result = probe();
+        if is_busy_or_locked(&result) {
+            return true;
+        }
+        if let Err(error) = result {
+            panic!("peer probe must observe busy/locked or succeed; got {error:?}");
+        }
+        std::thread::yield_now();
+    }
+}
+
+/// Run `scenario` with growing padding until one run observes the
+/// exclusion. `scenario` returns `true` when a probe observed busy/locked
+/// while restore was running, `false` when restore finished before any
+/// probe landed in the exclusion window.
+fn assert_exclusion_observed(what: &str, scenario: impl Fn(usize) -> bool) {
+    for chunks in PADDING_CHUNKS_PER_ATTEMPT {
+        if scenario(chunks) {
+            return;
+        }
+        eprintln!(
+            "{what}: restore finished before a probe landed in the exclusion window \
+             with {chunks} padding chunks; retrying with more padding"
+        );
+    }
+    panic!(
+        "{what}: no probe observed busy/locked across {} attempts",
+        PADDING_CHUNKS_PER_ATTEMPT.len()
+    );
 }
 
 /// `restore_from` must hold a SQLite-native exclusive
@@ -144,88 +231,71 @@ fn restore_blocks_when_peer_holds_exclusive() {
 
 #[test]
 fn restore_excludes_plain_readers_for_restore_duration() {
-    let (persister, tmp, db_path) = fresh_persister();
-    seed_one_row(&persister, &wid(0xA3));
-    let backup_dir = common::secure_tempdir().expect("backup dir");
-    let backup_path = persister.backup_to(backup_dir.path()).unwrap();
-    drop(persister);
+    assert_exclusion_observed("plain reader", |padding_chunks| {
+        let (persister, tmp, db_path) = fresh_persister();
+        seed_one_row(&persister, &wid(0xA3));
+        let backup_dir = common::secure_tempdir().expect("backup dir");
+        let backup_path = persister.backup_to(backup_dir.path()).unwrap();
+        drop(persister);
 
-    // Keep the staged-copy phase observable long enough to probe the lock
-    // without a test-only production hook.
-    pad_backup_for_observable_restore(&backup_path);
+        // Keep the staged-copy phase observable long enough to probe the
+        // lock without a test-only production hook.
+        pad_backup_for_observable_restore(&backup_path, padding_chunks);
 
-    let existing: HashSet<_> = std::fs::read_dir(tmp.path())
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name())
-        .collect();
-    let restore_db = db_path.clone();
-    let restore_source = backup_path.clone();
-    let restore = std::thread::spawn(move || {
-        SqlitePersister::restore_from_skip_backup(&restore_db, &restore_source)
+        let existing = snapshot_dir(tmp.path());
+        let restore_db = db_path.clone();
+        let restore_source = backup_path.clone();
+        let restore = std::thread::spawn(move || {
+            SqlitePersister::restore_from_skip_backup(&restore_db, &restore_source)
+        });
+
+        let observed = wait_for_staged_copy(&db_path, &existing, &restore)
+            && probe_while_restore_runs(&restore, || {
+                let reader = rusqlite::Connection::open(&db_path)?;
+                reader.busy_timeout(Duration::ZERO)?;
+                reader.query_row("SELECT COUNT(*) FROM wallets", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+            });
+
+        restore.join().unwrap().expect("restore succeeds");
+        drop(tmp);
+        drop(backup_dir);
+        observed
     });
-
-    wait_for_staged_copy(tmp.path(), &existing, &restore);
-
-    let reader = rusqlite::Connection::open(&db_path).unwrap();
-    reader.busy_timeout(Duration::ZERO).unwrap();
-    let read = reader.query_row("SELECT COUNT(*) FROM wallets", [], |row| {
-        row.get::<_, i64>(0)
-    });
-    assert!(
-        matches!(
-            read,
-            Err(rusqlite::Error::SqliteFailure(ref error, _))
-                if matches!(
-                    error.code,
-                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
-                )
-        ),
-        "plain reader must observe busy/locked while restore holds exclusion; got {read:?}"
-    );
-
-    restore.join().unwrap().expect("restore succeeds");
 }
 
 #[test]
 fn restore_excludes_peer_creating_missing_destination() {
-    let (persister, tmp, _source_db_path) = fresh_persister();
-    seed_one_row(&persister, &wid(0xA4));
-    let backup_dir = common::secure_tempdir().expect("backup dir");
-    let backup_path = persister.backup_to(backup_dir.path()).unwrap();
-    drop(persister);
-    pad_backup_for_observable_restore(&backup_path);
+    assert_exclusion_observed("peer creating a missing destination", |padding_chunks| {
+        let (persister, tmp, _source_db_path) = fresh_persister();
+        seed_one_row(&persister, &wid(0xA4));
+        let backup_dir = common::secure_tempdir().expect("backup dir");
+        let backup_path = persister.backup_to(backup_dir.path()).unwrap();
+        drop(persister);
+        pad_backup_for_observable_restore(&backup_path, padding_chunks);
 
-    let destination = tmp.path().join("restored-missing.db");
-    assert!(!destination.exists());
-    let existing: HashSet<_> = std::fs::read_dir(tmp.path())
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name())
-        .collect();
-    let restore_destination = destination.clone();
-    let restore_source = backup_path.clone();
-    let restore = std::thread::spawn(move || {
-        SqlitePersister::restore_from_skip_backup(&restore_destination, &restore_source)
+        let destination = tmp.path().join("restored-missing.db");
+        assert!(!destination.exists());
+        let existing = snapshot_dir(tmp.path());
+        let restore_destination = destination.clone();
+        let restore_source = backup_path.clone();
+        let restore = std::thread::spawn(move || {
+            SqlitePersister::restore_from_skip_backup(&restore_destination, &restore_source)
+        });
+
+        let observed = wait_for_staged_copy(&destination, &existing, &restore)
+            && probe_while_restore_runs(&restore, || {
+                let peer = rusqlite::Connection::open(&destination)?;
+                peer.busy_timeout(Duration::ZERO)?;
+                peer.execute_batch("CREATE TABLE peer_write (value INTEGER)")
+            });
+
+        restore.join().unwrap().expect("restore succeeds");
+        drop(tmp);
+        drop(backup_dir);
+        observed
     });
-
-    wait_for_staged_copy(tmp.path(), &existing, &restore);
-    let peer = rusqlite::Connection::open(&destination).unwrap();
-    peer.busy_timeout(Duration::ZERO).unwrap();
-    let peer_write = peer.execute_batch("CREATE TABLE peer_write (value INTEGER)");
-    drop(peer);
-    let restore_result = restore.join().unwrap();
-
-    assert!(
-        matches!(
-            peer_write,
-            Err(rusqlite::Error::SqliteFailure(ref error, _))
-                if matches!(
-                    error.code,
-                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
-                )
-        ),
-        "peer creating a missing destination must observe busy/locked; got {peer_write:?}"
-    );
-    restore_result.expect("restore succeeds");
 }
 
 /// flock / fs2 / fs4 must be gone from the persister.
