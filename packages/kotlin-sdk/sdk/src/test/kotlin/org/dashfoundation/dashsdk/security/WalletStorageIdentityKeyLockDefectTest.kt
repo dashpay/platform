@@ -106,6 +106,25 @@ class WalletStorageIdentityKeyLockDefectTest {
     }
 
     @Test
+    fun shouldNotReportALockDeniedBlobRecoverableWhenTheFingerprintMismatches() = runBlocking {
+        storage.storePrivateKey(pubkeyHex, privateKey)
+
+        // The alias key was replaced since the blob was written, so the stored
+        // fingerprint no longer matches: this blob belongs to a key that is
+        // gone. A device-locked denial is thrown at cipher.init, before the
+        // ciphertext is ever examined, so it cannot vouch for ownership —
+        // reporting "recoverable" here would hide the re-derive the key-health
+        // sheet must offer.
+        fake.fingerprintSuffix = "-rotated"
+        fake.failDeviceBoundDecrypts = Int.MAX_VALUE
+
+        assertFalse(
+            "a pre-ciphertext denial must not vouch for a mismatched blob",
+            storage.probeIdentityKeyRecoverability(pubkeyHex),
+        )
+    }
+
+    @Test
     fun shouldRetryFalseLockedIdentityReadAndSucceedWithoutBrandingTheDevice() = runBlocking {
         storage.storePrivateKey(pubkeyHex, privateKey)
         fake.deviceBoundDecryptCalls = 0
@@ -365,7 +384,10 @@ private class DeviceBoundLockDefectFakeKeystore :
         return blob.ciphertext.copyOfRange(2, 2 + len).also { lastIdentityDecryptRef = it }
     }
 
-    private fun fpOf(alias: String): String = "fake-fp-$alias"
+    /** Appended to every alias fingerprint — flip it to model a rotated key. */
+    var fingerprintSuffix: String = ""
+
+    private fun fpOf(alias: String): String = "fake-fp-$alias$fingerprintSuffix"
 
     private fun aliasTag(alias: String): Byte =
         if (alias == KEYS_ALIAS_DEVICE_BOUND) 1 else 2

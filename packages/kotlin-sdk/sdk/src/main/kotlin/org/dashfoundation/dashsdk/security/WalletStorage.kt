@@ -611,12 +611,23 @@ class WalletStorage(
                 recordLockBindingDefectFromDeniedRead("retrieveMnemonicUtf8", denial)
             },
         )
-        // Deliberately the PRE-decrypt snapshot: this is the hot resolver
-        // path (Rust calls it synchronously for every derivation), so it must
-        // not pay a second DataStore read. The only writer that could have
-        // set the flag during the decrypt is the exhausted-ladder recorder
+        // Deliberately the PRE-decrypt snapshot for the flag: this is the hot
+        // resolver path (Rust calls it synchronously for every derivation), so
+        // it must not pay a second DataStore read. The only writer that could
+        // have set the flag during the decrypt is the exhausted-ladder recorder
         // above, and that path throws instead of reaching here.
-        if (alias == KeystoreManager.MASTER_ALIAS && prefs[MASTER_LOCK_DEFECT_KEY] == true) {
+        //
+        // The witness is checked HERE rather than inherited from the flag: the
+        // re-wrap encrypts under MASTER_ALIAS_UNBOUND, which PROVISIONS that
+        // alias, so a restored flag reaching this line would mint its own
+        // evidence and the device-local gate would authorize itself. Requiring
+        // the witness first makes that impossible. hasUnboundMasterKey is a
+        // non-suspending Keystore presence check, so the hot path still pays
+        // no second DataStore read.
+        if (alias == KeystoreManager.MASTER_ALIAS &&
+            prefs[MASTER_LOCK_DEFECT_KEY] == true &&
+            keystore.hasUnboundMasterKey()
+        ) {
             try {
                 rewrapMnemonicUnbound(walletId, plain, encoded)
             } catch (t: Throwable) {
@@ -1464,17 +1475,18 @@ class WalletStorage(
             } else {
                 false
             }
-        } catch (e: KeystoreDeviceLockedException) {
-            // The device's lock gate is shut (genuinely, or the false-locked
-            // defect). The blob and its key are intact and open as soon as
-            // the gate lets go, so this is RECOVERABLE — unconditionally,
-            // unlike UNAE. The [unaeProvesRecoverable] caveat exists because
-            // a closed AUTH gate hides WHICH key was asked; a device-locked
-            // denial carries its alias and proves nothing about ownership
-            // either way, so reporting "strandable" here would offer a
-            // re-derive for a perfectly good key.
-            true
-        } catch (e: UserNotAuthenticatedException) {
+        } catch (_: KeystoreDeviceLockedException) {
+            // Same epistemic status as UNAE, so it obeys the same flag. A
+            // device-locked denial is thrown at `cipher.init`, BEFORE the
+            // ciphertext is examined, so it says the gate is shut and nothing
+            // about whether this alias actually wrote the blob. When the
+            // caller has independent proof of ownership (the stored
+            // fingerprint matches the recorded alias) the key really is intact
+            // behind a shut gate — recoverable. When it does not, returning
+            // true would report a blob belonging to a REPLACED key as healthy
+            // and suppress the re-derive the key-health sheet must offer.
+            unaeProvesRecoverable
+        } catch (_: UserNotAuthenticatedException) {
             unaeProvesRecoverable
         } catch (e: GeneralSecurityException) {
             false

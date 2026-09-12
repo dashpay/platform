@@ -389,6 +389,30 @@ class WalletStorageDeviceLockedRetryTest {
     }
 
     @Test
+    fun shouldNotLetARestoredFlagMintItsOwnWitnessViaTheRewrap() = runBlocking {
+        storage.storeMnemonic(walletId, mnemonic)
+        fake.failMasterEncrypts = Int.MAX_VALUE
+        storage.storeMnemonic(siblingWalletId, mnemonic) // earns the record
+        fake.failMasterEncrypts = 0
+
+        // Model the restore: the preference survived, the Keystore key did not.
+        fake.unboundKeyProvisioned = false
+        fake.unboundEncryptCalls = 0
+
+        // The re-wrap encrypts under the unbound alias, which PROVISIONS it —
+        // so if the read path trusted the portable flag alone it would mint
+        // the very evidence the flag is supposed to be checked against.
+        assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
+
+        assertEquals(
+            "a restored flag must not be able to create its own witness",
+            0,
+            fake.unboundEncryptCalls,
+        )
+        assertFalse(storage.isMasterKeyLockBindingDefectObserved())
+    }
+
+    @Test
     fun shouldIgnoreADefectFlagWithoutItsDeviceLocalKeystoreWitness() = runBlocking {
         // Earn the defect record on "this" device.
         fake.failMasterEncrypts = Int.MAX_VALUE
