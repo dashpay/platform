@@ -559,9 +559,10 @@ mod tests {
     /// The byte cap is a consensus parameter, so the only way every validator adopts it at the
     /// same height is Drive returning it from both proposal paths at the activation boundary
     /// and from nowhere else. Upgrading 16 to 17 with independent process-proposal
-    /// verification on: the boundary block pushes the block parameters from `prepare_proposal`
-    /// and `process_proposal` alike, every other block pushes none, and a round that is
-    /// retried before finalization returns the same update from the cached proposer results.
+    /// verification on: the activation block is proposed once, abandoned, and proposed again
+    /// in a later round, and both rounds return the same block parameters from
+    /// `prepare_proposal` and `process_proposal` alike over the same app hash; every other
+    /// block, before and after, pushes none.
     #[stack_size(4 * 1024 * 1024)]
     #[test]
     async fn run_chain_upgrade_to_v17_pushes_block_params_on_both_proposal_paths() {
@@ -637,7 +638,9 @@ mod tests {
             "the boundary must be the first version carrying block parameters"
         );
 
-        // Two epochs: the first locks 17 in, the second activates it on its first block.
+        // Two epochs of one-second blocks: the votes of the first lock 17 in at the first
+        // block of the second, and the chain stops one block short of the third epoch, whose
+        // first block activates it.
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -652,7 +655,7 @@ mod tests {
             ..
         } = run_chain_for_strategy(
             &mut platform,
-            130,
+            120,
             strategy.clone(),
             config.clone(),
             17,
@@ -662,62 +665,32 @@ mod tests {
         .await;
 
         let state = abci_app.platform.state.load();
-        assert_eq!(state.current_protocol_version_in_consensus(), 17);
+        assert_eq!(state.last_committed_block_epoch().index, 1);
+        assert_eq!(state.current_protocol_version_in_consensus(), 16);
         assert_eq!(state.next_epoch_protocol_version(), 17);
-        let last_committed_height = state
-            .last_committed_block_info()
-            .as_ref()
-            .expect("expected committed block info")
-            .basic_info()
-            .height;
+        let app_hash_before_activation = state
+            .last_committed_block_app_hash()
+            .expect("expected a committed app hash");
+        let activation_height = state.last_committed_block_height() + 1;
         drop(state);
 
-        let boundary_heights: Vec<u64> = consensus_param_updates_per_block
-            .iter()
-            .filter(|(_, updates)| {
-                updates
-                    .prepare_proposal
-                    .as_ref()
-                    .is_some_and(|params| params.block.is_some())
-            })
-            .map(|(height, _)| *height)
-            .collect();
-        assert_eq!(
-            boundary_heights.len(),
-            1,
-            "exactly one block pushes block parameters, got heights {boundary_heights:?}"
-        );
-        let boundary_height = boundary_heights[0];
-        assert!(boundary_height > 1, "the boundary is not the genesis block");
-
-        for (height, updates) in &consensus_param_updates_per_block {
-            assert_eq!(
-                updates.prepare_proposal, updates.process_proposal,
-                "the proposer and validator paths disagree at height {height}"
-            );
-            if *height == boundary_height {
-                let params = updates
-                    .prepare_proposal
-                    .as_ref()
-                    .expect("the boundary block pushes an update");
-                assert_eq!(params.block, Some(expected_block_params));
-                assert_eq!(
-                    params.version.as_ref().expect("version params").app_version,
-                    17
-                );
-            } else {
+        for (height, block) in &consensus_param_updates_per_block {
+            for updates in &block.rounds {
+                assert_eq!(updates.prepare_proposal, updates.process_proposal);
                 assert!(
                     updates
                         .prepare_proposal
                         .as_ref()
                         .is_none_or(|params| params.block.is_none()),
-                    "height {height} must not push block parameters"
+                    "height {height} predates the activation and must not push block parameters"
                 );
             }
         }
 
-        // A retried round after activation is served from the cached proposer results and
-        // returns no block parameters, exactly like the first round of any other block.
+        // The activation block: round 0 is prepared and processed on both paths and then
+        // abandoned (not finalized); round 1 is prepared and processed again and finalized.
+        // This is the retry Tenderdash performs when a proposal times out, and the block
+        // parameters have to come out identical from every round on every path.
         let retry_strategy = NetworkStrategy {
             failure_testing: Some(FailureStrategy {
                 deterministic_start_seed: None,
@@ -726,15 +699,108 @@ mod tests {
                 expect_specific_block_errors_with_codes: Default::default(),
                 rounds_before_successful_block: Some(1),
             }),
-            ..strategy
+            ..strategy.clone()
         };
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums,
+            current_validator_quorum_hash,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            consensus_param_updates_per_block,
+            ..
+        } = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start: activation_height,
+                core_height_start: 1,
+                block_count: 1,
+                proposers,
+                validator_quorums,
+                current_validator_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions.clone()),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: 1681094380000,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
+            },
+            retry_strategy,
+            config.clone(),
+            StrategyRandomness::SeedEntropy(11),
+        )
+        .await;
+
+        let activation = consensus_param_updates_per_block
+            .get(&activation_height)
+            .expect("the activation block was executed");
+        assert_eq!(consensus_param_updates_per_block.len(), 1);
+        assert_eq!(
+            activation.rounds.len(),
+            2,
+            "round 0 was abandoned and round 1 finalized"
+        );
+
+        // Exactly one block committed, the state it committed is the finalized round's, and
+        // the abandoned round left nothing behind: it computed the same state over the same
+        // parent and its transaction was dropped, so the committed root is the finalized one.
+        let state = abci_app.platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 2);
+        assert_eq!(state.current_protocol_version_in_consensus(), 17);
+        assert_eq!(state.last_committed_block_height(), activation_height);
+        let committed_app_hash = state
+            .last_committed_block_app_hash()
+            .expect("expected a committed app hash");
+        assert_ne!(
+            committed_app_hash, app_hash_before_activation,
+            "the activation block committed new state"
+        );
+        assert_eq!(committed_app_hash, activation.rounds[1].app_hash);
+        let committed_root_hash = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version_17.drive.grove_version)
+            .unwrap()
+            .expect("expected the committed root hash");
+        assert_eq!(committed_root_hash, committed_app_hash);
+        drop(state);
+        for (round, updates) in activation.rounds.iter().enumerate() {
+            assert_eq!(
+                updates.prepare_proposal, updates.process_proposal,
+                "the proposer and validator paths disagree at round {round}"
+            );
+            let params = updates
+                .prepare_proposal
+                .as_ref()
+                .expect("the activation block pushes an update in every round");
+            assert_eq!(params.block, Some(expected_block_params));
+            assert_eq!(
+                params.version.as_ref().expect("version params").app_version,
+                17
+            );
+        }
+        assert_eq!(
+            activation.rounds[0].app_hash, activation.rounds[1].app_hash,
+            "the abandoned round and the finalized round computed different app hashes"
+        );
+
+        // After activation nothing pushes block parameters again, whether or not a round is
+        // retried: a later block proposes nothing new and a retried round is served from the
+        // cached proposer results.
         let ChainExecutionOutcome {
             consensus_param_updates_per_block,
             ..
         } = continue_chain_for_strategy(
             abci_app,
             ChainExecutionParameters {
-                block_start: last_committed_height + 1,
+                block_start: activation_height + 1,
                 core_height_start: 1,
                 block_count: 3,
                 proposers,
@@ -750,21 +816,33 @@ mod tests {
                 current_identities: Vec::new(),
                 current_addresses_with_balance: AddressesWithBalance::default(),
             },
-            retry_strategy,
+            NetworkStrategy {
+                failure_testing: Some(FailureStrategy {
+                    deterministic_start_seed: None,
+                    dont_finalize_block: false,
+                    expect_every_block_errors_with_codes: vec![],
+                    expect_specific_block_errors_with_codes: Default::default(),
+                    rounds_before_successful_block: Some(1),
+                }),
+                ..strategy
+            },
             config,
-            StrategyRandomness::SeedEntropy(11),
+            StrategyRandomness::SeedEntropy(12),
         )
         .await;
         assert_eq!(consensus_param_updates_per_block.len(), 3);
-        for (height, updates) in &consensus_param_updates_per_block {
-            assert_eq!(updates.prepare_proposal, updates.process_proposal);
-            assert!(
-                updates
-                    .prepare_proposal
-                    .as_ref()
-                    .is_none_or(|params| params.block.is_none()),
-                "height {height} must not push block parameters after activation"
-            );
+        for (height, block) in &consensus_param_updates_per_block {
+            assert_eq!(block.rounds.len(), 2);
+            for updates in &block.rounds {
+                assert_eq!(updates.prepare_proposal, updates.process_proposal);
+                assert!(
+                    updates
+                        .prepare_proposal
+                        .as_ref()
+                        .is_none_or(|params| params.block.is_none()),
+                    "height {height} must not push block parameters after activation"
+                );
+            }
         }
     }
 

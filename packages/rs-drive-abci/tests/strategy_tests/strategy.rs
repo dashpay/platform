@@ -3099,18 +3099,28 @@ pub struct ChainExecutionOutcome<'a> {
     /// height to the validator set update at that height
     pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
     pub state_transition_results_per_block: BTreeMap<u64, Vec<(StateTransition, ExecTxResult)>>,
-    /// height to the consensus parameter update each proposal path returned at that height:
-    /// the proposer's (`prepare_proposal`) and, when `independent_process_proposal_verification`
-    /// is on, the validator's (`process_proposal`)
-    pub consensus_param_updates_per_block: BTreeMap<u64, ProposalConsensusParamUpdates>,
+    /// height to what each round of the block at that height returned: the consensus
+    /// parameter update of the proposer path (`prepare_proposal`) and, when
+    /// `independent_process_proposal_verification` is on, of the validator path
+    /// (`process_proposal`), with the app hash they agreed on
+    pub consensus_param_updates_per_block: BTreeMap<u64, BlockProposalRounds>,
     pub signer: SimpleSigner,
 }
 
-/// The consensus parameter update each proposal path of one block returned.
+/// What every round of one block returned, in round order; rounds before the last one were
+/// abandoned without finalization (`FailureStrategy::rounds_before_successful_block`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BlockProposalRounds {
+    pub rounds: Vec<ProposalConsensusParamUpdates>,
+}
+
+/// The consensus parameter update each proposal path of one round returned, and the app hash
+/// the round produced.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ProposalConsensusParamUpdates {
     pub prepare_proposal: Option<ConsensusParams>,
     pub process_proposal: Option<ConsensusParams>,
+    pub app_hash: [u8; 32],
 }
 
 impl ChainExecutionOutcome<'_> {
