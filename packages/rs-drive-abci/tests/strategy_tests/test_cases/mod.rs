@@ -6,6 +6,7 @@ mod core_height_increase;
 mod core_update_tests;
 mod credit_pool_backfill_tests;
 mod data_contract_history_tests;
+mod fee_version_boundary_tests;
 mod identity_and_document_tests;
 mod identity_create_proposal_tests;
 mod identity_transfer_tests;
