@@ -204,7 +204,20 @@ public struct DocumentHistoryLifecycle: Sendable {
             return nil
         }
         func value(_ key: String) -> UInt64? {
-            guard let number = json[key] as? NSNumber, number.doubleValue >= 0 else {
+            // JSONSerialization bridges JSON booleans and fractional numbers to
+            // NSNumber too, so a bare sign check would let `true` and `1.5`
+            // through and truncate them into lifecycle metadata. Accept only a
+            // whole, non-negative number that UInt64 can hold: the upper bound
+            // is strict because `Double(UInt64.max)` rounds up to 2^64, which
+            // `uint64Value` cannot represent.
+            guard let number = json[key] as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID() else {
+                return nil
+            }
+            let asDouble = number.doubleValue
+            guard asDouble >= 0,
+                  asDouble < Double(UInt64.max),
+                  asDouble == asDouble.rounded(.towardZero) else {
                 return nil
             }
             return number.uint64Value
