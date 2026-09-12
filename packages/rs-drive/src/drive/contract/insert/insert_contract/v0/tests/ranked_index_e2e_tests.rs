@@ -67,12 +67,15 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::platform_value::Value;
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
+use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 use grovedb::element::indexed::AVG_FIXED_POINT_SCALE;
 use grovedb::Element;
+use std::collections::BTreeMap;
 
 /// The one index property every doctype in the fixture ranks by.
 const GROUP_PROPERTY: &str = "restaurantId";
@@ -1331,6 +1334,10 @@ fn estimated_and_actual_update_fees(
         .document_type_for_name(document_type_name)
         .unwrap_or_else(|_| panic!("{document_type_name} doctype exists"));
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+    // The replaced element carries epoch flags, so pricing its removal needs
+    // the fee history of the removing block, as every production caller
+    // passes.
+    let fee_history: CachedEpochIndexFeeVersions = BTreeMap::from([(0, FeeVersion::first())]);
 
     let run = |apply: bool| {
         drive
@@ -1344,7 +1351,7 @@ fn estimated_and_actual_update_fees(
                 storage_flags.clone(),
                 None,
                 pv,
-                None,
+                Some(&fee_history),
             )
             .unwrap_or_else(|e| {
                 panic!("expected the {document_type_name} update (apply={apply}) to succeed: {e}")
