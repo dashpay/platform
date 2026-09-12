@@ -1,8 +1,14 @@
+use alloc::vec::Vec;
+use bincode::enc;
+#[cfg(feature = "platform-version")]
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;
-use bincode::{enc, Encode};
+#[cfg(feature = "platform-version")]
+use bincode::Encode;
+#[cfg(feature = "platform-version")]
 use platform_version::version::PlatformVersion;
 
+#[cfg(feature = "platform-version")]
 mod impls;
 
 #[derive(Default)]
@@ -37,6 +43,7 @@ impl enc::write::Writer for VecWriter {
     }
 }
 
+#[cfg(feature = "platform-version")]
 pub trait PlatformVersionEncode {
     /// Encode a given type.
     fn platform_encode<E: Encoder>(
@@ -47,6 +54,7 @@ pub trait PlatformVersionEncode {
 }
 
 /// Encode the variant of the given option. Will not encode the option itself.
+#[cfg(feature = "platform-version")]
 #[inline]
 pub(crate) fn encode_option_variant<E: Encoder, T>(
     encoder: &mut E,
@@ -59,12 +67,13 @@ pub(crate) fn encode_option_variant<E: Encoder, T>(
 }
 
 /// Encodes the length of any slice, container, etc into the given encoder
+#[cfg(feature = "platform-version")]
 #[inline]
 pub(crate) fn encode_slice_len<E: Encoder>(encoder: &mut E, len: usize) -> Result<(), EncodeError> {
     (len as u64).encode(encoder)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "platform-version"))]
 #[allow(clippy::drop_non_drop)]
 mod tests {
     use super::*;

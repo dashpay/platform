@@ -1,3 +1,4 @@
+use alloc::string::String;
 use core::fmt::{self, Display};
 use core::ops;
 
@@ -132,6 +133,8 @@ where
 
 // Prevent users from implementing the Index trait.
 mod private {
+    use alloc::string::String;
+
     pub trait Sealed {}
     impl Sealed for usize {}
     impl Sealed for str {}

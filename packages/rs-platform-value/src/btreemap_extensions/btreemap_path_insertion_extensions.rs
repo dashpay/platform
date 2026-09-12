@@ -1,6 +1,7 @@
 use crate::value_map::{ValueMap, ValueMapHelper};
 use crate::{Error, Value};
-use std::collections::BTreeMap;
+use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
 
 pub trait BTreeValueMapInsertionPathHelper {
     fn insert_at_path(&mut self, path: &str, value: Value) -> Result<(), Error>;

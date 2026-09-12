@@ -1,16 +1,28 @@
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+#[cfg(feature = "platform-version")]
 use bincode::enc::Encoder;
+#[cfg(feature = "platform-version")]
 use bincode::error::EncodeError;
 use bincode::{Decode, Encode};
+use core::convert::{TryFrom, TryInto};
+use core::fmt;
+#[cfg(feature = "platform-version")]
+use platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode};
+#[cfg(feature = "platform-version")]
+use platform_version::version::PlatformVersion;
+#[cfg(feature = "random")]
 use rand::distributions::Standard;
+#[cfg(feature = "random")]
 use rand::prelude::Distribution;
+#[cfg(feature = "random")]
 use rand::rngs::StdRng;
+#[cfg(feature = "random")]
 use rand::Rng;
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "json")]
 use serde_json::Value as JsonValue;
-use std::convert::{TryFrom, TryInto};
-use std::fmt;
 
 use crate::string_encoding::{Encoding, ALL_ENCODINGS};
 use crate::types::encoding_string_to_encoding;
@@ -38,6 +50,7 @@ pub struct IdentifierBytes32(pub [u8; 32]);
 )]
 pub struct Identifier(pub IdentifierBytes32);
 
+#[cfg(feature = "random")]
 impl Distribution<Identifier> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Identifier {
         let bytes: [u8; 32] = rng.gen();
@@ -45,20 +58,22 @@ impl Distribution<Identifier> for Standard {
     }
 }
 
-impl platform_serialization::PlatformVersionEncode for Identifier {
+#[cfg(feature = "platform-version")]
+impl PlatformVersionEncode for Identifier {
     fn platform_encode<E: Encoder>(
         &self,
         encoder: &mut E,
-        _: &platform_version::version::PlatformVersion,
+        _: &PlatformVersion,
     ) -> Result<(), EncodeError> {
         self.0 .0.encode(encoder)
     }
 }
 
-impl platform_serialization::PlatformVersionedDecode for Identifier {
+#[cfg(feature = "platform-version")]
+impl PlatformVersionedDecode for Identifier {
     fn platform_versioned_decode<D: bincode::de::Decoder>(
         decoder: &mut D,
-        _platform_version: &platform_version::version::PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, bincode::error::DecodeError> {
         let bytes = <[u8; 32]>::decode(decoder)?;
         Ok(Identifier::new(bytes))
@@ -187,10 +202,12 @@ impl Identifier {
         Identifier(IdentifierBytes32(buffer))
     }
 
+    #[cfg(feature = "random")]
     pub fn random() -> Identifier {
         Identifier(IdentifierBytes32(rand::random::<[u8; 32]>()))
     }
 
+    #[cfg(feature = "random")]
     pub fn random_with_rng(rng: &mut StdRng) -> Identifier {
         Identifier(IdentifierBytes32(rng.gen()))
     }
@@ -343,8 +360,8 @@ impl From<[u8; 32]> for Identifier {
     }
 }
 
-impl std::fmt::Display for Identifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Identifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_string(Encoding::Base58))
     }
 }

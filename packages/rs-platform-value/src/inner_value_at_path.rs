@@ -1,6 +1,9 @@
 use crate::value_map::ValueMapHelper;
 use crate::{error, Error, Value, ValueMap};
-use std::collections::BTreeMap;
+use alloc::collections::BTreeMap;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use core::cmp::Ordering;
 
 pub(crate) fn is_array_path(text: &str) -> Result<Option<(&str, Option<usize>)>, Error> {
     // 1. Find the last '[' character.
@@ -342,16 +345,16 @@ impl Value {
                 };
                 // We are setting the value of just member of the array
                 match number_part.cmp(&array.len()) {
-                    std::cmp::Ordering::Less => {
+                    Ordering::Less => {
                         //this already exists
                         current_value = array.get_mut(number_part).unwrap();
                     }
-                    std::cmp::Ordering::Equal => {
+                    Ordering::Equal => {
                         //we should create a new map
                         array.push(Value::Map(ValueMap::new()));
                         current_value = array.get_mut(number_part).unwrap();
                     }
-                    std::cmp::Ordering::Greater => {
+                    Ordering::Greater => {
                         return Err(Error::StructureError(
                             "trying to insert into an array path higher than current array length"
                                 .to_string(),

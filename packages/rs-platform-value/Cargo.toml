@@ -8,25 +8,48 @@ rust-version.workspace = true
 license = "MIT"
 
 [dependencies]
-bincode = { version = "=2.0.1", features = ["serde"] }
+bincode = { version = "=2.0.1", default-features = false, features = ["alloc", "derive", "serde"] }
 ciborium = { version = "0.2.2", optional = true }
-thiserror = "2.0.12"
-bs58 = "0.5.1"
-base64 = "0.22.1"
-hex = "0.4.3"
-serde = { version = "1.0.219", features = ["derive"] }
+thiserror = { version = "2.0.12", default-features = false }
+bs58 = { version = "0.5.1", default-features = false, features = ["alloc"] }
+base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
+hex = { version = "0.4.3", default-features = false, features = ["alloc"] }
+serde = { version = "1.0.219", default-features = false, features = ["derive", "alloc"] }
 serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
-rand = { version = "0.8.4", features = ["small_rng"] }
-treediff = "5.0.0"
-platform-serialization = { path = "../rs-platform-serialization" }
-platform-version = { path = "../rs-platform-version" }
-indexmap = "2.0.2"
+rand = { version = "0.8.4", features = ["small_rng"], optional = true }
+treediff = { version = "5.0.0", optional = true }
+platform-serialization = { path = "../rs-platform-serialization", default-features = false }
+platform-version = { path = "../rs-platform-version", optional = true }
+indexmap = { version = "2.0.2", optional = true }
 
 ### FEATURES #################################################################
 
 [features]
-default = ["std"]
-cbor = ["ciborium"]
-json = ["serde_json"]
+default = ["std", "random", "platform-version"]
 
-std = ["serde/std"]
+# Native profile. Without it the crate is `no_std` + `alloc`: the value type,
+# its bincode and serde encodings, the `platform_value!` macro and the bounded
+# guest codec stay; the thread-local decode depth limit, patch diffing, the
+# hash-based helpers and the JSON/CBOR conveniences go.
+std = [
+  "serde/std",
+  "bincode/std",
+  "bs58/std",
+  "base64/std",
+  "hex/std",
+  "thiserror/std",
+  "platform-serialization/std",
+  "dep:treediff",
+  "dep:indexmap",
+]
+
+# `Identifier::random`, `Identifier::random_with_rng` and
+# `Bytes32::random_with_rng`. Entropy is a host concern, so guests never get it.
+random = ["dep:rand", "std"]
+
+# The `PlatformVersion` aware encode and decode impls for `Identifier`. Guests
+# use explicit `CodecBounds` instead of the native version registry.
+platform-version = ["dep:platform-version", "platform-serialization/platform-version"]
+
+cbor = ["dep:ciborium", "std"]
+json = ["dep:serde_json", "std"]

@@ -1,10 +1,13 @@
 use crate::error::Error;
 use crate::value_map::ValueMap;
 use crate::{to_value, Value};
+use alloc::borrow::ToOwned;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
+use core::fmt::Display;
 use serde::ser::Serialize;
-use std::fmt::Display;
 
 // We only use our own error type; no need for From conversions provided by the
 // standard library's try! macro. This reduces lines of LLVM IR by 4%.
@@ -708,6 +711,7 @@ mod tests {
     // ---------------------------------------------------------------
 
     #[test]
+    #[cfg(feature = "std")]
     fn serialize_hashmap() {
         let mut map = std::collections::HashMap::new();
         map.insert("key", 42u32);
@@ -981,6 +985,7 @@ mod tests {
     // ---------------------------------------------------------------
 
     #[test]
+    #[cfg(feature = "std")]
     fn map_key_bool_now_supported() {
         let mut map = std::collections::HashMap::new();
         map.insert(true, "value");
@@ -995,6 +1000,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn map_key_string_works() {
         let mut map = std::collections::HashMap::new();
         map.insert("key".to_string(), 42u32);
@@ -1003,6 +1009,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn map_key_integer_works() {
         let mut map = std::collections::HashMap::new();
         map.insert(42u32, "value");

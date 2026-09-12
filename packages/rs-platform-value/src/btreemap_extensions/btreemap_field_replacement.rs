@@ -1,11 +1,14 @@
 use crate::value_map::ValueMapHelper;
 use crate::{Error, Value};
-use std::collections::BTreeMap;
+use alloc::borrow::ToOwned;
+use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
+use alloc::vec::IntoIter;
+use alloc::vec::Vec;
 
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
-use std::iter::Peekable;
-use std::vec::IntoIter;
+use core::iter::Peekable;
 
 #[derive(Debug, Clone, Copy)]
 pub enum IntegerReplacementType {
