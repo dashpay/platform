@@ -5,6 +5,7 @@ use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 use v0::compute_minimum_shielded_fee_v0;
 use v0::compute_shielded_identity_create_fee_v0;
+use v0::compute_shielded_identity_top_up_fee_v0;
 use v0::compute_shielded_unshield_fee_v0;
 use v0::compute_shielded_verification_fee_v0;
 use v0::compute_shielded_withdrawal_fee_v0;
@@ -77,6 +78,22 @@ pub fn compute_shielded_withdrawal_fee(
         0 => compute_shielded_withdrawal_fee_v0(num_actions, platform_version),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "compute_shielded_withdrawal_fee".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Computes the flat fee for `IdentityTopUpFromShieldedPool` (base minimum plus the flat
+/// identity-balance write component).
+pub fn compute_shielded_identity_top_up_fee(
+    num_actions: usize,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    match platform_version.dpp.methods.compute_minimum_shielded_fee {
+        0 => compute_shielded_identity_top_up_fee_v0(num_actions, platform_version),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "compute_shielded_identity_top_up_fee".to_string(),
             known_versions: vec![0],
             received: version,
         }),

@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 // module and the function share a name but live in different namespaces).
 pub use compute_minimum_shielded_fee::{
     compute_minimum_shielded_fee, compute_shielded_identity_create_fee,
-    compute_shielded_unshield_fee, compute_shielded_verification_fee,
-    compute_shielded_withdrawal_fee,
+    compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
+    compute_shielded_verification_fee, compute_shielded_withdrawal_fee,
 };
 
 // Re-exported so the public paths stay `dpp::shielded::<name>` after moving the sighash preimage
@@ -24,7 +24,9 @@ pub use compute_minimum_shielded_fee::{
 // re-exported (callers use the wrappers; byte-layout tests use the `_v0` impls).
 pub use sighash::{
     compute_platform_sighash, identity_create_from_shielded_extra_sighash_data,
-    identity_create_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
+    identity_create_from_shielded_extra_sighash_data_v0,
+    identity_top_up_from_shielded_extra_sighash_data,
+    identity_top_up_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
     shielded_withdrawal_extra_sighash_data_v0, unshield_extra_sighash_data,
     unshield_extra_sighash_data_v0,
 };
@@ -75,6 +77,10 @@ pub const SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES: u64 = 4100;
 /// evolves, exactly like the per-action note storage does. See
 /// [`compute_minimum_shielded_fee::compute_shielded_unshield_fee`].
 pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
+
+/// Flat storage component charged by `IdentityTopUpFromShieldedPool` for the identity balance
+/// write, priced like the `Unshield` address write so the pool-paid flat fee covers it.
+pub const SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES: u64 = 222;
 
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///

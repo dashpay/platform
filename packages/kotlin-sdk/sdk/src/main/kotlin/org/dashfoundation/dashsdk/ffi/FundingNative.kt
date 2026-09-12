@@ -26,7 +26,9 @@ internal object FundingNative {
     /**
      * The flat shielded fee in credits for a transition of [kind]
      * (0 = ShieldedTransfer/Shield, 1 = Unshield, 2 = ShieldedWithdrawal,
-     * 3 = ShieldFromIdentity: the compute-only floor, no storage term)
+     * 3 = ShieldFromIdentity: the compute-only floor, no storage term,
+     * 4 = IdentityTopUpFromShieldedPool: base plus the flat
+     * identity-balance write cost)
      * and Orchard action count [numActions], computed at [managerHandle]'s
      * network-tracked platform version. No network round-trip; throws on
      * an unknown kind, an invalid manager handle, or overflow.
@@ -226,6 +228,25 @@ internal object FundingNative {
         resolverHandle: Long,
         account: Int,
         toPlatformAddress: String,
+        amount: Long,
+    )
+
+    /**
+     * Shielded to existing-identity top-up, Type 22 (bridges
+     * `platform_wallet_manager_shielded_identity_top_up_from_pool`).
+     * [identityId] is the 32-byte id of an EXISTING Platform identity (it
+     * need not be one this wallet manages); [amount] is the credits the
+     * identity receives, and the flat pool-paid fee ([estimateShieldedFee]
+     * kind 4) is spent from the notes on top of it. [resolverHandle]
+     * supplies the transient spend authority exactly as for
+     * [shieldedUnshield].
+     */
+    external fun shieldedIdentityTopUpFromPool(
+        managerHandle: Long,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        account: Int,
+        identityId: ByteArray,
         amount: Long,
     )
 

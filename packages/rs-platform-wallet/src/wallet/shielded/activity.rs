@@ -105,6 +105,11 @@ pub enum ShieldedActivityKind {
         /// The funding identity's id (32 bytes).
         identity_id: [u8; 32],
     },
+    /// Type 22: shielded pool → an existing Platform identity's balance.
+    IdentityTopUp {
+        /// The credited identity's id (32 bytes).
+        identity_id: [u8; 32],
+    },
     /// Own spend whose outputs are all self-change and which no
     /// correlation arm could refine. The honest residual on the restore
     /// path. Carries `fee: None` because the exact fee is underivable
@@ -128,6 +133,7 @@ impl ShieldedActivityKind {
             ShieldedActivityKind::IdentityCreate { .. } => 6,
             ShieldedActivityKind::ShieldedSpend => 7,
             ShieldedActivityKind::ShieldFromIdentity { .. } => 8,
+            ShieldedActivityKind::IdentityTopUp { .. } => 9,
         }
     }
 }
@@ -1185,6 +1191,9 @@ mod tests {
             },
             ShieldedActivityKind::ShieldedSpend,
             ShieldedActivityKind::ShieldFromIdentity {
+                identity_id: [0u8; 32],
+            },
+            ShieldedActivityKind::IdentityTopUp {
                 identity_id: [0u8; 32],
             },
         ];

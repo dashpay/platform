@@ -353,6 +353,28 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     })),
                 }
             }
+            StateTransition::IdentityTopUpFromShieldedPool(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .identity_top_up_from_shielded_pool_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "identity top up from shielded pool transition: validate_basic_structure".to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "identity top up from shielded pool transition: validate_basic_structure".to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
             StateTransition::ShieldFromAssetLock(st) => {
                 match platform_version
                     .drive_abci
@@ -498,6 +520,13 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                 .validation_and_processing
                 .state_transitions
                 .unshield_state_transition
+                .basic_structure
+                .is_some(),
+            StateTransition::IdentityTopUpFromShieldedPool(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .identity_top_up_from_shielded_pool_state_transition
                 .basic_structure
                 .is_some(),
             StateTransition::ShieldFromAssetLock(_) => platform_version
@@ -882,6 +911,7 @@ mod tests {
                 | StateTransition::AddressCreditWithdrawal(_)
                 | StateTransition::Shield(_)
                 | StateTransition::ShieldedTransfer(_)
+                | StateTransition::IdentityTopUpFromShieldedPool(_)
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_) => false,

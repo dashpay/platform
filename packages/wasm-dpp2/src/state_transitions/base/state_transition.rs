@@ -327,6 +327,7 @@ impl StateTransitionWasm {
             ShieldedWithdrawal(_) => 19,
             IdentityCreateFromShieldedPool(_) => 20,
             ShieldFromIdentity(_) => 21,
+            IdentityTopUpFromShieldedPool(_) => 22,
         }
     }
 
@@ -417,7 +418,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => None,
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => None,
         }
     }
 
@@ -446,7 +448,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => None,
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => None,
         }
     }
 
@@ -593,7 +596,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => {
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set owner for shielded transition",
                 ));
@@ -672,7 +676,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => {
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity contract nonce for shielded transition",
                 ));
@@ -774,7 +779,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => {
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity nonce for shielded transition",
                 ));

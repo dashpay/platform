@@ -1895,6 +1895,46 @@ class PlatformWalletManager(
     }
 
     /**
+     * Shielded to existing-identity top-up (Type 22), a port of Swift's
+     * `PlatformWalletManager.shieldedIdentityTopUpFromPool`
+     * (`PlatformWalletManagerShieldedSync.swift`). Spends notes from
+     * [account] on [walletId] and credits [identityId]'s Platform balance.
+     *
+     * The identity only has to exist on Platform; it does not have to be
+     * one this wallet manages. The flat pool-paid fee
+     * ([ShieldedProver.FeeKind.IdentityTopUpFromPool], i.e.
+     * [estimateShieldedFee] kind 4) is spent from the notes on top of
+     * [amount].
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param identityId the 32-byte id of the identity being topped up.
+     * @param amount credits the identity receives (1 DASH = 1e11 credits).
+     * @param account the ZIP-32 shielded account to spend from (usually 0).
+     */
+    suspend fun shieldedIdentityTopUpFromPool(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        amount: Long,
+        account: Int = 0,
+    ): Unit = teardownGate.op {
+        require(amount > 0) { "amount must be positive, got $amount" }
+        require(account >= 0) { "account must be non-negative, got $account" }
+        require(identityId.size == 32) {
+            "identityId must be exactly 32 bytes, got ${identityId.size}"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedIdentityTopUpFromPool(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                identityId,
+                amount,
+            )
+        }
+    }
+
+    /**
      * Shielded → Core L1 withdrawal (Type 19) — port of Swift's
      * `PlatformWalletManager.shieldedWithdraw(walletId:account:toCoreAddress:amount:coreFeePerByte:)`
      * (`PlatformWalletManagerShieldedSync.swift`). Spends notes from

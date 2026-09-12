@@ -25,6 +25,7 @@ enum ShieldedActivityKindDisplay {
         case 5: return "Withdrawn"
         case 6: return "Identity Created"
         case 8: return "Shielded from Identity"
+        case 9: return "Identity Top-Up from Pool"
         // 7 (ShieldedSpend) and any tag this build doesn't know yet.
         default: return "Shielded Spend"
         }
@@ -40,7 +41,9 @@ enum ShieldedActivityKindDisplay {
         case 3: return "arrow.up.circle.fill"         // Sent
         case 4: return "lock.open.fill"               // Unshield
         case 5: return "arrow.up.right.circle.fill"   // Withdrawal
-        case 6: return "person.crop.circle.badge.plus" // IdentityCreate
+        // IdentityCreate / IdentityTopUp: both send pool value out to a
+        // Platform identity's balance.
+        case 6, 9: return "person.crop.circle.badge.plus"
         default: return "questionmark.circle.fill"     // ShieldedSpend
         }
     }
@@ -282,10 +285,18 @@ struct ShieldedActivityDetailView: View {
                     }
                 }
 
-                // Both identity-bearing kinds carry `identityId`: 6 is the
-                // identity that was created, 8 the identity that was debited.
-                if entry.kindTag == 6 || entry.kindTag == 8, entry.identityId.count == 32 {
-                    Section(entry.kindTag == 6 ? "Created Identity" : "Source Identity") {
+                // Every identity-bearing kind carries `identityId`: 6 is the
+                // identity that was created, 8 the identity that was debited,
+                // 9 the identity the pool topped up.
+                if entry.kindTag == 6 || entry.kindTag == 8 || entry.kindTag == 9,
+                   entry.identityId.count == 32 {
+                    // An expression, not a `switch` statement: a bare
+                    // statement here would be parsed as a view-producing
+                    // branch by the enclosing ViewBuilder.
+                    let identitySectionTitle = entry.kindTag == 6
+                        ? "Created Identity"
+                        : (entry.kindTag == 9 ? "Topped-Up Identity" : "Source Identity")
+                    Section(identitySectionTitle) {
                         let idHex = entry.identityId.map { String(format: "%02x", $0) }.joined()
                         Text(idHex)
                             .font(.caption.monospaced())

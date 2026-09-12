@@ -70,9 +70,9 @@ pub use platform_address::{
     outputs_to_optional_btree_map,
 };
 pub use shielded::{
-    AddressWitnessWasm, SerializedOrchardActionWasm, ShieldFromAssetLockTransitionWasm,
-    ShieldFromIdentityTransitionWasm, ShieldTransitionWasm, ShieldedTransferTransitionWasm,
-    ShieldedWithdrawalTransitionWasm, UnshieldTransitionWasm,
+    AddressWitnessWasm, IdentityTopUpFromShieldedPoolTransitionWasm, SerializedOrchardActionWasm,
+    ShieldFromAssetLockTransitionWasm, ShieldFromIdentityTransitionWasm, ShieldTransitionWasm,
+    ShieldedTransferTransitionWasm, ShieldedWithdrawalTransitionWasm, UnshieldTransitionWasm,
 };
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
 pub use state_transitions::proof_result::{StateTransitionProofResultTypeJs, convert_proof_result};

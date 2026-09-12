@@ -45,6 +45,14 @@ object ShieldedProver {
          * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedShieldFromIdentity].
          */
         ShieldFromIdentity(3),
+
+        /**
+         * IdentityTopUpFromShieldedPool (Type 22): base plus the flat
+         * identity-balance write cost, carved from the value balance like
+         * the other pool-paid kinds. Backs
+         * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedIdentityTopUpFromPool].
+         */
+        IdentityTopUpFromPool(4),
     }
 
     /** Kick the ~30s Halo 2 proving-key build onto a background thread. Idempotent. */

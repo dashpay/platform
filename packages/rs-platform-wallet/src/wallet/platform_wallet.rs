@@ -1429,6 +1429,37 @@ impl PlatformWallet {
         .await
     }
 
+    /// Top up an existing Platform identity's balance from `account`'s
+    /// shielded notes (`IdentityTopUpFromShieldedPool`, type 22). The identity
+    /// need not belong to this wallet: it only has to exist on Platform. The
+    /// identity receives `amount`; the flat pool-paid fee comes out of the
+    /// spent notes on top. `seed` supplies the transient spend authority (see
+    /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_identity_top_up_from_pool<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        identity_id: &Identifier,
+        amount: u64,
+        prover: P,
+    ) -> Result<(), PlatformWalletError> {
+        let keyset = self.derive_spend_keyset(seed, account).await?;
+        super::shielded::operations::identity_top_up_from_pool(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            &keyset,
+            account,
+            *identity_id,
+            amount,
+            &prover,
+        )
+        .await
+    }
+
     /// Withdraw from `account`'s notes to a Core L1 address
     /// (Base58Check string). `core_fee_per_byte` is the L1 fee
     /// rate (duffs/byte). `seed` supplies the transient spend

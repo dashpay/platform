@@ -9,7 +9,8 @@ use crate::error::PlatformWalletError;
 use dpp::fee::Credits;
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_identity_create_fee,
-    compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
+    compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
+    compute_shielded_withdrawal_fee,
 };
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -46,6 +47,9 @@ pub enum ShieldedFeeKind {
         /// Number of public keys in the new identity (the fee scales per key).
         num_keys: usize,
     },
+    /// `compute_shielded_identity_top_up_fee`: IdentityTopUpFromShieldedPool (base plus the flat
+    /// identity-balance write cost, the Unshield model with an identity as the output).
+    IdentityTopUp,
 }
 
 impl ShieldedFeeKind {
@@ -65,6 +69,9 @@ impl ShieldedFeeKind {
             }
             ShieldedFeeKind::IdentityCreate { num_keys } => {
                 compute_shielded_identity_create_fee(num_actions, num_keys, platform_version)
+            }
+            ShieldedFeeKind::IdentityTopUp => {
+                compute_shielded_identity_top_up_fee(num_actions, platform_version)
             }
         }
     }
