@@ -12,6 +12,13 @@ pub mod v1;
 /// validation, readiness verification, host entry, per-byte copy) are added to this group and
 /// its `FEE_DASHVM_VERSION*` constant in place while the protocol version that introduces it is
 /// unreleased.
+///
+/// Consumers read this group from the active protocol version
+/// (`platform_version.fee_version.dashvm`), never from the persisted epoch fee history or any
+/// other lookup by `fee_version_number`: those resolve to the registered fee-history generation,
+/// which serves only the storage, processing, hashing and signature groups and carries no
+/// contract pricing. `dpp::fee::smart_contract_computation::computation_units_to_credits` takes
+/// `&PlatformVersion` for that reason.
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
 pub struct FeeDashVmVersion {
     /// Processing credits charged per computation unit consumed by a contract invocation.

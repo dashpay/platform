@@ -299,6 +299,17 @@ only a group the history never serves keeps the number of the generation it
 agrees with and is not appended to `FEE_VERSIONS`: `FEE_VERSION2` (protocol
 version 9) and `FEE_VERSION3` (protocol version 17) both carry number 1.
 
+The epoch fee history (`previous_fee_versions` in platform state) records a
+schedule only when its number changes, is saved as numbers and restored through
+`FeeVersion::get(number)`, and serves exactly the groups `KnownCostItem` reads:
+storage, processing, hashing and signature. Every other group
+(`data_contract_registration`, `state_transition_min_fees`,
+`vote_resolution_fund_fees`, `dashvm`) is read from the active protocol
+version's schedule, `platform_version.fee_version`, and never from the history.
+Upgrading from protocol version 16 to 17 therefore records nothing new in the
+history and a restart resolves the existing entry to `FEE_VERSION1`; contract
+pricing is unaffected because nothing reads it from there.
+
 ### Smart-contract computation (protocol version 17, 5.0)
 
 Smart-contract work is metered by the runtime in *computation units*
@@ -319,10 +330,11 @@ limit):
 | `max_computation_units_per_invocation` | One outer invocation: a direct call, a predicate, or one scheduled attempt, including every nested call, predicate, module initialisation and host entry it causes. The runtime receives it as the budget of the invocation. |
 | `max_computation_units_per_block` | All invocations in one block, ordinary and scheduled. The block loop reserves an invocation's admitted bound before it runs and settles the actual consumption afterwards (`BlockComputationBudget` in `rs-drive-abci`), so an invocation that would not fit is delayed or rejected, never failed part-way through. |
 
-Units become credits at the schedule's price,
-`FeeVersion::dashvm.credits_per_computation_unit`, through
+Units become credits at the active protocol version's price,
+`platform_version.fee_version.dashvm.credits_per_computation_unit`, through
 `dpp::fee::smart_contract_computation::computation_units_to_credits` (checked
-multiplication). The charge enters the processing fee of the invocation's
+multiplication; the function takes `&PlatformVersion`, so a schedule taken from
+the epoch fee history cannot be passed to it). The charge enters the processing fee of the invocation's
 `FeeResult`, which is what Tenderdash's `gas_used` and `gas_wanted` already
 report, so gas stays denominated in credits and no unit equivalence between
 computation units and Tenderdash gas exists. A failed invocation still consumed

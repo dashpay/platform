@@ -7,8 +7,9 @@
 /// invocation under the same protocol version count exactly the same number of units, whatever
 /// their hardware, cache state or compiler backend.
 ///
-/// Consumption is reported in this unit by the runtime and priced in credits by the fee
-/// schedule (`FeeVersion::dashvm`), see `dpp::fee::smart_contract_computation`.
+/// Consumption is reported in this unit by the runtime and priced in credits by the active
+/// protocol version's fee schedule (`platform_version.fee_version.dashvm`), see
+/// `dpp::fee::smart_contract_computation`.
 pub type ComputationUnits = u64;
 
 /// The consensus limits on smart-contract computation.
@@ -40,8 +41,9 @@ pub type ComputationUnits = u64;
 ///
 /// # Credits and gas
 ///
-/// Units become credits through the protocol-versioned price in the fee schedule
-/// (`FeeVersion::dashvm.credits_per_computation_unit`, checked multiplication). The resulting
+/// Units become credits through the protocol-versioned price in the active protocol version's
+/// fee schedule (`platform_version.fee_version.dashvm.credits_per_computation_unit`, checked
+/// multiplication; the persisted epoch fee history never carries this group). The resulting
 /// charge enters the processing fee of the invocation's `FeeResult`, which is what
 /// Tenderdash's `gas_used` and `gas_wanted` already report. Gas therefore stays denominated in
 /// credits; no unit equivalence between computation units and Tenderdash gas is introduced.
