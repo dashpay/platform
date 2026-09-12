@@ -778,11 +778,25 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::random_document::{
+        CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+    };
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::{Identity, IdentityPublicKey};
+    use dpp::platform_value::Bytes32;
     use dpp::version::PlatformVersion;
     use drive::drive::shielded::paths::{
         shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_IN_POOL_KEY,
         SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY,
     };
+    use drive::grovedb::TransactionArg;
+    use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+    use std::collections::BTreeMap;
 
     /// Recursively compares the GroveDB subtree rooted at `root_path` between
     /// two platforms and returns a list of human-readable differences (empty ⇒
@@ -812,7 +826,7 @@ mod tests {
 
         fn read_level(
             platform: &crate::platform_types::platform::Platform<crate::rpc::core::MockCoreRPCLike>,
-            txn: drive::grovedb::TransactionArg,
+            txn: TransactionArg,
             path: &[Vec<u8>],
         ) -> std::collections::BTreeMap<Vec<u8>, Element> {
             let mut q = Query::new();
@@ -2817,20 +2831,6 @@ mod tests {
     /// dropped and a later round runs it again.
     #[test]
     fn should_activate_the_contract_credits_root_through_the_protocol_change_hook() {
-        use dpp::data_contract::accessors::v0::DataContractV0Getters;
-        use dpp::data_contract::document_type::random_document::{
-            CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
-        };
-        use dpp::identity::accessors::IdentityGettersV0;
-        use dpp::identity::v0::IdentityV0;
-        use dpp::identity::{Identity, IdentityPublicKey};
-        use dpp::platform_value::Bytes32;
-        use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
-        use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-        use rand::rngs::StdRng;
-        use rand::SeedableRng;
-        use std::collections::BTreeMap;
-
         let platform_version_16 = PlatformVersion::get(16).expect("expected v16");
         let platform_version_17 = PlatformVersion::get(17).expect("expected v17");
         let grove_version = &platform_version_17.drive.grove_version;
@@ -2915,7 +2915,7 @@ mod tests {
             )
             .expect("expected to insert the document");
 
-        let root_absent = |transaction: drive::grovedb::TransactionArg| {
+        let root_absent = |transaction: TransactionArg| {
             platform
                 .drive
                 .grove
