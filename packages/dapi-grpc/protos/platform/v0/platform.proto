@@ -1745,7 +1745,27 @@ message GetDocumentHistoryRequest {
     ];              // Only return results after this time in milliseconds
     bool prove = 7; // Flag to request a proof as the response
   }
-  oneof version { GetDocumentHistoryRequestV0 v0 = 1; }
+  message GetDocumentHistoryRequestV1 {
+    message Cursor {
+      uint64 time_ms = 1 [ jstype = JS_STRING ];
+      uint64 revision = 2 [ jstype = JS_STRING ];
+    }
+    bytes data_contract_id = 1;
+    string document_type_name = 2;
+    bytes document_id = 3;
+    google.protobuf.UInt32Value limit = 4;
+    bool prove = 5;
+    oneof selector {
+      uint64 start_at_ms = 6 [ jstype = JS_STRING ];
+      Cursor start_after = 7;
+      uint64 start_at_revision = 8 [ jstype = JS_STRING ];
+      uint64 revision = 9 [ jstype = JS_STRING ];
+    }
+  }
+  oneof version {
+    GetDocumentHistoryRequestV0 v0 = 1;
+    GetDocumentHistoryRequestV1 v1 = 2;
+  }
 }
 
 message GetDocumentHistoryResponse {
@@ -1771,7 +1791,30 @@ message GetDocumentHistoryResponse {
 
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
-  oneof version { GetDocumentHistoryResponseV0 v0 = 1; }
+  message GetDocumentHistoryResponseV1 {
+    message Entry {
+      uint64 time_ms = 1 [ jstype = JS_STRING ];
+      uint64 revision = 2 [ jstype = JS_STRING ];
+      bytes document = 3;
+    }
+    message Lifecycle {
+      enum State {
+        ACTIVE = 0;
+        ABSENT = 1;
+      }
+      State state = 1;
+      uint64 remaining_revisions = 2 [ jstype = JS_STRING ];
+    }
+    repeated Entry entries = 1;
+    Lifecycle lifecycle = 2;
+    Proof entries_proof = 3;
+    Proof metadata_proof = 4;
+    ResponseMetadata metadata = 5;
+  }
+  oneof version {
+    GetDocumentHistoryResponseV0 v0 = 1;
+    GetDocumentHistoryResponseV1 v1 = 2;
+  }
 }
 
 message GetIdentityByPublicKeyHashRequest {

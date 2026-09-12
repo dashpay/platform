@@ -556,6 +556,351 @@ mod tests {
 
     #[stack_size(4 * 1024 * 1024)]
     #[test]
+    async fn run_chain_v13_to_v14_migrates_document_history_and_survives_restart() {
+        use dpp::data_contract::document_type::random_document::{
+            DocumentFieldFillSize, DocumentFieldFillType,
+        };
+        use dpp::tests::json_document::json_document_to_created_contract;
+        use strategy_tests::frequency::Frequency;
+        use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
+        let old_version = PlatformVersion::get(13).unwrap();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/note/note-contract-keep-history-and-can-be-deleted.json",
+            1, false, old_version,
+        ).unwrap();
+        let make_operation = |action| Operation {
+            op_type: OperationType::Document(DocumentOp {
+                contract: created_contract.data_contract().clone(),
+                document_type: created_contract
+                    .data_contract()
+                    .document_type_for_name("note")
+                    .unwrap()
+                    .to_owned_document_type(),
+                action,
+            }),
+            frequency: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+        };
+        let operations = vec![
+            make_operation(DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            )),
+            make_operation(DocumentAction::DocumentActionReplaceRandom),
+        ];
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![(created_contract, None)],
+                operations,
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 50,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: Some(UpgradingInfo {
+                current_protocol_version: 13,
+                proposed_protocol_versions_with_weight: vec![(14, 1)],
+                upgrade_three_quarters_life: 0.0,
+            }),
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig {
+                quorum_size: 30,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                epoch_time_length_s: 60,
+                ..Default::default()
+            },
+            block_spacing_ms: 1_000,
+            testing_configs: PlatformTestConfig {
+                store_platform_state: true,
+                ..PlatformTestConfig::default_minimal_verifications()
+            },
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc();
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums,
+            current_validator_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            mut strategy,
+            state_transition_results_per_block,
+            ..
+        } = run_chain_for_strategy(
+            &mut platform,
+            60,
+            strategy.clone(),
+            config.clone(),
+            14,
+            &mut None,
+            &mut None,
+        )
+        .await;
+
+        for results in state_transition_results_per_block.values() {
+            for (_, result) in results {
+                assert_eq!(result.code, 0);
+            }
+        }
+        let contract = strategy.strategy.start_contracts[0]
+            .0
+            .data_contract()
+            .clone();
+        strategy.strategy.operations.clear();
+        strategy.strategy.identity_inserts = IdentityInsertInfo::default();
+        let primary_path = vec![
+            vec![drive::drive::RootTree::DataContractDocuments as u8],
+            contract.id().to_vec(),
+            vec![1],
+            b"note".to_vec(),
+            vec![0],
+        ];
+        let read_entries = |path: Vec<Vec<u8>>| {
+            let mut query = drive::grovedb::Query::new();
+            query.insert_all();
+            abci_app
+                .platform
+                .drive
+                .grove
+                .query_raw(
+                    &drive::grovedb::PathQuery::new(
+                        path,
+                        drive::grovedb::SizedQuery::new(query, None, None),
+                    ),
+                    false,
+                    true,
+                    true,
+                    drive::query::QueryResultType::QueryKeyElementPairResultType,
+                    None,
+                    &old_version.drive.grove_version,
+                )
+                .value
+                .unwrap()
+                .0
+                .to_key_elements()
+        };
+        let (document_id, expected_revisions) = read_entries(primary_path.clone())
+            .into_iter()
+            .map(|(id, _)| {
+                let mut path = primary_path.clone();
+                path.push(id.clone());
+                let count = read_entries(path).len() - 1;
+                (id, count)
+            })
+            .max_by_key(|(_, count)| *count)
+            .expect("strategy must create historical documents");
+        assert!(
+            expected_revisions > 1,
+            "strategy must replace existing documents"
+        );
+
+        let state = abci_app.platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 0);
+        assert_eq!(state.current_protocol_version_in_consensus(), 13);
+        assert_eq!(state.next_epoch_protocol_version(), 13);
+        let block_start = state
+            .last_committed_block_info()
+            .as_ref()
+            .expect("expected committed block info")
+            .basic_info()
+            .height
+            + 1;
+        drop(state);
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums,
+            current_validator_quorum_hash,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            ..
+        } = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 1,
+                block_count: 1,
+                proposers,
+                validator_quorums,
+                current_validator_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions.clone()),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: 1681094380000,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
+            },
+            strategy.clone(),
+            config.clone(),
+            StrategyRandomness::SeedEntropy(7),
+        )
+        .await;
+
+        let state = abci_app.platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 1);
+        assert_eq!(state.current_protocol_version_in_consensus(), 13);
+        assert_eq!(state.next_epoch_protocol_version(), 14);
+        let block_start = state
+            .last_committed_block_info()
+            .as_ref()
+            .expect("expected committed block info")
+            .basic_info()
+            .height
+            + 1;
+        drop(state);
+
+        drop(abci_app);
+        let TempPlatform {
+            platform: mut platform_before_activation_restart,
+            tempdir,
+        } = platform;
+        let core_rpc = std::mem::take(&mut platform_before_activation_restart.core_rpc);
+        drop(platform_before_activation_restart);
+        platform = TempPlatform::open_with_tempdir(tempdir, config.clone());
+        platform.platform.core_rpc = core_rpc;
+        let state = platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 1);
+        assert_eq!(state.current_protocol_version_in_consensus(), 13);
+        assert_eq!(state.next_epoch_protocol_version(), 14);
+        drop(state);
+        let abci_app = FullAbciApplication::new(&platform.platform);
+
+        let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 1,
+                block_count: 60,
+                proposers,
+                validator_quorums,
+                current_validator_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: 1681094380000,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
+            },
+            strategy,
+            config.clone(),
+            StrategyRandomness::SeedEntropy(18),
+        )
+        .await;
+
+        let state = abci_app.platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 2);
+        assert_eq!(state.current_protocol_version_in_consensus(), 14);
+        assert_eq!(state.next_epoch_protocol_version(), 14);
+        drop(state);
+        let new_version = PlatformVersion::get(14).unwrap();
+        let path = drive::drive::document::paths::document_history_path(
+            contract.id().as_slice(),
+            "note",
+            document_id.as_slice(),
+        );
+        let mut query = drive::grovedb::Query::new();
+        query.insert_all();
+        let query = drive::grovedb::PathQuery::new(
+            path,
+            drive::grovedb::SizedQuery::new(query, None, None),
+        );
+        let (entries, _) = abci_app
+            .platform
+            .drive
+            .grove
+            .query_raw(
+                &query,
+                false,
+                true,
+                true,
+                drive::query::QueryResultType::QueryKeyElementPairResultType,
+                None,
+                &new_version.drive.grove_version,
+            )
+            .value
+            .unwrap();
+        assert_eq!(entries.elements.len(), expected_revisions);
+        assert!(entries
+            .to_key_elements()
+            .iter()
+            .all(|(key, _)| key.len() == 16));
+        let root = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None, &new_version.drive.grove_version)
+            .value
+            .unwrap();
+        drop(abci_app);
+        let TempPlatform {
+            platform: old_platform,
+            tempdir,
+        } = platform;
+        drop(old_platform);
+        let restarted = TempPlatform::open_with_tempdir(tempdir, config);
+        assert_eq!(
+            restarted
+                .state
+                .load()
+                .current_protocol_version_in_consensus(),
+            14
+        );
+        assert_eq!(restarted.state.load().next_epoch_protocol_version(), 14);
+        assert_eq!(
+            restarted
+                .drive
+                .grove
+                .root_hash(None, &new_version.drive.grove_version)
+                .value
+                .unwrap(),
+            root
+        );
+    }
+
+    #[stack_size(4 * 1024 * 1024)]
+    #[test]
     async fn run_chain_v12_to_v13_locks_in_before_activation() {
         let strategy = NetworkStrategy {
             strategy: Strategy {

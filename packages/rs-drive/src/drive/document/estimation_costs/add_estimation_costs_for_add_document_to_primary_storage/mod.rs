@@ -8,6 +8,7 @@ use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;
 
 mod v0;
+mod v1;
 
 impl Drive {
     /// Adds estimated storage costs for adding a document to primary storage based on platform version.
@@ -54,10 +55,16 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 platform_version,
             ),
+            1 => Self::add_estimation_costs_for_add_document_to_primary_storage_v1(
+                document_and_contract_info,
+                primary_key_path,
+                estimated_costs_only_with_layer_info,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "Drive::add_estimation_costs_for_add_document_to_primary_storage"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

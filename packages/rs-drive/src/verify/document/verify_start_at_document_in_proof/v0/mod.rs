@@ -42,7 +42,7 @@ impl DriveDocumentQuery<'_> {
         // document is fetched.
         self.validate_in_clause_shape(platform_version)?;
         let (start_at_document_path, start_at_document_key) =
-            self.start_at_document_path_and_key(&document_id);
+            self.start_at_document_path_and_key(&document_id, platform_version);
         let path_query = PathQuery::new_single_key(
             start_at_document_path.clone(),
             start_at_document_key.clone(),

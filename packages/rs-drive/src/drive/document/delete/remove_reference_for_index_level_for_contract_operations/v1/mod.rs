@@ -221,7 +221,7 @@ impl Drive {
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
                 AllReference(
                     DEFAULT_HASH_SIZE_U8,
-                    document_reference_size(document_type),
+                    document_reference_size(document_type, &platform_version.drive),
                     storage_flags.map(|s| s.serialized_size()),
                 ),
                 &key_info_path,
@@ -250,7 +250,7 @@ impl Drive {
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
                 AllReference(
                     1,
-                    document_reference_size(document_type),
+                    document_reference_size(document_type, &platform_version.drive),
                     storage_flags.map(|s| s.serialized_size()),
                 ),
                 &key_info_path,

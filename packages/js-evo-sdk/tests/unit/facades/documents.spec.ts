@@ -72,13 +72,14 @@ describe('DocumentsFacade', () => {
       proof: {},
       metadata: {},
     });
-    getDocumentHistoryStub = this.sinon.stub(wasmSdk, 'getDocumentHistory').resolves(new Map());
+    getDocumentHistoryStub = this.sinon.stub(wasmSdk, 'getDocumentHistory').resolves({ entries: [], lifecycle: { state: 'ABSENT', remainingRevisions: BigInt(0) } });
     getDocumentHistoryWithProofInfoStub = this.sinon.stub(
       wasmSdk,
       'getDocumentHistoryWithProofInfo',
     ).resolves({
       data: new Map(),
-      proof: {},
+      entriesProof: undefined,
+      metadataProof: {},
       metadata: {},
     });
     getDocumentStub = this.sinon.stub(wasmSdk, 'getDocument').resolves(document);
@@ -166,12 +167,19 @@ describe('DocumentsFacade', () => {
         dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
         documentTypeName: 'note',
         documentId: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
-        startAtMs: 1000,
+        startAfter: { timeMs: BigInt(1000), revision: BigInt(1) },
         limit: 10,
-        offset: 1,
       };
 
-      await client.documents.history(query);
+      const result = {
+        entries: [
+          { timeMs: BigInt(1000), revision: BigInt(2), document },
+          { timeMs: BigInt(1000), revision: BigInt(3), document },
+        ],
+        lifecycle: { state: 'ACTIVE', remainingRevisions: BigInt(3) },
+      };
+      getDocumentHistoryStub.resolves(result);
+      expect(await client.documents.history(query)).to.equal(result);
 
       expect(getDocumentHistoryStub).to.be.calledOnceWithExactly(query);
     });
@@ -183,9 +191,12 @@ describe('DocumentsFacade', () => {
         dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
         documentTypeName: 'note',
         documentId: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
+        revision: BigInt(2),
       };
 
-      await client.documents.historyWithProof(query);
+      const result = { data: { entries: [], lifecycle: { state: 'ABSENT', remainingRevisions: BigInt(0) } }, entriesProof: undefined, metadataProof: { grovedbProof: new Uint8Array([2]) }, metadata: {} };
+      getDocumentHistoryWithProofInfoStub.resolves(result);
+      expect(await client.documents.historyWithProof(query)).to.equal(result);
 
       expect(getDocumentHistoryWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });

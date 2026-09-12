@@ -25,7 +25,7 @@ impl Drive {
         offset: Option<u16>,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<BTreeMap<u64, Document>>), Error> {
-        let path_query = Self::fetch_document_history_query(
+        let path_query = Self::fetch_document_history_query_legacy(
             contract_id,
             document_type_name,
             document_id,

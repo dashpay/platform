@@ -1376,6 +1376,196 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
     }
 }
 
+fn verify_document_history_response_v1(
+    request: platform::get_document_history_request::GetDocumentHistoryRequestV1,
+    response: &platform::GetDocumentHistoryResponse,
+    platform_version: &PlatformVersion,
+    provider: &dyn ContextProvider,
+) -> Result<(Option<DocumentHistory>, ResponseMetadata, Proof), Error> {
+    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use drive::drive::document::history::{
+        DocumentHistoryProofV1, DocumentHistoryQueryV1, DocumentHistorySelector,
+        DocumentHistoryState,
+    };
+    use platform::get_document_history_request::get_document_history_request_v1::Selector;
+    use platform::get_document_history_response::{
+        get_document_history_response_v1::lifecycle::State, Version,
+    };
+    let Some(Version::V1(response)) = &response.version else {
+        return Err(Error::ResponseDecodeError {
+            error: "history response version does not match request".to_owned(),
+        });
+    };
+    let proof = response
+        .metadata_proof
+        .as_ref()
+        .ok_or(Error::NoProofInResult)?;
+    let metadata = response
+        .metadata
+        .as_ref()
+        .ok_or(Error::EmptyResponseMetadata)?;
+    let contract_id = Identifier::from_bytes(&request.data_contract_id).map_err(|error| {
+        Error::ProtocolError {
+            error: error.to_string(),
+        }
+    })?;
+    let document_id =
+        Identifier::from_bytes(&request.document_id).map_err(|error| Error::ProtocolError {
+            error: error.to_string(),
+        })?;
+    let selector = match request.selector.ok_or_else(|| Error::RequestError {
+        error: "history selector is required".to_owned(),
+    })? {
+        Selector::StartAtMs(time) => DocumentHistorySelector::StartAtTime(time),
+        Selector::StartAfter(cursor) => DocumentHistorySelector::StartAfter {
+            time_ms: cursor.time_ms,
+            revision: cursor.revision,
+        },
+        Selector::StartAtRevision(revision) => DocumentHistorySelector::StartAtRevision(revision),
+        Selector::Revision(revision) => DocumentHistorySelector::Revision(revision),
+    };
+    let query =
+        DocumentHistoryQueryV1 {
+            contract_id: contract_id.to_buffer(),
+            document_type_name: request.document_type_name,
+            document_id: document_id.to_buffer(),
+            selector,
+            limit: request.limit.map(u16::try_from).transpose().map_err(|_| {
+                Error::RequestError {
+                    error: "history limit out of bounds".to_owned(),
+                }
+            })?,
+        };
+    query.validate()?;
+    let contract = provider
+        .get_data_contract(&contract_id, platform_version)?
+        .ok_or(Error::NotFound)?;
+    let document_type = contract
+        .document_type_for_name(&query.document_type_name)
+        .map_err(|error| Error::ProtocolError {
+            error: error.to_string(),
+        })?;
+    let proofs = DocumentHistoryProofV1 {
+        entries_proof: response
+            .entries_proof
+            .as_ref()
+            .map(|proof| proof.grovedb_proof.clone()),
+        metadata_proof: proof.grovedb_proof.clone(),
+    };
+    proofs
+        .validate_envelopes()
+        .map_drive_error(proof, metadata)?;
+    let (root, history) =
+        Drive::verify_document_history_v1(&query, &proofs, document_type, platform_version)
+            .map_drive_error(proof, metadata)?;
+    let claimed = response
+        .lifecycle
+        .as_ref()
+        .ok_or_else(|| Error::ResponseDecodeError {
+            error: "history response has no lifecycle metadata".to_owned(),
+        })?;
+    let expected_state = match history.lifecycle.state {
+        DocumentHistoryState::Active => State::Active,
+        DocumentHistoryState::Absent => State::Absent,
+    } as i32;
+    if claimed.state != expected_state
+        || claimed.remaining_revisions != history.lifecycle.remaining_revisions
+    {
+        return Err(Error::ResponseDecodeError {
+            error: "history lifecycle metadata differs from its proof".to_owned(),
+        });
+    }
+    if response.entries.len() != history.entries.len() {
+        return Err(Error::ResponseDecodeError {
+            error: "history entries differ from their proof".to_owned(),
+        });
+    }
+    for (claimed, entry) in response.entries.iter().zip(&history.entries) {
+        if claimed.time_ms != entry.time_ms
+            || claimed.revision != entry.revision
+            || claimed.document
+                != entry
+                    .document
+                    .serialize(document_type, &contract, platform_version)?
+        {
+            return Err(Error::ResponseDecodeError {
+                error: "history entry differs from its proof".to_owned(),
+            });
+        }
+    }
+    verify_tenderdash_proof(proof, metadata, &root, provider)?;
+    if let Some(entries_proof) = &response.entries_proof {
+        verify_tenderdash_proof(entries_proof, metadata, &root, provider)?;
+    }
+    Ok((
+        Some(DocumentHistory {
+            entries: history.entries,
+            lifecycle: Some(history.lifecycle),
+        }),
+        metadata.clone(),
+        proof.clone(),
+    ))
+}
+
+impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistoryProofInfo {
+    type Request = platform::GetDocumentHistoryRequest;
+    type Response = platform::GetDocumentHistoryResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let response = response.into();
+        let Some(platform::get_document_history_response::Version::V1(wire)) = &response.version
+        else {
+            return Err(Error::ResponseDecodeError {
+                error: "history proof info requires a version 1 response".to_owned(),
+            });
+        };
+        let wire = wire.clone();
+        let (history, metadata, proof) = DocumentHistory::maybe_from_proof_with_metadata(
+            request,
+            response,
+            network,
+            platform_version,
+            provider,
+        )?;
+        Ok((
+            history.map(|history| Self {
+                history,
+                response: wire,
+            }),
+            metadata,
+            proof,
+        ))
+    }
+}
+
+impl DocumentHistoryProofInfo {
+    /// Independently authenticate the retained response against its original request.
+    pub fn verify(
+        &self,
+        request: platform::GetDocumentHistoryRequest,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &dyn ContextProvider,
+    ) -> Result<Option<DocumentHistory>, Error> {
+        DocumentHistory::maybe_from_proof(
+            request,
+            platform::GetDocumentHistoryResponse::from(self.response.clone()),
+            network,
+            platform_version,
+            provider,
+        )
+    }
+}
+
 impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
     type Request = platform::GetDocumentHistoryRequest;
     type Response = platform::GetDocumentHistoryResponse;
@@ -1398,6 +1588,14 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
 
         let (contract_id, document_type_name, document_id, limit, offset, start_at_ms) =
             match request.version.ok_or(Error::EmptyVersion)? {
+                get_document_history_request::Version::V1(v1) => {
+                    return verify_document_history_response_v1(
+                        v1,
+                        &response,
+                        platform_version,
+                        provider,
+                    );
+                }
                 get_document_history_request::Version::V0(v0) => {
                     let contract_id =
                         Identifier::from_bytes(&v0.data_contract_id).map_err(|e| {
@@ -1432,7 +1630,7 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
                 error: e.to_string(),
             })?;
 
-        let (root_hash, maybe_history) = Drive::verify_document_history(
+        let (root_hash, maybe_history) = Drive::verify_document_history_legacy(
             &proof.grovedb_proof,
             contract_id.into_buffer(),
             &document_type_name,
@@ -1447,12 +1645,21 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        // Preserve the distinction between a verified-but-empty history page
-        // (e.g. an offset/start_at_ms past the last revision) and an absent
-        // result: DocumentHistory carries retrieved values, not proof-of-absence,
-        // so a proven empty page is a legitimate `Some(empty)` rather than `None`.
         Ok((
-            maybe_history.map(IndexMap::from_iter),
+            maybe_history.map(|entries| DocumentHistory {
+                entries: entries
+                    .into_iter()
+                    .map(|(time_ms, document)| {
+                        use dpp::document::DocumentV0Getters;
+                        DocumentHistoryEntry {
+                            time_ms,
+                            revision: document.revision().unwrap_or(1),
+                            document,
+                        }
+                    })
+                    .collect(),
+                lifecycle: None,
+            }),
             mtd.clone(),
             proof.clone(),
         ))
@@ -2826,7 +3033,11 @@ macro_rules! define_length {
 
 define_length!(DataContract);
 define_length!(DataContractHistory, |d: &DataContractHistory| d.len());
-define_length!(DocumentHistory, |d: &DocumentHistory| d.len());
+define_length!(DocumentHistoryProofInfo, |d: &DocumentHistoryProofInfo| d
+    .history
+    .entries
+    .len());
+define_length!(DocumentHistory, |d: &DocumentHistory| d.entries.len());
 define_length!(Document);
 define_length!(Identity);
 define_length!(IdentityBalance);
