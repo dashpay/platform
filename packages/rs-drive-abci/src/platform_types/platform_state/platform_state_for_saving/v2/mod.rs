@@ -213,6 +213,23 @@ impl PlatformStateForSavingV2 {
             );
         }
 
+        // A stored fee version number this build does not know is a load
+        // error, never a fallback to another generation: the refund rates it
+        // stands for would be wrong.
+        let previous_fee_versions = self
+            .previous_fee_versions
+            .into_iter()
+            .map(|(epoch_index, fee_version_number)| {
+                FeeVersion::get(fee_version_number)
+                    .map(|fee_version| (epoch_index, fee_version))
+                    .map_err(|_| {
+                        corrupted(format!(
+                            "platform state stores fee version {fee_version_number} for epoch {epoch_index}, which this build does not know"
+                        ))
+                    })
+            })
+            .collect::<Result<_, Error>>()?;
+
         Ok(PlatformState {
             genesis_block_info: self.genesis_block_info,
             last_committed_block_info: self.last_committed_block_info,
@@ -229,17 +246,7 @@ impl PlatformStateForSavingV2 {
             instant_lock_validating_quorums: self.instant_lock_validating_quorums.into(),
             full_masternode_list,
             hpmn_masternode_list,
-            previous_fee_versions: self
-                .previous_fee_versions
-                .into_iter()
-                .map(|(epoch_index, fee_version_number)| {
-                    (
-                        epoch_index,
-                        FeeVersion::get(fee_version_number)
-                            .expect("expected fee version number to exist"),
-                    )
-                })
-                .collect(),
+            previous_fee_versions,
             // The record was written under structure 1, so its entries are on
             // disk and match it: nothing is pending. The flag only drives the
             // structure 0 store, which starts from a full write after a restart.
