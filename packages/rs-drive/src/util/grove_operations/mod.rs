@@ -4,21 +4,21 @@
 //!
 
 use grovedb::batch::QualifiedGroveDbOp;
-use grovedb::DisplacedValue;
 
-/// Every op Drive hands to GroveDB declares that the value it displaces takes
-/// no part in backward references, because Drive stores no such participants.
-/// GroveDB checks the claim for free from the value it reads for the write
-/// and refuses a false one, so the declaration cannot corrupt state; it only
-/// spares the maintenance planning and the estimated fan-out. When a document
-/// type starts storing participants, declare per op where the ops are built
-/// instead of here.
+/// Every op Drive hands to GroveDB becomes its `DontCheck` twin, declaring
+/// that the value it displaces takes no part in backward references, because
+/// Drive stores no such participants. GroveDB checks the claim for free from
+/// the value it reads for the write and refuses a false one, so the
+/// declaration cannot corrupt state; it only spares the maintenance planning
+/// and the estimated fan-out. When a document type starts storing
+/// participants, build the checked ops for it where they are created instead
+/// of converting here.
 pub(crate) fn declaring_no_participants(
     operations: Vec<QualifiedGroveDbOp>,
 ) -> Vec<QualifiedGroveDbOp> {
     operations
         .into_iter()
-        .map(|op| op.with_displaced_value(DisplacedValue::NotParticipant))
+        .map(QualifiedGroveDbOp::dont_check)
         .collect()
 }
 
