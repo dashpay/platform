@@ -219,14 +219,17 @@ out to proposers.
 There is a **dust limit**: refunds below 32 bytes worth of storage credits are
 discarded to prevent micro-refund spam.
 
-A refund is priced at the storage table that was active when the bytes were
-written. `FeeRefunds::from_storage_removal` resolves that rate through the fee
-history at the storage epoch (the epoch recorded in the element's storage
-flags), never at the epoch of the removal. The current epoch only fixes how many
-era shares of the original fee were already paid out to proposers. Every
-schedule shipped so far carries the same storage table, so this distinction
-first becomes observable when a schedule with new storage rates is registered
-under a new fee version number.
+Refund pricing is versioned through `Drive::calculate_fee`. Generation 0, which
+every released protocol version selects, prices every removed byte at the storage
+rate active at the removal epoch (`FeeRefunds::from_storage_removal`). Generation
+1 prices each removed epoch at the storage table that was active when the bytes
+were written: `FeeRefunds::from_storage_removal_v1` resolves that rate through
+the fee history at the storage epoch (the epoch recorded in the element's storage
+flags), and the current epoch only fixes how many era shares of the original fee
+were already paid out to proposers. Every schedule shipped so far carries the same
+storage table, so the two generations agree on every reachable input; generation
+1 is switched on by the unreleased protocol version that registers a schedule
+with new storage rates under a new fee version number.
 
 ## Epoch-Based Fee Distribution
 
