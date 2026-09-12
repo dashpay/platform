@@ -30,7 +30,7 @@ use super::note_selection::{
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
-use crate::error::PlatformWalletError;
+use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
 
@@ -51,9 +51,9 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
 use dpp::shielded::builder::{
-    build_identity_create_from_shielded_pool_transition, build_shield_transition,
-    build_shielded_transfer_transition, build_shielded_withdrawal_transition,
-    build_unshield_transition, OrchardProver, SpendableNote,
+    build_identity_create_from_shielded_pool_transition, build_shield_from_identity_transition,
+    build_shield_transition, build_shielded_transfer_transition,
+    build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver, SpendableNote,
 };
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -61,6 +61,7 @@ use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
+use dpp::ProtocolError;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
 use tracing::{debug, info, trace, warn};
@@ -265,6 +266,7 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
     use dpp::state_transition::shielded_transfer_transition::accessors::ShieldedTransferTransitionAccessorsV0;
     use dpp::state_transition::shielded_withdrawal_transition::accessors::ShieldedWithdrawalTransitionAccessorsV0;
     use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+    use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
     use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAccessorsV0;
 
     match st {
@@ -274,6 +276,7 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
         StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(v0)) => &v0.actions,
         StateTransition::ShieldedWithdrawal(t) => t.actions(),
         StateTransition::IdentityCreateFromShieldedPool(t) => t.actions(),
+        StateTransition::ShieldFromIdentity(t) => t.actions(),
         _ => &[],
     }
 }
@@ -786,6 +789,289 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
     .await;
     info!(account, credits = amount, "Shield broadcast succeeded");
     Ok(())
+}
+
+// -------------------------------------------------------------------------
+// ShieldFromIdentity: identity balance -> shielded pool (Type 21)
+// -------------------------------------------------------------------------
+
+/// Shield credits from a Platform identity's balance straight into the shielded
+/// pool, with the resulting note assigned to `account`'s default Orchard address
+/// (`recipient` `None`) or to a third-party Orchard address.
+///
+/// Unlike [`shield_to`] there are no transparent inputs, no fee strategy, and no
+/// address witnesses: the identity's TRANSFER key signs the whole transition and
+/// consensus debits `amount` plus the metered fee (note writes + identity writes)
+/// plus the shielded compute fee from the identity balance. `nonce` is fetched
+/// from Platform here, so the caller only supplies the identity.
+///
+/// The activity row records no fee: the exact fee is metered at execution and
+/// never returned to the wallet, and `ShieldedActivityEntry::fee` is an exact
+/// value (the FFI reports it as such), so the consensus floor must not stand in
+/// for it.
+///
+/// Returns the identity's proven post-debit balance. The activity row is only
+/// confirmed by the identity's own `VerifiedPartialIdentity` proof carrying a
+/// balance (the SDK's `ShieldFromIdentity` check); a proof for another identity,
+/// one without a balance, or any other result leaves the row pending and
+/// reports [`PlatformWalletError::ShieldedSpendUnconfirmed`], since the wallet
+/// cannot tell from it whether the transition executed. The caller owns the
+/// managed identity and persists the balance
+/// (`PlatformWallet::shielded_shield_from_identity`).
+#[allow(clippy::too_many_arguments)]
+pub async fn shield_from_identity_to<
+    S: ShieldedStore,
+    Sig: Signer<IdentityPublicKey>,
+    P: OrchardProver,
+>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &AccountViewingKeys,
+    account: u32,
+    recipient: Option<&PaymentAddress>,
+    identity: &Identity,
+    amount: u64,
+    memo: [u8; 36],
+    signer: &Sig,
+    prover: &P,
+) -> Result<Credits, PlatformWalletError> {
+    let ShieldRecipient {
+        address: recipient_addr,
+        counterparty: external_counterparty,
+        kind,
+        direction,
+    } = resolve_shield_recipient(keys, recipient)?;
+    let id = SubwalletId::new(wallet_id, account);
+    let identity_id = identity.id();
+
+    // A self-shield funded by an identity is its own activity kind so the
+    // history shows which identity paid; a third-party recipient stays `Sent`.
+    let kind = match kind {
+        ShieldedActivityKind::Shield => ShieldedActivityKind::ShieldFromIdentity {
+            identity_id: identity_id.to_buffer(),
+        },
+        other => other,
+    };
+
+    let nonce = sdk
+        .get_identity_nonce(identity_id, true, None)
+        .await
+        .map_err(|e| {
+            PlatformWalletError::ShieldedBuildError(format!("fetch identity nonce: {e}"))
+        })?;
+
+    info!(
+        account,
+        credits = amount,
+        identity = %identity_id,
+        external = external_counterparty.is_some(),
+        "ShieldFromIdentity: building proof"
+    );
+
+    let state_transition = build_shield_from_identity_transition(
+        identity,
+        &recipient_addr,
+        amount,
+        nonce,
+        signer,
+        None,
+        0, // user_fee_increase
+        prover,
+        memo,
+        Some(keys.outgoing_viewing_key.clone()),
+        sdk.version(),
+    )
+    .await
+    .map_err(map_shield_from_identity_build_error)?;
+
+    trace!("ShieldFromIdentity: state transition built, broadcasting...");
+
+    let pending_entry = record_pending_activity(
+        store,
+        persister,
+        wallet_id,
+        id,
+        keys,
+        LiveEntryParams {
+            kind,
+            direction,
+            amount,
+            // Exact fee unknown (metered at execution); see the function docs.
+            fee: None,
+            counterparty: external_counterparty,
+            memo: non_zero_memo(&memo),
+            actions: shielded_actions(&state_transition),
+            spent_notes: &[],
+        },
+    )
+    .await;
+
+    let enrich = |e: &dash_sdk::Error| -> PlatformWalletError {
+        crate::error::promote_address_nonce_error(e)
+            .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))
+    };
+
+    match state_transition.broadcast(sdk, None).await {
+        Ok(()) => {}
+        Err(e) if broadcast_definitely_failed(&e) => {
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                ShieldedActivityStatus::Failed,
+                None,
+            )
+            .await;
+            return Err(enrich(&e));
+        }
+        Err(e) => {
+            warn!(
+                account,
+                error = %e,
+                "ShieldFromIdentity broadcast returned no verdict; the transition may have \
+                 been admitted; falling through to the result wait"
+            );
+        }
+    }
+
+    // The proof authenticates the identity's post-debit balance (an affected-state
+    // snapshot, not execution evidence); a consensus rejection surfaces as an error.
+    // `wait_for_affected_state` only converts the proof generically, so the variant
+    // and the identity are enforced here: only this identity's balance proof may
+    // confirm the activity.
+    let proof_outcome: Result<Credits, String> = match state_transition
+        .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
+        .await
+    {
+        Ok(StateTransitionProofResult::VerifiedPartialIdentity(partial))
+            if partial.id == identity_id =>
+        {
+            partial
+                .balance
+                .ok_or_else(|| "the identity proof did not include the updated balance".to_string())
+        }
+        Ok(StateTransitionProofResult::VerifiedPartialIdentity(partial)) => Err(format!(
+            "the proof returned identity {} but {} initiated the shield",
+            partial.id, identity_id
+        )),
+        Ok(other) => Err(format!(
+            "an identity balance proof was expected, received {other:?}"
+        )),
+        Err(wait_err) => {
+            if carries_consensus_rejection(&wait_err) {
+                record_activity_status(
+                    store,
+                    persister,
+                    wallet_id,
+                    id,
+                    &pending_entry,
+                    ShieldedActivityStatus::Failed,
+                    None,
+                )
+                .await;
+                return Err(enrich(&wait_err));
+            }
+            Err(wait_err.to_string())
+        }
+    };
+    let new_balance = match proof_outcome {
+        Ok(balance) => balance,
+        Err(reason) => {
+            warn!(
+                account,
+                %reason,
+                "ShieldFromIdentity broadcast accepted but result confirmation failed; \
+                 leaving the activity row pending"
+            );
+            return Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "shield from identity",
+                reason,
+            });
+        }
+    };
+
+    record_activity_status(
+        store,
+        persister,
+        wallet_id,
+        id,
+        &pending_entry,
+        ShieldedActivityStatus::Confirmed,
+        None,
+    )
+    .await;
+    info!(account, credits = amount, identity = %identity_id, "ShieldFromIdentity broadcast succeeded");
+    Ok(new_balance)
+}
+
+/// Map a `ShieldFromIdentity` builder failure. The builder signs with the
+/// identity signer, so a structured key-unavailable completion (the reserved
+/// marker at position 0 of a `ProtocolError::Generic` payload) can surface
+/// here; it is preserved verbatim under [`PlatformWalletError::Sdk`] so the
+/// FFI boundary restores code 31 (`ErrorSigningKeyUnavailable`) instead of
+/// flattening it into the generic build error. Every other failure keeps the
+/// protocol error's own rendering as a `ShieldedBuildError`.
+fn map_shield_from_identity_build_error(error: ProtocolError) -> PlatformWalletError {
+    preserve_signer_key_unavailable_or(dash_sdk::Error::Protocol(error), |e| match e {
+        dash_sdk::Error::Protocol(protocol_error) => {
+            PlatformWalletError::ShieldedBuildError(protocol_error.to_string())
+        }
+        other => PlatformWalletError::ShieldedBuildError(other.to_string()),
+    })
+}
+
+#[cfg(test)]
+mod shield_from_identity_build_error_tests {
+    use super::*;
+    use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
+
+    /// A key-unavailable signer completion keeps its structured shape so the
+    /// FFI can restore code 31; the marker must sit at position 0.
+    #[test]
+    fn preserves_signer_key_unavailable_completion() {
+        let error = ProtocolError::Generic(format!(
+            "{SIGNER_KEY_UNAVAILABLE_PREFIX}transfer key not in keychain"
+        ));
+        let mapped = map_shield_from_identity_build_error(error);
+        assert!(
+            matches!(
+                &mapped,
+                PlatformWalletError::Sdk(dash_sdk::Error::Protocol(ProtocolError::Generic(s)))
+                    if s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
+            ),
+            "expected the signer completion preserved under Sdk, got {mapped:?}"
+        );
+    }
+
+    /// Any other builder failure is a build error carrying the protocol
+    /// error's own rendering (the SDK wrapper's "Protocol error:" prefix is
+    /// not added), including a generic error that merely mentions the marker
+    /// mid-string.
+    #[test]
+    fn stringifies_other_builder_failures() {
+        let mapped = map_shield_from_identity_build_error(ProtocolError::Generic(
+            "amount must be > 0".to_string(),
+        ));
+        assert!(
+            matches!(
+                &mapped,
+                PlatformWalletError::ShieldedBuildError(s) if s == "Generic Error: amount must be > 0"
+            ),
+            "got {mapped:?}"
+        );
+
+        let mid_string = map_shield_from_identity_build_error(ProtocolError::Generic(format!(
+            "signer failed: {SIGNER_KEY_UNAVAILABLE_PREFIX}not at position 0"
+        )));
+        assert!(
+            matches!(mid_string, PlatformWalletError::ShieldedBuildError(_)),
+            "a mid-string marker must not be promoted, got {mid_string:?}"
+        );
+    }
 }
 
 // -------------------------------------------------------------------------

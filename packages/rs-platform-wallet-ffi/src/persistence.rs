@@ -2879,6 +2879,9 @@ impl PlatformWalletPersistence for FFIPersister {
                             let (identity_id, has_identity_id) = match &e.kind {
                                 platform_wallet::wallet::shielded::ShieldedActivityKind::IdentityCreate {
                                     identity_id,
+                                }
+                                | platform_wallet::wallet::shielded::ShieldedActivityKind::ShieldFromIdentity {
+                                    identity_id,
                                 } => (*identity_id, 1u8),
                                 _ => ([0u8; 32], 0u8),
                             };
@@ -3388,6 +3391,9 @@ impl PlatformWalletPersistence for FFIPersister {
                             4 => ShieldedActivityKind::Unshield,
                             5 => ShieldedActivityKind::Withdrawal,
                             6 => ShieldedActivityKind::IdentityCreate {
+                                identity_id: ffi.identity_id,
+                            },
+                            8 => ShieldedActivityKind::ShieldFromIdentity {
                                 identity_id: ffi.identity_id,
                             },
                             // 7 and any unknown tag fall back to the

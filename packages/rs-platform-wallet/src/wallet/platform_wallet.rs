@@ -35,6 +35,7 @@ use crate::error::PlatformWalletError;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
@@ -1837,6 +1838,180 @@ impl PlatformWallet {
             &prover,
         )
         .await
+    }
+
+    /// Shield credits from one of this wallet's Platform identities straight into
+    /// the wallet's shielded pool (`ShieldFromIdentity`, type 21). The note is
+    /// assigned to `shielded_account`'s default Orchard address; `identity_id` must
+    /// be an identity this wallet manages, and `signer` must hold its TRANSFER key
+    /// (typically the same `Signer<IdentityPublicKey>` used for credit transfers).
+    ///
+    /// The identity is debited `amount` plus the metered fee plus the shielded
+    /// compute fee. Returns the proven post-debit balance, which is also applied
+    /// to the managed identity and persisted. A result proof that is not this
+    /// identity's balance proof reports the spend as unconfirmed
+    /// ([`PlatformWalletError::ShieldedSpendUnconfirmed`]).
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_shield_from_identity<S, P>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        shielded_account: u32,
+        identity_id: &Identifier,
+        amount: u64,
+        signer: &S,
+        prover: P,
+    ) -> Result<Credits, PlatformWalletError>
+    where
+        S: dpp::identity::signer::Signer<IdentityPublicKey> + Send + Sync,
+        P: dpp::shielded::builder::OrchardProver,
+    {
+        self.shielded_shield_from_identity_impl(
+            coordinator,
+            shielded_account,
+            None,
+            identity_id,
+            amount,
+            [0u8; 36],
+            signer,
+            prover,
+        )
+        .await
+    }
+
+    /// [`shielded_shield_from_identity`](Self::shielded_shield_from_identity) with
+    /// the note paid to a THIRD-PARTY Orchard address (`recipient_raw_43`, same shape
+    /// as [`shielded_transfer_to`](Self::shielded_transfer_to)) and an optional memo.
+    /// An address this account's own IVK recognizes is rejected; self-shields use the
+    /// entry point without a recipient.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_shield_from_identity_to_recipient<S, P>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        shielded_account: u32,
+        identity_id: &Identifier,
+        recipient_raw_43: &[u8; 43],
+        amount: u64,
+        memo: [u8; 36],
+        signer: &S,
+        prover: P,
+    ) -> Result<Credits, PlatformWalletError>
+    where
+        S: dpp::identity::signer::Signer<IdentityPublicKey> + Send + Sync,
+        P: dpp::shielded::builder::OrchardProver,
+    {
+        let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
+            grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
+        )
+        .ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "invalid Orchard payment address bytes".to_string(),
+            )
+        })?;
+        self.shielded_shield_from_identity_impl(
+            coordinator,
+            shielded_account,
+            Some(recipient),
+            identity_id,
+            amount,
+            memo,
+            signer,
+            prover,
+        )
+        .await
+    }
+
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    async fn shielded_shield_from_identity_impl<S, P>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        shielded_account: u32,
+        recipient: Option<grovedb_commitment_tree::PaymentAddress>,
+        identity_id: &Identifier,
+        amount: u64,
+        memo: [u8; 36],
+        signer: &S,
+        prover: P,
+    ) -> Result<Credits, PlatformWalletError>
+    where
+        S: dpp::identity::signer::Signer<IdentityPublicKey> + Send + Sync,
+        P: dpp::shielded::builder::OrchardProver,
+    {
+        if amount == 0 {
+            return Err(PlatformWalletError::ShieldedBuildError(
+                "amount must be > 0".to_string(),
+            ));
+        }
+
+        // Single-flight with the address-funded shields: the identity nonce is
+        // fetched inside the operation, and two concurrent builds would race it.
+        let _shield_guard = self.shield_guard.lock().await;
+
+        let identity = {
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
+            info.identity_manager
+                .identity(identity_id)
+                .map(|m| m.identity.clone())
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
+        };
+
+        let keyset = {
+            let guard = self.shielded_keys.read().await;
+            let keys = guard
+                .as_ref()
+                .ok_or(PlatformWalletError::ShieldedNotBound)?;
+            keys.get(&shielded_account)
+                .ok_or_else(|| {
+                    PlatformWalletError::ShieldedKeyDerivation(format!(
+                        "shielded account {shielded_account} not bound"
+                    ))
+                })?
+                .clone()
+        };
+        let new_balance = super::shielded::operations::shield_from_identity_to(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            &keyset,
+            shielded_account,
+            recipient.as_ref(),
+            &identity,
+            amount,
+            memo,
+            signer,
+            &prover,
+        )
+        .await?;
+
+        // The operation only received a clone of the identity, so the managed
+        // identity still carries the pre-debit balance. Apply the proven
+        // post-debit balance and persist the snapshot (the pattern
+        // `transfer_credits_to_addresses_with_external_signer` follows).
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .and_then(|info| info.identity_manager.managed_identity_mut(identity_id));
+            if let Some(managed) = managed {
+                managed.identity.set_balance(new_balance);
+                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
+                    tracing::error!(
+                        identity = %identity_id,
+                        error = %e,
+                        "Failed to persist identity balance update after shield from identity"
+                    );
+                }
+            }
+        }
+
+        Ok(new_balance)
     }
 }
 

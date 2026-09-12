@@ -45,14 +45,18 @@ use std::os::raw::c_char;
 use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
 use dpp::shielded::{
-    compute_minimum_shielded_fee, compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
-    ShieldedMemo,
+    compute_minimum_shielded_fee, compute_shielded_unshield_fee, compute_shielded_verification_fee,
+    compute_shielded_withdrawal_fee, ShieldedMemo,
 };
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::ProtocolError;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
 use platform_wallet::PlatformWalletError;
-use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
+use rs_sdk_ffi::{
+    MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner,
+    DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX,
+};
 
 use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
@@ -61,6 +65,8 @@ use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::{block_on_worker, runtime};
 use crate::shielded_types::ShieldedShieldPreflightFFI;
+use crate::types::read_identifier;
+use crate::unwrap_result_or_return;
 
 /// A serialized `PlatformAddress` is exactly 21 bytes (1-byte variant tag + 20-byte hash).
 const PLATFORM_ADDRESS_LEN: usize = 21;
@@ -170,6 +176,7 @@ fn shielded_fee_formula(
         0 => Some(compute_minimum_shielded_fee),
         1 => Some(compute_shielded_unshield_fee),
         2 => Some(compute_shielded_withdrawal_fee),
+        3 => Some(compute_shielded_verification_fee),
         _ => None,
     }
 }
@@ -184,7 +191,10 @@ fn shielded_fee_formula(
 /// - `1` → Unshield (`compute_shielded_unshield_fee` — base + the flat
 ///   `AddBalanceToAddress` output-write cost),
 /// - `2` → ShieldedWithdrawal (`compute_shielded_withdrawal_fee` — base +
-///   the flat Core withdrawal-document cost).
+///   the flat Core withdrawal-document cost),
+/// - `3` → ShieldFromIdentity (`compute_shielded_verification_fee`: the
+///   compute-only floor; the note and identity writes are metered at
+///   execution and charged to the identity on top of it).
 ///
 /// `num_actions` is the Orchard action count of the bundle the host will
 /// build (a single-note spend with change is 2 actions). The fee is
@@ -216,7 +226,7 @@ pub unsafe extern "C" fn platform_wallet_shielded_estimate_fee(
     let Some(formula) = shielded_fee_formula(kind) else {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            format!("unknown shielded fee kind {kind} (expected 0/1/2)"),
+            format!("unknown shielded fee kind {kind} (expected 0/1/2/3)"),
         );
     };
     let Some(platform_version) =
@@ -631,11 +641,32 @@ fn map_spend_result(
                 format!("{operation} failed: {e}"),
             )
         }
+        // A structured key-unavailable signer completion that the wallet layer
+        // preserved verbatim under `Sdk` (`preserve_signer_key_unavailable_or`,
+        // reached by the identity-signed shield from identity). Restore code 31
+        // here as the blanket `From` conversion does, so hosts route to key
+        // repair instead of reading a generic wallet failure. Structural
+        // position-0 check only, never a substring sniff of the rendering.
+        Err(e) if is_preserved_signer_key_unavailable(&e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable,
+            format!("{operation} failed: {e}"),
+        ),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
         ),
     }
+}
+
+/// True when `error` is a key-unavailable signer completion the wallet layer
+/// preserved under `Sdk`: the reserved marker at position 0 of a
+/// `ProtocolError::Generic` payload (never a substring of the rendering).
+fn is_preserved_signer_key_unavailable(error: &PlatformWalletError) -> bool {
+    matches!(
+        error,
+        PlatformWalletError::Sdk(dash_sdk::Error::Protocol(ProtocolError::Generic(s)))
+            if s.starts_with(DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX)
+    )
 }
 
 /// Render a caught panic payload as a human-readable string.
@@ -1158,6 +1189,87 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
             .await
     });
     map_spend_result(result, "shielded shield")
+}
+
+/// Shield credits from one of the wallet's Platform identities straight into
+/// the wallet's shielded pool: the Type 21 `ShieldFromIdentity` transition.
+/// The note lands on `shielded_account`'s default Orchard address; the identity
+/// is debited `amount` plus the metered fee plus the shielded compute fee.
+///
+/// `identity_id` is the 32-byte identity id; the identity must be managed by
+/// this wallet. `signer_identity_handle` is a `*const SignerHandle` produced by
+/// `dash_sdk_signer_create_with_ctx` that can sign with the identity's TRANSFER
+/// key (the same handle credit transfers use). The caller retains ownership.
+///
+/// `out_new_balance`, when non-null, receives the identity's proven
+/// post-debit balance; the wallet's managed identity is updated and persisted
+/// with it before this returns. A result proof that is not this identity's
+/// balance proof is reported as `ErrorShieldedSpendUnconfirmed` (the
+/// transition may have executed; do not resubmit, the next sync reconciles).
+///
+/// A signer that reports the TRANSFER key unavailable surfaces as code 31
+/// (`ErrorSigningKeyUnavailable`), the same key-repair signal the other
+/// identity-signed operations use.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `identity_id` must point to 32 readable bytes.
+/// - `signer_identity_handle` must be a valid, non-destroyed `*const SignerHandle`
+///   that outlives this call and points at a `VTableSigner` with the callback
+///   variant.
+/// - `out_new_balance` must be null or point to writable `u64` storage.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    shielded_account: u32,
+    identity_id: *const u8,
+    amount: u64,
+    signer_identity_handle: *const SignerHandle,
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(identity_id);
+    check_ptr!(signer_identity_handle);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let identity_id = unwrap_result_or_return!(read_identifier(identity_id));
+
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+
+    // Same pointer round-trip as `platform_wallet_manager_shielded_shield`: the
+    // borrow is re-materialized inside the synchronously-awaited worker task.
+    let signer_addr = signer_identity_handle as usize;
+
+    let result = block_on_worker(async move {
+        // SAFETY: valid for the duration of this synchronously-awaited task per
+        // the caller's documented lifetime contract.
+        let identity_signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+        let prover = CachedOrchardProver::new();
+        wallet
+            .shielded_shield_from_identity(
+                &coordinator,
+                shielded_account,
+                &identity_id,
+                amount,
+                identity_signer,
+                &prover,
+            )
+            .await
+    });
+    match result {
+        Ok(new_balance) => {
+            if !out_new_balance.is_null() {
+                *out_new_balance = new_balance;
+            }
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => map_spend_result(Err(e), "shielded shield from identity"),
+    }
 }
 
 /// Shield: spend credits from a Platform Payment account into a
@@ -2352,6 +2464,39 @@ mod tests {
         assert_eq!(
             map_spend_result(Ok(()), "shielded transfer").code,
             PlatformWalletFFIResultCode::Success
+        );
+    }
+
+    /// A key-unavailable signer completion preserved under `Sdk` by the wallet
+    /// layer must keep code 31 through `map_spend_result` (the shield from
+    /// identity path) instead of flattening to `ErrorWalletOperation`; a
+    /// generic protocol error that only mentions the marker mid-string must
+    /// NOT be promoted.
+    #[test]
+    fn map_spend_result_preserves_signing_key_unavailable_code() {
+        let unavailable: Result<(), PlatformWalletError> = Err(PlatformWalletError::Sdk(
+            dash_sdk::Error::Protocol(ProtocolError::Generic(format!(
+                "{DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX}transfer key missing"
+            ))),
+        ));
+        let result = map_spend_result(unavailable, "shielded shield from identity");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+        );
+        assert!(
+            message_of(&result).contains("transfer key missing"),
+            "the signer's rendering must survive into the message"
+        );
+
+        let foreign: Result<(), PlatformWalletError> = Err(PlatformWalletError::Sdk(
+            dash_sdk::Error::Protocol(ProtocolError::Generic(format!(
+                "signer said: {DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX}mid-string"
+            ))),
+        ));
+        assert_eq!(
+            map_spend_result(foreign, "shielded shield from identity").code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
         );
     }
 

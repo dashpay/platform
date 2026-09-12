@@ -71,8 +71,8 @@ pub use platform_address::{
 };
 pub use shielded::{
     AddressWitnessWasm, SerializedOrchardActionWasm, ShieldFromAssetLockTransitionWasm,
-    ShieldTransitionWasm, ShieldedTransferTransitionWasm, ShieldedWithdrawalTransitionWasm,
-    UnshieldTransitionWasm,
+    ShieldFromIdentityTransitionWasm, ShieldTransitionWasm, ShieldedTransferTransitionWasm,
+    ShieldedWithdrawalTransitionWasm, UnshieldTransitionWasm,
 };
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
 pub use state_transitions::proof_result::{StateTransitionProofResultTypeJs, convert_proof_result};

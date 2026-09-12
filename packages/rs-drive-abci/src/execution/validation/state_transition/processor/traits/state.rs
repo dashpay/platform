@@ -149,6 +149,11 @@ impl StateTransitionStateValidation for StateTransition {
                     "identity credit transfer to addresses should not have state validation",
                 )))
             }
+            StateTransition::ShieldFromIdentity(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "shield from identity should not have state validation",
+                )))
+            }
             StateTransition::IdentityCreateFromAddresses(st) => {
                 let action =
                     action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -271,6 +276,7 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::AddressCreditWithdrawal(_)
+            | StateTransition::ShieldFromIdentity(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)

@@ -122,6 +122,7 @@ private fun kindLabel(kindTag: Int): String = when (kindTag) {
     4 -> "Unshielded"
     5 -> "Withdrawn"
     6 -> "Identity Created"
+    8 -> "Shielded from Identity"
     else -> "Shielded Spend"
 }
 

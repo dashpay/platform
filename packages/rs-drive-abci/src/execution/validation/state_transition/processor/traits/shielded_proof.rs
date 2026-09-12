@@ -14,6 +14,7 @@ use dpp::serialization::{PlatformMessageSignable, Signable};
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+use dpp::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -60,6 +61,7 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_)
+                | StateTransition::ShieldFromIdentity(_)
         )
     }
 
@@ -69,6 +71,9 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 dpp::state_transition::shield_transition::ShieldTransition::V0(v0) => {
                     v0.actions.len()
                 }
+            },
+            StateTransition::ShieldFromIdentity(st) => match st {
+                ShieldFromIdentityTransition::V0(v0) => v0.actions.len(),
             },
             StateTransition::ShieldedTransfer(st) => match st {
                 dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
@@ -198,7 +203,7 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                 //   document cost). MUST match what the builder/transformer carve from the pool.
                 let (validated_amount, num_actions, min_net_amount, max_net_amount, amount_is_pure_fee, fee_kind): (i64, usize, u64, u64, bool, ShieldedMinFeeKind) = match self {
                     // Shield: fee is paid from transparent address inputs, not from value_balance.
-                    StateTransition::Shield(_) => {
+                    StateTransition::Shield(_) | StateTransition::ShieldFromIdentity(_) => {
                         return Ok(SimpleConsensusValidationResult::new())
                     }
                     // ShieldedTransfer: value_balance (u64) IS the fee. It writes no extra
@@ -462,6 +467,22 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                                 v0.proof.as_slice(),
                                 &v0.binding_signature,
                                 &[], // No transparent fields for shield
+                            )
+                        }
+                    },
+                    StateTransition::ShieldFromIdentity(st) => match st {
+                        ShieldFromIdentityTransition::V0(v0) => {
+                            // Outputs-only bundle entering the pool, exactly like `Shield`. The
+                            // identity ECDSA signature already binds every bundle field to the
+                            // identity and nonce, so no extra sighash data is needed.
+                            reconstruct_and_verify_bundle(
+                                &v0.actions,
+                                FLAGS_OUTPUTS_ONLY,
+                                -(v0.amount as i64),
+                                &v0.anchor,
+                                v0.proof.as_slice(),
+                                &v0.binding_signature,
+                                &[],
                             )
                         }
                     },

@@ -100,6 +100,11 @@ pub enum ShieldedActivityKind {
         /// The created identity's id (32 bytes).
         identity_id: [u8; 32],
     },
+    /// Type 21: a Platform identity's balance → shielded pool.
+    ShieldFromIdentity {
+        /// The funding identity's id (32 bytes).
+        identity_id: [u8; 32],
+    },
     /// Own spend whose outputs are all self-change and which no
     /// correlation arm could refine. The honest residual on the restore
     /// path. Carries `fee: None` because the exact fee is underivable
@@ -122,6 +127,7 @@ impl ShieldedActivityKind {
             ShieldedActivityKind::Withdrawal => 5,
             ShieldedActivityKind::IdentityCreate { .. } => 6,
             ShieldedActivityKind::ShieldedSpend => 7,
+            ShieldedActivityKind::ShieldFromIdentity { .. } => 8,
         }
     }
 }
@@ -1178,6 +1184,9 @@ mod tests {
                 identity_id: [0u8; 32],
             },
             ShieldedActivityKind::ShieldedSpend,
+            ShieldedActivityKind::ShieldFromIdentity {
+                identity_id: [0u8; 32],
+            },
         ];
         let tags: Set<u8> = kinds.iter().map(|k| k.tag()).collect();
         assert_eq!(tags.len(), kinds.len(), "every kind tag must be distinct");
