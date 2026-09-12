@@ -1201,6 +1201,10 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    maxTxBytes: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
                     timeoutCheckTx: {
                       $ref: '#/definitions/duration',
                     },
@@ -1228,7 +1232,7 @@ export default {
                     },
                   },
                   additionalProperties: false,
-                  required: ['size', 'maxTxsBytes', 'cacheSize', 'timeoutCheckTx', 'txEnqueueTimeout', 'txSendRateLimit', 'txRecvRateLimit', 'maxConcurrentCheckTx', 'ttlDuration', 'ttlNumBlocks'],
+                  required: ['size', 'maxTxsBytes', 'maxTxBytes', 'cacheSize', 'timeoutCheckTx', 'txEnqueueTimeout', 'txSendRateLimit', 'txRecvRateLimit', 'maxConcurrentCheckTx', 'ttlDuration', 'ttlNumBlocks'],
                 },
                 consensus: {
                   type: 'object',
@@ -1331,8 +1335,12 @@ export default {
                     timeoutBroadcastTx: {
                       $ref: '#/definitions/duration',
                     },
+                    maxBodyBytes: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
                   },
-                  required: ['host', 'port', 'maxOpenConnections', 'timeoutBroadcastTx'],
+                  required: ['host', 'port', 'maxOpenConnections', 'timeoutBroadcastTx', 'maxBodyBytes'],
                   additionalProperties: false,
                 },
                 pprof: {
