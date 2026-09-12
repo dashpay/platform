@@ -48,6 +48,12 @@ pub struct FeeVersion {
     pub state_transition_min_fees: StateTransitionMinFees,
     pub vote_resolution_fund_fees: VoteResolutionFundFees,
     /// Prices of smart-contract work; `None` on every schedule that predates smart contracts.
+    ///
+    /// Read from the active protocol version's schedule (`platform_version.fee_version.dashvm`),
+    /// never from the persisted epoch fee history: the history is keyed by `fee_version_number`,
+    /// which this group does not change, and serves only the storage, processing, hashing and
+    /// signature groups, so a schedule looked up by number (`FeeVersion::get`, `as_static`, the
+    /// epoch history) carries no contract pricing. See `dpp::fee::smart_contract_computation`.
     pub dashvm: Option<FeeDashVmVersion>,
 }
 
