@@ -3100,6 +3100,9 @@ pub struct ChainExecutionOutcome<'a> {
     /// height to the validator set update at that height
     pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
     pub state_transition_results_per_block: BTreeMap<u64, Vec<(StateTransition, ExecTxResult)>>,
+    /// Every state transition the strategy submitted, per block, whether or not
+    /// the proposer kept it; lets a test prove two runs executed one workload.
+    pub state_transitions_per_block: BTreeMap<u64, Vec<StateTransition>>,
     pub signer: SimpleSigner,
 }
 

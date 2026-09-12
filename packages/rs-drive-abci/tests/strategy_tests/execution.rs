@@ -1245,6 +1245,7 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
         withdrawals: total_withdrawals,
         validator_set_updates,
         state_transition_results_per_block,
+        state_transitions_per_block,
         instant_lock_quorums,
         signer,
     }
