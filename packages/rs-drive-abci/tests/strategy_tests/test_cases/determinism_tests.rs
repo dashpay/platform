@@ -462,84 +462,163 @@ mod tests {
         }
     }
 
+    /// The kind of one executed transition, precise enough to tell a document
+    /// create from an identity create. A `DocumentsBatch([Create, Delete])`
+    /// contributes one `DocumentCreate` and one `DocumentDelete`.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    enum TransitionKind {
+        DataContractCreate,
+        IdentityCreate,
+        IdentityTopUp,
+        IdentityCreditTransfer,
+        DocumentCreate,
+        DocumentReplace,
+        DocumentDelete,
+    }
+
+    impl TransitionKind {
+        /// The kinds the workload submits every block, so each must succeed
+        /// on both sides of the activation.
+        const RECURRING: [TransitionKind; 6] = [
+            TransitionKind::IdentityCreate,
+            TransitionKind::IdentityTopUp,
+            TransitionKind::IdentityCreditTransfer,
+            TransitionKind::DocumentCreate,
+            TransitionKind::DocumentReplace,
+            TransitionKind::DocumentDelete,
+        ];
+
+        /// Every kind a recorded name maps to. Unknown names fail loudly so
+        /// a new operation in the workload has to be classified here.
+        fn parse(name: &str) -> Result<Vec<TransitionKind>, String> {
+            if let Some(inner) = name
+                .strip_prefix("DocumentsBatch([")
+                .and_then(|rest| rest.strip_suffix("])"))
+            {
+                return inner
+                    .split(", ")
+                    .filter(|part| !part.is_empty())
+                    .map(|part| match part {
+                        "Create" => Ok(TransitionKind::DocumentCreate),
+                        "Replace" => Ok(TransitionKind::DocumentReplace),
+                        "Delete" => Ok(TransitionKind::DocumentDelete),
+                        other => Err(format!("unclassified batched transition {other:?}")),
+                    })
+                    .collect();
+            }
+            match name {
+                "DataContractCreate" => Ok(vec![TransitionKind::DataContractCreate]),
+                "IdentityCreate" => Ok(vec![TransitionKind::IdentityCreate]),
+                "IdentityTopUp" => Ok(vec![TransitionKind::IdentityTopUp]),
+                "IdentityCreditTransfer" => Ok(vec![TransitionKind::IdentityCreditTransfer]),
+                other => Err(format!("unclassified transition {other:?}")),
+            }
+        }
+    }
+
+    /// Counts the successful transitions of each kind in `blocks`.
+    fn successful_kinds(blocks: &[BlockRecord]) -> Result<BTreeMap<TransitionKind, usize>, String> {
+        let mut counts = BTreeMap::new();
+        for block in blocks {
+            for transition in &block.transitions {
+                if transition.code != 0 {
+                    continue;
+                }
+                for kind in TransitionKind::parse(&transition.name)? {
+                    *counts.entry(kind).or_insert(0) += 1;
+                }
+            }
+        }
+        Ok(counts)
+    }
+
+    /// The recorded blocks must show the upgrade activating strictly after
+    /// the split, no internal errors, the contract deployed exactly once
+    /// before activation, and every recurring workload operation succeeding
+    /// both before and after activation. A run that quietly rejected or
+    /// dropped a whole operation kind after the upgrade would still replay
+    /// identically, so this is checked separately from the agreement between
+    /// runs. Returns the activation height.
+    fn check_workload_shape(
+        blocks: &[BlockRecord],
+        previous: u32,
+        latest: u32,
+    ) -> Result<u64, String> {
+        let block = |height: u64| {
+            blocks
+                .iter()
+                .find(|block| block.height == height)
+                .ok_or_else(|| format!("block {height} must be recorded"))
+        };
+        if block(FIRST_SEGMENT_BLOCKS)?.protocol_version != previous as u64 {
+            return Err(format!(
+                "block {FIRST_SEGMENT_BLOCKS} must still run protocol version {previous}"
+            ));
+        }
+        let last_height = FIRST_SEGMENT_BLOCKS + SECOND_SEGMENT_BLOCKS;
+        if block(last_height)?.protocol_version != latest as u64 {
+            return Err(format!(
+                "the upgrade to {latest} must have activated by block {last_height}"
+            ));
+        }
+        let activation_height = blocks
+            .iter()
+            .find(|block| block.protocol_version == latest as u64)
+            .map(|block| block.height)
+            .ok_or_else(|| "some block must run the new version".to_string())?;
+        if activation_height <= FIRST_SEGMENT_BLOCKS {
+            return Err(format!(
+                "activation at {activation_height} must come after the split at {FIRST_SEGMENT_BLOCKS}"
+            ));
+        }
+
+        for block in blocks {
+            for transition in &block.transitions {
+                if transition.code == INTERNAL_ERROR_CODE {
+                    return Err(format!(
+                        "block {} produced an internal error on {}",
+                        block.height, transition.name
+                    ));
+                }
+            }
+        }
+
+        let split = blocks.partition_point(|block| block.height < activation_height);
+        let (before, after) = blocks.split_at(split);
+        let before = successful_kinds(before)?;
+        let after = successful_kinds(after)?;
+
+        if before.get(&TransitionKind::DataContractCreate) != Some(&1) {
+            return Err("the contract must be deployed exactly once before activation".to_string());
+        }
+        if after.contains_key(&TransitionKind::DataContractCreate) {
+            return Err("no contract may be deployed after activation".to_string());
+        }
+        for kind in TransitionKind::RECURRING {
+            if !before.contains_key(&kind) {
+                return Err(format!(
+                    "the workload must execute a successful {kind:?} before the upgrade activated"
+                ));
+            }
+            if !after.contains_key(&kind) {
+                return Err(format!(
+                    "the workload must execute a successful {kind:?} after the upgrade activated"
+                ));
+            }
+        }
+        Ok(activation_height)
+    }
+
     /// The upgrade must lock in before the split and activate after it, and
-    /// the workload must have exercised every operation kind with success on
-    /// both sides of the activation. A run that quietly rejected everything
-    /// would still replay identically.
+    /// the recorded blocks must pass `check_workload_shape`.
     fn assert_upgrade_and_workload_shape(run: &RunRecord, previous: u32, latest: u32) {
         assert_eq!(run.protocol_version_at_split, previous);
         assert_eq!(
             run.next_epoch_protocol_version_at_split, latest,
             "the upgrade must be locked in before the split"
         );
-        let block = |height: u64| {
-            run.consensus
-                .blocks
-                .iter()
-                .find(|block| block.height == height)
-                .unwrap_or_else(|| panic!("block {height} must be recorded"))
-        };
-        assert_eq!(
-            block(FIRST_SEGMENT_BLOCKS).protocol_version,
-            previous as u64
-        );
-        let last_height = FIRST_SEGMENT_BLOCKS + SECOND_SEGMENT_BLOCKS;
-        assert_eq!(
-            block(last_height).protocol_version,
-            latest as u64,
-            "the upgrade must have activated inside the second segment"
-        );
-        let activation_height = run
-            .consensus
-            .blocks
-            .iter()
-            .find(|block| block.protocol_version == latest as u64)
-            .map(|block| block.height)
-            .expect("some block must run the new version");
-        assert!(
-            activation_height > FIRST_SEGMENT_BLOCKS,
-            "activation at {activation_height} must come after the split"
-        );
-
-        for block in &run.consensus.blocks {
-            for transition in &block.transitions {
-                assert_ne!(
-                    transition.code, INTERNAL_ERROR_CODE,
-                    "block {} produced an internal error on {}",
-                    block.height, transition.name
-                );
-            }
-        }
-
-        let successes_after = |height: u64, needle: &str| {
-            run.consensus
-                .blocks
-                .iter()
-                .filter(|block| block.height >= height)
-                .flat_map(|block| block.transitions.iter())
-                .filter(|transition| transition.code == 0 && transition.name.contains(needle))
-                .count()
-        };
-        for name in [
-            "DataContractCreate",
-            "IdentityCreate",
-            "IdentityTopUp",
-            "IdentityCreditTransfer",
-            "Create",
-            "Replace",
-            "Delete",
-        ] {
-            assert!(
-                successes_after(1, name) > 0,
-                "the workload must execute at least one successful {name}"
-            );
-        }
-        for name in ["IdentityCreate", "IdentityCreditTransfer", "Create"] {
-            assert!(
-                successes_after(activation_height, name) > 0,
-                "the workload must execute a successful {name} after the upgrade activated"
-            );
-        }
+        check_workload_shape(&run.consensus.blocks, previous, latest)
+            .unwrap_or_else(|reason| panic!("workload shape: {reason}"));
     }
 
     fn assert_runs_agree(continuous: &Consensus, reopened: &Consensus) {
@@ -605,5 +684,135 @@ mod tests {
                 "determinism artifact not written: PLATFORM_DETERMINISM_ARTIFACT_DIR is unset"
             ),
         }
+    }
+
+    /// A synthetic recording with the split at `FIRST_SEGMENT_BLOCKS`, the
+    /// activation at `activation` and one successful transition of every
+    /// kind on both sides of it.
+    fn synthetic_blocks(previous: u32, latest: u32, activation: u64) -> Vec<BlockRecord> {
+        let last_height = FIRST_SEGMENT_BLOCKS + SECOND_SEGMENT_BLOCKS;
+        let ok = |name: &str| TransitionRecord {
+            name: name.to_string(),
+            code: 0,
+            fee: 1,
+        };
+        (1..=last_height)
+            .map(|height| {
+                let mut transitions = vec![
+                    ok("IdentityCreate"),
+                    ok("IdentityTopUp"),
+                    ok("IdentityCreditTransfer"),
+                    ok("DocumentsBatch([Create, Replace, Delete])"),
+                ];
+                if height == 2 {
+                    transitions.push(ok("DataContractCreate"));
+                }
+                BlockRecord {
+                    height,
+                    protocol_version: if height >= activation {
+                        latest as u64
+                    } else {
+                        previous as u64
+                    },
+                    app_hash: hex_lower(&[height as u8; 32]),
+                    transitions,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn should_accept_a_recording_with_every_operation_kind_on_both_sides_of_the_activation() {
+        let blocks = synthetic_blocks(13, 14, FIRST_SEGMENT_BLOCKS + 51);
+        assert_eq!(
+            check_workload_shape(&blocks, 13, 14),
+            Ok(FIRST_SEGMENT_BLOCKS + 51)
+        );
+    }
+
+    #[test]
+    fn should_reject_a_recording_that_lost_its_document_operations_after_the_activation() {
+        let activation = FIRST_SEGMENT_BLOCKS + 51;
+        let mut blocks = synthetic_blocks(13, 14, activation);
+        for block in blocks.iter_mut().filter(|block| block.height >= activation) {
+            block
+                .transitions
+                .retain(|transition| !transition.name.starts_with("DocumentsBatch"));
+        }
+        let reason = check_workload_shape(&blocks, 13, 14)
+            .expect_err("dropping every post-activation document result must be caught");
+        assert!(
+            reason.contains("DocumentCreate") && reason.contains("after the upgrade activated"),
+            "unexpected reason: {reason}"
+        );
+
+        // Identity creates alone must not stand in for document creates.
+        let mut blocks = synthetic_blocks(13, 14, activation);
+        for block in blocks.iter_mut().filter(|block| block.height >= activation) {
+            block
+                .transitions
+                .retain(|transition| transition.name == "IdentityCreate");
+        }
+        let reason = check_workload_shape(&blocks, 13, 14)
+            .expect_err("identity creates must not satisfy the document create check");
+        assert!(
+            reason.contains("after the upgrade activated"),
+            "unexpected reason: {reason}"
+        );
+    }
+
+    #[test]
+    fn should_reject_a_recording_whose_top_ups_failed_after_the_activation() {
+        let activation = FIRST_SEGMENT_BLOCKS + 51;
+        let mut blocks = synthetic_blocks(13, 14, activation);
+        for transition in blocks
+            .iter_mut()
+            .filter(|block| block.height >= activation)
+            .flat_map(|block| block.transitions.iter_mut())
+            .filter(|transition| transition.name == "IdentityTopUp")
+        {
+            transition.code = 10_000;
+        }
+        let reason = check_workload_shape(&blocks, 13, 14)
+            .expect_err("rejected top-ups after activation must be caught");
+        assert!(
+            reason.contains("IdentityTopUp") && reason.contains("after the upgrade activated"),
+            "unexpected reason: {reason}"
+        );
+    }
+
+    #[test]
+    fn should_reject_a_recording_that_activated_before_the_split_or_not_at_all() {
+        let blocks = synthetic_blocks(13, 14, FIRST_SEGMENT_BLOCKS);
+        let reason = check_workload_shape(&blocks, 13, 14)
+            .expect_err("activation at the split must be caught");
+        assert!(
+            reason.contains("protocol version 13"),
+            "unexpected reason: {reason}"
+        );
+
+        let blocks = synthetic_blocks(13, 14, FIRST_SEGMENT_BLOCKS + SECOND_SEGMENT_BLOCKS + 1);
+        let reason = check_workload_shape(&blocks, 13, 14)
+            .expect_err("a run that never activated must be caught");
+        assert!(
+            reason.contains("must have activated"),
+            "unexpected reason: {reason}"
+        );
+    }
+
+    #[test]
+    fn should_reject_an_unclassified_transition_name() {
+        let mut blocks = synthetic_blocks(13, 14, FIRST_SEGMENT_BLOCKS + 51);
+        blocks[5].transitions.push(TransitionRecord {
+            name: "MasternodeVote".to_string(),
+            code: 0,
+            fee: 0,
+        });
+        let reason = check_workload_shape(&blocks, 13, 14)
+            .expect_err("a new operation kind must be classified before it counts");
+        assert!(
+            reason.contains("unclassified transition"),
+            "unexpected reason: {reason}"
+        );
     }
 }
