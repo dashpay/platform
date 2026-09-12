@@ -1700,6 +1700,9 @@ impl NetworkShieldedCoordinator {
                 store.save_activity(*id, &upgraded).map_err(|e| {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                 })?;
+                store.clear_redrive(*id, &entry_id).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
                 changeset.record_activity_entry(*id, upgraded);
             }
         }

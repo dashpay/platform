@@ -1458,7 +1458,7 @@ mod replacement_tests {
 
         let check_tx_result = state_transition_to_execution_event_for_check_tx(
             &platform_ref,
-            replayed_state_transition,
+            &replayed_state_transition,
             CheckTxLevel::FirstTimeCheck,
             &platform.check_tx_proof_verifier,
             platform_version,

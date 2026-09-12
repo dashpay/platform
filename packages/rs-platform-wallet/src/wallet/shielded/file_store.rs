@@ -167,7 +167,10 @@ impl FileBackedShieldedStore {
                 tracing::warn!("dropping corrupt shielded_pending_spends row (bad key widths)");
                 continue;
             };
-            if nullifiers.is_empty() || nullifiers.len() % 32 != 0 {
+            // Empty nullifiers identify a ShieldFromIdentity retry guard.
+            // Its exact transition bytes, rather than note reservations,
+            // preserve idempotency across restarts.
+            if nullifiers.len() % 32 != 0 {
                 tracing::warn!("dropping corrupt shielded_pending_spends row (bad nullifiers)");
                 continue;
             }
@@ -423,6 +426,18 @@ impl ShieldedStore for FileBackedShieldedStore {
             .get(&id)
             .map(SubwalletState::pending_redrives)
             .unwrap_or_default())
+    }
+
+    fn pending_redrives_for_wallet(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<PendingRedrive>, Self::Error> {
+        Ok(self
+            .subwallets
+            .iter()
+            .filter(|(id, _)| id.wallet_id == wallet_id)
+            .flat_map(|(_, subwallet)| subwallet.pending_redrives())
+            .collect())
     }
 
     fn bump_redrive_attempts(
@@ -802,6 +817,32 @@ mod tests {
             assert!(
                 store.stale_pending_spends(id).expect("stale").is_empty(),
                 "no reservations rehydrate once the record is gone"
+            );
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn identity_debit_guard_with_no_nullifiers_survives_reopen() {
+        let path = temp_tree_path("identity_debit_guard");
+        let id = SubwalletId::new([9u8; 32], 4);
+        let redrive = PendingRedrive {
+            activity_id: [1u8; 32],
+            anchor: [2u8; 32],
+            nullifiers: vec![],
+            st_bytes: vec![0xAB; 96],
+            attempts: 0,
+        };
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            store.arm_redrive(id, redrive.clone()).expect("arm");
+        }
+        {
+            let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+            assert_eq!(
+                store.pending_redrives(id).expect("pending redrives"),
+                vec![redrive],
+                "identity debit guard must survive process restart"
             );
         }
         let _ = std::fs::remove_file(&path);

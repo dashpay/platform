@@ -266,6 +266,13 @@ pub trait ShieldedStore: Send + Sync {
     /// Every armed redrive record for `id`.
     fn pending_redrives(&self, id: SubwalletId) -> Result<Vec<PendingRedrive>, Self::Error>;
 
+    /// Every armed redrive record for a wallet, across all of its
+    /// currently and previously bound shielded accounts.
+    fn pending_redrives_for_wallet(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<PendingRedrive>, Self::Error>;
+
     /// Increment the attempt counter on `id`'s redrive keyed by
     /// `activity_id`, returning the new count (`0` when no such record
     /// exists).
@@ -878,6 +885,18 @@ impl ShieldedStore for InMemoryShieldedStore {
             .get(&id)
             .map(SubwalletState::pending_redrives)
             .unwrap_or_default())
+    }
+
+    fn pending_redrives_for_wallet(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<PendingRedrive>, Self::Error> {
+        Ok(self
+            .subwallets
+            .iter()
+            .filter(|(id, _)| id.wallet_id == wallet_id)
+            .flat_map(|(_, subwallet)| subwallet.pending_redrives())
+            .collect())
     }
 
     fn bump_redrive_attempts(
