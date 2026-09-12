@@ -13,7 +13,19 @@ use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityWithdrawalTransactionQueueMethodVersions,
 };
 
-pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
+/// V3 is protocol version 15's identity-method table. It differs from V2 in
+/// one slot:
+///
+/// * `update.credit_storage_refunds_to_owners` `None -> Some(0)`: the
+///   primitive that credits each recorded owner of a storage refund and
+///   reports the amount whose owner has no balance element, so a block
+///   lifecycle path (or, later, the state transition refund path) can route
+///   that amount to the current epoch's processing pool instead of halting.
+///   No key or permission is consulted on any route: a frozen but existing
+///   owner is credited, an owner without a balance is settled into the pool.
+///   Nothing before v15 settles refunds outside a state transition, so V1 and
+///   V2 keep the slot `None`.
+pub const DRIVE_IDENTITY_METHOD_VERSIONS_V3: DriveIdentityMethodVersions =
     DriveIdentityMethodVersions {
         fetch: DriveIdentityFetchMethodVersions {
             public_key_hashes: DriveIdentityFetchPublicKeyHashesMethodVersions {
@@ -78,8 +90,8 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
                 create_new_identity_key_query_trees: 0,
                 insert_key_searchable_references: 0,
                 insert_key_to_storage: 0,
-                insert_new_non_unique_key: 0,
-                insert_new_unique_key: 0,
+                insert_new_non_unique_key: 1,
+                insert_new_unique_key: 1,
                 replace_key_in_storage: 0,
             },
             insert_key_hash_identity_reference:
@@ -92,13 +104,13 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
                     insert_unique_public_key_hash_reference_to_identity: 0,
                 },
             budget: DriveIdentityKeysBudgetMethodVersions {
-                insert_identity_key_budget: None,
-                fetch_identity_key_remaining_budget: None,
-                deduct_from_identity_key_budget: None,
-                add_estimation_costs_for_key_budgets: None,
-                fetch_identity_keys_remaining_budgets: None,
-                prove_identity_keys_remaining_budgets: None,
-                add_to_identity_key_budget: None,
+                insert_identity_key_budget: Some(0),
+                fetch_identity_key_remaining_budget: Some(0),
+                deduct_from_identity_key_budget: Some(0),
+                add_estimation_costs_for_key_budgets: Some(0),
+                fetch_identity_keys_remaining_budgets: Some(0),
+                prove_identity_keys_remaining_budgets: Some(0),
+                add_to_identity_key_budget: Some(0),
             },
         },
         update: DriveIdentityUpdateMethodVersions {
@@ -106,27 +118,27 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
             merge_identity_nonce: 0,
             update_identity_negative_credit_operation: 0,
             initialize_identity_revision: 0,
-            disable_identity_keys: 0,
+            disable_identity_keys: 1,
             re_enable_identity_keys: 0,
             add_new_non_unique_keys_to_identity: 0,
             add_new_unique_keys_to_identity: 0,
             add_new_keys_to_identity: 0,
             insert_identity_balance: 0,
             initialize_negative_identity_balance: 0,
-            add_to_identity_balance: 0,
+            add_to_identity_balance: 1, // changed in v14: credits that repay an identity's debt are owed to the processing fee pool
             add_to_previous_balance: 0,
-            apply_balance_change_from_fee_to_identity: 0,
+            apply_balance_change_from_fee_to_identity: 1, // changed in v14: routes the debt a balance change repaid to the processing fee pool
             remove_from_identity_balance: 0,
             refresh_identity_key_reference_operations: 0,
-            update_identity_key_limits: None,
-            credit_storage_refunds_to_owners: None,
+            update_identity_key_limits: Some(0),
+            credit_storage_refunds_to_owners: Some(0), // new in v15: credits recorded refund owners, reports the unrouted amount for the processing pool
         },
         insert: DriveIdentityInsertMethodVersions {
             add_new_identity: 0,
         },
         contract_info: DriveIdentityContractInfoMethodVersions {
-            add_potential_contract_info_for_contract_bounded_key: 0,
-            refresh_potential_contract_info_key_references: 0,
+            add_potential_contract_info_for_contract_bounded_key: 1,
+            refresh_potential_contract_info_key_references: 1,
             merge_identity_contract_nonce: 0,
         },
         cost_estimation: DriveIdentityCostEstimationMethodVersions {
@@ -154,7 +166,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
         withdrawals: DriveIdentityWithdrawalMethodVersions {
             document: DriveIdentityWithdrawalDocumentMethodVersions {
                 fetch_oldest_withdrawal_documents_by_status: 0,
-                find_withdrawal_documents_by_status_and_transaction_indices: 0,
+                find_withdrawal_documents_by_status_and_transaction_indices: 1,
             },
             transaction: DriveIdentityWithdrawalTransactionMethodVersions {
                 index: DriveIdentityWithdrawalTransactionIndexMethodVersions {
@@ -168,9 +180,9 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
                     move_broadcasted_withdrawal_transactions_back_to_queue_operations: 0,
                 },
             },
-            calculate_current_withdrawal_limit: 0,
-            record_total_credits_history: None,
-            fetch_total_credits_in_platform_a_day_ago: None,
-            record_credit_inflows: None,
+            calculate_current_withdrawal_limit: 1, // changed in v14: daily maximum is a percentage of the total credits a day ago plus the credit inflows of the last 25 hours
+            record_total_credits_history: Some(0), // new in v14: total credits history for the day-lagged daily withdrawal limit
+            fetch_total_credits_in_platform_a_day_ago: Some(0), // new in v14
+            record_credit_inflows: Some(0), // new in v14: credit inflows sum tree for the net daily withdrawal limit
         },
     };

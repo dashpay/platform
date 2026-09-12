@@ -21,7 +21,7 @@ use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIV
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
+use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
 use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v3::SYSTEM_DATA_CONTRACT_VERSIONS_V3;
@@ -30,14 +30,28 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 
-/// Introduced as the activation gate for the consensus changes of the 4.3
-/// line. Functionally identical to v14 at introduction: the same component
-/// version structs, no behavior change. Each change that needs this gate
-/// lands in its own follow-up and bumps the component table it consumes here;
-/// keeping v15 == v14 until then lets mixed-version validators agree.
+/// v15 hosts the storage refund fee-history rules:
+///
+/// 1. **Fee history required for storage refunds**: `DRIVE_VERSION_V10`
+///    bumps `fees.calculate_fee` to 1. A storage refund for owner-attributed
+///    bytes is priced only with the fee history of the block that removes
+///    the bytes; the history is consulted on every fee version number and a
+///    missing history is an internal error instead of a silent fallback to
+///    the first-generation storage rates. Every shipped schedule shares fee
+///    version number 1 and the same storage rates, so refund credits are
+///    unchanged for every shipped input; the boundary makes the absence of
+///    history an error from this version onward.
+/// 2. **Recorded-owner refund credits**: the same drive table turns on
+///    `identity.update.credit_storage_refunds_to_owners`, the primitive that
+///    credits each recorded owner of a refund without consulting any key or
+///    permission and reports the amount whose owner has no balance element,
+///    so block lifecycle paths can settle it into the current epoch's
+///    processing pool.
+///
+/// Everything else matches v14.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V9,
+    drive: DRIVE_VERSION_V10, // changed: calculate_fee v1 (fee history required for refunds) + identity table v3 (credit_storage_refunds_to_owners)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10,
