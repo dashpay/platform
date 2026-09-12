@@ -9,6 +9,7 @@ use dpp::version::PlatformVersion;
 use enum_map::EnumMap;
 
 mod v0;
+mod v1;
 
 impl Drive {
     /// Calculates fees for the given operations. Returns the storage and processing costs.
@@ -47,9 +48,17 @@ impl Drive {
                 &platform_version.fee_version,
                 previous_fee_versions,
             ),
+            1 => Self::calculate_fee_v1(
+                base_operations,
+                drive_operations,
+                epoch,
+                epochs_per_era,
+                &platform_version.fee_version,
+                previous_fee_versions,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "Drive::calculate_fee".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -69,6 +78,8 @@ mod tests {
     use grovedb_costs::storage_cost::StorageCost;
     use grovedb_costs::OperationCost;
     use intmap::IntMap;
+    use platform_version::version::drive_versions::DriveFeesMethodVersions;
+    use platform_version::version::drive_versions::{DriveMethodVersions, DriveVersion};
     use platform_version::version::fee::FeeVersion;
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
@@ -109,12 +120,33 @@ mod tests {
     }
 
     /// A mock platform version whose schedule is the mock generation, so the dispatcher must
-    /// hand the fee history through for refunds to be priced at all.
-    fn platform_version_with_doubled_storage_rate() -> PlatformVersion {
+    /// hand the fee history through for refunds to be priced at all, running the requested
+    /// `calculate_fee` generation.
+    fn platform_version_with_doubled_storage_rate(calculate_fee: u16) -> PlatformVersion {
         PlatformVersion {
             fee_version: TEST_FEE_VERSION_DOUBLED_STORAGE_RATE,
+            drive: DriveVersion {
+                methods: DriveMethodVersions {
+                    fees: DriveFeesMethodVersions { calculate_fee },
+                    ..TEST_PLATFORM_V2.drive.methods
+                },
+                ..TEST_PLATFORM_V2.drive
+            },
             ..TEST_PLATFORM_V2
         }
+    }
+
+    fn first_rate() -> Credits {
+        FeeVersion::get(1)
+            .expect("registered")
+            .storage
+            .storage_disk_usage_credit_per_byte
+    }
+
+    fn doubled_rate() -> Credits {
+        TEST_FEE_VERSION_DOUBLED_STORAGE_RATE
+            .storage
+            .storage_disk_usage_credit_per_byte
     }
 
     fn expected_refund(bytes: u32, rate: Credits, storage_epoch: u16) -> Credits {
@@ -176,18 +208,13 @@ mod tests {
     }
 
     #[test]
-    fn should_price_refunds_across_a_rate_boundary_through_the_dispatcher_for_a_later_generation() {
-        let platform_version = platform_version_with_doubled_storage_rate();
+    fn should_price_every_removed_epoch_at_the_current_epoch_rate_through_generation_zero() {
+        // Shipped rule, selected by every released protocol version: the rate active at the
+        // removal epoch (15, after the boundary) prices every removed epoch.
+        let platform_version = platform_version_with_doubled_storage_rate(0);
         let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
         let history = boundary_history();
-        let first_rate = FeeVersion::get(1)
-            .expect("registered")
-            .storage
-            .storage_disk_usage_credit_per_byte;
-        let doubled_rate = TEST_FEE_VERSION_DOUBLED_STORAGE_RATE
-            .storage
-            .storage_disk_usage_credit_per_byte;
-        assert_ne!(first_rate, doubled_rate);
+        assert_ne!(first_rate(), doubled_rate());
 
         let fee_result = Drive::calculate_fee(
             None,
@@ -199,20 +226,114 @@ mod tests {
         )
         .expect("history supplied through the dispatcher");
 
-        assert_eq!(fee_result.storage_fee, 10 * doubled_rate);
+        assert_eq!(fee_result.storage_fee, 10 * doubled_rate());
         assert_eq!(
             refunds_of(&fee_result),
             BTreeMap::from([
-                (5, expected_refund(100, first_rate, 5)),
-                (12, expected_refund(100, doubled_rate, 12)),
+                (5, expected_refund(100, doubled_rate(), 5)),
+                (12, expected_refund(100, doubled_rate(), 12)),
             ]),
-            "bytes stored on each side of the boundary refund at the rate they were charged"
+            "generation 0 prices both epochs at the current epoch's rate"
+        );
+    }
+
+    #[test]
+    fn should_price_refunds_across_a_rate_boundary_through_generation_one() {
+        let platform_version = platform_version_with_doubled_storage_rate(1);
+        let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
+        let history = boundary_history();
+
+        let fee_result = Drive::calculate_fee(
+            None,
+            Some(vec![removal_operation()]),
+            &epoch,
+            EPOCHS_PER_ERA,
+            &platform_version,
+            Some(&history),
+        )
+        .expect("history supplied through the dispatcher");
+
+        assert_eq!(fee_result.storage_fee, 10 * doubled_rate());
+        assert_eq!(
+            refunds_of(&fee_result),
+            BTreeMap::from([
+                (5, expected_refund(100, first_rate(), 5)),
+                (12, expected_refund(100, doubled_rate(), 12)),
+            ]),
+            "generation 1 refunds each epoch at the rate its bytes were charged"
+        );
+    }
+
+    #[test]
+    fn should_agree_across_generations_whenever_every_generation_shares_one_storage_table() {
+        // Every input reachable on a released protocol version: a history where every entry is
+        // number 1. Both generations then resolve the same rate at every epoch.
+        let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
+        let history: CachedEpochIndexFeeVersions = BTreeMap::from([
+            (0, FeeVersion::get(1).expect("registered")),
+            (10, FeeVersion::get(1).expect("registered")),
+        ]);
+        let results: Vec<FeeResult> = [0, 1]
+            .into_iter()
+            .map(|calculate_fee| {
+                let platform_version = PlatformVersion {
+                    drive: DriveVersion {
+                        methods: DriveMethodVersions {
+                            fees: DriveFeesMethodVersions { calculate_fee },
+                            ..TEST_PLATFORM_V2.drive.methods
+                        },
+                        ..TEST_PLATFORM_V2.drive
+                    },
+                    ..TEST_PLATFORM_V2
+                };
+                Drive::calculate_fee(
+                    None,
+                    Some(vec![removal_operation()]),
+                    &epoch,
+                    EPOCHS_PER_ERA,
+                    &platform_version,
+                    Some(&history),
+                )
+                .expect("dispatches")
+            })
+            .collect();
+
+        assert_eq!(results[0], results[1]);
+        assert_eq!(
+            refunds_of(&results[1]),
+            BTreeMap::from([
+                (5, expected_refund(100, first_rate(), 5)),
+                (12, expected_refund(100, first_rate(), 12)),
+            ])
         );
     }
 
     #[test]
     fn should_reject_a_missing_fee_history_through_the_dispatcher_for_a_later_generation() {
-        let platform_version = platform_version_with_doubled_storage_rate();
+        for calculate_fee in [0, 1] {
+            let platform_version = platform_version_with_doubled_storage_rate(calculate_fee);
+            let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
+
+            let error = Drive::calculate_fee(
+                None,
+                Some(vec![removal_operation()]),
+                &epoch,
+                EPOCHS_PER_ERA,
+                &platform_version,
+                None,
+            )
+            .expect_err("a later generation cannot price refunds without the history");
+
+            assert!(
+                matches!(error, Error::Drive(DriveError::CorruptedCodeExecution(_))),
+                "calculate_fee {calculate_fee}: unexpected error {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_an_unknown_calculate_fee_version() {
+        let platform_version = platform_version_with_doubled_storage_rate(2);
         let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
 
         let error = Drive::calculate_fee(
@@ -223,10 +344,13 @@ mod tests {
             &platform_version,
             None,
         )
-        .expect_err("a later generation cannot price refunds without the history");
+        .expect_err("version 2 is not known");
 
         assert!(
-            matches!(error, Error::Drive(DriveError::CorruptedCodeExecution(_))),
+            matches!(
+                error,
+                Error::Drive(DriveError::UnknownVersionMismatch { received: 2, .. })
+            ),
             "unexpected error {error}"
         );
     }
