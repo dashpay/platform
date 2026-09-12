@@ -42,7 +42,7 @@ pub fn verify_token_total_supply_and_aggregated_identity_balance(
 
     let (root_hash, total_balance) =
         Drive::verify_token_total_supply_and_aggregated_identity_balance(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             token_id_bytes,
             verify_subset_of_proof,
             platform_version,

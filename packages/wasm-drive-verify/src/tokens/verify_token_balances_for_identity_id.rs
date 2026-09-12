@@ -68,7 +68,7 @@ pub fn verify_token_balances_for_identity_id_vec(
 
     let (root_hash, balances_vec): (RootHash, Vec<([u8; 32], Option<TokenAmount>)>) =
         drive::drive::Drive::verify_token_balances_for_identity_id(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             &token_ids_vec,
             identity_id_bytes,
             verify_subset_of_proof,
@@ -146,7 +146,7 @@ pub fn verify_token_balances_for_identity_id_map(
 
     let (root_hash, balances_map): (RootHash, BTreeMap<[u8; 32], Option<TokenAmount>>) =
         drive::drive::Drive::verify_token_balances_for_identity_id(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             &token_ids_vec,
             identity_id_bytes,
             verify_subset_of_proof,

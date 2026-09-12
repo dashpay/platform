@@ -44,7 +44,7 @@ impl FromProof<GetTokenContractInfoRequest> for TokenContractInfo {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_token_contract_info(
-            &proof.grovedb_proof,
+            crate::verify::current_grovedb_proof_bytes(&proof)?,
             token_id,
             false,
             platform_version,

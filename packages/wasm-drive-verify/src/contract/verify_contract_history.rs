@@ -44,7 +44,7 @@ pub fn verify_contract_history(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, contract_history_option) = Drive::verify_contract_history(
-        &proof_vec,
+        crate::utils::proof::current_grovedb_proof(&proof_vec)?,
         contract_id_bytes,
         start_at_date,
         limit,

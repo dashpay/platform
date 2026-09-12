@@ -43,7 +43,7 @@ impl FromProof<GetTokenTotalSupplyRequest> for TotalSingleTokenBalance {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_token_total_supply_and_aggregated_identity_balance(
-            &proof.grovedb_proof,
+            crate::verify::current_grovedb_proof_bytes(&proof)?,
             token_id,
             false,
             platform_version,

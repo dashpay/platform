@@ -55,6 +55,11 @@ pub fn verify_full_identity_by_non_unique_public_key_hash(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
+    if let Some(identity_proof) = identity_proof_vec.as_deref() {
+        crate::utils::proof::current_grovedb_proof(identity_proof)?;
+    }
+    crate::utils::proof::current_grovedb_proof(&identity_id_public_key_hash_proof_vec)?;
+
     let proof = IdentityAndNonUniquePublicKeyHashDoubleProof {
         identity_proof: identity_proof_vec,
         identity_id_public_key_hash_proof: identity_id_public_key_hash_proof_vec,

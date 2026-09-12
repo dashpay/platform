@@ -105,7 +105,10 @@ pub fn verify_vote_poll_votes_proof(
         .map_err(|e| JsValue::from_str(&format!("Failed to resolve query: {:?}", e)))?;
 
     let (root_hash, votes_vec) = resolved_query
-        .verify_vote_poll_votes_proof(&proof_vec, platform_version)
+        .verify_vote_poll_votes_proof(
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            platform_version,
+        )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert identifiers to JS array

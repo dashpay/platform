@@ -40,7 +40,7 @@ pub fn verify_epoch_infos(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, epoch_infos_vec) = Drive::verify_epoch_infos(
-        &proof_vec,
+        crate::utils::proof::current_grovedb_proof(&proof_vec)?,
         current_epoch,
         start_epoch,
         count,

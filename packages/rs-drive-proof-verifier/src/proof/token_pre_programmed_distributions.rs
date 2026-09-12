@@ -86,7 +86,7 @@ impl FromProof<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammed
 
         let (root_hash, result): ([u8; 32], TokenPreProgrammedDistributions) =
             Drive::verify_token_pre_programmed_distributions(
-                &proof.grovedb_proof,
+                crate::verify::current_grovedb_proof_bytes(&proof)?,
                 token_id,
                 start_at,
                 limit,

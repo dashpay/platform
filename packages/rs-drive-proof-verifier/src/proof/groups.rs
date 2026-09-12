@@ -60,7 +60,7 @@ impl FromProof<GetGroupInfoRequest> for Group {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_group_info(
-            &proof.grovedb_proof,
+            crate::verify::current_grovedb_proof_bytes(&proof)?,
             contract_id,
             group_contract_position,
             false,
@@ -123,7 +123,7 @@ impl FromProof<GetGroupInfosRequest> for Groups {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_group_infos_in_contract(
-            &proof.grovedb_proof,
+            crate::verify::current_grovedb_proof_bytes(&proof)?,
             contract_id,
             start_at_group_contract_position,
             count,
@@ -221,7 +221,7 @@ impl FromProof<GetGroupActionsRequest> for GroupActions {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_action_infos_in_contract(
-            &proof.grovedb_proof,
+            crate::verify::current_grovedb_proof_bytes(&proof)?,
             contract_id,
             group_contract_position,
             status,
@@ -300,7 +300,7 @@ impl FromProof<GetGroupActionSignersRequest> for GroupActionSigners {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_action_signers(
-            &proof.grovedb_proof,
+            crate::verify::current_grovedb_proof_bytes(&proof)?,
             contract_id,
             group_contract_position,
             status,

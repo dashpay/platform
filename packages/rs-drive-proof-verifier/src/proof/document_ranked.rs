@@ -332,7 +332,10 @@ pub fn verify_ranked_top_k_proof(
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, RankedPage), Error> {
     let (root_hash, page) = query
-        .verify_ranked_top_k_proof(&proof.grovedb_proof, platform_version)
+        .verify_ranked_top_k_proof(
+            crate::verify::current_grovedb_proof_bytes(proof)?,
+            platform_version,
+        )
         .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;

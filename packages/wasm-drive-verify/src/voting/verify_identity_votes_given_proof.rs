@@ -95,7 +95,11 @@ pub fn verify_identity_votes_given_proof_vec(
     let contract_lookup_fn = create_contract_lookup_fn(contract_lookup, platform_version)?;
 
     let (root_hash, votes_vec): (RootHash, Vec<(Identifier, ResourceVote)>) = query
-        .verify_identity_votes_given_proof(&proof_vec, &*contract_lookup_fn, platform_version)
+        .verify_identity_votes_given_proof(
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            &*contract_lookup_fn,
+            platform_version,
+        )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert to JS array of tuples
@@ -144,7 +148,11 @@ pub fn verify_identity_votes_given_proof_map(
     let contract_lookup_fn = create_contract_lookup_fn(contract_lookup, platform_version)?;
 
     let (root_hash, votes_map): (RootHash, BTreeMap<Identifier, ResourceVote>) = query
-        .verify_identity_votes_given_proof(&proof_vec, &*contract_lookup_fn, platform_version)
+        .verify_identity_votes_given_proof(
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            &*contract_lookup_fn,
+            platform_version,
+        )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert to JS object with base58 keys

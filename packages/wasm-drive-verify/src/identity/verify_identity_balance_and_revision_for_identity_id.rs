@@ -48,7 +48,7 @@ pub fn verify_identity_balance_and_revision_for_identity_id(
 
     let (root_hash, balance_and_revision_option) =
         Drive::verify_identity_balance_and_revision_for_identity_id(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             identity_id_bytes,
             verify_subset_of_proof,
             platform_version,

@@ -8,7 +8,14 @@ use dpp::document::Document;
 use dpp::identity::Identity;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
+use drive::error::proof::ProofError;
 use drive::query::DriveDocumentQuery;
+
+fn current_grovedb_proof(proof: &[u8]) -> Result<&[u8], drive::error::Error> {
+    crate::utils::proof::validate_current_grovedb_proof(proof)
+        .map_err(|error| drive::error::Error::Proof(ProofError::CorruptedProof(error)))?;
+    Ok(proof)
+}
 
 /// Verify a full identity by identity ID
 pub fn verify_full_identity_by_identity_id(
@@ -18,7 +25,7 @@ pub fn verify_full_identity_by_identity_id(
     platform_version: &PlatformVersion,
 ) -> Result<([u8; 32], Option<Identity>), drive::error::Error> {
     Drive::verify_full_identity_by_identity_id(
-        proof,
+        current_grovedb_proof(proof)?,
         is_proof_subset,
         identity_id,
         platform_version,
@@ -35,7 +42,7 @@ pub fn verify_contract(
     platform_version: &PlatformVersion,
 ) -> Result<([u8; 32], Option<DataContract>), drive::error::Error> {
     Drive::verify_contract(
-        proof,
+        current_grovedb_proof(proof)?,
         contract_known_keeps_history,
         is_proof_subset,
         in_multiple_contract_proof_form,
@@ -50,5 +57,5 @@ pub fn verify_documents_with_query(
     query: &DriveDocumentQuery,
     platform_version: &PlatformVersion,
 ) -> Result<([u8; 32], Vec<Document>), drive::error::Error> {
-    query.verify_proof(proof, platform_version)
+    query.verify_proof(current_grovedb_proof(proof)?, platform_version)
 }

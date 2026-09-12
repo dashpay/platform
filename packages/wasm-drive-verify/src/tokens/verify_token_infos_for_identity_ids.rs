@@ -81,7 +81,7 @@ pub fn verify_token_infos_for_identity_ids_vec(
 
     let (root_hash, token_infos_vec): (RootHash, Vec<([u8; 32], Option<IdentityTokenInfo>)>) =
         drive::drive::Drive::verify_token_infos_for_identity_ids(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             token_id_bytes,
             &identity_ids_vec,
             is_proof_subset,
@@ -155,7 +155,7 @@ pub fn verify_token_infos_for_identity_ids_map(
 
     let (root_hash, token_infos_map): (RootHash, BTreeMap<[u8; 32], Option<IdentityTokenInfo>>) =
         drive::drive::Drive::verify_token_infos_for_identity_ids(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             token_id_bytes,
             &identity_ids_vec,
             is_proof_subset,

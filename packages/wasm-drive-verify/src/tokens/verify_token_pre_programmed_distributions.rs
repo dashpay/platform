@@ -74,7 +74,7 @@ pub fn verify_token_pre_programmed_distributions_vec(
     type DistributionVec = Vec<(Identifier, TokenAmount)>;
     let (root_hash, distributions_vec): (RootHash, Vec<(TimestampMillis, DistributionVec)>) =
         drive::drive::Drive::verify_token_pre_programmed_distributions(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             token_id_bytes,
             start_at,
             limit,
@@ -155,7 +155,7 @@ pub fn verify_token_pre_programmed_distributions_map(
     type DistributionMap = BTreeMap<Identifier, TokenAmount>;
     let (root_hash, distributions_map): (RootHash, BTreeMap<TimestampMillis, DistributionMap>) =
         drive::drive::Drive::verify_token_pre_programmed_distributions(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             token_id_bytes,
             start_at,
             limit,

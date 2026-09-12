@@ -58,7 +58,7 @@ pub fn verify_epoch_proposers_by_range_vec(
 
     let (root_hash, proposers_vec): (RootHash, Vec<(Vec<u8>, u64)>) =
         Drive::verify_epoch_proposers(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             epoch_index,
             proposer_query_type,
             platform_version,
@@ -117,7 +117,7 @@ pub fn verify_epoch_proposers_by_range_map(
 
     let (root_hash, proposers_map): (RootHash, BTreeMap<Vec<u8>, u64>) =
         Drive::verify_epoch_proposers(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             epoch_index,
             proposer_query_type,
             platform_version,
@@ -176,7 +176,7 @@ pub fn verify_epoch_proposers_by_ids_vec(
 
     let (root_hash, proposers_vec): (RootHash, Vec<(Vec<u8>, u64)>) =
         Drive::verify_epoch_proposers(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             epoch_index,
             proposer_query_type,
             platform_version,
@@ -237,7 +237,7 @@ pub fn verify_epoch_proposers_by_ids_map(
 
     let (root_hash, proposers_map): (RootHash, BTreeMap<Vec<u8>, u64>) =
         Drive::verify_epoch_proposers(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             epoch_index,
             proposer_query_type,
             platform_version,

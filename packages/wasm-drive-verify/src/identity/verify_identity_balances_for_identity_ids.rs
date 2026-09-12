@@ -63,7 +63,7 @@ pub fn verify_identity_balances_for_identity_ids_vec(
 
     let (root_hash, balances_vec): (RootHash, Vec<([u8; 32], Option<Credits>)>) =
         Drive::verify_identity_balances_for_identity_ids(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             is_proof_subset,
             &identity_ids_vec,
             platform_version,
@@ -134,7 +134,7 @@ pub fn verify_identity_balances_for_identity_ids_map(
 
     let (root_hash, balances_map): (RootHash, BTreeMap<[u8; 32], Option<Credits>>) =
         Drive::verify_identity_balances_for_identity_ids(
-            &proof_vec,
+            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
             is_proof_subset,
             &identity_ids_vec,
             platform_version,
