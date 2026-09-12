@@ -2,12 +2,14 @@
 #[allow(clippy::module_inception)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
+    use crate::execution::check_tx::CheckTxLevel;
     use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{
         create_dummy_serialized_action, get_proving_key, process_transition,
         serialize_authorized_bundle_with_flags, setup_platform,
     };
     use crate::execution::validation::state_transition::state_transitions::tests::process_state_transitions;
+    use crate::platform_types::platform::PlatformRef;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -409,6 +411,200 @@ mod tests {
         );
         assert_eq!(identity_balance(&platform, &identity), balance);
         assert_eq!(identity_nonce(&platform, &identity), 0);
+    }
+
+    #[tokio::test]
+    async fn test_check_tx_validates_full_metered_fee_before_proof() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = setup_platform();
+        let mut rng = StdRng::seed_from_u64(31);
+        let amount = 1_000;
+        let compute_fee = dpp::shielded::compute_shielded_verification_fee(1, platform_version)
+            .expect("shielded verification fee");
+        let (identity, signer) = create_identity_with_transfer_key(
+            [31u8; 32],
+            amount + compute_fee,
+            &mut rng,
+            platform_version,
+        );
+        add_identity_to_drive(&mut platform, &identity);
+
+        let transition = create_signed_transition(
+            &identity,
+            &signer,
+            dummy_bundle(),
+            amount,
+            1,
+            0,
+            platform_version,
+        )
+        .await;
+        let raw_transition = transition
+            .serialize_to_bytes()
+            .expect("transition should serialize");
+        let platform_state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let result = platform
+            .check_tx(
+                &raw_transition,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("fee rejection should be a validation result");
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(
+                StateError::IdentityInsufficientBalanceError(_)
+            )],
+            "the metered fee gate must reject before the dummy Orchard proof is verified"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_tx_throttles_repeated_proofs_for_one_identity_nonce() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = setup_platform();
+        let mut rng = StdRng::seed_from_u64(32);
+        let (identity, signer) = create_identity_with_transfer_key(
+            [32u8; 32],
+            dash_to_credits!(1.0),
+            &mut rng,
+            platform_version,
+        );
+        add_identity_to_drive(&mut platform, &identity);
+
+        let transition = create_signed_transition(
+            &identity,
+            &signer,
+            dummy_bundle(),
+            1_000,
+            1,
+            0,
+            platform_version,
+        )
+        .await;
+        let raw_transition = transition
+            .serialize_to_bytes()
+            .expect("transition should serialize");
+        let platform_state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let first = platform
+            .check_tx(
+                &raw_transition,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("first proof should be admitted");
+        assert_matches!(
+            first.errors.as_slice(),
+            [ConsensusError::StateError(
+                StateError::InvalidShieldedProofError(_)
+            )]
+        );
+
+        let second = platform.check_tx(
+            &raw_transition,
+            CheckTxLevel::FirstTimeCheck,
+            &platform_ref,
+            platform_version,
+        );
+        assert_matches!(
+            second,
+            Err(crate::error::Error::Execution(
+                crate::error::execution::ExecutionError::CheckTxProofVerificationBusy
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_tx_throttles_alternating_future_identity_nonces() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = setup_platform();
+        let mut rng = StdRng::seed_from_u64(33);
+        let (identity, signer) = create_identity_with_transfer_key(
+            [33u8; 32],
+            dash_to_credits!(1.0),
+            &mut rng,
+            platform_version,
+        );
+        add_identity_to_drive(&mut platform, &identity);
+
+        let nonce_one = create_signed_transition(
+            &identity,
+            &signer,
+            dummy_bundle(),
+            1_000,
+            1,
+            0,
+            platform_version,
+        )
+        .await
+        .serialize_to_bytes()
+        .expect("nonce-one transition should serialize");
+        let nonce_two = create_signed_transition(
+            &identity,
+            &signer,
+            dummy_bundle(),
+            1_000,
+            2,
+            0,
+            platform_version,
+        )
+        .await
+        .serialize_to_bytes()
+        .expect("nonce-two transition should serialize");
+        let platform_state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        for raw in [&nonce_one, &nonce_two] {
+            let result = platform
+                .check_tx(
+                    raw,
+                    CheckTxLevel::FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("each new future nonce should receive one proof attempt");
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::InvalidShieldedProofError(_)
+                )]
+            );
+        }
+
+        assert_matches!(
+            platform.check_tx(
+                &nonce_one,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            ),
+            Err(crate::error::Error::Execution(
+                crate::error::execution::ExecutionError::CheckTxProofVerificationBusy
+            )),
+            "returning to an earlier still-valid nonce must not repeat proof work"
+        );
     }
 
     #[tokio::test]

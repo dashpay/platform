@@ -167,7 +167,10 @@ impl FileBackedShieldedStore {
                 tracing::warn!("dropping corrupt shielded_pending_spends row (bad key widths)");
                 continue;
             };
-            if nullifiers.is_empty() || nullifiers.len() % 32 != 0 {
+            // Empty nullifiers identify a ShieldFromIdentity retry guard.
+            // Its exact transition bytes, rather than note reservations,
+            // preserve idempotency across restarts.
+            if nullifiers.len() % 32 != 0 {
                 tracing::warn!("dropping corrupt shielded_pending_spends row (bad nullifiers)");
                 continue;
             }
@@ -425,6 +428,23 @@ impl ShieldedStore for FileBackedShieldedStore {
             .unwrap_or_default())
     }
 
+    fn pending_redrives_for_wallet(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<(SubwalletId, PendingRedrive)>, Self::Error> {
+        Ok(self
+            .subwallets
+            .iter()
+            .filter(|(id, _)| id.wallet_id == wallet_id)
+            .flat_map(|(id, subwallet)| {
+                subwallet
+                    .pending_redrives()
+                    .into_iter()
+                    .map(|redrive| (*id, redrive))
+            })
+            .collect())
+    }
+
     fn bump_redrive_attempts(
         &mut self,
         id: SubwalletId,
@@ -437,7 +457,7 @@ impl ShieldedStore for FileBackedShieldedStore {
             .subwallets
             .get(&id)
             .and_then(|sw| sw.redrive_attempts(activity_id))
-            .map(|attempts| attempts + 1)
+            .map(|attempts| attempts.saturating_add(1))
         else {
             return Ok(0);
         };
@@ -468,10 +488,13 @@ impl ShieldedStore for FileBackedShieldedStore {
         id: SubwalletId,
         activity_id: &[u8; 32],
     ) -> Result<(), Self::Error> {
+        // Persist first so an I/O failure leaves the active process guarded in
+        // exactly the same way as a restart that rehydrates the surviving row.
+        self.delete_redrive_row(id, activity_id)?;
         if let Some(sw) = self.subwallets.get_mut(&id) {
             sw.clear_redrive(activity_id);
         }
-        self.delete_redrive_row(id, activity_id)
+        Ok(())
     }
 
     fn record_outgoing_note(
@@ -648,21 +671,34 @@ impl ShieldedStore for FileBackedShieldedStore {
     }
 
     fn purge_subwallet(&mut self, id: SubwalletId) -> Result<(), Self::Error> {
-        // Durable redrive rows are scoped by (wallet_id, account_index);
-        // delete this subwallet's before the in-memory drop, same
-        // SQL-before-memory fail-atomic ordering as `purge_wallet`.
+        // Note-spend redrives are account-scoped and go with the account.
+        // Empty-nullifier ShieldFromIdentity guards are wallet-wide: the signed
+        // debit remains executable after its recipient account is re-bound, so
+        // retain those rows and their minimal in-memory state.
         {
             let conn = self.pending_conn.lock().expect("pending_conn mutex");
             conn.execute(
                 "DELETE FROM shielded_pending_spends \
-                 WHERE wallet_id = ?1 AND account_index = ?2",
+                 WHERE wallet_id = ?1 AND account_index = ?2 \
+                   AND length(nullifiers) > 0",
                 rusqlite::params![id.wallet_id.as_slice(), id.account_index],
             )
             .map_err(|e| {
                 FileShieldedStoreError(format!("purge pending spends for subwallet: {e}"))
             })?;
         }
+        let identity_redrives = self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::identity_redrives)
+            .unwrap_or_default();
         self.subwallets.remove(&id);
+        if !identity_redrives.is_empty() {
+            let retained = self.subwallets.entry(id).or_default();
+            for redrive in identity_redrives {
+                retained.arm_redrive(redrive);
+            }
+        }
         Ok(())
     }
 
@@ -802,6 +838,122 @@ mod tests {
             assert!(
                 store.stale_pending_spends(id).expect("stale").is_empty(),
                 "no reservations rehydrate once the record is gone"
+            );
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn identity_debit_guard_with_no_nullifiers_survives_reopen() {
+        let path = temp_tree_path("identity_debit_guard");
+        let id = SubwalletId::new([9u8; 32], 4);
+        let redrive = PendingRedrive {
+            activity_id: [1u8; 32],
+            anchor: [2u8; 32],
+            nullifiers: vec![],
+            st_bytes: vec![0xAB; 96],
+            attempts: 0,
+        };
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            store.arm_redrive(id, redrive.clone()).expect("arm");
+        }
+        {
+            let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+            assert_eq!(
+                store.pending_redrives(id).expect("pending redrives"),
+                vec![redrive],
+                "identity debit guard must survive process restart"
+            );
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn clear_redrive_sql_failure_keeps_memory_and_durable_guard() {
+        let path = temp_tree_path("clear_redrive_failure");
+        let id = SubwalletId::new([0x91; 32], 2);
+        let redrive = PendingRedrive {
+            activity_id: [0x12; 32],
+            anchor: [0x23; 32],
+            nullifiers: vec![],
+            st_bytes: vec![0x34; 24],
+            attempts: 0,
+        };
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            store.arm_redrive(id, redrive.clone()).expect("arm");
+            store
+                .pending_conn
+                .lock()
+                .expect("pending_conn mutex")
+                .execute_batch(
+                    "CREATE TRIGGER reject_redrive_delete \
+                     BEFORE DELETE ON shielded_pending_spends \
+                     BEGIN SELECT RAISE(FAIL, 'injected delete failure'); END;",
+                )
+                .expect("install failure trigger");
+
+            assert!(
+                store.clear_redrive(id, &redrive.activity_id).is_err(),
+                "the injected durable delete failure must surface"
+            );
+            assert_eq!(
+                store.pending_redrives(id).expect("memory guard"),
+                vec![redrive.clone()],
+                "a failed durable delete must leave the live process guarded"
+            );
+        }
+        {
+            let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+            assert_eq!(
+                store.pending_redrives(id).expect("durable guard"),
+                vec![redrive],
+                "the guard must also rehydrate after the failed delete"
+            );
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn account_purge_durably_retains_identity_guard_only() {
+        let path = temp_tree_path("purge_subwallet_identity_guard");
+        let wallet_id = [0xA4; 32];
+        let id = SubwalletId::new(wallet_id, 8);
+        let identity_guard = PendingRedrive {
+            activity_id: [0x15; 32],
+            anchor: [0x26; 32],
+            nullifiers: vec![],
+            st_bytes: vec![0x37; 24],
+            attempts: 5,
+        };
+        let note_spend = PendingRedrive {
+            activity_id: [0x48; 32],
+            anchor: [0x59; 32],
+            nullifiers: vec![[0x6A; 32]],
+            st_bytes: vec![0x7B; 24],
+            attempts: 1,
+        };
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            store
+                .arm_redrive(id, identity_guard.clone())
+                .expect("arm identity");
+            store.arm_redrive(id, note_spend).expect("arm spend");
+            store.purge_subwallet(id).expect("purge account");
+            assert_eq!(
+                store.pending_redrives(id).expect("retained guard"),
+                vec![identity_guard.clone()]
+            );
+        }
+        {
+            let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+            assert_eq!(
+                store
+                    .pending_redrives_for_wallet(wallet_id)
+                    .expect("wallet guards"),
+                vec![(id, identity_guard)],
+                "only the wallet-wide identity guard may survive account removal"
             );
         }
         let _ = std::fs::remove_file(&path);

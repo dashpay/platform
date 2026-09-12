@@ -28,6 +28,12 @@ pub(crate) trait StateTransitionHasShieldedProofValidationV0 {
     /// Returns the number of Orchard actions whose proof work must be admitted.
     fn shielded_proof_action_count(&self) -> usize;
 
+    /// Returns the identity and nonce that must not start repeated Orchard
+    /// verification attempts in CheckTx. Only ShieldFromIdentity uses this
+    /// admission key; shielded spends are already replay-protected by their
+    /// nullifiers.
+    fn shielded_proof_identity_nonce_admission_key(&self) -> Option<([u8; 32], u64)>;
+
     /// Returns true if this state transition pays fees from the shielded pool's
     /// value_balance and requires minimum fee validation.
     ///
@@ -54,10 +60,10 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
         // is done inside transform_into_action because a failed proof must penalize
         // the asset lock (via PartiallyUseAssetLockAction). Moving it here would let
         // attackers spam bad proofs without burning their asset lock.
-        // ShieldFromIdentity is excluded for the same reason: its transform verifies
-        // the proof and turns a failure into a paid, nonce-consuming penalty on the
-        // funding identity (BumpIdentityNonceAction), so a rejected proof never leaves
-        // the identity's nonce and balance reusable for free.
+        // ShieldFromIdentity is excluded from the shared processor step for the same
+        // reason: block processing verifies it in its transform and turns a failure
+        // into a paid, nonce-consuming penalty. CheckTx invokes
+        // `validate_shielded_proof` explicitly after full fee admission.
         matches!(
             self,
             StateTransition::Shield(_)
@@ -102,6 +108,15 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 }
             },
             _ => 0,
+        }
+    }
+
+    fn shielded_proof_identity_nonce_admission_key(&self) -> Option<([u8; 32], u64)> {
+        match self {
+            StateTransition::ShieldFromIdentity(ShieldFromIdentityTransition::V0(v0)) => {
+                Some((v0.identity_id.to_buffer(), v0.nonce))
+            }
+            _ => None,
         }
     }
 
@@ -473,6 +488,17 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                             )
                         }
                     },
+                    StateTransition::ShieldFromIdentity(st) => match st {
+                        ShieldFromIdentityTransition::V0(v0) => reconstruct_and_verify_bundle(
+                            &v0.actions,
+                            FLAGS_OUTPUTS_ONLY,
+                            -(v0.amount as i64),
+                            &v0.anchor,
+                            v0.proof.as_slice(),
+                            &v0.binding_signature,
+                            &[],
+                        ),
+                    },
                     StateTransition::ShieldedTransfer(st) => match st {
                         dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
                             reconstruct_and_verify_bundle(
@@ -557,9 +583,8 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                             )
                         }
                     },
-                    // ShieldFromAssetLock and ShieldFromIdentity retain proof verification in
-                    // transform_into_action (their penalties come from the asset lock and the
-                    // funding identity respectively, which is safe)
+                    // ShieldFromAssetLock retains proof verification in transform_into_action;
+                    // its paid-failure action comes from the asset lock.
                     _ => return Ok(SimpleConsensusValidationResult::new()),
                 };
 

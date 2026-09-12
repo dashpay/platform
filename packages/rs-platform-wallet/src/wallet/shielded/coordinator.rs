@@ -552,7 +552,7 @@ impl NetworkShieldedCoordinator {
         // keep unspendable notes and a stale watermark alive, and a
         // re-keyed account's stored notes belong to the OLD viewing
         // key. Computed before the maps mutate.
-        let stale: Vec<SubwalletId> = {
+        let stale: Vec<(SubwalletId, AccountViewingKeys)> = {
             let accounts = self.accounts.read().await;
             accounts
                 .iter()
@@ -563,7 +563,7 @@ impl NetworkShieldedCoordinator {
                         .map(|new_views| new_views.to_fvk_bytes() != views.to_fvk_bytes())
                         .unwrap_or(true)
                 })
-                .map(|(id, _)| *id)
+                .map(|(id, views)| (*id, views.clone()))
                 .collect()
         };
         // Whether the registration shape changed AT ALL — a dropped or
@@ -580,6 +580,34 @@ impl NetworkShieldedCoordinator {
                 .filter(|id| id.wallet_id == wallet_id)
                 .count();
             registered_count != account_views.len()
+        };
+
+        // An unresolved identity debit can land after this re-registration.
+        // Keep the old viewing key in the coordinator until its guard resolves,
+        // so the scan can still observe the output and clear the wallet-wide
+        // lock. A store read failure is treated conservatively as guarded.
+        let guarded_stale: Vec<(SubwalletId, AccountViewingKeys)> = if stale.is_empty() {
+            Vec::new()
+        } else {
+            let store = self.store.read().await;
+            stale
+                .iter()
+                .filter_map(|(id, views)| match store.pending_redrives(*id) {
+                    Ok(redrives) => redrives
+                        .iter()
+                        .any(|redrive| redrive.nullifiers.is_empty())
+                        .then(|| (*id, views.clone())),
+                    Err(e) => {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(id.wallet_id),
+                            account = id.account_index,
+                            error = %e,
+                            "Could not inspect identity guards during re-register; retaining old viewing key"
+                        );
+                        Some((*id, views.clone()))
+                    }
+                })
+                .collect()
         };
 
         // Persister FIRST, accounts second. `sync()` snapshots
@@ -602,6 +630,9 @@ impl NetworkShieldedCoordinator {
             for (account_index, views) in account_views {
                 accounts.insert(SubwalletId::new(wallet_id, account_index), views);
             }
+            for (id, views) in &guarded_stale {
+                accounts.insert(*id, views.clone());
+            }
         }
 
         // Any shape change invalidates prior hydration — the restore
@@ -621,7 +652,7 @@ impl NetworkShieldedCoordinator {
         // dropped; retained accounts are left untouched.
         if !stale.is_empty() {
             let mut store = self.store.write().await;
-            for id in stale {
+            for (id, _) in stale {
                 if let Err(e) = store.purge_subwallet(id) {
                     tracing::warn!(
                         wallet_id = %hex::encode(id.wallet_id),
@@ -986,28 +1017,17 @@ impl NetworkShieldedCoordinator {
         let _lifecycle = self.lifecycle.lock().await;
 
         // Reset the persistent store FIRST and bail before mutating any
-        // in-memory state if it fails. Clearing `accounts` / `persisters`
+        // coordinator registries if it fails. Clearing `accounts` / `persisters`
         // makes the coordinator forget every bound wallet (no syncs until
         // the host rebinds), so doing that while the store reset failed —
         // and the host therefore keeps its own local state — would leave
-        // the two halves inconsistent. Both resets are still attempted
-        // even if the first fails, so the store is left as clean as
-        // possible, but the first error is captured and propagated.
+        // the two halves inconsistent. Reset the tree before deleting
+        // subwallet state: a tree-reset failure must leave durable unresolved
+        // identity-debit guards intact, otherwise the still-bound wallet could
+        // build another valid debit after a failed Clear.
         let mut first_err: Option<crate::error::PlatformWalletError> = None;
         {
             let mut store = self.store.write().await;
-            if let Err(e) = store.purge_all_subwallets() {
-                tracing::warn!(error = %e, "Failed to purge subwallet store state on clear");
-                first_err.get_or_insert_with(|| {
-                    crate::error::PlatformWalletError::ShieldedStoreError(format!(
-                        "purge_all_subwallets failed: {e}"
-                    ))
-                });
-            }
-            // Reset the shared commitment tree under the same write
-            // guard so the watermark (now 0) and the tree size reset
-            // together — otherwise the post-clear resync gate-skips
-            // every re-downloaded position into the still-full tree.
             if let Err(e) = store.reset_commitment_tree() {
                 tracing::warn!(error = %e, "Failed to reset commitment tree on clear");
                 first_err.get_or_insert_with(|| {
@@ -1046,17 +1066,25 @@ impl NetworkShieldedCoordinator {
                     }
                 }
             }
+            // Delete notes, watermarks, and durable redrive rows only after
+            // the tree reset is known to have succeeded. This keeps a failed
+            // Clear fail-closed for any in-flight identity debit.
+            if first_err.is_none() {
+                if let Err(e) = store.purge_all_subwallets() {
+                    tracing::warn!(error = %e, "Failed to purge subwallet store state on clear");
+                    first_err.get_or_insert_with(|| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(format!(
+                            "purge_all_subwallets failed: {e}"
+                        ))
+                    });
+                }
+            }
         }
-        // Hydration and snapshot validity go regardless of the outcome
-        // above, because the subwallet purge runs FIRST: a failure in a
-        // later step still leaves the per-subwallet notes and watermarks
-        // destroyed. Leaving the hydrated flag set there would let the
-        // next identical re-bind take the idempotent fast path over a
-        // store whose contents this call just deleted — the host keeps
-        // its rows on a failed Clear, and they would never be restored
-        // until a restart. Leaving the generation unbumped would
-        // likewise let an in-flight bind restore a pre-Clear snapshot
-        // into the half-emptied store.
+        // Hydration and snapshot validity go regardless of the outcome.
+        // Either reset may fail after changing part of its persistent state,
+        // so the next identical bind must not fast-path over a potentially
+        // half-reset store. The generation bump also prevents an in-flight
+        // bind from restoring a pre-Clear snapshot afterward.
         self.hydrated.write().await.clear();
         self.clear_generation
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
@@ -1249,6 +1277,31 @@ impl NetworkShieldedCoordinator {
             .await
         {
             tracing::warn!(error = %e, "Shielded activity derivation failed; skipping this pass");
+        }
+
+        // Identity-funded shields have no input nullifiers and use an
+        // outputs-only empty-tree anchor, so the ordinary stale-reservation
+        // pass can never schedule them. After activity derivation has first
+        // cleared guards for outputs observed by this scan, drive each still-
+        // unresolved byte-identical transition once per wallet. Wallet-wide
+        // enumeration also includes a guard retained under a previously bound
+        // account after re-key or removal.
+        let wallet_ids: HashSet<WalletId> = subwallets.iter().map(|(id, _)| id.wallet_id).collect();
+        let wallet_persisters: Vec<(WalletId, Option<WalletPersister>)> = {
+            let persisters = self.persisters.read().await;
+            wallet_ids
+                .into_iter()
+                .map(|wallet_id| (wallet_id, persisters.get(&wallet_id).cloned()))
+                .collect()
+        };
+        for (wallet_id, persister) in wallet_persisters {
+            super::operations::redrive_pending_identity_shields(
+                &self.sdk,
+                &self.store,
+                persister.as_ref(),
+                wallet_id,
+            )
+            .await;
         }
 
         // The note-side changeset already carries saves, synced
@@ -1643,6 +1696,25 @@ impl NetworkShieldedCoordinator {
                     // flips a still-Pending raced row.
                     continue;
                 }
+                // A dropped and later re-bound account may have retained only
+                // its wallet-wide identity-debit guard. The rediscovered entry
+                // has the same cmx-derived id as the original live entry, so
+                // resolve that guard before saving the reconstructed row.
+                let owners: Vec<SubwalletId> = store
+                    .pending_redrives_for_wallet(id.wallet_id)
+                    .map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                    })?
+                    .into_iter()
+                    .filter_map(|(owner, redrive)| {
+                        (redrive.activity_id == entry.id).then_some(owner)
+                    })
+                    .collect();
+                for owner in owners {
+                    store.clear_redrive(owner, &entry.id).map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                    })?;
+                }
                 store.save_activity(*id, &entry).map_err(|e| {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                 })?;
@@ -1697,6 +1769,26 @@ impl NetworkShieldedCoordinator {
                     super::activity::ShieldedActivityStatus::Confirmed,
                     Some(height),
                 );
+                // The unresolved identity-debit guard can survive under the
+                // account that originally received the note, even after that
+                // account is removed and later re-bound. Resolve every matching
+                // row wallet-wide, and persist those deletions before making the
+                // Confirmed activity suppress future cleanup attempts.
+                let owners: Vec<SubwalletId> = store
+                    .pending_redrives_for_wallet(id.wallet_id)
+                    .map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                    })?
+                    .into_iter()
+                    .filter_map(|(owner, redrive)| {
+                        (redrive.activity_id == entry_id).then_some(owner)
+                    })
+                    .collect();
+                for owner in owners {
+                    store.clear_redrive(owner, &entry_id).map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                    })?;
+                }
                 store.save_activity(*id, &upgraded).map_err(|e| {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                 })?;
@@ -1976,6 +2068,20 @@ mod tests {
     async fn clear_failure_preserves_registries() {
         let dir = temp_dir("clear_err");
         let coordinator = coordinator_with_one_wallet(&dir).await;
+        let guard_id = SubwalletId::new([0x11; 32], 0);
+        let identity_guard = super::super::store::PendingRedrive {
+            activity_id: [0x31; 32],
+            anchor: [0x32; 32],
+            nullifiers: vec![],
+            st_bytes: vec![0x33; 64],
+            attempts: 0,
+        };
+        coordinator
+            .store()
+            .write()
+            .await
+            .arm_redrive(guard_id, identity_guard.clone())
+            .expect("arm identity guard");
         assert!(!coordinator.accounts.read().await.is_empty());
         assert!(!coordinator.persisters.read().await.is_empty());
 
@@ -1998,15 +2104,23 @@ mod tests {
             !coordinator.persisters.read().await.is_empty(),
             "persisters must survive a failed clear"
         );
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .pending_redrives(guard_id)
+                .expect("identity guard after failed clear"),
+            vec![identity_guard],
+            "a failed Clear must not reopen the wallet to a second identity debit"
+        );
     }
 
-    /// A Clear that fails partway has still destroyed restorable state:
-    /// the subwallet purge runs before the tree reset, so the notes and
-    /// watermarks are gone even when a later step errors. Hydration must
-    /// therefore be invalidated on that path too — otherwise the next
-    /// identical re-bind takes the idempotent fast path over a store this
-    /// call emptied, and the host rows it deliberately kept (it was told
-    /// the Clear failed) are never restored until a restart.
+    /// Even a failed tree reset may have changed persistent tree state before
+    /// reporting the error. Hydration and snapshots must therefore be
+    /// invalidated so the next bind cannot trust a pre-Clear view. Subwallet
+    /// state is purged only after a verified tree reset, which also preserves
+    /// unresolved identity-debit guards on this failure path.
     ///
     /// Unix-only for the same reason as `clear_failure_preserves_registries`:
     /// the failure injection relies on POSIX unlink-while-open.
@@ -2020,8 +2134,8 @@ mod tests {
         coordinator.mark_hydrated(wallet_id, true).await;
         let generation_before = coordinator.clear_generation();
 
-        // Break the tree reset's reopen, leaving the subwallet purge —
-        // which runs first — to succeed.
+        // Break the tree reset's reopen. The subwallet purge must not run
+        // after this failure.
         std::fs::remove_dir_all(&dir).expect("remove temp dir to break reopen");
 
         let result = coordinator.clear().await;
@@ -2309,6 +2423,67 @@ mod tests {
             "a re-keyed account's old-key notes must not survive"
         );
         assert_eq!(store.last_synced_note_index(id).unwrap(), 0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn rekey_retains_old_viewing_key_while_identity_debit_is_unresolved() {
+        let dir = temp_dir("reg_rekey_identity_guard");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let old_views = coordinator
+            .accounts
+            .read()
+            .await
+            .get(&id)
+            .expect("old account")
+            .clone();
+        let identity_guard = super::super::store::PendingRedrive {
+            activity_id: [0x71; 32],
+            anchor: [0x72; 32],
+            nullifiers: vec![],
+            st_bytes: vec![0x73; 64],
+            attempts: 0,
+        };
+        coordinator
+            .store()
+            .write()
+            .await
+            .arm_redrive(id, identity_guard.clone())
+            .expect("arm identity guard");
+
+        let rekeyed = OrchardKeySet::from_seed(&[0x99u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        let mut views = BTreeMap::new();
+        views.insert(0u32, rekeyed);
+        let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+        coordinator
+            .register_wallet(wallet_id, views, persister)
+            .await;
+
+        assert_eq!(
+            coordinator
+                .accounts
+                .read()
+                .await
+                .get(&id)
+                .expect("guarded account")
+                .to_fvk_bytes(),
+            old_views.to_fvk_bytes(),
+            "the scan must retain the key that can observe the in-flight output"
+        );
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .pending_redrives(id)
+                .expect("identity guard"),
+            vec![identity_guard]
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
