@@ -532,6 +532,15 @@ export interface DocumentEraseOptions {
   };
 
   /**
+   * The identity submitting and paying for this erase. It is the identity the
+   * key and signer below belong to, and its contract nonce is consumed.
+   * Defaults to the document's owner, which is who the first erase must come
+   * from; the erases after it may come from any identity, which then names
+   * itself here.
+   */
+  identityId?: IdentifierLike;
+
+  /**
    * The identity public key to use for signing the transition.
    * The first erase must be signed by the document's owner; any identity may
    * sign the ones after it.
@@ -611,6 +620,15 @@ impl WasmSdk {
             )
         };
 
+        // The builder's owner is the identity that submits and pays; only the
+        // first erase has to be the document's owner, so a continuation names
+        // its own identity here and keeps the document owner as metadata.
+        let submitter_id: Identifier =
+            match try_from_options_optional::<IdentifierWasm>(&options, "identityId")? {
+                Some(identity_id) => identity_id.into(),
+                None => owner_id,
+            };
+
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
@@ -622,7 +640,7 @@ impl WasmSdk {
             Arc::new(data_contract),
             document_type_name,
             document_id,
-            owner_id,
+            submitter_id,
         );
         let builder = if let Some(s) = settings {
             builder.with_settings(s)
