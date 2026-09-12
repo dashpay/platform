@@ -236,16 +236,20 @@ unchanged for every shipped input.
 Refunds follow the recorded owner in the element's storage flags.
 `Drive::credit_storage_refunds_to_owners_operations` credits each owner that
 has a balance element without consulting any key or permission, so a frozen
-but existing owner still receives its bookkeeping refund, and reports the
-amount whose owner has no balance element (the native stand-in for a wiped
-owner) for the caller to move into the current epoch's processing pool with a
-single pool write. The caller records every refund against its storage epoch
-in the pending epoch refunds, so the credit conservation check stays balanced.
-Block lifecycle paths that remove owner-attributed bytes settle their refunds
-this way in the block that removes them. The protocol 12 schema migration,
-which shrank stored contracts without refunding the stripped bytes, ran once
-at that activation and is the recorded historical exception; it replays
-exactly as executed.
+but existing owner still receives its bookkeeping refund. Two shares of a
+refund never reach a balance and are reported for the caller instead: the
+part that clears an owner's negative credit (identity debt, which lives
+outside the credit sum trees) and the part whose owner has no balance element
+(the native stand-in for a wiped owner). The caller moves both into the
+current epoch's processing pool with a single pool write and records every
+refund against its storage epoch in the pending epoch refunds, so the credit
+conservation check stays balanced. This primitive is the settlement step
+block lifecycle paths that remove owner-attributed bytes are meant to use in
+the block that removes them; at protocol version 15 the vote poll end cleanup
+does not yet price or settle its refunds, and wiring it up is a separate
+change. The protocol 12 schema migration, which shrank stored contracts
+without refunding the stripped bytes, ran once at that activation and is the
+recorded historical exception; it replays exactly as executed.
 
 ## Epoch-Based Fee Distribution
 
