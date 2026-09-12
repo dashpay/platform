@@ -653,3 +653,91 @@ fn should_reject_history_keys_that_are_not_sixteen_bytes() {
         );
     }
 }
+
+#[test]
+fn should_reject_metadata_proofs_that_omit_a_queried_branch() {
+    let version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(None);
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
+        false,
+        version,
+    )
+    .unwrap();
+    drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .unwrap();
+    let document_type = contract.document_type_for_name("profile").unwrap();
+    let mut document = json_document_to_document(
+        "tests/supporting_files/contract/dashpay/profile0.json",
+        Some([8; 32].into()),
+        document_type,
+        version,
+    )
+    .unwrap();
+    document.set_revision(Some(1));
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type,
+            },
+            true,
+            BlockInfo::default_with_time(2000),
+            true,
+            None,
+            version,
+            None,
+        )
+        .unwrap();
+    let query = DocumentHistoryQueryV1 {
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "profile".into(),
+        document_id: document.id().to_buffer(),
+        selector: DocumentHistorySelector::StartAtTime(0),
+        limit: Some(10),
+    };
+    let (page, honest) = drive
+        .prove_document_history_v1(&query, document_type, None, version)
+        .unwrap();
+    assert_eq!(page.lifecycle.state, DocumentHistoryState::Active);
+    let (_, verified) =
+        Drive::verify_document_history_v1(&query, &honest, document_type, version).unwrap();
+    assert_eq!(verified, page);
+
+    // A node that answers only for the lifecycle record and the history tree,
+    // leaving the current pointer out of the proof entirely, must not be able
+    // to pass the document off as absent with an empty page.
+    for omitted in [0u8, DOCUMENT_HISTORY_TREE_KEY] {
+        let branches = [0u8, 1, DOCUMENT_HISTORY_TREE_KEY]
+            .into_iter()
+            .filter(|branch| *branch != omitted)
+            .map(|branch| {
+                let mut path =
+                    contract_document_type_path_vec(&query.contract_id, &query.document_type_name);
+                path.push(vec![branch]);
+                let mut key_query = Query::new();
+                key_query.insert_key(query.document_id.to_vec());
+                PathQuery::new(path, SizedQuery::new(key_query, None, None))
+            })
+            .collect::<Vec<_>>();
+        let mut narrowed =
+            PathQuery::merge(branches.iter().collect(), &version.drive.grove_version).unwrap();
+        narrowed.query.limit = Some(2);
+        let metadata_proof = drive
+            .grove_get_proved_path_query(&narrowed, None, &mut vec![], &version.drive)
+            .unwrap();
+        let forged = DocumentHistoryProofV1 {
+            entries_proof: None,
+            metadata_proof,
+        };
+        assert!(
+            Drive::verify_document_history_v1(&query, &forged, document_type, version).is_err(),
+            "a metadata proof that omits branch {omitted} verified as an authenticated absence"
+        );
+    }
+}
