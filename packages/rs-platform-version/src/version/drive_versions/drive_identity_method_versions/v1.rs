@@ -109,6 +109,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
             apply_balance_change_from_fee_to_identity: 0,
             remove_from_identity_balance: 0,
             refresh_identity_key_reference_operations: 0,
+            credit_storage_refunds_to_owners: None,
         },
         insert: DriveIdentityInsertMethodVersions {
             add_new_identity: 0,

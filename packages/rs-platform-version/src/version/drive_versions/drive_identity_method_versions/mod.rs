@@ -2,6 +2,7 @@ use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityMethodVersions {
@@ -214,4 +215,9 @@ pub struct DriveIdentityUpdateMethodVersions {
     pub apply_balance_change_from_fee_to_identity: FeatureVersion,
     pub remove_from_identity_balance: FeatureVersion,
     pub refresh_identity_key_reference_operations: FeatureVersion,
+    /// Read by `Drive::credit_storage_refunds_to_owners_operations`: credits each recorded
+    /// owner of a storage refund and reports the amount whose owner has no balance element
+    /// so the caller can route it to the current epoch's processing pool. `None` before
+    /// protocol version 15, where no path settles refunds outside a state transition.
+    pub credit_storage_refunds_to_owners: OptionalFeatureVersion,
 }
