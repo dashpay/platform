@@ -30,6 +30,7 @@ mod state_transition_types;
 
 pub mod state_transition_factory;
 
+pub mod envelope_kind;
 pub mod errors;
 #[cfg(feature = "state-transition-signing")]
 use crate::util::hash::ripemd160_sha256;

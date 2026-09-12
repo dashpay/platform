@@ -37,8 +37,9 @@ pub struct SystemLimits {
     /// envelope. Distinct from the wire cap above: bincode charges the allocation claims of the
     /// `Value` containers a contract schema decodes into against this budget as well as the
     /// encoded bytes, so it must leave headroom above the wire cap. Every ordinary family keeps
-    /// the historical 100,000 budget of `StateTransition::deserialize_from_bytes`. Must be one
-    /// of the budgets `StateTransition::deserialize_from_bytes_with_budget` supports; `None`
+    /// the shipped decode of `StateTransition::deserialize_from_bytes`, which applies no
+    /// bincode budget (see `StateTransitionDecodeBudget::Historical` in `dpp`). Must be one of
+    /// the budgets `StateTransition::deserialize_from_bytes_with_budget` supports; `None`
     /// before the contract-code generations exist.
     pub max_contract_code_state_transition_decode_budget: Option<u64>,
     /// Sum of the canonical module bytes one code bundle may carry, validated at basic
