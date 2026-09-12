@@ -1,16 +1,17 @@
 use crate::version::drive_versions::drive_contract_method_versions::v5::DRIVE_CONTRACT_METHOD_VERSIONS_V5;
+use crate::version::drive_versions::drive_identity_method_versions::v3::DRIVE_IDENTITY_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_state_transition_method_versions::v5::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERIFY_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
-use crate::version::drive_versions::{DriveMethodVersions, DriveVersion};
+use crate::version::drive_versions::{DriveFeesMethodVersions, DriveMethodVersions, DriveVersion};
 
-/// Drive version 10.
-/// Introduced in protocol v15:
+/// Drive version 10, introduced in protocol v15. Differs from v9 in:
 ///
-/// * **Compiled contract storage**: `DRIVE_CONTRACT_METHOD_VERSIONS_V5`: applying a contract
-///   writes nothing when its format version 1 bytes match the stored contract's, whatever
-///   format the stored one is in, as contracts are stored compiled from this version
+/// * **Contracts stored compiled**: `DRIVE_CONTRACT_METHOD_VERSIONS_V5` selects
+///   `apply_contract_with_serialization` 1, which writes nothing when a contract's format
+///   version 1 bytes match the stored contract's, whatever format the stored one is in,
+///   as contracts are stored compiled from this version
 ///   (`contract_storage_serialization_version` 2).
 /// * **Yes/no vote polls**: `DRIVE_VOTE_METHOD_VERSIONS_V4` bumps
 ///   `insert.register_identity_vote` to 1, which registers a vote of either poll kind, and
@@ -26,13 +27,27 @@ use crate::version::drive_versions::{DriveMethodVersions, DriveVersion};
 ///   sets `convert_to_high_level_operations.document_create_transition` to 1: a create deletes
 ///   each document it consumes from what document reference validation 1 read of it, without
 ///   reading it again.
+/// * **Fee history required for refunds** — `fees.calculate_fee` 0 -> 1.
+///   The v1 generation consults the block's fee history on every fee
+///   version number and returns an internal error for an owner-attributed
+///   (sectioned) storage removal without that history, where v0 priced
+///   fee version number 1 against an empty map. Every shipped schedule
+///   shares number 1 and the same storage rates, so the credits are
+///   unchanged; only a missing history is now an error instead of a
+///   silent fallback to the first-generation rates.
+/// * **Recorded-owner refund credits** — `DRIVE_IDENTITY_METHOD_VERSIONS_V3`
+///   turns on `update.credit_storage_refunds_to_owners`, the primitive
+///   block lifecycle paths use to credit each recorded owner of a refund
+///   and report the amount whose owner has no balance element.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: compiled contract storage
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's, as contracts are stored compiled
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4,         // changed in v10: the yes/no poll kind
-        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4,     // changed in v10: the yes/no proof verifiers
+        fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: fee history required and consulted for every storage refund
+        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no proof verifiers
+        identity: DRIVE_IDENTITY_METHOD_VERSIONS_V3, // changed in v10: credit_storage_refunds_to_owners primitive for lifecycle refund settlement
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
         ..DRIVE_VERSION_V9.methods
     },
