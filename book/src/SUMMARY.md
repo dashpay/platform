@@ -69,6 +69,7 @@
 - [Document Ranked Trees](drive/document-ranked-trees.md)
 - [Ranked Index Examples](drive/ranked-index-examples.md)
 - [Index-Only Document Types](drive/index-only-document-types.md)
+- [Contract Credit Buckets](drive/contract-credit-buckets.md)
 
 # Testing
 
