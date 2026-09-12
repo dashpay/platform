@@ -31,6 +31,9 @@ pub(crate) fn interface_of_submitted(
             name: import.name.clone(),
             reason,
         };
+        if import.module == VM_MODULE {
+            return Err(refuse(ImportRejection::ReservedModule));
+        }
         let type_index = match import.kind {
             ImportKind::Function { type_index } => type_index,
             ImportKind::Global { .. } => return Err(refuse(ImportRejection::NotAFunction)),
@@ -40,9 +43,6 @@ pub(crate) fn interface_of_submitted(
             .get(type_index as usize)
             .ok_or_else(|| ModuleError::Internal("import type out of range".to_owned()))?
             .clone();
-        if import.module == VM_MODULE {
-            return Err(refuse(ImportRejection::ReservedModule));
-        }
         if import.module == HOST_MODULE {
             let Some((_, expected)) = host_functions.iter().find(|(name, _)| *name == import.name)
             else {

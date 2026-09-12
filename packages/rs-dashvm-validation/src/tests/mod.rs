@@ -39,10 +39,10 @@ pub const MINIMAL: &str = r#"
 pub fn module_with(body: &str) -> String {
     format!(
         r#"(module
+  {body}
   (memory (export "memory") 1)
   (func (export "dash_alloc") (param i32) (result i32) i32.const 0)
   (func (export "run") (param i32 i32) (result i64) i64.const 0)
-  {body}
 )"#
     )
 }
