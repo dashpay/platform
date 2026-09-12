@@ -81,6 +81,17 @@ describe('createDAPIAddressProviderFromOptions', () => {
       expect(result).to.be.an.instanceOf(ListDAPIAddressProvider);
     });
 
+    it('should not rewrite a caller-supplied non-default regtest address', async () => {
+      options.dapiAddresses = ['127.0.0.2:45003:self-signed'];
+
+      const provider = createDAPIAddressProviderFromOptions(options);
+
+      const liveAddress = await provider.getLiveAddress();
+
+      expect(liveAddress.getHost()).to.equal('127.0.0.2');
+      expect(liveAddress.getPort()).to.equal(45003);
+    });
+
     it('should throw DAPIClientError if `seeds` option is passed too', async () => {
       options.seeds = ['127.0.0.1'];
 
