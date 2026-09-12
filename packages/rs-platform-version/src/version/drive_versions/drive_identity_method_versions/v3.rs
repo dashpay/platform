@@ -13,64 +13,19 @@ use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityWithdrawalTransactionQueueMethodVersions,
 };
 
-/// V2 is protocol version 14's identity-method table. It differs from V1 in
-/// its contract-bound key indexing and withdrawal methods:
+/// V3 is protocol version 15's identity-method table. It differs from V2 in
+/// one slot:
 ///
-/// * `contract_info.add_potential_contract_info_for_contract_bounded_key` 0 -> 1 and
-///   `contract_info.refresh_potential_contract_info_key_references` 0 -> 1:
-///   write and refresh contract-bound authentication-key references. Both v0s preserve the
-///   historical rejection of authentication keys with contract bounds before v14. Both v1s also
-///   store the current-key alias of a contract-level encryption or decryption key bound under
-///   `MultipleReferenceToLatest` in the key's purpose subtree, where the current-key query reads
-///   it; both v0s wrote it one level up, where the sibling reference could not resolve, so such
-///   keys could never be registered before v14 (nothing is stored at the v0 path on any network).
-/// * `keys.insert.insert_new_unique_key` 0 -> 1 and `keys.insert.insert_new_non_unique_key`
-///   0 -> 1: a key that carries a budget also gets its remaining budget written to the identity's
-///   key budgets subtree. Keys cannot carry a budget before v14, so both v0s never write it.
-/// * `keys.budget.*` `None -> Some(0)`: the key budgets subtree and the methods that write, read
-///   and deduct from it. The subtree does not exist before v14, so V1 keeps the slots `None`.
-/// * `update.update_identity_key_limits` and `keys.budget.add_to_identity_key_budget`
-///   `None -> Some(0)`: the identity key limits update transition rewrites a key with a raised
-///   total budget or a later expiry and raises its remaining budget by the same amount.
-/// * `update.add_to_identity_balance` 0 -> 1 and
-///   `update.apply_balance_change_from_fee_to_identity` 0 -> 1: credits an identity receives
-///   while it carries a debt (a negative credit balance) still repay the debt first, and the
-///   repaid part now reaches the processing fee pool of the block's epoch. Both v0s left it in
-///   no balance the credit sum counts.
-/// * `update.disable_identity_keys` 0 -> 1: fee estimation reads the stored keys so a
-///   bound key's reference refreshes are priced; v0 estimated with an unbounded
-///   stand-in key.
-/// * `withdrawals.document.find_withdrawal_documents_by_status_and_transaction_indices`
-///   0 -> 1, selecting the v1 withdrawal-by-transaction-index query builder
-///   that carries the transaction-index `In` clause in
-///   `InternalClauses.in_clauses` instead of smuggling it through
-///   `equal_clauses`. The two builders lower to the identical grovedb path
-///   query (pinned by `withdrawal_in_clause_placement_equivalence` in
-///   rs-drive's query tests), so this is a structural version bump, not a
-///   behavior change; v0 stays byte-frozen for protocol versions up to 13.
-/// * `withdrawals.calculate_current_withdrawal_limit` 0 -> 1: the daily
-///   maximum derives from the total credits Platform held a day ago (the
-///   relative daily withdrawal limit) instead of the current total. The
-///   credit inflows from the active window are added on top so matching
-///   deposit-withdraw cycles do not consume the budget of others.
-/// * `withdrawals.record_total_credits_history` and
-///   `withdrawals.fetch_total_credits_in_platform_a_day_ago` `None -> Some(0)`:
-///   the per-block total credits history under the withdrawals tree that the
-///   lagged limit reads; the subtree does not exist before v14, so V1 keeps
-///   both slots `None`.
-/// * `withdrawals.record_credit_inflows` `None -> Some(0)`: every credit mint
-///   (asset locks, epoch Core rewards) is recorded in the credit inflows sum
-///   tree so the daily withdrawal limit counts net outflow instead of gross —
-///   a deposit -> withdraw cycle no longer consumes the budget of other users.
-///   The subtree does not exist before v14, so V1 keeps the slot `None`.
-/// * `withdrawals.record_core_credit_pool_blocks`,
-///   `withdrawals.fetch_core_credit_pool_balances` and
-///   `withdrawals.fetch_in_flight_withdrawal_amount` `None -> Some(0)`: the
-///   Core-anchored withdrawal limit, which reads Core's credit pool balance as
-///   recorded per Core block and what pooled withdrawals take out of the pool
-///   once mined. The subtree does not exist before v14, so V1 keeps the slots
-///   `None`.
-pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
+/// * `update.credit_storage_refunds_to_owners` `None -> Some(0)`: the
+///   primitive that credits each recorded owner of a storage refund and
+///   reports the amount whose owner has no balance element, so a block
+///   lifecycle path (or, later, the state transition refund path) can route
+///   that amount to the current epoch's processing pool instead of halting.
+///   No key or permission is consulted on any route: a frozen but existing
+///   owner is credited, an owner without a balance is settled into the pool.
+///   Nothing before v15 settles refunds outside a state transition, so V1 and
+///   V2 keep the slot `None`.
+pub const DRIVE_IDENTITY_METHOD_VERSIONS_V3: DriveIdentityMethodVersions =
     DriveIdentityMethodVersions {
         fetch: DriveIdentityFetchMethodVersions {
             public_key_hashes: DriveIdentityFetchPublicKeyHashesMethodVersions {
@@ -170,13 +125,13 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
             add_new_keys_to_identity: 0,
             insert_identity_balance: 0,
             initialize_negative_identity_balance: 0,
-            add_to_identity_balance: 1, // changed: credits that repay an identity's debt are owed to the processing fee pool
+            add_to_identity_balance: 1, // changed in v14: credits that repay an identity's debt are owed to the processing fee pool
             add_to_previous_balance: 0,
-            apply_balance_change_from_fee_to_identity: 1, // changed: routes the debt a balance change repaid to the processing fee pool
+            apply_balance_change_from_fee_to_identity: 1, // changed in v14: routes the debt a balance change repaid to the processing fee pool
             remove_from_identity_balance: 0,
             refresh_identity_key_reference_operations: 0,
             update_identity_key_limits: Some(0),
-            credit_storage_refunds_to_owners: None,
+            credit_storage_refunds_to_owners: Some(0), // new in v15: credits recorded refund owners, reports the unrouted amount for the processing pool
         },
         insert: DriveIdentityInsertMethodVersions {
             add_new_identity: 0,
