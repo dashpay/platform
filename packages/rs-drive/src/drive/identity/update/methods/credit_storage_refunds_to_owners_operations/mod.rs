@@ -15,9 +15,11 @@ impl Drive {
     ///
     /// For every owner in `fee_refunds` except `skip_owner`, the owner's
     /// per-epoch credits are summed with checked arithmetic. An owner with a
-    /// balance element is credited through `add_to_identity_balance_operations`;
-    /// no key, signature or permission is consulted, so a frozen but existing
-    /// owner receives its bookkeeping refund. When that owner's balance is
+    /// balance element is credited the way a state transition payer's own
+    /// refund is (one balance read feeding `add_to_previous_balance`, then the
+    /// balance and negative credit updates); no key, signature or permission
+    /// is consulted, so a frozen but existing owner receives its bookkeeping
+    /// refund. When that owner's balance is
     /// zero the helper first clears its negative credit (identity debt), and
     /// only the remainder reaches the balance; the cleared debt is reported as
     /// `repaid_debt` because debt lives outside the credit sum trees and is
