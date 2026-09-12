@@ -213,7 +213,29 @@ fn encode_leaf_or_push<'v, E: Encoder>(
             budget.claim_elements(strings.len() as u64)?;
             value.encode(encoder)?;
         }
-        leaf => leaf.encode(encoder)?,
+        // Listed one by one on purpose: this match is where bounded encoding
+        // decides what counts as a leaf. A new `Value` variant fails to
+        // compile here until someone decides whether it nests or is counted.
+        Value::U128(_)
+        | Value::I128(_)
+        | Value::U64(_)
+        | Value::I64(_)
+        | Value::U32(_)
+        | Value::I32(_)
+        | Value::U16(_)
+        | Value::I16(_)
+        | Value::U8(_)
+        | Value::I8(_)
+        | Value::Bytes(_)
+        | Value::Bytes20(_)
+        | Value::Bytes32(_)
+        | Value::Bytes36(_)
+        | Value::EnumU8(_)
+        | Value::Identifier(_)
+        | Value::Float(_)
+        | Value::Text(_)
+        | Value::Bool(_)
+        | Value::Null => value.encode(encoder)?,
     }
     Ok(())
 }
@@ -228,6 +250,15 @@ impl Value {
     ///
     /// Accepted inputs decode to the same value as the plain [`bincode::Decode`]
     /// impl with the native big-endian configuration.
+    ///
+    /// Decoding itself never recurses, but the returned tree is as deep as
+    /// `max_depth` allows and `Value`'s `Drop`, `Clone`, `PartialEq` and
+    /// derived `Encode` walk it recursively, as they do for every value in
+    /// this crate. That holds for the value returned on success and for the
+    /// partially built value discarded on rejection alike, so `max_depth` is
+    /// what protects the stack and must be sized for the target: the native
+    /// document limit of 256 is comfortably within a small thread stack; see
+    /// [`CodecBounds::max_depth`].
     pub fn decode_bounded(bytes: &[u8], bounds: &CodecBounds) -> Result<Value, BoundedDecodeError> {
         bounded_decode_from_slice(bytes, bounds, |decoder, budget| {
             decode_value_with(decoder, &mut BudgetedLeaves { budget })
@@ -533,6 +564,70 @@ mod tests {
                     remaining: 1
                 }
             ))
+        ));
+    }
+
+    /// Bounds at the native document depth limit, the value the provisional
+    /// ABI bounds carry.
+    const DOCUMENT_DEPTH_BOUNDS: CodecBounds = CodecBounds {
+        max_bytes: 4096,
+        max_depth: 256,
+        max_elements: 1024,
+    };
+
+    /// Runs `body` on a thread with a deliberately small stack so a recursion
+    /// proportional to the nesting depth shows up as an overflow instead of
+    /// hiding behind the test harness's large main-thread stack.
+    fn on_small_stack<T: Send + 'static>(body: impl FnOnce() -> T + Send + 'static) -> T {
+        std::thread::Builder::new()
+            .stack_size(128 * 1024)
+            .spawn(body)
+            .expect("spawn")
+            .join()
+            .expect("the small-stack thread must not overflow")
+    }
+
+    fn nested_arrays(depth: usize) -> Value {
+        (0..depth).fold(Value::Null, |inner, _| Value::Array(vec![inner]))
+    }
+
+    #[test]
+    fn should_decode_and_drop_a_value_at_the_document_depth_limit_on_a_small_stack() {
+        let bytes = native_encode(&nested_arrays(256));
+        let depth = on_small_stack(move || {
+            let value =
+                Value::decode_bounded(&bytes, &DOCUMENT_DEPTH_BOUNDS).expect("at the limit");
+            value.first_depth_exceeding(0)
+        });
+        assert_eq!(depth, Some(1));
+    }
+
+    #[test]
+    fn should_reject_trailing_bytes_after_a_value_at_the_document_depth_limit_on_a_small_stack() {
+        let mut bytes = native_encode(&nested_arrays(256));
+        bytes.push(0);
+        let result = on_small_stack(move || Value::decode_bounded(&bytes, &DOCUMENT_DEPTH_BOUNDS));
+        assert!(matches!(
+            result,
+            Err(BoundedDecodeError::TrailingBytes { remaining: 1 })
+        ));
+    }
+
+    #[test]
+    fn should_reject_a_malformed_sibling_of_a_completed_deep_subtree_on_a_small_stack() {
+        // An outer array of two items: a completed subtree that reaches the
+        // depth limit, then an unknown variant. The completed subtree sits in
+        // the outer frame when the error is returned and is discarded there.
+        let mut bytes = vec![21u8, 2];
+        bytes.extend(native_encode(&nested_arrays(255)));
+        bytes.push(23);
+        let result = on_small_stack(move || Value::decode_bounded(&bytes, &DOCUMENT_DEPTH_BOUNDS));
+        assert!(matches!(
+            result,
+            Err(BoundedDecodeError::Decode(DecodeError::UnexpectedVariant {
+                found: 23,
+                ..
+            }))
         ));
     }
 
