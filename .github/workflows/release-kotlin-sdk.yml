@@ -37,7 +37,14 @@ on:
 jobs:
   build-and-release:
     name: Build release AAR (arm64-v8a + x86_64)
-    runs-on: ubuntu-24.04
+    # Same persistent runner as kotlin-sdk-build.yml, so the multi-hour
+    # cargo/NDK build reuses its warm ~/.cargo and target/ caches instead of
+    # building cold on a hosted runner. No fork PR guard is needed here: the
+    # workflow only triggers on release/workflow_dispatch (via release.yml),
+    # never on pull_request. The maven-central-deploy job below deliberately
+    # stays on a hosted runner so the environment-scoped publishing secrets
+    # never touch the persistent machine.
+    runs-on: [self-hosted, kotlin-ci]
     timeout-minutes: 180
     permissions:
       contents: write # attach the AAR to the platform release
@@ -58,6 +65,29 @@ jobs:
       sha: ${{ steps.resolve-sha.outputs.sha }}
 
     steps:
+      # Same idempotent host check as kotlin-sdk-build.yml, plus gh (used by
+      # the tag validation below and preinstalled only on hosted images). Runs
+      # before checkout so the validation step can rely on gh.
+      - name: Ensure runner dependencies
+        run: |
+          set -euo pipefail
+
+          MISSING=()
+          for pkg in build-essential cmake curl gh jq libgmp-dev libpulse0 libssl-dev libx11-xcb1 pkg-config python3 unzip zip; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || MISSING+=("$pkg")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "Installing: ${MISSING[*]}"
+            sudo apt-get update -qq
+            sudo apt-get install -qq --yes "${MISSING[@]}"
+          fi
+
+          if [ ! -x "$HOME/.cargo/bin/rustup" ]; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --no-modify-path --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
       # A workflow_dispatch `tag` input is free-form and actions/checkout would
       # happily resolve it to a BRANCH (or any ref). Normalize and validate it
       # here — reject anything that is not an existing platform release tag
@@ -124,21 +154,30 @@ jobs:
           # raw dispatch input — so the released AAR is built from the tag's
           # commit and a manual run can never build from a branch.
           ref: ${{ steps.release-ref.outputs.checkout_ref }}
+          clean: false
+
+      # Release from a tree that is exactly the tag's content plus the
+      # persistent Cargo target cache: stale jniLibs or gradle outputs from an
+      # earlier dev build on this runner must never leak into a release AAR.
+      - name: Clean working directory while preserving Rust build cache
+        run: |
+          git reset --hard HEAD
+          git clean -ffdx \
+            -e target/ \
+            -e target/**
 
       - name: Resolve built commit SHA
         id: resolve-sha
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Free disk space
+      - name: Verify JDK 17
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc
-          df -h /
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+          JAVA_HOME_RESOLVED=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
+          JAVA_VERSION_OUTPUT=$("$JAVA_HOME_RESOLVED/bin/java" -version 2>&1)
+          printf '%s\n' "$JAVA_VERSION_OUTPUT"
+          printf '%s\n' "$JAVA_VERSION_OUTPUT" | grep -Eq 'version "17([.]|\")'
+          echo "JAVA_HOME=$JAVA_HOME_RESOLVED" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_RESOLVED/bin" >> "$GITHUB_PATH"
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -153,26 +192,33 @@ jobs:
         with:
           targets: aarch64-linux-android,x86_64-linux-android
 
-      - name: Restore cargo cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: kotlin-sdk-release-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            kotlin-sdk-release-cargo-
-            kotlin-sdk-cargo-
+      # No actions/cache here: the persistent runner keeps ~/.cargo and the
+      # Cargo target/ directory between runs, same as kotlin-sdk-build.yml.
 
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk --locked
-
-      - name: Install protoc v32.0 (repo-standard; apt's 3.21 breaks tenderdash-proto)
+      # Pinned: this runner is persistent, so an unpinned `cargo install`
+      # leaves whatever version happened to be current on the day it first ran,
+      # and every later job silently builds with it. Assert after installing so
+      # a drifted host fails here instead of somewhere in the NDK build.
+      - name: Ensure cargo-ndk v4.1.2 is installed
         run: |
-          curl -fsSL -o /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip
-          sudo unzip -o /tmp/protoc.zip -d /usr/local 'bin/protoc' 'include/*'
+          set -euo pipefail
+          if ! cargo ndk --version 2>/dev/null | grep -qx 'cargo-ndk 4.1.2'; then
+            cargo install cargo-ndk --version 4.1.2 --locked --force
+          fi
+          cargo ndk --version
+          cargo ndk --version | grep -qx 'cargo-ndk 4.1.2'
+
+      - name: Ensure protoc v32.0 is installed (repo-standard; apt's 3.21 breaks tenderdash-proto)
+        run: |
+          set -euo pipefail
+          if ! protoc --version 2>/dev/null | grep -qx 'libprotoc 32.0'; then
+            curl -fsSL -o /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip
+            sudo unzip -o /tmp/protoc.zip -d /usr/local 'bin/protoc' 'include/*'
+          fi
           protoc --version
+          # A stale protoc earlier on PATH would shadow the one just unpacked
+          # into /usr/local; catch that here rather than in a codegen failure.
+          protoc --version | grep -qx 'libprotoc 32.0'
 
       - name: Build native library (both ABIs, release profile)
         working-directory: packages/kotlin-sdk

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Version (i.e. v0.22.3-pre.2)"
+        description: "Version (i.e. v0.22.3-pre.2); prefix with npm-test: to run only the NPM release dry-run"
         required: true
       only_drive:
         type: boolean
@@ -24,72 +24,103 @@ permissions:
   contents: read
 
 jobs:
-  release-npm:
-    name: Release NPM packages
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    if: github.event_name != 'workflow_dispatch'
+  build-npm:
+    name: Build NPM packages
+    # Reuse the persistent Linux runner's Cargo target and registry state. The
+    # publish job stays on a GitHub-hosted runner because npm trusted publishing
+    # does not support self-hosted runners.
+    runs-on: [self-hosted, kotlin-ci]
+    timeout-minutes: 120
+    if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
+    # In particular, do not mint an OIDC token for the persistent build host.
+    permissions:
+      contents: read
     steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Check package version matches tag
-        uses: geritol/match-tag-to-package-version@0.2.0
-        env:
-          TAG_PREFIX: v
-
       - uses: softwareforgood/check-artifact-v4-existence@v0
         id: check-artifact
         with:
           name: js-build-${{ github.sha }}
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
+      - name: Check out repo
+        uses: actions/checkout@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          # Preserve the expensive Cargo target cache between release builds.
+          clean: false
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Ensure runner dependencies
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+        run: |
+          set -euo pipefail
+
+          MISSING=()
+          for pkg in build-essential cmake curl jq libgmp-dev libssl-dev pkg-config python3 unzip zip; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || MISSING+=("$pkg")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "Installing: ${MISSING[*]}"
+            sudo apt-get update -qq
+            sudo apt-get install -qq --yes "${MISSING[@]}"
+          fi
+
+          if [ ! -x "$HOME/.cargo/bin/rustup" ]; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --no-modify-path --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+          docker info >/dev/null
+          if ! docker image inspect rvolosatovs/protoc:4.0.0 >/dev/null 2>&1; then
+            docker pull rvolosatovs/protoc:4.0.0
+          fi
+
+      - name: Clean stale build outputs
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+        run: |
+          git reset --hard
+          git clean -ffdx -e target/
 
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
           target: wasm32-unknown-unknown
+          # The runner persists the Cargo registry and target directory.
+          cache: 'false'
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
-      - name: Setup sccache
-        uses: ./.github/actions/sccache
-        with:
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.AWS_REGION }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
-
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      # Composite action defaults to Node 24+ which ships npm 11.5.1+;
-      # required for trusted-publishers OIDC at the publish step below.
-      # See https://docs.npmjs.com/trusted-publishers.
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install Cargo binstall
         uses: cargo-bins/cargo-binstall@v1.3.1
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install wasm-bindgen-cli
-        run: cargo binstall wasm-bindgen-cli@0.2.108
+        run: |
+          if ! wasm-bindgen --version 2>/dev/null | grep -Fxq 'wasm-bindgen 0.2.108'; then
+            cargo binstall wasm-bindgen-cli@0.2.108 --no-confirm --force
+          fi
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install wasm-pack
-        run: cargo binstall wasm-pack
+        run: |
+          if ! wasm-pack --version 2>/dev/null | grep -Fxq 'wasm-pack 0.15.0'; then
+            cargo binstall wasm-pack@0.15.0 --no-confirm --force
+          fi
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install Binaryen
         run: |
-          wget https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz -P /tmp
-          tar -xzf /tmp/binaryen-version_121-x86_64-linux.tar.gz -C /tmp
-          sudo cp -r /tmp/binaryen-version_121/* /usr/local/
+          BINARYEN_DIR="$HOME/.local/binaryen-version_121"
+          if [ ! -x "$BINARYEN_DIR/bin/wasm-opt" ]; then
+            ARCHIVE="$RUNNER_TEMP/binaryen-version_121-x86_64-linux.tar.gz"
+            curl -fsSL -o "$ARCHIVE" \
+              https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz
+            mkdir -p "$HOME/.local"
+            tar -xzf "$ARCHIVE" -C "$HOME/.local"
+          fi
+          echo "$BINARYEN_DIR/bin" >> "$GITHUB_PATH"
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Build packages
@@ -98,13 +129,94 @@ jobs:
           CARGO_BUILD_PROFILE: release
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
+      - name: Ignore only already cached artifacts
+        run: |
+          find . -name '.gitignore' -exec rm -f {} +
+          {
+            echo ".yarn"
+            echo "target"
+            echo "node_modules"
+            echo ".nyc_output"
+            echo ".idea"
+            echo ".ultra.cache.json"
+            echo "db/*"
+          } >> .gitignore
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Get modified files
+        id: diff
+        run: |
+          {
+            echo "files<<EOF"
+            git ls-files --others --exclude-standard
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Upload the archive of built files
+        uses: actions/upload-artifact@v4
+        with:
+          name: js-build-${{ github.sha }}
+          path: ${{ steps.diff.outputs.files }}
+          # Keep the handoff alive long enough to re-run only a failed publish.
+          retention-days: 7
+          if-no-files-found: error
+          include-hidden-files: true
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+  release-npm:
+    name: Publish NPM packages
+    needs: build-npm
+    # npm trusted publishing currently accepts GitHub-hosted runners only.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Check package version matches tag
+        uses: geritol/match-tag-to-package-version@0.2.0
+        if: github.event_name == 'release'
+        env:
+          TAG_PREFIX: v
+
+      - name: Check package version matches requested test tag
+        id: test-tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          TAG="${INPUT_TAG#npm-test:}"
+          PACKAGE_VERSION=$(jq -r '.version' package.json)
+          if [ "$TAG" != "v${PACKAGE_VERSION}" ]; then
+            echo "::error::Requested tag $TAG does not match package version v${PACKAGE_VERSION}"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      # Composite action defaults to Node 24+ which ships npm 11.5.1+;
+      # required for trusted-publishers OIDC at the publish step below.
+      # See https://docs.npmjs.com/trusted-publishers.
+      - name: Setup Node.JS
+        uses: ./.github/actions/nodejs
+
+      - name: Download JS build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: js-build-${{ github.sha }}
+          path: packages
+
       - name: Set suffix
-        uses: actions/github-script@v6
+        uses: actions/github-script@v8
         id: suffix
         with:
           result-encoding: string
           script: |
-            const fullTag = "${{ inputs.tag }}" || context.payload.release.tag_name;
+            const fullTag = "${{ steps.test-tag.outputs.tag }}" || context.payload.release.tag_name;
             if (fullTag.includes('-')) {
               const [, fullSuffix] = fullTag.split('-');
               const [suffix] = fullSuffix.split('.');
@@ -114,12 +226,12 @@ jobs:
             }
 
       - name: Set NPM release tag
-        uses: actions/github-script@v6
+        uses: actions/github-script@v8
         id: tag
         with:
           result-encoding: string
           script: |
-            const tag = "${{ inputs.tag }}" || context.payload.release.tag_name;
+            const tag = "${{ steps.test-tag.outputs.tag }}" || context.payload.release.tag_name;
             const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
             return (tag.includes('-') ? `${major}.${minor}-${{steps.suffix.outputs.result}}` : 'latest');
 
@@ -129,40 +241,16 @@ jobs:
           echo "NPM release tag: ${{ steps.tag.outputs.result }}"
 
       - name: Publish NPM packages
+        if: github.event_name == 'release'
         run: yarn workspaces foreach --all --no-private --parallel npm publish --tolerate-republish --access public --tag ${{ steps.tag.outputs.result }}
 
-      - name: Ignore only already cached artifacts
-        run: |
-          find . -name '.gitignore' -exec rm -f {} +
-          echo ".yarn" >> .gitignore
-          echo "target" >> .gitignore
-          echo "node_modules" >> .gitignore
-          echo ".nyc_output" >> .gitignore
-          echo ".idea" >> .gitignore
-          echo ".ultra.cache.json" >> .gitignore
-          echo "db/*" >> .gitignore
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Get modified files
-        id: diff
-        run: |
-          echo "files<<EOF" >> $GITHUB_OUTPUT
-          git ls-files --others --exclude-standard >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Upload the archive of built files
-        uses: actions/upload-artifact@v4
-        with:
-          name: js-build-${{ github.sha }}
-          path: ${{ steps.diff.outputs.files }}
-          retention-days: 1
-          if-no-files-found: error
-          include-hidden-files: true
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+      - name: Dry-run NPM packages
+        if: github.event_name == 'workflow_dispatch'
+        run: yarn workspaces foreach --all --no-private --parallel npm publish --dry-run --tolerate-republish --access public --tag ${{ steps.tag.outputs.result }}
 
   release-drive-image:
     name: Release Drive image
+    if: ${{ !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -174,6 +262,7 @@ jobs:
 
   release-drive-image-debug:
     name: Release Drive debug image
+    if: ${{ !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -187,7 +276,7 @@ jobs:
 
   release-rs-dapi-image:
     name: Release RS-DAPI image
-    if: ${{ !inputs.only_drive }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -199,7 +288,7 @@ jobs:
 
   release-test-suite-image:
     name: Release Test Suite image
-    if: ${{ !inputs.only_drive }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -212,7 +301,7 @@ jobs:
   release-dashmate-helper-image:
     name: Release Dashmate Helper image
     secrets: inherit
-    if: ${{ !inputs.only_drive }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     uses: ./.github/workflows/release-docker-image.yml
     with:
       name: Dashmate Helper
@@ -247,7 +336,7 @@ jobs:
   release-dashmate-packages:
     name: Release Dashmate packages
     runs-on: ${{ matrix.os }}
-    if: ${{ !inputs.only_drive }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     needs: release-npm
     permissions:
       id-token: write # s3 cache
