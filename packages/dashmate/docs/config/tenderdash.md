@@ -33,8 +33,8 @@ These settings control the peer-to-peer network for Tenderdash nodes:
 | `platform.drive.tenderdash.p2p.allowlistOnly` | Only allow peers from `persistentPeers` and `seeds` | `false` | `true` |
 | `platform.drive.tenderdash.p2p.flushThrottleTimeout` | Throttle timeout for P2P data | `100ms` | `200ms` |
 | `platform.drive.tenderdash.p2p.maxPacketMsgPayloadSize` | Maximum P2P message size | `10240` | `20480` |
-| `platform.drive.tenderdash.p2p.sendRate` | P2P send rate limit | `5120000` | `10240000` |
-| `platform.drive.tenderdash.p2p.recvRate` | P2P receive rate limit | `5120000` | `10240000` |
+| `platform.drive.tenderdash.p2p.sendRate` | P2P send rate limit in bytes per second | `20480000` | `10240000` |
+| `platform.drive.tenderdash.p2p.recvRate` | P2P receive rate limit in bytes per second | `20480000` | `10240000` |
 | `platform.drive.tenderdash.p2p.maxConnections` | Maximum P2P connections | `64` | `128` |
 | `platform.drive.tenderdash.p2p.maxOutgoingConnections` | Maximum outgoing P2P connections | `30` | `60` |
 
@@ -74,6 +74,7 @@ These settings control the RPC interface for Tenderdash:
 | `platform.drive.tenderdash.rpc.host` | Host binding for RPC | `127.0.0.1` | `0.0.0.0` |
 | `platform.drive.tenderdash.rpc.maxOpenConnections` | Maximum RPC connections | `900` | `1800` |
 | `platform.drive.tenderdash.rpc.timeoutBroadcastTx` | Timeout for broadcasting transactions | `0` | `30s` |
+| `platform.drive.tenderdash.rpc.maxBodyBytes` | Maximum RPC request body size in bytes. A state transition arrives base64-encoded inside `broadcast_tx_sync`, so this must hold the largest state transition inflated by a third plus the JSON envelope | `50000000` | `60000000` |
 
 The RPC interface is used for:
 - Querying blockchain state
@@ -103,7 +104,8 @@ The mempool handles pending transactions before they are added to blocks:
 |--------|-------------|---------|---------|
 | `platform.drive.tenderdash.mempool.size` | Maximum number of transactions in mempool | `5000` | `10000` |
 | `platform.drive.tenderdash.mempool.cacheSize` | Size of mempool cache | `10000` | `20000` |
-| `platform.drive.tenderdash.mempool.maxTxsBytes` | Maximum transaction size in bytes | `1048576` | `2097152` |
+| `platform.drive.tenderdash.mempool.maxTxsBytes` | Maximum total size of all transactions in the mempool in bytes | `1073741824` | `2147483648` |
+| `platform.drive.tenderdash.mempool.maxTxBytes` | Maximum size of a single transaction in bytes. Must be at least the largest state transition family cap of the protocol version Drive runs (32 MiB for contract-code capable contract transitions from protocol version 17); Drive enforces the per-family caps itself | `33554432` | `67108864` |
 | `platform.drive.tenderdash.mempool.timeoutCheckTx` | Timeout for checking transactions | `1s` | `2s` |
 | `platform.drive.tenderdash.mempool.txEnqueueTimeout` | Timeout for enqueueing transactions | `1s` | `2s` |
 | `platform.drive.tenderdash.mempool.txSendRateLimit` | Rate limit for sending transactions | `0` | `1000` |
@@ -118,7 +120,8 @@ Mempool configuration example:
   "mempool": {
     "size": 5000,
     "cacheSize": 10000,
-    "maxTxsBytes": 1048576,
+    "maxTxsBytes": 1073741824,
+    "maxTxBytes": 33554432,
     "timeoutCheckTx": "1s",
     "txEnqueueTimeout": "1s",
     "txSendRateLimit": 0,
