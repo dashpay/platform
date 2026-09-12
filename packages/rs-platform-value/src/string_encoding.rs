@@ -1,9 +1,11 @@
 use crate::Error;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use base64;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use bs58;
-use std::fmt;
+use core::fmt;
 
 #[derive(Debug, Copy, Clone)]
 pub enum Encoding {

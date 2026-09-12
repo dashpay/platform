@@ -1,12 +1,14 @@
 use crate::string_encoding::Encoding;
 use crate::types::encoding_string_to_encoding;
 use crate::{string_encoding, Error, Value};
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use bincode::{Decode, DecodeUntrusted, Encode};
+use core::fmt;
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 #[derive(
     Default,
@@ -29,8 +31,8 @@ impl AsRef<[u8]> for Bytes20 {
         &self.0
     }
 }
-impl std::fmt::Display for Bytes20 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Bytes20 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_string(Encoding::Base58))
     }
 }

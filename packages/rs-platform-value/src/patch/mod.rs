@@ -66,19 +66,25 @@
 //! # }
 //! ```
 
+#[cfg(feature = "std")]
 pub use self::diff::diff;
 use crate::value_map::ValueMap;
 use crate::{Value, ValueMapHelper};
+use alloc::borrow::{Cow, ToOwned};
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::mem;
+use core::ops::Deref;
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
 use thiserror::Error;
+#[cfg(feature = "std")]
 mod diff;
 
 /// Representation of Platform Value Patch (list of patch operations)
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Patch(pub Vec<PatchOperation>);
 
-impl std::ops::Deref for Patch {
+impl Deref for Patch {
     type Target = [PatchOperation];
 
     fn deref(&self) -> &[PatchOperation] {
@@ -222,7 +228,7 @@ fn split_pointer(pointer: &str) -> Result<(&str, &str), PatchErrorKind> {
 
 fn add(doc: &mut Value, path: &str, value: Value) -> Result<Option<Value>, PatchErrorKind> {
     if path.is_empty() {
-        return Ok(Some(std::mem::replace(doc, value)));
+        return Ok(Some(mem::replace(doc, value)));
     }
 
     let (parent, last_unescaped) = split_pointer(path)?;
@@ -273,7 +279,7 @@ fn replace(doc: &mut Value, path: &str, value: Value) -> Result<Value, PatchErro
     let target = doc
         .pointer_mut(path)
         .ok_or(PatchErrorKind::InvalidPointer)?;
-    Ok(std::mem::replace(target, value))
+    Ok(mem::replace(target, value))
 }
 
 fn mov(
