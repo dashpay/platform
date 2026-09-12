@@ -117,7 +117,10 @@ mod tests {
                 quorum_size: 30,
                 ..Default::default()
             },
-            chain_lock: ChainLockConfig::default_100_67(),
+            // Chain locks need their own quorum type: the harness only signs them
+            // (and the independent validator path only accepts them) when the
+            // chain-lock quorums are distinct from the validator set.
+            chain_lock: ChainLockConfig::default(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
@@ -197,14 +200,17 @@ mod tests {
             total_hpmns: 50,
             extra_normal_mns: 0,
             validator_quorum_count: 24,
-            chain_lock_quorum_count: 24,
+            chain_lock_quorum_count: 4,
             upgrading_info,
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            // The validator path verifies the chain lock of every proposal it did
+            // not build, so the locks must carry a real quorum signature.
             independent_process_proposal_verification: true,
+            sign_chain_locks: true,
             ..Default::default()
         }
     }
@@ -295,10 +301,10 @@ mod tests {
     /// saved state instead of the in-memory one.
     ///
     /// The continuation is workload-preserving: the mutated strategy of the
-    /// first segment (its start contracts already deployed and its operations
-    /// remapped to the deployed contract), its identities, its signer and its
-    /// nonce counters are handed to the second segment, and both runs reseed
-    /// the second segment from the same entropy.
+    /// first segment (its operations remapped to the deployed contract, its
+    /// start contracts cleared so they are not deployed again), its
+    /// identities, its signer and its nonce counters are handed to the second
+    /// segment, and both runs reseed the second segment from the same entropy.
     async fn run_split(
         mut platform: TempPlatform<drive_abci::rpc::core::MockCoreRPCLike>,
         config: PlatformConfig,
@@ -345,10 +351,13 @@ mod tests {
         drop(state);
         drop(abci_app);
 
-        assert!(
-            continued_strategy.strategy.start_contracts.is_empty(),
-            "the first segment deploys the start contracts; the continuation must not redeploy them"
-        );
+        // The first segment deployed the start contracts and remapped the
+        // operations to the deployed ids, but the harness puts the (remapped)
+        // contracts back into the strategy, and `state_transitions_for_block`
+        // would deploy them again at the continuation's first block. Take them
+        // out so the second segment keeps working on the documents the first
+        // one wrote.
+        continued_strategy.strategy.start_contracts.clear();
         continued_strategy.strategy.signer = Some(signer);
 
         let platform = if reopen {
