@@ -149,24 +149,40 @@ jobs:
           fi
 
       - name: Reject a perturbed recording
-        # Flip one byte of one application hash in the x86_64 recording and
-        # require the comparator to reject it against the aarch64 recording.
-        # Proves the real comparison above can fail, on every run.
+        # Flip one byte of one application hash in a nonfinal block of the
+        # x86_64 recording (the artifact stays internally valid: the final
+        # root still equals the last block's hash) and require the comparator
+        # to report a consensus mismatch naming that block, with exit 1. A
+        # malformed-input exit 2 or a crash does not count. Proves the real
+        # comparison above can fail, on every run.
         run: |
           set -euo pipefail
           dir="${{ runner.temp }}/determinism"
-          python3 - "${dir}/determinism-x86_64.json" "${dir}/determinism-x86_64-perturbed.json" <<'PY'
+          height="$(python3 - "${dir}/determinism-x86_64.json" "${dir}/determinism-x86_64-perturbed.json" <<'PY'
           import json, sys
           artifact = json.load(open(sys.argv[1]))
-          block = artifact["consensus"]["blocks"][-1]
+          blocks = artifact["consensus"]["blocks"]
+          block = blocks[len(blocks) // 2]
           first = "1" if block["app_hash"][0] != "1" else "2"
           block["app_hash"] = first + block["app_hash"][1:]
           json.dump(artifact, open(sys.argv[2], "w"), indent=2)
-          print("perturbed block", block["height"], "app_hash")
+          print(block["height"])
           PY
-          if python3 .github/scripts/compare-determinism-artifacts.py \
-            "${dir}/determinism-x86_64-perturbed.json" "${dir}/determinism-aarch64.json"; then
-            echo "::error::the comparator accepted a recording with a changed application hash"
+          )"
+          echo "perturbed the application hash of block ${height}"
+          set +e
+          python3 .github/scripts/compare-determinism-artifacts.py \
+            "${dir}/determinism-x86_64-perturbed.json" "${dir}/determinism-aarch64.json" \
+            > "${dir}/perturbed-report.txt" 2>&1
+          rc=$?
+          set -e
+          cat "${dir}/perturbed-report.txt"
+          if [ "${rc}" -ne 1 ]; then
+            echo "::error::expected a consensus mismatch (exit 1) for the perturbed recording, got exit ${rc}"
             exit 1
           fi
-          echo "the comparator rejected the perturbed recording, as it must"
+          if ! grep -q "consensus mismatch: block ${height}: app_hash" "${dir}/perturbed-report.txt"; then
+            echo "::error::the comparator rejected the perturbed recording without naming block ${height}'s application hash"
+            exit 1
+          fi
+          echo "the comparator rejected the perturbed recording at block ${height}, as it must"

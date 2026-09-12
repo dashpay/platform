@@ -50,7 +50,62 @@ def load(path):
     return artifact
 
 
+HEX_HASH_LENGTH = 64
+
+PROFILE_FIELDS = {
+    "target_arch": str,
+    "target_os": str,
+    "pointer_width": int,
+    "endian": str,
+    "cpu_features": list,
+    "protocol_version_start": int,
+    "protocol_version_end": int,
+}
+CONSENSUS_FIELDS = {
+    "workload_seed": int,
+    "reopened_at_height": int,
+    "blocks": list,
+    "final_root_hash": str,
+    "total_credits": dict,
+    "identity_balances": dict,
+}
+TOTAL_CREDITS_FIELDS = (
+    "total_credits_in_platform",
+    "total_in_pools",
+    "total_identity_balances",
+    "total_specialized_balances",
+    "total_in_addresses",
+    "total_in_shielded_balances",
+)
+BLOCK_FIELDS = {"height": int, "protocol_version": int, "app_hash": str, "transitions": list}
+TRANSITION_FIELDS = {"name": str, "code": int, "fee": int}
+DIAGNOSTIC_FIELDS = {"elapsed_ms": int, "block_count": int}
+
+
+def _require_fields(obj, fields, label):
+    if not isinstance(obj, dict):
+        raise Malformed(f"{label} is not an object")
+    for key, kind in fields.items():
+        if key not in obj:
+            raise Malformed(f"{label} lacks {key!r}")
+        value = obj[key]
+        # bool is an int subclass in Python; a boolean where a number belongs is malformed.
+        if not isinstance(value, kind) or (kind is int and isinstance(value, bool)):
+            raise Malformed(f"{label}.{key} is not {kind.__name__}: {value!r}")
+
+
+def _require_hash(value, label):
+    if len(value) != HEX_HASH_LENGTH or any(c not in "0123456789abcdef" for c in value):
+        raise Malformed(f"{label} is not a lowercase 32-byte hex hash: {value!r}")
+
+
 def validate_shape(artifact, label):
+    """Reject anything that is not a complete schema-1 artifact.
+
+    An incomplete recording (a missing fee, an empty block list, a null
+    block) must be malformed rather than silently comparable: two
+    recordings that both lack a field would otherwise match on nothing.
+    """
     if not isinstance(artifact, dict):
         raise Malformed(f"{label}: artifact is not an object")
     schema = artifact.get("schema")
@@ -61,13 +116,47 @@ def validate_shape(artifact, label):
     for section in ("profile", "consensus", "diagnostic"):
         if not isinstance(artifact.get(section), dict):
             raise Malformed(f"{label}: missing or malformed section {section!r}")
-    profile = artifact["profile"]
-    for key in ("target_arch", "protocol_version_start", "protocol_version_end"):
-        if key not in profile:
-            raise Malformed(f"{label}: profile lacks {key!r}")
+
+    _require_fields(artifact["profile"], PROFILE_FIELDS, f"{label}: profile")
+    _require_fields(artifact["diagnostic"], DIAGNOSTIC_FIELDS, f"{label}: diagnostic")
+
     consensus = artifact["consensus"]
-    if not isinstance(consensus.get("blocks"), list):
-        raise Malformed(f"{label}: consensus.blocks is not a list")
+    _require_fields(consensus, CONSENSUS_FIELDS, f"{label}: consensus")
+    _require_hash(consensus["final_root_hash"], f"{label}: consensus.final_root_hash")
+    _require_fields(
+        consensus["total_credits"],
+        {key: int for key in TOTAL_CREDITS_FIELDS},
+        f"{label}: consensus.total_credits",
+    )
+    for identity, balance in consensus["identity_balances"].items():
+        _require_hash(identity, f"{label}: consensus.identity_balances key")
+        if not isinstance(balance, int) or isinstance(balance, bool):
+            raise Malformed(f"{label}: consensus.identity_balances[{identity}] is not int")
+
+    blocks = consensus["blocks"]
+    if not blocks:
+        raise Malformed(f"{label}: consensus.blocks is empty; an empty recording is not evidence")
+    previous_height = 0
+    for index, block in enumerate(blocks):
+        block_label = f"{label}: consensus.blocks[{index}]"
+        _require_fields(block, BLOCK_FIELDS, block_label)
+        if block["height"] != previous_height + 1:
+            raise Malformed(
+                f"{block_label}.height is {block['height']}, expected {previous_height + 1}"
+            )
+        previous_height = block["height"]
+        _require_hash(block["app_hash"], f"{block_label}.app_hash")
+        for position, transition in enumerate(block["transitions"]):
+            _require_fields(transition, TRANSITION_FIELDS, f"{block_label}.transitions[{position}]")
+    if blocks[-1]["app_hash"] != consensus["final_root_hash"]:
+        raise Malformed(
+            f"{label}: consensus.final_root_hash does not equal the last block's app_hash"
+        )
+    if artifact["diagnostic"]["block_count"] != len(blocks):
+        raise Malformed(
+            f"{label}: diagnostic.block_count is {artifact['diagnostic']['block_count']} "
+            f"but {len(blocks)} blocks are recorded"
+        )
 
 
 def canonical(value):
@@ -109,7 +198,12 @@ def first_consensus_difference(left, right):
 
 
 def compare(left, right, allow_same_architecture=False, out=sys.stdout):
-    """Compare two loaded artifacts. Returns (exit_code, report_lines)."""
+    """Compare two validated artifacts. Returns (exit_code, report_lines).
+
+    Raises `Malformed` if either artifact fails `validate_shape`.
+    """
+    validate_shape(left, "left")
+    validate_shape(right, "right")
     lines = []
     failures = []
     lp, rp = left["profile"], right["profile"]
@@ -234,9 +328,15 @@ def self_test():
     expect("identical consensus on two architectures matches", code, EXIT_MATCH, lines, "MATCH")
 
     mutated = copy.deepcopy(right)
-    mutated["consensus"]["blocks"][1]["app_hash"] = "03" * 32
+    mutated["consensus"]["blocks"][0]["app_hash"] = "03" * 32
     code, lines = compare(left, mutated, out=sink)
-    expect("one differing app hash is rejected", code, EXIT_MISMATCH, lines, "block 2: app_hash")
+    expect("one differing app hash is rejected", code, EXIT_MISMATCH, lines, "block 1: app_hash")
+
+    mutated = copy.deepcopy(right)
+    mutated["consensus"]["blocks"][1]["app_hash"] = "03" * 32
+    mutated["consensus"]["final_root_hash"] = "03" * 32
+    code, lines = compare(left, mutated, out=sink)
+    expect("a differing final root is rejected", code, EXIT_MISMATCH, lines, "block 2: app_hash")
 
     mutated = copy.deepcopy(right)
     mutated["consensus"]["blocks"][0]["transitions"][0]["fee"] += 1
@@ -265,6 +365,8 @@ def self_test():
 
     mutated = copy.deepcopy(right)
     mutated["consensus"]["blocks"].pop()
+    mutated["consensus"]["final_root_hash"] = mutated["consensus"]["blocks"][-1]["app_hash"]
+    mutated["diagnostic"]["block_count"] = 1
     code, lines = compare(left, mutated, out=sink)
     expect("a missing block is rejected", code, EXIT_MISMATCH, lines, "2 blocks recorded versus 1")
 
@@ -289,21 +391,61 @@ def self_test():
     code, lines = compare(left, mutated, out=sink)
     expect("differing protocol profiles are rejected", code, EXIT_MISMATCH, lines, "profile.protocol_version_end differs")
 
-    mutated = copy.deepcopy(right)
-    mutated["schema"] = 99
-    try:
-        validate_shape(mutated, "in-memory")
-        code = EXIT_MATCH
-    except Malformed:
-        code = EXIT_MALFORMED
-    expect("an unknown schema is malformed", code, EXIT_MALFORMED)
+    def malformed(name, mutate):
+        mutated = copy.deepcopy(right)
+        mutate(mutated)
+        try:
+            compare(left, mutated, out=sink)
+            code = EXIT_MATCH
+        except Malformed:
+            code = EXIT_MALFORMED
+        expect(name, code, EXIT_MALFORMED)
 
+    def drop_fees(artifact):
+        for block in artifact["consensus"]["blocks"]:
+            for transition in block["transitions"]:
+                del transition["fee"]
+
+    def null_block(artifact):
+        artifact["consensus"]["blocks"][0] = None
+
+    def empty_blocks(artifact):
+        artifact["consensus"]["blocks"] = []
+        artifact["diagnostic"]["block_count"] = 0
+
+    def drop_total_credits_field(artifact):
+        del artifact["consensus"]["total_credits"]["total_in_pools"]
+
+    def bad_hash(artifact):
+        artifact["consensus"]["blocks"][0]["app_hash"] = "not hex"
+
+    def gap_in_heights(artifact):
+        artifact["consensus"]["blocks"][1]["height"] = 3
+
+    def stale_final_root(artifact):
+        artifact["consensus"]["final_root_hash"] = "0f" * 32
+
+    malformed("an unknown schema is malformed", lambda a: a.__setitem__("schema", 99))
+    malformed("a missing section is malformed", lambda a: a.__delitem__("diagnostic"))
+    malformed("a missing transition fee is malformed", drop_fees)
+    malformed("a null block is malformed", null_block)
+    malformed("an empty recording is malformed", empty_blocks)
+    malformed("a missing credit total field is malformed", drop_total_credits_field)
+    malformed("a non-hex application hash is malformed", bad_hash)
+    malformed("a gap in block heights is malformed", gap_in_heights)
+    malformed("a final root that is not the last app hash is malformed", stale_final_root)
+
+    # Both sides lacking the same field must still be malformed, not a match on nothing.
+    both = copy.deepcopy(left)
+    drop_fees(both)
+    other = copy.deepcopy(right)
+    drop_fees(other)
     try:
-        validate_shape({"schema": 1, "profile": {}, "consensus": {}}, "in-memory")
+        compare(both, other, out=sink)
         code = EXIT_MATCH
     except Malformed:
         code = EXIT_MALFORMED
-    expect("a missing section is malformed", code, EXIT_MALFORMED)
+    expect("two recordings both missing fees are malformed, not a match", code, EXIT_MALFORMED)
 
     failed = [name for name, ok in checks if not ok]
     print(f"self-test: {len(checks) - len(failed)} of {len(checks)} checks passed")
