@@ -50,10 +50,14 @@ use dpp::shielded::{
     compute_shielded_withdrawal_fee, ShieldedMemo,
 };
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::ProtocolError;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
 use platform_wallet::PlatformWalletError;
-use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
+use rs_sdk_ffi::{
+    MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner,
+    DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX,
+};
 
 use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
@@ -641,11 +645,32 @@ fn map_spend_result(
                 format!("{operation} failed: {e}"),
             )
         }
+        // A structured key-unavailable signer completion that the wallet layer
+        // preserved verbatim under `Sdk` (`preserve_signer_key_unavailable_or`,
+        // reached by the identity-signed shield from identity). Restore code 31
+        // here as the blanket `From` conversion does, so hosts route to key
+        // repair instead of reading a generic wallet failure. Structural
+        // position-0 check only, never a substring sniff of the rendering.
+        Err(e) if is_preserved_signer_key_unavailable(&e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable,
+            format!("{operation} failed: {e}"),
+        ),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
         ),
     }
+}
+
+/// True when `error` is a key-unavailable signer completion the wallet layer
+/// preserved under `Sdk`: the reserved marker at position 0 of a
+/// `ProtocolError::Generic` payload (never a substring of the rendering).
+fn is_preserved_signer_key_unavailable(error: &PlatformWalletError) -> bool {
+    matches!(
+        error,
+        PlatformWalletError::Sdk(dash_sdk::Error::Protocol(ProtocolError::Generic(s)))
+            if s.starts_with(DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX)
+    )
 }
 
 /// Render a caught panic payload as a human-readable string.
@@ -1181,7 +1206,13 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
 /// key (the same handle credit transfers use). The caller retains ownership.
 ///
 /// `out_new_balance`, when non-null, receives the identity's proven
-/// post-debit balance (0 when the result proof carried none).
+/// post-debit balance (0 when the result proof carried none). The wallet's
+/// managed identity is updated and persisted with that balance before this
+/// returns.
+///
+/// A signer that reports the TRANSFER key unavailable surfaces as code 31
+/// (`ErrorSigningKeyUnavailable`), the same key-repair signal the other
+/// identity-signed operations use.
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
@@ -2497,6 +2528,39 @@ mod tests {
         assert_eq!(
             map_spend_result(Ok(()), "shielded transfer").code,
             PlatformWalletFFIResultCode::Success
+        );
+    }
+
+    /// A key-unavailable signer completion preserved under `Sdk` by the wallet
+    /// layer must keep code 31 through `map_spend_result` (the shield from
+    /// identity path) instead of flattening to `ErrorWalletOperation`; a
+    /// generic protocol error that only mentions the marker mid-string must
+    /// NOT be promoted.
+    #[test]
+    fn map_spend_result_preserves_signing_key_unavailable_code() {
+        let unavailable: Result<(), PlatformWalletError> = Err(PlatformWalletError::Sdk(
+            dash_sdk::Error::Protocol(ProtocolError::Generic(format!(
+                "{DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX}transfer key missing"
+            ))),
+        ));
+        let result = map_spend_result(unavailable, "shielded shield from identity");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+        );
+        assert!(
+            message_of(&result).contains("transfer key missing"),
+            "the signer's rendering must survive into the message"
+        );
+
+        let foreign: Result<(), PlatformWalletError> = Err(PlatformWalletError::Sdk(
+            dash_sdk::Error::Protocol(ProtocolError::Generic(format!(
+                "signer said: {DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX}mid-string"
+            ))),
+        ));
+        assert_eq!(
+            map_spend_result(foreign, "shielded shield from identity").code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
         );
     }
 
