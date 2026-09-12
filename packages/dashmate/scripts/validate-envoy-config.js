@@ -51,6 +51,7 @@ import getBaseConfigFactory from '../configs/defaults/getBaseConfigFactory.js';
 import HomeDir from '../src/config/HomeDir.js';
 import renderServiceTemplatesFactory from '../src/templates/renderServiceTemplatesFactory.js';
 import renderTemplateFactory from '../src/templates/renderTemplateFactory.js';
+import ensureTenderdashNodeKeyFactory from '../src/tenderdash/ensureTenderdashNodeKeyFactory.js';
 
 const DEFAULT_IMAGE_REPO = 'envoyproxy/envoy';
 const ENVOY_CONFIG_TEMPLATE = 'platform/gateway/envoy.yaml';
@@ -240,7 +241,10 @@ function renderVariant(variant) {
 
   variant.apply(config);
 
-  const renderServiceTemplates = renderServiceTemplatesFactory(renderTemplateFactory());
+  const renderServiceTemplates = renderServiceTemplatesFactory(
+    renderTemplateFactory(),
+    ensureTenderdashNodeKeyFactory(),
+  );
 
   return { config, renderedConfigs: renderServiceTemplates(config) };
 }

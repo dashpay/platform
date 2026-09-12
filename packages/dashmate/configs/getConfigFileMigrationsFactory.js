@@ -2,6 +2,7 @@
 import fs from 'fs';
 import lodash from 'lodash';
 import path from 'path';
+import getDefaultSeedUpdates from '../src/tenderdash/getDefaultSeedUpdates.js';
 
 import {
   NETWORK_LOCAL,
@@ -1703,6 +1704,10 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         return configFile;
       },
       '4.2.0': (configFile) => {
+        getDefaultSeedUpdates(configFile.configs).forEach(([name, seeds]) => {
+          configFile.configs[name].platform.drive.tenderdash.p2p.seeds = seeds;
+        });
+
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             // Repeated from the 4.1.1 migration: a config written by a

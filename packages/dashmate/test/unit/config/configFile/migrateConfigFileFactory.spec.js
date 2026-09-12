@@ -245,6 +245,64 @@ describe('migrateConfigFileFactory', () => {
     }
   });
 
+  it('should move a mainnet config off the dead stock seed list', () => {
+    const fromVersion = '4.1.0';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const mainnetConfig = container.resolve('defaultConfigs').get('mainnet');
+    const newSeeds = mainnetConfig.get('platform.drive.tenderdash.p2p.seeds');
+
+    const deadSeeds = [
+      { id: '069639dfceec5f7c86257e6e9c46407c16ad1eab', host: '34.211.174.194', port: 26656 },
+      { id: 'd46e2445642b2f94158ac3c2a6d90b88b83705b8', host: '3.76.148.150', port: 26656 },
+      { id: 'b08a650ecfac178939f21c0c12801eccaf18a5ea', host: '3.0.60.103', port: 26656 },
+      { id: '4cb4a8488eb1dbabda7fb79e47ac3c14eec73c4f', host: '152.42.151.147', port: 26656 },
+      { id: 'fdc2239c1e0e62f3a192823d6e068d012620a2d1', host: 'seed-1.pshenmic.dev', port: 26656 },
+    ];
+
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = fromVersion;
+    // Order differs from the shipped one; it is still the stock set.
+    configFileData.configs.mainnet.platform.drive.tenderdash.p2p.seeds = [...deadSeeds].reverse();
+    // A testnet config is out of scope even with the same entries.
+    configFileData.configs.testnet.platform.drive.tenderdash.p2p.seeds = [...deadSeeds];
+
+    const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+    expect(migrated.configs.mainnet.platform.drive.tenderdash.p2p.seeds).to.deep.equal(newSeeds);
+    expect(migrated.configs.testnet.platform.drive.tenderdash.p2p.seeds).to.deep.equal(deadSeeds);
+  });
+
+  it('should leave a custom mainnet seed list alone', () => {
+    const fromVersion = '4.1.0';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const custom = [
+      { id: '069639dfceec5f7c86257e6e9c46407c16ad1eab', host: '34.211.174.194', port: 26656 },
+      { id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', host: 'seed.example.org', port: 26656 },
+    ];
+
+    // Five entries, all from the stock list, but one repeated and one missing -
+    // not the stock set, so not replaced.
+    const duplicated = [
+      { id: '069639dfceec5f7c86257e6e9c46407c16ad1eab', host: '34.211.174.194', port: 26656 },
+      { id: '069639dfceec5f7c86257e6e9c46407c16ad1eab', host: '34.211.174.194', port: 26656 },
+      { id: 'd46e2445642b2f94158ac3c2a6d90b88b83705b8', host: '3.76.148.150', port: 26656 },
+      { id: 'b08a650ecfac178939f21c0c12801eccaf18a5ea', host: '3.0.60.103', port: 26656 },
+      { id: '4cb4a8488eb1dbabda7fb79e47ac3c14eec73c4f', host: '152.42.151.147', port: 26656 },
+    ];
+
+    for (const seeds of [custom, duplicated]) {
+      const configFileData = createConfigFile().toObject();
+      configFileData.configFormatVersion = fromVersion;
+      configFileData.configs.mainnet.platform.drive.tenderdash.p2p.seeds = seeds;
+
+      const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+      expect(migrated.configs.mainnet.platform.drive.tenderdash.p2p.seeds).to.deep.equal(seeds);
+    }
+  });
+
   it('should load a config a development build stamped with its own prerelease version', async () => {
     // A development build records its own package version in the config, so
     // every node running one is stamped at a prerelease of the next release.

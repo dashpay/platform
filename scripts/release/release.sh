@@ -81,6 +81,9 @@ else
   yarn node $DIR/bump_version.js "$RELEASE_TYPE"
 fi
 
+# Refresh bootstrap data for this version; failure aborts release preparation.
+node "$DIR/../../packages/dashmate/scripts/generate-tenderdash-seeds.js"
+
 cargo metadata --format-version 1 > /dev/null
 
 NEW_PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
