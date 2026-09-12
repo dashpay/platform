@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::masternode::Masternode;
 use crate::platform_types::platform_state::accessors::PlatformStateV0Methods;
@@ -106,9 +107,28 @@ impl TryFrom<PlatformState> for PlatformStateForSavingV1 {
     }
 }
 
-impl From<PlatformStateForSavingV1> for PlatformState {
-    fn from(value: PlatformStateForSavingV1) -> Self {
-        PlatformState {
+impl TryFrom<PlatformStateForSavingV1> for PlatformState {
+    type Error = Error;
+
+    /// Restores the in-memory state, resolving every stored fee version number through the fee
+    /// version registry. A number this build does not know is a load error, never a fallback to
+    /// another generation, because the refund rates it stands for would be wrong.
+    fn try_from(value: PlatformStateForSavingV1) -> Result<Self, Self::Error> {
+        let previous_fee_versions = value
+            .previous_fee_versions
+            .into_iter()
+            .map(|(epoch_index, fee_version_number)| {
+                FeeVersion::get(fee_version_number)
+                    .map(|fee_version| (epoch_index, fee_version))
+                    .map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedCachedState(format!(
+                            "platform state stores fee version {fee_version_number} for epoch {epoch_index}, which this build does not know"
+                        )))
+                    })
+            })
+            .collect::<Result<_, Error>>()?;
+
+        Ok(PlatformState {
             genesis_block_info: value.genesis_block_info,
             last_committed_block_info: value.last_committed_block_info,
             current_protocol_version_in_consensus: value.current_protocol_version_in_consensus,
@@ -136,17 +156,7 @@ impl From<PlatformStateForSavingV1> for PlatformState {
                 .into_iter()
                 .map(|(k, v)| (ProTxHash::from_byte_array(k.to_buffer()), v.into()))
                 .collect(),
-            previous_fee_versions: value
-                .previous_fee_versions
-                .into_iter()
-                .map(|(epoch_index, fee_version_number)| {
-                    (
-                        epoch_index,
-                        FeeVersion::get(fee_version_number)
-                            .expect("expected fee version number to exist"),
-                    )
-                })
-                .collect(),
-        }
+            previous_fee_versions,
+        })
     }
 }
