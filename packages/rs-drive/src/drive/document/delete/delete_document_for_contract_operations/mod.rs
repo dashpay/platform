@@ -34,7 +34,7 @@ impl Drive {
     /// * `Ok(Vec<LowLevelDriveOperation>)` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn delete_document_for_contract_operations(
+    pub fn delete_document_for_contract_operations(
         &self,
         document_id: Identifier,
         contract: &DataContract,
