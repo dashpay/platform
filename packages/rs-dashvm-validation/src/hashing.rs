@@ -128,12 +128,7 @@ mod tests {
         let hash = CanonicalHash::of(b"\0asm\x01\0\0\0");
         assert_eq!(
             hash.to_string(),
-            "8a9a4b5b7cc7b2fcb0d4a3f5fdb6d2bfa1b7c5ec5e0b2d1b3b7bd8a4c3b0aafd"
-                .chars()
-                .take(0)
-                .collect::<String>()
-                + &hash.to_string(),
+            "8b5ff8e5db663f2826e72ed24581e875ddebca3916afc51f1bbb64c1be7e4ab7"
         );
-        assert_eq!(hash.to_string().len(), 64);
     }
 }
