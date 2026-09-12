@@ -316,7 +316,7 @@ mod tests {
                 &platform_version.drive,
             )
             .expect("expected to get root elements");
-        assert_eq!(elements.len(), 18);
+        assert_eq!(elements.len(), 19); // 18 before protocol version 17 added ContractCredits
     }
 
     // PROTOCOL_VERSION_13: the released root layout has 17 trees; the ContractGroups tree
@@ -1301,6 +1301,11 @@ mod tests {
     #[test]
     /// Proof sizes differ from v11 by +33/+35 bytes on nodes touching the
     /// shielded pool subtree, which uses `KVValueHashFeatureTypeWithChildHash`.
+    ///
+    /// From protocol v17 the `ContractCredits` root sum tree (key 100) sits
+    /// as the left child of `Misc` (104) at Merk level 4, so the `Misc` proof
+    /// grows by the child hash it now carries and the new key proves at the
+    /// same size as the other level 4 keys under a normal tree parent.
     fn test_initial_state_structure_proper_heights_in_latest_protocol_version() {
         let drive = setup_drive_with_initial_state_structure(None);
 
@@ -1627,7 +1632,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 285);
+        assert_eq!(proof.len(), 319); // 285 before v17: Misc now carries the ContractCredits child hash
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::Versions as u8]);
@@ -1672,15 +1677,36 @@ mod tests {
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 319);
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::ContractCredits as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 285); // ContractCredits root sum tree, added in protocol version 17
     }
 
     #[test]
     /// PROTOCOL_VERSION_13: the root Merk shape before the ContractGroups tree (structure v3),
     /// pinned so v13 proof sizes stay reproducible.
     fn test_initial_state_structure_proper_heights_in_protocol_version_13() {
-        let drive = setup_drive_with_initial_state_structure(None);
-
         let platform_version = PlatformVersion::get(13).expect("expected platform version 13");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+
         let drive_version = &platform_version.drive;
 
         // Merk Level 0
@@ -2003,7 +2029,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 319);
+        assert_eq!(proof.len(), 285); // 319 at the latest version, where ContractGroups (124) hangs below Versions (120)
 
         // Merk Level 4
 
