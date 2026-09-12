@@ -312,6 +312,78 @@ impl LowLevelDriveOperation {
             .collect()
     }
 
+    /// Returns a list of the costs of the Drive operations, pricing every
+    /// owner-attributed storage removal with the fee history of the block
+    /// that removes the bytes.
+    ///
+    /// This is the generation `Drive::calculate_fee` v1 selects. It differs
+    /// from `consume_to_fees_v0` in one arm: a `SectionedStorageRemoval`
+    /// always consults `previous_fee_versions` and returns
+    /// `CorruptedCodeExecution` when none is given, on every fee version
+    /// number. v0 priced fee version number 1 against an empty history, so a
+    /// caller that forgot the history silently refunded at the first
+    /// generation's storage rates; from protocol version 15 that omission is
+    /// an error, never a fallback to a schedule.
+    pub fn consume_to_fees_v1(
+        drive_operations: Vec<LowLevelDriveOperation>,
+        epoch: &Epoch,
+        epochs_per_era: u16,
+        fee_version: &FeeVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
+    ) -> Result<Vec<FeeResult>, Error> {
+        drive_operations
+            .into_iter()
+            .map(|operation| match operation {
+                PreCalculatedFeeResult(f) => Ok(f),
+                FunctionOperation(op) => Ok(FeeResult {
+                    processing_fee: op.cost(fee_version),
+                    ..Default::default()
+                }),
+                _ => {
+                    let cost = operation.operation_cost()?;
+                    // There is no need for a checked multiply here because added bytes are u64 and
+                    // storage disk usage credit per byte should never be high enough to cause an overflow
+                    let storage_fee = cost.storage_cost.added_bytes as u64
+                        * fee_version.storage.storage_disk_usage_credit_per_byte;
+                    let processing_fee = cost.ephemeral_cost(fee_version)?;
+                    let (fee_refunds, removed_bytes_from_system) =
+                        match cost.storage_cost.removed_bytes {
+                            NoStorageRemoval => (FeeRefunds::default(), 0),
+                            BasicStorageRemoval(amount) => {
+                                // this is not always considered an error
+                                (FeeRefunds::default(), amount)
+                            }
+                            SectionedStorageRemoval(mut removal_per_epoch_by_identifier) => {
+                                let system_amount = removal_per_epoch_by_identifier
+                                    .remove(&Identifier::default())
+                                    .map_or(0, |a| a.values().sum());
+                                let previous_fee_versions = previous_fee_versions.ok_or(
+                                    Error::Drive(DriveError::CorruptedCodeExecution(
+                                        "a storage refund needs the fee history of the block that removes the bytes",
+                                    )),
+                                )?;
+                                (
+                                    FeeRefunds::from_storage_removal(
+                                        removal_per_epoch_by_identifier,
+                                        epoch.index,
+                                        epochs_per_era,
+                                        previous_fee_versions,
+                                    )?,
+                                    system_amount,
+                                )
+                            }
+                        };
+                    Ok(FeeResult {
+                        storage_fee,
+                        processing_fee,
+                        fee_refunds,
+                        removed_bytes_from_system,
+                    })
+                }
+            })
+            .collect()
+    }
+
     /// Returns the cost of this operation
     pub fn operation_cost(self) -> Result<OperationCost, Error> {
         match self {
