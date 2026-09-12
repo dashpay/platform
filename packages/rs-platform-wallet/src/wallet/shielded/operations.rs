@@ -30,7 +30,7 @@ use super::note_selection::{
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
-use crate::error::PlatformWalletError;
+use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
 
@@ -61,6 +61,7 @@ use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
+use dpp::ProtocolError;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
 use tracing::{debug, info, trace, warn};
@@ -804,8 +805,15 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
 /// plus the shielded compute fee from the identity balance. `nonce` is fetched
 /// from Platform here, so the caller only supplies the identity.
 ///
+/// The activity row records no fee: the exact fee is metered at execution and
+/// never returned to the wallet, and `ShieldedActivityEntry::fee` is an exact
+/// value (the FFI reports it as such), so the consensus floor must not stand in
+/// for it.
+///
 /// Returns the identity's proven post-debit balance when the result proof carried
-/// it (`None` when the wait confirmed execution without a balance).
+/// it (`None` when the wait confirmed execution without a balance). The caller
+/// owns the managed identity and persists that balance
+/// (`PlatformWallet::shielded_shield_from_identity`).
 #[allow(clippy::too_many_arguments)]
 pub async fn shield_from_identity_to<
     S: ShieldedStore,
@@ -843,12 +851,6 @@ pub async fn shield_from_identity_to<
         other => other,
     };
 
-    // The metered part of the fee is only known at execution; the shielded
-    // compute fee is the consensus floor and what the activity row records.
-    let fee_floor =
-        dpp::shielded::compute_shielded_verification_fee(SHIELD_NUM_ACTIONS, sdk.version())
-            .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-
     let nonce = sdk
         .get_identity_nonce(identity_id, true, None)
         .await
@@ -878,7 +880,7 @@ pub async fn shield_from_identity_to<
         sdk.version(),
     )
     .await
-    .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    .map_err(map_shield_from_identity_build_error)?;
 
     trace!("ShieldFromIdentity: state transition built, broadcasting...");
 
@@ -892,7 +894,8 @@ pub async fn shield_from_identity_to<
             kind,
             direction,
             amount,
-            fee: Some(fee_floor),
+            // Exact fee unknown (metered at execution); see the function docs.
+            fee: None,
             counterparty: external_counterparty,
             memo: non_zero_memo(&memo),
             actions: shielded_actions(&state_transition),
@@ -978,6 +981,72 @@ pub async fn shield_from_identity_to<
     .await;
     info!(account, credits = amount, identity = %identity_id, "ShieldFromIdentity broadcast succeeded");
     Ok(new_balance)
+}
+
+/// Map a `ShieldFromIdentity` builder failure. The builder signs with the
+/// identity signer, so a structured key-unavailable completion (the reserved
+/// marker at position 0 of a `ProtocolError::Generic` payload) can surface
+/// here; it is preserved verbatim under [`PlatformWalletError::Sdk`] so the
+/// FFI boundary restores code 31 (`ErrorSigningKeyUnavailable`) instead of
+/// flattening it into the generic build error. Every other failure keeps the
+/// protocol error's own rendering as a `ShieldedBuildError`.
+fn map_shield_from_identity_build_error(error: ProtocolError) -> PlatformWalletError {
+    preserve_signer_key_unavailable_or(dash_sdk::Error::Protocol(error), |e| match e {
+        dash_sdk::Error::Protocol(protocol_error) => {
+            PlatformWalletError::ShieldedBuildError(protocol_error.to_string())
+        }
+        other => PlatformWalletError::ShieldedBuildError(other.to_string()),
+    })
+}
+
+#[cfg(test)]
+mod shield_from_identity_build_error_tests {
+    use super::*;
+    use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
+
+    /// A key-unavailable signer completion keeps its structured shape so the
+    /// FFI can restore code 31; the marker must sit at position 0.
+    #[test]
+    fn preserves_signer_key_unavailable_completion() {
+        let error = ProtocolError::Generic(format!(
+            "{SIGNER_KEY_UNAVAILABLE_PREFIX}transfer key not in keychain"
+        ));
+        let mapped = map_shield_from_identity_build_error(error);
+        assert!(
+            matches!(
+                &mapped,
+                PlatformWalletError::Sdk(dash_sdk::Error::Protocol(ProtocolError::Generic(s)))
+                    if s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
+            ),
+            "expected the signer completion preserved under Sdk, got {mapped:?}"
+        );
+    }
+
+    /// Any other builder failure is a build error carrying the protocol
+    /// error's own rendering (the SDK wrapper's "Protocol error:" prefix is
+    /// not added), including a generic error that merely mentions the marker
+    /// mid-string.
+    #[test]
+    fn stringifies_other_builder_failures() {
+        let mapped = map_shield_from_identity_build_error(ProtocolError::Generic(
+            "amount must be > 0".to_string(),
+        ));
+        assert!(
+            matches!(
+                &mapped,
+                PlatformWalletError::ShieldedBuildError(s) if s == "Generic Error: amount must be > 0"
+            ),
+            "got {mapped:?}"
+        );
+
+        let mid_string = map_shield_from_identity_build_error(ProtocolError::Generic(format!(
+            "signer failed: {SIGNER_KEY_UNAVAILABLE_PREFIX}not at position 0"
+        )));
+        assert!(
+            matches!(mid_string, PlatformWalletError::ShieldedBuildError(_)),
+            "a mid-string marker must not be promoted, got {mid_string:?}"
+        );
+    }
 }
 
 // -------------------------------------------------------------------------
