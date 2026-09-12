@@ -197,12 +197,13 @@ pub fn compute_shielded_unshield_fee_v0(
 ///   `floor = compute_minimum_shielded_fee_v0(num_actions)
 ///            + SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES × (disk + processing) credits/byte`
 ///
-/// [`compute_minimum_shielded_fee_v0`] plus one flat storage component for the identity balance
-/// write, the same shape as [`compute_shielded_unshield_fee_v0`]'s address-write component. The
-/// transition's real fee is metered at execution (note inserts plus the identity balance and
-/// nonce updates); this floor is the conservative stand-in the stateless balance pre-check uses
-/// so that a short identity is refused before the Orchard proof is verified, and the client-side
-/// estimate of the total fee.
+/// [`compute_minimum_shielded_fee_v0`] plus one flat component for the identity-side writes
+/// (nonce and balance replacements), built the same way as
+/// [`compute_shielded_unshield_fee_v0`]'s address-write component but calibrated to those
+/// replacements' measured processing cost (they add no storage). The transition's real fee is
+/// metered at execution; this floor is the conservative stand-in the stateless balance pre-check
+/// uses so that a short identity is refused before the Orchard proof is verified, and the
+/// client-side estimate of the total fee.
 ///
 /// All arithmetic is checked: an overflow (only reachable via pathological fee constants)
 /// surfaces as `ProtocolError::Overflow` instead of silently wrapping.
