@@ -428,7 +428,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1919540);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1921020); // 1919540 before v17: ContractCredits (100) became the left child of Misc (104), so the system credits write hashes one more child
 
         platform
             .drive
@@ -443,7 +443,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99913867460);
+        assert_eq!(identity_balance, 99913865980); // 99913867460 before v17: the processing fee above moved
     }
 
     #[tokio::test]
@@ -877,7 +877,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2195200);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2196680); // 2195200 before v17: ContractCredits (100) became the left child of Misc (104), so the system credits write hashes one more child
 
         platform
             .drive
@@ -892,7 +892,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99909262100); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, 99909260620); // The identity balance is smaller than if there hadn't been any issue; 99909262100 before v17
     }
 
     #[tokio::test]
@@ -1842,7 +1842,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2195200);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2196680); // 2195200 before v17: ContractCredits (100) became the left child of Misc (104), so the system credits write hashes one more child
 
         platform
             .drive
@@ -1857,6 +1857,6 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99909262100); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, 99909260620); // The identity balance is smaller than if there hadn't been any issue; 99909262100 before v17
     }
 }

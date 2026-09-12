@@ -122,6 +122,11 @@ mod tests {
 
         // This will cause the costs of insertion of a spent asset lock transition, since group actions now exist we will see a slight difference in processing costs
         // This is because WithdrawalTransactions will have a right element in the tree.
+        //
+        // From protocol version 17 the ContractCredits root tree (100) is the left child of
+        // Misc (104), so the system credits write under Misc hashes one more child and the
+        // identity keeps 1_480 credits less than at protocol version 13 and 14 (99864009940,
+        // pinned by the version 13 test below).
 
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
@@ -187,7 +192,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864009940)
+        assert_eq!(balance, 99864008460)
     }
 
     #[tokio::test]
