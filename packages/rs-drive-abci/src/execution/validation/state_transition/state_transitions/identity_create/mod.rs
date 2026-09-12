@@ -348,11 +348,21 @@ mod tests {
     async fn test_identity_create_validation_latest_protocol_version() {
         run_test_identity_create_validation_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            // PROTOCOL_VERSION_14: 4,960 credits less, see the protocol version 13 twin
-            1914580,
-            99913872420,
+            // PROTOCOL_VERSION_14: 4,960 credits less, see the protocol version 13 twin.
+            // PROTOCOL_VERSION_17: 1,480 credits more, see the protocol version 14 twin
+            1916060,
+            99913870940,
         )
         .await;
+    }
+
+    /// PROTOCOL_VERSION_14: 1,480 credits less processing than at the latest version. v17
+    /// adds the `ContractCredits` root tree (key 100) as the left child of `Misc` (104), so the
+    /// total system credits write this transition makes under `Misc` hashes one more child.
+    /// Pinned so v14 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_identity_create_validation_protocol_version_14() {
+        run_test_identity_create_validation_at_protocol_version(14, 1914580, 99913872420).await;
     }
 
     /// PROTOCOL_VERSION_13: 4,960 credits more processing than at the latest version. v14
@@ -1092,7 +1102,22 @@ mod tests {
     async fn test_identity_create_asset_lock_reuse_after_issue_latest_protocol_version() {
         run_test_identity_create_asset_lock_reuse_after_issue_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            // PROTOCOL_VERSION_14: 4,960 credits less, see the protocol version 13 twin
+            // PROTOCOL_VERSION_14: 4,960 credits less, see the protocol version 13 twin.
+            // PROTOCOL_VERSION_17: 1,480 credits more, see the protocol version 14 twin
+            2191720,
+            99909265580,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_14: 1,480 credits less processing than at the latest version. v17
+    /// adds the `ContractCredits` root tree (key 100) as the left child of `Misc` (104), so the
+    /// total system credits write this transition makes under `Misc` hashes one more child.
+    /// Pinned so v14 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_identity_create_asset_lock_reuse_after_issue_protocol_version_14() {
+        run_test_identity_create_asset_lock_reuse_after_issue_at_protocol_version(
+            14,
             2190240,
             99909267060,
         )
@@ -2069,7 +2094,22 @@ mod tests {
     async fn test_identity_create_asset_lock_replay_attack_latest_protocol_version() {
         run_test_identity_create_asset_lock_replay_attack_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            // PROTOCOL_VERSION_14: 4,960 credits less, see the protocol version 13 twin
+            // PROTOCOL_VERSION_14: 4,960 credits less, see the protocol version 13 twin.
+            // PROTOCOL_VERSION_17: 1,480 credits more, see the protocol version 14 twin
+            2191720,
+            99909265580,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_14: 1,480 credits less processing than at the latest version. v17
+    /// adds the `ContractCredits` root tree (key 100) as the left child of `Misc` (104), so the
+    /// total system credits write this transition makes under `Misc` hashes one more child.
+    /// Pinned so v14 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_identity_create_asset_lock_replay_attack_protocol_version_14() {
+        run_test_identity_create_asset_lock_replay_attack_at_protocol_version(
+            14,
             2190240,
             99909267060,
         )

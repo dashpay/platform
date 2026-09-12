@@ -122,6 +122,11 @@ mod tests {
 
         // This will cause the costs of insertion of a spent asset lock transition, since group actions now exist we will see a slight difference in processing costs
         // This is because WithdrawalTransactions will have a right element in the tree.
+        //
+        // From protocol version 17 the ContractCredits root tree (100) is the left child of
+        // Misc (104), so the system credits write under Misc hashes one more child and the
+        // identity keeps 1_480 credits less than at protocol version 14 (see the assertion
+        // below; the version 13 test pins the fee before the documents expirations tree).
 
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
@@ -191,7 +196,11 @@ mod tests {
         // version 13. The documents expirations tree joins `Misc` (key `E`) beside the total
         // system credits item an identity created from an asset lock rewrites, and the extra
         // key reshapes the `Misc` Merk that write rehashes.
-        assert_eq!(balance, 99863968860)
+        //
+        // PROTOCOL_VERSION_17: the ContractCredits root tree (100) is the left child of
+        // Misc (104), so the system credits write under Misc hashes one more child and the
+        // identity keeps 1_480 credits less than at protocol version 14 (99863968860).
+        assert_eq!(balance, 99863967380)
     }
 
     #[tokio::test]

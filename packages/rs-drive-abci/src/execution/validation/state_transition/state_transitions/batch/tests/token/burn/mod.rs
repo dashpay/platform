@@ -3963,7 +3963,23 @@ mod token_burn_tests {
             // +740 per document write from protocol version 14: the contract's version item is
             // one more node to rehash; -12_820: the documents expirations tree joins `Misc`
             // beside the token supplies tree the burn rewrites, reshaping the `Misc` Merk
-            4_356_200,
+            //
+            // PROTOCOL_VERSION_17: +1_480, ContractCredits (100) became the
+            // left child of Misc (104), so the total supply write under Misc
+            // hashes one more child
+            4_357_680,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_14: the root Merk has no contract credits key yet, so
+    /// the fee must be exactly what it was before that root tree was added.
+    /// Pinned so v14 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_token_burn_group_action_confirmer_fee_includes_transformer_reads_protocol_version_14(
+    ) {
+        run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
+            14, 4_356_200,
         )
         .await;
     }
