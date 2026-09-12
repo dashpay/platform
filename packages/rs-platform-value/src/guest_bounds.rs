@@ -14,8 +14,16 @@
 //! - depth and element counts are charged at the header, so an oversized
 //!   container is refused before its first entry is decoded.
 //!
-//! Since the input itself is at most `max_bytes`, total allocation on this
-//! path is bounded by the caller's limit.
+//! Heap usage is bounded by the three limits together: byte leaves by
+//! `max_bytes`, container storage by `max_elements` (plus vector growth
+//! slack), and the frame stack by `max_depth`. It is not bounded by
+//! `max_bytes` alone; a three byte array header still allocates a frame and an
+//! element vector.
+//!
+//! Bounded decoding is not canonical validation. bincode accepts overlong
+//! variable-length integers, so two byte strings can decode to the same value
+//! here; canonical bytes are established by re-encoding and comparing, which
+//! the ABI layer does.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -66,8 +74,8 @@ impl Display for BoundedEncodeError {
 
 impl core::error::Error for BoundedEncodeError {}
 
-/// Leaf reader that charges every length to a [`CodecBudget`] and never
-/// allocates more than the unread input.
+/// Leaf reader that charges every length to a [`CodecBudget`]. Byte leaves
+/// never allocate more than the unread input; containers start empty.
 struct BudgetedLeaves<'b, 'a> {
     budget: &'b mut CodecBudget<'a>,
 }
@@ -229,10 +237,12 @@ impl Value {
     /// Encodes the value with the canonical configuration under explicit
     /// `bounds`.
     ///
-    /// Depth and element counts are checked during a size pass that allocates
-    /// nothing; the output is then refused if it would exceed `max_bytes`, and
-    /// only afterwards is a buffer of exactly the right size allocated. The
-    /// bytes are identical to the derived [`bincode::Encode`] output.
+    /// Depth and element counts are checked during a size pass whose only
+    /// allocation is the traversal stack (one frame per open container, so at
+    /// most `max_depth` frames); the output is then refused if it would exceed
+    /// `max_bytes`, and only afterwards is the output buffer allocated, sized
+    /// exactly once. The bytes are identical to the derived
+    /// [`bincode::Encode`] output.
     pub fn encode_bounded(&self, bounds: &CodecBounds) -> Result<Vec<u8>, BoundedEncodeError> {
         let size = {
             let mut budget = CodecBudget::new(bounds);
@@ -541,6 +551,23 @@ mod tests {
                 ..
             }))
         ));
+    }
+
+    #[test]
+    fn should_accept_overlong_varints_so_canonicality_needs_a_re_encode_check() {
+        // `U16(0)` as the minimal bytes and as two overlong forms: one on the
+        // payload, one on the variant index. All decode; only the minimal form
+        // survives a re-encode comparison, which is the ABI layer's job.
+        let minimal = [6u8, 0];
+        let overlong_payload = [6u8, 251, 0, 0];
+        let overlong_variant = [251u8, 0, 6, 0];
+        for bytes in [&minimal[..], &overlong_payload[..], &overlong_variant[..]] {
+            assert_eq!(
+                Value::decode_bounded(bytes, &BOUNDS).unwrap(),
+                Value::U16(0)
+            );
+        }
+        assert_eq!(Value::U16(0).encode_bounded(&BOUNDS).unwrap(), minimal);
     }
 
     #[test]

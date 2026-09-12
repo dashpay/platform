@@ -287,10 +287,16 @@ use platform_serialization::bounded::CodecBounds;
 use platform_value::Value;
 
 let bounds = CodecBounds { max_bytes: 64 * 1024, max_depth: 256, max_elements: 65_536 };
-let value = Value::decode_bounded(&bytes, &bounds)?;
-let again = value.encode_bounded(&bounds)?;
-assert_eq!(again, bytes);
+let bytes = value.encode_bounded(&bounds)?;
+let decoded = Value::decode_bounded(&bytes, &bounds)?;
+assert_eq!(decoded, value);
 ```
+
+Bounded decoding is not canonical validation. bincode accepts overlong
+variable-length integers, so two different byte strings can decode to the same
+value; only encoder-produced bytes are guaranteed to round-trip byte for byte.
+The ABI layer establishes canonical bytes by re-encoding the decoded value and
+comparing.
 
 `CodecBounds` lives in `packages/rs-platform-serialization/src/bounded.rs`
 together with `CodecBudget` (the running counters), `BoundsError` (fixed-width
@@ -305,9 +311,12 @@ length as untrusted. Container counts, byte strings, text and string lists are
 checked against the unread input and the budget before anything is allocated;
 byte leaves then allocate exactly the declared length, and containers start
 empty and grow by push. Depth and element counts are charged at the container
-header. Because the input is at most `max_bytes`, total allocation on the
-bounded path is bounded by the caller. The native path is untouched: it keeps
-the thread-local limit, bincode's own leaf decoders and pre-sized containers,
+header. Heap usage is bounded by the three limits together: byte leaves by
+`max_bytes`, container storage by `max_elements` (plus vector growth slack),
+and the traversal stack by `max_depth`. It is not bounded by `max_bytes`
+alone, so callers size the depth and element limits deliberately rather than
+relying on a small byte budget. The native path is untouched: it keeps the
+thread-local limit, bincode's own leaf decoders and pre-sized containers,
 because shipped protocol versions decode through it.
 
 ## The `BincodeContext` type alias

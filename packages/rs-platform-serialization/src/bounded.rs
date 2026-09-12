@@ -9,9 +9,25 @@
 //! decoded, and every variable-length leaf is read through a helper that checks
 //! the declared length against the unread input **before** allocating.
 //!
-//! The invariant the helpers uphold is simple to state: no allocation on the
-//! bounded path is ever larger than the bytes still unread. Since the input
-//! itself is at most `max_bytes`, total allocation is bounded by the caller.
+//! What the bounds guarantee, precisely:
+//!
+//! - byte-sized leaves (byte strings, text) never allocate more than the
+//!   unread input, so their total is at most `max_bytes`;
+//! - container storage starts empty and grows by push, so its capacity
+//!   tracks the entries actually decoded, which `max_elements` caps (with the
+//!   usual amortised growth slack of a vector);
+//! - the traversal stack holds one frame per open container, which `max_depth`
+//!   caps.
+//!
+//! Heap usage is therefore bounded by the three limits together, not by
+//! `max_bytes` alone: a three byte input can still allocate a frame and an
+//! element vector. Callers size `max_depth` and `max_elements` with that in
+//! mind.
+//!
+//! These helpers bound decoding; they do not make it canonical. bincode
+//! accepts overlong variable-length integers, so two different byte strings
+//! can decode to the same value here. Canonical validation (re-encode and
+//! compare) belongs to the ABI layer built on top of this module.
 //!
 //! Nothing here depends on `std` or on the native `PlatformVersion` registry.
 
@@ -59,8 +75,9 @@ pub enum BoundsError {
     },
     /// A container would nest deeper than `max_depth`.
     DepthExceeded {
-        /// The depth that was about to be entered.
-        depth: u16,
+        /// The depth that was about to be entered. Wider than the limit so
+        /// that one past `u16::MAX` is still representable.
+        depth: u32,
         /// The configured maximum.
         max: u16,
     },
@@ -116,7 +133,7 @@ impl core::error::Error for BoundsError {}
 #[derive(Debug)]
 pub struct CodecBudget<'a> {
     bounds: &'a CodecBounds,
-    depth: u16,
+    depth: u32,
     elements: u64,
 }
 
@@ -136,7 +153,7 @@ impl<'a> CodecBudget<'a> {
     }
 
     /// The current container nesting depth.
-    pub const fn depth(&self) -> u16 {
+    pub const fn depth(&self) -> u32 {
         self.depth
     }
 
@@ -159,14 +176,20 @@ impl<'a> CodecBudget<'a> {
     }
 
     /// Records entering an array or map. Fails when the new depth would exceed
-    /// `max_depth`.
+    /// `max_depth`. The counter is wider than the limit and the addition is
+    /// checked, so a limit of `u16::MAX` still refuses the 65,536th level
+    /// instead of pinning the counter and letting every deeper level through.
     pub fn enter_container(&mut self) -> Result<(), BoundsError> {
-        let depth = self.depth.saturating_add(1);
-        if depth > self.bounds.max_depth {
-            return Err(BoundsError::DepthExceeded {
-                depth,
-                max: self.bounds.max_depth,
-            });
+        let max = self.bounds.max_depth;
+        let depth = self
+            .depth
+            .checked_add(1)
+            .ok_or(BoundsError::DepthExceeded {
+                depth: u32::MAX,
+                max,
+            })?;
+        if depth > u32::from(max) {
+            return Err(BoundsError::DepthExceeded { depth, max });
         }
         self.depth = depth;
         Ok(())
@@ -411,8 +434,12 @@ where
 ///
 /// Checks the input length first, hands the closure a decoder over the whole
 /// input plus a fresh [`CodecBudget`], and finally requires that every byte was
-/// consumed: trailing bytes are an error, so one value has exactly one
-/// accepted encoding of a given length.
+/// consumed: trailing bytes are an error.
+///
+/// This does not make the accepted encoding unique. bincode decodes overlong
+/// variable-length integers leniently, so distinct inputs can still decode to
+/// the same value; a caller that needs canonical bytes re-encodes the result
+/// and compares. That check belongs to the ABI layer.
 pub fn bounded_decode_from_slice<'a, T, F>(
     bytes: &'a [u8],
     bounds: &CodecBounds,
@@ -484,6 +511,50 @@ mod tests {
         );
         budget.exit_container();
         assert_eq!(budget.enter_container(), Ok(()));
+    }
+
+    #[test]
+    fn should_refuse_the_level_past_a_u16_max_depth_limit() {
+        let bounds = CodecBounds {
+            max_bytes: u32::MAX,
+            max_depth: u16::MAX,
+            max_elements: u32::MAX,
+        };
+        let mut budget = CodecBudget::new(&bounds);
+        for _ in 0..u16::MAX {
+            assert_eq!(budget.enter_container(), Ok(()));
+        }
+        assert_eq!(budget.depth(), u32::from(u16::MAX));
+        assert_eq!(
+            budget.enter_container(),
+            Err(BoundsError::DepthExceeded {
+                depth: 65_536,
+                max: u16::MAX
+            })
+        );
+        // The refused level did not move the counter, so one exit and one
+        // entry still land exactly on the limit.
+        budget.exit_container();
+        assert_eq!(budget.enter_container(), Ok(()));
+        assert_eq!(budget.depth(), u32::from(u16::MAX));
+    }
+
+    #[test]
+    fn should_accept_overlong_varints_like_bincode_does() {
+        // Two encodings of the same u16 value 0: the minimal single byte and
+        // the overlong two byte form behind the u16 marker. Bounded decoding
+        // is not canonical validation; the ABI layer re-encodes and compares.
+        let minimal = [0u8];
+        let overlong = [251u8, 0, 0];
+        let read = |bytes: &[u8]| {
+            decode_all(bytes, |decoder, _| {
+                <u16 as Decode<()>>::decode(decoder).map_err(Into::into)
+            })
+            .unwrap()
+        };
+        assert_eq!(read(&minimal), 0);
+        assert_eq!(read(&overlong), 0);
+        assert_eq!(encode(0u16), minimal);
     }
 
     #[test]
