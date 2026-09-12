@@ -76,19 +76,25 @@ pub const SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES: u64 = 4100;
 /// [`compute_minimum_shielded_fee::compute_shielded_unshield_fee`].
 pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
 
-/// Flat storage allowance (in effective bytes) for the identity balance write that
-/// `ShieldFromIdentity` performs on top of its per-action note writes.
+/// Calibrated effective-byte cost of the identity-side writes a `ShieldFromIdentity` performs on
+/// top of its per-action note inserts: the `UpdateIdentityNonce` and `RemoveFromIdentityBalance`
+/// operations.
 ///
-/// The transition's real fee is metered (note inserts plus the identity balance and nonce
-/// updates) and only known at execution, so its stateless admission floor needs a conservative
-/// stand-in for that metered part: [`compute_minimum_shielded_fee`] (compute plus the per-action
-/// note storage allowance) plus this identity-write allowance, priced at the same per-byte storage
-/// rate. The figure mirrors `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES`: a balance-tree write of the
-/// same shape as the transparent address write, ≈222 effective bytes. Admission below
-/// `amount + floor` is refused BEFORE the Orchard proof is verified, so a short identity can
-/// never occupy a proof-verification slot. See
+/// The transition's real fee is metered and only known at execution, so its stateless admission
+/// floor needs a conservative stand-in for the metered part: [`compute_minimum_shielded_fee`]
+/// (compute plus the per-action note allowance, which covers the note inserts with headroom)
+/// plus this identity-write component, priced at the same per-byte storage rate so it tracks the
+/// rate as it evolves. Admission below `amount + floor` is refused BEFORE the Orchard proof is
+/// verified, so a short identity never occupies a proof-verification slot.
+///
+/// Unlike the `Unshield` address write, both identity operations REPLACE existing elements
+/// (the identity's nonce and its balance-tree entry), so they add no storage bytes at all: the
+/// GroveDB-metered cost of the pair is 424,400 credits of processing, which is 15.5 effective
+/// bytes at the 27,400 credits/byte storage rate. 16 covers it with the usual small round-up.
+/// (The pool-total update is not priced separately, exactly as for the other pool-paid
+/// transitions.) See
 /// [`compute_minimum_shielded_fee::compute_shielded_identity_balance_write_fee`].
-pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 222;
+pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 16;
 
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///
