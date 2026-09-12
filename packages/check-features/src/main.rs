@@ -11,6 +11,8 @@ fn main() {
         ("rs-drive-proof-verifier", vec![]),
         ("rs-platform-wallet", vec![]),
         ("dash-platform-queries", vec![]),
+        ("rs-platform-value", vec![]),
+        ("rs-platform-serialization", vec![]),
     ];
 
     for (specific_crate, to_ignore) in crates {
