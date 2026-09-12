@@ -1,0 +1,347 @@
+#!/usr/bin/env python3
+"""Compare two determinism artifacts recorded on different architectures.
+
+The artifact is written by the drive-abci strategy test
+`determinism_tests::should_replay_identically_from_saved_state_across_the_protocol_upgrade`
+(schema in packages/rs-drive-abci/tests/strategy_tests/determinism_artifact.rs).
+It has three sections with three rules:
+
+  consensus   must be byte-identical between the two recordings; any
+              difference (an application hash, a transition code or fee, a
+              protocol version, a balance, a credit total) rejects the pair.
+  profile     the protocol versions must match, the target architecture must
+              differ (unless --allow-same-architecture is given for a local
+              two-process check), and the CPU features and engine pin are
+              printed so a mismatch can be explained.
+  diagnostic  printed side by side, never compared.
+
+Exit codes: 0 match, 1 consensus or profile mismatch, 2 malformed input or
+unknown schema.
+
+`--self-test` runs the comparator against artifacts built in memory and
+proves that it accepts an identical pair and rejects each kind of
+consensus-visible difference. The workflow runs it before every real
+comparison so the comparison step cannot pass by comparing nothing.
+"""
+
+import argparse
+import copy
+import json
+import sys
+
+KNOWN_SCHEMAS = {1}
+
+EXIT_MATCH = 0
+EXIT_MISMATCH = 1
+EXIT_MALFORMED = 2
+
+
+class Malformed(Exception):
+    """The artifact cannot be compared at all."""
+
+
+def load(path):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            artifact = json.load(handle)
+    except (OSError, ValueError) as error:
+        raise Malformed(f"{path}: cannot read artifact: {error}") from error
+    validate_shape(artifact, path)
+    return artifact
+
+
+def validate_shape(artifact, label):
+    if not isinstance(artifact, dict):
+        raise Malformed(f"{label}: artifact is not an object")
+    schema = artifact.get("schema")
+    if schema not in KNOWN_SCHEMAS:
+        raise Malformed(
+            f"{label}: unknown artifact schema {schema!r}; this comparator knows {sorted(KNOWN_SCHEMAS)}"
+        )
+    for section in ("profile", "consensus", "diagnostic"):
+        if not isinstance(artifact.get(section), dict):
+            raise Malformed(f"{label}: missing or malformed section {section!r}")
+    profile = artifact["profile"]
+    for key in ("target_arch", "protocol_version_start", "protocol_version_end"):
+        if key not in profile:
+            raise Malformed(f"{label}: profile lacks {key!r}")
+    consensus = artifact["consensus"]
+    if not isinstance(consensus.get("blocks"), list):
+        raise Malformed(f"{label}: consensus.blocks is not a list")
+
+
+def canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def first_consensus_difference(left, right):
+    """Name the first field that differs, block by block, or None."""
+    left_blocks = left["blocks"]
+    right_blocks = right["blocks"]
+    for index, (lb, rb) in enumerate(zip(left_blocks, right_blocks)):
+        height = lb.get("height", index + 1)
+        if lb.get("height") != rb.get("height"):
+            return f"block order differs at index {index}: heights {lb.get('height')} and {rb.get('height')}"
+        for key in ("protocol_version", "app_hash"):
+            if lb.get(key) != rb.get(key):
+                return f"block {height}: {key} {lb.get(key)!r} != {rb.get(key)!r}"
+        lt = lb.get("transitions", [])
+        rt = rb.get("transitions", [])
+        if len(lt) != len(rt):
+            return f"block {height}: {len(lt)} transitions kept versus {len(rt)}"
+        for position, (ltx, rtx) in enumerate(zip(lt, rt)):
+            for key in ("name", "code", "fee"):
+                if ltx.get(key) != rtx.get(key):
+                    return (
+                        f"block {height}, transition {position} ({ltx.get('name')}): "
+                        f"{key} {ltx.get(key)!r} != {rtx.get(key)!r}"
+                    )
+    if len(left_blocks) != len(right_blocks):
+        return f"{len(left_blocks)} blocks recorded versus {len(right_blocks)}"
+    for key in sorted(set(left) | set(right)):
+        if key == "blocks":
+            continue
+        if canonical(left.get(key)) != canonical(right.get(key)):
+            return f"consensus.{key}: {canonical(left.get(key))} != {canonical(right.get(key))}"
+    if canonical(left) != canonical(right):
+        return "consensus sections differ in a field this comparator does not name"
+    return None
+
+
+def compare(left, right, allow_same_architecture=False, out=sys.stdout):
+    """Compare two loaded artifacts. Returns (exit_code, report_lines)."""
+    lines = []
+    failures = []
+    lp, rp = left["profile"], right["profile"]
+    ld, rd = left["diagnostic"], right["diagnostic"]
+
+    lines.append("| field | left | right |")
+    lines.append("|---|---|---|")
+    for key in sorted(set(lp) | set(rp)):
+        lines.append(f"| profile.{key} | `{canonical(lp.get(key))}` | `{canonical(rp.get(key))}` |")
+    for key in sorted(set(ld) | set(rd)):
+        lines.append(f"| diagnostic.{key} | `{canonical(ld.get(key))}` | `{canonical(rd.get(key))}` |")
+
+    if lp["target_arch"] == rp["target_arch"] and not allow_same_architecture:
+        failures.append(
+            f"both artifacts were recorded on {lp['target_arch']!r}; a cross-architecture "
+            "comparison needs two different targets (pass --allow-same-architecture for a "
+            "local two-process check)"
+        )
+    for key in ("protocol_version_start", "protocol_version_end"):
+        if lp[key] != rp[key]:
+            failures.append(
+                f"profile.{key} differs ({lp[key]} versus {rp[key]}): the recordings ran "
+                "under different protocol profiles and are not comparable"
+            )
+
+    if not failures:
+        difference = first_consensus_difference(left["consensus"], right["consensus"])
+        if difference is not None:
+            failures.append(f"consensus mismatch: {difference}")
+
+    for key in sorted(set(ld) | set(rd)):
+        if canonical(ld.get(key)) != canonical(rd.get(key)):
+            lines.append(f"note: diagnostic.{key} differs; diagnostics are recorded, not compared")
+
+    if failures:
+        for failure in failures:
+            lines.append(f"REJECT: {failure}")
+        code = EXIT_MISMATCH
+    else:
+        lines.append(
+            f"MATCH: consensus sections are identical across {lp['target_arch']} and "
+            f"{rp['target_arch']} ({len(left['consensus']['blocks'])} blocks, protocol "
+            f"{lp['protocol_version_start']} to {lp['protocol_version_end']})"
+        )
+        code = EXIT_MATCH
+    for line in lines:
+        print(line, file=out)
+    return code, lines
+
+
+def sample_artifact(arch="x86_64"):
+    return {
+        "schema": 1,
+        "profile": {
+            "target_arch": arch,
+            "target_os": "linux",
+            "pointer_width": 64,
+            "endian": "little",
+            "cpu_features": ["sse4.2"] if arch == "x86_64" else ["neon"],
+            "protocol_version_start": 13,
+            "protocol_version_end": 14,
+            "engine": None,
+        },
+        "consensus": {
+            "workload_seed": 7,
+            "reopened_at_height": 70,
+            "blocks": [
+                {
+                    "height": 1,
+                    "protocol_version": 13,
+                    "app_hash": "01" * 32,
+                    "transitions": [{"name": "IdentityCreate", "code": 0, "fee": 1000}],
+                },
+                {
+                    "height": 2,
+                    "protocol_version": 14,
+                    "app_hash": "02" * 32,
+                    "transitions": [],
+                },
+            ],
+            "final_root_hash": "02" * 32,
+            "total_credits": {
+                "total_credits_in_platform": 10,
+                "total_in_pools": 1,
+                "total_identity_balances": 9,
+                "total_specialized_balances": 0,
+                "total_in_addresses": 0,
+                "total_in_shielded_balances": 0,
+            },
+            "identity_balances": {"09" * 32: 9},
+        },
+        "diagnostic": {"elapsed_ms": 1, "block_count": 2, "engine_fuel": None},
+    }
+
+
+class _Sink:
+    def write(self, _text):
+        return None
+
+    def flush(self):
+        return None
+
+
+def self_test():
+    """Prove the comparator accepts an identical pair and rejects each
+    consensus-visible difference. Returns the number of failed checks."""
+    sink = _Sink()
+    checks = []
+
+    def expect(name, code, expected, lines=None, needle=None):
+        ok = code == expected
+        if ok and needle is not None:
+            ok = any(needle in line for line in lines)
+        checks.append((name, ok))
+        status = "ok  " if ok else "FAIL"
+        print(f"self-test {status} {name} (exit {code}, expected {expected})")
+
+    left = sample_artifact("x86_64")
+    right = sample_artifact("aarch64")
+
+    code, lines = compare(left, right, out=sink)
+    expect("identical consensus on two architectures matches", code, EXIT_MATCH, lines, "MATCH")
+
+    mutated = copy.deepcopy(right)
+    mutated["consensus"]["blocks"][1]["app_hash"] = "03" * 32
+    code, lines = compare(left, mutated, out=sink)
+    expect("one differing app hash is rejected", code, EXIT_MISMATCH, lines, "block 2: app_hash")
+
+    mutated = copy.deepcopy(right)
+    mutated["consensus"]["blocks"][0]["transitions"][0]["fee"] += 1
+    code, lines = compare(left, mutated, out=sink)
+    expect("one differing transition fee is rejected", code, EXIT_MISMATCH, lines, "fee 1000 != 1001")
+
+    mutated = copy.deepcopy(right)
+    mutated["consensus"]["blocks"][0]["transitions"][0]["code"] = 10000
+    code, lines = compare(left, mutated, out=sink)
+    expect("one differing transition code is rejected", code, EXIT_MISMATCH, lines, "code 0 != 10000")
+
+    mutated = copy.deepcopy(right)
+    mutated["consensus"]["blocks"][1]["protocol_version"] = 13
+    code, lines = compare(left, mutated, out=sink)
+    expect("a differing per-block protocol version is rejected", code, EXIT_MISMATCH, lines, "protocol_version 14 != 13")
+
+    mutated = copy.deepcopy(right)
+    mutated["consensus"]["total_credits"]["total_in_pools"] += 1
+    code, lines = compare(left, mutated, out=sink)
+    expect("a differing credit total is rejected", code, EXIT_MISMATCH, lines, "consensus.total_credits")
+
+    mutated = copy.deepcopy(right)
+    mutated["consensus"]["identity_balances"]["09" * 32] -= 1
+    code, lines = compare(left, mutated, out=sink)
+    expect("a differing identity balance is rejected", code, EXIT_MISMATCH, lines, "consensus.identity_balances")
+
+    mutated = copy.deepcopy(right)
+    mutated["consensus"]["blocks"].pop()
+    code, lines = compare(left, mutated, out=sink)
+    expect("a missing block is rejected", code, EXIT_MISMATCH, lines, "2 blocks recorded versus 1")
+
+    mutated = copy.deepcopy(right)
+    mutated["diagnostic"]["elapsed_ms"] = 999_999
+    code, lines = compare(left, mutated, out=sink)
+    expect("a differing diagnostic timing still matches, with a note", code, EXIT_MATCH, lines, "note: diagnostic.elapsed_ms differs")
+
+    mutated = copy.deepcopy(right)
+    mutated["profile"]["cpu_features"] = ["neon", "sve"]
+    code, lines = compare(left, mutated, out=sink)
+    expect("differing recorded CPU features still match", code, EXIT_MATCH, lines, "MATCH")
+
+    code, lines = compare(left, copy.deepcopy(left), out=sink)
+    expect("the same architecture twice is rejected without the flag", code, EXIT_MISMATCH, lines, "both artifacts were recorded on")
+
+    code, lines = compare(left, copy.deepcopy(left), allow_same_architecture=True, out=sink)
+    expect("the same architecture twice matches with the flag", code, EXIT_MATCH, lines, "MATCH")
+
+    mutated = copy.deepcopy(right)
+    mutated["profile"]["protocol_version_end"] = 15
+    code, lines = compare(left, mutated, out=sink)
+    expect("differing protocol profiles are rejected", code, EXIT_MISMATCH, lines, "profile.protocol_version_end differs")
+
+    mutated = copy.deepcopy(right)
+    mutated["schema"] = 99
+    try:
+        validate_shape(mutated, "in-memory")
+        code = EXIT_MATCH
+    except Malformed:
+        code = EXIT_MALFORMED
+    expect("an unknown schema is malformed", code, EXIT_MALFORMED)
+
+    try:
+        validate_shape({"schema": 1, "profile": {}, "consensus": {}}, "in-memory")
+        code = EXIT_MATCH
+    except Malformed:
+        code = EXIT_MALFORMED
+    expect("a missing section is malformed", code, EXIT_MALFORMED)
+
+    failed = [name for name, ok in checks if not ok]
+    print(f"self-test: {len(checks) - len(failed)} of {len(checks)} checks passed")
+    return len(failed)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("left", nargs="?", help="artifact recorded on the first architecture")
+    parser.add_argument("right", nargs="?", help="artifact recorded on the second architecture")
+    parser.add_argument(
+        "--allow-same-architecture",
+        action="store_true",
+        help="accept two artifacts from one target (local two-process check)",
+    )
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="exercise the comparator on in-memory artifacts and exit",
+    )
+    args = parser.parse_args(argv)
+
+    if args.self_test:
+        return EXIT_MISMATCH if self_test() else EXIT_MATCH
+
+    if not args.left or not args.right:
+        parser.error("two artifact paths are required unless --self-test is given")
+
+    try:
+        left = load(args.left)
+        right = load(args.right)
+    except Malformed as error:
+        print(f"MALFORMED: {error}", file=sys.stderr)
+        return EXIT_MALFORMED
+
+    code, _lines = compare(left, right, allow_same_architecture=args.allow_same_architecture)
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

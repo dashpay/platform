@@ -1,0 +1,172 @@
+name: "Determinism: cross-architecture replay"
+
+# Records one seeded replay (protocol upgrade plus node restart) on an x86_64
+# and on an aarch64 hosted runner, then compares the two recordings. The
+# comparator is exercised on its own failure path on every run, so a green
+# result means "two architectures agreed", not "the comparison was skipped".
+# See book/src/testing/determinism-and-fuzzing.md.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 21 * * *" # 21:00 UTC daily, one hour before the long-running nightly
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - master
+      - "v*-dev"
+    paths:
+      - ".github/workflows/tests-rs-determinism.yml"
+      - ".github/scripts/compare-determinism-artifacts.py"
+      - "packages/rs-drive-abci/tests/strategy_tests/determinism_artifact.rs"
+      - "packages/rs-drive-abci/tests/strategy_tests/test_cases/determinism_tests.rs"
+      - "packages/rs-drive-abci/tests/strategy_tests/execution.rs"
+      - "packages/rs-drive-abci/tests/strategy_tests/strategy.rs"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  record:
+    name: Record replay (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    # Provisional bound: one debug build of the strategy test binary plus a
+    # 260-block simulation. Revisit after the first nightly timings.
+    timeout-minutes: 90
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+          platform: linux/${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64' }}
+
+      - name: Install librocksdb
+        uses: ./.github/actions/librocksdb
+
+      - name: Resolve the multiarch snappy path
+        id: snappy
+        run: |
+          set -euo pipefail
+          multiarch="$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
+          test -f "/usr/lib/${multiarch}/libsnappy.a"
+          echo "lib_dir=/usr/lib/${multiarch}" >> "$GITHUB_OUTPUT"
+
+      - name: Record the replay
+        env:
+          PLATFORM_DETERMINISM_ARTIFACT_DIR: ${{ runner.temp }}/determinism
+          RUST_MIN_STACK: "4194304"
+          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
+          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
+          SNAPPY_STATIC: "${{ steps.snappy.outputs.lib_dir }}/libsnappy.a"
+          SNAPPY_LIB_DIR: "${{ steps.snappy.outputs.lib_dir }}"
+        run: |
+          set -euo pipefail
+          cargo test \
+            --package drive-abci \
+            --test strategy_tests \
+            --all-features \
+            --locked \
+            -- determinism_tests determinism_artifact
+          artifact="${PLATFORM_DETERMINISM_ARTIFACT_DIR}/determinism-${{ matrix.arch }}.json"
+          test -s "${artifact}"
+          python3 -c 'import json,sys; a=json.load(open(sys.argv[1])); print("schema", a["schema"], "profile", json.dumps(a["profile"]), "blocks", len(a["consensus"]["blocks"]))' "${artifact}"
+
+      - name: Upload the artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: determinism-${{ matrix.arch }}
+          path: ${{ runner.temp }}/determinism/determinism-${{ matrix.arch }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+  compare:
+    name: Compare x86_64 with aarch64
+    needs: record
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Download both recordings
+        uses: actions/download-artifact@v4
+        with:
+          pattern: determinism-*
+          path: ${{ runner.temp }}/determinism
+          merge-multiple: true
+
+      - name: Exercise the comparator on known differences
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/compare-determinism-artifacts.py --self-test
+
+      - name: Compare the two recordings
+        id: compare
+        run: |
+          set -euo pipefail
+          dir="${{ runner.temp }}/determinism"
+          ls -l "${dir}"
+          report="${dir}/report.md"
+          set +e
+          python3 .github/scripts/compare-determinism-artifacts.py \
+            "${dir}/determinism-x86_64.json" "${dir}/determinism-aarch64.json" \
+            | tee "${report}"
+          rc=${PIPESTATUS[0]}
+          set -e
+          {
+            echo "## Determinism: x86_64 versus aarch64"
+            echo
+            cat "${report}"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${rc}" -ne 0 ]; then
+            echo "::error::consensus-visible mismatch between the x86_64 and aarch64 recordings (exit ${rc}); see the report above"
+            exit "${rc}"
+          fi
+
+      - name: Reject a perturbed recording
+        # Flip one byte of one application hash in the x86_64 recording and
+        # require the comparator to reject it against the aarch64 recording.
+        # Proves the real comparison above can fail, on every run.
+        run: |
+          set -euo pipefail
+          dir="${{ runner.temp }}/determinism"
+          python3 - "${dir}/determinism-x86_64.json" "${dir}/determinism-x86_64-perturbed.json" <<'PY'
+          import json, sys
+          artifact = json.load(open(sys.argv[1]))
+          block = artifact["consensus"]["blocks"][-1]
+          first = "1" if block["app_hash"][0] != "1" else "2"
+          block["app_hash"] = first + block["app_hash"][1:]
+          json.dump(artifact, open(sys.argv[2], "w"), indent=2)
+          print("perturbed block", block["height"], "app_hash")
+          PY
+          if python3 .github/scripts/compare-determinism-artifacts.py \
+            "${dir}/determinism-x86_64-perturbed.json" "${dir}/determinism-aarch64.json"; then
+            echo "::error::the comparator accepted a recording with a changed application hash"
+            exit 1
+          fi
+          echo "the comparator rejected the perturbed recording, as it must"
