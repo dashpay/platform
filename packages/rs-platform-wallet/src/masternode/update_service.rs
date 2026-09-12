@@ -87,7 +87,38 @@ pub async fn execute_masternode_update_service<S: TransactionSigner + ?Sized + S
 ) -> Result<Txid, PlatformWalletError> {
     let signed =
         prepare_masternode_update_service(wallet, spv, params, operator_secret, signer).await?;
-    wallet.core().broadcast_finalized_transaction(&signed).await
+    broadcast_special_transaction_guarded(wallet.core(), &signed).await
+}
+
+/// Broadcast a prepared masternode special transaction under the wallet
+/// generation's lifecycle gate. The prepare paths drop every manager lock
+/// across their awaits (network fetches, the external signer), so the host
+/// can remove — or re-create — the wallet between signing and this send;
+/// broadcasting then would publish a dead generation's transaction, which
+/// can conflict with inputs a re-created generation has since selected
+/// (`dashpay/platform#4185`). The gate is held across BOTH the liveness
+/// check and the send, so a teardown cannot interleave between them —
+/// the same protection `core_wallet_broadcast_signed_transaction` gives
+/// the prepare-then-broadcast flow. On a dead generation the transaction
+/// is abandoned (generation-bound, so a logged no-op after a genuine
+/// removal) and the send refused.
+pub(crate) async fn broadcast_special_transaction_guarded<B>(
+    core: &CoreWallet<B>,
+    signed: &SignedCoreTransaction,
+) -> Result<Txid, PlatformWalletError>
+where
+    B: TransactionBroadcaster + ?Sized,
+{
+    let _lifecycle = core.generation_payment_guard().await;
+    if !core.is_current_generation().await {
+        core.abandon_transaction(signed).await;
+        return Err(PlatformWalletError::WalletNotFound(
+            "the wallet was removed (or re-created) while the transaction was being \
+             prepared; it was NOT broadcast and its funding reservation was reconciled"
+                .to_string(),
+        ));
+    }
+    core.broadcast_finalized_transaction(signed).await
 }
 
 /// Everything [`execute_masternode_update_service`] does except the
@@ -193,7 +224,7 @@ pub async fn execute_masternode_update_service_with_values<S: TransactionSigner 
         signer,
     )
     .await?;
-    wallet.core().broadcast_finalized_transaction(&signed).await
+    broadcast_special_transaction_guarded(wallet.core(), &signed).await
 }
 
 /// Prepare-only sibling of
@@ -421,6 +452,16 @@ pub(crate) fn validate_update_service_values(
         ),
     ] {
         let Some(port) = port else { continue };
+        // Not a consensus rule off mainnet — Core's
+        // `CheckProviderNetworkFields` accepts a single zero platform port
+        // in a v2 payload (only BOTH zero collides in its dup-ports
+        // equality) — but no node can serve on port 0, so a caller-supplied
+        // zero is an input error caught before funding.
+        if port == 0 {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the {name} port must not be 0"
+            )));
+        }
         if on_mainnet && port != mainnet_default {
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "the {name} port must be {mainnet_default} on mainnet, got {port}"
@@ -1206,6 +1247,14 @@ mod tests {
                 "the Core service port as platform P2P port",
                 values("34.214.48.68:19999", [0x77; 20], 19999, 22001),
             ),
+            (
+                "a zero platform P2P port",
+                values("34.214.48.68:19999", [0x77; 20], 0, 22001),
+            ),
+            (
+                "a zero platform HTTP port",
+                values("34.214.48.68:19999", [0x77; 20], 22000, 0),
+            ),
         ] {
             assert!(
                 check(Network::Testnet, &v).is_err(),
@@ -1311,6 +1360,54 @@ mod tests {
             &summaries,
         )
         .expect("re-asserting the target's own node id passes");
+    }
+
+    /// Regression for the review's teardown race on the execute paths:
+    /// they sign, then broadcast, and the host can remove (or re-create)
+    /// the wallet in between. The guarded broadcast must take the
+    /// generation gate, see the dead generation, refuse the send, and
+    /// leave the broadcaster untouched.
+    #[tokio::test]
+    async fn removed_wallet_transaction_is_refused_not_broadcast() {
+        let (wallet_manager, wallet_id, generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let broadcaster = Arc::new(RecordingBroadcaster::default());
+        let core = CoreWallet::new(
+            sdk,
+            wallet_manager.clone(),
+            wallet_id,
+            broadcaster.clone(),
+            generation,
+        );
+
+        let entry = operator_entry(0x44, true);
+        let placeholder = prepare_update_service_placeholder(&entry, Some(26656), ScriptBuf::new())
+            .expect("placeholder");
+        let prepared =
+            build_sign_update_service(&core, placeholder, Zeroizing::new(OPERATOR_SECRET), &signer)
+                .await
+                .expect("signs");
+
+        // The host removes the wallet between signing and the send.
+        wallet_manager
+            .write()
+            .await
+            .remove_wallet(&wallet_id)
+            .expect("the test wallet is registered");
+
+        let err = broadcast_special_transaction_guarded(&core, &prepared)
+            .await
+            .expect_err("a dead generation's transaction must be refused");
+        assert!(matches!(err, PlatformWalletError::WalletNotFound(_)));
+        assert!(
+            broadcaster
+                .sent
+                .lock()
+                .expect("broadcaster lock")
+                .is_empty(),
+            "nothing may reach the network for a removed wallet"
+        );
     }
 
     #[tokio::test]
