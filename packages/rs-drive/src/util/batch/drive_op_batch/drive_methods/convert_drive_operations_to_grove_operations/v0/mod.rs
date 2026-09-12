@@ -1,7 +1,6 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::{DriveOperation, GroveDbOpBatch};
 use dpp::block::block_info::BlockInfo;
@@ -37,16 +36,23 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<GroveDbOpBatch, Error> {
+        self.prepare_drive_operations_time_range_ttl(
+            &drive_batch_operations,
+            block_info,
+            transaction,
+            platform_version,
+        )?;
         let ops = drive_batch_operations
             .into_iter()
             .map(|drive_op| {
-                let inner_drive_operations = drive_op.into_low_level_drive_operations(
-                    self,
-                    &mut None,
-                    block_info,
-                    transaction,
-                    platform_version,
-                )?;
+                let inner_drive_operations = drive_op
+                    .into_low_level_drive_operations_after_ttl_drain(
+                        self,
+                        &mut None,
+                        block_info,
+                        transaction,
+                        platform_version,
+                    )?;
                 Ok(LowLevelDriveOperation::grovedb_operations_consume(
                     inner_drive_operations,
                 ))

@@ -2261,6 +2261,7 @@ fn beat_bucket_counts_serve_trending() {
         range_seconds: 3600,
         step_seconds: 900,
         phase_seconds: 0,
+        ttl_seconds: None,
     };
     let resolved = vec![ResolvedTimeRange {
         transform: transform.clone(),
@@ -2403,6 +2404,7 @@ fn beat_synthesis_over_bucketed_index_is_refused() {
                 range_seconds: 3600,
                 step_seconds: 900,
                 phase_seconds: 0,
+                ttl_seconds: None,
             },
         }],
         sub_queries: vec![],

@@ -3566,6 +3566,7 @@ mod time_range_picker_tests {
                     range_seconds: 6 * HOUR_SECONDS,
                     step_seconds: 2 * HOUR_SECONDS,
                     phase_seconds: 0,
+                    ttl_seconds: None,
                 }),
             ),
         ]
@@ -3585,6 +3586,7 @@ mod time_range_picker_tests {
                 range_seconds: 6 * HOUR_SECONDS,
                 step_seconds: 2 * HOUR_SECONDS,
                 phase_seconds: 0,
+                ttl_seconds: None,
             },
         }]
     }

@@ -2,7 +2,7 @@ use super::EmptyTreeInsertMode;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::fees::op::LowLevelDriveOperation::{EphemeralGroveOperation, GroveOperation};
 use crate::fees::op::{LowLevelDriveOperation, LowLevelDriveOperationTreeTypeConverter};
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::PathKeyInfo;
@@ -11,10 +11,50 @@ use crate::util::object_size_info::PathKeyInfo::{
 };
 use crate::util::storage_flags::StorageFlags;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::GroveOp;
 use grovedb::element::IndexAxis;
 use grovedb::{TransactionArg, TreeType};
+
+/// Whether the pending tree `drive_operation` would create is already
+/// covered by `existing_operations` — the same insert queued by an earlier
+/// document of the batch, or a queued deletion of that tree, which this
+/// insert cancels (the deletion is removed here).
+///
+/// Operations retagged for a TTL'd (ephemeral) subtree are the same
+/// pending trees in a different fee class, so both tags take part: a
+/// grouped create whose predecessor already queued the new live bucket
+/// must reuse it rather than queue the tree twice.
+fn pending_tree_already_queued(
+    existing_operations: &mut Vec<LowLevelDriveOperation>,
+    drive_operation: &LowLevelDriveOperation,
+) -> Result<bool, Error> {
+    let (GroveOperation(candidate) | EphemeralGroveOperation(candidate)) = drive_operation else {
+        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+            "an empty-tree insert must be a grove operation",
+        )));
+    };
+    let mut i = 0;
+    while i < existing_operations.len() {
+        let (GroveOperation(previous) | EphemeralGroveOperation(previous)) =
+            &existing_operations[i]
+        else {
+            i += 1;
+            continue;
+        };
+        if previous == candidate {
+            return Ok(true);
+        }
+        if previous.path == candidate.path
+            && previous.key == candidate.key
+            && matches!(previous.op, GroveOp::DeleteTree(_, _))
+        {
+            existing_operations.remove(i);
+            return Ok(true);
+        }
+        i += 1;
+    }
+    Ok(false)
+}
 
 impl Drive {
     /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.
@@ -101,31 +141,7 @@ impl Drive {
                 let drive_operation = build_op(path.clone(), key.to_vec())?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
-                    let mut i = 0;
-                    let mut found = false;
-                    while i < existing_operations.len() {
-                        // we need to check every drive operation
-                        // if it already exists then just ignore things
-                        // if we had a delete then we need to remove the delete
-                        let previous_drive_operation = &existing_operations[i];
-                        if previous_drive_operation == &drive_operation {
-                            found = true;
-                            break;
-                        } else if let GroveOperation(grove_op) = previous_drive_operation {
-                            if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
-                                && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
-                            {
-                                found = true;
-                                existing_operations.remove(i);
-                                break;
-                            } else {
-                                i += 1;
-                            }
-                        } else {
-                            i += 1;
-                        }
-                    }
+                    let found = pending_tree_already_queued(existing_operations, &drive_operation)?;
                     if !found {
                         let has_raw = self.grove_has_raw(
                             path.as_slice().into(),
@@ -164,31 +180,7 @@ impl Drive {
                 let drive_operation = build_op(path.clone(), key.to_vec())?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
-                    let mut i = 0;
-                    let mut found = false;
-                    while i < existing_operations.len() {
-                        // we need to check every drive operation
-                        // if it already exists then just ignore things
-                        // if we had a delete then we need to remove the delete
-                        let previous_drive_operation = &existing_operations[i];
-                        if previous_drive_operation == &drive_operation {
-                            found = true;
-                            break;
-                        } else if let GroveOperation(grove_op) = previous_drive_operation {
-                            if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
-                                && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
-                            {
-                                found = true;
-                                existing_operations.remove(i);
-                                break;
-                            } else {
-                                i += 1;
-                            }
-                        } else {
-                            i += 1;
-                        }
-                    }
+                    let found = pending_tree_already_queued(existing_operations, &drive_operation)?;
                     if !found {
                         let has_raw = self.grove_has_raw(
                             path.as_slice().into(),
@@ -225,31 +217,7 @@ impl Drive {
                 let drive_operation = build_op(path_items, key.to_vec())?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
-                    let mut i = 0;
-                    let mut found = false;
-                    while i < existing_operations.len() {
-                        // we need to check every drive operation
-                        // if it already exists then just ignore things
-                        // if we had a delete then we need to remove the delete
-                        let previous_drive_operation = &existing_operations[i];
-                        if previous_drive_operation == &drive_operation {
-                            found = true;
-                            break;
-                        } else if let GroveOperation(grove_op) = previous_drive_operation {
-                            if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
-                                && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
-                            {
-                                found = true;
-                                existing_operations.remove(i);
-                                break;
-                            } else {
-                                i += 1;
-                            }
-                        } else {
-                            i += 1;
-                        }
-                    }
+                    let found = pending_tree_already_queued(existing_operations, &drive_operation)?;
                     if !found {
                         let has_raw = self.grove_has_raw(
                             path.as_ref().into(),
@@ -286,31 +254,7 @@ impl Drive {
                 let drive_operation = build_op(path_items, key.to_vec())?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
-                    let mut i = 0;
-                    let mut found = false;
-                    while i < existing_operations.len() {
-                        // we need to check every drive operation
-                        // if it already exists then just ignore things
-                        // if we had a delete then we need to remove the delete
-                        let previous_drive_operation = &existing_operations[i];
-                        if previous_drive_operation == &drive_operation {
-                            found = true;
-                            break;
-                        } else if let GroveOperation(grove_op) = previous_drive_operation {
-                            if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
-                                && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
-                            {
-                                found = true;
-                                existing_operations.remove(i);
-                                break;
-                            } else {
-                                i += 1;
-                            }
-                        } else {
-                            i += 1;
-                        }
-                    }
+                    let found = pending_tree_already_queued(existing_operations, &drive_operation)?;
                     if !found {
                         let has_raw = self.grove_has_raw(
                             path.as_ref().into(),

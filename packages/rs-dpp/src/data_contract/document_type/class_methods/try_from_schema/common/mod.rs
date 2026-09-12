@@ -928,6 +928,40 @@ fn parse_indices(
                                     ));
                                 }
                             }
+                            // The TTL cap is likewise a versioned system
+                            // limit — it is what makes billing TTL'd bytes
+                            // at a flat processing rate honest, so retuning
+                            // it is a protocol-version decision. The lower
+                            // bound (`ttl >= range`) is structural and
+                            // checked in `Index` parsing.
+                            if let Some(ttl_seconds) = transform.ttl_seconds {
+                                if let Some(max_ttl) = ctx
+                                    .platform_version
+                                    .system_limits
+                                    .max_time_range_ttl_seconds
+                                {
+                                    if ttl_seconds > max_ttl {
+                                        return Err(consensus_or_protocol_data_contract_error(
+                                            DataContractError::InvalidContractStructure(format!(
+                                                "timeRange.ttl ({} seconds) exceeds the maximum \
+                                                 of {} seconds: the flat ephemeral-storage \
+                                                 pricing TTL'd entries bill under is only an \
+                                                 honest rate while the lifetime it covers is \
+                                                 bounded",
+                                                ttl_seconds, max_ttl
+                                            )),
+                                        ));
+                                    }
+                                } else {
+                                    return Err(consensus_or_protocol_data_contract_error(
+                                        DataContractError::InvalidContractStructure(
+                                            "timeRange.ttl is not supported by this protocol \
+                                             version"
+                                                .to_string(),
+                                        ),
+                                    ));
+                                }
+                            }
                             let source = transform.source.as_str();
                             let is_system_timestamp = matches!(
                                 source,
@@ -1131,9 +1165,45 @@ fn parse_indices(
     // different grids (or not at all) — each grid forks into its own index
     // level, keyed by the property name qualified with the grid parameters
     // (`TimeRangeTransform::storage_key`), so a bucketed level never shares
-    // a keyspace with a plain level or with another grid's level. No
-    // cross-index agreement rule is needed; identical grids simply share
-    // one level.
+    // a keyspace with a plain level or with another grid's level. The ONE
+    // cross-index agreement rule is the TTL: it is deliberately excluded
+    // from the grid identity (declaring or changing it must not fork the
+    // storage level), so two indexes sharing a grid on one field share one
+    // level's subtrees — and a level cannot have two lifecycles. Identical
+    // grids must declare identical TTLs (including both declaring none).
+    for (name_a, index_a) in indices.iter() {
+        let Some(transform_a) = &index_a.time_range else {
+            continue;
+        };
+        for (name_b, index_b) in indices.iter() {
+            if name_b <= name_a {
+                continue;
+            }
+            let Some(transform_b) = &index_b.time_range else {
+                continue;
+            };
+            if transform_a.source == transform_b.source
+                && transform_a.range_seconds == transform_b.range_seconds
+                && transform_a.step_seconds == transform_b.step_seconds
+                && transform_a.phase_seconds == transform_b.phase_seconds
+                && transform_a.ttl_seconds != transform_b.ttl_seconds
+            {
+                return Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "indexes \"{}\" and \"{}\" bucket \"{}\" with the same grid but \
+                         different TTLs ({:?} vs {:?} seconds): indexes sharing a grid share \
+                         its storage level, and one level cannot have two lifecycles — \
+                         declare the same ttl on both (or on neither)",
+                        name_a,
+                        name_b,
+                        transform_a.source,
+                        transform_a.ttl_seconds,
+                        transform_b.ttl_seconds
+                    )),
+                ));
+            }
+        }
+    }
 
     let index_structure =
         IndexLevel::try_from_indices(indices.values(), ctx.name, ctx.platform_version)?;

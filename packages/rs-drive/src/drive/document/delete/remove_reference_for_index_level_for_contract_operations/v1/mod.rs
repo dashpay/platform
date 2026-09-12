@@ -53,6 +53,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        skip_missing_expired_entry: bool,
         event_id: [u8; 32],
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
@@ -62,6 +63,57 @@ impl Drive {
             return Ok(());
         }
         let mut key_info_path = index_path_info.convert_to_key_info_path();
+
+        // TTL: for an entry in an expired-but-standing bucket, drainage may
+        // already have removed the deeper trees (the group's `[0]` and value
+        // tree go before the bucket does). The entry path is checked at
+        // full granularity and the whole reference removal skipped when it
+        // is gone — the drain took it, and there is nothing left to
+        // remove. Only set on the stateful path, so every KeyInfo below is
+        // a KnownKey.
+        if skip_missing_expired_entry {
+            let mut path_segments: Vec<Vec<u8>> = key_info_path
+                .0
+                .iter()
+                .map(|key_info| match key_info {
+                    KnownKey(key) => Ok(key.clone()),
+                    _ => Err(Error::Drive(
+                        crate::error::drive::DriveError::CorruptedCodeExecution(
+                            "expired-entry skip is stateful-only; its path must be known",
+                        ),
+                    )),
+                })
+                .collect::<Result<_, _>>()?;
+            // The layouts that store the reference inside a `[0]` subtree
+            // must include that segment in the walk: the drain drops the
+            // flat `[0]` tree BEFORE its value tree, and a budget boundary
+            // between the two leaves the value tree standing with the
+            // `[0]` gone — every shallower segment then exists while the
+            // delete below would target the missing subtree. Mirrors the
+            // layout dispatch used for the actual delete: the indexOnly
+            // terminal and the non-unique / contested / null layouts use
+            // `[0]` trees; the unique layout stores the reference AT key
+            // `[0]` as a bare element of the value tree.
+            let uses_zero_subtree = index_type.terminal.is_some()
+                || index_type.index_type == NonUniqueIndex
+                || index_type.index_type == ContestedResourceIndex
+                || any_fields_null;
+            if uses_zero_subtree {
+                path_segments.push(vec![0]);
+            }
+            // The document-type path plus the (grid-qualified) index level
+            // key exist for every registered contract: the flag is only
+            // ever set for a bucketed index, whose level tree is created at
+            // contract registration — so the walk starts below them.
+            if !self.expired_entry_path_exists(
+                &path_segments,
+                usize::from(CONTRACT_DOCUMENTS_PATH_HEIGHT) + 1,
+                transaction,
+                platform_version,
+            )? {
+                return Ok(());
+            }
+        }
 
         let document_type = document_and_contract_info.document_type;
 
