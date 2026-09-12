@@ -763,8 +763,9 @@ extension PlatformWalletManager {
     ///
     /// The identity is debited `amount` plus the metered fee plus the
     /// shielded compute fee (`estimateShieldedFee(kind: .shieldFromIdentity)`).
-    /// Returns the identity's proven post-debit balance, or `0` when the
-    /// execution result carried no balance proof.
+    /// Returns the identity's proven post-debit balance; the wallet only
+    /// confirms on the identity's own balance proof, and any other result
+    /// throws `.shieldedSpendUnconfirmed` (do not resubmit).
     ///
     /// Heavy CPU work (Halo 2 proof + the identity signature) runs on a
     /// detached task so the caller's actor isn't blocked.

@@ -1202,9 +1202,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
 /// key (the same handle credit transfers use). The caller retains ownership.
 ///
 /// `out_new_balance`, when non-null, receives the identity's proven
-/// post-debit balance (0 when the result proof carried none). The wallet's
-/// managed identity is updated and persisted with that balance before this
-/// returns.
+/// post-debit balance; the wallet's managed identity is updated and persisted
+/// with it before this returns. A result proof that is not this identity's
+/// balance proof is reported as `ErrorShieldedSpendUnconfirmed` (the
+/// transition may have executed; do not resubmit, the next sync reconciles).
 ///
 /// A signer that reports the TRANSFER key unavailable surfaces as code 31
 /// (`ErrorSigningKeyUnavailable`), the same key-repair signal the other
@@ -1263,7 +1264,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity(
     match result {
         Ok(new_balance) => {
             if !out_new_balance.is_null() {
-                *out_new_balance = new_balance.unwrap_or(0);
+                *out_new_balance = new_balance;
             }
             PlatformWalletFFIResult::ok()
         }

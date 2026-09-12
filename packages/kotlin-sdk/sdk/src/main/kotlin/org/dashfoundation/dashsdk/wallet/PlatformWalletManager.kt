@@ -1652,8 +1652,9 @@ class PlatformWalletManager(
      * @param walletId the 32-byte wallet id.
      * @param identityId the 32-byte funding identity id.
      * @param amount credits to shield (1 DASH = 1e11).
-     * @return the identity's proven post-debit credit balance, or 0 when the
-     *   result proof carried none (the transition still succeeded).
+     * @return the identity's proven post-debit credit balance; the wallet only
+     *   confirms on the identity's own balance proof, any other result throws
+     *   the shielded-spend-unconfirmed error (do not resubmit).
      */
     suspend fun shieldedShieldFromIdentity(
         walletId: ByteArray,
