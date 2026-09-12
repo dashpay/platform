@@ -462,30 +462,33 @@ mod tests {
         }
     }
 
-    /// At least one document written before `split` was deleted at or after
-    /// `from`, so the history-driven refund path priced bytes that were
-    /// persisted before the restart.
-    fn assert_deleted_earlier_document(activity: &DocumentActivity, split: u64, from: u64) {
-        let created_before_split = activity
+    /// At least one document written at or before `created_by` was deleted at
+    /// or after `deleted_from`, so the history-driven refund path priced bytes
+    /// that were persisted before that point (the restart, or the activation
+    /// of a new fee generation).
+    fn assert_deleted_earlier_document(
+        activity: &DocumentActivity,
+        created_by: u64,
+        deleted_from: u64,
+    ) {
+        let created_before = activity
             .created
-            .range(..=split)
+            .range(..=created_by)
             .flat_map(|(_, ids)| ids.iter().copied())
             .collect::<BTreeSet<_>>();
         let deleted_after = activity
             .deleted
-            .range(from..)
+            .range(deleted_from..)
             .flat_map(|(_, ids)| ids.iter().copied())
             .collect::<BTreeSet<_>>();
         assert!(
-            !created_before_split.is_empty(),
-            "expected documents to be created before block {split}"
+            !created_before.is_empty(),
+            "expected documents to be created by block {created_by}"
         );
         assert!(
-            deleted_after
-                .iter()
-                .any(|id| created_before_split.contains(id)),
-            "expected a document created before block {split} to be deleted from block {from}; \
-             deleted {deleted_after:?}"
+            deleted_after.iter().any(|id| created_before.contains(id)),
+            "expected a document created by block {created_by} to be deleted from block \
+             {deleted_from}; deleted {deleted_after:?}"
         );
     }
 
@@ -562,7 +565,11 @@ mod tests {
                  the epoch that activated it"
             );
             assert_eq!(run.snapshot.fee_history, run.fee_history_at_split);
-            assert_deleted_earlier_document(&run.activity, first_blocks, activation_block);
+            // A delete that crosses the boundary: written under the genesis
+            // generation, removed under the doubled one.
+            assert_deleted_earlier_document(&run.activity, activation_block - 1, activation_block);
+            // A delete that crosses the split: written before the restart point,
+            // removed after it.
             assert_deleted_earlier_document(&run.activity, first_blocks, first_blocks + 1);
             runs.push(run);
         }
