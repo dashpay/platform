@@ -49,8 +49,9 @@ in `FeeStorageVersion`:
 | `storage_seek_cost` | 2,000 | Cost of a single disk seek |
 
 Storage fees are **refundable**: when data is deleted, a portion of the original
-storage fee is returned to the identity that paid it (see [Refunds](#refunds)
-below).
+storage fee becomes a refund for the owner recorded in the stored bytes' storage
+flags, which is not always the identity that paid the fee (see
+[Refunds](#refunds) below).
 
 The documents of a type that declares a `ttl` (protocol version 14) are the exception: they
 carry no storage flags and refund nothing, their bytes are priced for the time they live, and
