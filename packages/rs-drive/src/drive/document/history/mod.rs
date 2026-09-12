@@ -241,10 +241,11 @@ impl DocumentHistoryQueryV1 {
             query.insert_key(self.document_id.to_vec());
             PathQuery::new(path, SizedQuery::new(query, None, None))
         });
-        Ok(PathQuery::merge(
-            queries.iter().collect(),
-            &version.drive.grove_version,
-        )?)
+        let mut merged = PathQuery::merge(queries.iter().collect(), &version.drive.grove_version)?;
+        // One exact key per branch. The finite limit lets the verifier map
+        // every queried key to a proven element or a proven absence.
+        merged.query.limit = Some(queries.len() as u16);
+        Ok(merged)
     }
 
     fn lifecycle(
@@ -506,7 +507,10 @@ impl Drive {
             &proof.metadata_proof,
             &query.metadata_query(version)?,
             grovedb::VerifyOptions {
-                absence_proofs_for_non_existing_searched_keys: false,
+                // The lifecycle is derived from which metadata keys are missing,
+                // so every queried key must come back as a proven element or a
+                // proven absence rather than being silently left out.
+                absence_proofs_for_non_existing_searched_keys: true,
                 verify_proof_succinctness: true,
                 include_empty_trees_in_result: true,
             },
