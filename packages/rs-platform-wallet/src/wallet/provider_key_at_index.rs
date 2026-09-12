@@ -428,6 +428,40 @@ impl PlatformWallet {
             .max(PROVIDER_KEY_WINDOW))
     }
 
+    /// One past the highest voting-key index the wallet's managed
+    /// provider-voting address pool holds an entry for. Unlike operator
+    /// keys — whose ownership is resolved by a derive-and-compare scan
+    /// over a floored window — voting ownership joins against the pool's
+    /// ACTUAL persisted entries (key-wallet's
+    /// `check_provider_voting_key_in_transaction_for_match` walks the
+    /// pool's address index, and hosts join their persisted address
+    /// rows), so a rotation must select an index the pool registered.
+    ///
+    /// Blocking (wallet-manager `blocking_read` — never call from an async
+    /// runtime worker); errors when the wallet was concurrently removed.
+    pub fn provider_voting_tracked_window(&self) -> Result<u32, PlatformWalletError> {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+        let wm = self.wallet_manager().blocking_read();
+        let info = wm
+            .get_wallet_info(&self.wallet_id())
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
+        Ok(info
+            .core_wallet
+            .accounts
+            .provider_voting_keys
+            .as_ref()
+            .and_then(|acct| {
+                acct.managed_account_type()
+                    .address_pools()
+                    .iter()
+                    .filter_map(|pool| pool.highest_generated)
+                    .max()
+            })
+            .map(|highest| highest.saturating_add(1))
+            .unwrap_or(0))
+    }
+
     /// Derive this wallet's provider key of `kind` at `index`.
     ///
     /// Public-only when `resolved_seed` is `None` and `include_private`
