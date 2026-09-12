@@ -144,6 +144,55 @@ class KeystoreDeviceLockedDenialTest {
     }
 
     @Test
+    fun shouldMapDeviceBoundIdentityAliasDenialToTypedException() {
+        // MO-972. KEYS_ALIAS_DEVICE_BOUND carries setUnlockedDeviceRequired
+        // but NO auth gate, so — exactly like MASTER_ALIAS — a Keystore
+        // "user not authenticated" from it can only be the unlocked-device
+        // denial. Left unclassified it reached KeystoreSigner looking like an
+        // expired auth window on a policy that HAS no auth window, and the
+        // wallet reported "Keystore auth window expired" one second after a
+        // successful biometric.
+        val manager = managerSampling(
+            DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false),
+        )
+        val denial = SimulatedUserNotAuthenticatedException()
+
+        val thrown = assertThrows(KeystoreDeviceLockedException::class.java) {
+            manager.rethrowClassifyingDeviceLockedDenial(
+                denial,
+                KeystoreManager.KEYS_ALIAS_DEVICE_BOUND,
+                operation = "decrypt",
+            )
+        }
+        assertEquals(KeystoreManager.KEYS_ALIAS_DEVICE_BOUND, thrown.alias)
+        assertEquals("decrypt", thrown.operation)
+        assertFalse(thrown.deviceReportsLocked)
+        assertSame(denial, thrown.cause)
+    }
+
+    @Test
+    fun shouldRethrowUnboundAliasDenialsUnclassified() {
+        // The *_UNBOUND aliases carry NEITHER gate, so a denial there is not
+        // a lock denial at all. Classifying it would promise "retry after
+        // unlock" for a failure no unlock can fix, and would send the
+        // degradation ladders chasing a device defect that is not the one
+        // they heal.
+        val manager = managerSampling(
+            DeviceLockState(isDeviceLocked = true, isKeyguardLocked = true),
+        )
+        for (alias in listOf(
+            KeystoreManager.MASTER_ALIAS_UNBOUND,
+            KeystoreManager.KEYS_ALIAS_DEVICE_BOUND_UNBOUND,
+        )) {
+            val raw = SimulatedUserNotAuthenticatedException()
+            val thrown = assertThrows(SimulatedUserNotAuthenticatedException::class.java) {
+                manager.rethrowClassifyingDeviceLockedDenial(raw, alias, operation = "decrypt")
+            }
+            assertSame(raw, thrown)
+        }
+    }
+
+    @Test
     fun shouldRethrowAuthGatedAliasUserNotAuthenticatedUnclassified() {
         // The auth-gated identity-keys alias' NORMAL pre-prompt contract:
         // UserNotAuthenticatedException means "auth window closed" and must
