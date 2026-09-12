@@ -119,7 +119,13 @@ fn should_record_a_contract_layer_with_its_documents_on_top() {
     // fixture. Documents are read most and sit at the root of the layer; the
     // contract itself and everything else hang below.
     let contract = &json["layer_shapes"]["contracts.contract"];
-    assert_eq!(contract["origin"], "fixture contracts_with_documents@14");
+    assert_eq!(
+        contract["origin"],
+        format!(
+            "fixture contracts_with_documents@{}",
+            PlatformVersion::latest().protocol_version
+        )
+    );
     assert_eq!(contract["tree"]["hex"], "01");
     assert_eq!(contract["tree"]["left"]["hex"], "00");
     assert_eq!(contract["tree"]["right"]["hex"], "02");
@@ -1649,6 +1655,58 @@ mod fixtures {
         conformance_of(&drive, "expiring_documents", run);
     }
 
+    /// A live contract's credit bucket beside a wiped contract's retained
+    /// bucket, written as raw elements: the bucket operations that create
+    /// them arrive with a later change, and the layout is what they must
+    /// produce.
+    fn contract_credits(run: &mut FixtureRun) {
+        use crate::drive::contract::balances::{contract_credits_path, contract_credits_root_path};
+        use grovedb::Element;
+        use grovedb_path::SubtreePath;
+
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let grove_version = &platform_version.drive.grove_version;
+
+        for (contract_id, element, credits) in [
+            ([1u8; 32], Element::empty_sum_tree(), 700),
+            (
+                [2u8; 32],
+                Element::new_not_summed(Element::empty_sum_tree())
+                    .expect("a sum tree can be wrapped"),
+                5_000,
+            ),
+        ] {
+            drive
+                .grove
+                .insert(
+                    SubtreePath::from(&contract_credits_root_path()),
+                    &contract_id,
+                    element,
+                    None,
+                    None,
+                    grove_version,
+                )
+                .unwrap()
+                .expect("expected to insert the contract sum tree");
+            for position in [0u16, 1] {
+                drive
+                    .grove
+                    .insert(
+                        SubtreePath::from(&contract_credits_path(&contract_id)),
+                        &position.to_be_bytes(),
+                        Element::new_sum_item(credits),
+                        None,
+                        None,
+                        grove_version,
+                    )
+                    .unwrap()
+                    .expect("expected to insert the bucket sum item");
+            }
+        }
+        conformance_of(&drive, "contract_credits", run);
+    }
+
     /// Runs every fixture
     pub(super) fn run_all() -> FixtureRun {
         let mut run = FixtureRun::default();
@@ -1666,6 +1724,7 @@ mod fixtures {
         token_distributions(&mut run);
         contract_groups_and_bound_keys(&mut run);
         spent_nullifiers(&mut run);
+        contract_credits(&mut run);
         run
     }
 

@@ -1,6 +1,7 @@
 use crate::drive::address_funds::structure::structure as address_balances;
 use crate::drive::asset_lock::structure::structure as spent_asset_locks;
 use crate::drive::balances::structure::structure as balances;
+use crate::drive::contract::balances::structure::structure as contract_credits;
 use crate::drive::contract::structure::structure as contracts_and_documents;
 use crate::drive::contract_groups::structure::structure as contract_groups;
 use crate::drive::credit_pools::structure::structure as pools;
@@ -45,5 +46,6 @@ pub(crate) fn root_structure() -> StructureNode {
         votes(),
         versions(),
         contract_groups(),
+        contract_credits(),
     ])
 }
