@@ -28,6 +28,12 @@ pub(crate) trait StateTransitionHasShieldedProofValidationV0 {
     /// Returns the number of Orchard actions whose proof work must be admitted.
     fn shielded_proof_action_count(&self) -> usize;
 
+    /// Returns the identity and nonce that must not start repeated Orchard
+    /// verification attempts in CheckTx. Only ShieldFromIdentity uses this
+    /// admission key; shielded spends are already replay-protected by their
+    /// nullifiers.
+    fn shielded_proof_identity_nonce_admission_key(&self) -> Option<([u8; 32], u64)>;
+
     /// Returns true if this state transition pays fees from the shielded pool's
     /// value_balance and requires minimum fee validation.
     ///
@@ -99,6 +105,15 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 }
             },
             _ => 0,
+        }
+    }
+
+    fn shielded_proof_identity_nonce_admission_key(&self) -> Option<([u8; 32], u64)> {
+        match self {
+            StateTransition::ShieldFromIdentity(ShieldFromIdentityTransition::V0(v0)) => {
+                Some((v0.identity_id.to_buffer(), v0.nonce))
+            }
+            _ => None,
         }
     }
 

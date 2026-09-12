@@ -18,7 +18,10 @@ use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::address_witnesses::{StateTransitionAddressWitnessValidationV0, StateTransitionHasAddressWitnessValidationV0};
-use crate::execution::validation::state_transition::processor::traits::shielded_proof::{StateTransitionHasShieldedProofValidationV0, StateTransitionShieldedMinimumFeeValidationV0, StateTransitionShieldedProofValidationV0};
+use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
+    StateTransitionHasShieldedProofValidationV0,
+    StateTransitionShieldedMinimumFeeValidationV0, StateTransitionShieldedProofValidationV0,
+};
 use crate::execution::validation::state_transition::processor::addresses_minimum_balance::StateTransitionAddressesMinimumBalanceValidationV0;
 use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
@@ -70,7 +73,7 @@ fn transform_into_action_for_check_tx<C: CoreRPCLike>(
 /// We keep the version here just in case for a future radical change.
 pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
-    state_transition: StateTransition,
+    state_transition: &StateTransition,
     check_tx_level: CheckTxLevel,
     proof_verifier: &CheckTxProofVerifier,
     platform_version: &PlatformVersion,
@@ -279,7 +282,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 .requires_advanced_structure_validation_with_state_on_check_tx()
             {
                 let state_transition_action_result = transform_into_action_for_check_tx(
-                    &state_transition,
+                    state_transition,
                     platform,
                     &remaining_address_balances,
                     ValidationMode::CheckTx,
@@ -361,10 +364,14 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 state_transition_action_result.into_data()?
             };
 
-            // Run proof verification only after cheap current-state admission has
-            // accepted the transition. CheckTx uses a node-local, fail-fast budget;
-            // proposal and block execution do not share it and retain capacity.
-            if state_transition.has_shielded_proof_validation() {
+            // ShieldFromIdentity is deferred until the caller has performed
+            // authoritative execution-event fee admission. Other shielded
+            // transitions retain their existing proof-validation order.
+            if state_transition.has_shielded_proof_validation()
+                && state_transition
+                    .shielded_proof_identity_nonce_admission_key()
+                    .is_none()
+            {
                 let _permit = proof_verifier
                     .try_acquire(state_transition.shielded_proof_action_count())
                     .ok_or(Error::Execution(
@@ -463,7 +470,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
 
                 let state_transition_action_result = transform_into_action_for_check_tx(
-                    &state_transition,
+                    state_transition,
                     platform,
                     &remaining_address_balances,
                     ValidationMode::RecheckTx,
@@ -628,7 +635,7 @@ mod tests {
             let missing_anchor = [42; 32];
             let result = state_transition_to_execution_event_for_check_tx_v0(
                 &platform_ref,
-                shielded_transfer_with_dummy_proof(missing_anchor),
+                &shielded_transfer_with_dummy_proof(missing_anchor),
                 CheckTxLevel::FirstTimeCheck,
                 &verifier,
                 platform_version,
@@ -643,7 +650,7 @@ mod tests {
             insert_anchor_into_state(&platform, &missing_anchor);
             let error = match state_transition_to_execution_event_for_check_tx_v0(
                 &platform_ref,
-                shielded_transfer_with_dummy_proof(missing_anchor),
+                &shielded_transfer_with_dummy_proof(missing_anchor),
                 CheckTxLevel::FirstTimeCheck,
                 &verifier,
                 platform_version,
@@ -674,7 +681,7 @@ mod tests {
 
             let result = state_transition_to_execution_event_for_check_tx_v0(
                 &platform_ref,
-                state_transition,
+                &state_transition,
                 CheckTxLevel::FirstTimeCheck,
                 &platform.check_tx_proof_verifier,
                 platform_version,
@@ -709,7 +716,7 @@ mod tests {
 
             let result = state_transition_to_execution_event_for_check_tx_v0(
                 &platform_ref,
-                state_transition,
+                &state_transition,
                 CheckTxLevel::FirstTimeCheck,
                 &platform.check_tx_proof_verifier,
                 platform_version,
@@ -776,7 +783,7 @@ mod tests {
 
             let result = state_transition_to_execution_event_for_check_tx_v0(
                 &platform_ref,
-                state_transition,
+                &state_transition,
                 CheckTxLevel::FirstTimeCheck,
                 &platform.check_tx_proof_verifier,
                 platform_version,
@@ -844,7 +851,7 @@ mod tests {
 
             let result = state_transition_to_execution_event_for_check_tx_v0(
                 &platform_ref,
-                state_transition,
+                &state_transition,
                 CheckTxLevel::FirstTimeCheck,
                 &platform.check_tx_proof_verifier,
                 platform_version,
@@ -913,7 +920,7 @@ mod tests {
 
             let result = state_transition_to_execution_event_for_check_tx_v0(
                 &platform_ref,
-                state_transition,
+                &state_transition,
                 CheckTxLevel::FirstTimeCheck,
                 &platform.check_tx_proof_verifier,
                 platform_version,
@@ -957,7 +964,7 @@ mod tests {
             // goes through the non-asset-lock recheck path
             let result = state_transition_to_execution_event_for_check_tx_v0(
                 &platform_ref,
-                state_transition,
+                &state_transition,
                 CheckTxLevel::Recheck,
                 &platform.check_tx_proof_verifier,
                 platform_version,
@@ -1020,7 +1027,7 @@ mod tests {
 
             let result = state_transition_to_execution_event_for_check_tx_v0(
                 &platform_ref,
-                state_transition,
+                &state_transition,
                 CheckTxLevel::Recheck,
                 &platform.check_tx_proof_verifier,
                 platform_version,

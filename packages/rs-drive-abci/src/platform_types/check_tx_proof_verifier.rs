@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 /// Node-local admission control for expensive proof verification in CheckTx.
 ///
@@ -8,6 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 pub struct CheckTxProofVerifier {
     in_flight_weight: AtomicUsize,
     limit: usize,
+    identity_nonce_attempts: Mutex<HashMap<[u8; 32], u64>>,
 }
 
 impl Default for CheckTxProofVerifier {
@@ -26,6 +29,7 @@ impl CheckTxProofVerifier {
         Self {
             in_flight_weight: AtomicUsize::new(0),
             limit: limit.max(1),
+            identity_nonce_attempts: Mutex::new(HashMap::new()),
         }
     }
 
@@ -59,6 +63,31 @@ impl CheckTxProofVerifier {
                 Err(observed) => current = observed,
             }
         }
+    }
+
+    /// Admit at most one ShieldFromIdentity proof attempt per identity nonce
+    /// until committed state advances that identity's nonce. Only the latest
+    /// admitted nonce is retained per identity because earlier nonces fail the
+    /// cheap state validation before reaching this limiter. The key is reserved
+    /// only after global proof capacity is available, so a busy node cannot
+    /// strand an honest request.
+    pub(crate) fn try_acquire_identity_nonce(
+        &self,
+        identity_id: [u8; 32],
+        nonce: u64,
+        action_count: usize,
+    ) -> Option<CheckTxProofVerifierPermit<'_>> {
+        let permit = self.try_acquire(action_count)?;
+        let mut attempts = self
+            .identity_nonce_attempts
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if attempts.get(&identity_id) == Some(&nonce) {
+            return None;
+        }
+
+        attempts.insert(identity_id, nonce);
+        Some(permit)
     }
 }
 
@@ -139,5 +168,75 @@ mod tests {
         assert!(verifier.try_acquire(1).is_none());
         drop(permits);
         assert!(verifier.try_acquire(LIMIT * 2).is_some());
+    }
+
+    #[test]
+    fn rejects_repeated_identity_nonce_attempts_without_blocking_new_nonces() {
+        let verifier = CheckTxProofVerifier::new(3);
+        let identity_id = [7; 32];
+
+        let first = verifier
+            .try_acquire_identity_nonce(identity_id, 4, 1)
+            .expect("first identity nonce attempt");
+        drop(first);
+
+        assert!(
+            verifier
+                .try_acquire_identity_nonce(identity_id, 4, 1)
+                .is_none(),
+            "the same identity nonce must not repeatedly consume proof capacity"
+        );
+        assert!(
+            verifier
+                .try_acquire_identity_nonce(identity_id, 5, 1)
+                .is_some(),
+            "an advanced nonce remains admissible"
+        );
+        assert!(
+            verifier.try_acquire_identity_nonce([8; 32], 4, 1).is_some(),
+            "another identity remains admissible"
+        );
+    }
+
+    #[test]
+    fn admits_only_one_concurrent_attempt_for_an_identity_nonce() {
+        const CALLERS: usize = 16;
+        let verifier = Arc::new(CheckTxProofVerifier::new(CALLERS));
+        let start = Arc::new(Barrier::new(CALLERS));
+        let admitted = Arc::new(AtomicUsize::new(0));
+
+        thread::scope(|scope| {
+            for _ in 0..CALLERS {
+                let verifier = Arc::clone(&verifier);
+                let start = Arc::clone(&start);
+                let admitted = Arc::clone(&admitted);
+                scope.spawn(move || {
+                    start.wait();
+                    if let Some(permit) = verifier.try_acquire_identity_nonce([7; 32], 4, 1) {
+                        admitted.fetch_add(1, Ordering::AcqRel);
+                        drop(permit);
+                    }
+                });
+            }
+        });
+
+        assert_eq!(admitted.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn busy_capacity_does_not_reserve_identity_nonce() {
+        let verifier = CheckTxProofVerifier::new(1);
+        let occupied = verifier.try_acquire(1).expect("occupied capacity");
+
+        assert!(verifier
+            .try_acquire_identity_nonce([10; 32], 1, 1)
+            .is_none());
+        drop(occupied);
+        assert!(
+            verifier
+                .try_acquire_identity_nonce([10; 32], 1, 1)
+                .is_some(),
+            "capacity rejection must not consume the identity nonce attempt"
+        );
     }
 }

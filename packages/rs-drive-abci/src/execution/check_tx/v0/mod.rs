@@ -1,6 +1,9 @@
 use crate::error::Error;
 use crate::execution::check_tx::{CheckTxLevel, CheckTxResult};
 use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
+use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
+    StateTransitionHasShieldedProofValidationV0, StateTransitionShieldedProofValidationV0,
+};
 
 #[cfg(test)]
 use crate::platform_types::event_execution_result::EventExecutionResult;
@@ -157,7 +160,7 @@ where
 
         let validation_result = state_transition_to_execution_event_for_check_tx(
             platform_ref,
-            state_transition,
+            &state_transition,
             check_tx_level,
             &self.check_tx_proof_verifier,
             platform_version,
@@ -185,9 +188,33 @@ where
                 platform_ref.state.previous_fee_versions(),
             )?;
 
-            let (estimated_fee_result, errors) = validation_result.into_data_and_errors()?;
+            let (estimated_fee_result, mut errors) = validation_result.into_data_and_errors()?;
 
             check_tx_result.fee_result = Some(estimated_fee_result);
+
+            // Orchard verification is intentionally last. In particular,
+            // ShieldFromIdentity's preliminary balance floor does not include
+            // its metered identity and note writes, so only the execution-event
+            // fee result above can establish that the caller can fund all work.
+            if errors.is_empty() && matches!(check_tx_level, CheckTxLevel::FirstTimeCheck) {
+                if let Some((identity_id, nonce)) =
+                    state_transition.shielded_proof_identity_nonce_admission_key()
+                {
+                    let _permit = self
+                        .check_tx_proof_verifier
+                        .try_acquire_identity_nonce(
+                            identity_id,
+                            nonce,
+                            state_transition.shielded_proof_action_count(),
+                        )
+                        .ok_or(Error::Execution(
+                            ExecutionError::CheckTxProofVerificationBusy,
+                        ))?;
+                    let proof_result =
+                        state_transition.validate_shielded_proof(platform_version)?;
+                    errors.extend(proof_result.errors);
+                }
+            }
 
             Ok(ValidationResult::new_with_data_and_errors(
                 check_tx_result,
