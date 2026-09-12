@@ -29,7 +29,7 @@ data class ShieldedActivityEntity(
     /**
      * `ShieldedActivityKind::tag`: 0 Shield, 1 ShieldFromAssetLock,
      * 2 Received, 3 Sent, 4 Unshield, 5 Withdrawal, 6 IdentityCreate,
-     * 7 ShieldedSpend.
+     * 7 ShieldedSpend, 8 ShieldFromIdentity.
      */
     val kindTag: Int,
     /** 0 In, 1 Out, 2 Self. */
@@ -46,7 +46,11 @@ data class ShieldedActivityEntity(
     val hasBlockHeight: Boolean,
     /** Record time in Unix millis; Swift `UInt64` → [Long]. */
     val createdAtMs: Long,
-    /** Created identity id (32 bytes) when kindTag == 6; empty otherwise. */
+    /**
+     * Identity id (32 bytes) when the kind carries one: the created
+     * identity for kindTag == 6 (IdentityCreate), the funding identity for
+     * kindTag == 8 (ShieldFromIdentity); empty otherwise.
+     */
     val identityId: ByteArray = ByteArray(0),
     /** Counterparty bytes (43B Orchard / 21B PlatformAddress / Core script). */
     val counterparty: ByteArray = ByteArray(0),

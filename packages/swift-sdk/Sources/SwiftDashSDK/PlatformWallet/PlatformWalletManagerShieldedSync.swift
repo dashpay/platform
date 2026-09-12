@@ -468,6 +468,11 @@ extension PlatformWalletManager {
         case unshield = 1
         /// ShieldedWithdrawal (`compute_shielded_withdrawal_fee`).
         case withdrawal = 2
+        /// ShieldFromIdentity (`compute_shielded_verification_fee`): the
+        /// compute-only floor (Halo 2 verification + per-action
+        /// processing) this transition adds on top of its GroveDB-metered
+        /// storage, so storage is never double-counted.
+        case shieldFromIdentity = 3
     }
 
     /// Consensus-pinned flat shielded fee (in credits) for a pool-paid
@@ -744,6 +749,92 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// Identity → Shielded. The Type 21 `ShieldFromIdentity` transition:
+    /// credits leave `identityId`'s Platform identity balance and enter the
+    /// bound shielded sub-wallet's pool directly: no transparent Platform
+    /// address and no payment account in between. The new note lands on
+    /// `shieldedAccount`'s default Orchard address.
+    ///
+    /// `identityId` is a 32-byte identity id managed by `walletId`'s wallet.
+    /// `identitySigner` is the host-side `KeychainSigner` whose `.handle`
+    /// signs the transition with the identity's TRANSFER key: the same
+    /// signer the identity credit-transfer path uses. Borrowed for the
+    /// duration of the call.
+    ///
+    /// The identity is debited `amount` plus the metered fee plus the
+    /// shielded compute fee (`estimateShieldedFee(kind: .shieldFromIdentity)`).
+    /// Returns the identity's proven post-debit balance, or `0` when the
+    /// execution result carried no balance proof.
+    ///
+    /// Heavy CPU work (Halo 2 proof + the identity signature) runs on a
+    /// detached task so the caller's actor isn't blocked.
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed: the shield may already be on chain, so the caller must
+    /// NOT retry (a retry would rebuild the bundle and could double-shield;
+    /// the next sync reconciles the outcome). Like every shield it spends
+    /// no notes, so nothing is reserved wallet-side.
+    @discardableResult
+    public func shieldedShieldFromIdentity(
+        walletId: Data,
+        shieldedAccount: UInt32 = 0,
+        identityId: Data,
+        amount: UInt64,
+        identitySigner: KeychainSigner
+    ) async throws -> UInt64 {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be exactly 32 bytes"
+            )
+        }
+
+        let handle = self.handle
+        let signerHandle = identitySigner.handle
+
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            // Rust writes the proven post-debit identity balance here on
+            // success; it leaves the slot untouched on every error path, so
+            // the initializer is the value a failed call keeps (and a call
+            // that throws never returns it).
+            var newBalance: UInt64 = 0
+            // Guaranteed signer keepalive across the whole FFI call :
+            // same rationale as `shieldedShield`.
+            try withExtendedLifetime(identitySigner) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try identityId.withUnsafeBytes { idRaw in
+                        guard let idPtr = idRaw.baseAddress?
+                            .assumingMemoryBound(to: UInt8.self)
+                        else {
+                            throw PlatformWalletError.invalidParameter(
+                                "identityId baseAddress is nil"
+                            )
+                        }
+                        try platform_wallet_manager_shielded_shield_from_identity(
+                            handle, widPtr, shieldedAccount, idPtr, amount,
+                            signerHandle, &newBalance
+                        ).check()
+                    }
+                }
+            }
+            return newBalance
+        }.value
+    }
+
     /// Platform → EXTERNAL Shielded. The Type 15 shield with the note
     /// assigned to `recipientRaw43` (a third-party raw 43-byte Orchard
     /// payment address — same shape [`shieldedTransfer`] takes) instead
@@ -798,7 +889,7 @@ extension PlatformWalletManager {
         let signerHandle = addressSigner.handle
 
         try await Task.detached(priority: .userInitiated) {
-            // Guaranteed signer keepalive across the whole FFI call —
+            // Guaranteed signer keepalive across the whole FFI call :
             // same rationale as `shieldedShield`.
             try withExtendedLifetime(addressSigner) {
                 try walletId.withUnsafeBytes { widRaw in

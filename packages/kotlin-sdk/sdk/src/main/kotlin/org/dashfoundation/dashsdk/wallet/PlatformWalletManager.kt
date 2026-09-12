@@ -1633,6 +1633,52 @@ class PlatformWalletManager(
     }
 
     /**
+     * Shield from a Platform IDENTITY's balance (Type 21). Sibling of
+     * [shieldedShield] with the identity: not the transparent
+     * Platform-Payment addresses: as the funding side: [amount] credits move
+     * straight out of [identityId]'s balance into this wallet's own bound
+     * shielded pool ([shieldedAccount]), and the identity is debited [amount]
+     * plus the metered fee plus the shielded compute fee
+     * ([ShieldedProver.FeeKind.ShieldFromIdentity]). The identity must be
+     * managed by this wallet. Signed by the Keystore identity signer
+     * ([signerHandle]) with the identity's TRANSFER key: the same handle
+     * [org.dashfoundation.dashsdk.credits.IdentityCredits.transferToAddresses]
+     * threads through. Self-shield only (Rust always targets this wallet's own
+     * default Orchard address, so there is no recipient parameter). Blocks for
+     * the ~30s Halo 2 proof; the note arrives on the next shielded sync pass.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param identityId the 32-byte funding identity id.
+     * @param amount credits to shield (1 DASH = 1e11).
+     * @return the identity's proven post-debit credit balance, or 0 when the
+     *   result proof carried none (the transition still succeeded).
+     */
+    suspend fun shieldedShieldFromIdentity(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        amount: Long,
+        shieldedAccount: Int = 0,
+    ): Long = teardownGate.op {
+        require(identityId.size == 32) {
+            "identityId must be exactly 32 bytes, got ${identityId.size}"
+        }
+        require(amount > 0) { "amount must be positive, got $amount" }
+        require(shieldedAccount >= 0) {
+            "shieldedAccount must be non-negative, got $shieldedAccount"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedShieldFromIdentity(
+                managerHandle,
+                walletId,
+                shieldedAccount,
+                identityId,
+                amount,
+                signerHandle,
+            )
+        }
+    }
+
+    /**
      * Create an identity funded from the shielded pool (Type 20) — port of
      * Swift's `shieldedIdentityCreateFromPool`. Spends a note of the fixed
      * exit [denomination] (credits — a member of the ACTIVE protocol

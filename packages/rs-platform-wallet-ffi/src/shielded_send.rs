@@ -187,7 +187,10 @@ fn shielded_fee_formula(
 /// - `1` → Unshield (`compute_shielded_unshield_fee` — base + the flat
 ///   `AddBalanceToAddress` output-write cost),
 /// - `2` → ShieldedWithdrawal (`compute_shielded_withdrawal_fee` — base +
-///   the flat Core withdrawal-document cost).
+///   the flat Core withdrawal-document cost),
+/// - `3` → ShieldFromIdentity (`compute_shielded_verification_fee`: the
+///   compute-only floor; the note and identity writes are metered at
+///   execution and charged to the identity on top of it).
 ///
 /// `num_actions` is the Orchard action count of the bundle the host will
 /// build (a single-note spend with change is 2 actions). The fee is

@@ -46,7 +46,8 @@ public final class PersistentShieldedActivity {
 
     /// Kind discriminant (`ShieldedActivityKind::tag`): 0 Shield,
     /// 1 ShieldFromAssetLock, 2 Received, 3 Sent, 4 Unshield,
-    /// 5 Withdrawal, 6 IdentityCreate, 7 ShieldedSpend.
+    /// 5 Withdrawal, 6 IdentityCreate, 7 ShieldedSpend,
+    /// 8 ShieldFromIdentity.
     public var kindTag: Int
     /// Direction: 0 In, 1 Out, 2 Self.
     public var direction: Int
@@ -85,8 +86,9 @@ public final class PersistentShieldedActivity {
     public var minNotePosition: UInt64 = 0
     public var hasMinNotePosition: Bool = false
 
-    /// Created identity id (32 bytes) when `kindTag == 6`
-    /// (IdentityCreate); empty otherwise.
+    /// Identity id (32 bytes) when the kind carries one: the created
+    /// identity for `kindTag == 6` (IdentityCreate), the debited identity
+    /// for `kindTag == 8` (ShieldFromIdentity). Empty otherwise.
     public var identityId: Data
     /// Counterparty bytes (43B Orchard / 21B PlatformAddress / Core
     /// script) when present; empty otherwise.

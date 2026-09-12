@@ -34,6 +34,17 @@ object ShieldedProver {
 
         /** ShieldedWithdrawal (base + the flat Core withdrawal-document cost). */
         Withdrawal(2),
+
+        /**
+         * ShieldFromIdentity (Type 21): the shielded COMPUTE fee floor
+         * (`compute_shielded_verification_fee`: proof verification + per-action
+         * processing). Unlike the pool-paid kinds above it carries no storage
+         * term: the identity-funded shield meters its writes through GroveDB
+         * against the identity balance, so only the compute portion is flat.
+         * Backs
+         * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedShieldFromIdentity].
+         */
+        ShieldFromIdentity(3),
     }
 
     /** Kick the ~30s Halo 2 proving-key build onto a background thread. Idempotent. */

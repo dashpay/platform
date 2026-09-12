@@ -88,7 +88,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_proverI
 }
 
 /// The flat shielded fee in credits for a transition of the given `kind`
-/// (`0` = ShieldedTransfer/Shield, `1` = Unshield, `2` = ShieldedWithdrawal)
+/// (`0` = ShieldedTransfer/Shield, `1` = Unshield, `2` = ShieldedWithdrawal,
+/// `3` = ShieldFromIdentity: the compute-only floor, no storage component)
 /// and Orchard action `count` (a single-note spend with change is 2
 /// actions), computed at `managerHandle`'s network-tracked platform
 /// version — the same version the shielded builders carve fees with. No
@@ -338,7 +339,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     core_signer_handle: jlong,
 ) {
     guard(&mut env, (), |env| {
-        // Reject sign errors at the boundary — negatives would otherwise
+        // Reject sign errors at the boundary: negatives would otherwise
         // bit-cast to huge unsigned values (and a clamped 0 amount would
         // build a meaningless 0-duff asset lock).
         if amount_duffs <= 0 {
@@ -573,7 +574,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     progress_bridge: JObject,
 ) {
     guard(&mut env, (), |env| {
-        // Reject sign errors at the boundary — negatives would otherwise
+        // Reject sign errors at the boundary: negatives would otherwise
         // bit-cast to huge unsigned values. A target of 0 is legal (the
         // Rust side treats an already-met target as a no-op success).
         if account < 0 {
@@ -679,7 +680,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     signer_address_handle: jlong,
 ) {
     guard(&mut env, (), |env| {
-        // Reject sign errors at the boundary — negatives would otherwise
+        // Reject sign errors at the boundary: negatives would otherwise
         // bit-cast to huge unsigned values (never clamp).
         if amount <= 0 {
             throw_sdk_exception(env, 1, "amount must be positive");
@@ -711,6 +712,80 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             )
         };
         let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Shield from a Platform IDENTITY's balance, Type 21 (bridges
+/// `platform_wallet_manager_shielded_shield_from_identity`).
+///
+/// Sibling of [`Java_..._shieldedShield`] with the identity: not the
+/// transparent Platform-Payment addresses: as the funding side: `amount`
+/// credits move straight out of `identity_id`'s balance into this wallet's
+/// own bound shielded pool (`shielded_account`), and the identity is debited
+/// `amount` + the metered fee + the shielded compute fee. The identity must
+/// be managed by this wallet. Self-shield only (Rust always targets the
+/// account's own default Orchard address), so there is no recipient
+/// parameter.
+///
+/// `signer_identity_handle` is the Keystore identity signer
+/// (`mgr.signerHandle`, a `*const SignerHandle` / `VTableSigner` callback
+/// variant): the SAME handle credit transfers sign with, since the
+/// transition is authorized by the identity's TRANSFER key. The caller
+/// retains ownership.
+///
+/// Blocks for the ~30s Halo 2 proof; returns the identity's proven
+/// post-debit credit balance (0 when the result proof carried none: the
+/// transition still succeeded), mirroring
+/// [`Java_..._transferCreditsToAddresses`]. The note itself arrives on the
+/// next shielded sync pass.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedShieldFromIdentity(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    shielded_account: jint,
+    identity_id: JByteArray,
+    amount: jlong,
+    signer_identity_handle: jlong,
+) -> jlong {
+    guard(&mut env, 0i64, |env| {
+        // Reject sign errors at the boundary: negatives would otherwise
+        // bit-cast to huge unsigned values (never clamp).
+        if amount <= 0 {
+            throw_sdk_exception(env, 1, "amount must be positive");
+            return 0;
+        }
+        if shielded_account < 0 {
+            throw_sdk_exception(env, 1, "shieldedAccount must be non-negative");
+            return 0;
+        }
+        if signer_identity_handle == 0 {
+            throw_sdk_exception(env, 1, "signerIdentityHandle must be non-null");
+            return 0;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return 0;
+        };
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return 0;
+        };
+        let mut out_balance: u64 = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_shield_from_identity(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                shielded_account as u32,
+                id.as_ptr(),
+                amount as u64,
+                signer_identity_handle as *const SignerHandle,
+                &mut out_balance as *mut u64,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        out_balance as i64
     })
 }
 
@@ -874,7 +949,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     memo_text: JString,
 ) {
     guard(&mut env, (), |env| {
-        // Reject sign errors at the boundary — negatives would otherwise
+        // Reject sign errors at the boundary: negatives would otherwise
         // bit-cast to huge unsigned values (never clamp).
         if amount <= 0 {
             throw_sdk_exception(env, 1, "amount must be positive");
