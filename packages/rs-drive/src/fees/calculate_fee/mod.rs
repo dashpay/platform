@@ -61,6 +61,10 @@ mod tests {
     use super::*;
     use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
     use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+    use dpp::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
+    use dpp::fee::Credits;
+    use dpp::version::mocks::fee_test::TEST_FEE_VERSION_DOUBLED_STORAGE_RATE;
+    use dpp::version::mocks::v2_test::TEST_PLATFORM_V2;
     use grovedb_costs::storage_cost::removal::StorageRemovedBytes::SectionedStorageRemoval;
     use grovedb_costs::storage_cost::StorageCost;
     use grovedb_costs::OperationCost;
@@ -69,31 +73,82 @@ mod tests {
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
 
+    const EPOCHS_PER_ERA: u16 = 20;
+    const CURRENT_EPOCH: u16 = 15;
+    const IDENTITY: [u8; 32] = [9; 32];
+
+    /// One identity removing 100 bytes stored at epoch 5 and 100 bytes stored at epoch 12,
+    /// plus 10 freshly added bytes.
+    fn removal_operation() -> LowLevelDriveOperation {
+        let mut removal = BTreeMap::new();
+        removal.insert(
+            IDENTITY,
+            IntMap::from_iter([(5u16, 100u32), (12u16, 100u32)]),
+        );
+        CalculatedCostOperation(OperationCost {
+            storage_cost: StorageCost {
+                added_bytes: 10,
+                replaced_bytes: 0,
+                removed_bytes: SectionedStorageRemoval(removal),
+            },
+            ..Default::default()
+        })
+    }
+
+    /// Fee history with a storage-rate boundary at epoch 10.
+    fn boundary_history() -> CachedEpochIndexFeeVersions {
+        BTreeMap::from([
+            (0, FeeVersion::get(1).expect("registered")),
+            (
+                10,
+                TEST_FEE_VERSION_DOUBLED_STORAGE_RATE
+                    .as_static()
+                    .expect("mock generation is registered"),
+            ),
+        ])
+    }
+
+    /// A mock platform version whose schedule is the mock generation, so the dispatcher must
+    /// hand the fee history through for refunds to be priced at all.
+    fn platform_version_with_doubled_storage_rate() -> PlatformVersion {
+        PlatformVersion {
+            fee_version: TEST_FEE_VERSION_DOUBLED_STORAGE_RATE,
+            ..TEST_PLATFORM_V2
+        }
+    }
+
+    fn expected_refund(bytes: u32, rate: Credits, storage_epoch: u16) -> Credits {
+        let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(
+            bytes as Credits * rate,
+            storage_epoch,
+            CURRENT_EPOCH,
+            EPOCHS_PER_ERA,
+        )
+        .expect("refund amount");
+        amount
+    }
+
+    fn refunds_of(fee_result: &FeeResult) -> BTreeMap<u16, Credits> {
+        fee_result
+            .fee_refunds
+            .get(&IDENTITY)
+            .expect("identity has refunds")
+            .iter()
+            .map(|(epoch_index, credits)| (*epoch_index, *credits))
+            .collect()
+    }
+
     #[test]
     fn should_forward_the_platform_fee_schedule_and_the_fee_history_to_the_implementation() {
         let platform_version = PlatformVersion::latest();
-        let identity = [9; 32];
-        let operation = || {
-            let mut removal = BTreeMap::new();
-            removal.insert(identity, IntMap::from_iter([(2u16, 200u32)]));
-            CalculatedCostOperation(OperationCost {
-                storage_cost: StorageCost {
-                    added_bytes: 10,
-                    replaced_bytes: 0,
-                    removed_bytes: SectionedStorageRemoval(removal),
-                },
-                ..Default::default()
-            })
-        };
-        let epoch = Epoch::new(6).expect("epoch");
-        let history: CachedEpochIndexFeeVersions =
-            BTreeMap::from([(0, FeeVersion::get(1).expect("registered"))]);
+        let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
+        let history = boundary_history();
 
         let through_dispatcher = Drive::calculate_fee(
             None,
-            Some(vec![operation()]),
+            Some(vec![removal_operation()]),
             &epoch,
-            20,
+            EPOCHS_PER_ERA,
             platform_version,
             Some(&history),
         )
@@ -101,9 +156,9 @@ mod tests {
 
         let expected = Drive::calculate_fee_v0(
             None,
-            Some(vec![operation()]),
+            Some(vec![removal_operation()]),
             &epoch,
-            20,
+            EPOCHS_PER_ERA,
             &platform_version.fee_version,
             Some(&history),
         )
@@ -117,6 +172,62 @@ mod tests {
                 .storage
                 .storage_disk_usage_credit_per_byte
         );
-        assert!(through_dispatcher.fee_refunds.get(&identity).is_some());
+        assert!(through_dispatcher.fee_refunds.get(&IDENTITY).is_some());
+    }
+
+    #[test]
+    fn should_price_refunds_across_a_rate_boundary_through_the_dispatcher_for_a_later_generation() {
+        let platform_version = platform_version_with_doubled_storage_rate();
+        let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
+        let history = boundary_history();
+        let first_rate = FeeVersion::get(1)
+            .expect("registered")
+            .storage
+            .storage_disk_usage_credit_per_byte;
+        let doubled_rate = TEST_FEE_VERSION_DOUBLED_STORAGE_RATE
+            .storage
+            .storage_disk_usage_credit_per_byte;
+        assert_ne!(first_rate, doubled_rate);
+
+        let fee_result = Drive::calculate_fee(
+            None,
+            Some(vec![removal_operation()]),
+            &epoch,
+            EPOCHS_PER_ERA,
+            &platform_version,
+            Some(&history),
+        )
+        .expect("history supplied through the dispatcher");
+
+        assert_eq!(fee_result.storage_fee, 10 * doubled_rate);
+        assert_eq!(
+            refunds_of(&fee_result),
+            BTreeMap::from([
+                (5, expected_refund(100, first_rate, 5)),
+                (12, expected_refund(100, doubled_rate, 12)),
+            ]),
+            "bytes stored on each side of the boundary refund at the rate they were charged"
+        );
+    }
+
+    #[test]
+    fn should_reject_a_missing_fee_history_through_the_dispatcher_for_a_later_generation() {
+        let platform_version = platform_version_with_doubled_storage_rate();
+        let epoch = Epoch::new(CURRENT_EPOCH).expect("epoch");
+
+        let error = Drive::calculate_fee(
+            None,
+            Some(vec![removal_operation()]),
+            &epoch,
+            EPOCHS_PER_ERA,
+            &platform_version,
+            None,
+        )
+        .expect_err("a later generation cannot price refunds without the history");
+
+        assert!(
+            matches!(error, Error::Drive(DriveError::CorruptedCodeExecution(_))),
+            "unexpected error {error}"
+        );
     }
 }
