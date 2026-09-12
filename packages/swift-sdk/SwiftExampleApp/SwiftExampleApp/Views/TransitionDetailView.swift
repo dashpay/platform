@@ -1235,9 +1235,20 @@ struct TransitionDetailView: View {
     )
     _ = signer  // keepalive across the await — see KeychainSigner lifetime contract
 
-    let after = try await sdk.documentGetLifecycle(
+    // The erase is broadcast and confirmed by this point, so the closing
+    // lifecycle read fails on its own terms: an unreadable observation is
+    // reported as unread, never as a failed erase the user would pay to
+    // submit a second time.
+    let after = try? await sdk.documentGetLifecycle(
       dataContractId: contractId, documentType: documentType, documentId: documentId
     )
+
+    guard let after else {
+      return [
+        "message": "Erase submitted; document absence observed under proof",
+        "progress": "Lifecycle not read; use Platform Queries → Get Document History to see what remains."
+      ]
+    }
 
     return [
       "message": "Erase submitted; document absence observed under proof",
