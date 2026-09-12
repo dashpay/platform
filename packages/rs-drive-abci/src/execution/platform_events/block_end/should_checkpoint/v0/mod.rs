@@ -203,7 +203,17 @@ mod tests {
             return;
         }
 
+        // Checkpoints are off in the default test config, and the guard for
+        // that returns before the age of the block is looked at. They have to
+        // be on for this test to reach the code it is about.
         let platform = TestPlatformBuilder::new()
+            .with_config(crate::config::PlatformConfig {
+                testing_configs: crate::config::PlatformTestConfig {
+                    disable_checkpoints: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
             .build_with_mock_rpc()
             .set_genesis_state();
 

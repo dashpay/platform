@@ -399,6 +399,10 @@ impl PlatformStateV0Methods for PlatformState {
     /// Sets the current protocol version in consensus.
     fn set_current_protocol_version_in_consensus(&mut self, version: ProtocolVersion) {
         self.current_protocol_version_in_consensus = version;
+        // The protocol version chooses the structure the full record is written
+        // in, so a change has to rewrite it rather than leave an older structure
+        // on disk with a newer version recorded beside it.
+        self.heavy_fields_dirty = true;
     }
 
     /// Sets the next epoch protocol version.
@@ -419,26 +423,31 @@ impl PlatformStateV0Methods for PlatformState {
     /// Sets the current validator sets.
     fn set_validator_sets(&mut self, sets: IndexMap<QuorumHash, ValidatorSet>) {
         self.validator_sets = sets;
+        self.heavy_fields_dirty = true;
     }
 
     /// Sets the current chain lock validating quorums.
     fn set_chain_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
         self.chain_lock_validating_quorums = quorums;
+        self.heavy_fields_dirty = true;
     }
 
     /// Sets the current instant lock validating quorums.
     fn set_instant_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
         self.instant_lock_validating_quorums = quorums;
+        self.heavy_fields_dirty = true;
     }
 
     /// Sets the full masternode list.
     fn set_full_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>) {
         self.full_masternode_list = list;
+        self.heavy_fields_dirty = true;
     }
 
     /// Sets the list of high performance masternodes.
     fn set_hpmn_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>) {
         self.hpmn_masternode_list = list;
+        self.heavy_fields_dirty = true;
     }
 
     /// Sets the platform initialization information.
@@ -451,6 +460,7 @@ impl PlatformStateV0Methods for PlatformState {
     }
 
     fn current_protocol_version_in_consensus_mut(&mut self) -> &mut ProtocolVersion {
+        self.heavy_fields_dirty = true;
         &mut self.current_protocol_version_in_consensus
     }
 
@@ -467,22 +477,27 @@ impl PlatformStateV0Methods for PlatformState {
     }
 
     fn validator_sets_mut(&mut self) -> &mut IndexMap<QuorumHash, ValidatorSet> {
+        self.heavy_fields_dirty = true;
         &mut self.validator_sets
     }
 
     fn chain_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
+        self.heavy_fields_dirty = true;
         &mut self.chain_lock_validating_quorums
     }
 
     fn instant_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
+        self.heavy_fields_dirty = true;
         &mut self.instant_lock_validating_quorums
     }
 
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {
+        self.heavy_fields_dirty = true;
         &mut self.full_masternode_list
     }
 
     fn hpmn_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {
+        self.heavy_fields_dirty = true;
         &mut self.hpmn_masternode_list
     }
 
@@ -606,6 +621,124 @@ impl PlatformStateV0Methods for PlatformState {
     }
 
     fn previous_fee_versions_mut(&mut self) -> &mut CachedEpochIndexFeeVersions {
+        self.heavy_fields_dirty = true;
         &mut self.previous_fee_versions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::PlatformConfig;
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::Network;
+
+    fn clean_state() -> PlatformState {
+        let platform_version = PlatformVersion::latest();
+        let mut state = PlatformState::default_with_protocol_versions(
+            platform_version.protocol_version,
+            platform_version.protocol_version,
+            &PlatformConfig::default_for_network(Network::Testnet),
+        )
+        .expect("platform state");
+        state.heavy_fields_dirty = false;
+        state
+    }
+
+    /// Runs `mutate` on a clean state and reports whether it left the state dirty.
+    fn leaves_dirty(mutate: impl FnOnce(&mut PlatformState)) -> bool {
+        let mut state = clean_state();
+        mutate(&mut state);
+        state.heavy_fields_dirty
+    }
+
+    /// A state that has never been written in full must start dirty, or its
+    /// first historical block would skip the full write.
+    #[test]
+    fn a_new_state_starts_dirty() {
+        let platform_version = PlatformVersion::latest();
+        let state = PlatformState::default_with_protocol_versions(
+            platform_version.protocol_version,
+            platform_version.protocol_version,
+            &PlatformConfig::default_for_network(Network::Testnet),
+        )
+        .expect("platform state");
+
+        assert!(state.heavy_fields_dirty);
+    }
+
+    /// Every accessor that can change a field carried only by the full saved
+    /// record must mark the state dirty. If one stops doing so, a historical
+    /// block that changes that field through it skips the full write, and a
+    /// node restarted from disk comes back with the old value.
+    #[test]
+    fn heavy_field_accessors_mark_the_state_dirty() {
+        let quorums = clean_state().chain_lock_validating_quorums().clone();
+
+        assert!(leaves_dirty(
+            |s| s.set_current_protocol_version_in_consensus(1)
+        ));
+        assert!(leaves_dirty(|s| s.set_validator_sets(IndexMap::new())));
+        assert!(leaves_dirty(
+            |s| s.set_chain_lock_validating_quorums(quorums.clone())
+        ));
+        assert!(leaves_dirty(
+            |s| s.set_instant_lock_validating_quorums(quorums.clone())
+        ));
+        assert!(leaves_dirty(|s| s.set_full_masternode_list(BTreeMap::new())));
+        assert!(leaves_dirty(|s| s.set_hpmn_masternode_list(BTreeMap::new())));
+
+        // Handing out the mutable borrow is enough: the caller may change the
+        // field through it without the state seeing the write.
+        assert!(leaves_dirty(|s| {
+            s.current_protocol_version_in_consensus_mut();
+        }));
+        assert!(leaves_dirty(|s| {
+            s.validator_sets_mut();
+        }));
+        assert!(leaves_dirty(|s| {
+            s.chain_lock_validating_quorums_mut();
+        }));
+        assert!(leaves_dirty(|s| {
+            s.instant_lock_validating_quorums_mut();
+        }));
+        assert!(leaves_dirty(|s| {
+            s.full_masternode_list_mut();
+        }));
+        assert!(leaves_dirty(|s| {
+            s.hpmn_masternode_list_mut();
+        }));
+        assert!(leaves_dirty(|s| {
+            s.previous_fee_versions_mut();
+        }));
+    }
+
+    /// The fields the small per-block record carries are written every block
+    /// regardless, so changing them must not force a full rewrite.
+    #[test]
+    fn per_block_field_accessors_leave_the_state_clean() {
+        assert!(!leaves_dirty(|s| s.set_last_committed_block_info(None)));
+        assert!(!leaves_dirty(|s| s.set_next_epoch_protocol_version(1)));
+        assert!(!leaves_dirty(|s| {
+            s.set_current_validator_set_quorum_hash(QuorumHash::all_zeros())
+        }));
+        assert!(!leaves_dirty(|s| s.set_next_validator_set_quorum_hash(None)));
+        assert!(!leaves_dirty(|s| s.set_genesis_block_info(None)));
+        assert!(!leaves_dirty(|s| {
+            s.take_next_validator_set_quorum_hash();
+        }));
+
+        assert!(!leaves_dirty(|s| {
+            s.last_committed_block_info_mut();
+        }));
+        assert!(!leaves_dirty(|s| {
+            s.next_epoch_protocol_version_mut();
+        }));
+        assert!(!leaves_dirty(|s| {
+            s.current_validator_set_quorum_hash_mut();
+        }));
+        assert!(!leaves_dirty(|s| {
+            s.next_validator_set_quorum_hash_mut();
+        }));
     }
 }
