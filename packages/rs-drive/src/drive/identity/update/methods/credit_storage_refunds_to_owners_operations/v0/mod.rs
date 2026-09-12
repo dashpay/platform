@@ -1,6 +1,6 @@
+use crate::drive::identity::update::add_to_previous_balance_outcome::AddToPreviousBalanceOutcomeV0Methods;
 use crate::drive::identity::update::storage_refund_credit_outcome::StorageRefundCreditOutcome;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::fee::fee_result::refunds::FeeRefunds;
@@ -8,9 +8,8 @@ use dpp::fee::Credits;
 use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::{BTreeMap, HashMap};
+use grovedb::TransactionArg;
+use std::collections::BTreeMap;
 
 impl Drive {
     /// Credits each recorded refund owner that has a balance element and
@@ -55,36 +54,48 @@ impl Drive {
             )?;
 
             if let Some(existing_balance) = existing_balance {
-                // `add_to_identity_balance_operations` clears negative credit before
-                // raising a zero balance. That portion never reaches the sum trees,
-                // so it is measured here for the caller's processing pool write.
-                let owner_repaid_debt = if existing_balance == 0 {
-                    let debt = self
-                        .fetch_identity_negative_balance_operations(
-                            *owner_id,
-                            true,
-                            transaction,
-                            drive_operations,
-                            platform_version,
-                        )?
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "an identity with a balance element always has a negative credit element",
-                        )))?;
-                    debt.min(credits)
-                } else {
-                    0
-                };
-
-                let mut estimated_costs_only_with_layer_info =
-                    None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>;
-
-                drive_operations.extend(self.add_to_identity_balance_operations(
+                // The same shape as the payer's own credit in
+                // `apply_balance_change_from_fee_to_identity`: the balance read above
+                // feeds the shipped helper directly, which reads the negative credit
+                // itself only when the balance is zero, so nothing is read twice.
+                let outcome = self.add_to_previous_balance(
                     *owner_id,
+                    existing_balance,
                     credits,
-                    &mut estimated_costs_only_with_layer_info,
+                    true,
                     transaction,
+                    drive_operations,
                     platform_version,
-                )?);
+                )?;
+
+                if let Some(new_balance) = outcome.balance_modified() {
+                    drive_operations
+                        .push(self.update_identity_balance_operation_v0(*owner_id, new_balance)?);
+                }
+
+                if let Some(new_negative_balance) = outcome.negative_credit_balance_modified() {
+                    drive_operations.push(self.update_identity_negative_credit_operation_v0(
+                        *owner_id,
+                        new_negative_balance,
+                    ));
+                }
+
+                // From a zero balance the helper clears negative credit first and only
+                // the remainder becomes the new balance; from a positive balance the
+                // whole refund is added. Whatever did not reach the balance repaid
+                // debt, which lives outside the sum trees and is reported for the
+                // caller's processing pool write.
+                let reached_balance = if existing_balance == 0 {
+                    outcome.balance_modified().unwrap_or(0)
+                } else {
+                    credits
+                };
+                let owner_repaid_debt =
+                    credits
+                        .checked_sub(reached_balance)
+                        .ok_or(ProtocolError::Overflow(
+                            "a storage refund cannot raise a balance by more than the refund",
+                        ))?;
 
                 repaid_debt =
                     repaid_debt
@@ -93,7 +104,6 @@ impl Drive {
                             "storage refund credits repaying identity debt overflow",
                         ))?;
 
-                let reached_balance = credits - owner_repaid_debt;
                 if reached_balance > 0 {
                     credited.insert(Identifier::from(*owner_id), reached_balance);
                 }
@@ -117,6 +127,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::drive::DriveError;
     use crate::util::batch::DriveOperation;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
@@ -724,6 +735,46 @@ mod tests {
             balance(&drive, owner_id, &transaction, platform_version),
             Some(IDENTITY_BALANCE + 250)
         );
+    }
+
+    #[test]
+    fn should_read_each_owner_once_before_writing_its_balance() {
+        // The balance read decides whether the owner exists and then feeds the
+        // shipped helper, which reads the negative credit only from a zero
+        // balance: two stateful reads for an owner in debt, one otherwise.
+        // A second read of either element would show up as an extra cost
+        // operation and be billed to every refund the caller settles.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+
+        let funded = insert_identity(&drive, 10, &transaction, platform_version);
+        let in_debt = insert_identity_with_debt(&drive, 11, 100, &transaction, platform_version);
+
+        let count_reads = |owner_id: [u8; 32]| {
+            let mut operations = vec![];
+            drive
+                .credit_storage_refunds_to_owners_operations(
+                    &refunds(&[(owner_id, &[(0, 150)])]),
+                    None,
+                    Some(&transaction),
+                    &mut operations,
+                    platform_version,
+                )
+                .expect("expected to credit the owner");
+            operations
+                .iter()
+                .filter(|operation| {
+                    matches!(
+                        operation,
+                        LowLevelDriveOperation::CalculatedCostOperation(_)
+                    )
+                })
+                .count()
+        };
+
+        assert_eq!(count_reads(funded.id().to_buffer()), 1);
+        assert_eq!(count_reads(in_debt.id().to_buffer()), 2);
     }
 
     #[test]
