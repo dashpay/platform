@@ -504,6 +504,11 @@ public class PlatformWalletManager: ObservableObject {
     /// it without hopping onto the main actor first.
     nonisolated let shieldedSyncGeneration = SyncGenerationCounter()
 
+    /// Bind/Clear can change the local ledger even if a later native step
+    /// fails. Local reads use their own generation so invalidating those
+    /// results does not change the existing sync callback semantics.
+    nonisolated let shieldedLocalBalanceGeneration = SyncGenerationCounter()
+
     /// Generation guard for platform-address (BLAST/DIP-17) sync
     /// completion events, mirroring [`shieldedSyncGeneration`]. The FFI
     /// completion callback snapshots this on its own thread before the
@@ -598,7 +603,7 @@ public class PlatformWalletManager: ObservableObject {
     /// `await`.
     private(set) var shutdownRequested = false
 
-    /// Async native entrypoints (`createWallet`, `loadFromPersistor`)
+    /// Async native entrypoints (create, load, and local balance snapshots)
     /// between admission and the end of their MainActor epilogue.
     /// [`shutdown()`] waits for this to reach zero before taking the
     /// handle: an admitted op must complete its FULL transaction (FFI +
@@ -613,8 +618,9 @@ public class PlatformWalletManager: ObservableObject {
     /// rejects while a shutdown drain runs, otherwise counts the op in.
     /// MainActor-atomic (no suspension between check and increment), so the
     /// drain can never miss an admitted op. Balance with
-    /// [`finishNativeOp()`] on every exit path.
-    private func admitNativeOp(_ name: String) throws {
+    /// [`finishNativeOp()`] on every exit path. Internal so native wrappers
+    /// in sibling extensions participate in the same shutdown drain.
+    func admitNativeOp(_ name: String) throws {
         guard !shutdownRequested else {
             throw PlatformWalletError.invalidHandle(
                 "manager shutdown is in progress; \(name) rejected")
@@ -622,7 +628,7 @@ public class PlatformWalletManager: ObservableObject {
         activeNativeOpCount += 1
     }
 
-    private func finishNativeOp() {
+    func finishNativeOp() {
         activeNativeOpCount -= 1
         if activeNativeOpCount == 0, !nativeOpDrainContinuations.isEmpty {
             let waiters = nativeOpDrainContinuations
@@ -644,6 +650,10 @@ public class PlatformWalletManager: ObservableObject {
     /// Test seam for the native calls of the async `loadFromPersistor()`
     /// overload; same contract as [`nativeTeardownCalls`].
     internal var nativeLoadCalls = PlatformWalletNativeLoadCalls.live
+
+    /// Native snapshot reads and their paired allocation release. Kept
+    /// injectable so ownership and shutdown admission are tested together.
+    internal var nativeShieldedLocalBalanceCalls = PlatformWalletNativeShieldedLocalBalanceCalls.live
 
     /// Test seam for the native reads behind the progress poller; same
     /// contract as [`nativeTeardownCalls`].

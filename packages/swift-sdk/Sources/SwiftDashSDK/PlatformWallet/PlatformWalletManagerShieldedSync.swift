@@ -213,25 +213,27 @@ extension PlatformWalletManager {
             )
         }
 
-        try walletId.withUnsafeBytes { walletIdRaw in
-            guard let walletIdPtr = walletIdRaw.baseAddress?
-                .assumingMemoryBound(to: UInt8.self)
-            else {
-                throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
-            }
-            try accounts.withUnsafeBufferPointer { accountsBuf in
-                guard let accountsPtr = accountsBuf.baseAddress else {
-                    throw PlatformWalletError.invalidParameter(
-                        "accounts baseAddress is nil"
-                    )
+        try withShieldedLocalBalanceMutation {
+            try walletId.withUnsafeBytes { walletIdRaw in
+                guard let walletIdPtr = walletIdRaw.baseAddress?
+                    .assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
                 }
-                try platform_wallet_manager_bind_shielded(
-                    handle,
-                    walletIdPtr,
-                    resolverHandle,
-                    accountsPtr,
-                    UInt(accountsBuf.count)
-                ).check()
+                try accounts.withUnsafeBufferPointer { accountsBuf in
+                    guard let accountsPtr = accountsBuf.baseAddress else {
+                        throw PlatformWalletError.invalidParameter(
+                            "accounts baseAddress is nil"
+                        )
+                    }
+                    try platform_wallet_manager_bind_shielded(
+                        handle,
+                        walletIdPtr,
+                        resolverHandle,
+                        accountsPtr,
+                        UInt(accountsBuf.count)
+                    ).check()
+                }
             }
         }
     }
@@ -317,7 +319,9 @@ extension PlatformWalletManager {
                 "PlatformWalletManager not configured"
             )
         }
-        try platform_wallet_manager_shielded_clear(handle).check()
+        try withShieldedLocalBalanceMutation {
+            try platform_wallet_manager_shielded_clear(handle).check()
+        }
         // The Rust drain returned; bump the generation so any trailing
         // completion event the main actor delivers after Clear is dropped
         // (it would otherwise briefly repopulate the mirror the host is
