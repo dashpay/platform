@@ -813,9 +813,13 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
 /// value (the FFI reports it as such), so the consensus floor must not stand in
 /// for it.
 ///
-/// Returns the identity's proven post-debit balance when the result proof carried
-/// it (`None` when the wait confirmed execution without a balance). The caller
-/// owns the managed identity and persists that balance
+/// Returns the identity's proven post-debit balance. The activity row is only
+/// confirmed by the identity's own `VerifiedPartialIdentity` proof carrying a
+/// balance (the SDK's `ShieldFromIdentity` check); a proof for another identity,
+/// one without a balance, or any other result leaves the row pending and
+/// reports [`PlatformWalletError::ShieldedSpendUnconfirmed`], since the wallet
+/// cannot tell from it whether the transition executed. The caller owns the
+/// managed identity and persists the balance
 /// (`PlatformWallet::shielded_shield_from_identity`).
 #[allow(clippy::too_many_arguments)]
 pub async fn shield_from_identity_to<
@@ -835,7 +839,7 @@ pub async fn shield_from_identity_to<
     memo: [u8; 36],
     signer: &Sig,
     prover: &P,
-) -> Result<Option<Credits>, PlatformWalletError> {
+) -> Result<Credits, PlatformWalletError> {
     let ShieldRecipient {
         address: recipient_addr,
         counterparty: external_counterparty,
@@ -939,12 +943,27 @@ pub async fn shield_from_identity_to<
 
     // The proof authenticates the identity's post-debit balance (an affected-state
     // snapshot, not execution evidence); a consensus rejection surfaces as an error.
-    let new_balance = match state_transition
+    // `wait_for_affected_state` only converts the proof generically, so the variant
+    // and the identity are enforced here: only this identity's balance proof may
+    // confirm the activity.
+    let proof_outcome: Result<Credits, String> = match state_transition
         .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
         .await
     {
-        Ok(StateTransitionProofResult::VerifiedPartialIdentity(partial)) => partial.balance,
-        Ok(_) => None,
+        Ok(StateTransitionProofResult::VerifiedPartialIdentity(partial))
+            if partial.id == identity_id =>
+        {
+            partial
+                .balance
+                .ok_or_else(|| "the identity proof did not include the updated balance".to_string())
+        }
+        Ok(StateTransitionProofResult::VerifiedPartialIdentity(partial)) => Err(format!(
+            "the proof returned identity {} but {} initiated the shield",
+            partial.id, identity_id
+        )),
+        Ok(other) => Err(format!(
+            "an identity balance proof was expected, received {other:?}"
+        )),
         Err(wait_err) => {
             if carries_consensus_rejection(&wait_err) {
                 record_activity_status(
@@ -959,15 +978,21 @@ pub async fn shield_from_identity_to<
                 .await;
                 return Err(enrich(&wait_err));
             }
+            Err(wait_err.to_string())
+        }
+    };
+    let new_balance = match proof_outcome {
+        Ok(balance) => balance,
+        Err(reason) => {
             warn!(
                 account,
-                error = %wait_err,
+                %reason,
                 "ShieldFromIdentity broadcast accepted but result confirmation failed; \
                  leaving the activity row pending"
             );
             return Err(PlatformWalletError::ShieldedSpendUnconfirmed {
                 operation: "shield from identity",
-                reason: wait_err.to_string(),
+                reason,
             });
         }
     };

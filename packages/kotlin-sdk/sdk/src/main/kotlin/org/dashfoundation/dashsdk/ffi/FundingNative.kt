@@ -156,7 +156,7 @@ internal object FundingNative {
      * `signerHandle`): the same handle credit transfers use, since the
      * transition is authorized by the identity's TRANSFER key. Blocks for the
      * ~30s Halo 2 proof; returns the identity's proven post-debit credit
-     * balance (0 when the result proof carried none).
+     * balance (the wallet only confirms on the identity's own balance proof).
      */
     external fun shieldedShieldFromIdentity(
         managerHandle: Long,

@@ -1878,8 +1878,10 @@ impl PlatformWallet {
     /// (typically the same `Signer<IdentityPublicKey>` used for credit transfers).
     ///
     /// The identity is debited `amount` plus the metered fee plus the shielded
-    /// compute fee. Returns the proven post-debit balance when the result proof
-    /// carried one.
+    /// compute fee. Returns the proven post-debit balance, which is also applied
+    /// to the managed identity and persisted. A result proof that is not this
+    /// identity's balance proof reports the spend as unconfirmed
+    /// ([`PlatformWalletError::ShieldedSpendUnconfirmed`]).
     #[cfg(feature = "shielded")]
     pub async fn shielded_shield_from_identity<S, P>(
         &self,
@@ -1889,7 +1891,7 @@ impl PlatformWallet {
         amount: u64,
         signer: &S,
         prover: P,
-    ) -> Result<Option<Credits>, PlatformWalletError>
+    ) -> Result<Credits, PlatformWalletError>
     where
         S: dpp::identity::signer::Signer<IdentityPublicKey> + Send + Sync,
         P: dpp::shielded::builder::OrchardProver,
@@ -1924,7 +1926,7 @@ impl PlatformWallet {
         memo: [u8; 36],
         signer: &S,
         prover: P,
-    ) -> Result<Option<Credits>, PlatformWalletError>
+    ) -> Result<Credits, PlatformWalletError>
     where
         S: dpp::identity::signer::Signer<IdentityPublicKey> + Send + Sync,
         P: dpp::shielded::builder::OrchardProver,
@@ -1962,7 +1964,7 @@ impl PlatformWallet {
         memo: [u8; 36],
         signer: &S,
         prover: P,
-    ) -> Result<Option<Credits>, PlatformWalletError>
+    ) -> Result<Credits, PlatformWalletError>
     where
         S: dpp::identity::signer::Signer<IdentityPublicKey> + Send + Sync,
         P: dpp::shielded::builder::OrchardProver,
@@ -2022,15 +2024,14 @@ impl PlatformWallet {
         // The operation only received a clone of the identity, so the managed
         // identity still carries the pre-debit balance. Apply the proven
         // post-debit balance and persist the snapshot (the pattern
-        // `transfer_credits_to_addresses_with_external_signer` follows);
-        // `None` means the proof carried no balance, so nothing is overwritten.
-        if let Some(balance) = new_balance {
+        // `transfer_credits_to_addresses_with_external_signer` follows).
+        {
             let mut wm = self.wallet_manager.write().await;
             let managed = wm
                 .get_wallet_info_mut(&self.wallet_id)
                 .and_then(|info| info.identity_manager.managed_identity_mut(identity_id));
             if let Some(managed) = managed {
-                managed.identity.set_balance(balance);
+                managed.identity.set_balance(new_balance);
                 if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
                     tracing::error!(
                         identity = %identity_id,
