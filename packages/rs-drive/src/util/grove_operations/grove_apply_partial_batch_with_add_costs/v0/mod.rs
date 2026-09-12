@@ -5,7 +5,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::query::GroveError;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
-use crate::util::grove_operations::push_drive_operation_result;
+use crate::util::grove_operations::{declaring_no_participants, push_drive_operation_result};
 use crate::util::storage_flags::{MergingOwnersStrategy, StorageFlags};
 use grovedb::batch::{BatchApplyOptions, OpsByLevelPath, QualifiedGroveDbOp};
 use grovedb::TransactionArg;
@@ -46,7 +46,7 @@ impl Drive {
         }
 
         let cost_context = self.grove.apply_partial_batch_with_element_flags_update(
-            ops.operations,
+            declaring_no_participants(ops.operations),
             Some(BatchApplyOptions {
                 validate_insertion_does_not_override: validate,
                 validate_insertion_does_not_override_tree: validate,

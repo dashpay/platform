@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::query::GroveError;
 use crate::util::batch::GroveDbOpBatch;
-use crate::util::grove_operations::push_drive_operation_result;
+use crate::util::grove_operations::{declaring_no_participants, push_drive_operation_result};
 use grovedb::batch::estimated_costs::EstimatedCostsType::AverageCaseCostsType;
 use grovedb::batch::{BatchApplyOptions, KeyInfoPath};
 use grovedb::{EstimatedLayerInformation, GroveDb};
@@ -22,7 +22,7 @@ impl Drive {
     ) -> Result<(), Error> {
         let cost_context = GroveDb::estimated_case_operations_for_batch(
             AverageCaseCostsType(estimated_layer_info),
-            ops.operations,
+            declaring_no_participants(ops.operations),
             Some(BatchApplyOptions {
                 validate_insertion_does_not_override: validate,
                 validate_insertion_does_not_override_tree: validate,

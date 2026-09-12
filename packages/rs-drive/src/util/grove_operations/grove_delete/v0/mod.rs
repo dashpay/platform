@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::push_drive_operation_result;
 use grovedb::operations::delete::DeleteOptions;
+use grovedb::DisplacedValue;
 use grovedb::TransactionArg;
 use grovedb_path::SubtreePath;
 use platform_version::version::drive_versions::DriveVersion;
@@ -18,6 +19,9 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         let options = DeleteOptions {
+            // Drive stores no backward-reference participants; GroveDB checks the
+            // claim for free from the value it reads for the write.
+            displaced_value: DisplacedValue::NotParticipant,
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,

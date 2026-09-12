@@ -3,6 +3,25 @@
 //! Defines and implements in Drive functions pertinent to groveDB operations.
 //!
 
+use grovedb::batch::QualifiedGroveDbOp;
+
+/// Every op Drive hands to GroveDB becomes its `DontCheck` twin, declaring
+/// that the value it displaces takes no part in backward references, because
+/// Drive stores no such participants. GroveDB checks the claim for free from
+/// the value it reads for the write and refuses a false one, so the
+/// declaration cannot corrupt state; it only spares the maintenance planning
+/// and the estimated fan-out. When a document type starts storing
+/// participants, build the checked ops for it where they are created instead
+/// of converting here.
+pub(crate) fn declaring_no_participants(
+    operations: Vec<QualifiedGroveDbOp>,
+) -> Vec<QualifiedGroveDbOp> {
+    operations
+        .into_iter()
+        .map(QualifiedGroveDbOp::dont_check)
+        .collect()
+}
+
 /// Grove insert operation
 pub mod grove_insert;
 

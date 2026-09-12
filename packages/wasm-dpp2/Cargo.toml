@@ -10,7 +10,7 @@ crate-type = ["cdylib", "lib"]
 # TODO: Consider to use talc allocator
 #talc = { version = "=4.4.2", default-features = false, features = ["lock_api"] }
 async-trait = { version = "0.1.79" }
-bincode = "=2.0.1"
+bincode = { workspace = true }
 wasm-bindgen = { version = "=0.2.108", default-features = false, features = [
   "serde-serialize",
 ] }
