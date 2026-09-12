@@ -17,12 +17,17 @@ impl Drive {
     /// per-epoch credits are summed with checked arithmetic. An owner with a
     /// balance element is credited through `add_to_identity_balance_operations`;
     /// no key, signature or permission is consulted, so a frozen but existing
-    /// owner receives its bookkeeping refund. An owner without a balance
-    /// element (the native proxy for a wiped owner) is not credited and its
-    /// amount is reported as `routed_to_processing_pool`, for the caller to
-    /// settle into the current epoch's processing pool with one pool write.
-    /// The primitive records no pending refunds; the caller does, so the block
-    /// keeps a single pending-refund and pool write per batch.
+    /// owner receives its bookkeeping refund. When that owner's balance is
+    /// zero the helper first clears its negative credit (identity debt), and
+    /// only the remainder reaches the balance; the cleared debt is reported as
+    /// `repaid_debt` because debt lives outside the credit sum trees and is
+    /// processing fee the pools were short of when it was incurred. An owner
+    /// without a balance element (the native proxy for a wiped owner) is not
+    /// credited and its amount is reported as `routed_to_processing_pool`.
+    /// The caller settles `processing_pool_share()` (both amounts) into the
+    /// current epoch's processing pool with one pool write and records the
+    /// pending refunds; the primitive does neither, so the block keeps a
+    /// single pending-refund and pool write per batch.
     ///
     /// # Parameters
     ///
@@ -37,8 +42,8 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Ok(StorageRefundCreditOutcome)` - The owners credited and the amount
-    ///   routed to the processing pool.
+    /// * `Ok(StorageRefundCreditOutcome)` - The owners credited, the debt the
+    ///   refunds repaid and the amount routed to the processing pool.
     /// * `Err(Error)` - On overflow, a corrupted balance element, or when the
     ///   method is not active for the platform version.
     pub fn credit_storage_refunds_to_owners_operations(
