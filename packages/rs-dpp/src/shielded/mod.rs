@@ -79,9 +79,18 @@ pub const SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES: u64 = 4100;
 /// [`compute_minimum_shielded_fee::compute_shielded_unshield_fee`].
 pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
 
-/// Flat storage component charged by `IdentityTopUpFromShieldedPool` for the identity balance
-/// write, priced like the `Unshield` address write so the pool-paid flat fee covers it.
-pub const SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES: u64 = 222;
+/// Calibrated effective-byte cost of the identity-side write an `IdentityTopUpFromShieldedPool`
+/// performs on top of its per-action nullifier and note writes: the single
+/// `AddToIdentityBalance` operation, charged as a flat component of the pool-paid fee (built like
+/// `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES`, priced at the same per-byte storage rate).
+///
+/// Unlike the `Unshield` address write, the top-up REPLACES the existing identity's balance-tree
+/// entry (the identity must already exist), so it adds no storage bytes: its GroveDB-metered cost
+/// is 175,280 credits of processing, 6.4 effective bytes at the 27,400 credits/byte storage rate.
+/// 7 covers it with the usual small round-up. (The pool-total update is not priced separately,
+/// exactly as for the other pool-paid transitions.) See
+/// [`compute_minimum_shielded_fee::compute_shielded_identity_top_up_fee`].
+pub const SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES: u64 = 7;
 
 /// Calibrated effective-byte cost of the identity-side writes a `ShieldFromIdentity` performs on
 /// top of its per-action note inserts: the `UpdateIdentityNonce` and `RemoveFromIdentityBalance`

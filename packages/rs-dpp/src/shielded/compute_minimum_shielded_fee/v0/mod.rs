@@ -265,8 +265,10 @@ pub fn compute_shielded_identity_balance_write_fee_v0(
 /// All arithmetic is checked: an overflow (only reachable via pathological fee constants or key
 /// counts) surfaces as `ProtocolError::Overflow` instead of silently wrapping.
 /// Flat fee for `IdentityTopUpFromShieldedPool`: the base shielded minimum plus the flat
-/// identity-balance write component, mirroring `compute_shielded_unshield_fee_v0`'s address
-/// write component (the top-up writes one balance element, priced like an address write).
+/// identity-balance write component, built like `compute_shielded_unshield_fee_v0`'s address
+/// write component but calibrated to the measured processing cost of replacing the existing
+/// identity's balance element (it adds no storage; see
+/// `SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES`).
 pub fn compute_shielded_identity_top_up_fee_v0(
     num_actions: usize,
     platform_version: &PlatformVersion,
