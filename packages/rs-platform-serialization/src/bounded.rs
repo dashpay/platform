@@ -52,6 +52,13 @@ pub struct CodecBounds {
     /// Maximum size of the encoded payload in bytes.
     pub max_bytes: u32,
     /// Maximum container nesting depth. The outermost array or map is depth 1.
+    ///
+    /// This is the limit that protects the stack. Bounded decoding and
+    /// encoding walk containers iteratively, but a decoded value tree is as
+    /// deep as this allows and its `Drop`, `Clone` and derived `Encode` are
+    /// recursive, so choose it for the target's stack rather than for the
+    /// width of the field. The native document depth limit of 256 is the
+    /// reference value; `u16::MAX` is representable, not recommended.
     pub max_depth: u16,
     /// Maximum number of container entries across the whole value: one per
     /// array item, two per map entry (key and value), one per string in an
