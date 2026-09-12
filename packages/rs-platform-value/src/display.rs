@@ -1,10 +1,12 @@
 use crate::Value;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
-use std::fmt::{Display, Formatter};
+use core::fmt::{self, Display, Formatter};
 
 impl Display for Value {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(&self.string_representation())
     }
 }

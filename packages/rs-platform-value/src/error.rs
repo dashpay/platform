@@ -1,4 +1,5 @@
-use std::fmt::Display;
+use alloc::string::{String, ToString};
+use core::fmt::Display;
 
 use thiserror::Error;
 

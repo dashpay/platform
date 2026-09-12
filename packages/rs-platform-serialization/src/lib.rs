@@ -1,13 +1,38 @@
+#![cfg_attr(not(any(test, feature = "std")), no_std)]
+
+//! Bincode based serialization for Dash Platform.
+//!
+//! Two profiles share this crate:
+//!
+//! - the native profile (default features) adds the `PlatformVersion` aware
+//!   traits and free functions that shipped protocol versions decode through;
+//! - the allocation-only profile (`--no-default-features`) is `no_std` +
+//!   `alloc` and offers the [`bounded`] codec seam, where every decode carries
+//!   caller supplied [`bounded::CodecBounds`] instead of ambient state.
+
+extern crate alloc;
+#[cfg(any(test, feature = "std"))]
+extern crate std;
+
+pub mod bounded;
 pub mod de;
 pub mod enc;
 mod features;
 
-use bincode::config::{BigEndian, Config, Configuration, NoLimit, Varint};
+#[cfg(feature = "platform-version")]
+use bincode::config::Config;
+use bincode::config::{BigEndian, Configuration, NoLimit, Varint};
+#[cfg(feature = "platform-version")]
 use bincode::de::read::Reader;
+#[cfg(feature = "platform-version")]
 use bincode::de::{read, DecoderImpl};
+#[cfg(feature = "platform-version")]
 use bincode::enc::write::Writer;
+#[cfg(feature = "platform-version")]
 use bincode::enc::{write, EncoderImpl};
+#[cfg(feature = "platform-version")]
 pub use enc::PlatformVersionEncode;
+#[cfg(feature = "platform-version")]
 pub use features::platform_encode_to_vec;
 
 /// Bincode configuration for all platform serialization: big-endian, varint integers, no size limit.
@@ -21,23 +46,24 @@ pub type BincodeContext = ();
 
 pub use de::DefaultBorrowDecode;
 pub use de::DefaultDecode;
+#[cfg(feature = "platform-version")]
 pub use de::PlatformVersionedBorrowDecode;
+#[cfg(feature = "platform-version")]
 pub use de::PlatformVersionedDecode;
 
 pub use bincode::enc::Encode;
 pub use bincode::error;
 pub use de::BorrowDecode;
 pub use de::Decode;
+#[cfg(feature = "platform-version")]
 use platform_version::version::PlatformVersion;
-
-extern crate alloc;
-extern crate std;
 
 /// Encode the given value into the given slice. Returns the amount of bytes that have been written.
 ///
 /// See the [config] module for more information on configurations.
 ///
 /// [config]: config/index.html
+#[cfg(feature = "platform-version")]
 pub fn platform_encode_into_slice<E: PlatformVersionEncode, C: Config>(
     val: E,
     dst: &mut [u8],
@@ -55,6 +81,7 @@ pub fn platform_encode_into_slice<E: PlatformVersionEncode, C: Config>(
 /// See the [config] module for more information on configurations.
 ///
 /// [config]: config/index.html
+#[cfg(feature = "platform-version")]
 pub fn encode_into_writer<E: PlatformVersionEncode, W: Writer, C: Config>(
     val: E,
     writer: W,
@@ -70,6 +97,7 @@ pub fn encode_into_writer<E: PlatformVersionEncode, W: Writer, C: Config>(
 /// See the [config] module for more information on configurations.
 ///
 /// [config]: config/index.html
+#[cfg(feature = "platform-version")]
 pub fn platform_versioned_decode_from_slice<D: PlatformVersionedDecode, C: Config>(
     src: &[u8],
     config: C,
@@ -85,6 +113,7 @@ pub fn platform_versioned_decode_from_slice<D: PlatformVersionedDecode, C: Confi
 /// See the [config] module for more information on configurations.
 ///
 /// [config]: config/index.html
+#[cfg(feature = "platform-version")]
 pub fn platform_versioned_borrow_decode_from_slice<
     'a,
     D: PlatformVersionedBorrowDecode<'a>,
@@ -104,6 +133,7 @@ pub fn platform_versioned_borrow_decode_from_slice<
 /// See the [config] module for more information on configurations.
 ///
 /// [config]: config/index.html
+#[cfg(feature = "platform-version")]
 pub fn platform_versioned_decode_from_reader<D: PlatformVersionedDecode, R: Reader, C: Config>(
     reader: R,
     config: C,
@@ -113,7 +143,7 @@ pub fn platform_versioned_decode_from_reader<D: PlatformVersionedDecode, R: Read
     D::platform_versioned_decode(&mut decoder, platform_version)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "platform-version"))]
 mod tests {
     use super::*;
     use platform_version::version::PlatformVersion;

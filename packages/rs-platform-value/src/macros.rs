@@ -276,12 +276,14 @@ macro_rules! platform_value_internal {
 
 // The platform_value_internal macro above cannot invoke vec directly because it uses
 // local_inner_macros. A vec invocation there would resolve to $crate::vec.
-// Instead invoke vec here outside of local_inner_macros.
+// Instead invoke vec here outside of local_inner_macros, through the crate's own
+// re-export so the expansion also works inside a `#![no_std]` guest that has no
+// `vec!` in its prelude.
 #[macro_export]
 #[doc(hidden)]
 macro_rules! platform_value_internal_vec {
     ($($content:tt)*) => {
-        vec![$($content)*]
+        $crate::__private::vec![$($content)*]
     };
 }
 
