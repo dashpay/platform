@@ -19,4 +19,5 @@ pub const FEE_VERSION1: FeeVersion = FeeVersion {
     data_contract_registration: FEE_DATA_CONTRACT_REGISTRATION_VERSION1,
     state_transition_min_fees: STATE_TRANSITION_MIN_FEES_VERSION1,
     vote_resolution_fund_fees: VOTE_RESOLUTION_FUND_FEES_VERSION1,
+    dashvm: None, // smart-contract pricing arrives with the 5.0 protocol version
 };
