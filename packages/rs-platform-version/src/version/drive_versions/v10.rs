@@ -1,12 +1,13 @@
 use crate::version::drive_versions::drive_contract_method_versions::v5::DRIVE_CONTRACT_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
+use crate::version::drive_versions::drive_identity_method_versions::v3::DRIVE_IDENTITY_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_state_transition_method_versions::v5::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERIFY_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::drive_versions::{
-    DriveBatchOperationsMethodVersion, DriveMethodVersions, DrivePlatformSystemMethodVersions,
-    DriveSystemEstimationCostsMethodVersions, DriveVersion,
+    DriveBatchOperationsMethodVersion, DriveFeesMethodVersions, DriveMethodVersions,
+    DrivePlatformSystemMethodVersions, DriveSystemEstimationCostsMethodVersions, DriveVersion,
 };
 
 /// Drive version 10.
@@ -45,11 +46,23 @@ use crate::version::drive_versions::{
 ///   `stateless_delete_of_non_tree_for_costs` to 1, and
 ///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete and a
 ///   system credits update describe their layers as they are. Applying a batch is unchanged.
+/// * **Fee history required for refunds** — `fees.calculate_fee` 0 -> 1.
+///   The v1 generation consults the block's fee history on every fee
+///   version number and returns an internal error for an owner-attributed
+///   (sectioned) storage removal without that history, where v0 priced
+///   fee version number 1 against an empty map. Every shipped schedule
+///   shares number 1 and the same storage rates, so the credits are
+///   unchanged; only a missing history is now an error instead of a
+///   silent fallback to the first-generation rates.
+/// * **Recorded-owner refund credits** — `DRIVE_IDENTITY_METHOD_VERSIONS_V3`
+///   turns on `update.credit_storage_refunds_to_owners`, the primitive
+///   block lifecycle paths use to credit each recorded owner of a refund
+///   and report the amount whose owner has no balance element.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: compiled contract storage
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's, as contracts are stored compiled
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete estimates
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4,         // changed in v10: the yes/no poll kind
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers
@@ -63,6 +76,8 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
                 for_total_system_credits_update: 1, // changed in v10: `Misc` described with its subtrees
             },
         },
+        fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: fee history required and consulted for every storage refund
+        identity: DRIVE_IDENTITY_METHOD_VERSIONS_V3, // changed in v10: credit_storage_refunds_to_owners primitive for lifecycle refund settlement
         ..DRIVE_VERSION_V9.methods
     },
     ..DRIVE_VERSION_V9
