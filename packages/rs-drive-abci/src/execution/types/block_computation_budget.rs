@@ -16,16 +16,33 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::fee::smart_contract_computation::ComputationUnits;
 use dpp::version::PlatformVersion;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Process-local identity of one ledger instance, so a reservation can only be settled into
+/// the ledger that issued it. Never serialised and never consensus-visible: it only ties two
+/// values in the same process together.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LedgerId(u64);
+
+impl LedgerId {
+    fn next() -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
+}
 
 /// The admitted computation bound of one contract invocation, held against the block's budget
 /// until it is settled.
 ///
 /// Not `Clone` and consumed by [`BlockComputationBudget::settle`], so a reservation can only be
-/// spent once. Dropping it without settling keeps its bound held for the rest of the block; a
-/// caller that abandons an invocation before it runs settles with zero consumption instead.
+/// spent once, and bound to the ledger that issued it, so it cannot be settled into another
+/// ledger (which would credit that ledger with units it never held). Dropping it without
+/// settling keeps its bound held for the rest of the block; a caller that abandons an invocation
+/// before it runs settles with zero consumption instead.
 #[derive(Debug, PartialEq, Eq)]
 #[must_use = "an unsettled reservation keeps its bound held for the rest of the block"]
 pub struct ComputationReservation {
+    ledger: LedgerId,
     bound: ComputationUnits,
 }
 
@@ -50,16 +67,36 @@ pub struct BlockComputationBudgetExceeded {
 /// already handed out.
 ///
 /// Invariant after every operation: `consumed + held + remaining == limit`, where `held` is the
-/// sum of the outstanding reservations. Every operation uses checked arithmetic; the invariant
-/// keeps each intermediate value within `limit`, but the checks make that proof local to each
-/// method rather than something a reader has to carry across the file.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// sum of the outstanding reservations this ledger issued. Every operation uses checked
+/// arithmetic; the invariant keeps each intermediate value within `limit`, but the checks make
+/// that proof local to each method rather than something a reader has to carry across the file.
+/// A reservation issued by another ledger is refused by [`settle`](Self::settle) before any
+/// counter changes, because its bound was never subtracted from this ledger's `remaining`.
+///
+/// Cloning a ledger (the block execution context is `Clone`) copies the counters into a new
+/// ledger with its own identity: the clone continues the accounting from the same state, but
+/// reservations the original issued before the clone can only be settled into the original,
+/// and reservations the clone issues only into the clone. The two never share a hold.
+#[derive(Debug, PartialEq, Eq)]
 pub struct BlockComputationBudget {
+    id: LedgerId,
     limit: ComputationUnits,
     /// Units settled as actually consumed.
     consumed: ComputationUnits,
     /// Units still available to reserve: the limit minus consumed and held units.
     remaining: ComputationUnits,
+}
+
+impl Clone for BlockComputationBudget {
+    /// A new ledger with the same counters and its own identity; see the type documentation.
+    fn clone(&self) -> Self {
+        Self {
+            id: LedgerId::next(),
+            limit: self.limit,
+            consumed: self.consumed,
+            remaining: self.remaining,
+        }
+    }
 }
 
 impl BlockComputationBudget {
@@ -76,6 +113,7 @@ impl BlockComputationBudget {
     /// A ledger over an explicit limit.
     pub fn with_limit(limit: ComputationUnits) -> Self {
         Self {
+            id: LedgerId::next(),
             limit,
             consumed: 0,
             remaining: limit,
@@ -108,7 +146,10 @@ impl BlockComputationBudget {
         match self.remaining.checked_sub(bound) {
             Some(remaining) => {
                 self.remaining = remaining;
-                Ok(ComputationReservation { bound })
+                Ok(ComputationReservation {
+                    ledger: self.id,
+                    bound,
+                })
             }
             None => Err(BlockComputationBudgetExceeded {
                 requested: bound,
@@ -121,14 +162,22 @@ impl BlockComputationBudget {
     /// units are recorded and the unused part of the bound is returned to the block. Returns
     /// the released units.
     ///
-    /// `actual` above the reserved bound is `ExecutionError::CorruptedCodeExecution`: the
-    /// runtime is handed the bound as its budget and cannot legally exceed it, so this is a
-    /// broken runtime, not an admission outcome. The ledger is unchanged in that case.
+    /// Two misuses are `ExecutionError::CorruptedCodeExecution`, and the ledger is unchanged in
+    /// both: a reservation issued by another ledger (its bound was never held here, so releasing
+    /// it would let this block admit more than its limit), and `actual` above the reserved bound
+    /// (the runtime is handed the bound as its budget and cannot legally exceed it, so this is a
+    /// broken runtime, not an admission outcome).
     pub fn settle(
         &mut self,
         reservation: ComputationReservation,
         actual: ComputationUnits,
     ) -> Result<ComputationUnits, Error> {
+        if reservation.ledger != self.id {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "a computation reservation was settled into a ledger other than the one that issued it",
+            )));
+        }
+
         let released = reservation
             .bound
             .checked_sub(actual)
@@ -210,12 +259,8 @@ mod tests {
             }
         );
         assert_eq!(
-            budget,
-            BlockComputationBudget {
-                limit: 1_000,
-                consumed: 0,
-                remaining: 0,
-            },
+            (budget.limit(), budget.consumed(), budget.remaining()),
+            (1_000, 0, 0),
             "a refused reservation must leave the ledger unchanged"
         );
 
@@ -258,13 +303,89 @@ mod tests {
             "expected a corrupted code execution error, got {result:?}"
         );
         assert_eq!(
-            budget,
-            BlockComputationBudget {
-                limit: 10_000,
-                consumed: 0,
-                remaining: 9_000,
-            },
+            (budget.limit(), budget.consumed(), budget.remaining()),
+            (10_000, 0, 9_000),
             "a rejected settlement must leave the ledger unchanged, with the bound still held"
+        );
+    }
+
+    #[test]
+    fn should_reject_settling_a_reservation_issued_by_another_ledger() {
+        let mut issuing = ledger(100);
+        let mut other = ledger(100);
+
+        let reservation = issuing.reserve(80).expect("80 units fit in 100");
+        assert_eq!(issuing.remaining(), 20);
+        assert_eq!(other.remaining(), 100);
+
+        let result = other.settle(reservation, 0);
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(_)))
+            ),
+            "expected a corrupted code execution error, got {result:?}"
+        );
+        assert_eq!(
+            (other.consumed(), other.remaining()),
+            (0, 100),
+            "a foreign reservation must not credit the receiving ledger"
+        );
+        assert_eq!(
+            (issuing.consumed(), issuing.remaining()),
+            (0, 20),
+            "the issuing ledger keeps the bound held; the reservation was consumed by the \
+             rejected settlement and cannot be returned"
+        );
+        let refused = other
+            .reserve(101)
+            .expect_err("the other ledger must still be bounded by its own limit");
+        assert_eq!(refused.remaining, 100);
+    }
+
+    #[test]
+    fn should_give_a_clone_its_own_identity_with_the_same_counters() {
+        let mut original = ledger(1_000);
+        let before_clone = original.reserve(300).expect("300 units fit in 1,000");
+
+        let mut cloned = original.clone();
+        assert_eq!(
+            (cloned.limit(), cloned.consumed(), cloned.remaining()),
+            (1_000, 0, 700),
+            "a clone continues from the same counters"
+        );
+        assert_ne!(original, cloned, "a clone is a distinct ledger");
+
+        // A reservation issued before the clone belongs to the original only.
+        let result = cloned.settle(before_clone, 100);
+        assert!(
+            matches!(
+                result,
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(_)))
+            ),
+            "expected a corrupted code execution error, got {result:?}"
+        );
+        assert_eq!((cloned.consumed(), cloned.remaining()), (0, 700));
+
+        // Each ledger settles what it issued, and neither sees the other's settlement.
+        let from_original = original.reserve(200).expect("200 units fit in 700");
+        let released = original
+            .settle(from_original, 50)
+            .expect("the original settles its own reservation");
+        assert_eq!(released, 150);
+        assert_eq!((original.consumed(), original.remaining()), (50, 650));
+
+        let from_clone = cloned.reserve(700).expect("700 units fit in the clone");
+        let released = cloned
+            .settle(from_clone, 700)
+            .expect("the clone settles its own reservation");
+        assert_eq!(released, 0);
+        assert_eq!((cloned.consumed(), cloned.remaining()), (700, 0));
+        assert_eq!(
+            (original.consumed(), original.remaining()),
+            (50, 650),
+            "the clone's settlement does not touch the original"
         );
     }
 
