@@ -48,11 +48,22 @@ unsafe extern "C" fn resolve_trampoline(
     out_mnemonic_utf8: *mut c_char,
     out_capacity: usize,
     out_len: *mut usize,
+    _out_passphrase_utf8: *mut c_char,
+    _out_passphrase_capacity: usize,
+    out_passphrase_len: *mut usize,
 ) -> i32 {
     let result = catch_unwind(AssertUnwindSafe(|| {
-        if ctx.is_null() || wallet_id_bytes.is_null() || out_mnemonic_utf8.is_null() {
+        if ctx.is_null()
+            || wallet_id_bytes.is_null()
+            || out_mnemonic_utf8.is_null()
+            || out_passphrase_len.is_null()
+        {
             return RESULT_OTHER;
         }
+        // TODO(seed-passphrase): the Kotlin `NativeMnemonicBridge` has no
+        // passphrase slot yet, so Android wallets always resolve with the
+        // empty passphrase (unchanged behaviour).
+        *out_passphrase_len = 0;
         let ctx = &*(ctx as *const KotlinMnemonicCtx);
         let Some(vm) = JVM.get() else {
             return RESULT_OTHER;

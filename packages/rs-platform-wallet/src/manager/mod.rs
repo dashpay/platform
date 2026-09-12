@@ -11,6 +11,7 @@ pub mod platform_address_sync;
 pub mod shielded_sync;
 pub mod startup;
 mod wallet_lifecycle;
+pub use wallet_lifecycle::seed_from_mnemonic;
 
 pub(crate) use persistence_load::run_blocking_load;
 

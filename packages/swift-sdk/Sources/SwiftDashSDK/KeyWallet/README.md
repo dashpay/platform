@@ -52,9 +52,13 @@ let mnemonic = try Mnemonic.generate(wordCount: 24)
 // Create wallet from mnemonic
 let wallet = try Wallet(
     mnemonic: mnemonic,
-    passphrase: nil,
     network: .testnet
 )
+
+// With a BIP39 passphrase ("25th word"): derive the seed, then build
+// the wallet from it.
+let seed = try Mnemonic.toSeed(mnemonic: mnemonic, passphrase: "my-secret-passphrase")
+let passphraseWallet = try Wallet(seed: seed, network: .testnet)
 
 // Get wallet ID
 let walletId = try wallet.id
