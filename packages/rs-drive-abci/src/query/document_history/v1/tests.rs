@@ -403,3 +403,232 @@ fn should_reject_missing_selectors_before_reading_state() {
         .unwrap()
         .is_valid());
 }
+
+/// A response that claims a lifecycle other than the one its proofs establish
+/// is rejected field by field, for a deleted document and for one whose
+/// erasure is under way, not only for a current one.
+#[test]
+fn should_reject_tampered_lifecycle_claims_for_deleted_and_erasing_histories() {
+    use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Selector;
+    use dapi_grpc::platform::v0::get_document_history_request::GetDocumentHistoryRequestV1;
+    use dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV1;
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Setters;
+    use drive_proof_verifier::types::DocumentHistoryState;
+
+    let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+    let mut state = state.as_ref().clone();
+    let contract = json_document_to_contract(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json"
+        ),
+        false,
+        version,
+    )
+    .unwrap();
+    platform
+        .drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .unwrap();
+    let document_type = contract.document_type_for_name("profile").unwrap();
+    let owner = Identifier::from([8; 32]);
+    let mut document = json_document_to_document(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../rs-drive/tests/supporting_files/contract/dashpay/profile0.json"
+        ),
+        Some(owner),
+        document_type,
+        version,
+    )
+    .unwrap();
+    // Enough revisions that one erase chunk leaves some behind.
+    let chunk = version
+        .system_limits
+        .max_document_revisions_erased_per_transition
+        .expect("protocol 14 bounds the erase chunk") as u64;
+    for revision in 1..=chunk + 2 {
+        document.set_revision(Some(revision));
+        platform
+            .drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                revision > 1,
+                BlockInfo::default_with_time(1_000 + revision),
+                true,
+                None,
+                version,
+                None,
+            )
+            .unwrap();
+    }
+    let key = SecretKey::<Bls12381G2Impl>::from_hash(b"document-history-quorum");
+    let provider = Provider {
+        contract: Arc::new(contract.clone()),
+        key: key.public_key().to_bytes().try_into().unwrap(),
+    };
+    state.last_committed_block_info = Some(
+        dpp::block::extended_block_info::v0::ExtendedBlockInfoV0 {
+            basic_info: BlockInfo {
+                height: 42,
+                core_height: 12,
+                time_ms: 3000,
+                epoch: Default::default(),
+            },
+            app_hash: [0; 32],
+            quorum_hash: [9; 32],
+            block_id_hash: [7; 32],
+            proposer_pro_tx_hash: [0; 32],
+            signature: [0; 96],
+            round: 0,
+        }
+        .into(),
+    );
+    let apply = |batch| {
+        platform
+            .drive
+            .apply_batch_low_level_drive_operations(None, None, batch, &mut vec![], &version.drive)
+            .unwrap();
+    };
+    let v1_request = GetDocumentHistoryRequestV1 {
+        data_contract_id: contract.id().to_vec(),
+        document_type_name: "profile".into(),
+        document_id: document.id().to_vec(),
+        limit: None,
+        prove: true,
+        selector: Some(Selector::StartAtMs(0)),
+    };
+    let request: GetDocumentHistoryRequest = v1_request.clone().into();
+
+    // Delete, then start an erasure; after each, sign the new root and check
+    // that the honest response verifies while every altered claim does not.
+    let stages: [(&str, Box<dyn Fn()>, DocumentHistoryState); 2] = [
+        (
+            "deleted",
+            Box::new(|| {
+                apply(
+                    platform
+                        .drive
+                        .delete_document_for_contract_operations(
+                            document.id(),
+                            &contract,
+                            document_type,
+                            &BlockInfo::default_with_time(5_000),
+                            Some(owner),
+                            None,
+                            &mut None,
+                            None,
+                            version,
+                        )
+                        .unwrap(),
+                )
+            }),
+            DocumentHistoryState::Deleted,
+        ),
+        (
+            "erasing",
+            Box::new(|| {
+                apply(
+                    platform
+                        .drive
+                        .erase_document_for_contract_operations(
+                            document.id(),
+                            &contract,
+                            document_type,
+                            &BlockInfo::default_with_time(6_000),
+                            &mut None,
+                            None,
+                            version,
+                        )
+                        .unwrap(),
+                )
+            }),
+            DocumentHistoryState::Erasing,
+        ),
+    ];
+    for (stage, advance, expected_state) in stages {
+        advance();
+        let root = platform
+            .drive
+            .grove
+            .root_hash(None, &version.drive.grove_version)
+            .value
+            .unwrap();
+        let metadata = platform.response_metadata_v0(&state, CheckpointUsed::Current);
+        let signed = signed_proof(
+            vec![],
+            root,
+            &metadata,
+            &key,
+            platform.config.validator_set.quorum_type as u32,
+        );
+        let committed = state.last_committed_block_info.as_mut().unwrap();
+        committed.set_app_hash(root);
+        committed.set_signature(signed.signature.try_into().unwrap());
+
+        let response = platform
+            .query_document_history_v1(v1_request.clone(), &state, version)
+            .unwrap()
+            .into_data()
+            .unwrap();
+        let verify = |response: GetDocumentHistoryResponseV1| {
+            DocumentHistory::maybe_from_proof(
+                request.clone(),
+                GetDocumentHistoryResponse::from(response),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+        };
+        let honest = verify(response.clone())
+            .unwrap_or_else(|error| panic!("{stage}: honest response must verify: {error}"))
+            .unwrap();
+        let lifecycle = honest
+            .lifecycle
+            .expect("history v1 always carries a lifecycle");
+        assert_eq!(lifecycle.state, expected_state, "{stage}");
+        assert_eq!(lifecycle.times.deleted_at_ms, 5_000, "{stage}");
+
+        let tamperings: Vec<(&str, Box<dyn Fn(&mut GetDocumentHistoryResponseV1)>)> = vec![
+            (
+                "state",
+                Box::new(|r| r.lifecycle.as_mut().unwrap().state = 0),
+            ),
+            (
+                "remaining_revisions",
+                Box::new(|r| r.lifecycle.as_mut().unwrap().remaining_revisions += 1),
+            ),
+            (
+                "deleted_at_ms",
+                Box::new(|r| r.lifecycle.as_mut().unwrap().deleted_at_ms += 1),
+            ),
+            (
+                "erasing_started_at_ms",
+                Box::new(|r| r.lifecycle.as_mut().unwrap().erasing_started_at_ms += 1),
+            ),
+            (
+                "erasing_from_time_ms",
+                Box::new(|r| r.lifecycle.as_mut().unwrap().erasing_from_time_ms += 1),
+            ),
+            (
+                "erasing_from_revision",
+                Box::new(|r| r.lifecycle.as_mut().unwrap().erasing_from_revision += 1),
+            ),
+        ];
+        for (field, tamper) in tamperings {
+            let mut tampered = response.clone();
+            tamper(&mut tampered);
+            assert!(
+                verify(tampered).is_err(),
+                "{stage}: a response whose {field} differs from its proof must be rejected"
+            );
+        }
+    }
+}
