@@ -5,10 +5,11 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 
 use std::collections::HashMap;
 
-use crate::drive::constants::DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE;
+use crate::drive::constants::{DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE, STORAGE_FLAGS_SIZE};
 use crate::drive::document::lifecycle::DocumentLifecycleRecord;
 use crate::drive::document::paths::{
-    contract_documents_primary_key_path, document_lifecycle_path, DOCUMENT_LIFECYCLE_TREE_KEY,
+    contract_documents_primary_key_path, document_history_path, document_lifecycle_path,
+    DOCUMENT_LIFECYCLE_TREE_KEY,
 };
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::util::object_size_info::DocumentInfo::{
@@ -18,11 +19,11 @@ use crate::util::storage_flags::StorageFlags;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 
 use crate::drive::Drive;
-use crate::util::grove_operations::QueryTarget::QueryTargetValue;
-use crate::util::grove_operations::{BatchInsertTreeApplyType, QueryType};
+use crate::util::grove_operations::QueryTarget::{QueryTargetTree, QueryTargetValue};
+use crate::util::grove_operations::{BatchInsertTreeApplyType, DirectQueryType, QueryType};
 use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::util::object_size_info::PathKeyInfo::PathKey;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
@@ -157,21 +158,67 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        let document_info = if let QueryType::StatelessQuery { query_target, .. } = query_type {
-            DocumentEstimatedAverageSize(query_target.len())
-        } else if let Some(document_element) = &document_element {
-            let Element::Item(data, element_flags) = document_element else {
-                return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
-                    "the current pointer of a keep-history document did not resolve to an item",
+        let (document_info, latest_revision) =
+            if let QueryType::StatelessQuery { query_target, .. } = query_type {
+                (DocumentEstimatedAverageSize(query_target.len()), 0)
+            } else if let Some(document_element) = &document_element {
+                let Element::Item(data, element_flags) = document_element else {
+                    return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
+                        "the current pointer of a keep-history document did not resolve to an item",
+                    )));
+                };
+                let document =
+                    Document::from_bytes(data.as_slice(), document_type, platform_version)?;
+                let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
+                let latest_revision = document.revision().unwrap_or(1);
+                (
+                    DocumentOwnedInfo((document, storage_flags)),
+                    latest_revision,
+                )
+            } else {
+                return Err(Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(
+                    "document being deleted does not exist",
                 )));
             };
-            let document = Document::from_bytes(data.as_slice(), document_type, platform_version)?;
-            let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
-            DocumentOwnedInfo((document, storage_flags))
+
+        // The record remembers how many revisions the history retained next to
+        // the revision being deleted, so a later by-revision read can tell a
+        // contiguous history from one a pre-protocol-14 overwrite left gapped.
+        // That count is the history tree's own aggregate, read off its element
+        // in the type's history tree.
+        let mut history_type_path = document_history_path(
+            contract.id_ref().as_bytes(),
+            document_type.name().as_str(),
+            document_id.as_slice(),
+        );
+        history_type_path.pop();
+        let history_query_type = if estimated_costs_only_with_layer_info.is_some() {
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_type: TreeType::NormalTree,
+                query_target: QueryTargetTree(STORAGE_FLAGS_SIZE, TreeType::ProvableCountTree),
+            }
         } else {
-            return Err(Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(
-                "document being deleted does not exist",
-            )));
+            DirectQueryType::StatefulDirectQuery
+        };
+        let history_element = self.grove_get_raw(
+            history_type_path.as_slice().into(),
+            document_id.as_slice(),
+            history_query_type,
+            transaction,
+            &mut batch_operations,
+            &platform_version.drive,
+        )?;
+        let revision_count = match (
+            estimated_costs_only_with_layer_info.is_some(),
+            history_element,
+        ) {
+            (true, _) => 0,
+            (false, Some(Element::ProvableCountTree(_, count, _))) => count,
+            (false, _) => {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "a keep-history document being deleted has no history tree".to_string(),
+                )))
+            }
         };
 
         // The pointer goes; the revisions it named stay in the history tree.
@@ -213,7 +260,11 @@ impl Drive {
             document_id,
             contract,
             document_type,
-            DocumentLifecycleRecord::deleted_at(block_info.time_ms),
+            DocumentLifecycleRecord::deleted_at(
+                block_info.time_ms,
+                latest_revision,
+                revision_count,
+            ),
             record_flags.as_ref(),
             estimated_costs_only_with_layer_info,
             transaction,
