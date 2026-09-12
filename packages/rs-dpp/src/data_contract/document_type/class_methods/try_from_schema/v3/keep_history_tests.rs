@@ -249,6 +249,39 @@ fn should_reject_a_keep_history_type_that_carries_a_contested_index() {
     assert_contract_structure_consensus_error(&error);
 }
 
+/// The refusal is a registration rule. A contract that carries the combination
+/// was registered under a protocol that allowed it, and every stored contract
+/// is loaded through the structural parse, so that parse must keep reading it
+/// or the activation that migrates its history could not even start.
+#[test]
+fn should_still_load_a_legacy_contested_keep_history_type_without_validation() {
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "label": {"type": "string", "maxLength": 50, "position": 0},
+        },
+        "indices": [
+            {
+                "name": "byLabel",
+                "properties": [{"label": "asc"}],
+                "unique": true,
+                "contested": {
+                    "fieldMatches": [{"field": "label", "regexPattern": "^[a-z]{3,10}$"}],
+                    "resolution": 0,
+                },
+            },
+        ],
+        "required": ["label"],
+        "additionalProperties": false,
+        "documentsMutable": false,
+        "documentsKeepHistory": true,
+        "canBeDeleted": false,
+    });
+    let document_type = parse_at_version(schema, 14, false)
+        .expect("a stored contract with this combination must still load");
+    assert!(document_type.documents_keep_history());
+}
+
 /// The same index without history is unaffected: the refusal is about the
 /// combination, not about contested indexes.
 #[test]

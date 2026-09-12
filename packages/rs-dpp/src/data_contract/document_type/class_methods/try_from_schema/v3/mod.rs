@@ -317,7 +317,12 @@ fn try_from_schema_generation_3(
     // it sees the value resolved against the contract config default (`true`
     // when the key is omitted).
     common::apply_can_be_erased(&mut v2, can_be_erased, name)?;
-    common::reject_contested_keep_history(&v2, name)?;
+    // A registration-time rule only: a contract that already carries this
+    // combination was registered under an earlier protocol, and the structural
+    // parse that loads stored contracts must keep reading it.
+    if full_validation {
+        common::reject_contested_keep_history(&v2, name)?;
+    }
 
     Ok(v2)
 }
