@@ -82,6 +82,17 @@ public struct ShieldedSyncEvent: Sendable {
 }
 
 extension PlatformWalletManager {
+    /// Shutdown leaves the handle live for admitted operations after its
+    /// early shielded stop. Do not restart or mutate that lifecycle while
+    /// the main actor is reentrant during the drain.
+    private func ensureShieldedLifecycleAllowed(_ name: String) throws {
+        try ensureConfigured()
+        guard !shutdownRequested else {
+            throw PlatformWalletError.invalidHandle(
+                "manager shutdown is in progress; \(name) rejected")
+        }
+    }
+
     func handleShieldedSyncCompleted(_ event: ShieldedSyncEvent, generation: UInt64) {
         // Drop a trailing event that the Rust drain already dispatched but
         // the main actor only delivers after stop/clear returned. The FFI
@@ -187,11 +198,7 @@ extension PlatformWalletManager {
         resolver: MnemonicResolver,
         accounts: [UInt32] = [0]
     ) throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("bindShielded")
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
                 "walletId must be exactly 32 bytes"
@@ -249,11 +256,7 @@ extension PlatformWalletManager {
     /// throws — the SQLite handle is opened once per manager and
     /// can't be repointed mid-flight.
     public func configureShielded(dbPath: String) throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("configureShielded")
         try dbPath.withCString { dbPathPtr in
             try platform_wallet_manager_configure_shielded(handle, dbPathPtr).check()
         }
@@ -266,11 +269,7 @@ extension PlatformWalletManager {
     /// call `bindShielded` later and the loop will pick the binding
     /// up on its next tick.
     public func startShieldedSync(intervalSeconds: UInt64? = nil) throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("startShieldedSync")
 
         if let intervalSeconds {
             try setShieldedSyncInterval(seconds: intervalSeconds)
@@ -283,11 +282,7 @@ extension PlatformWalletManager {
     }
 
     public func stopShieldedSync() throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("stopShieldedSync")
         try platform_wallet_manager_shielded_sync_stop(handle).check()
         // The Rust drain returned; bump the generation so any trailing
         // completion event the main actor delivers after this point is
@@ -314,11 +309,7 @@ extension PlatformWalletManager {
     /// registries and the next sync pass re-saves notes via
     /// the changeset path.
     public func clearShielded() throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("clearShielded")
         try withShieldedLocalBalanceMutation {
             try platform_wallet_manager_shielded_clear(handle).check()
         }
@@ -373,20 +364,12 @@ extension PlatformWalletManager {
     }
 
     public func setShieldedSyncInterval(seconds: UInt64) throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("setShieldedSyncInterval")
         try platform_wallet_manager_shielded_sync_set_interval(handle, seconds).check()
     }
 
     public func syncShieldedNow() async throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("syncShieldedNow")
         // No generation reset needed: this run's completion event snapshots
         // the current generation and passes the guard, while a trailing
         // event from a prior stopped run still carries the older generation.
@@ -1123,11 +1106,7 @@ extension PlatformWalletManager {
     }
 
     public func syncShieldedWalletNow(walletId: Data) async throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("syncShieldedWalletNow")
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
                 "walletId must be exactly 32 bytes"
