@@ -409,6 +409,24 @@ every time the number moves. A new method version is warranted only when the
 `SystemLimits`. Raising the percentage later is a `SYSTEM_LIMITS_V5`, not a
 `v3`.
 
+Limits that only exist from a certain protocol version are `Option`s, `None`
+on every table that predates them. `SystemLimits` carries four such fields for
+the contract-code capable contract transitions introduced with protocol
+version 17: `max_contract_code_state_transition_size` (the wire cap of the
+family), `max_contract_code_state_transition_decode_budget` (the bincode budget
+it decodes under), `max_contract_code_bundle_bytes` and
+`max_contract_code_modules_per_bundle` (the bounds of the bundle itself). A
+reader of the family cap falls back to `max_state_transition_size` where the
+option is `None`, so the contract families are bounded like every other one on
+older versions.
+
+`ConsensusVersions` holds the Tenderdash consensus parameters Drive owns. Next
+to `tenderdash_consensus_version` it carries `block_max_bytes` and
+`block_max_gas`, both `None` until protocol version 17; `consensus_params_update`
+v2 pushes them to Tenderdash when the new protocol version sets them and the
+previous one did not carry the same pair, which is how a block size change is
+adopted by every validator at the same height.
+
 ## How Subsystem Version Constants Compose
 
 Each subsystem version constant (like `DRIVE_VERSION_V1`) is assembled from
