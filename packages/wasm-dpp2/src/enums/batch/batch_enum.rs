@@ -13,6 +13,7 @@ pub enum BatchTypeWasm {
     UpdatePrice,
     IgnoreWhileBumpingRevision,
     IndexOnlyDelete,
+    Erase,
 }
 
 impl TryFrom<&JsValue> for BatchTypeWasm {
@@ -33,6 +34,7 @@ impl TryFrom<&JsValue> for BatchTypeWasm {
                     "updateprice" => Ok(BatchTypeWasm::UpdatePrice),
                     "ignorewhilebumpingrevision" => Ok(BatchTypeWasm::IgnoreWhileBumpingRevision),
                     "indexonlydelete" => Ok(BatchTypeWasm::IndexOnlyDelete),
+                    "erase" => Ok(BatchTypeWasm::Erase),
                     _ => Err(WasmDppError::invalid_argument(format!(
                         "unknown batch type value: {}",
                         enum_val
@@ -53,6 +55,7 @@ impl TryFrom<&JsValue> for BatchTypeWasm {
                     5 => Ok(BatchTypeWasm::UpdatePrice),
                     6 => Ok(BatchTypeWasm::IgnoreWhileBumpingRevision),
                     7 => Ok(BatchTypeWasm::IndexOnlyDelete),
+                    8 => Ok(BatchTypeWasm::Erase),
                     _ => Err(WasmDppError::invalid_argument(format!(
                         "unknown batch type value: {}",
                         enum_val
@@ -82,6 +85,7 @@ impl From<BatchTypeWasm> for String {
             BatchTypeWasm::UpdatePrice => String::from("updatePrice"),
             BatchTypeWasm::IgnoreWhileBumpingRevision => String::from("ignoreWhileBumpingRevision"),
             BatchTypeWasm::IndexOnlyDelete => String::from("indexOnlyDelete"),
+            BatchTypeWasm::Erase => String::from("erase"),
         }
     }
 }
@@ -99,6 +103,7 @@ impl From<DocumentTransitionActionType> for BatchTypeWasm {
                 BatchTypeWasm::IgnoreWhileBumpingRevision
             }
             DocumentTransitionActionType::IndexOnlyDelete => BatchTypeWasm::IndexOnlyDelete,
+            DocumentTransitionActionType::Erase => BatchTypeWasm::Erase,
         }
     }
 }

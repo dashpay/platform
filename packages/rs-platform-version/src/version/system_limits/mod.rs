@@ -100,6 +100,23 @@ pub struct SystemLimits {
     /// time-range indexes (nothing to bound: the `timeRange` keyword does not
     /// parse there).
     pub max_time_range_overlap_factor: Option<u64>,
+    /// Maximum number of retained revisions one erase transition may remove
+    /// from a deleted keep-history document.
+    ///
+    /// An erase is chunked so that a single transition can never expand into
+    /// unbounded work: the chunk is bounded here, and the admission estimate
+    /// every erase must have in balance is sized for a full chunk whatever the
+    /// document's actual history length. A document with more retained
+    /// revisions than this stays in the erasing state and is finished by
+    /// further erase transitions, which any identity may submit.
+    ///
+    /// The bound applies per transition, not per block, so raising it raises
+    /// the work a maximum legal block of erases can demand as well as the
+    /// balance every single erase needs up front.
+    ///
+    /// `None` preserves the behavior of protocol versions that predate the
+    /// document lifecycle, where no erase transition can exist.
+    pub max_document_revisions_erased_per_transition: Option<u16>,
 }
 
 #[cfg(test)]

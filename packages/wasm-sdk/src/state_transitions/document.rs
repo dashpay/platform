@@ -12,7 +12,9 @@ use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
-use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
+use dash_sdk::platform::documents::transitions::{
+    DocumentDeleteTransitionBuilder, DocumentEraseTransitionBuilder,
+};
 use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
 use dash_sdk::platform::transition::put_document::PutDocument;
 use dash_sdk::platform::transition::transfer_document::TransferDocument;
@@ -500,6 +502,154 @@ impl WasmSdk {
 
         self.inner_sdk()
             .document_delete(builder, &identity_key, &signer)
+            .await?;
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Document Erase
+// ============================================================================
+
+/// TypeScript interface for document erase options
+#[wasm_bindgen(typescript_custom_section)]
+const DOCUMENT_ERASE_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for erasing the retained revisions of an already deleted document.
+ */
+export interface DocumentEraseOptions {
+  /**
+   * The document to erase, or the identifiers that name it. The document is
+   * already invisible to ordinary reads, so its identifiers are all that is
+   * needed.
+   */
+  document: Document | {
+    id: IdentifierLike;
+    ownerId: IdentifierLike;
+    dataContractId: IdentifierLike;
+    documentTypeName: string;
+  };
+
+  /**
+   * The identity submitting and paying for this erase. It is the identity the
+   * key and signer below belong to, and its contract nonce is consumed.
+   * Defaults to the document's owner, which is who the first erase must come
+   * from; the erases after it may come from any identity, which then names
+   * itself here.
+   */
+  identityId?: IdentifierLike;
+
+  /**
+   * The identity public key to use for signing the transition.
+   * The first erase must be signed by the document's owner; any identity may
+   * sign the ones after it.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
+   * Signer containing the private key that corresponds to the identity key.
+   * Use IdentitySigner to add the private key before calling.
+   */
+  signer: IdentitySigner;
+
+  /**
+   * Optional settings for the broadcast operation.
+   * Includes retries, timeouts, userFeeIncrease, etc.
+   */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DocumentEraseOptions")]
+    pub type DocumentEraseOptionsJs;
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Erase a chunk of the retained revisions of an already deleted document.
+    ///
+    /// A document with more retained revisions than one transition may remove
+    /// needs several calls. The first must come from the document's owner and
+    /// commits the document to erasure; any identity may make the ones after
+    /// it. Read the document's history to see how much is left.
+    ///
+    /// @param options - Erase options including the document identifiers, identity key, and signer
+    /// @returns Promise that resolves when the erase has been accepted
+    #[wasm_bindgen(js_name = "documentErase")]
+    pub async fn document_erase(
+        &self,
+        options: DocumentEraseOptionsJs,
+    ) -> Result<(), WasmSdkError> {
+        let document_js = js_sys::Reflect::get(&options, &JsValue::from_str("document"))
+            .map_err(|_| WasmSdkError::invalid_argument("document is required"))?;
+
+        if document_js.is_undefined() || document_js.is_null() {
+            return Err(WasmSdkError::invalid_argument("document is required"));
+        }
+
+        // The transition carries only the base, so the values of a Document
+        // instance are not needed and a plain object of identifiers works for
+        // every document type.
+        let (document_id, owner_id, contract_id, document_type_name): (
+            Identifier,
+            Identifier,
+            Identifier,
+            String,
+        ) = if get_class_type(&document_js).ok().as_deref() == Some("Document") {
+            let doc: DocumentWasm = document_js
+                .to_wasm::<DocumentWasm>("Document")
+                .map(|boxed| (*boxed).clone())?;
+            let doc_inner: Document = doc.clone().into();
+            (
+                doc.id().into(),
+                doc_inner.owner_id(),
+                doc.data_contract_id().into(),
+                doc.document_type_name(),
+            )
+        } else {
+            (
+                IdentifierWasm::try_from_options(&document_js, "id")?.into(),
+                IdentifierWasm::try_from_options(&document_js, "ownerId")?.into(),
+                IdentifierWasm::try_from_options(&document_js, "dataContractId")?.into(),
+                try_from_options_with(&document_js, "documentTypeName", |v| {
+                    try_to_string(v, "documentTypeName")
+                })?,
+            )
+        };
+
+        // The builder's owner is the identity that submits and pays; only the
+        // first erase has to be the document's owner, so a continuation names
+        // its own identity here and keeps the document owner as metadata.
+        let submitter_id: Identifier =
+            match try_from_options_optional::<IdentifierWasm>(&options, "identityId")? {
+                Some(identity_id) => identity_id.into(),
+                None => owner_id,
+            };
+
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        let builder = DocumentEraseTransitionBuilder::new(
+            Arc::new(data_contract),
+            document_type_name,
+            document_id,
+            submitter_id,
+        );
+        let builder = if let Some(s) = settings {
+            builder.with_settings(s)
+        } else {
+            builder
+        };
+
+        self.inner_sdk()
+            .document_erase(builder, &identity_key, &signer)
             .await?;
 
         Ok(())

@@ -26,6 +26,7 @@ describe('DocumentsFacade', () => {
   let documentCreateStub: SinonStub;
   let documentReplaceStub: SinonStub;
   let documentDeleteStub: SinonStub;
+  let documentEraseStub: SinonStub;
   let documentTransferStub: SinonStub;
   let documentPurchaseStub: SinonStub;
   let documentSetPriceStub: SinonStub;
@@ -72,13 +73,14 @@ describe('DocumentsFacade', () => {
       proof: {},
       metadata: {},
     });
-    getDocumentHistoryStub = this.sinon.stub(wasmSdk, 'getDocumentHistory').resolves(new Map());
+    getDocumentHistoryStub = this.sinon.stub(wasmSdk, 'getDocumentHistory').resolves({ entries: [], lifecycle: { state: 'ABSENT', remainingRevisions: BigInt(0) } });
     getDocumentHistoryWithProofInfoStub = this.sinon.stub(
       wasmSdk,
       'getDocumentHistoryWithProofInfo',
     ).resolves({
       data: new Map(),
-      proof: {},
+      entriesProof: undefined,
+      metadataProof: {},
       metadata: {},
     });
     getDocumentStub = this.sinon.stub(wasmSdk, 'getDocument').resolves(document);
@@ -92,6 +94,7 @@ describe('DocumentsFacade', () => {
     documentCreateStub = this.sinon.stub(wasmSdk, 'documentCreate').resolves();
     documentReplaceStub = this.sinon.stub(wasmSdk, 'documentReplace').resolves();
     documentDeleteStub = this.sinon.stub(wasmSdk, 'documentDelete').resolves();
+    documentEraseStub = this.sinon.stub(wasmSdk, 'documentErase').resolves();
     documentTransferStub = this.sinon.stub(wasmSdk, 'documentTransfer').resolves();
     documentPurchaseStub = this.sinon.stub(wasmSdk, 'documentPurchase').resolves();
     documentSetPriceStub = this.sinon.stub(wasmSdk, 'documentSetPrice').resolves();
@@ -166,12 +169,19 @@ describe('DocumentsFacade', () => {
         dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
         documentTypeName: 'note',
         documentId: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
-        startAtMs: 1000,
+        startAfter: { timeMs: BigInt(1000), revision: BigInt(1) },
         limit: 10,
-        offset: 1,
       };
 
-      await client.documents.history(query);
+      const result = {
+        entries: [
+          { timeMs: BigInt(1000), revision: BigInt(2), document },
+          { timeMs: BigInt(1000), revision: BigInt(3), document },
+        ],
+        lifecycle: { state: 'ACTIVE', remainingRevisions: BigInt(3) },
+      };
+      getDocumentHistoryStub.resolves(result);
+      expect(await client.documents.history(query)).to.equal(result);
 
       expect(getDocumentHistoryStub).to.be.calledOnceWithExactly(query);
     });
@@ -183,9 +193,12 @@ describe('DocumentsFacade', () => {
         dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
         documentTypeName: 'note',
         documentId: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
+        revision: BigInt(2),
       };
 
-      await client.documents.historyWithProof(query);
+      const result = { data: { entries: [], lifecycle: { state: 'ABSENT', remainingRevisions: BigInt(0) } }, entriesProof: undefined, metadataProof: { grovedbProof: new Uint8Array([2]) }, metadata: {} };
+      getDocumentHistoryWithProofInfoStub.resolves(result);
+      expect(await client.documents.historyWithProof(query)).to.equal(result);
 
       expect(getDocumentHistoryWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
@@ -278,6 +291,37 @@ describe('DocumentsFacade', () => {
       await client.documents.delete(options);
 
       expect(documentDeleteStub).to.be.calledOnceWithExactly(options);
+    });
+  });
+
+  describe('erase()', () => {
+    it('should erase the retained revisions of a deleted document', async () => {
+      const options = {
+        document,
+        identityKey,
+        signer,
+      };
+
+      await client.documents.erase(options);
+
+      expect(documentEraseStub).to.be.calledOnceWithExactly(options);
+    });
+
+    it('should accept document identifiers instead of a Document instance', async () => {
+      const options = {
+        document: {
+          id: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
+          ownerId: '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS',
+          dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+          documentTypeName: 'note',
+        },
+        identityKey,
+        signer,
+      };
+
+      await client.documents.erase(options);
+
+      expect(documentEraseStub).to.be.calledOnceWithExactly(options);
     });
   });
 

@@ -68,6 +68,7 @@ impl DocumentTransitionWasm {
             DocumentTransition::Transfer(_) => JsValue::null(),
             DocumentTransition::UpdatePrice(_) => JsValue::null(),
             DocumentTransition::Purchase(_) => JsValue::null(),
+            DocumentTransition::Erase(_) => JsValue::null(),
             DocumentTransition::IndexOnlyDelete(index_only_delete) => {
                 let json_value = index_only_delete.data().to_json_value().unwrap();
                 json_value
@@ -118,6 +119,7 @@ impl DocumentTransitionWasm {
             DocumentTransition::UpdatePrice(update_price) => Some(update_price.price()),
             DocumentTransition::Purchase(purchase) => Some(purchase.price()),
             DocumentTransition::IndexOnlyDelete(_) => None,
+            DocumentTransition::Erase(_) => None,
         }
     }
 
@@ -131,6 +133,7 @@ impl DocumentTransitionWasm {
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
             DocumentTransition::IndexOnlyDelete(_) => None,
+            DocumentTransition::Erase(_) => None,
         }
     }
 

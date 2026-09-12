@@ -56,6 +56,7 @@ use dpp::state_transition::batch_transition::batched_transition::document_purcha
 use dpp::state_transition::{StateTransitionHasUserFeeIncrease, StateTransitionOwned};
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::DocumentEraseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_index_only_delete_transition_action::DocumentIndexOnlyDeleteTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
 use drive::state_transition_action::batch::BatchTransitionAction;
@@ -858,6 +859,16 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             }
             DocumentTransition::IndexOnlyDelete(document_index_only_delete_transition) => {
                 let (batched_action, fee_result) = DocumentIndexOnlyDeleteTransitionAction::try_from_document_borrowed_index_only_delete_transition_with_contract_lookup(document_index_only_delete_transition, owner_id, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                })?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            DocumentTransition::Erase(document_erase_transition) => {
+                let (batched_action, fee_result) = DocumentEraseTransitionAction::try_from_document_borrowed_erase_transition_with_contract_lookup(document_erase_transition, owner_id, user_fee_increase, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
                 })?;
 

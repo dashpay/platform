@@ -285,6 +285,24 @@ impl Drive {
                 type_key.as_bytes(),
             ];
 
+            if document_type.as_ref().documents_keep_history()
+                && platform_version
+                    .drive
+                    .methods
+                    .document
+                    .insert
+                    .add_document_to_primary_storage
+                    == 1
+            {
+                self.batch_insert_empty_tree(
+                    type_path,
+                    KeyRef(&[crate::drive::document::paths::DOCUMENT_HISTORY_TREE_KEY]),
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+            }
+
             // indexOnly document types have no primary-key tree at all —
             // the index entries are the rows, and nothing is ever addressed
             // by document id, so the `[0]` tree is skipped and only the
