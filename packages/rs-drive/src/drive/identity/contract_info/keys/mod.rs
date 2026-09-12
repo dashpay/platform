@@ -68,8 +68,41 @@ impl IdentityDataContractKeyApplyInfo {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Error> {
-        let contract_id = contract_bounds.identifier().to_buffer();
+    ) -> Result<Vec<Self>, Error> {
+        if let ContractBounds::Scoped(scope) = contract_bounds {
+            return Ok(scope
+                .contracts()
+                .iter()
+                .map(|entry| {
+                    let contract_id = entry.id;
+                    let document_type_keys = entry
+                        .document_types
+                        .as_ref()
+                        .map(|names| {
+                            names
+                                .iter()
+                                .map(|name| (name.clone(), vec![(key_id, purpose)]))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    ContractBased {
+                        contract_id,
+                        document_type_keys,
+                        contract_keys: if entry.document_types.is_none() {
+                            vec![(key_id, purpose)]
+                        } else {
+                            vec![]
+                        },
+                    }
+                })
+                .collect());
+        }
+        let contract_id = contract_bounds
+            .identifier()
+            .ok_or(Error::Identity(IdentityError::IdentityKeyBoundsError(
+                "expected single contract bounds",
+            )))?
+            .to_buffer();
         // we are getting with fetch info to add the cost to the drive operations
         let maybe_contract_fetch_info = drive.get_contract_with_fetch_info_and_add_to_operations(
             contract_id,
@@ -86,28 +119,26 @@ impl IdentityDataContractKeyApplyInfo {
         };
         let contract = &contract_fetch_info.contract;
         match contract_bounds {
-            ContractBounds::SingleContract { .. } => Ok(ContractBased {
+            ContractBounds::SingleContract { .. } => Ok(vec![ContractBased {
                 contract_id: contract.id(),
                 document_type_keys: Default::default(),
                 contract_keys: vec![(key_id, purpose)],
-            }),
+            }]),
             ContractBounds::SingleContractDocumentType {
                 document_type_name: document_type,
                 ..
             } => {
                 let document_type = contract.document_type_for_name(document_type)?;
-                Ok(ContractBased {
+                Ok(vec![ContractBased {
                     contract_id: contract.id(),
                     document_type_keys: BTreeMap::from([(
                         document_type.name().clone(),
                         vec![(key_id, purpose)],
                     )]),
                     contract_keys: vec![],
-                })
-            } // ContractBounds::MultipleContractsOfSameOwner { .. } => Ok(ContractFamilyBased {
-              //     contracts_owner_id: contract.owner_id(),
-              //     family_keys: vec![key_id],
-              // }),
+                }])
+            }
+            ContractBounds::Scoped(_) => unreachable!("handled above"),
         }
     }
 }

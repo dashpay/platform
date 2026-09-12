@@ -1,3 +1,6 @@
+use crate::consensus::signature::ScopedKeyExpiredError;
+use crate::consensus::signature::ScopedKeyNonBatchError;
+use crate::consensus::signature::ScopedKeyOutOfScopeError;
 use crate::consensus::signature::{
     BasicBLSError, BasicECDSAError, IdentityNotFoundError, InvalidIdentityPublicKeyTypeError,
     InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError,
@@ -60,6 +63,14 @@ pub enum SignatureError {
 
     #[error(transparent)]
     UncompressedPublicKeyNotAllowedError(UncompressedPublicKeyNotAllowedError),
+    #[error(transparent)]
+    ScopedKeyNonBatchError(ScopedKeyNonBatchError),
+
+    #[error(transparent)]
+    ScopedKeyExpiredError(ScopedKeyExpiredError),
+
+    #[error(transparent)]
+    ScopedKeyOutOfScopeError(ScopedKeyOutOfScopeError),
 }
 
 impl From<SignatureError> for ConsensusError {

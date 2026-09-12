@@ -1,3 +1,4 @@
+pub mod authentication_scope;
 use crate::identifier::Identifier;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds::{
     SingleContract, SingleContractDocumentType,
@@ -7,6 +8,7 @@ use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
+pub use authentication_scope::{AuthenticationScope, AuthenticationScopeV0, ContractScope};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +37,8 @@ pub enum ContractBounds {
         id: Identifier,
         document_type_name: String,
     } = 1,
+    /// Application authentication permissions. Existing encryption variants retain their wire tags.
+    Scoped(AuthenticationScope) = 2,
     // /// this key can only be used within contracts owned by a specified owner
     // #[serde(rename = "multipleContractsOfSameOwner")]
     // MultipleContractsOfSameOwner { owner_id: Identifier } = 2,
@@ -69,7 +73,7 @@ impl ContractBounds {
         match self {
             SingleContract { .. } => 0,
             SingleContractDocumentType { .. } => 1,
-            // MultipleContractsOfSameOwner { .. } => 2,
+            Self::Scoped(_) => 2,
         }
     }
 
@@ -77,6 +81,7 @@ impl ContractBounds {
         match str {
             "singleContract" => Ok(0),
             "documentType" => Ok(1),
+            "scoped" => Ok(2),
             _ => Err(ProtocolError::DecodingError(String::from(
                 "Expected type to be one of none, singleContract or singleContractDocumentType",
             ))),
@@ -87,16 +92,39 @@ impl ContractBounds {
         match self {
             SingleContract { .. } => "singleContract",
             SingleContractDocumentType { .. } => "documentType",
-            // MultipleContractsOfSameOwner { .. } => "multipleContractsOfSameOwner",
+            Self::Scoped(_) => "scoped",
         }
     }
 
+    /// Every bounded contract and its optional document-type restriction.
+    /// Unlike the legacy singular accessors, this retains the entire delegation.
+    pub fn contracts(&self) -> impl Iterator<Item = (&Identifier, Option<&[String]>)> {
+        let single = match self {
+            Self::SingleContract { id } => Some((id, None)),
+            Self::SingleContractDocumentType {
+                id,
+                document_type_name,
+            } => Some((id, Some(std::slice::from_ref(document_type_name)))),
+            Self::Scoped(_) => None,
+        };
+        let scoped = match self {
+            Self::Scoped(scope) => Some(scope.contracts()),
+            _ => None,
+        };
+        single.into_iter().chain(
+            scoped
+                .into_iter()
+                .flatten()
+                .map(|entry| (&entry.id, entry.document_types.as_deref())),
+        )
+    }
+
     /// Gets the identifier
-    pub fn identifier(&self) -> &Identifier {
+    pub fn identifier(&self) -> Option<&Identifier> {
         match self {
-            SingleContract { id } => id,
-            SingleContractDocumentType { id, .. } => id,
-            // MultipleContractsOfSameOwner { owner_id } => owner_id,
+            SingleContract { id } => Some(id),
+            SingleContractDocumentType { id, .. } => Some(id),
+            Self::Scoped(_) => None,
         }
     }
 
@@ -108,7 +136,7 @@ impl ContractBounds {
                 document_type_name: document_type,
                 ..
             } => Some(document_type),
-            // MultipleContractsOfSameOwner { .. } => None,
+            Self::Scoped(_) => None,
         }
     }
     //
@@ -176,7 +204,7 @@ mod core_tests {
         assert!(matches!(bounds, ContractBounds::SingleContract { .. }));
         assert_eq!(bounds.contract_bounds_type(), 0);
         assert_eq!(bounds.contract_bounds_type_string(), "singleContract");
-        assert_eq!(bounds.identifier().as_bytes(), id_bytes.as_slice());
+        assert_eq!(bounds.identifier().unwrap().as_bytes(), id_bytes.as_slice());
         // document_type is None for SingleContract regardless of what we passed in.
         assert!(bounds.document_type().is_none());
     }
@@ -192,7 +220,7 @@ mod core_tests {
         ));
         assert_eq!(bounds.contract_bounds_type(), 1);
         assert_eq!(bounds.contract_bounds_type_string(), "documentType");
-        assert_eq!(bounds.identifier().as_bytes(), id_bytes.as_slice());
+        assert_eq!(bounds.identifier().unwrap().as_bytes(), id_bytes.as_slice());
         assert_eq!(bounds.document_type().map(String::as_str), Some("myDoc"));
     }
 

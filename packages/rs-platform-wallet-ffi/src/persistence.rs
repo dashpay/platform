@@ -1739,6 +1739,23 @@ impl PlatformWalletPersistence for FFIPersister {
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
+        // The legacy native ABI cannot represent Scoped. Reject the whole
+        // round before any callback; never persist an unrestricted projection.
+        if let Some(keys) = &changeset.identity_keys {
+            use dpp::identity::contract_bounds::ContractBounds;
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+            if keys.upserts.values().any(|entry| {
+                matches!(
+                    entry.public_key.contract_bounds(),
+                    Some(ContractBounds::Scoped(_))
+                )
+            }) {
+                return Err(PersistenceError::backend(
+                    "scoped authentication keys require a newer native persistence ABI",
+                ));
+            }
+        }
+
         // Serialize the ENTIRE begin→per-kind→end round against every
         // other round producer (see `round_lock`'s field doc and
         // dashpay/platform#4069). The lock is a synchronous
@@ -2207,11 +2224,10 @@ impl PlatformWalletPersistence for FFIPersister {
         // `PersistentPublicKey` rows.
         if let Some(ref keys_cs) = changeset.identity_keys {
             if let Some(cb) = self.callbacks.on_persist_identity_keys_fn {
-                let mut upserts: Vec<IdentityKeyEntryFFI> = keys_cs
-                    .upserts
-                    .values()
-                    .map(IdentityKeyEntryFFI::from_entry)
-                    .collect();
+                let mut upserts = Vec::with_capacity(keys_cs.upserts.len());
+                let projection = keys_cs.upserts.values().try_for_each(|entry| {
+                    IdentityKeyEntryFFI::from_entry(entry).map(|entry| upserts.push(entry))
+                });
                 let removed: Vec<IdentityKeyRemovalFFI> = keys_cs
                     .removed
                     .iter()
@@ -2220,19 +2236,25 @@ impl PlatformWalletPersistence for FFIPersister {
                         key_id: *key_id,
                     })
                     .collect();
-                let result = unsafe {
-                    cb(
-                        self.callbacks.context,
-                        wallet_id.as_ptr(),
-                        upserts.as_ptr(),
-                        upserts.len(),
-                        if removed.is_empty() {
-                            std::ptr::null()
-                        } else {
-                            removed.as_ptr()
-                        },
-                        removed.len(),
-                    )
+                let result = if projection.is_ok() {
+                    unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            upserts.as_ptr(),
+                            upserts.len(),
+                            if removed.is_empty() {
+                                std::ptr::null()
+                            } else {
+                                removed.as_ptr()
+                            },
+                            removed.len(),
+                        )
+                    }
+                } else {
+                    // Preserve rollback and free every successful projection
+                    // on any projection failure added in the future.
+                    -1
                 };
                 for entry in upserts.iter_mut() {
                     unsafe { free_identity_key_entry_ffi(entry) };

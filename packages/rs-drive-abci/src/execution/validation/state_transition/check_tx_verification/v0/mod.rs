@@ -194,6 +194,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 let result = if state_transition.validates_signature_based_on_identity_info() {
                     state_transition.validate_identity_signed_state_transition(
                         platform.drive,
+                        platform.state.last_block_info().time_ms,
                         None,
                         &mut state_transition_execution_context,
                         platform_version,

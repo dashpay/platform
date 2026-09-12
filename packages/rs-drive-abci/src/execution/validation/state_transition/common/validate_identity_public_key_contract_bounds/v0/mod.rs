@@ -62,6 +62,12 @@ fn validate_identity_public_key_contract_bounds_v0(
     let purpose = identity_public_key_in_creation.purpose();
     if let Some(contract_bounds) = identity_public_key_in_creation.contract_bounds() {
         match contract_bounds {
+            ContractBounds::Scoped(_) => Ok(SimpleConsensusValidationResult::new_with_error(
+                dpp::consensus::basic::identity::InvalidAuthenticationScopeError::new(
+                    "scope is not activated".into(),
+                )
+                .into(),
+            )),
             ContractBounds::SingleContract { id: contract_id } => {
                 // we should fetch the contract
                 let contract = drive.get_contract_with_fetch_info(

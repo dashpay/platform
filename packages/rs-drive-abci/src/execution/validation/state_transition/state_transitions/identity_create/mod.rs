@@ -10,6 +10,7 @@ use crate::error::execution::ExecutionError;
 
 use crate::execution::validation::state_transition::identity_create::basic_structure::v0::IdentityCreateStateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::identity_create::state::v0::IdentityCreateStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::identity_create::state::v1::IdentityCreateStateTransitionStateValidationV1;
 use crate::platform_types::platform::PlatformRef;
 
 use crate::rpc::core::CoreRPCLike;
@@ -163,6 +164,7 @@ pub trait StateTransitionStateValidationForIdentityCreateTransitionV0 {
         &self,
         action: IdentityCreateTransitionAction,
         platform: &PlatformRef<C>,
+        block_info: &dpp::block::block_info::BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -173,6 +175,7 @@ impl StateTransitionStateValidationForIdentityCreateTransitionV0 for IdentityCre
         &self,
         action: IdentityCreateTransitionAction,
         platform: &PlatformRef<C>,
+        block_info: &dpp::block::block_info::BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -185,9 +188,17 @@ impl StateTransitionStateValidationForIdentityCreateTransitionV0 for IdentityCre
             .state
         {
             0 => self.validate_state_v0(platform, action, execution_context, tx, platform_version),
+            1 => self.validate_state_v1(
+                platform,
+                block_info,
+                action,
+                execution_context,
+                tx,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create transition: validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -198,6 +209,7 @@ impl StateTransitionStateValidationForIdentityCreateTransitionV0 for IdentityCre
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::{Network, PrivateKey};
     use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
@@ -444,6 +456,205 @@ mod tests {
             .expect("expected there to be an identity balance for this identity");
 
         assert_eq!(identity_balance, 99913867460);
+    }
+
+    #[tokio::test]
+    async fn should_create_identity_with_scoped_authentication_key() {
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        for (protocol, bounds_kind) in [(13, 0), (13, 1), (13, 2), (14, 0)] {
+            let platform_version = PlatformVersion::get(protocol).unwrap();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_initial_protocol_version(protocol)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let mut signer = SimpleSigner::default();
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let (master_key, master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key(
+                    0,
+                    Some(58),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+
+            signer.add_identity_public_key(master_key.clone(), master_private_key);
+
+            let (mut key, private_key) =
+                IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                    1,
+                    Some(999),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+
+            use dpp::data_contract::accessors::v0::DataContractV0Getters;
+            use dpp::identity::contract_bounds::{
+                authentication_scope::permissions, AuthenticationScope, AuthenticationScopeV0,
+                ContractBounds, ContractScope,
+            };
+            let dashpay = platform
+                .drive
+                .cache
+                .system_data_contracts
+                .load_dashpay(platform_version)
+                .unwrap();
+            let scoped_bounds =
+                ContractBounds::Scoped(AuthenticationScope::V0(AuthenticationScopeV0 {
+                    contracts: vec![ContractScope {
+                        id: dashpay.id(),
+                        document_types: Some(vec!["profile".into()]),
+                    }],
+                    permissions: permissions::DOCUMENT_CREATE,
+                    expires_at: Some(100),
+                }));
+            let bounds = match bounds_kind {
+                0 => scoped_bounds,
+                1 => ContractBounds::SingleContract { id: dashpay.id() },
+                _ => ContractBounds::SingleContractDocumentType {
+                    id: dashpay.id(),
+                    document_type_name: "profile".into(),
+                },
+            };
+            let IdentityPublicKey::V0(ref mut key_v0) = key;
+            key_v0.contract_bounds = Some(bounds.clone());
+            signer.add_identity_public_key(key.clone(), private_key);
+
+            let (_, pk) = ECDSA_SECP256K1
+                .random_public_and_private_key_data(&mut rng, platform_version)
+                .unwrap();
+
+            let asset_lock_proof = instant_asset_lock_proof_fixture(
+                Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
+                None,
+            );
+
+            let identifier = asset_lock_proof
+                .create_identifier()
+                .expect("expected an identifier");
+
+            let identity: Identity = IdentityV0 {
+                id: identifier,
+                public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
+                balance: 1000000000,
+                revision: 0,
+            }
+            .into();
+
+            let identity_create_transition: StateTransition =
+                IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
+                    &identity,
+                    asset_lock_proof,
+                    pk.as_slice(),
+                    &signer,
+                    &NativeBlsModule,
+                    0,
+                    platform_version,
+                )
+                .await
+                .expect("expected an identity create transition");
+
+            let identity_create_serialized_transition = identity_create_transition
+                .serialize_to_bytes()
+                .expect("serialized state transition");
+
+            let before = platform
+                .drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .unwrap();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![identity_create_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            if protocol == 13 {
+                use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+                if bounds_kind == 0 {
+                    assert_eq!(processing_result.invalid_unpaid_count(), 1);
+                    assert_eq!(processing_result.invalid_paid_count(), 0);
+                    assert_eq!(
+                        platform
+                            .drive
+                            .grove
+                            .root_hash(Some(&transaction), &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
+                        before
+                    );
+                } else {
+                    assert_matches!(processing_result.execution_results().as_slice(), [StateTransitionExecutionResult::InternalError(error)] if error.contains("identity key bounds error: purpose not available for key bounds"));
+                }
+                assert_eq!(
+                    platform
+                        .drive
+                        .grove
+                        .root_hash(None, &platform_version.drive.grove_version)
+                        .unwrap()
+                        .unwrap(),
+                    before
+                );
+                continue;
+            }
+            assert_eq!(processing_result.valid_count(), 1);
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+
+            let identity_balance = platform
+                .drive
+                .fetch_identity_balance(identity.id().into_buffer(), None, platform_version)
+                .expect("expected to get identity balance")
+                .expect("expected there to be an identity balance for this identity");
+
+            assert!(identity_balance > 0);
+            use drive::drive::identity::key::fetch::IdentityKeysRequest;
+            let fetched = platform
+                .drive
+                .fetch_identity_keys_as_partial_identity(
+                    IdentityKeysRequest::new_specific_key_query(&identity.id().to_buffer(), 1),
+                    None,
+                    platform_version,
+                )
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                fetched
+                    .loaded_public_keys
+                    .get(&1)
+                    .unwrap()
+                    .contract_bounds(),
+                Some(&bounds)
+            );
+        }
     }
 
     #[tokio::test]

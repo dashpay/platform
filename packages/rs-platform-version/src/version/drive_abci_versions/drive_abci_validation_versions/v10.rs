@@ -22,10 +22,10 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                     fetch_asset_lock_transaction_output_sync: 0,
                     verify_asset_lock_is_not_spent_and_has_enough_balance: 0,
                 },
-                validate_identity_public_key_contract_bounds: 1,
+                validate_identity_public_key_contract_bounds: 2,
                 validate_identity_public_key_ids_dont_exist_in_state: 0,
                 validate_identity_public_key_ids_exist_in_state: 0,
-                validate_state_transition_identity_signed: 0,
+                validate_state_transition_identity_signed: 1,
                 validate_unique_identity_public_key_hashes_in_state: 1,
                 validate_master_key_uniqueness: 0,
                 validate_non_masternode_identity_exists: 0,
@@ -37,7 +37,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 advanced_structure: Some(0),
                 identity_signatures: Some(0),
                 nonce: None,
-                state: 0,
+                state: 1,
                 transform_into_action: 0,
             },
             identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
@@ -45,7 +45,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 advanced_structure: Some(0),
                 identity_signatures: Some(0),
                 nonce: Some(0),
-                state: 0,
+                state: 1,
                 transform_into_action: 0,
             },
             identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion {
@@ -113,7 +113,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             data_contract_reference_validation: 0,
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 basic_structure: 0,
-                advanced_structure: 0,
+                advanced_structure: 1,
                 state: 0,
                 revision: 0,
                 // PROTOCOL_VERSION_12 (v3.1 hard fork): batch state transition
@@ -230,7 +230,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                     advanced_structure: Some(0),
                     identity_signatures: Some(0),
                     nonce: Some(0),
-                    state: 0,
+                    state: 1,
                     transform_into_action: 0,
                 },
             identity_top_up_from_addresses_state_transition:
@@ -312,7 +312,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                     advanced_structure: None,
                     identity_signatures: None,
                     nonce: None,
-                    state: 0,
+                    state: 1,
                     transform_into_action: 0,
                 },
         },

@@ -68,3 +68,6 @@ mod missing_master_public_key_error;
 mod not_implemented_credit_withdrawal_transition_pooling_error;
 mod too_many_master_public_key_error;
 mod withdrawal_output_script_not_allowed_when_signing_with_owner_key;
+
+mod invalid_authentication_scope_error;
+pub use invalid_authentication_scope_error::InvalidAuthenticationScopeError;

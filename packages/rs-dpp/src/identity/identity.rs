@@ -29,6 +29,11 @@ use std::collections::{BTreeMap, BTreeSet};
 /// The identity is not stored inside of drive, because of this, the serialization is mainly for
 /// transport, the serialization of the identity will include the version, so no passthrough or
 /// untagged is needed here
+///
+/// The 256 MiB decoding budget accommodates `IDENTITY_MAX_KEYS` (15,000) at
+/// 16 KiB per scoped key, plus the key map and identity fields. Bincode counts
+/// container allocations as well as wire bytes. Individual authentication scopes
+/// still have a separate 2 KiB wire limit enforced by scope validation.
 #[derive(Debug, Clone, PartialEq, From)]
 #[cfg_attr(
    feature = "serde-conversion",
@@ -39,7 +44,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[cfg_attr(
     feature = "identity-serialization",
     derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
-    platform_serialize(limit = 15000, unversioned)
+    platform_serialize(limit = 268435456, unversioned)
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 pub enum Identity {
@@ -333,6 +338,81 @@ mod tests {
             data: BinaryData::new(vec![0x42; 33]),
             disabled_at: None,
         })
+    }
+
+    #[cfg(feature = "identity-serialization")]
+    #[test]
+    fn should_decode_full_identities_with_large_scoped_key_sets() {
+        use crate::identity::contract_bounds::{
+            authentication_scope::permissions, AuthenticationScope, AuthenticationScopeV0,
+            ContractBounds, ContractScope,
+        };
+        use crate::identity::fields::IDENTITY_MAX_KEYS;
+        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+
+        let scope = AuthenticationScope::V0(AuthenticationScopeV0 {
+            contracts: (1..=16)
+                .map(|id| ContractScope {
+                    id: Identifier::from([id; 32]),
+                    document_types: Some((0..16).map(|n| format!("t{n:03}")).collect()),
+                })
+                .collect(),
+            permissions: permissions::ALL,
+            expires_at: Some(u64::MAX),
+        });
+        scope.validate().unwrap();
+
+        for count in [8, u32::from(IDENTITY_MAX_KEYS)] {
+            let mut public_keys = BTreeMap::from([(0, sample_key(0))]);
+            for id in 1..count {
+                let mut key = IdentityPublicKeyV0 {
+                    id,
+                    key_type: KeyType::BLS12_381,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::HIGH,
+                    contract_bounds: Some(ContractBounds::Scoped(scope.clone())),
+                    data: vec![0x42; 48].into(),
+                    read_only: false,
+                    disabled_at: None,
+                };
+                // Full identities retain disabled keys too.
+                if id % 2 == 0 {
+                    key.disabled_at = Some(u64::MAX);
+                }
+                public_keys.insert(id, key.into());
+            }
+            let identity: Identity = IdentityV0 {
+                id: Identifier::from([0x42; 32]),
+                public_keys,
+                balance: u64::MAX,
+                revision: u64::MAX,
+            }
+            .into();
+            let bytes = identity.serialize_to_bytes().unwrap();
+            assert_eq!(
+                Identity::deserialize_from_bytes(&bytes).unwrap(),
+                identity,
+                "full identity with {count} keys must round-trip"
+            );
+        }
+    }
+
+    #[cfg(feature = "identity-serialization")]
+    #[test]
+    fn should_reject_full_identity_with_excessive_declared_key_allocation() {
+        use crate::serialization::PlatformDeserializable;
+
+        // Valid V0 tag and identity ID, followed by a forged public-key map length.
+        // The decoder must enforce its allocation budget before reading any keys.
+        let bytes = bincode::encode_to_vec(
+            (0_u8, Identifier::from([0x42; 32]), u64::MAX),
+            bincode::config::standard().with_big_endian(),
+        )
+        .unwrap();
+        assert!(matches!(
+            Identity::deserialize_from_bytes(&bytes),
+            Err(ProtocolError::MaxEncodedBytesReachedError { .. })
+        ));
     }
 
     #[test]

@@ -102,6 +102,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
                 self.public_keys_to_add(),
                 drive,
                 platform.state.last_committed_block_epoch_ref(),
+                0,
                 tx,
                 &mut state_transition_execution_context,
                 platform_version,
