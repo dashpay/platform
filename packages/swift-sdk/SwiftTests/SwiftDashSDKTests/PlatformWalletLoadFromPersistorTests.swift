@@ -222,7 +222,7 @@ final class PlatformWalletLoadFromPersistorTests: XCTestCase {
         XCTAssertTrue(manager.wallets[id(3)] === restored.first)
         XCTAssertEqual(manager.handle, NULL_HANDLE)
         XCTAssertEqual(metrics.steps.count, 6)
-        XCTAssertEqual(log.events.first, "teardown:spv_stop")
+        XCTAssertEqual(log.events.first, "teardown:shielded_sync_stop")
     }
 
     func testLoadDuringShutdownDrainIsRejectedBeforeNativeCall() async throws {

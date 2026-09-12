@@ -791,10 +791,10 @@ pub(crate) async fn balances_across<S: ShieldedStore>(
     let store = store.read().await;
     let mut out: BTreeMap<SubwalletId, u64> = BTreeMap::new();
     for (id, _) in subwallets {
-        let notes = store
-            .get_unspent_notes(*id)
+        let balance = store
+            .spendable_balance(*id)
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-        out.insert(*id, notes.iter().map(|n| n.value).sum());
+        out.insert(*id, balance);
     }
     Ok(out)
 }

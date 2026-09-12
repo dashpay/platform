@@ -24,14 +24,14 @@ final class PlatformWalletShutdownTests: XCTestCase {
         }
 
         func record(name: String, handle: Handle) -> PlatformWalletFFIResult {
-            if name == "spv_stop" {
+            if name == "shielded_sync_stop" {
                 firstCallGate?.wait()
             }
             lock.withLock {
                 invocations.append((name, handle, Thread.isMainThread))
             }
             let code = name == failingStep
-                ? PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVALID_HANDLE
+                ? PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHUTDOWN_INCOMPLETE
                 : PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS
             return PlatformWalletFFIResult(code: code, message: nil)
         }
@@ -45,9 +45,9 @@ final class PlatformWalletShutdownTests: XCTestCase {
     }
 
     private static let expectedOrder = [
+        "shielded_sync_stop",
         "spv_stop",
         "platform_address_sync_stop",
-        "shielded_sync_stop",
         "dashpay_sync_stop",
         "dpns_sync_stop",
         "destroy",
@@ -113,6 +113,54 @@ final class PlatformWalletShutdownTests: XCTestCase {
         XCTAssertFalse(manager.isConfigured)
         XCTAssertThrowsError(try manager.ensureConfigured())
         XCTAssertEqual(recorder.count(named: "destroy"), 1)
+    }
+
+    func testShieldedLifecycleCannotRestartDuringShutdownDrain() async throws {
+        let recorder = TeardownRecorder()
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 7, calls: Self.makeCalls(recorder: recorder))
+        try manager.admitNativeOp("test")
+        let shutdown = Task { await manager.shutdown() }
+        for _ in 0..<200 {
+            if recorder.count(named: "shielded_sync_stop") == 1 { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(recorder.names, ["shielded_sync_stop"])
+        XCTAssertEqual(manager.handle, 7, "Admitted work still owns the live handle")
+
+        func assertShutdownError(_ error: Error, operation: String) {
+            guard case .invalidHandle(let message) = error as? PlatformWalletError else {
+                return XCTFail("Expected shutdown rejection, got \(error)")
+            }
+            XCTAssertEqual(message, "manager shutdown is in progress; \(operation) rejected")
+        }
+        let syncOperations: [(String, () throws -> Void)] = [
+            ("configureShielded", { try manager.configureShielded(dbPath: "unused.sqlite") }),
+            ("startShieldedSync", { try manager.startShieldedSync() }),
+            ("stopShieldedSync", { try manager.stopShieldedSync() }),
+            ("clearShielded", { try manager.clearShielded() }),
+            ("setShieldedSyncInterval", { try manager.setShieldedSyncInterval(seconds: 1) }),
+        ]
+        for (name, operation) in syncOperations {
+            XCTAssertThrowsError(try operation()) { assertShutdownError($0, operation: name) }
+        }
+        do {
+            try await manager.syncShieldedNow()
+            XCTFail("Forced sync was allowed after the early stop")
+        } catch {
+            assertShutdownError(error, operation: "syncShieldedNow")
+        }
+        do {
+            try await manager.syncShieldedWalletNow(walletId: Data(repeating: 7, count: 32))
+            XCTFail("Wallet sync was allowed after the early stop")
+        } catch {
+            assertShutdownError(error, operation: "syncShieldedWalletNow")
+        }
+
+        manager.finishNativeOp()
+        let metrics = await shutdown.value
+        XCTAssertEqual(metrics.steps.map(\.name), Self.expectedOrder)
+        XCTAssertEqual(recorder.names, Self.expectedOrder)
     }
 
     func testShutdownWithoutHandleIsANoOp() async {
@@ -196,12 +244,15 @@ final class PlatformWalletShutdownTests: XCTestCase {
             handle: 11,
             calls: Self.makeCalls(recorder: recorder)
         )
+        weak var retainedManager: PlatformWalletManager?
+        retainedManager = manager
 
         await manager?.shutdown()
         XCTAssertEqual(recorder.names, Self.expectedOrder)
 
         manager = nil
         drainDestroyQueue()
+        XCTAssertNil(retainedManager, "The completed shutdown task must release its manager")
         XCTAssertEqual(recorder.names, Self.expectedOrder)
         XCTAssertEqual(recorder.count(named: "destroy"), 1)
     }
@@ -217,7 +268,10 @@ final class PlatformWalletShutdownTests: XCTestCase {
         manager = nil
         drainDestroyQueue()
 
-        XCTAssertEqual(recorder.names, Self.expectedOrder)
+        XCTAssertEqual(recorder.names, [
+            "spv_stop", "platform_address_sync_stop", "shielded_sync_stop",
+            "dashpay_sync_stop", "dpns_sync_stop", "destroy",
+        ])
         XCTAssertEqual(recorder.mainThreadFlags, Array(repeating: false, count: 6))
         XCTAssertEqual(recorder.handles, Array(repeating: 13, count: 6))
         XCTAssertEqual(recorder.count(named: "destroy"), 1)
@@ -241,7 +295,7 @@ final class PlatformWalletShutdownTests: XCTestCase {
         XCTAssertEqual(metrics.steps.map(\.name), Self.expectedOrder)
         XCTAssertEqual(
             metrics.steps.map(\.ffiCode),
-            [0, 0, PlatformWalletResultCode.errorInvalidHandle.rawValue, 0, 0, 0]
+            [PlatformWalletResultCode.errorShutdownIncomplete.rawValue, 0, 0, 0, 0, 0]
         )
         XCTAssertTrue(metrics.ranOffMainThread)
     }

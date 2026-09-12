@@ -27,6 +27,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 use std::fmt;
 
+use super::balance::ShieldedBalanceSource;
 use crate::wallet::platform_wallet::WalletId;
 
 /// Identifies a single shielded "subwallet" — one Orchard account
@@ -194,6 +195,15 @@ pub trait ShieldedStore: Send + Sync {
 
     /// Return all unspent notes for `id`.
     fn get_unspent_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error>;
+
+    /// The same reservation-aware sum used by sync and local balance reads.
+    fn spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error> {
+        Ok(self
+            .get_unspent_notes(id)?
+            .iter()
+            .map(|note| note.value)
+            .sum())
+    }
 
     /// Return all notes (spent and unspent) for `id`.
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error>;
@@ -512,6 +522,9 @@ pub(super) struct SubwalletState {
     /// Sync watermark: count of note positions scanned = the next
     /// global index to scan (exclusive). `0` = nothing scanned yet.
     pub last_synced_index: u64,
+    /// Session-only provenance; durable watermarks are still ordinary u64 rows.
+    pub last_scanned_index: Option<u64>,
+    pub balance_source: ShieldedBalanceSource,
     /// Nullifiers of notes currently being spent in an in-flight
     /// transition, mapped to the [`PendingSpend`] bookkeeping the
     /// sync reconcile needs. Excluded from `unspent_notes()` so
@@ -1009,7 +1022,10 @@ impl ShieldedStore for InMemoryShieldedStore {
         id: SubwalletId,
         index: u64,
     ) -> Result<(), Self::Error> {
-        self.subwallets.entry(id).or_default().last_synced_index = index;
+        let state = self.subwallets.entry(id).or_default();
+        state.last_synced_index = index;
+        state.last_scanned_index = Some(index);
+        state.balance_source = ShieldedBalanceSource::ScannedThisSession;
         Ok(())
     }
 

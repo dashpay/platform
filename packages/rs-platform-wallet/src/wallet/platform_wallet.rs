@@ -1023,7 +1023,7 @@ impl PlatformWallet {
         // only re-apply older data — skip it. The hydration flag is
         // load-bearing: a matching registration alone doesn't prove
         // the store was ever hydrated (the first bind's load/restore
-        // may have failed transiently and is only logged), and
+        // may have failed transiently), and
         // skipping on registration match alone would leave notes and
         // the watermark absent until a full rescan or restart.
         if identical && install.is_hydrated().await {
@@ -1035,13 +1035,11 @@ impl PlatformWallet {
         // this wallet. The restore is additive and monotonic
         // (`restore_for_wallet` never rewinds a watermark or
         // overwrites a known note), so applying a snapshot on top
-        // of retained live state is safe. Errors are logged but
-        // not fatal — first-launch wallets simply see no persisted
-        // state; the hydration flag stays unset on failure so the
-        // next re-bind retries the restore instead of fast-pathing
-        // over an unhydrated store. (A snapshot that cannot be READ
-        // is fatal, but earlier: both bind paths need it before they
-        // can decide what to install.)
+        // of retained live state is safe. Surface restore failures to
+        // the host and leave hydration unset: an empty first-launch
+        // snapshot succeeds, while an unreadable ledger must not look
+        // like a successfully bound zero balance. A subsequent bind
+        // retries rather than fast-pathing over an unhydrated store.
         // A Clear that completed after `start` was read wiped both the
         // store and (once it returned) the host's own rows, so this
         // snapshot describes state the user asked to be deleted.
@@ -1068,6 +1066,7 @@ impl PlatformWallet {
                     error = %e,
                     "Failed to restore shielded snapshot at bind time"
                 );
+                return Err(e);
             }
         }
         Ok(())

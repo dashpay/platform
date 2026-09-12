@@ -13,12 +13,18 @@ use std::os::raw::c_char;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use platform_wallet::wallet::shielded::ShieldedSyncSummary;
+use platform_wallet::error::PlatformWalletError;
+use platform_wallet::wallet::shielded::{
+    ShieldedBalanceSource, ShieldedLocalBalanceState, ShieldedSyncSummary,
+};
 
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::{block_on_worker, runtime};
-use crate::shielded_types::ShieldedSyncWalletResultFFI;
+use crate::shielded_types::{
+    ShieldedBalanceSourceFFI, ShieldedLocalAccountBalanceFFI, ShieldedLocalBalanceSnapshotFFI,
+    ShieldedLocalBalanceStatusFFI, ShieldedSyncWalletResultFFI,
+};
 use crate::{check_ptr, unwrap_option_or_return};
 use rs_sdk_ffi::MnemonicResolverHandle;
 
@@ -26,7 +32,7 @@ impl ShieldedSyncWalletResultFFI {
     pub(crate) fn ok(wallet_id: [u8; 32], summary: &ShieldedSyncSummary) -> Self {
         // Multi-account on the Rust side; flattened to wallet-level
         // sums here. Hosts that want per-account detail call
-        // `platform_wallet_manager_shielded_balance(account)`.
+        // `platform_wallet_manager_local_shielded_balance_snapshot`.
         let new_notes = u32::try_from(summary.notes_result.total_new_notes()).unwrap_or(u32::MAX);
         let newly_spent = u32::try_from(summary.total_newly_spent()).unwrap_or(u32::MAX);
         Self {
@@ -41,6 +47,116 @@ impl ShieldedSyncWalletResultFFI {
             error_message: std::ptr::null(),
         }
     }
+}
+
+impl From<ShieldedLocalBalanceState> for ShieldedLocalBalanceSnapshotFFI {
+    fn from(state: ShieldedLocalBalanceState) -> Self {
+        let snapshot = match state {
+            ShieldedLocalBalanceState::Unbound => return Self::default(),
+            ShieldedLocalBalanceState::RestoreIncomplete => {
+                return Self {
+                    status: ShieldedLocalBalanceStatusFFI::RestoreIncomplete,
+                    ..Self::default()
+                }
+            }
+            ShieldedLocalBalanceState::Ready(snapshot) => snapshot,
+        };
+        let accounts: Box<[_]> = snapshot
+            .accounts
+            .into_iter()
+            .map(|(account_index, balance)| ShieldedLocalAccountBalanceFFI {
+                account_index,
+                spendable_credits: balance.spendable_credits,
+                last_scanned_index: balance.last_scanned_index.unwrap_or(0),
+                has_last_scanned_index: balance.last_scanned_index.is_some(),
+                source: match balance.source {
+                    ShieldedBalanceSource::NoHistory => ShieldedBalanceSourceFFI::NoHistory,
+                    ShieldedBalanceSource::Restored => ShieldedBalanceSourceFFI::Restored,
+                    ShieldedBalanceSource::ScannedThisSession => {
+                        ShieldedBalanceSourceFFI::ScannedThisSession
+                    }
+                },
+            })
+            .collect();
+        let accounts_count = accounts.len();
+        Self {
+            status: ShieldedLocalBalanceStatusFFI::Ready,
+            accounts: if accounts_count == 0 {
+                std::ptr::null()
+            } else {
+                Box::into_raw(accounts) as *const ShieldedLocalAccountBalanceFFI
+            },
+            accounts_count,
+        }
+    }
+}
+
+/// Read the bound wallet's local shielded balance, including pending-spend
+/// reservations, without starting sync or resolving a mnemonic. May wait for an
+/// in-flight sync to release the store lock; call it off the host's UI thread.
+///
+/// # Safety
+/// `wallet_id_bytes` must point to 32 readable bytes; `out_snapshot` must be
+/// writable and must not still own an earlier snapshot. Free the result with
+/// `platform_wallet_manager_local_shielded_balance_snapshot_free`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_local_shielded_balance_snapshot(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    out_snapshot: *mut ShieldedLocalBalanceSnapshotFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_snapshot);
+    *out_snapshot = ShieldedLocalBalanceSnapshotFFI::default();
+    check_ptr!(wallet_id_bytes);
+    let mut wallet_id = [0; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), wallet_id.len());
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(async {
+            // A missing wallet is an API error, not a legitimate unbound state.
+            let wallet = manager
+                .get_wallet(&wallet_id)
+                .await
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
+            let Some(coordinator) = manager.shielded_coordinator().await else {
+                return Ok(ShieldedLocalBalanceState::Unbound);
+            };
+            // Keep the wallet alive until the read completes. Coordinator
+            // lifecycle locking serializes removal/Clear against its snapshot.
+            coordinator.local_balance_snapshot(wallet.wallet_id()).await
+        })
+    });
+    match unwrap_option_or_return!(option) {
+        Ok(snapshot) => {
+            *out_snapshot = snapshot.into();
+            PlatformWalletFFIResult::ok()
+        }
+        Err(error) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("local shielded balance snapshot failed: {error}"),
+        ),
+    }
+}
+
+/// Free the account array and reset the caller's snapshot. A null pointer is a
+/// no-op; calling again on the same reset value is also safe.
+///
+/// # Safety
+/// `snapshot` must be null or point to a live value returned by the matching
+/// snapshot function, not a copied owner or an already-freed array.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_local_shielded_balance_snapshot_free(
+    snapshot: *mut ShieldedLocalBalanceSnapshotFFI,
+) {
+    let Some(snapshot) = snapshot.as_mut() else {
+        return;
+    };
+    if !snapshot.accounts.is_null() {
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            snapshot.accounts as *mut ShieldedLocalAccountBalanceFFI,
+            snapshot.accounts_count,
+        )));
+    }
+    *snapshot = ShieldedLocalBalanceSnapshotFFI::default();
 }
 
 // ---------------------------------------------------------------------------
@@ -566,5 +682,102 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_wallet(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded sync failed: {e}"),
         ),
+    }
+}
+
+#[cfg(test)]
+mod local_balance_tests {
+    use super::*;
+    use platform_wallet::wallet::shielded::{
+        ShieldedLocalAccountBalance, ShieldedLocalBalanceSnapshot,
+    };
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn local_balance_ffi_preserves_accounts_provenance_and_explicit_zero_then_frees() {
+        let ready = ShieldedLocalBalanceSnapshot {
+            accounts: BTreeMap::from([
+                (
+                    0,
+                    ShieldedLocalAccountBalance {
+                        spendable_credits: 12,
+                        last_scanned_index: None,
+                        source: ShieldedBalanceSource::Restored,
+                    },
+                ),
+                (
+                    2,
+                    ShieldedLocalAccountBalance {
+                        spendable_credits: 0,
+                        last_scanned_index: Some(0),
+                        source: ShieldedBalanceSource::ScannedThisSession,
+                    },
+                ),
+                (3, ShieldedLocalAccountBalance::default()),
+            ]),
+        };
+        let mut ffi =
+            ShieldedLocalBalanceSnapshotFFI::from(ShieldedLocalBalanceState::Ready(ready));
+        assert_eq!(ffi.status, ShieldedLocalBalanceStatusFFI::Ready);
+        assert_eq!(ffi.accounts_count, 3);
+        let accounts = unsafe { std::slice::from_raw_parts(ffi.accounts, ffi.accounts_count) };
+        assert_eq!(accounts[0].account_index, 0);
+        assert_eq!(accounts[0].spendable_credits, 12);
+        assert!(!accounts[0].has_last_scanned_index);
+        assert_eq!(accounts[0].source, ShieldedBalanceSourceFFI::Restored);
+        assert_eq!(accounts[1].account_index, 2);
+        assert!(accounts[1].has_last_scanned_index);
+        assert_eq!(accounts[1].last_scanned_index, 0);
+        assert_eq!(
+            accounts[1].source,
+            ShieldedBalanceSourceFFI::ScannedThisSession
+        );
+        assert_eq!(accounts[2].source, ShieldedBalanceSourceFFI::NoHistory);
+        unsafe { platform_wallet_manager_local_shielded_balance_snapshot_free(&mut ffi) };
+        assert!(ffi.accounts.is_null());
+        assert_eq!(ffi.accounts_count, 0);
+        assert_eq!(ffi.status, ShieldedLocalBalanceStatusFFI::Unbound);
+        unsafe {
+            platform_wallet_manager_local_shielded_balance_snapshot_free(&mut ffi);
+            platform_wallet_manager_local_shielded_balance_snapshot_free(std::ptr::null_mut());
+        }
+    }
+
+    #[test]
+    fn local_balance_ffi_unavailable_states_never_allocate_numeric_payloads() {
+        for state in [
+            ShieldedLocalBalanceState::Unbound,
+            ShieldedLocalBalanceState::RestoreIncomplete,
+        ] {
+            let mut ffi = ShieldedLocalBalanceSnapshotFFI::from(state.clone());
+            assert_eq!(
+                ffi.status,
+                if state == ShieldedLocalBalanceState::Unbound {
+                    ShieldedLocalBalanceStatusFFI::Unbound
+                } else {
+                    ShieldedLocalBalanceStatusFFI::RestoreIncomplete
+                }
+            );
+            assert!(ffi.accounts.is_null());
+            assert_eq!(ffi.accounts_count, 0);
+            unsafe { platform_wallet_manager_local_shielded_balance_snapshot_free(&mut ffi) };
+        }
+    }
+
+    #[test]
+    fn local_balance_ffi_invalid_handle_initializes_output_and_returns_error() {
+        let mut ffi = ShieldedLocalBalanceSnapshotFFI::default();
+        let wallet_id = [1; 32];
+        let mut result = unsafe {
+            platform_wallet_manager_local_shielded_balance_snapshot(
+                NULL_HANDLE,
+                wallet_id.as_ptr(),
+                &mut ffi,
+            )
+        };
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(ffi.accounts.is_null());
+        assert_eq!(ffi.accounts_count, 0);
+        unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
     }
 }

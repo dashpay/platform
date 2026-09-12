@@ -78,10 +78,12 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::RwLock;
 
+use super::balance::{ShieldedLocalBalanceSnapshot, ShieldedLocalBalanceState};
 use super::file_store::FileBackedShieldedStore;
 use super::keys::AccountViewingKeys;
 use super::store::{ShieldedStore, StalePendingSpend, SubwalletId};
 use super::CAUGHT_UP_COOLDOWN;
+use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
@@ -225,7 +227,7 @@ pub struct NetworkShieldedCoordinator {
     /// wallet's current registration was installed). A matching
     /// registration alone does NOT imply hydration: the first bind
     /// registers before restoring, and a transient persister
-    /// load/restore failure is logged rather than surfaced — without
+    /// load/restore failure leaves the store unhydrated — without
     /// this flag a later re-bind would see matching keys, take the
     /// idempotent fast path, and silently skip the restore that could
     /// now succeed, leaving notes and the watermark absent until a
@@ -757,6 +759,42 @@ impl NetworkShieldedCoordinator {
         self.accounts.read().await.keys().copied().collect()
     }
 
+    /// Read a wallet's local ledger without networking. Lifecycle serialization
+    /// prevents Clear/rebind from changing the account set or hydration halfway
+    /// through the read; one store guard keeps balances and coverage coherent
+    /// with concurrent syncs and spend reservations.
+    pub async fn local_balance_snapshot(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<ShieldedLocalBalanceState, PlatformWalletError> {
+        let _install = self.begin_install(wallet_id).await;
+        let account_ids: Vec<SubwalletId> = self
+            .accounts
+            .read()
+            .await
+            .keys()
+            .filter(|id| id.wallet_id == wallet_id)
+            .copied()
+            .collect();
+        if account_ids.is_empty() {
+            return Ok(ShieldedLocalBalanceState::Unbound);
+        }
+        if !self.is_hydrated_locked(wallet_id).await {
+            return Ok(ShieldedLocalBalanceState::RestoreIncomplete);
+        }
+        let store = self.store.read().await;
+        let mut accounts = BTreeMap::new();
+        for id in account_ids {
+            let balance = store
+                .local_account_balance(id)
+                .map_err(|error| PlatformWalletError::ShieldedStoreError(error.to_string()))?;
+            accounts.insert(id.account_index, balance);
+        }
+        Ok(ShieldedLocalBalanceState::Ready(
+            ShieldedLocalBalanceSnapshot { accounts },
+        ))
+    }
+
     /// Rehydrate per-subwallet state from a host-persisted
     /// snapshot for the wallet identified by `wallet_id`. Should
     /// be called after [`register_wallet`](Self::register_wallet)
@@ -910,16 +948,12 @@ impl NetworkShieldedCoordinator {
             // scan or a prior restore, so taking the max is always
             // safe; genuine rewinds (chain rollback handling, Clear)
             // write the store directly rather than through restore.
-            let current = store.last_synced_note_index(*id).map_err(|e| {
-                crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
-            })?;
-            if sub.last_synced_index > current {
-                store
-                    .set_last_synced_note_index(*id, sub.last_synced_index)
-                    .map_err(|e| {
-                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
-                    })?;
-            }
+            store.restore_balance_metadata(
+                *id,
+                sub.last_synced_index,
+                sub.has_sync_state,
+                !sub.notes.is_empty(),
+            );
         }
         Ok(())
     }

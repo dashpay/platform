@@ -3328,6 +3328,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             .entry(id)
                             .or_insert_with(ShieldedSubwalletStartState::default);
                         entry.last_synced_index = ffi.last_synced_index;
+                        entry.has_sync_state = true;
                     }
                 }
             }
@@ -6788,6 +6789,82 @@ mod tests {
         *out_entries = std::ptr::null();
         *out_count = 0;
         0
+    }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn local_balance_restore_preserves_explicit_zero_sync_row_presence() {
+        use crate::shielded_persistence::ShieldedSubwalletSyncStateFFI;
+        use platform_wallet::wallet::shielded::SubwalletId;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        unsafe extern "C" fn load_wallet(
+            _context: *mut c_void,
+            entries: *mut *const WalletRestoreEntryFFI,
+            count: *mut usize,
+        ) -> i32 {
+            *entries = Box::into_raw(Box::new(WalletRestoreEntryFFI {
+                wallet_id: [42; 32],
+                ..Default::default()
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free_wallet(
+            context: *mut c_void,
+            entries: *const WalletRestoreEntryFFI,
+            _count: usize,
+        ) {
+            drop(Box::from_raw(entries.cast_mut()));
+            (*(context as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+        }
+        unsafe extern "C" fn load_state(
+            _context: *mut c_void,
+            entries: *mut *const ShieldedSubwalletSyncStateFFI,
+            count: *mut usize,
+        ) -> i32 {
+            *entries = Box::into_raw(Box::new(ShieldedSubwalletSyncStateFFI {
+                wallet_id: [42; 32],
+                account_index: 7,
+                last_synced_index: 0,
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free_state(
+            context: *mut c_void,
+            entries: *const ShieldedSubwalletSyncStateFFI,
+            _count: usize,
+        ) {
+            drop(Box::from_raw(entries.cast_mut()));
+            (*(context as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+        }
+        let releases = AtomicUsize::new(0);
+        let persister = FFIPersister::new(PersistenceCallbacks {
+            context: (&releases as *const AtomicUsize).cast_mut().cast(),
+            on_load_wallet_list_fn: Some(load_wallet),
+            on_load_wallet_list_free_fn: Some(free_wallet),
+            on_load_shielded_sync_states_fn: Some(load_state),
+            on_load_shielded_sync_states_free_fn: Some(free_state),
+            ..Default::default()
+        });
+        let snapshot = persister.load().expect("host snapshot");
+        let account = &snapshot.shielded.per_subwallet[&SubwalletId::new([42; 32], 7)];
+        assert_eq!(account.last_synced_index, 0);
+        assert!(
+            account.has_sync_state,
+            "a persisted zero is known scan history"
+        );
+        assert!(account.notes.is_empty());
+        assert!(!snapshot
+            .shielded
+            .per_subwallet
+            .contains_key(&SubwalletId::new([42; 32], 8)));
+        assert_eq!(
+            releases.load(Ordering::SeqCst),
+            2,
+            "both host allocations freed"
+        );
     }
     unsafe extern "C" fn noop_free_wallets(
         _ctx: *mut c_void,
