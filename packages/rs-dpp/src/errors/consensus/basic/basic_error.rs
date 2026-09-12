@@ -104,7 +104,8 @@ use crate::consensus::basic::state_transition::{
     OutputsNotGreaterThanInputsError, ShieldedEmptyProofError,
     ShieldedEncryptedNoteSizeMismatchError, ShieldedImplicitFeeCapExceededError,
     ShieldedInvalidDenominationError, ShieldedInvalidValueBalanceError, ShieldedNoActionsError,
-    ShieldedTooManyActionsError, ShieldedZeroAnchorError, StateTransitionMaxSizeExceededError,
+    ShieldedTooManyActionsError, ShieldedZeroAnchorError,
+    StateTransitionFamilyMaxSizeExceededError, StateTransitionMaxSizeExceededError,
     StateTransitionNotActiveError, TransitionNoInputsError, TransitionNoOutputsError,
     TransitionOverMaxInputsError, TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError,
     WithdrawalBelowMinAmountError,
@@ -841,6 +842,10 @@ pub enum BasicError {
     // (protocol version 14).
     #[error(transparent)]
     DocumentPropertyNotGeneratedError(DocumentPropertyNotGeneratedError),
+
+    // A contract-code capable envelope over its family cap (protocol version 17).
+    #[error(transparent)]
+    StateTransitionFamilyMaxSizeExceededError(StateTransitionFamilyMaxSizeExceededError),
 }
 
 impl From<BasicError> for ConsensusError {

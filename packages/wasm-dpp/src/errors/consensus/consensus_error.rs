@@ -165,7 +165,7 @@ use dpp::consensus::state::shielded::insufficient_shielded_fee_error::Insufficie
 use dpp::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
-use dpp::consensus::basic::state_transition::{StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError, InputWitnessCountMismatchError, TransitionNoInputsError, TransitionNoOutputsError, FeeStrategyEmptyError, FeeStrategyDuplicateError, FeeStrategyIndexOutOfBoundsError, FeeStrategyTooManyStepsError, InputBelowMinimumError, OutputBelowMinimumError, InputOutputBalanceMismatchError, OutputsNotGreaterThanInputsError, WithdrawalBalanceMismatchError, InsufficientFundingAmountError, InputsNotLessThanOutputsError, OutputAddressAlsoInputError, InvalidRemainderOutputCountError, WithdrawalBelowMinAmountError, ShieldedNoActionsError, ShieldedTooManyActionsError, ShieldedEmptyProofError, ShieldedZeroAnchorError, ShieldedInvalidValueBalanceError, ShieldedEncryptedNoteSizeMismatchError, ShieldedImplicitFeeCapExceededError, ShieldedInvalidDenominationError};
+use dpp::consensus::basic::state_transition::{StateTransitionFamilyMaxSizeExceededError, StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError, InputWitnessCountMismatchError, TransitionNoInputsError, TransitionNoOutputsError, FeeStrategyEmptyError, FeeStrategyDuplicateError, FeeStrategyIndexOutOfBoundsError, FeeStrategyTooManyStepsError, InputBelowMinimumError, OutputBelowMinimumError, InputOutputBalanceMismatchError, OutputsNotGreaterThanInputsError, WithdrawalBalanceMismatchError, InsufficientFundingAmountError, InputsNotLessThanOutputsError, OutputAddressAlsoInputError, InvalidRemainderOutputCountError, WithdrawalBelowMinAmountError, ShieldedNoActionsError, ShieldedTooManyActionsError, ShieldedEmptyProofError, ShieldedZeroAnchorError, ShieldedInvalidValueBalanceError, ShieldedEncryptedNoteSizeMismatchError, ShieldedImplicitFeeCapExceededError, ShieldedInvalidDenominationError};
 use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
 use dpp::consensus::state::document::referenced_identity_key_requirement_not_met_error::ReferencedIdentityKeyRequirementNotMetError;
 use dpp::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
@@ -1322,6 +1322,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::DocumentPropertyNotGeneratedError(e) => {
             generic_consensus_error!(DocumentPropertyNotGeneratedError, e).into()
+        }
+        BasicError::StateTransitionFamilyMaxSizeExceededError(e) => {
+            generic_consensus_error!(StateTransitionFamilyMaxSizeExceededError, e).into()
         }
     }
 }
