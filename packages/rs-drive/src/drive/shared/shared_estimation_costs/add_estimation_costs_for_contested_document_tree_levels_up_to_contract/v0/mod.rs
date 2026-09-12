@@ -59,7 +59,6 @@ impl Drive {
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(2, false), //voting is on level 2
                 // We have balances in the middle which is a sum tree
                 estimated_layer_sizes: AllSubtrees(
@@ -85,7 +84,6 @@ impl Drive {
             KeyInfoPath::from_known_path(vote_root_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 // contested resource tree is a key of "c" so it should be on the top layer of the merk
                 estimated_layer_count: EstimatedLevel(0, false),
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
@@ -97,7 +95,6 @@ impl Drive {
             KeyInfoPath::from_known_path(vote_contested_resource_tree_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 // active poll "p", with "e" and "i" first so it should be on the second layer of the merk
                 estimated_layer_count: EstimatedLevel(1, false),
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
@@ -109,7 +106,6 @@ impl Drive {
             KeyInfoPath::from_known_path(vote_contested_resource_active_polls_tree_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
             },
@@ -123,7 +119,6 @@ impl Drive {
             )),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: ApproximateElements(document_type_count),
                 estimated_layer_sizes: AllSubtrees(
                     ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE,
@@ -143,7 +138,6 @@ impl Drive {
                 ),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
-                    may_contain_backward_references: false,
                     estimated_layer_count: ApproximateElements(2),
                     estimated_layer_sizes: AllSubtrees(
                         ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
@@ -162,7 +156,6 @@ impl Drive {
                 ),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
-                    may_contain_backward_references: false,
                     estimated_layer_count: ApproximateElements(1024), //Just a guess
                     estimated_layer_sizes: AllSubtrees(
                         ESTIMATED_AVERAGE_INDEX_NAME_SIZE,

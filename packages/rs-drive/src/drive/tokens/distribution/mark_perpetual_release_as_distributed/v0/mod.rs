@@ -45,7 +45,6 @@ impl Drive {
                 KeyInfoPath::from_known_owned_path(perpetual_distributions_path.clone()),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
-                    may_contain_backward_references: false,
                     estimated_layer_count,
                     estimated_layer_sizes: AllItems(1, 8, None),
                 },

@@ -25,7 +25,6 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(non_unique_key_hashes_path),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_160_SIZE_U8, NoSumTrees, None),
             },
@@ -38,7 +37,6 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(non_unique_key_hashes_sub_path),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: ApproximateElements(ESTIMATED_NON_UNIQUE_KEY_DUPLICATES),
                 estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, 0, None),
             },

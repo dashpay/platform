@@ -55,7 +55,6 @@ impl Drive {
                 index_path_info.clone().convert_to_key_info_path(),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
-                    may_contain_backward_references: false,
                     estimated_layer_count: ApproximateElements(2),
                     estimated_layer_sizes: Mix {
                         // The votes don't have storage flags
@@ -149,7 +148,6 @@ impl Drive {
                 votes_path_key_info.clone().convert_to_key_info_path()?,
                 EstimatedLayerInformation {
                     tree_type: TreeType::SumTree,
-                    may_contain_backward_references: false,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, U8_SIZE_U32, None),
                 },

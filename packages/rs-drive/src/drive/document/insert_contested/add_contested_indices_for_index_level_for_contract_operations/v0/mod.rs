@@ -61,7 +61,6 @@ impl Drive {
                 index_path_info.clone().convert_to_key_info_path(),
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
-                    may_contain_backward_references: false,
                     estimated_layer_count: ApproximateElements(sub_level_index_count + 1),
                     estimated_layer_sizes: AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
@@ -136,7 +135,6 @@ impl Drive {
                     sub_level_index_path_info.clone().convert_to_key_info_path(),
                     EstimatedLayerInformation {
                         tree_type: TreeType::NormalTree,
-                        may_contain_backward_references: false,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             document_top_field_estimated_size as u8,

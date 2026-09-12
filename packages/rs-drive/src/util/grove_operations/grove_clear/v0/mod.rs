@@ -1,7 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use grovedb::operations::delete::ClearOptions;
-use grovedb::BackwardReferencesPolicy;
+use grovedb::DisplacedValue;
 use grovedb::TransactionArg;
 use grovedb_path::SubtreePath;
 use platform_version::version::drive_versions::DriveVersion;
@@ -15,8 +15,9 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         let options = ClearOptions {
-            // Drive stores no backward-reference participants; Skip keeps the released V4 path.
-            backward_references_policy: BackwardReferencesPolicy::Skip,
+            // Drive stores no backward-reference participants; GroveDB checks the
+            // claim for free from the value it reads for the write.
+            displaced_value: DisplacedValue::NotParticipant,
             check_for_subtrees: false,
             allow_deleting_subtrees: false,
             trying_to_clear_with_subtrees_returns_error: false,

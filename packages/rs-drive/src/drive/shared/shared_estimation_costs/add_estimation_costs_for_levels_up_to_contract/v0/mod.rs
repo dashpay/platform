@@ -44,7 +44,6 @@ impl Drive {
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(0, false),
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
             },
@@ -55,7 +54,6 @@ impl Drive {
             KeyInfoPath::from_known_path(all_contracts_global_root_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllSubtrees(
                     DEFAULT_HASH_SIZE_U8,

@@ -45,7 +45,6 @@ impl Drive {
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(3, false),
                 estimated_layer_sizes: AllSubtrees(
                     1,
@@ -71,7 +70,6 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(Self::addresses_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::SumTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(1, false),
                 estimated_layer_sizes: AllSubtrees(
                     1,
@@ -98,7 +96,6 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(Self::clear_addresses_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::CountSumTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllItems(
                     PLATFORM_ADDRESS_KEY_SIZE as u8,

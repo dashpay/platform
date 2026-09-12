@@ -955,7 +955,7 @@ mod grovedb_op_batch_tests {
     use drive::util::batch::grovedb_op_batch::GroveDbOpBatch;
     use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use grovedb::batch::{GroveOp, QualifiedGroveDbOp};
-    use grovedb::{Element, TreeType};
+    use grovedb::{DisplacedValue, Element, TreeType};
 
     #[test]
     fn new_batch_is_empty() {
@@ -1399,6 +1399,7 @@ mod grovedb_op_batch_tests {
             path: KeyInfoPath(vec![]),
             key: None,
             op: GroveOp::Delete,
+            displaced_value: DisplacedValue::NotParticipant,
         };
         let mut batch = GroveDbOpBatch::new();
         batch.push(op);

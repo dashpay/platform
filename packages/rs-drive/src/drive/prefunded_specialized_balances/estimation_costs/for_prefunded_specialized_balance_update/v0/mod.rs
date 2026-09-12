@@ -29,7 +29,6 @@ impl Drive {
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                may_contain_backward_references: false,
                 // We are on the 3rd level
                 estimated_layer_count: EstimatedLevel(3, false),
                 estimated_layer_sizes: AllSubtrees(
@@ -54,7 +53,6 @@ impl Drive {
             KeyInfoPath::from_known_path(prefunded_specialized_balances_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::SumTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: EstimatedLevel(0, false),
                 estimated_layer_sizes: AllSubtrees(1, AllSumTrees, None),
             },
@@ -64,7 +62,6 @@ impl Drive {
             KeyInfoPath::from_known_owned_path(prefunded_specialized_balances_for_voting_path_vec()),
             EstimatedLayerInformation {
                 tree_type: TreeType::SumTree,
-                may_contain_backward_references: false,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, AVERAGE_BALANCE_SIZE, None),
             },

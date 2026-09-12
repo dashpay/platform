@@ -70,7 +70,6 @@ impl Drive {
             KeyInfoPath::from_known_path(primary_key_path),
             EstimatedLayerInformation {
                 tree_type: primary_key_tree_type,
-                may_contain_backward_references: false,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllItems(
                     DEFAULT_HASH_SIZE_U8,
