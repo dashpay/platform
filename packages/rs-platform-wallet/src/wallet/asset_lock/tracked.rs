@@ -47,6 +47,8 @@ use crate::changeset::AssetLockEntry;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AssetLockStatus {
     Built,
+    /// A broadcast attempt was not definitely rejected before dispatch. The
+    /// status does not assert that a peer or the network accepted it.
     Broadcast,
     InstantSendLocked,
     ChainLocked,

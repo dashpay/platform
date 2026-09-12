@@ -492,10 +492,13 @@ pub enum PlatformWalletError {
     /// While the sibling stands, peers reject the lock as a double spend
     /// and an unbounded proof wait would hang (Core stopped sending BIP61
     /// `reject` by default in 0.17, so the drop is silent and looks
-    /// exactly like a slow network). The sighting therefore bounds the
-    /// wait rather than replacing it: the resume still (re-)broadcasts and
-    /// still waits, and this is what the bounded wait expired with — a
-    /// `Broadcast`-status lock was also already sent on an earlier call.
+    /// exactly like a slow network). The resume still attempts recovery. If
+    /// the transport is ready, the sighting bounds the proof wait and this is
+    /// what that wait expired with. In the `Broadcast` arm, if readiness was
+    /// missed and the send was rejected before dispatch, a still-standing
+    /// conflict returns immediately after refreshing local finality, and the
+    /// readiness-deferred retry owns the next proof wait. A `Broadcast`-status
+    /// lock may also represent an earlier attempt that sent the transaction.
     ///
     /// The verdict is PROVISIONAL and carries NO licence to discard the
     /// tracked lock. Keep the lock and retry later. Note what a retry can
