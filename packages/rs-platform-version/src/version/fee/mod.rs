@@ -60,6 +60,12 @@ pub struct FeeVersion {
     /// Prices of smart-contract work; `None` on every schedule that predates smart contracts.
     /// Like `document_ttl`, never part of a stored format: `FeeVersionFieldsBeforeVersion4`
     /// must not gain it.
+    ///
+    /// Read from the active protocol version's schedule (`platform_version.fee_version.dashvm`),
+    /// never from the persisted epoch fee history: the history is keyed by `fee_version_number`,
+    /// which this group does not change, and serves only the storage, processing, hashing and
+    /// signature groups, so a schedule looked up by number (`FeeVersion::get`, `as_static`, the
+    /// epoch history) carries no contract pricing. See `dpp::fee::smart_contract_computation`.
     pub dashvm: Option<FeeDashVmVersion>,
 }
 
