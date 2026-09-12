@@ -41,4 +41,5 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
     max_time_range_overlap_factor: Some(24),
+    smart_contract_computation: None, // smart contracts arrive with the 5.0 protocol version
 };
