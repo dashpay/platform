@@ -30,6 +30,18 @@ mod dpns_tests {
         .await;
     }
 
+    /// PROTOCOL_VERSION_13: fee predating every v14 change on this path,
+    /// including GroveDB V4's write through the retained old-value node
+    /// (v13 stays on GroveDB V3). Pinned so v13 chain history stays
+    /// bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_dpns_contract_references_with_no_contested_unique_index_protocol_version_13() {
+        run_dpns_contract_references_with_no_contested_unique_index_at_protocol_version(
+            13, 6_010_380,
+        )
+        .await;
+    }
+
     /// PROTOCOL_VERSION_11: pre-T1/T2 fee — `create_domain_data_trigger_v0`
     /// runs the same parent-domain + preorder queries but discards their
     /// cost (epoch=None → `query_documents` cost short-circuits to 0,
