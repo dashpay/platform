@@ -227,6 +227,73 @@ fn should_report_conflicting_declaration_between_attribute_and_builder() {
 }
 
 #[test]
+fn should_report_conflicting_declaration_attribute_first_whatever_the_order() {
+    let attribute = minimal("scores").with_origin(DeclarationOrigin::Attribute);
+    let builder = minimal("scores")
+        .with_origin(DeclarationOrigin::Builder)
+        .mutable(false);
+    let declaration = ContractDeclaration::new()
+        .collection(builder)
+        .collection(attribute);
+    let diagnostics = expect_diagnostics(&declaration);
+    assert_eq!(kinds(&diagnostics), ["ConflictingDeclaration"]);
+    let DiagnosticKind::ConflictingDeclaration { first, second, .. } = &diagnostics[0].kind else {
+        panic!()
+    };
+    assert_eq!(*first, DeclarationOrigin::Attribute);
+    assert_eq!(*second, DeclarationOrigin::Builder);
+}
+
+#[test]
+fn should_report_duplicate_builder_declarations_whatever_the_order() {
+    let attribute = minimal("scores").with_origin(DeclarationOrigin::Attribute);
+    let first = minimal("scores")
+        .with_origin(DeclarationOrigin::Builder)
+        .index(IndexSpec::new(index_name("by_a"), vec![path("a")]));
+    let second = minimal("scores")
+        .with_origin(DeclarationOrigin::Builder)
+        .index(IndexSpec::new(index_name("by_a_too"), vec![path("a")]));
+    let orders = [
+        [attribute.clone(), first.clone(), second.clone()],
+        [first.clone(), attribute.clone(), second.clone()],
+        [first, second, attribute],
+    ];
+    for order in orders {
+        let mut declaration = ContractDeclaration::new();
+        for collection in order {
+            declaration = declaration.collection(collection);
+        }
+        let diagnostics = expect_diagnostics(&declaration);
+        assert_eq!(kinds(&diagnostics), ["DuplicateCollection"]);
+    }
+}
+
+#[test]
+fn should_report_both_a_duplicate_and_a_conflict_whatever_the_order() {
+    let attribute = minimal("scores").with_origin(DeclarationOrigin::Attribute);
+    let agreeing = minimal("scores").with_origin(DeclarationOrigin::Builder);
+    let disagreeing = minimal("scores")
+        .with_origin(DeclarationOrigin::Builder)
+        .mutable(false);
+    let orders = [
+        [attribute.clone(), agreeing.clone(), disagreeing.clone()],
+        [attribute.clone(), disagreeing.clone(), agreeing.clone()],
+        [disagreeing, agreeing, attribute],
+    ];
+    for order in orders {
+        let mut declaration = ContractDeclaration::new();
+        for collection in order {
+            declaration = declaration.collection(collection);
+        }
+        let diagnostics = expect_diagnostics(&declaration);
+        assert_eq!(
+            kinds(&diagnostics),
+            ["DuplicateCollection", "ConflictingDeclaration"]
+        );
+    }
+}
+
+#[test]
 fn should_let_a_builder_extend_an_attribute_collection_with_indexes() {
     let attribute = minimal("scores").with_origin(DeclarationOrigin::Attribute);
     let builder = minimal("scores")
@@ -916,6 +983,44 @@ fn should_report_duplicate_interface_function() {
                 .function("add", vec![], ValueType::Bool),
         );
     assert_reports(&declaration, "DuplicateInterfaceFunction");
+}
+
+#[test]
+fn should_report_unbounded_field_in_interface_parameters_and_returns() {
+    let declaration = ContractDeclaration::new()
+        .module(ModuleSpec::new(module("main")))
+        .interface(
+            InterfaceSpec::new(interface("text"), module("main")).function(
+                "join",
+                vec![
+                    ParamSpec {
+                        name: "parts".to_string(),
+                        ty: ValueType::list(
+                            8,
+                            ValueType::Struct(vec![(
+                                "text".to_string(),
+                                ValueType::String { max_chars: None },
+                            )]),
+                        ),
+                    },
+                    ParamSpec {
+                        name: "separator".to_string(),
+                        ty: ValueType::string(4),
+                    },
+                ],
+                ValueType::option(ValueType::Bytes { max_len: None }),
+            ),
+        );
+    let diagnostics = expect_diagnostics(&declaration);
+    assert_eq!(kinds(&diagnostics), ["UnboundedField", "UnboundedField"]);
+    assert_eq!(
+        diagnostics[0].path().to_string(),
+        "interface text, function join, parameter parts"
+    );
+    assert_eq!(
+        diagnostics[1].path().to_string(),
+        "interface text, function join, parameter return"
+    );
 }
 
 #[test]
