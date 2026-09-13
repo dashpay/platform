@@ -25,6 +25,17 @@
             }
           ],
           "countable": true
+        },
+        {
+          "name": "byHashtagCreated",
+          "properties": [
+            {
+              "hashtag": "asc"
+            },
+            {
+              "$createdAt": "asc"
+            }
+          ]
         }
       ],
       "properties": {
@@ -54,7 +65,8 @@
       },
       "required": [
         "hashtag",
-        "message"
+        "message",
+        "$createdAt"
       ],
       "additionalProperties": false
     },

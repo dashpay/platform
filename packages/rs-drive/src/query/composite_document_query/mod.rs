@@ -20,8 +20,8 @@
 //! query carries the page and its sub-queries in one request and proves
 //! them together: the server materializes the page, derives every
 //! sub-query's `IN` clause from it (or from an earlier sub-query's
-//! documents), and `prove_query_many` merges all the component path
-//! queries into one proof over one state root.
+//! documents), and [`DriveDocumentQuery::merged_path_query`] merges all
+//! the component path queries into one proof over one state root.
 //!
 //! Soundness never rests on the server's derivation. The verifier
 //! bootstraps the page (a subset pass against the merged proof), derives
@@ -738,11 +738,12 @@ impl<'a> DriveDocumentQuery<'a> {
             || self.internal_clauses.primary_key_equal_clause.is_some()
     }
 
-    /// The page's path query as the proof covers it. A by-ids page is
-    /// built WITHOUT its limit: its ids already bound it, and grovedb
+    /// The page's path query as a component of the proof. A by-ids page
+    /// is built WITHOUT its limit: its ids already bound it, and grovedb
     /// cannot lift a limit off a query that lands at the merged root
     /// (which a by-ids page shares with a join on the same type). Every
-    /// other page keeps its limit, lifted into its branch on merge.
+    /// other page keeps its limit, which the proof carries as its
+    /// branch's per-instance cap (see [`Self::lift_limit_into_branch_cap`]).
     pub fn page_path_query(&self, platform_version: &PlatformVersion) -> Result<PathQuery, Error> {
         if self.page_is_by_ids() {
             let mut unlimited = self.clone();
@@ -1173,9 +1174,9 @@ impl<'a> DriveDocumentQuery<'a> {
     /// bound sub-query whose binding derived nothing (it has no branch).
     /// Every sub-query walks in the page's direction: documents must
     /// already agree, while counts and by-id joins may be aligned without
-    /// changing their selected sets. ONE builder both the prover
-    /// (`prove_query_many`) and the verifier (`PathQuery::merge`) call,
-    /// so the merged query is byte-identical on both sides.
+    /// changing their selected sets. ONE builder both the prover and the
+    /// verifier feed into [`Self::merged_path_query`], so the merged
+    /// query is byte-identical on both sides.
     pub fn proof_path_queries(
         &self,
         derived: &[DerivedValues],
@@ -1295,8 +1296,29 @@ impl<'a> DriveDocumentQuery<'a> {
         Ok(true)
     }
 
+    /// A component's path query as the merged proof budgets it. The
+    /// merge lifts a component's global `SizedQuery::limit` into the
+    /// per-instance cap (`Query::limit`) of its branch root, and the
+    /// two budgets are not interchangeable: at a layer with subquery
+    /// branches the prover truncates the children it emits under a
+    /// global limit but only the descendant rows under an instance cap.
+    /// So a subset pass reading one component out of the merged proof
+    /// must use the lifted form, or an ordered page whose index level
+    /// holds more keys than its limit fails the more-data-than-limit
+    /// check, and a proof of the page alone must be built in the lifted
+    /// form too, so that the shape of a page's proof does not depend on
+    /// whether its bound sub-queries derived anything.
+    pub(crate) fn lift_limit_into_branch_cap(mut path_query: PathQuery) -> PathQuery {
+        if let Some(global) = path_query.query.limit.take() {
+            let own = path_query.query.query.limit;
+            path_query.query.query.limit = Some(own.map_or(global, |own| own.min(global)));
+        }
+        path_query
+    }
+
     /// Merges the component path queries into the one query the proof
-    /// covers.
+    /// covers. A page alone is proven in the same lifted-limit form the
+    /// merge would give it (see [`Self::lift_limit_into_branch_cap`]).
     pub fn merged_path_query(
         page: &PathQuery,
         sub_path_queries: &[Option<PathQuery>],
@@ -1305,7 +1327,7 @@ impl<'a> DriveDocumentQuery<'a> {
         let mut components: Vec<&PathQuery> = vec![page];
         components.extend(sub_path_queries.iter().flatten());
         if components.len() == 1 {
-            return Ok(page.clone());
+            return Ok(Self::lift_limit_into_branch_cap(page.clone()));
         }
         PathQuery::merge(components, &platform_version.drive.grove_version)
             .map_err(merge_error_to_shape_error)
@@ -1911,8 +1933,8 @@ impl<'a> DriveDocumentQuery<'a> {
     /// The page (and every sub-query that feeds a later binding) is
     /// materialized so the sub-queries can be derived; then
     /// [`Self::proof_path_queries`] builds the component path queries
-    /// and `prove_query_many` merges them — one proof, one root by
-    /// construction. Grovedb proves committed state only, so the
+    /// and [`Self::merged_path_query`] merges them — one proof, one root
+    /// by construction. Grovedb proves committed state only, so the
     /// materialize/prove sequence is bracketed by root-hash reads and
     /// retried if a block commit interleaved (otherwise the proof's page
     /// branch could disagree with the sub-queries derived from a stale
@@ -1972,13 +1994,14 @@ impl<'a> DriveDocumentQuery<'a> {
 
             let (page_path_query, sub_path_queries) =
                 self.proof_path_queries(&derived, platform_version)?;
-            let mut components: Vec<&PathQuery> = vec![&page_path_query];
-            components.extend(sub_path_queries.iter().flatten());
+            // The same builder the verifier re-merges with, so the proof
+            // covers exactly the query the verifier reconstructs.
+            let merged_query =
+                Self::merged_path_query(&page_path_query, &sub_path_queries, platform_version)?;
             let proof = drive
                 .grove
-                .prove_query_many(components, None, &platform_version.drive.grove_version)
-                .unwrap()
-                .map_err(merge_error_to_shape_error)?;
+                .prove_query(&merged_query, None, &platform_version.drive.grove_version)
+                .unwrap()?;
 
             let root_after = drive
                 .grove

@@ -30,10 +30,17 @@ impl DriveDocumentQuery<'_> {
         // verification — succinctness off, so the sub-query branches'
         // extra coverage is tolerated), decoded into candidate documents.
         // Candidates only reconstruct the merged query; the full pass
-        // below is the authority.
+        // below is the authority. Each component is read under the
+        // per-instance cap the merge lifted its limit into: the proof
+        // was budgeted that way, and a global limit would truncate an
+        // ordered page's index level differently.
         let page_path_query = self.page_path_query(platform_version)?;
         let direction = page_path_query.query.query.left_to_right;
-        let (_, page_trios) = GroveDb::verify_subset_query(proof, &page_path_query, grove_version)?;
+        let (_, page_trios) = GroveDb::verify_subset_query(
+            proof,
+            &Self::lift_limit_into_branch_cap(page_path_query),
+            grove_version,
+        )?;
         let bootstrap_page =
             Self::decode_document_trios(self, present(page_trios), platform_version)?;
 
@@ -59,8 +66,11 @@ impl DriveDocumentQuery<'_> {
                         direction,
                         platform_version,
                     )?;
-                    let (_, trios) =
-                        GroveDb::verify_subset_query(proof, &path_query, grove_version)?;
+                    let (_, trios) = GroveDb::verify_subset_query(
+                        proof,
+                        &Self::lift_limit_into_branch_cap(path_query),
+                        grove_version,
+                    )?;
                     self.decode_sub_query_document_trios(
                         sub_query,
                         &values,
