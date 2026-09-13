@@ -811,12 +811,7 @@ impl WasmSdk {
         Ok(DocumentHistoryProofMetadataResponseWasm {
             data: document_history_to_js(result.history, contract_id, &document_type_name)?,
             metadata: result.response.metadata.expect("verified metadata").into(),
-            entries_proof: result.response.entries_proof.map(Into::into),
-            metadata_proof: result
-                .response
-                .metadata_proof
-                .expect("verified metadata proof")
-                .into(),
+            proof: result.response.proof.expect("verified proof").into(),
         })
     }
 
@@ -1417,31 +1412,21 @@ mod history_wasm_tests {
     use wasm_bindgen_test::wasm_bindgen_test;
 
     #[wasm_bindgen_test]
-    fn should_export_both_history_proofs_without_combining_them() {
-        let make_proof = |bytes| {
-            ProofInfoWasm::from(dash_sdk::platform::proto::Proof {
-                grovedb_proof: bytes,
-                ..Default::default()
-            })
-        };
+    fn should_export_the_history_proof_as_one_proof_object() {
         let result = DocumentHistoryProofMetadataResponseWasm {
             data: JsValue::NULL,
             metadata: dash_sdk::platform::proto::ResponseMetadata::default().into(),
-            entries_proof: Some(make_proof(vec![1, 2])),
-            metadata_proof: make_proof(vec![3, 4]),
+            proof: ProofInfoWasm::from(dash_sdk::platform::proto::Proof {
+                grovedb_proof: vec![1, 2, 3],
+                ..Default::default()
+            }),
         };
         let result = JsValue::from(result);
-        let entries = Reflect::get(&result, &"entriesProof".into()).unwrap();
-        let metadata = Reflect::get(&result, &"metadataProof".into()).unwrap();
+        let proof = Reflect::get(&result, &"proof".into()).unwrap();
         assert_eq!(
-            js_sys::Uint8Array::new(&Reflect::get(&entries, &"grovedbProof".into()).unwrap())
+            js_sys::Uint8Array::new(&Reflect::get(&proof, &"grovedbProof".into()).unwrap())
                 .to_vec(),
-            vec![1, 2]
-        );
-        assert_eq!(
-            js_sys::Uint8Array::new(&Reflect::get(&metadata, &"grovedbProof".into()).unwrap())
-                .to_vec(),
-            vec![3, 4]
+            vec![1, 2, 3]
         );
     }
 
@@ -1508,13 +1493,13 @@ mod history_wasm_tests {
     }
 }
 
-/// History page with the two independently reusable proofs and their shared metadata.
+/// History page with its proof and metadata. The proof's GroveDB payload is
+/// the history envelope carrying both underlying GroveDB proofs.
 #[wasm_bindgen(js_name = DocumentHistoryProofMetadataResponse)]
 pub struct DocumentHistoryProofMetadataResponseWasm {
     data: JsValue,
     metadata: ResponseMetadataWasm,
-    entries_proof: Option<ProofInfoWasm>,
-    metadata_proof: ProofInfoWasm,
+    proof: ProofInfoWasm,
 }
 
 #[wasm_bindgen(js_class = DocumentHistoryProofMetadataResponse)]
@@ -1527,13 +1512,9 @@ impl DocumentHistoryProofMetadataResponseWasm {
     pub fn metadata(&self) -> ResponseMetadataWasm {
         self.metadata.clone()
     }
-    #[wasm_bindgen(getter = entriesProof)]
-    pub fn entries_proof(&self) -> Option<ProofInfoWasm> {
-        self.entries_proof.clone()
-    }
-    #[wasm_bindgen(getter = metadataProof)]
-    pub fn metadata_proof(&self) -> ProofInfoWasm {
-        self.metadata_proof.clone()
+    #[wasm_bindgen(getter)]
+    pub fn proof(&self) -> ProofInfoWasm {
+        self.proof.clone()
     }
 }
 

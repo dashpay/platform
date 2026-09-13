@@ -1396,10 +1396,7 @@ fn verify_document_history_response_v1(
             error: "history response version does not match request".to_owned(),
         });
     };
-    let proof = response
-        .metadata_proof
-        .as_ref()
-        .ok_or(Error::NoProofInResult)?;
+    let proof = response.proof.as_ref().ok_or(Error::NoProofInResult)?;
     let metadata = response
         .metadata
         .as_ref()
@@ -1445,13 +1442,9 @@ fn verify_document_history_response_v1(
         .map_err(|error| Error::ProtocolError {
             error: error.to_string(),
         })?;
-    let proofs = DocumentHistoryProofV1 {
-        entries_proof: response
-            .entries_proof
-            .as_ref()
-            .map(|proof| proof.grovedb_proof.clone()),
-        metadata_proof: proof.grovedb_proof.clone(),
-    };
+    // One proof object on the wire carries both GroveDB proofs.
+    let proofs = DocumentHistoryProofV1::from_bytes(&proof.grovedb_proof)
+        .map_drive_error(proof, metadata)?;
     proofs
         .validate_envelopes()
         .map_drive_error(proof, metadata)?;
@@ -1494,9 +1487,6 @@ fn verify_document_history_response_v1(
         }
     }
     verify_tenderdash_proof(proof, metadata, &root, provider)?;
-    if let Some(entries_proof) = &response.entries_proof {
-        verify_tenderdash_proof(entries_proof, metadata, &root, provider)?;
-    }
     Ok((
         Some(DocumentHistory {
             entries: history.entries,
@@ -1582,87 +1572,15 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
     {
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
-
-        let proof = response.proof().or(Err(Error::NoProofInResult))?;
-        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-
-        let (contract_id, document_type_name, document_id, limit, offset, start_at_ms) =
-            match request.version.ok_or(Error::EmptyVersion)? {
-                get_document_history_request::Version::V1(v1) => {
-                    return verify_document_history_response_v1(
-                        v1,
-                        &response,
-                        platform_version,
-                        provider,
-                    );
-                }
-                get_document_history_request::Version::V0(v0) => {
-                    let contract_id =
-                        Identifier::from_bytes(&v0.data_contract_id).map_err(|e| {
-                            Error::ProtocolError {
-                                error: e.to_string(),
-                            }
-                        })?;
-                    let document_id = Identifier::from_bytes(&v0.document_id).map_err(|e| {
-                        Error::ProtocolError {
-                            error: e.to_string(),
-                        }
-                    })?;
-                    let limit = u32_to_u16_opt(v0.limit.unwrap_or_default())?;
-                    let offset = u32_to_u16_opt(v0.offset.unwrap_or_default())?;
-                    (
-                        contract_id,
-                        v0.document_type_name,
-                        document_id,
-                        limit,
-                        offset,
-                        v0.start_at_ms,
-                    )
-                }
-            };
-
-        let data_contract = provider
-            .get_data_contract(&contract_id, platform_version)?
-            .ok_or(Error::NotFound)?;
-        let document_type = data_contract
-            .document_type_for_name(&document_type_name)
-            .map_err(|e| Error::ProtocolError {
-                error: e.to_string(),
-            })?;
-
-        let (root_hash, maybe_history) = Drive::verify_document_history_legacy(
-            &proof.grovedb_proof,
-            contract_id.into_buffer(),
-            &document_type_name,
-            document_type,
-            document_id.into_buffer(),
-            start_at_ms,
-            limit,
-            offset,
-            platform_version,
-        )
-        .map_drive_error(proof, mtd)?;
-
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
-
-        Ok((
-            maybe_history.map(|entries| DocumentHistory {
-                entries: entries
-                    .into_iter()
-                    .map(|(time_ms, document)| {
-                        use dpp::document::DocumentV0Getters;
-                        DocumentHistoryEntry {
-                            time_ms,
-                            revision: document.revision().unwrap_or(1),
-                            document,
-                        }
-                    })
-                    .collect(),
-                lifecycle: None,
-            }),
-            mtd.clone(),
-            proof.clone(),
-        ))
+        // A response without a proof or metadata is refused before the request
+        // is even looked at, as for every other proved query.
+        response.proof().or(Err(Error::NoProofInResult))?;
+        response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+        match request.version.ok_or(Error::EmptyVersion)? {
+            get_document_history_request::Version::V1(v1) => {
+                verify_document_history_response_v1(v1, &response, platform_version, provider)
+            }
+        }
     }
 }
 
@@ -3511,13 +3429,12 @@ mod tests {
     }
 
     fn document_history_response_with_proof_and_metadata() -> platform::GetDocumentHistoryResponse {
-        use platform::get_document_history_response::{
-            get_document_history_response_v0::Result as V0Result, GetDocumentHistoryResponseV0,
-            Version,
-        };
+        use platform::get_document_history_response::{GetDocumentHistoryResponseV1, Version};
         platform::GetDocumentHistoryResponse {
-            version: Some(Version::V0(GetDocumentHistoryResponseV0 {
-                result: Some(V0Result::Proof(Proof::default())),
+            version: Some(Version::V1(GetDocumentHistoryResponseV1 {
+                entries: vec![],
+                lifecycle: None,
+                proof: Some(Proof::default()),
                 metadata: Some(ResponseMetadata::default()),
             })),
         }
@@ -3528,17 +3445,17 @@ mod tests {
         document_type_name: &str,
         document_id: Vec<u8>,
         limit: Option<u32>,
-        offset: Option<u32>,
     ) -> platform::GetDocumentHistoryRequest {
-        use dapi_grpc::platform::v0::get_document_history_request::GetDocumentHistoryRequestV0;
-        GetDocumentHistoryRequestV0 {
+        use dapi_grpc::platform::v0::get_document_history_request::{
+            get_document_history_request_v1::Selector, GetDocumentHistoryRequestV1,
+        };
+        GetDocumentHistoryRequestV1 {
             data_contract_id,
             document_type_name: document_type_name.to_string(),
             document_id,
             limit,
-            offset,
-            start_at_ms: 0,
             prove: true,
+            selector: Some(Selector::StartAtMs(0)),
         }
         .into()
     }
@@ -5006,14 +4923,13 @@ mod tests {
 
     #[test]
     fn document_history_empty_response_metadata() {
-        use platform::get_document_history_response::{
-            get_document_history_response_v0::Result as V0Result, GetDocumentHistoryResponseV0,
-            Version,
-        };
+        use platform::get_document_history_response::{GetDocumentHistoryResponseV1, Version};
         let request = platform::GetDocumentHistoryRequest::default();
         let response = platform::GetDocumentHistoryResponse {
-            version: Some(Version::V0(GetDocumentHistoryResponseV0 {
-                result: Some(V0Result::Proof(Proof::default())),
+            version: Some(Version::V1(GetDocumentHistoryResponseV1 {
+                entries: vec![],
+                lifecycle: None,
+                proof: Some(Proof::default()),
                 metadata: None,
             })),
         };
@@ -5037,8 +4953,7 @@ mod tests {
 
     #[test]
     fn document_history_rejects_bad_contract_id_length() {
-        let request =
-            document_history_request(vec![0u8; 5], "niceDocument", vec![1u8; 32], None, None);
+        let request = document_history_request(vec![0u8; 5], "niceDocument", vec![1u8; 32], None);
         let response = document_history_response_with_proof_and_metadata();
         let provider = unreachable_provider();
 
@@ -5049,8 +4964,7 @@ mod tests {
 
     #[test]
     fn document_history_rejects_bad_document_id_length() {
-        let request =
-            document_history_request(vec![0u8; 32], "niceDocument", vec![1u8; 5], None, None);
+        let request = document_history_request(vec![0u8; 32], "niceDocument", vec![1u8; 5], None);
         let response = document_history_response_with_proof_and_metadata();
         let provider = unreachable_provider();
 
@@ -5061,13 +4975,8 @@ mod tests {
 
     #[test]
     fn document_history_rejects_overflowing_limit() {
-        let request = document_history_request(
-            vec![0u8; 32],
-            "niceDocument",
-            vec![1u8; 32],
-            Some(100_000),
-            None,
-        );
+        let request =
+            document_history_request(vec![0u8; 32], "niceDocument", vec![1u8; 32], Some(100_000));
         let response = document_history_response_with_proof_and_metadata();
         let provider = unreachable_provider();
 
@@ -5078,8 +4987,7 @@ mod tests {
 
     #[test]
     fn document_history_returns_not_found_when_contract_provider_misses() {
-        let request =
-            document_history_request(vec![0u8; 32], "niceDocument", vec![1u8; 32], None, None);
+        let request = document_history_request(vec![0u8; 32], "niceDocument", vec![1u8; 32], None);
         let response = document_history_response_with_proof_and_metadata();
         let provider = NoDataContractProvider;
 
@@ -5100,8 +5008,7 @@ mod tests {
         let provider = StaticDataContractProvider {
             data_contract: std::sync::Arc::new(data_contract),
         };
-        let request =
-            document_history_request(contract_id, "missingDocument", vec![1u8; 32], None, None);
+        let request = document_history_request(contract_id, "missingDocument", vec![1u8; 32], None);
         let response = document_history_response_with_proof_and_metadata();
 
         let err = document_history_error(request, response, &provider);

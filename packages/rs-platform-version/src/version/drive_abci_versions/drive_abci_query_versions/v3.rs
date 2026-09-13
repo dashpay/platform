@@ -27,7 +27,7 @@ use crate::version::drive_abci_versions::drive_abci_query_versions::{
 /// range page has no rank base).
 pub const DRIVE_ABCI_QUERY_VERSIONS_V3: DriveAbciQueryVersions = DriveAbciQueryVersions {
     document_history: crate::version::FeatureVersionBounds {
-        min_version: 0,
+        min_version: 1,
         max_version: 1,
         default_current_version: 1,
     },
