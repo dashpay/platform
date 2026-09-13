@@ -40,6 +40,18 @@ class DocumentHistoryTest {
     }
 
     @Test
+    fun negativeOrStringTypedNumbersAreMalformedNotValues() {
+        // Rust serializes every lifecycle number as an unsigned integer, so a
+        // string or a negative number is a malformed block, never a count.
+        val stringTyped = page("DELETED", 5).replace("\"remaining_revisions\":5", "\"remaining_revisions\":\"5\"")
+        assertNull(DocumentLifecycle.fromHistoryJson(stringTyped))
+        assertNull(DocumentLifecycle.fromHistoryJson(page("DELETED", -1)))
+        val negativeTime = page("DELETED", 5).replace("\"deleted_at_ms\":1700000000001", "\"deleted_at_ms\":-1")
+        assertNull(DocumentLifecycle.fromHistoryJson(negativeTime))
+        assertEquals(0L, DocumentLifecycle.fromHistoryJson(page("DELETED", 0))!!.remainingRevisions)
+    }
+
+    @Test
     fun unchangedDeletedLifecycleIsNotPresentedAsAConfirmedErase() {
         val before = DocumentLifecycle.fromHistoryJson(page("DELETED", 5))!!
         val after = DocumentLifecycle.fromHistoryJson(page("DELETED", 5))!!
