@@ -14,6 +14,7 @@ use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use drive::drive::document::history::{
     DocumentHistoryLifecycle, DocumentHistorySelector, DocumentHistoryState,
 };
@@ -102,6 +103,8 @@ impl DocumentEraseTransitionBuilder {
             .data_contract
             .document_type_for_name(&self.document_type_name)
             .map_err(|e| Error::Protocol(e.into()))?;
+        let (user_fee_increase, creation_options) = self.signing_parameters();
+        Self::check_erase_is_constructible(creation_options.as_ref(), platform_version)?;
 
         // The transition carries only the base, so an id is all the builder
         // needs; the values of a document that is no longer visible are not
@@ -138,14 +141,60 @@ impl DocumentEraseTransitionBuilder {
             document_type,
             identity_public_key,
             identity_contract_nonce,
-            self.user_fee_increase.unwrap_or_default(),
+            user_fee_increase,
             signer,
             platform_version,
-            self.state_transition_creation_options,
+            creation_options,
         )
         .await?;
 
         Ok(state_transition)
+    }
+
+    /// The fee increase and creation options the transition is signed with.
+    ///
+    /// An explicitly set value wins; otherwise the ones carried by the put
+    /// settings apply, so a caller that only hands over settings (the wasm and
+    /// FFI wrappers do) still signs with what it asked for.
+    fn signing_parameters(&self) -> (UserFeeIncrease, Option<StateTransitionCreationOptions>) {
+        let settings = self.settings.as_ref();
+        (
+            self.user_fee_increase
+                .or(settings.and_then(|settings| settings.user_fee_increase))
+                .unwrap_or_default(),
+            self.state_transition_creation_options
+                .or(settings.and_then(|settings| settings.state_transition_creation_options)),
+        )
+    }
+
+    /// Refuses, before any nonce is reserved, an erase the platform version
+    /// cannot construct: the transition kind joined the wire at protocol
+    /// version 14, and the batch may only be built at a version it knows.
+    ///
+    /// The same rejection happens inside the transition constructor, but by
+    /// then the SDK has already advanced its cached contract nonce for a
+    /// transition that is never broadcast.
+    fn check_erase_is_constructible(
+        creation_options: Option<&StateTransitionCreationOptions>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let serialization = &platform_version.dpp.state_transition_serialization_versions;
+        if serialization.document_erase_state_transition.is_none() {
+            return Err(Error::Protocol(ProtocolError::Generic(
+                "erase transitions do not exist at this platform version".to_string(),
+            )));
+        }
+        let batch_feature_version = creation_options
+            .and_then(|options| options.batch_feature_version)
+            .unwrap_or(serialization.batch_state_transition.default_current_version);
+        if !matches!(batch_feature_version, 0 | 1) {
+            return Err(Error::Protocol(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentEraseTransitionBuilder::sign".to_string(),
+                known_versions: vec![0, 1],
+                received: batch_feature_version,
+            }));
+        }
+        Ok(())
     }
 }
 
@@ -292,5 +341,74 @@ mod tests {
 
         erase_observation(StateTransitionProofResult::VerifiedTokenBalanceAbsence(id))
             .expect_err("only a document result can describe an erase");
+    }
+
+    #[cfg(feature = "mocks")]
+    fn builder_with(settings: Option<PutSettings>) -> DocumentEraseTransitionBuilder {
+        let contract = dpp::tests::fixtures::get_dashpay_contract_fixture(
+            None,
+            0,
+            PlatformVersion::latest().protocol_version,
+        )
+        .data_contract_owned();
+        let builder = DocumentEraseTransitionBuilder::new(
+            Arc::new(contract),
+            "profile".to_string(),
+            Identifier::from([1u8; 32]),
+            Identifier::from([2u8; 32]),
+        );
+        match settings {
+            Some(settings) => builder.with_settings(settings),
+            None => builder,
+        }
+    }
+
+    /// A fee increase or creation options handed over inside the put settings
+    /// reach the signing step, and an explicit builder value still wins.
+    #[cfg(feature = "mocks")]
+    #[test]
+    fn should_sign_with_the_settings_fee_increase_unless_set_explicitly() {
+        let options = StateTransitionCreationOptions {
+            batch_feature_version: Some(1),
+            ..Default::default()
+        };
+        let settings = PutSettings {
+            user_fee_increase: Some(250),
+            state_transition_creation_options: Some(options),
+            ..Default::default()
+        };
+        assert_eq!(builder_with(None).signing_parameters(), (0, None));
+        assert_eq!(
+            builder_with(Some(settings)).signing_parameters(),
+            (250, Some(options))
+        );
+        assert_eq!(
+            builder_with(Some(settings))
+                .with_user_fee_increase(7)
+                .with_state_transition_creation_options(Default::default())
+                .signing_parameters(),
+            (7, Some(Default::default()))
+        );
+    }
+
+    /// The version gate runs before the nonce fetch, so a platform version
+    /// that cannot construct an erase is refused without reserving a nonce.
+    #[test]
+    fn should_refuse_an_erase_the_platform_version_cannot_construct() {
+        let too_old = PlatformVersion::get(13).unwrap();
+        let error = DocumentEraseTransitionBuilder::check_erase_is_constructible(None, too_old)
+            .expect_err("protocol 13 has no erase transition");
+        assert!(error
+            .to_string()
+            .contains("erase transitions do not exist at this platform version"));
+        let current = PlatformVersion::get(14).unwrap();
+        DocumentEraseTransitionBuilder::check_erase_is_constructible(None, current)
+            .expect("protocol 14 constructs erases");
+        let unknown_batch = StateTransitionCreationOptions {
+            batch_feature_version: Some(9),
+            ..Default::default()
+        };
+        DocumentEraseTransitionBuilder::check_erase_is_constructible(Some(&unknown_batch), current)
+            .expect_err("an unknown batch version is refused before any nonce is reserved");
     }
 }
