@@ -76,7 +76,11 @@ data class DocumentLifecycle(
             val state = obj["state"]?.jsonPrimitive?.content
                 ?.let { name -> DocumentLifecycleState.entries.firstOrNull { it.name == name } }
                 ?: return null
-            fun number(key: String): Long? = obj[key]?.jsonPrimitive?.content?.toLongOrNull()
+            // Rust serializes these as unsigned integers: a JSON string or a
+            // negative number is a malformed block, not a value to display.
+            fun number(key: String): Long? = obj[key]?.jsonPrimitive
+                ?.takeUnless { it.isString }
+                ?.content?.toLongOrNull()?.takeIf { it >= 0 }
             return DocumentLifecycle(
                 state = state,
                 remainingRevisions = number("remaining_revisions") ?: return null,
