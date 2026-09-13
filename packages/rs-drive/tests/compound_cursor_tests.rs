@@ -588,6 +588,159 @@ fn three_level_rows() -> Vec<[u8; 3]> {
     rows
 }
 
+/// Terminal keys still have a document-id level on non-unique indexes.
+/// Check each cursor against the ordered documents, including pages that
+/// end inside a duplicate run and offsets applied after the cursor.
+fn assert_terminal_cursor_pages(
+    fixture: &LeftOverFixture,
+    where_clauses: serde_json::Value,
+    order_by: serde_json::Value,
+    filter: impl Fn(&[u8; 3]) -> bool,
+    ascending: bool,
+) {
+    let full = left_over_oracle_rows(fixture, |_| true, &[(0, ascending)]);
+    let matching = left_over_oracle(fixture, filter, &[(0, ascending)]);
+    for prove in [false, true] {
+        for included in [false, true] {
+            for (position, (_, cursor)) in full.iter().enumerate() {
+                for (offset, limit) in [
+                    (None, 1),
+                    (None, 2),
+                    (None, 100),
+                    (Some(1), 1),
+                    (Some(2), 2),
+                ] {
+                    // Only padded startAfter queries support proof offsets;
+                    // GroveDB cannot merge an ordinary startAt with an offset.
+                    if included && offset.is_some() {
+                        continue;
+                    }
+                    let expected: Vec<_> =
+                        left_over_expected_page(&full, &matching, position, included)
+                            .into_iter()
+                            .skip(offset.unwrap_or(0))
+                            .take(limit)
+                            .collect();
+                    let got = left_over_page_with_offset(
+                        fixture,
+                        where_clauses.clone(),
+                        order_by.clone(),
+                        limit,
+                        offset,
+                        Some((*cursor, included)),
+                        prove,
+                    );
+                    assert_eq!(
+                        got, expected,
+                        "{where_clauses} {order_by}: prove={prove}, included={included}, \
+                         cursor position {position}, limit={limit}, offset={offset:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn should_paginate_duplicate_terminal_range_and_in_keys() {
+    let fixture = setup_left_over_fixture(
+        &[("a", "asc")],
+        false,
+        &[
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 0, 0],
+            [1, 0, 0],
+            [3, 0, 0],
+            [5, 0, 0],
+        ],
+    );
+    for ascending in [true, false] {
+        let order = if ascending { "asc" } else { "desc" };
+        assert_terminal_cursor_pages(
+            &fixture,
+            json!([["a", ">", 0]]),
+            json!([["a", order]]),
+            |values| values[0] > 0,
+            ascending,
+        );
+        assert_terminal_cursor_pages(
+            &fixture,
+            json!([["a", "in", [1, 3]]]),
+            json!([["a", order]]),
+            |values| [1, 3].contains(&values[0]),
+            ascending,
+        );
+    }
+}
+
+#[test]
+fn should_paginate_duplicate_terminal_keys_without_where_clause() {
+    let fixture = setup_left_over_fixture(
+        &[("a", "asc")],
+        false,
+        &[[1, 0, 0], [1, 0, 0], [1, 0, 0], [3, 0, 0]],
+    );
+    for ascending in [true, false] {
+        let order = if ascending { "asc" } else { "desc" };
+        assert_terminal_cursor_pages(
+            &fixture,
+            json!([]),
+            json!([["a", order]]),
+            |_| true,
+            ascending,
+        );
+    }
+}
+
+#[test]
+fn should_paginate_duplicate_terminal_equality_keys() {
+    let fixture = setup_left_over_fixture(
+        &[("a", "asc")],
+        false,
+        &[[0, 0, 0], [1, 0, 0], [1, 0, 0], [1, 0, 0], [3, 0, 0]],
+    );
+    assert_terminal_cursor_pages(
+        &fixture,
+        json!([["a", "==", 1]]),
+        json!([]),
+        |values| values[0] == 1,
+        true,
+    );
+}
+
+#[test]
+fn should_preserve_terminal_range_predicates_for_every_cursor() {
+    for unique in [false, true] {
+        let rows = if unique {
+            vec![[0, 0, 0], [3, 0, 0], [5, 0, 0], [7, 0, 0]]
+        } else {
+            vec![[0, 0, 0], [3, 0, 0], [5, 0, 0], [5, 0, 0], [7, 0, 0]]
+        };
+        let fixture = setup_left_over_fixture(&[("a", "asc")], unique, &rows);
+        for (operator, filter) in [
+            (
+                "<",
+                (|values: &[u8; 3]| values[0] < 5) as fn(&[u8; 3]) -> bool,
+            ),
+            ("<=", |values| values[0] <= 5),
+            (">", |values| values[0] > 5),
+            (">=", |values| values[0] >= 5),
+        ] {
+            for ascending in [true, false] {
+                let order = if ascending { "asc" } else { "desc" };
+                assert_terminal_cursor_pages(
+                    &fixture,
+                    json!([["a", operator, 5]]),
+                    json!([["a", order]]),
+                    filter,
+                    ascending,
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn should_include_start_at_cursor_on_unique_index_with_left_over_level() {
     // Range outside, In inside, and c left over on a unique index: the

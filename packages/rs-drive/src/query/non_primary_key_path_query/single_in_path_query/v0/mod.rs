@@ -85,6 +85,28 @@ impl<'a> DriveDocumentQuery<'a> {
                     order_by,
                     platform_version,
                 )?;
+                if left_over.is_empty() && !unique {
+                    if let Some(cursor) = starts_at_document {
+                        // An ordering-only query can end at this property,
+                        // but duplicate keys still need the document-id bound.
+                        let cursor_key = cursor.document.get_raw_for_document_type(
+                            indexed_property.name.as_str(),
+                            cursor.document_type,
+                            None,
+                            platform_version,
+                        )?;
+                        Self::recursive_conditional_insert_on_query_ordered(
+                            &mut inner_query,
+                            cursor_key,
+                            left_over,
+                            unique,
+                            cursor,
+                            left_to_right,
+                            order_by,
+                            platform_version,
+                        )?;
+                    }
+                }
                 Ok(Some(inner_query))
             }
         }
@@ -518,13 +540,12 @@ impl<'a> DriveDocumentQuery<'a> {
                 // not widen the clause's own range, and its branch holds no
                 // matching row anyway.
                 let cursor_outer_key = match &starts_at_document {
-                    Some((document, _)) if sibling_aware_cursor_lowering => document
-                        .get_raw_for_document_type(
-                            where_clause.field.as_str(),
-                            self.document_type,
-                            None,
-                            platform_version,
-                        )?,
+                    Some((document, _)) => document.get_raw_for_document_type(
+                        where_clause.field.as_str(),
+                        self.document_type,
+                        None,
+                        platform_version,
+                    )?,
                     _ => None,
                 };
                 let cursor_outer_key_in_clause = match cursor_outer_key.as_ref() {
@@ -587,16 +608,18 @@ impl<'a> DriveDocumentQuery<'a> {
                         }
                         _ => (None, false, true),
                     };
-                let starts_at_document_with_branch_included = if sibling_aware_cursor_lowering {
-                    starts_at_document.as_ref().map(|(document, _)| {
+                let starts_at_document_in_clause =
+                    starts_at_document.as_ref().map(|(document, included)| {
                         (
                             document.clone(),
-                            cursor_outer_key_in_clause && cursor_branch_live,
+                            cursor_outer_key_in_clause
+                                && if sibling_aware_cursor_lowering {
+                                    cursor_branch_live
+                                } else {
+                                    *included
+                                },
                         )
-                    })
-                } else {
-                    None
-                };
+                    });
 
                 // We should set the starts at document to be included for the query if there are
                 // left over index properties.
@@ -617,12 +640,15 @@ impl<'a> DriveDocumentQuery<'a> {
                     // Keep the cursor's outer branch for both startAt and
                     // startAfter: its remaining inner rows still belong to
                     // the page. Only its conditional subquery uses the cursor.
-                    &starts_at_document_with_branch_included
+                    &starts_at_document_in_clause
                 } else if left_over_index_properties.is_empty() {
                     if last_clause_is_on_transformed_source {
                         &None
                     } else {
-                        &starts_at_document
+                        // A padded cursor must not turn a strict terminal
+                        // bound into an inclusive one when the cursor is
+                        // outside the clause.
+                        &starts_at_document_in_clause
                     }
                 } else {
                     &None
@@ -757,21 +783,39 @@ impl<'a> DriveDocumentQuery<'a> {
                                 }
                             }
                         } else {
+                            let cursor =
+                                starts_at_document.map(|(document, included)| StartAtDocument {
+                                    document,
+                                    document_type: self.document_type,
+                                    included,
+                                });
                             Self::recursive_insert_on_query_ordered_with_cursor(
                                 &mut query,
                                 left_over_index_properties.as_slice(),
                                 index.unique,
-                                starts_at_document
-                                    .map(|(document, included)| StartAtDocument {
-                                        document,
-                                        document_type: self.document_type,
-                                        included,
-                                    })
-                                    .as_ref(),
+                                cursor.as_ref(),
                                 left_to_right,
                                 &self.order_by,
                                 platform_version,
                             )?;
+                            if left_over_index_properties.is_empty() && !index.unique {
+                                if let Some(cursor) = cursor.as_ref() {
+                                    // Only the cursor's terminal key needs an
+                                    // id bound; later keys retain all ids. This
+                                    // makes the included cursor the first row
+                                    // before padded startAfter removes it.
+                                    Self::recursive_conditional_insert_on_query_ordered(
+                                        &mut query,
+                                        cursor_outer_key,
+                                        left_over_index_properties.as_slice(),
+                                        index.unique,
+                                        cursor,
+                                        left_to_right,
+                                        &self.order_by,
+                                        platform_version,
+                                    )?;
+                                }
+                            }
                         }
                     }
                     Some(subquery_where_clause) => {
