@@ -99,8 +99,10 @@ extension PlatformWalletManager {
         // callback snapshots `shieldedSyncGeneration` at enqueue time; a
         // stop/clear bumps the counter, so a stale event's snapshot no
         // longer matches and is dropped — even if a restart happened in the
-        // same actor turn (the restart does not reset the counter).
-        guard generation == shieldedSyncGeneration.current() else { return }
+        // same actor turn (the restart does not reset the counter). Shutdown
+        // suppresses callbacks immediately, while leaving the generation
+        // valid until admitted local reads finish their MainActor delivery.
+        guard !shutdownRequested, generation == shieldedSyncGeneration.current() else { return }
         lastShieldedSyncEvent = event
         // A completed pass means the per-chunk progress counter for
         // this pass is no longer meaningful — clear so the next pass
@@ -138,7 +140,7 @@ extension PlatformWalletManager {
         blockHeight: UInt64,
         generation: UInt64
     ) {
-        guard generation == shieldedSyncGeneration.current() else { return }
+        guard !shutdownRequested, generation == shieldedSyncGeneration.current() else { return }
         currentShieldedSyncScanned = cumulativeScanned
         currentShieldedSyncBlockHeight = blockHeight
     }
@@ -160,7 +162,7 @@ extension PlatformWalletManager {
         total: UInt64,
         generation: UInt64
     ) {
-        guard generation == shieldedSyncGeneration.current() else { return }
+        guard !shutdownRequested, generation == shieldedSyncGeneration.current() else { return }
         currentShieldedTreeCommitted = committed
         currentShieldedTreeTotal = total
     }
@@ -220,7 +222,7 @@ extension PlatformWalletManager {
             )
         }
 
-        try withShieldedLocalBalanceMutation {
+        try withShieldedLocalBalanceBind {
             try walletId.withUnsafeBytes { walletIdRaw in
                 guard let walletIdPtr = walletIdRaw.baseAddress?
                     .assumingMemoryBound(to: UInt8.self)

@@ -504,10 +504,13 @@ public class PlatformWalletManager: ObservableObject {
     /// it without hopping onto the main actor first.
     nonisolated let shieldedSyncGeneration = SyncGenerationCounter()
 
-    /// Bind/Clear can change the local ledger even if a later native step
-    /// fails. Local reads use their own generation so invalidating those
-    /// results does not change the existing sync callback semantics.
+    /// Clear and failed binds invalidate pending local reads without
+    /// changing the existing sync callback generation semantics.
     nonisolated let shieldedLocalBalanceGeneration = SyncGenerationCounter()
+
+    /// A successful bind may be idempotent. Reads overlapping it take one
+    /// fresh snapshot rather than treating every bind as destructive.
+    nonisolated let shieldedLocalBalanceBindGeneration = SyncGenerationCounter()
 
     /// Generation guard for platform-address (BLAST/DIP-17) sync
     /// completion events, mirroring [`shieldedSyncGeneration`]. The FFI

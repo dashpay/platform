@@ -75,24 +75,44 @@ struct PlatformWalletNativeShieldedLocalBalanceCalls: Sendable {
 }
 
 extension PlatformWalletManager {
-    /// Bind and Clear can change registration or purge notes before a later
-    /// storage error is returned. Invalidate pending reads before either
-    /// native call, even when the call throws; sync callback generations keep
-    /// their existing success-only semantics. Call after validating arguments.
+    /// Clear can purge notes before a later storage error is returned.
+    /// Invalidate before entering native code, including its failure path.
     func withShieldedLocalBalanceMutation<T>(_ body: () throws -> T) rethrows -> T {
         shieldedLocalBalanceGeneration.bump()
         return try body()
     }
 
+    /// Native bind does not report whether it preserved or changed the
+    /// registration. Refresh reads after either successful outcome; discard
+    /// them on failure because a failed bind cannot certify the old ledger.
+    /// The synchronous MainActor call and epoch update cannot interleave
+    /// with a snapshot's MainActor delivery.
+    func withShieldedLocalBalanceBind<T>(_ body: () throws -> T) rethrows -> T {
+        do {
+            let result = try body()
+            shieldedLocalBalanceBindGeneration.bump()
+            return result
+        } catch {
+            shieldedLocalBalanceGeneration.bump()
+            throw error
+        }
+    }
+
     /// Reads one coherent local balance snapshot after shielded binding.
     /// This performs no network requests. Call it before starting network
-    /// sync during launch: an active scan can hold the native store lock
-    /// while waiting for network responses, delaying this read.
+    /// sync during launch. Native lock waits have a short deadline: if an
+    /// active scan holds the store across a network request, this throws
+    /// instead of blocking native-operation admission until the scan ends.
+    ///
+    /// A successful bind overlapping delivery triggers one fresh read. If
+    /// binding changes again during that retry, this throws rather than
+    /// returning an obsolete ledger or retrying indefinitely.
     ///
     /// Native failures throw; unbound and incompletely restored wallets do
-    /// not produce numeric balances. Retain the last usable snapshot when a
-    /// later read fails. The manager remains alive until the native read and
-    /// allocation release finish, and shutdown drains admitted reads.
+    /// not produce numeric balances. Retain the last usable snapshot and
+    /// retry later when a read fails. The manager remains alive until the
+    /// native read and allocation release finish; shutdown drains admitted
+    /// reads, including their one permitted bind retry.
     public func localShieldedBalanceSnapshot(walletId: Data) async throws -> ShieldedLocalBalanceState {
         try Task.checkCancellation()
         try ensureConfigured()
@@ -106,25 +126,37 @@ extension PlatformWalletManager {
         let generation = shieldedSyncGeneration.current()
         let localGeneration = shieldedLocalBalanceGeneration.current()
         let calls = nativeShieldedLocalBalanceCalls
-        let state: ShieldedLocalBalanceState = try await withCheckedThrowingContinuation { continuation in
-            // Shared FIFO ordering matches the other admitted native ops.
-            Self.destroyQueue.async {
-                do {
-                    continuation.resume(returning: try Self.readLocalShieldedBalance(
-                        handle: h, walletId: walletId, calls: calls))
-                } catch {
-                    continuation.resume(throwing: error)
+        var remainingBindRetries = 1
+        while true {
+            try Task.checkCancellation()
+            let bindGeneration = shieldedLocalBalanceBindGeneration.current()
+            let state: ShieldedLocalBalanceState = try await withCheckedThrowingContinuation { continuation in
+                // Shared FIFO ordering matches the other admitted native ops.
+                Self.destroyQueue.async {
+                    do {
+                        continuation.resume(returning: try Self.readLocalShieldedBalance(
+                            handle: h, walletId: walletId, calls: calls))
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
                 }
             }
+            try Task.checkCancellation()
+            guard handle == h, generation == shieldedSyncGeneration.current(),
+                  localGeneration == shieldedLocalBalanceGeneration.current() else {
+                // Clear, stop, or a failed bind makes this request obsolete,
+                // including when it happens during the second native read.
+                throw CancellationError()
+            }
+            guard bindGeneration != shieldedLocalBalanceBindGeneration.current() else {
+                return state
+            }
+            guard remainingBindRetries > 0 else {
+                throw PlatformWalletError.walletOperation(
+                    "Shielded binding changed repeatedly during the local balance snapshot; retry the read")
+            }
+            remainingBindRetries -= 1
         }
-        try Task.checkCancellation()
-        guard handle == h, generation == shieldedSyncGeneration.current(),
-              localGeneration == shieldedLocalBalanceGeneration.current() else {
-            // Clear, stop, or rebind may complete while this off-main read
-            // is queued or waiting to resume. Do not return its old ledger.
-            throw CancellationError()
-        }
-        return state
     }
 
     nonisolated static func readLocalShieldedBalance(

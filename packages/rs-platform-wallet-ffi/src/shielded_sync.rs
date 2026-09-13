@@ -92,8 +92,10 @@ impl From<ShieldedLocalBalanceState> for ShieldedLocalBalanceSnapshotFFI {
 }
 
 /// Read the bound wallet's local shielded balance, including pending-spend
-/// reservations, without starting sync or resolving a mnemonic. May wait for an
-/// in-flight sync to release the store lock; call it off the host's UI thread.
+/// reservations, without starting sync or resolving a mnemonic. Waits at most
+/// 100 ms for the coordinator lifecycle/store locks. On contention, returns
+/// ErrorWalletOperation with an empty output; retain the last balance and retry.
+/// Call it off the host's UI thread.
 ///
 /// # Safety
 /// `wallet_id_bytes` must point to 32 readable bytes; `out_snapshot` must be
@@ -104,6 +106,22 @@ pub unsafe extern "C" fn platform_wallet_manager_local_shielded_balance_snapshot
     handle: Handle,
     wallet_id_bytes: *const u8,
     out_snapshot: *mut ShieldedLocalBalanceSnapshotFFI,
+) -> PlatformWalletFFIResult {
+    local_shielded_balance_snapshot_with_budget(
+        handle,
+        wallet_id_bytes,
+        out_snapshot,
+        Duration::from_millis(100),
+    )
+}
+
+// Separate the budget from the exported ABI so the registry-lock regression
+// can keep a snapshot parked longer than its independent writer/stop deadlines.
+unsafe fn local_shielded_balance_snapshot_with_budget(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    out_snapshot: *mut ShieldedLocalBalanceSnapshotFFI,
+    wait_budget: Duration,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_snapshot);
     *out_snapshot = ShieldedLocalBalanceSnapshotFFI::default();
@@ -123,24 +141,44 @@ pub unsafe extern "C" fn platform_wallet_manager_local_shielded_balance_snapshot
     // which then blocks the stop lookup behind it on the fair registry lock.
     let result = runtime().block_on(async {
         // A missing wallet is an API error, not a legitimate unbound state.
-        let wallet =
-            wallet.ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
+        let wallet = wallet.ok_or_else(|| {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                format!(
+                    "local shielded balance snapshot failed: {}",
+                    PlatformWalletError::WalletNotFound(hex::encode(wallet_id))
+                ),
+            )
+        })?;
         let Some(coordinator) = coordinator else {
             return Ok(ShieldedLocalBalanceState::Unbound);
         };
         // Keep the wallet alive until the read completes. Coordinator
         // lifecycle locking serializes removal/Clear against its snapshot.
-        coordinator.local_balance_snapshot(wallet.wallet_id()).await
+        tokio::time::timeout(
+            wait_budget,
+            coordinator.local_balance_snapshot(wallet.wallet_id()),
+        )
+        .await
+        .map_err(|_| {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "local shielded balance snapshot busy; retry after sync releases its locks",
+            )
+        })?
+        .map_err(|error| {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                format!("local shielded balance snapshot failed: {error}"),
+            )
+        })
     });
     match result {
         Ok(snapshot) => {
             *out_snapshot = snapshot.into();
             PlatformWalletFFIResult::ok()
         }
-        Err(error) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("local shielded balance snapshot failed: {error}"),
-        ),
+        Err(error) => error,
     }
 }
 
@@ -778,8 +816,12 @@ mod local_balance_tests {
         )
     }
 
-    #[test]
-    fn should_allow_registry_writer_and_stop_while_local_balance_snapshot_is_parked() {
+    fn bound_manager() -> (
+        Handle,
+        [u8; 32],
+        Arc<platform_wallet::wallet::shielded::NetworkShieldedCoordinator>,
+        PathBuf,
+    ) {
         let manager = mock_manager();
         let path = std::env::temp_dir().join(format!(
             "ffi-shielded-local-balance-{}-{}.sqlite",
@@ -817,16 +859,23 @@ mod local_balance_tests {
             (wallet_id, coordinator)
         });
         let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
+        (handle, wallet_id, coordinator, path)
+    }
+
+    #[test]
+    fn should_allow_registry_writer_and_stop_while_local_balance_snapshot_is_parked() {
+        let (handle, wallet_id, coordinator, path) = bound_manager();
         let unrelated_handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
         // Model a scan owning the real store lock. The FFI snapshot must
         // enter its lifecycle transaction and park on this guard.
         let store_guard = runtime().block_on(coordinator.store().write());
         let snapshot_thread = std::thread::spawn(move || unsafe {
             let mut snapshot = ShieldedLocalBalanceSnapshotFFI::default();
-            let mut result = platform_wallet_manager_local_shielded_balance_snapshot(
+            let mut result = local_shielded_balance_snapshot_with_budget(
                 handle,
                 wallet_id.as_ptr(),
                 &mut snapshot,
+                Duration::from_secs(10),
             );
             let outcome = (result.code, snapshot.status, snapshot.accounts_count);
             platform_wallet_manager_local_shielded_balance_snapshot_free(&mut snapshot);
@@ -893,6 +942,94 @@ mod local_balance_tests {
                 1
             )
         );
+    }
+
+    fn assert_snapshot_contention_is_bounded(hold_lifecycle: bool) {
+        let (handle, wallet_id, coordinator, path) = bound_manager();
+        let store_guard = runtime().block_on(coordinator.store().write());
+        // A Rust read has no FFI deadline. Polling it while the store is
+        // locked deterministically holds the lifecycle mutex for the second
+        // case, so the exported read must bound either kind of contention.
+        let mut lifecycle_holder = Box::pin(coordinator.local_balance_snapshot(wallet_id));
+        if hold_lifecycle {
+            let pending = runtime().block_on(poll_fn(|cx| {
+                Poll::Ready(lifecycle_holder.as_mut().poll(cx).is_pending())
+            }));
+            assert!(pending, "store guard must park the lifecycle holder");
+        }
+        let (done_tx, done_rx) = mpsc::channel();
+        let snapshot_thread = std::thread::spawn(move || unsafe {
+            let mut snapshot = ShieldedLocalBalanceSnapshotFFI {
+                status: ShieldedLocalBalanceStatusFFI::Ready,
+                accounts: std::ptr::dangling(),
+                accounts_count: 99,
+            };
+            let mut result = platform_wallet_manager_local_shielded_balance_snapshot(
+                handle,
+                wallet_id.as_ptr(),
+                &mut snapshot,
+            );
+            let message = if result.message.is_null() {
+                String::new()
+            } else {
+                CStr::from_ptr(result.message)
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            let outcome = (
+                result.code,
+                snapshot.status,
+                snapshot.accounts.is_null(),
+                snapshot.accounts_count,
+                message,
+            );
+            platform_wallet_manager_local_shielded_balance_snapshot_free(&mut snapshot);
+            crate::platform_wallet_ffi_result_free(&mut result);
+            done_tx.send(outcome).expect("snapshot receiver");
+        });
+        // Observe completion BEFORE releasing either guard. The generous
+        // watchdog tolerates slow CI without turning the lock release into
+        // what lets the read complete in a regressed implementation.
+        let bounded_result = done_rx.recv_timeout(Duration::from_secs(2));
+        drop(lifecycle_holder);
+        drop(store_guard);
+        snapshot_thread.join().expect("snapshot thread");
+        let (retry_code, retry_status, retry_count) = unsafe {
+            let mut snapshot = ShieldedLocalBalanceSnapshotFFI::default();
+            let mut result = platform_wallet_manager_local_shielded_balance_snapshot(
+                handle,
+                wallet_id.as_ptr(),
+                &mut snapshot,
+            );
+            let outcome = (result.code, snapshot.status, snapshot.accounts_count);
+            platform_wallet_manager_local_shielded_balance_snapshot_free(&mut snapshot);
+            crate::platform_wallet_ffi_result_free(&mut result);
+            let mut destroy = crate::manager::platform_wallet_manager_destroy(handle);
+            crate::platform_wallet_ffi_result_free(&mut destroy);
+            outcome
+        };
+        drop(coordinator);
+        std::fs::remove_file(path).expect("remove test store");
+        let (code, status, empty, count, message) =
+            bounded_result.expect("FFI read must finish while locks remain held");
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorWalletOperation);
+        assert_eq!(status, ShieldedLocalBalanceStatusFFI::Unbound);
+        assert!(empty);
+        assert_eq!(count, 0);
+        assert!(message.contains("snapshot busy; retry"), "{message}");
+        assert_eq!(retry_code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(retry_status, ShieldedLocalBalanceStatusFFI::Ready);
+        assert_eq!(retry_count, 1);
+    }
+
+    #[test]
+    fn should_bound_snapshot_store_lock_wait_and_allow_retry() {
+        assert_snapshot_contention_is_bounded(false);
+    }
+
+    #[test]
+    fn should_bound_snapshot_lifecycle_lock_wait_and_allow_retry() {
+        assert_snapshot_contention_is_bounded(true);
     }
 
     #[test]
