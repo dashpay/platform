@@ -67,12 +67,14 @@ impl Drive {
                 specialized_balance_id.to_vec(),
                 Element::new_sum_item(new_total as i64),
             )
+            .dont_check()
         } else {
             QualifiedGroveDbOp::insert_or_replace_op(
                 path_holding_total_credits_vec,
                 specialized_balance_id.to_vec(),
                 Element::new_sum_item(new_total as i64),
             )
+            .dont_check()
         };
         drive_operations.push(GroveOperation(op));
         Ok(drive_operations)

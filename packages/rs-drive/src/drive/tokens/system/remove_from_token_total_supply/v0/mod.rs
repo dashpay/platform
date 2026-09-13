@@ -138,7 +138,8 @@ impl Drive {
             path_holding_total_token_supply_vec,
             token_id.to_vec(),
             SumItem(new_total as i64, None),
-        );
+        )
+        .dont_check();
         drive_operations.push(GroveOperation(replace_op));
 
         Ok(drive_operations)

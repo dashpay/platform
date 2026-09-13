@@ -26,7 +26,8 @@ pub fn update_storage_fee_distribution_pool_operation(
         pools_vec_path(),
         KEY_STORAGE_FEE_POOL.to_vec(),
         Element::new_sum_item(storage_fee.to_signed()?),
-    ))
+    )
+    .dont_check())
 }
 
 #[cfg(feature = "server")]
@@ -37,6 +38,7 @@ pub fn update_unpaid_epoch_index_operation(epoch_index: EpochIndex) -> Qualified
         KEY_UNPAID_EPOCH_INDEX.to_vec(),
         Element::new_item(epoch_index.to_be_bytes().to_vec()),
     )
+    .dont_check()
 }
 
 #[cfg(test)]

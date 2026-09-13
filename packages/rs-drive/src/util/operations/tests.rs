@@ -92,17 +92,19 @@ fn apply_batch_low_level_mixed_ops_applies_grove_and_preserves_leftovers() {
     // of guessing paths, we build grove ops against an already-existing
     // subtree by inserting at a *newly created* subtree first.
     let batch_ops = vec![
-        LowLevelDriveOperation::GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(
-            vec![],
-            vec![0xfe],
-            Element::empty_tree(),
-        )),
+        LowLevelDriveOperation::GroveOperation(
+            QualifiedGroveDbOp::insert_or_replace_op(vec![], vec![0xfe], Element::empty_tree())
+                .dont_check(),
+        ),
         function_op(),
-        LowLevelDriveOperation::GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(
-            vec![vec![0xfe]],
-            vec![0x01],
-            Element::new_item(vec![1, 2, 3]),
-        )),
+        LowLevelDriveOperation::GroveOperation(
+            QualifiedGroveDbOp::insert_or_replace_op(
+                vec![vec![0xfe]],
+                vec![0x01],
+                Element::new_item(vec![1, 2, 3]),
+            )
+            .dont_check(),
+        ),
     ];
     let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
@@ -145,16 +147,18 @@ fn apply_batch_low_level_actually_persists_grove_inserts() {
     let platform_version = PlatformVersion::latest();
 
     let batch_ops = vec![
-        LowLevelDriveOperation::GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(
-            vec![],
-            vec![0xfd],
-            Element::empty_tree(),
-        )),
-        LowLevelDriveOperation::GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(
-            vec![vec![0xfd]],
-            b"hello".to_vec(),
-            Element::new_item(b"world".to_vec()),
-        )),
+        LowLevelDriveOperation::GroveOperation(
+            QualifiedGroveDbOp::insert_or_replace_op(vec![], vec![0xfd], Element::empty_tree())
+                .dont_check(),
+        ),
+        LowLevelDriveOperation::GroveOperation(
+            QualifiedGroveDbOp::insert_or_replace_op(
+                vec![vec![0xfd]],
+                b"hello".to_vec(),
+                Element::new_item(b"world".to_vec()),
+            )
+            .dont_check(),
+        ),
     ];
     let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
@@ -280,16 +284,18 @@ fn rollback_transaction_v0_discards_uncommitted_changes() {
 
     // Build ops inside the transaction.
     let batch_ops = vec![
-        LowLevelDriveOperation::GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(
-            vec![],
-            vec![0xfb],
-            Element::empty_tree(),
-        )),
-        LowLevelDriveOperation::GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(
-            vec![vec![0xfb]],
-            b"k".to_vec(),
-            Element::new_item(b"v".to_vec()),
-        )),
+        LowLevelDriveOperation::GroveOperation(
+            QualifiedGroveDbOp::insert_or_replace_op(vec![], vec![0xfb], Element::empty_tree())
+                .dont_check(),
+        ),
+        LowLevelDriveOperation::GroveOperation(
+            QualifiedGroveDbOp::insert_or_replace_op(
+                vec![vec![0xfb]],
+                b"k".to_vec(),
+                Element::new_item(b"v".to_vec()),
+            )
+            .dont_check(),
+        ),
     ];
     let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
     drive
@@ -323,7 +329,8 @@ fn rollback_transaction_v0_discards_uncommitted_changes() {
             vec![vec![0xfb]],
             b"k2".to_vec(),
             Element::new_item(b"v2".to_vec()),
-        ),
+        )
+        .dont_check(),
     )];
     let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
     let res = drive.apply_batch_low_level_drive_operations_v0(
@@ -387,16 +394,18 @@ fn public_apply_batch_low_level_drive_operations_routes_through_v0() {
     let platform_version = PlatformVersion::latest();
 
     let batch_ops = vec![
-        LowLevelDriveOperation::GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(
-            vec![],
-            vec![0xfa],
-            Element::empty_tree(),
-        )),
-        LowLevelDriveOperation::GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(
-            vec![vec![0xfa]],
-            b"x".to_vec(),
-            Element::new_item(b"y".to_vec()),
-        )),
+        LowLevelDriveOperation::GroveOperation(
+            QualifiedGroveDbOp::insert_or_replace_op(vec![], vec![0xfa], Element::empty_tree())
+                .dont_check(),
+        ),
+        LowLevelDriveOperation::GroveOperation(
+            QualifiedGroveDbOp::insert_or_replace_op(
+                vec![vec![0xfa]],
+                b"x".to_vec(),
+                Element::new_item(b"y".to_vec()),
+            )
+            .dont_check(),
+        ),
     ];
     let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 

@@ -78,7 +78,8 @@ impl Drive {
         let delete_op = QualifiedGroveDbOp::delete_op(
             path_holding_total_credits_vec,
             specialized_balance_id.to_vec(),
-        );
+        )
+        .dont_check();
         drive_operations.push(GroveOperation(delete_op));
         Ok((previous_credits_in_specialized_balance, drive_operations))
     }
@@ -101,7 +102,13 @@ mod tests {
     fn has_delete_op(ops: &[crate::fees::op::LowLevelDriveOperation]) -> bool {
         ops.iter().any(|op| match op {
             GroveOperation(qualified) => {
-                matches!(qualified.op, GroveOp::Delete | GroveOp::DeleteTree { .. })
+                matches!(
+                    qualified.op,
+                    GroveOp::Delete
+                        | GroveOp::DeleteDontCheck
+                        | GroveOp::DeleteTree { .. }
+                        | GroveOp::DeleteTreeDontCheck { .. }
+                )
             }
             _ => false,
         })
