@@ -12,7 +12,7 @@ use crate::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
 use crate::serialization::json_safe_fields;
 use crate::shielded::SerializedAction;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::BinaryData;
 #[cfg(feature = "serde-conversion")]
@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
     PlatformDeserialize,
     PlatformSignable,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(
