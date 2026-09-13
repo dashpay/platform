@@ -39,6 +39,44 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        block_time_ms: u64,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        if estimated_costs_only_with_layer_info.is_none() {
+            self.prepare_document_time_range_ttl(
+                contract,
+                document_type,
+                block_time_ms,
+                transaction,
+                platform_version,
+            )?;
+        }
+        self.delete_document_for_contract_operations_without_ttl_drain(
+            document_id,
+            contract,
+            document_type,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            block_time_ms,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// Build against post-drain state. The caller must prepare the whole
+    /// batch before invoking this method; no cleanup occurs during conversion.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn delete_document_for_contract_operations_without_ttl_drain(
+        &self,
+        document_id: Identifier,
+        contract: &DataContract,
+        document_type: DocumentTypeRef,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -55,6 +93,7 @@ impl Drive {
                 document_type,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
+                block_time_ms,
                 transaction,
                 platform_version,
             ),
@@ -91,6 +130,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -107,6 +147,7 @@ impl Drive {
                 document_type,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
+                block_time_ms,
                 transaction,
                 platform_version,
             ),

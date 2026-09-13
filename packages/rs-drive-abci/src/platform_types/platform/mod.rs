@@ -147,6 +147,24 @@ impl<C> Platform<C> {
         let (drive, current_platform_version) =
             Drive::open(&config.db_path, Some(config.drive.clone())).map_err(Error::Drive)?;
 
+        // Finish any TTL bucket-drop reclamation a crash interrupted
+        // (grovedb#848 / PR #849): committed redo records survive restarts,
+        // and draining them is idempotent and outside consensus. A no-op
+        // when no records exist; a failure leaves the records for the
+        // per-block flush to retry.
+        if let Some(platform_version) = current_platform_version {
+            if let Err(error) = drive
+                .grove
+                .flush_pending_prefix_drops(&platform_version.drive.grove_version)
+            {
+                tracing::warn!(
+                    ?error,
+                    "failed to flush pending prefix drops at startup; records persist and \
+                     will be retried after the next block"
+                );
+            }
+        }
+
         if let Some(platform_version) = current_platform_version {
             let Some(execution_state) =
                 Platform::<C>::fetch_platform_state(&drive, None, platform_version)?

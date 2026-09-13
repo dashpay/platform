@@ -100,6 +100,25 @@ pub struct SystemLimits {
     /// time-range indexes (nothing to bound: the `timeRange` keyword does not
     /// parse there).
     pub max_time_range_overlap_factor: Option<u64>,
+    /// Maximum time-to-live (in seconds) a `timeRange` index transform may
+    /// declare, enforced at contract registration.
+    ///
+    /// The cap is what makes the TTL fee model safe: entries under a TTL'd
+    /// index bill their bytes as processing (the ephemeral-bytes rate)
+    /// instead of storage, and a flat rate is only an honest price while
+    /// the lifetime it covers is bounded. One week in V4.
+    /// See `book/src/drive/time-range-ttl.md`.
+    ///
+    /// `None` preserves the behavior of protocol versions that predate the
+    /// `ttl` key (nothing to bound: the key does not parse there).
+    pub max_time_range_ttl_seconds: Option<u64>,
+    /// Minimum per-write drainage budget for a TTL'd time-range grid.
+    /// Drive raises this floor to twice the maximum trees one document
+    /// can create in the grid's merged index structure, times its overlap
+    /// factor. This gives cleanup capacity above the tree creation rate,
+    /// including shared grids and deep suffixes. Each drop is O(1).
+    /// `None` disables cleanup on versions predating the `ttl` key.
+    pub min_time_range_ttl_drop_operations_per_write: Option<u16>,
 }
 
 #[cfg(test)]
