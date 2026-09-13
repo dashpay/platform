@@ -409,6 +409,39 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn versioned_deserialize_trusted_agrees_with_untrusted() {
+        let platform_version = PlatformVersion::latest();
+        let created = sample_created();
+        let bytes = created
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("serialize should succeed");
+
+        let trusted =
+            CreatedDataContract::versioned_deserialize_trusted(&bytes, false, platform_version)
+                .expect("trusted deserialize should succeed");
+        let untrusted =
+            CreatedDataContract::versioned_deserialize_untrusted(&bytes, false, platform_version)
+                .expect("untrusted deserialize should succeed");
+        assert_eq!(trusted, untrusted);
+        assert_eq!(trusted.identity_nonce(), created.identity_nonce());
+        assert_eq!(trusted.data_contract().id(), created.data_contract().id());
+    }
+
+    #[test]
+    fn versioned_deserialize_trusted_rejects_garbage_and_empty_input() {
+        let platform_version = PlatformVersion::latest();
+        for input in [vec![0xFFu8; 16], vec![]] {
+            let err =
+                CreatedDataContract::versioned_deserialize_trusted(&input, false, platform_version)
+                    .expect_err("malformed input should not deserialize");
+            assert!(matches!(
+                err,
+                ProtocolError::PlatformDeserializationError(_)
+            ));
+        }
+    }
+
     // -----------------------------------------------------------------------
     // CreatedDataContractInSerializationFormat helpers
     // -----------------------------------------------------------------------
