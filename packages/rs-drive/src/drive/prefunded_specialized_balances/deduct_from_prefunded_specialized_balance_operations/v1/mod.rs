@@ -85,7 +85,7 @@ impl Drive {
             specialized_balance_id.to_vec(),
             Element::new_sum_item(new_total as i64),
         )
-        .dont_check();
+        .dont_check_for_backwards_references();
         drive_operations.push(GroveOperation(replace_op));
         Ok(drive_operations)
     }

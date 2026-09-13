@@ -194,7 +194,7 @@ impl EpochOperations for Epoch {
             KEY_PROTOCOL_VERSION.to_vec(),
             Element::Item(protocol_version.to_be_bytes().to_vec(), None),
         )
-        .dont_check()
+        .dont_check_for_backwards_references()
     }
 
     /// Returns a groveDB op which updates the epoch start time.
@@ -204,7 +204,7 @@ impl EpochOperations for Epoch {
             KEY_START_TIME.to_vec(),
             Element::Item(time_ms.to_be_bytes().to_vec(), None),
         )
-        .dont_check()
+        .dont_check_for_backwards_references()
     }
 
     /// Returns a groveDB op which updates the epoch start block height.
@@ -214,7 +214,7 @@ impl EpochOperations for Epoch {
             KEY_START_BLOCK_HEIGHT.to_vec(),
             Element::Item(start_block_height.to_be_bytes().to_vec(), None),
         )
-        .dont_check()
+        .dont_check_for_backwards_references()
     }
 
     /// Returns a groveDB op which updates the epoch start block core height.
@@ -227,7 +227,7 @@ impl EpochOperations for Epoch {
             KEY_START_BLOCK_CORE_HEIGHT.to_vec(),
             Element::Item(start_block_core_height.to_be_bytes().to_vec(), None),
         )
-        .dont_check()
+        .dont_check_for_backwards_references()
     }
 
     /// Returns a groveDB op which updates the epoch fee multiplier.
@@ -237,7 +237,7 @@ impl EpochOperations for Epoch {
             KEY_FEE_MULTIPLIER.to_vec(),
             Element::Item(multiplier_permille.to_be_bytes().to_vec(), None),
         )
-        .dont_check()
+        .dont_check_for_backwards_references()
     }
 
     /// Returns a groveDB op which updates the epoch processing credits for distribution.
@@ -250,13 +250,13 @@ impl EpochOperations for Epoch {
             KEY_POOL_PROCESSING_FEES.to_vec(),
             Element::new_sum_item(processing_fee.to_signed()?),
         )
-        .dont_check())
+        .dont_check_for_backwards_references())
     }
 
     /// Returns a groveDB op which deletes the epoch processing credits for distribution tree.
     fn delete_processing_credits_for_distribution_operation(&self) -> QualifiedGroveDbOp {
         QualifiedGroveDbOp::delete_op(self.get_path_vec(), KEY_POOL_PROCESSING_FEES.to_vec())
-            .dont_check()
+            .dont_check_for_backwards_references()
     }
 
     /// Returns a groveDB op which updates the epoch storage credits for distribution.
@@ -269,13 +269,13 @@ impl EpochOperations for Epoch {
             KEY_POOL_STORAGE_FEES.to_vec(),
             Element::new_sum_item(storage_fee.to_signed()?),
         )
-        .dont_check())
+        .dont_check_for_backwards_references())
     }
 
     /// Returns a groveDB op which deletes the epoch storage credits for distribution tree.
     fn delete_storage_credits_for_distribution_operation(&self) -> QualifiedGroveDbOp {
         QualifiedGroveDbOp::delete_op(self.get_path_vec(), KEY_POOL_STORAGE_FEES.to_vec())
-            .dont_check()
+            .dont_check_for_backwards_references()
     }
 
     /// Returns a groveDB op which updates the given epoch proposer's block count.
@@ -289,7 +289,7 @@ impl EpochOperations for Epoch {
             proposer_pro_tx_hash.to_vec(),
             Element::Item(block_count.to_be_bytes().to_vec(), None),
         )
-        .dont_check()
+        .dont_check_for_backwards_references()
     }
 
     /// Returns a groveDB op which inserts an empty tree into the epoch proposers path.
@@ -299,7 +299,7 @@ impl EpochOperations for Epoch {
             KEY_PROPOSERS.to_vec(),
             Element::empty_tree(),
         )
-        .dont_check()
+        .dont_check_for_backwards_references()
     }
 
     /// Returns a groveDB op which deletes the epoch proposers tree.
@@ -310,7 +310,7 @@ impl EpochOperations for Epoch {
             TreeType::NormalTree,
             SubelementsDeletionBehavior::DeleteChildren,
         )
-        .dont_check()
+        .dont_check_for_backwards_references()
     }
 
     /// Adds a groveDB op to the batch which deletes the given epoch proposers from the proposers tree.

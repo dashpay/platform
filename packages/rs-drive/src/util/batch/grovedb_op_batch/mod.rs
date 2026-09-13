@@ -538,7 +538,8 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
     /// Adds an `Insert` operation with an empty tree at the specified path and key to a list of GroveDB ops.
     fn add_insert_empty_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>) {
         self.operations.push(
-            QualifiedGroveDbOp::insert_or_replace_op(path, key, Element::empty_tree()).dont_check(),
+            QualifiedGroveDbOp::insert_or_replace_op(path, key, Element::empty_tree())
+                .dont_check_for_backwards_references(),
         )
     }
 
@@ -557,7 +558,7 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
                     StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                 ),
             )
-            .dont_check(),
+            .dont_check_for_backwards_references(),
         )
     }
 
@@ -565,7 +566,7 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
     fn add_insert_empty_sum_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>) {
         self.operations.push(
             QualifiedGroveDbOp::insert_or_replace_op(path, key, Element::empty_sum_tree())
-                .dont_check(),
+                .dont_check_for_backwards_references(),
         )
     }
 
@@ -584,14 +585,14 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
                     StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                 ),
             )
-            .dont_check(),
+            .dont_check_for_backwards_references(),
         )
     }
 
     /// Adds a `Delete` operation to a list of GroveDB ops.
     fn add_delete(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>) {
         self.operations
-            .push(QualifiedGroveDbOp::delete_op(path, key).dont_check())
+            .push(QualifiedGroveDbOp::delete_op(path, key).dont_check_for_backwards_references())
     }
 
     /// Adds a `Delete` tree operation to a list of GroveDB ops.
@@ -605,14 +606,16 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
                 tree_type,
                 SubelementsDeletionBehavior::DontCheckWithNoCleanup,
             )
-            .dont_check(),
+            .dont_check_for_backwards_references(),
         )
     }
 
     /// Adds an `Insert` operation with an element to a list of GroveDB ops.
     fn add_insert(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, element: Element) {
-        self.operations
-            .push(QualifiedGroveDbOp::insert_or_replace_op(path, key, element).dont_check())
+        self.operations.push(
+            QualifiedGroveDbOp::insert_or_replace_op(path, key, element)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Verify consistency of operations

@@ -40,7 +40,8 @@ impl Drive {
             ));
         } else {
             drive_operations.push(LowLevelDriveOperation::GroveOperation(
-                QualifiedGroveDbOp::delete_op(direct_selling_path, token_id.to_vec()).dont_check(),
+                QualifiedGroveDbOp::delete_op(direct_selling_path, token_id.to_vec())
+                    .dont_check_for_backwards_references(),
             ));
         }
 

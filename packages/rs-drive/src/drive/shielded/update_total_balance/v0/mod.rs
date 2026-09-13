@@ -27,7 +27,7 @@ impl Drive {
                 vec![SHIELDED_TOTAL_BALANCE_KEY],
                 Element::new_sum_item(balance_i64),
             )
-            .dont_check(),
+            .dont_check_for_backwards_references(),
         )])
     }
 }

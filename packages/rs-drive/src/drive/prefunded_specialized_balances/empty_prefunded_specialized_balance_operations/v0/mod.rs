@@ -79,7 +79,7 @@ impl Drive {
             path_holding_total_credits_vec,
             specialized_balance_id.to_vec(),
         )
-        .dont_check();
+        .dont_check_for_backwards_references();
         drive_operations.push(GroveOperation(delete_op));
         Ok((previous_credits_in_specialized_balance, drive_operations))
     }
