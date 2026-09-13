@@ -256,7 +256,7 @@ fn test_setup() {
     setup(10, Some(range_inserts), 73509, platform_version);
 }
 
-#[cfg(feature = "server")]
+#[cfg(all(feature = "server", feature = "verify"))]
 #[test]
 fn test_proved_primary_key_cursor_pages_over_history_in_both_directions() {
     // The history-keeping twin of the primary-key cursor test in
