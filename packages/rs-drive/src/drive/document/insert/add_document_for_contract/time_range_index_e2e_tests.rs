@@ -666,8 +666,116 @@ fn should_prepare_ttl_before_mixed_create_and_delete() {
 }
 
 #[test]
-fn should_preserve_ttl_operations_in_raw_batch_conversion() {
-    assert_ttl_document_batch(TtlBatchCase::RawConversion, true);
+fn should_apply_time_range_batches_through_raw_conversion_without_ttl() {
+    assert_ttl_document_batch(TtlBatchCase::RawConversion, false);
+}
+
+/// The single-batch conversion cannot carry a TTL'd level's ephemeral
+/// operations (they are priced separately, in their own batch), and TTL
+/// preparation drains expired buckets directly, so it refuses to run
+/// without the caller's transaction. Neither refusal may leave a trace.
+#[test]
+fn raw_conversion_refuses_ttl_operations_and_requires_a_transaction() {
+    use crate::error::drive::DriveError;
+    use crate::util::batch::drive_op_batch::{DocumentOperationType, DriveOperation};
+    use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
+    let pv = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(pv));
+    let contract = build_ttl_contract_with_index_keys(230, vec![]);
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .unwrap();
+    let dt = contract.document_type_for_name("post").unwrap();
+    let t0 = 5000 * HOUR_MS;
+    let doc = Document::V0(DocumentV0 {
+        id: Identifier::from(fixture_bytes(231, t0, "raw")),
+        owner_id: Identifier::from([232; 32]),
+        properties: BTreeMap::from([
+            ("hashtag".into(), Value::Text("raw".into())),
+            ("amount".into(), Value::U64(5)),
+        ]),
+        created_at: Some(t0),
+        revision: Some(1),
+        ..Default::default()
+    });
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((&doc, StorageFlags::optional_default_as_cow())),
+                    owner_id: Some([232; 32]),
+                },
+                contract: &contract,
+                document_type: dt,
+            },
+            false,
+            BlockInfo {
+                time_ms: t0,
+                ..Default::default()
+            },
+            true,
+            None,
+            pv,
+            None,
+        )
+        .unwrap();
+    // Inside the bucket's TTL, so the delete still removes ephemeral entries.
+    let now = BlockInfo {
+        time_ms: t0 + HOUR_MS,
+        ..Default::default()
+    };
+    let ops = || {
+        vec![DriveOperation::DocumentOperation(
+            DocumentOperationType::DeleteDocument {
+                document_id: doc.id(),
+                contract_info: DataContractInfo::BorrowedDataContract(&contract),
+                document_type_info: DocumentTypeInfo::DocumentTypeRef(dt),
+            },
+        )]
+    };
+    let root = |tx| {
+        drive
+            .grove
+            .root_hash(tx, &pv.drive.grove_version)
+            .unwrap()
+            .unwrap()
+    };
+    let before = root(None);
+
+    // No transaction: preparation would drain and commit on its own.
+    let err = drive
+        .convert_drive_operations_to_grove_operations(ops(), &now, None, pv)
+        .expect_err("TTL preparation must refuse to run without a transaction");
+    assert!(
+        matches!(err, Error::Drive(DriveError::CorruptedCodeExecution(_))),
+        "{err:?}"
+    );
+    assert_eq!(
+        root(None),
+        before,
+        "a refused conversion must leave no trace"
+    );
+
+    // With one: preparation runs inside it and the conversion refuses the
+    // ephemeral operations; rolling back leaves nothing behind.
+    let tx = drive.grove.start_transaction();
+    let err = drive
+        .convert_drive_operations_to_grove_operations(ops(), &now, Some(&tx), pv)
+        .expect_err("one plain batch cannot carry ephemeral operations");
+    assert!(
+        matches!(err, Error::Drive(DriveError::NotSupported(_))),
+        "{err:?}"
+    );
+    drive.grove.rollback_transaction(&tx).unwrap();
+    assert_eq!(root(None), before);
+    assert_eq!(root(Some(&tx)), before);
 }
 
 /// One hour in each of the two units these tests deal in: `*_SECONDS`

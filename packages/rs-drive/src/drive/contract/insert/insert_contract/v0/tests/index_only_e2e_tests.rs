@@ -493,12 +493,84 @@ fn estimated_fees_upper_bound_actual_fees() {
     let estimated_delete =
         delete_like(&drive, &contract, like.clone(), false).expect("estimated delete must work");
     let actual_delete = delete_like(&drive, &contract, like, true).expect("actual delete");
-    // Deletes refund storage; both processing fees must be present and the
-    // estimation path must simply not error or under-run the layer sweep.
-    assert!(estimated_delete.processing_fee > 0);
+    // Deletes refund storage, so only processing is comparable: the dry run
+    // must upper-bound the applied fee, which bills one commitment-probe
+    // read per index entry on top of the removal walk.
     assert!(actual_delete.processing_fee > 0);
+    assert!(
+        estimated_delete.processing_fee >= actual_delete.processing_fee,
+        "estimated delete processing fee {} must upper-bound actual {}",
+        estimated_delete.processing_fee,
+        actual_delete.processing_fee
+    );
 
     assert_grovedb_is_consistent(&drive);
+}
+
+/// The dry run prices the commitment-probe reads the applying delete
+/// bills: one priced read per index entry path on top of the removal
+/// walk, so it carries at least as many priced reads as the applying
+/// path. Counted at the operation level because the fee-level bound
+/// above has enough slack to hide a missing probe.
+#[test]
+fn delete_estimate_prices_one_probe_read_per_index_entry() {
+    use crate::fees::op::LowLevelDriveOperation;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use std::collections::HashMap;
+    let (drive, contract) = setup_likes();
+    let like = build_like(&contract, "dash", POST_A, OWNER_1, 1);
+    insert_like(&drive, &contract, &like, true).expect("insert");
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name(DOCTYPE)
+        .expect("like doctype exists");
+    let probe_paths: usize = document_type
+        .indexes()
+        .values()
+        .map(|index| {
+            Drive::index_only_entry_paths_and_key(contract.id(), document_type, index, &like, pv)
+                .expect("entry paths")
+                .0
+                .len()
+        })
+        .sum();
+    assert!(probe_paths > 0);
+    let tx = drive.grove.start_transaction();
+    let priced_reads = |estimate: bool| -> usize {
+        let mut estimated_costs_only_with_layer_info = estimate.then(HashMap::new);
+        drive
+            .delete_index_only_document_for_contract_operations(
+                like.clone(),
+                &contract,
+                document_type,
+                None,
+                &mut estimated_costs_only_with_layer_info,
+                0,
+                Some(&tx),
+                pv,
+            )
+            .expect("delete operations")
+            .iter()
+            .filter(|operation| {
+                matches!(
+                    operation,
+                    LowLevelDriveOperation::CalculatedCostOperation(cost) if cost.seek_count > 0
+                )
+            })
+            .count()
+    };
+    let applied = priced_reads(false);
+    let estimated = priced_reads(true);
+    drive.grove.rollback_transaction(&tx).unwrap();
+    assert!(
+        applied >= probe_paths,
+        "the applying delete reads every entry: {applied} priced reads for {probe_paths} entries"
+    );
+    assert!(
+        estimated >= applied,
+        "the dry run must price every read the applying delete bills, the {probe_paths} \
+         commitment probes included: {estimated} priced reads estimated, {applied} applied"
+    );
 }
 
 // ---------------------------------------------------------------------------

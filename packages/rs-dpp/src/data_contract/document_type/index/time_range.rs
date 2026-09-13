@@ -90,8 +90,10 @@ pub struct TimeRangeTransform {
     pub phase_seconds: u64,
     /// Time to live, in seconds: entries under this index exist for at most
     /// this long past their bucket's start, after which the whole bucket is
-    /// dropped (lazily, by the write that creates a new bucket). `None`
-    /// means entries live forever, exactly as before the key existed.
+    /// drained lazily: every write into the index spends a bounded drop
+    /// budget on its expired buckets, resuming across writes until they are
+    /// gone. `None` means entries live forever, exactly as before the key
+    /// existed.
     ///
     /// Deliberately **not part of the grid identity**: [`Self::storage_key`]
     /// excludes it, so a TTL never forks the storage level, and query-side

@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -17,6 +18,13 @@ impl Drive {
     /// processing each operation in the `drive_batch_operations` vector, transforming them to low-level
     /// drive operations and finally, into grove database operations. The resulting operations are
     /// returned as a `GroveDbOpBatch`.
+    ///
+    /// The result is ONE plain batch, so operations on a TTL'd (ephemeral) subtree are refused:
+    /// their bytes are priced separately and travel in their own batch, which only
+    /// `apply_drive_operations` keeps apart. TTL preparation drains expired buckets directly,
+    /// inside `transaction`, before the conversion, so a caller must pass the transaction it will
+    /// apply the returned batch in (preparation refuses to run without one) and roll it back when
+    /// the conversion fails.
     ///
     /// # Arguments
     ///
@@ -53,6 +61,18 @@ impl Drive {
                         transaction,
                         platform_version,
                     )?;
+                if inner_drive_operations.iter().any(|operation| {
+                    matches!(
+                        operation,
+                        LowLevelDriveOperation::EphemeralGroveOperation(_)
+                    )
+                }) {
+                    return Err(Error::Drive(DriveError::NotSupported(
+                        "convert_drive_operations_to_grove_operations returns one plain batch \
+                         and cannot carry a TTL'd subtree's ephemeral operations, whose bytes \
+                         are priced separately; apply them through apply_drive_operations",
+                    )));
+                }
                 Ok(LowLevelDriveOperation::grovedb_operations_consume(
                     inner_drive_operations,
                 ))

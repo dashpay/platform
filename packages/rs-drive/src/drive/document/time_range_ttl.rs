@@ -284,6 +284,21 @@ impl Drive {
         for (name, sub_level) in index_level.sub_levels() {
             if let Some(transform) = sub_level.time_range() {
                 if transform.ttl_seconds.is_some() {
+                    // Drainage drops subtrees directly, outside the batch
+                    // being prepared. Without the caller's transaction each
+                    // drop would commit on its own, so a batch that later
+                    // failed, or was never applied (a conversion-only
+                    // caller), would leave its buckets drained while its
+                    // document mutations never landed. Refuse instead:
+                    // every applying entry point opens a transaction
+                    // before it prepares.
+                    if transaction.is_none() {
+                        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                            "TTL drainage must run inside the caller's transaction so it \
+                             rolls back with the batch it prepares; open one before \
+                             preparing operations on a document type with a TTL'd index",
+                        )));
+                    }
                     let mut level_path = contract_document_type_path.to_vec();
                     level_path.push(name.as_bytes().to_vec());
                     self.drain_expired_time_range_buckets(
