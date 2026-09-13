@@ -1400,8 +1400,8 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
     }
 }
 
-fn verify_document_history_response_v1(
-    request: platform::get_document_history_request::GetDocumentHistoryRequestV1,
+fn verify_document_history_response_v0(
+    request: platform::get_document_history_request::GetDocumentHistoryRequestV0,
     response: &platform::GetDocumentHistoryResponse,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
@@ -1411,11 +1411,11 @@ fn verify_document_history_response_v1(
         DocumentHistoryProofV1, DocumentHistoryQueryV1, DocumentHistorySelector,
         DocumentHistoryState,
     };
-    use platform::get_document_history_request::get_document_history_request_v1::Selector;
+    use platform::get_document_history_request::get_document_history_request_v0::Selector;
     use platform::get_document_history_response::{
-        get_document_history_response_v1::lifecycle::State, Version,
+        get_document_history_response_v0::lifecycle::State, Version,
     };
-    let Some(Version::V1(response)) = &response.version else {
+    let Some(Version::V0(response)) = &response.version else {
         return Err(Error::ResponseDecodeError {
             error: "history response version does not match request".to_owned(),
         });
@@ -1536,10 +1536,10 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistoryProofInfo
         Self: Sized + 'a,
     {
         let response = response.into();
-        let Some(platform::get_document_history_response::Version::V1(wire)) = &response.version
+        let Some(platform::get_document_history_response::Version::V0(wire)) = &response.version
         else {
             return Err(Error::ResponseDecodeError {
-                error: "history proof info requires a version 1 response".to_owned(),
+                error: "history proof info requires a version 0 response".to_owned(),
             });
         };
         let wire = wire.clone();
@@ -1601,8 +1601,8 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
         response.proof().or(Err(Error::NoProofInResult))?;
         response.metadata().or(Err(Error::EmptyResponseMetadata))?;
         match request.version.ok_or(Error::EmptyVersion)? {
-            get_document_history_request::Version::V1(v1) => {
-                verify_document_history_response_v1(v1, &response, platform_version, provider)
+            get_document_history_request::Version::V0(request) => {
+                verify_document_history_response_v0(request, &response, platform_version, provider)
             }
         }
     }
@@ -3483,9 +3483,9 @@ mod tests {
     }
 
     fn document_history_response_with_proof_and_metadata() -> platform::GetDocumentHistoryResponse {
-        use platform::get_document_history_response::{GetDocumentHistoryResponseV1, Version};
+        use platform::get_document_history_response::{GetDocumentHistoryResponseV0, Version};
         platform::GetDocumentHistoryResponse {
-            version: Some(Version::V1(GetDocumentHistoryResponseV1 {
+            version: Some(Version::V0(GetDocumentHistoryResponseV0 {
                 entries: vec![],
                 lifecycle: None,
                 proof: Some(Proof::default()),
@@ -3501,9 +3501,9 @@ mod tests {
         limit: Option<u32>,
     ) -> platform::GetDocumentHistoryRequest {
         use dapi_grpc::platform::v0::get_document_history_request::{
-            get_document_history_request_v1::Selector, GetDocumentHistoryRequestV1,
+            get_document_history_request_v0::Selector, GetDocumentHistoryRequestV0,
         };
-        GetDocumentHistoryRequestV1 {
+        GetDocumentHistoryRequestV0 {
             data_contract_id,
             document_type_name: document_type_name.to_string(),
             document_id,
@@ -5081,10 +5081,10 @@ mod tests {
 
     #[test]
     fn document_history_empty_response_metadata() {
-        use platform::get_document_history_response::{GetDocumentHistoryResponseV1, Version};
+        use platform::get_document_history_response::{GetDocumentHistoryResponseV0, Version};
         let request = platform::GetDocumentHistoryRequest::default();
         let response = platform::GetDocumentHistoryResponse {
-            version: Some(Version::V1(GetDocumentHistoryResponseV1 {
+            version: Some(Version::V0(GetDocumentHistoryResponseV0 {
                 entries: vec![],
                 lifecycle: None,
                 proof: Some(Proof::default()),

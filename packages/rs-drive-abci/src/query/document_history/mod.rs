@@ -8,7 +8,7 @@ use dapi_grpc::platform::v0::get_document_history_response::Version as ResponseV
 use dapi_grpc::platform::v0::{GetDocumentHistoryRequest, GetDocumentHistoryResponse};
 use dpp::version::PlatformVersion;
 
-mod v1;
+mod v0;
 
 impl<C> Platform<C> {
     /// Querying of a document history.
@@ -27,7 +27,7 @@ impl<C> Platform<C> {
         let feature_version_bounds = &platform_version.drive_abci.query.document_history;
 
         let feature_version = match &version {
-            RequestVersion::V1(_) => 1,
+            RequestVersion::V0(_) => 0,
         };
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
@@ -42,11 +42,11 @@ impl<C> Platform<C> {
         }
 
         match version {
-            RequestVersion::V1(request) => {
+            RequestVersion::V0(request) => {
                 let result =
-                    self.query_document_history_v1(request, platform_state, platform_version)?;
+                    self.query_document_history_v0(request, platform_state, platform_version)?;
                 Ok(result.map(|response| GetDocumentHistoryResponse {
-                    version: Some(ResponseVersion::V1(response)),
+                    version: Some(ResponseVersion::V0(response)),
                 }))
             }
         }

@@ -123,7 +123,7 @@ pub use drive::drive::document::history::{
 pub struct DocumentHistory {
     /// Entries retain their complete cursor, including edits sharing a timestamp.
     pub entries: Vec<DocumentHistoryEntry>,
-    /// Present for history v1; legacy responses do not authenticate lifecycle metadata.
+    /// Filled by proof verification; optional only so unproved mock responses can omit it.
     pub lifecycle: Option<DocumentHistoryLifecycle>,
 }
 /// Verified history with the complete wire response needed for independent verification.
@@ -134,7 +134,7 @@ pub struct DocumentHistoryProofInfo {
     /// Original entries, lifecycle, metadata, and the quorum-signed proof whose
     /// GroveDB payload carries both underlying GroveDB proofs.
     pub response:
-        dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV1,
+        dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV0,
 }
 
 /// Multiple data contracts.

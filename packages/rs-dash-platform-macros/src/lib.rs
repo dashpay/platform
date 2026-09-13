@@ -81,41 +81,6 @@ pub fn stack_size(attr: TokenStream, item: TokenStream) -> TokenStream {
     })
 }
 
-/// Reads the `grpc_versions` attribute: either a single integer `N`, meaning
-/// every version from 0 through `N`, or an inclusive range `A..=B` for a
-/// message whose oldest version was retired from the wire.
-fn grpc_versions(attrs: &[syn::Attribute]) -> std::ops::RangeInclusive<usize> {
-    let attr = attrs
-        .iter()
-        .find(|attr| attr.path().is_ident("grpc_versions"))
-        .expect("Expected a grpc_versions attribute");
-    if let Ok(lit) = attr.parse_args::<syn::LitInt>() {
-        let max: usize = lit
-            .base10_parse()
-            .expect("Expected a grpc_versions attribute with an integer");
-        return 0..=max;
-    }
-    let range = attr
-        .parse_args::<syn::ExprRange>()
-        .expect("Expected a grpc_versions attribute with an integer or an inclusive range");
-    let bound = |expr: Option<&Box<syn::Expr>>| -> usize {
-        match expr.map(|expr| expr.as_ref()) {
-            Some(syn::Expr::Lit(syn::ExprLit {
-                lit: syn::Lit::Int(lit),
-                ..
-            })) => lit.base10_parse().expect("grpc_versions range bound"),
-            _ => panic!("grpc_versions range bounds must be integer literals"),
-        }
-    };
-    let min = bound(range.start.as_ref());
-    let max = bound(range.end.as_ref());
-    assert!(
-        matches!(range.limits, syn::RangeLimits::Closed(_)),
-        "grpc_versions range must be inclusive (A..=B)"
-    );
-    min..=max
-}
-
 /// Versioned gRPC message derive macro
 ///
 /// This adds implementation of [dapi_grpc::VersionedGrpcMessage] to the message.
@@ -133,7 +98,20 @@ pub fn versioned_grpc_message_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     // Extract attributes to find the number of versions
-    let versions = grpc_versions(&input.attrs);
+    let versions: usize = input
+        .attrs
+        .iter()
+        .find_map(|attr| {
+            if attr.path().is_ident("grpc_versions") {
+                // Parse the attribute into a literal integer
+                attr.parse_args::<syn::LitInt>()
+                    .ok()
+                    .and_then(|lit| lit.base10_parse().ok())
+            } else {
+                None
+            }
+        })
+        .expect("Expected a grpc_versions attribute with an integer");
 
     let name = input.ident;
     // Generate the names of the nested message and enum types
@@ -141,7 +119,7 @@ pub fn versioned_grpc_message_derive(input: TokenStream) -> TokenStream {
     let mod_ident = syn::parse_str::<Ident>(&mod_name).expect("parse response ident");
 
     // Generate match arms for proof and metadata methods
-    let impl_from_arms = versions.clone().map(|version| {
+    let impl_from_arms = (0..=versions).map(|version| {
         let version_ident = format_ident!("V{}", version);
         let version_msg_ident = format_ident!("{}V{}", name, version);
         // Now create an identifier from the constructed string
@@ -185,7 +163,20 @@ pub fn versioned_grpc_response_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     // Extract attributes to find the number of versions
-    let versions = grpc_versions(&input.attrs);
+    let versions: usize = input
+        .attrs
+        .iter()
+        .find_map(|attr| {
+            if attr.path().is_ident("grpc_versions") {
+                // Parse the attribute into a literal integer
+                attr.parse_args::<syn::LitInt>()
+                    .ok()
+                    .and_then(|lit| lit.base10_parse().ok())
+            } else {
+                None
+            }
+        })
+        .expect("Expected a grpc_versions attribute with an integer");
 
     let name = input.ident;
     // Generate the names of the nested message and enum types
@@ -193,7 +184,7 @@ pub fn versioned_grpc_response_derive(input: TokenStream) -> TokenStream {
     let mod_ident = syn::parse_str::<Ident>(&mod_name).expect("parse response ident");
 
     // Generate match arms for proof and metadata methods
-    let proof_arms = versions.clone().map(|version| {
+    let proof_arms = (0..=versions).map(|version| {
         let version_ident = format_ident!("V{}", version);
         // Construct the identifier string for the module
         let version_mod_str = format!("{}_v{}", mod_ident, version);
@@ -209,7 +200,7 @@ pub fn versioned_grpc_response_derive(input: TokenStream) -> TokenStream {
     });
 
     // Generate match arms for proof and metadata methods
-    let proof_owned_arms = versions.clone().map(|version| {
+    let proof_owned_arms = (0..=versions).map(|version| {
         let version_ident = format_ident!("V{}", version);
         // Construct the identifier string for the module
         let version_mod_str = format!("{}_v{}", mod_ident, version);
@@ -224,7 +215,7 @@ pub fn versioned_grpc_response_derive(input: TokenStream) -> TokenStream {
         }
     });
 
-    let metadata_arms = versions.clone().map(|version| {
+    let metadata_arms = (0..=versions).map(|version| {
         let version_ident = format_ident!("V{}", version);
         quote! {
             #mod_ident::Version::#version_ident(inner) => inner.metadata.as_ref().ok_or(platform_version::error::PlatformVersionError:: UnknownVersionError("result did not have metadata".to_string())),
@@ -289,7 +280,20 @@ pub fn proof_only_versioned_grpc_message_derive(input: TokenStream) -> TokenStre
     let input = parse_macro_input!(input as DeriveInput);
 
     // Extract attributes to find the number of versions
-    let versions = grpc_versions(&input.attrs);
+    let versions: usize = input
+        .attrs
+        .iter()
+        .find_map(|attr| {
+            if attr.path().is_ident("grpc_versions") {
+                // Parse the attribute into a literal integer
+                attr.parse_args::<syn::LitInt>()
+                    .ok()
+                    .and_then(|lit| lit.base10_parse().ok())
+            } else {
+                None
+            }
+        })
+        .expect("Expected a grpc_versions attribute with an integer");
 
     let name = input.ident;
     // Generate the names of the nested message and enum types
@@ -297,7 +301,7 @@ pub fn proof_only_versioned_grpc_message_derive(input: TokenStream) -> TokenStre
     let mod_ident = syn::parse_str::<Ident>(&mod_name).expect("parse response ident");
 
     // Generate match arms for proof and metadata methods
-    let impl_from_arms = versions.clone().map(|version| {
+    let impl_from_arms = (0..=versions).map(|version| {
         let version_ident = format_ident!("V{}", version);
         let version_msg_ident = format_ident!("{}V{}", name, version);
         // Now create an identifier from the constructed string
@@ -340,7 +344,20 @@ pub fn proof_only_versioned_grpc_response_derive(input: TokenStream) -> TokenStr
     let input = parse_macro_input!(input as DeriveInput);
 
     // Extract attributes to find the number of versions
-    let versions = grpc_versions(&input.attrs);
+    let versions: usize = input
+        .attrs
+        .iter()
+        .find_map(|attr| {
+            if attr.path().is_ident("grpc_versions") {
+                // Parse the attribute into a literal integer
+                attr.parse_args::<syn::LitInt>()
+                    .ok()
+                    .and_then(|lit| lit.base10_parse().ok())
+            } else {
+                None
+            }
+        })
+        .expect("Expected a grpc_versions attribute with an integer");
 
     let name = input.ident;
     // Generate the names of the nested message and enum types
@@ -348,7 +365,7 @@ pub fn proof_only_versioned_grpc_response_derive(input: TokenStream) -> TokenStr
     let mod_ident = syn::parse_str::<Ident>(&mod_name).expect("parse response ident");
 
     // Generate match arms for proof method - proof is a direct field
-    let proof_arms = versions.clone().map(|version| {
+    let proof_arms = (0..=versions).map(|version| {
         let version_ident = format_ident!("V{}", version);
         quote! {
             #mod_ident::Version::#version_ident(inner) => inner.proof.as_ref().ok_or(
@@ -358,7 +375,7 @@ pub fn proof_only_versioned_grpc_response_derive(input: TokenStream) -> TokenStr
     });
 
     // Generate match arms for proof_owned method - proof is a direct field
-    let proof_owned_arms = versions.clone().map(|version| {
+    let proof_owned_arms = (0..=versions).map(|version| {
         let version_ident = format_ident!("V{}", version);
         quote! {
             #mod_ident::Version::#version_ident(inner) => inner.proof.ok_or(
@@ -367,7 +384,7 @@ pub fn proof_only_versioned_grpc_response_derive(input: TokenStream) -> TokenStr
         }
     });
 
-    let metadata_arms = versions.clone().map(|version| {
+    let metadata_arms = (0..=versions).map(|version| {
         let version_ident = format_ident!("V{}", version);
         quote! {
             #mod_ident::Version::#version_ident(inner) => inner.metadata.as_ref().ok_or(platform_version::error::PlatformVersionError::UnknownVersionError("result did not have metadata".to_string())),
@@ -426,7 +443,20 @@ pub fn merk_proof_versioned_grpc_response_derive(input: TokenStream) -> TokenStr
     let input = parse_macro_input!(input as DeriveInput);
 
     // Extract attributes to find the number of versions
-    let versions = grpc_versions(&input.attrs);
+    let versions: usize = input
+        .attrs
+        .iter()
+        .find_map(|attr| {
+            if attr.path().is_ident("grpc_versions") {
+                // Parse the attribute into a literal integer
+                attr.parse_args::<syn::LitInt>()
+                    .ok()
+                    .and_then(|lit| lit.base10_parse().ok())
+            } else {
+                None
+            }
+        })
+        .expect("Expected a grpc_versions attribute with an integer");
 
     let name = input.ident;
     // Generate the names of the nested message and enum types
@@ -434,7 +464,7 @@ pub fn merk_proof_versioned_grpc_response_derive(input: TokenStream) -> TokenStr
     let mod_ident = syn::parse_str::<Ident>(&mod_name).expect("parse response ident");
 
     // Generate match arms for merk_proof method - merk_proof is a direct bytes field
-    let merk_proof_arms = versions.clone().map(|version| {
+    let merk_proof_arms = (0..=versions).map(|version| {
         let version_ident = format_ident!("V{}", version);
         quote! {
             #mod_ident::Version::#version_ident(inner) => Ok(&inner.merk_proof),
@@ -442,7 +472,7 @@ pub fn merk_proof_versioned_grpc_response_derive(input: TokenStream) -> TokenStr
     });
 
     // Generate match arms for merk_proof_owned method
-    let merk_proof_owned_arms = versions.clone().map(|version| {
+    let merk_proof_owned_arms = (0..=versions).map(|version| {
         let version_ident = format_ident!("V{}", version);
         quote! {
             #mod_ident::Version::#version_ident(inner) => Ok(inner.merk_proof),

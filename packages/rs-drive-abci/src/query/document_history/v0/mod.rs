@@ -2,11 +2,11 @@ use crate::error::{query::QueryError, Error};
 use crate::platform_types::{platform::Platform, platform_state::PlatformState};
 use crate::query::{response_metadata::CheckpointUsed, QueryValidationResult};
 use dapi_grpc::platform::v0::get_document_history_request::{
-    get_document_history_request_v1::Selector, GetDocumentHistoryRequestV1,
+    get_document_history_request_v0::Selector, GetDocumentHistoryRequestV0,
 };
 use dapi_grpc::platform::v0::get_document_history_response::{
-    get_document_history_response_v1::{lifecycle::State, Entry, Lifecycle},
-    GetDocumentHistoryResponseV1,
+    get_document_history_response_v0::{lifecycle::State, Entry, Lifecycle},
+    GetDocumentHistoryResponseV0,
 };
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -19,12 +19,12 @@ use drive::drive::document::history::{
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
-    pub(super) fn query_document_history_v1(
+    pub(super) fn query_document_history_v0(
         &self,
-        request: GetDocumentHistoryRequestV1,
+        request: GetDocumentHistoryRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetDocumentHistoryResponseV1>, Error> {
+    ) -> Result<QueryValidationResult<GetDocumentHistoryResponseV0>, Error> {
         let contract_id =
             check_validation_result_with_data!(request.data_contract_id.try_into().map_err(|_| {
                 QueryError::InvalidArgument("data_contract_id must be 32 bytes".to_owned())
@@ -117,7 +117,7 @@ impl<C> Platform<C> {
             })
             .collect::<Result<Vec<_>, Error>>()?;
         Ok(QueryValidationResult::new_with_data(
-            GetDocumentHistoryResponseV1 {
+            GetDocumentHistoryResponseV0 {
                 entries,
                 lifecycle: Some(Lifecycle {
                     state: match history.lifecycle.state {

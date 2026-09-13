@@ -59,7 +59,9 @@ fn should_activate_storage_migration_and_history_proofs_together() {
             .verify_document_history,
         1
     );
-    assert_eq!(version.drive_abci.query.document_history.max_version, 1);
+    // The wire keeps the query in its v0 slot; the storage change is
+    // carried by the Drive method versions above, not by a wire version.
+    assert_eq!(version.drive_abci.query.document_history.max_version, 0);
     assert_eq!(
         version
             .drive_abci
