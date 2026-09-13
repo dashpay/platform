@@ -30,7 +30,12 @@ pub struct MethodEntry {
 }
 
 impl MethodEntry {
-    pub(crate) fn takes_document_id(receiver: &Receiver, kind: Option<CollectionKind>) -> bool {
+    /// Whether a receiver on a collection of the given kind is addressed by a
+    /// document id on the wire.
+    pub(crate) fn receiver_takes_document_id(
+        receiver: &Receiver,
+        kind: Option<CollectionKind>,
+    ) -> bool {
         matches!(receiver, Receiver::Ref(_) | Receiver::Mut(_))
             && kind == Some(CollectionKind::Documents)
     }
