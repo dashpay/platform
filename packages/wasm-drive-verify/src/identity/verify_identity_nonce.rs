@@ -1,5 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
-use crate::utils::proof::current_grovedb_proof;
+use crate::utils::proof::supported_grovedb_proof;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use js_sys::Uint8Array;
@@ -42,7 +42,7 @@ pub fn verify_identity_nonce(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, nonce_option) = Drive::verify_identity_nonce(
-        current_grovedb_proof(&proof_vec)?,
+        supported_grovedb_proof(&proof_vec, platform_version)?,
         identity_id_bytes,
         verify_subset_of_proof,
         platform_version,

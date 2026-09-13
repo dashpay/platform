@@ -1,4 +1,4 @@
-use crate::utils::proof::current_grovedb_proof;
+use crate::utils::proof::supported_grovedb_proof;
 use dpp::version::PlatformVersion;
 use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use wasm_bindgen::prelude::*;
@@ -135,7 +135,7 @@ pub fn verify_single_document_proof_keep_serialized(
     // Verify the proof keeping it serialized
     match query.inner.verify_proof_keep_serialized(
         is_subset,
-        current_grovedb_proof(&proof)?,
+        supported_grovedb_proof(&proof, platform_version)?,
         platform_version,
     ) {
         Ok((root_hash, maybe_serialized_document)) => Ok(SingleDocumentProofResult {

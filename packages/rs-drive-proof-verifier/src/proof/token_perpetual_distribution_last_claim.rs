@@ -1,4 +1,4 @@
-use crate::verify::current_grovedb_proof_bytes;
+use crate::verify::supported_grovedb_proof_bytes;
 use dapi_grpc::platform::v0::{
     get_token_perpetual_distribution_last_claim_request::Version as RequestVersion,
     get_token_perpetual_distribution_last_claim_response::{
@@ -96,7 +96,7 @@ impl FromProof<GetTokenPerpetualDistributionLastClaimRequest> for RewardDistribu
                     Some(distribution_type) => {
                         let (root_hash, moment_opt) =
                             Drive::verify_token_perpetual_distribution_last_paid_time(
-                                current_grovedb_proof_bytes(&proof_msg)?,
+                                supported_grovedb_proof_bytes(&proof_msg, platform_version)?,
                                 token_id,
                                 identity_id,
                                 &distribution_type,
@@ -104,7 +104,13 @@ impl FromProof<GetTokenPerpetualDistributionLastClaimRequest> for RewardDistribu
                                 platform_version,
                             )?;
 
-                        verify_tenderdash_proof(&proof_msg, &metadata, &root_hash, provider)?;
+                        verify_tenderdash_proof(
+                            &proof_msg,
+                            &metadata,
+                            &root_hash,
+                            provider,
+                            platform_version,
+                        )?;
 
                         // May be None if identity has not yet claimed
                         Ok((moment_opt, metadata, proof_msg))

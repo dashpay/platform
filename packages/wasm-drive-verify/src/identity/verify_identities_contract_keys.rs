@@ -1,5 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
-use crate::utils::proof::current_grovedb_proof;
+use crate::utils::proof::supported_grovedb_proof;
 use dpp::identity::Purpose;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -81,7 +81,7 @@ pub fn verify_identities_contract_keys(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, keys) = Drive::verify_identities_contract_keys(
-        current_grovedb_proof(&proof_vec)?,
+        supported_grovedb_proof(&proof_vec, platform_version)?,
         &identity_ids_vec,
         &contract_id_bytes,
         document_type_name,

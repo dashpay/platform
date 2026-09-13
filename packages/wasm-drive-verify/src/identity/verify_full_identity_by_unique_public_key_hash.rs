@@ -1,5 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
-use crate::utils::proof::current_grovedb_proof;
+use crate::utils::proof::supported_grovedb_proof;
 use crate::utils::serialization::identity_to_js_value;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -42,7 +42,7 @@ pub fn verify_full_identity_by_unique_public_key_hash(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, identity_option) = Drive::verify_full_identity_by_unique_public_key_hash(
-        current_grovedb_proof(&proof_vec)?,
+        supported_grovedb_proof(&proof_vec, platform_version)?,
         public_key_hash_bytes,
         platform_version,
     )

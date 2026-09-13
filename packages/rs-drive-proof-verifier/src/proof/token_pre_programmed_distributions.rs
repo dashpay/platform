@@ -1,5 +1,5 @@
 use crate::error::MapGroveDbError;
-use crate::verify::{current_grovedb_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{types::TokenPreProgrammedDistributions, ContextProvider, Error};
 use dapi_grpc::platform::v0::{
     get_token_pre_programmed_distributions_request, GetTokenPreProgrammedDistributionsRequest,
@@ -86,7 +86,7 @@ impl FromProof<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammed
 
         let (root_hash, result): ([u8; 32], TokenPreProgrammedDistributions) =
             Drive::verify_token_pre_programmed_distributions(
-                current_grovedb_proof_bytes(&proof)?,
+                supported_grovedb_proof_bytes(&proof, platform_version)?,
                 token_id,
                 start_at,
                 limit,
@@ -95,7 +95,7 @@ impl FromProof<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammed
             )
             .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
 
         if result.0.is_empty() {
             Ok((None, metadata, proof))

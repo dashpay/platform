@@ -1,6 +1,6 @@
 use crate::error::MapGroveDbError;
 use crate::types::groups::{GroupActionSigners, GroupActions, Groups};
-use crate::verify::{current_grovedb_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
     get_group_action_signers_request, get_group_actions_request, get_group_info_request,
@@ -60,7 +60,7 @@ impl FromProof<GetGroupInfoRequest> for Group {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_group_info(
-            current_grovedb_proof_bytes(&proof)?,
+            supported_grovedb_proof_bytes(&proof, platform_version)?,
             contract_id,
             group_contract_position,
             false,
@@ -68,7 +68,7 @@ impl FromProof<GetGroupInfoRequest> for Group {
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
 
         Ok((result, metadata, proof))
     }
@@ -123,7 +123,7 @@ impl FromProof<GetGroupInfosRequest> for Groups {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_group_infos_in_contract(
-            current_grovedb_proof_bytes(&proof)?,
+            supported_grovedb_proof_bytes(&proof, platform_version)?,
             contract_id,
             start_at_group_contract_position,
             count,
@@ -142,7 +142,7 @@ impl FromProof<GetGroupInfosRequest> for Groups {
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
 
         Ok((Some(result), metadata, proof))
     }
@@ -221,7 +221,7 @@ impl FromProof<GetGroupActionsRequest> for GroupActions {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_action_infos_in_contract(
-            current_grovedb_proof_bytes(&proof)?,
+            supported_grovedb_proof_bytes(&proof, platform_version)?,
             contract_id,
             group_contract_position,
             status,
@@ -242,7 +242,7 @@ impl FromProof<GetGroupActionsRequest> for GroupActions {
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
 
         Ok((Some(result), metadata, proof))
     }
@@ -300,7 +300,7 @@ impl FromProof<GetGroupActionSignersRequest> for GroupActionSigners {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_action_signers(
-            current_grovedb_proof_bytes(&proof)?,
+            supported_grovedb_proof_bytes(&proof, platform_version)?,
             contract_id,
             group_contract_position,
             status,
@@ -320,7 +320,7 @@ impl FromProof<GetGroupActionSignersRequest> for GroupActionSigners {
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
 
         Ok((Some(result), metadata, proof))
     }

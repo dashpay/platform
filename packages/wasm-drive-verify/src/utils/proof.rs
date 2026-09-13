@@ -1,51 +1,79 @@
 //! GroveDB proof-envelope policy for public WASM verification entry points.
 
 use crate::utils::error::{format_error, ErrorCategory};
+use dpp::version::PlatformVersion;
 use wasm_bindgen::JsValue;
 
-const CURRENT_GROVEDB_PROOF_ENVELOPE_VERSION: u32 = 1;
-
-pub(crate) fn validate_current_grovedb_proof(proof: &[u8]) -> Result<(), String> {
+/// Reject GroveDB proof envelopes older than the floor the protocol version
+/// sets in `SystemLimits::minimum_grovedb_proof_envelope_version`. Newer
+/// discriminants pass here and fail in GroveDB's own decoder if this build
+/// does not know them.
+pub(crate) fn validate_supported_grovedb_proof(
+    proof: &[u8],
+    platform_version: &PlatformVersion,
+) -> Result<(), String> {
     let config = bincode::config::standard()
         .with_big_endian()
         .with_limit::<16>();
     let (version, _): (u32, usize) = bincode::decode_from_slice(proof, config)
         .map_err(|error| format!("invalid GroveDB proof envelope: {error}"))?;
 
-    if version != CURRENT_GROVEDB_PROOF_ENVELOPE_VERSION {
+    let minimum = platform_version
+        .system_limits
+        .minimum_grovedb_proof_envelope_version;
+    if version < minimum {
         return Err(format!(
-            "unsupported GroveDB proof envelope version {version}: current-state responses require V1"
+            "GroveDB proof envelope version {version} is below the minimum {minimum} required by protocol version {}",
+            platform_version.protocol_version
         ));
     }
 
     Ok(())
 }
 
-pub(crate) fn current_grovedb_proof(proof: &[u8]) -> Result<&[u8], JsValue> {
-    validate_current_grovedb_proof(proof)
+pub(crate) fn supported_grovedb_proof<'a>(
+    proof: &'a [u8],
+    platform_version: &PlatformVersion,
+) -> Result<&'a [u8], JsValue> {
+    validate_supported_grovedb_proof(proof, platform_version)
         .map_err(|error| format_error(ErrorCategory::VerificationError, &error))?;
     Ok(proof)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::validate_current_grovedb_proof;
+    use super::validate_supported_grovedb_proof;
+    use dpp::version::PlatformVersion;
 
-    #[test]
-    fn rejects_legacy_and_unknown_proof_envelopes() {
-        let config = bincode::config::standard().with_big_endian();
-
-        for version in [0u32, 2u32] {
-            let proof = bincode::encode_to_vec(version, config).expect("encode proof version");
-            assert!(validate_current_grovedb_proof(&proof).is_err());
-        }
+    fn envelope(version: u32) -> Vec<u8> {
+        bincode::encode_to_vec(version, bincode::config::standard().with_big_endian())
+            .expect("encode proof version")
     }
 
     #[test]
-    fn accepts_v1_proof_envelope() {
-        let proof = bincode::encode_to_vec(1u32, bincode::config::standard().with_big_endian())
-            .expect("encode proof version");
+    fn rejects_legacy_v0_envelope_at_the_latest_protocol_version() {
+        let error = validate_supported_grovedb_proof(&envelope(0), PlatformVersion::latest())
+            .expect_err("V0 must be rejected");
 
-        assert!(validate_current_grovedb_proof(&proof).is_ok());
+        assert!(
+            error.contains("version 0 is below the minimum 1"),
+            "unexpected message: {error}"
+        );
+    }
+
+    #[test]
+    fn accepts_legacy_v0_envelope_before_protocol_version_14() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+
+        validate_supported_grovedb_proof(&envelope(0), platform_version)
+            .expect("protocol version 13 accepts V0 envelopes");
+    }
+
+    #[test]
+    fn accepts_envelopes_at_or_above_the_minimum() {
+        for version in [1u32, 2u32] {
+            validate_supported_grovedb_proof(&envelope(version), PlatformVersion::latest())
+                .unwrap_or_else(|error| panic!("envelope {version} must pass: {error}"));
+        }
     }
 }

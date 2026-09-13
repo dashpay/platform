@@ -1,5 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
-use crate::utils::proof::current_grovedb_proof;
+use crate::utils::proof::supported_grovedb_proof;
 use crate::utils::serialization::identity_to_js_value;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
@@ -57,9 +57,9 @@ pub fn verify_full_identity_by_non_unique_public_key_hash(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     if let Some(identity_proof) = identity_proof_vec.as_deref() {
-        current_grovedb_proof(identity_proof)?;
+        supported_grovedb_proof(identity_proof, platform_version)?;
     }
-    current_grovedb_proof(&identity_id_public_key_hash_proof_vec)?;
+    supported_grovedb_proof(&identity_id_public_key_hash_proof_vec, platform_version)?;
 
     let proof = IdentityAndNonUniquePublicKeyHashDoubleProof {
         identity_proof: identity_proof_vec,

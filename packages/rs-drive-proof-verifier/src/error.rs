@@ -44,11 +44,15 @@ pub enum Error {
     #[error("no proof in result")]
     NoProofInResult,
 
-    /// Legacy or unknown GroveDB proof envelope version
+    /// GroveDB proof envelope older than the protocol version's floor
     #[error(
-        "unsupported GroveDB proof envelope version {version}: current-state responses require V1"
+        "GroveDB proof envelope version {version} is below the minimum {minimum} required by protocol version {protocol_version}"
     )]
-    UnsupportedGroveDBProofVersion { version: u32 },
+    UnsupportedGroveDBProofVersion {
+        version: u32,
+        minimum: u32,
+        protocol_version: u32,
+    },
 
     /// Requested object not found
     #[error("requested object not found")]

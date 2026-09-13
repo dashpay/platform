@@ -1,5 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
-use crate::utils::proof::current_grovedb_proof;
+use crate::utils::proof::supported_grovedb_proof;
 use crate::utils::serialization::identifier_to_base58;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
@@ -97,7 +97,7 @@ pub fn verify_identity_votes_given_proof_vec(
 
     let (root_hash, votes_vec): (RootHash, Vec<(Identifier, ResourceVote)>) = query
         .verify_identity_votes_given_proof(
-            current_grovedb_proof(&proof_vec)?,
+            supported_grovedb_proof(&proof_vec, platform_version)?,
             &*contract_lookup_fn,
             platform_version,
         )
@@ -150,7 +150,7 @@ pub fn verify_identity_votes_given_proof_map(
 
     let (root_hash, votes_map): (RootHash, BTreeMap<Identifier, ResourceVote>) = query
         .verify_identity_votes_given_proof(
-            current_grovedb_proof(&proof_vec)?,
+            supported_grovedb_proof(&proof_vec, platform_version)?,
             &*contract_lookup_fn,
             platform_version,
         )

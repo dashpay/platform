@@ -17,7 +17,7 @@
 //! `DocumentSumMode`.
 
 use crate::error::MapGroveDbError;
-use crate::verify::{current_grovedb_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error};
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::version::PlatformVersion;
@@ -61,10 +61,13 @@ pub fn verify_aggregate_sum_proof(
     provider: &dyn ContextProvider,
 ) -> Result<i64, Error> {
     let (root_hash, sum) = query
-        .verify_aggregate_sum_proof(current_grovedb_proof_bytes(proof)?, platform_version)
+        .verify_aggregate_sum_proof(
+            supported_grovedb_proof_bytes(proof, platform_version)?,
+            platform_version,
+        )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
     Ok(sum)
 }
@@ -88,14 +91,14 @@ pub fn verify_primary_key_sum_tree_proof(
     provider: &dyn ContextProvider,
 ) -> Result<i64, Error> {
     let (root_hash, sum) = DriveDocumentSumQuery::verify_primary_key_sum_tree_proof(
-        current_grovedb_proof_bytes(proof)?,
+        supported_grovedb_proof_bytes(proof, platform_version)?,
         contract_id,
         document_type_name,
         platform_version,
     )
     .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
     Ok(sum)
 }
@@ -119,10 +122,13 @@ pub fn verify_point_lookup_sum_proof(
     provider: &dyn ContextProvider,
 ) -> Result<Vec<SumEntry>, Error> {
     let (root_hash, entries) = query
-        .verify_point_lookup_sum_proof(current_grovedb_proof_bytes(proof)?, platform_version)
+        .verify_point_lookup_sum_proof(
+            supported_grovedb_proof_bytes(proof, platform_version)?,
+            platform_version,
+        )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
     Ok(entries)
 }
@@ -149,14 +155,14 @@ pub fn verify_distinct_sum_proof(
 ) -> Result<Vec<SumEntry>, Error> {
     let (root_hash, entries) = query
         .verify_distinct_sum_proof(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             limit,
             left_to_right,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
     Ok(entries)
 }
@@ -191,14 +197,14 @@ pub fn verify_carrier_aggregate_sum_proof(
 ) -> Result<Vec<SumEntry>, Error> {
     let (root_hash, per_key_sums) = query
         .verify_carrier_aggregate_sum_proof(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             limit,
             left_to_right,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
     // Map drive's `Vec<(Vec<u8>, i64)>` carrier shape onto the
     // SDK's `Vec<SumEntry>` so the call sites stay uniform.

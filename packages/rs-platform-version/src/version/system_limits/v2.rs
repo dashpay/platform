@@ -31,4 +31,5 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
     max_time_range_overlap_factor: None,
+    minimum_grovedb_proof_envelope_version: 0, // V0 envelopes stay accepted until v14
 };

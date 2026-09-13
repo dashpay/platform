@@ -1,5 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
-use crate::utils::proof::current_grovedb_proof;
+use crate::utils::proof::supported_grovedb_proof;
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -41,7 +41,7 @@ pub fn verify_epoch_infos(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, epoch_infos_vec) = Drive::verify_epoch_infos(
-        current_grovedb_proof(&proof_vec)?,
+        supported_grovedb_proof(&proof_vec, platform_version)?,
         current_epoch,
         start_epoch,
         count,

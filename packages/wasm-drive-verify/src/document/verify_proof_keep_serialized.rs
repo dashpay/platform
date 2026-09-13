@@ -1,5 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
-use crate::utils::proof::current_grovedb_proof;
+use crate::utils::proof::supported_grovedb_proof;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
@@ -111,7 +111,10 @@ pub fn verify_document_proof_keep_serialized(
     };
 
     let (root_hash, serialized_docs) = query
-        .verify_proof_keep_serialized(current_grovedb_proof(&proof_vec)?, platform_version)
+        .verify_proof_keep_serialized(
+            supported_grovedb_proof(&proof_vec, platform_version)?,
+            platform_version,
+        )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert serialized documents to JS array of Uint8Arrays

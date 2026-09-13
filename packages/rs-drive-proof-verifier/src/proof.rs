@@ -47,7 +47,7 @@ pub mod token_total_supply;
 
 use crate::from_request::TryFromRequest;
 use crate::verify::{
-    current_grovedb_proof_bytes, require_current_grovedb_proof_bytes, verify_tenderdash_proof, verify_tenderdash_signature,
+    supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_tenderdash_proof, verify_tenderdash_signature,
 };
 use crate::{types::*, ContextProvider, DataContractProvider, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
@@ -326,14 +326,14 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_full_identity_by_identity_id(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             false,
             id.into_buffer(),
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
@@ -375,13 +375,13 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_full_identity_by_unique_public_key_hash(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             public_key_hash,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
@@ -449,10 +449,10 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
         let proof = proved_response
             .grovedb_identity_public_key_hash_proof
             .ok_or(Error::NoProofInResult)?;
-        require_current_grovedb_proof_bytes(&proof.grovedb_proof)?;
+        require_supported_grovedb_proof_bytes(&proof.grovedb_proof, platform_version)?;
 
         if let Some(identity_proof) = proved_response.identity_proof_bytes.as_deref() {
-            require_current_grovedb_proof_bytes(identity_proof)?;
+            require_supported_grovedb_proof_bytes(identity_proof, platform_version)?;
         }
 
         let proof_tuple = IdentityAndNonUniquePublicKeyHashDoubleProof {
@@ -487,7 +487,7 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
                 _ => e.into(),
             })?;
 
-        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider, platform_version)?;
 
         Ok((maybe_identity, mtd.clone(), proof))
     }
@@ -543,7 +543,7 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_identity_keys_by_identity_id(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             key_request,
             false,
             false,
@@ -576,7 +576,7 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
             None
         };
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((maybe_keys, mtd.clone(), proof.clone()))
     }
@@ -671,14 +671,14 @@ impl FromProof<platform::GetIdentityNonceRequest> for IdentityNonceFetcher {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_nonce) = Drive::verify_identity_nonce(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             identity_id.into_buffer(),
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((
             maybe_nonce.map(IdentityNonceFetcher),
@@ -725,7 +725,7 @@ impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNo
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_identity_contract_nonce(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             identity_id.into_buffer(),
             contract_id.into_buffer(),
             false,
@@ -733,7 +733,7 @@ impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNo
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((
             maybe_identity.map(IdentityContractNonceFetcher),
@@ -774,14 +774,14 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_identity_balance_for_identity_id(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             id.into_buffer(),
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
@@ -823,14 +823,14 @@ impl FromProof<platform::GetIdentitiesBalancesRequest> for IdentityBalances {
             })
             .collect::<Result<Vec<[u8; 32]>, Error>>()?;
         let (root_hash, balances) = Drive::verify_identity_balances_for_identity_ids(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             false,
             &identity_ids,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((Some(balances), mtd.clone(), proof.clone()))
     }
@@ -869,14 +869,14 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) =
             Drive::verify_identity_balance_and_revision_for_identity_id(
-                current_grovedb_proof_bytes(proof)?,
+                supported_grovedb_proof_bytes(proof, platform_version)?,
                 id.into_buffer(),
                 false,
                 platform_version,
             )
             .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
@@ -910,14 +910,14 @@ impl FromProof<platform::GetAddressInfoRequest> for AddressInfo {
         };
 
         let (root_hash, maybe_info) = Drive::verify_address_info(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             &address,
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         let info = maybe_info.map(|(nonce, balance)| AddressInfo {
             address,
@@ -966,14 +966,14 @@ impl FromProof<platform::GetAddressesInfosRequest> for AddressInfos {
             _,
             Vec<(PlatformAddress, Option<(AddressNonce, Credits)>)>,
         >(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             addresses.iter(),
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         let infos = entries
             .into_iter()
@@ -1024,7 +1024,7 @@ impl FromProof<platform::GetRecentAddressBalanceChangesRequest> for RecentAddres
 
         let (root_hash, verified_changes) = if start_height_exclusive {
             Drive::verify_recent_address_balance_changes_after(
-                current_grovedb_proof_bytes(proof)?,
+                supported_grovedb_proof_bytes(proof, platform_version)?,
                 start_height,
                 limit,
                 false,
@@ -1033,7 +1033,7 @@ impl FromProof<platform::GetRecentAddressBalanceChangesRequest> for RecentAddres
             .map_drive_error(proof, mtd)?
         } else {
             Drive::verify_recent_address_balance_changes(
-                current_grovedb_proof_bytes(proof)?,
+                supported_grovedb_proof_bytes(proof, platform_version)?,
                 start_height,
                 limit,
                 false,
@@ -1042,7 +1042,7 @@ impl FromProof<platform::GetRecentAddressBalanceChangesRequest> for RecentAddres
             .map_drive_error(proof, mtd)?
         };
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         let result = RecentAddressBalanceChanges(
             verified_changes
@@ -1100,7 +1100,7 @@ impl FromProof<platform::GetRecentCompactedAddressBalanceChangesRequest>
             .verify_compacted_address_balance_changes
             == 0
         {
-            require_current_grovedb_proof_bytes(&proof.grovedb_proof)?;
+            require_supported_grovedb_proof_bytes(&proof.grovedb_proof, platform_version)?;
         }
 
         let (root_hash, verified_changes) = Drive::verify_compacted_address_balance_changes(
@@ -1215,7 +1215,7 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_contract) = Drive::verify_contract(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             None,
             false,
             false,
@@ -1224,7 +1224,7 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((maybe_contract, mtd.clone(), proof.clone()))
     }
@@ -1262,7 +1262,7 @@ impl FromProof<platform::GetDataContractRequest> for (DataContract, Vec<u8>) {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_contract) = Drive::verify_contract_return_serialization(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             None,
             false,
             false,
@@ -1271,7 +1271,7 @@ impl FromProof<platform::GetDataContractRequest> for (DataContract, Vec<u8>) {
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((maybe_contract, mtd.clone(), proof.clone()))
     }
@@ -1314,14 +1314,14 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, contracts) = Drive::verify_contracts(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             false,
             ids.as_slice(),
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
         let contracts = contracts
             .into_iter()
             .map(|(k, v)| {
@@ -1379,7 +1379,7 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_history) = Drive::verify_contract_history(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             id.into_buffer(),
             start_at_ms,
             limit,
@@ -1388,7 +1388,7 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((
             maybe_history.map(IndexMap::from_iter),
@@ -1455,7 +1455,7 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
             })?;
 
         let (root_hash, maybe_history) = Drive::verify_document_history(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             contract_id.into_buffer(),
             &document_type_name,
             document_type,
@@ -1467,7 +1467,7 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         // Preserve the distinction between a verified-but-empty history page
         // (e.g. an offset/start_at_ms past the last revision) and an absent
@@ -1531,13 +1531,13 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
         let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
             &block_info,
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             &contracts_provider_fn,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((Some(outcome), mtd.clone(), proof.clone()))
     }
@@ -1621,7 +1621,7 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
         let count = try_u32_to_u16(count)?;
 
         let (root_hash, epoch_info) = Drive::verify_epoch_infos(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             current_epoch,
             start_epoch,
             count,
@@ -1642,7 +1642,7 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
             })
             .collect::<ExtendedEpochInfos>();
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((epoch_info.into_option(), mtd.clone(), proof.clone()))
     }
@@ -1687,7 +1687,7 @@ impl FromProof<platform::GetFinalizedEpochInfosRequest> for FinalizedEpochInfos 
         let end_epoch_index: EpochIndex = try_u32_to_u16(end_epoch_index)?;
 
         let (root_hash, epoch_info) = Drive::verify_finalized_epoch_infos(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             start_epoch_index,
             start_epoch_index_included,
             end_epoch_index,
@@ -1701,7 +1701,7 @@ impl FromProof<platform::GetFinalizedEpochInfosRequest> for FinalizedEpochInfos 
             .map(|(epoch_index, finalized_epoch_info)| (epoch_index, Some(finalized_epoch_info)))
             .collect::<FinalizedEpochInfos>();
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((epoch_info.into_option(), mtd.clone(), proof.clone()))
     }
@@ -1733,11 +1733,13 @@ impl FromProof<GetProtocolVersionUpgradeStateRequest> for ProtocolVersionUpgrade
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (root_hash, objects) =
-            Drive::verify_upgrade_state(current_grovedb_proof_bytes(proof)?, platform_version)
-                .map_drive_error(proof, mtd)?;
+        let (root_hash, objects) = Drive::verify_upgrade_state(
+            supported_grovedb_proof_bytes(proof, platform_version)?,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         // Convert objects to a map of Option values
         let response: Self = objects.into_iter().map(|(k, v)| (k, Some(v))).collect();
@@ -1784,14 +1786,14 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
         let count = try_u32_to_u16(request_v0.count)?;
 
         let (root_hash, objects) = Drive::verify_upgrade_vote_status(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             start_pro_tx_hash,
             count,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         if objects.is_empty() {
             return Ok((None, mtd.clone(), proof.clone()));
@@ -1848,14 +1850,14 @@ impl FromProof<GetPathElementsRequest> for Elements {
         let keys = request_v0.keys;
 
         let (root_hash, objects) = Drive::verify_elements(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             path,
             keys,
             platform_version,
         )?;
         let elements: Elements = Elements::from_iter(objects);
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((elements.into_option(), mtd.clone(), proof.clone()))
     }
@@ -1896,7 +1898,10 @@ where
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, documents) = request
-            .verify_proof(current_grovedb_proof_bytes(proof)?, platform_version)
+            .verify_proof(
+                supported_grovedb_proof_bytes(proof, platform_version)?,
+                platform_version,
+            )
             .map_drive_error(proof, mtd)?;
 
         let documents = documents
@@ -1904,7 +1909,7 @@ where
             .map(|d| (d.id(), Some(d)))
             .collect::<Documents>();
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((documents.into_option(), mtd.clone(), proof.clone()))
     }
@@ -1971,7 +1976,7 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, identities_contract_keys) = Drive::verify_identities_contract_keys(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             identities_ids.as_slice(),
             &contract_id,
             document_type_name,
@@ -1981,7 +1986,7 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         if identities_contract_keys.is_empty() {
             return Ok((None, mtd.clone(), proof.clone()));
@@ -2019,10 +2024,13 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, items) = resolved_request
-            .verify_contests_proof(current_grovedb_proof_bytes(proof)?, platform_version)
+            .verify_contests_proof(
+                supported_grovedb_proof_bytes(proof, platform_version)?,
+                platform_version,
+            )
             .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         let resources: ContestedResources = items.into_iter().map(ContestedResource).collect();
 
@@ -2062,12 +2070,12 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
 
         let (root_hash, contested_resource_vote_state) = resolved_request
             .verify_vote_poll_vote_state_proof(
-                current_grovedb_proof_bytes(proof)?,
+                supported_grovedb_proof_bytes(proof, platform_version)?,
                 platform_version,
             )
             .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         let contenders = contested_resource_vote_state
             .contenders
@@ -2116,10 +2124,13 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, voters) = resolved_request
-            .verify_vote_poll_votes_proof(current_grovedb_proof_bytes(proof)?, platform_version)
+            .verify_vote_poll_votes_proof(
+                supported_grovedb_proof_bytes(proof, platform_version)?,
+                platform_version,
+            )
             .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         if voters.is_empty() {
             return Ok((None, mtd.clone(), proof.clone()));
@@ -2157,13 +2168,13 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
         let contract_provider_fn = provider.as_contract_lookup_fn(platform_version);
         let (root_hash, voters) = drive_query
             .verify_identity_votes_given_proof::<Vec<_>>(
-                current_grovedb_proof_bytes(proof)?,
+                supported_grovedb_proof_bytes(proof, platform_version)?,
                 &contract_provider_fn,
                 platform_version,
             )
             .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         let response: ResourceVotesByIdentity = voters
             .into_iter()
@@ -2200,12 +2211,12 @@ impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTim
 
         let (root_hash, vote_polls) = drive_query
             .verify_vote_polls_by_end_date_proof::<Vec<(_, _)>>(
-                current_grovedb_proof_bytes(proof)?,
+                supported_grovedb_proof_bytes(proof, platform_version)?,
                 platform_version,
             )
             .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         let response = VotePollsGroupedByTimestamp(vote_polls).sorted(drive_query.order_ascending);
 
@@ -2243,14 +2254,14 @@ impl FromProof<platform::GetPrefundedSpecializedBalanceRequest> for PrefundedSpe
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, balance) = Drive::verify_specialized_balance(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             balance_id.into_buffer(),
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((balance.map(|v| v.into()), mtd.clone(), proof.clone()))
     }
@@ -2336,7 +2347,7 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPla
         let core_subsidy_halving_interval = network.core_subsidy_halving_interval();
 
         let (root_hash, credits) = Drive::verify_total_credits_in_system(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             core_subsidy_halving_interval,
             || {
                 provider.get_platform_activation_height().map_err(|e| {
@@ -2348,7 +2359,7 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPla
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((
             Some(TotalCreditsInPlatform(credits)),
@@ -2393,14 +2404,14 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByIdsRequest> for Propose
         };
 
         let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             epoch_index,
             ProposerQueryType::ByIds(ids),
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((
             Some(ProposerBlockCounts(proposer_block_counts)),
@@ -2463,14 +2474,14 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByRangeRequest> for Propo
         let checked_limit = limit.map(try_u32_to_u16).transpose()?;
 
         let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             epoch_index,
             ProposerQueryType::ByRange(checked_limit, formatted_start),
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((
             Some(ProposerBlockCounts(proposer_block_counts)),
@@ -2518,13 +2529,13 @@ impl FromProof<platform::GetShieldedPoolStateRequest> for ShieldedPoolState {
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, maybe_balance) = Drive::verify_shielded_pool_state(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((
             maybe_balance.map(ShieldedPoolState),
@@ -2557,13 +2568,13 @@ impl FromProof<platform::GetShieldedNotesCountRequest> for ShieldedNotesCount {
         // `total_count` out of the `CommitmentTree` element rather than a
         // `SumItem` balance.
         let (root_hash, maybe_count) = Drive::verify_shielded_notes_count(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((
             maybe_count.map(ShieldedNotesCount),
@@ -2592,13 +2603,13 @@ impl FromProof<platform::GetShieldedAnchorsRequest> for ShieldedAnchors {
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, anchors) = Drive::verify_shielded_anchors(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         let result = if anchors.is_empty() {
             None
@@ -2629,13 +2640,13 @@ impl FromProof<platform::GetMostRecentShieldedAnchorRequest> for MostRecentShiel
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, maybe_anchor) = Drive::verify_most_recent_shielded_anchor(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         Ok((
             maybe_anchor.map(MostRecentShieldedAnchor),
@@ -2678,7 +2689,7 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
             * (1u32 << drive::drive::shielded::paths::SHIELDED_NOTES_CHUNK_POWER);
 
         let (root_hash, notes, total_count) = Drive::verify_shielded_encrypted_notes(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             start_index,
             count,
             max_elements,
@@ -2687,7 +2698,7 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         // `total_count` (the on-chain total note count) is extracted from the
         // same proof, so it is available even when this chunk returned no
@@ -2737,14 +2748,14 @@ impl FromProof<platform::GetShieldedNullifiersRequest> for ShieldedNullifierStat
         };
 
         let (root_hash, statuses) = Drive::verify_shielded_nullifiers(
-            current_grovedb_proof_bytes(proof)?,
+            supported_grovedb_proof_bytes(proof, platform_version)?,
             &nullifiers,
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
         let result = if statuses.is_empty() {
             None
@@ -3717,7 +3728,7 @@ mod tests {
 
         assert!(matches!(
             err,
-            Error::UnsupportedGroveDBProofVersion { version: 0 }
+            Error::UnsupportedGroveDBProofVersion { version: 0, .. }
         ));
     }
 
@@ -3769,7 +3780,7 @@ mod tests {
 
         assert!(matches!(
             err,
-            Error::UnsupportedGroveDBProofVersion { version: 0 }
+            Error::UnsupportedGroveDBProofVersion { version: 0, .. }
         ));
     }
 

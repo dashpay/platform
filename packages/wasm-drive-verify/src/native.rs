@@ -3,7 +3,7 @@
 //! This module provides Rust-native functions for proof verification,
 //! allowing other Rust/WASM projects to use wasm-drive-verify as a library.
 
-use crate::utils::proof::validate_current_grovedb_proof;
+use crate::utils::proof::validate_supported_grovedb_proof;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::identity::Identity;
@@ -12,8 +12,11 @@ use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::query::DriveDocumentQuery;
 
-fn current_grovedb_proof(proof: &[u8]) -> Result<&[u8], drive::error::Error> {
-    validate_current_grovedb_proof(proof)
+fn supported_grovedb_proof<'a>(
+    proof: &'a [u8],
+    platform_version: &PlatformVersion,
+) -> Result<&'a [u8], drive::error::Error> {
+    validate_supported_grovedb_proof(proof, platform_version)
         .map_err(|error| drive::error::Error::Proof(ProofError::CorruptedProof(error)))?;
     Ok(proof)
 }
@@ -26,7 +29,7 @@ pub fn verify_full_identity_by_identity_id(
     platform_version: &PlatformVersion,
 ) -> Result<([u8; 32], Option<Identity>), drive::error::Error> {
     Drive::verify_full_identity_by_identity_id(
-        current_grovedb_proof(proof)?,
+        supported_grovedb_proof(proof, platform_version)?,
         is_proof_subset,
         identity_id,
         platform_version,
@@ -43,7 +46,7 @@ pub fn verify_contract(
     platform_version: &PlatformVersion,
 ) -> Result<([u8; 32], Option<DataContract>), drive::error::Error> {
     Drive::verify_contract(
-        current_grovedb_proof(proof)?,
+        supported_grovedb_proof(proof, platform_version)?,
         contract_known_keeps_history,
         is_proof_subset,
         in_multiple_contract_proof_form,
@@ -58,7 +61,10 @@ pub fn verify_documents_with_query(
     query: &DriveDocumentQuery,
     platform_version: &PlatformVersion,
 ) -> Result<([u8; 32], Vec<Document>), drive::error::Error> {
-    query.verify_proof(current_grovedb_proof(proof)?, platform_version)
+    query.verify_proof(
+        supported_grovedb_proof(proof, platform_version)?,
+        platform_version,
+    )
 }
 
 #[cfg(test)]
@@ -80,16 +86,22 @@ mod tests {
             .expect("encode envelope version")
     }
 
-    fn assert_rejected_envelope(result: Result<(), Error>, version: u32) {
+    fn assert_rejected_envelope(result: Result<(), Error>) {
         match result {
             Err(Error::Proof(ProofError::CorruptedProof(message))) => assert!(
-                message.contains(&format!(
-                    "unsupported GroveDB proof envelope version {version}"
-                )),
+                message.contains("GroveDB proof envelope version 0 is below the minimum 1"),
                 "unexpected message: {message}"
             ),
             other => panic!("expected envelope rejection, got {other:?}"),
         }
+    }
+
+    fn assert_not_an_envelope_rejection(result: Result<(), Error>) {
+        let error = result.expect_err("payload without a proof body cannot verify");
+        assert!(
+            !error.to_string().contains("GroveDB proof envelope"),
+            "must not be rejected by the envelope policy: {error}"
+        );
     }
 
     fn dpns_domain_query<'a>(
@@ -106,55 +118,71 @@ mod tests {
     }
 
     #[test]
-    fn identity_entry_point_rejects_legacy_and_unknown_envelopes() {
-        let platform_version = PlatformVersion::latest();
-
-        for version in [0u32, 2u32] {
-            let result = verify_full_identity_by_identity_id(
-                &envelope_only_proof(version),
-                false,
-                [0u8; 32],
-                platform_version,
-            )
-            .map(|_| ());
-            assert_rejected_envelope(result, version);
-        }
+    fn identity_entry_point_rejects_legacy_envelope() {
+        let result = verify_full_identity_by_identity_id(
+            &envelope_only_proof(0),
+            false,
+            [0u8; 32],
+            PlatformVersion::latest(),
+        )
+        .map(|_| ());
+        assert_rejected_envelope(result);
     }
 
     #[test]
-    fn contract_entry_point_rejects_legacy_and_unknown_envelopes() {
-        let platform_version = PlatformVersion::latest();
+    fn contract_entry_point_rejects_legacy_envelope() {
+        let result = verify_contract(
+            &envelope_only_proof(0),
+            None,
+            false,
+            false,
+            [0u8; 32],
+            PlatformVersion::latest(),
+        )
+        .map(|_| ());
+        assert_rejected_envelope(result);
+    }
 
-        for version in [0u32, 2u32] {
-            let result = verify_contract(
-                &envelope_only_proof(version),
+    #[test]
+    fn documents_entry_point_rejects_legacy_envelope() {
+        let platform_version = PlatformVersion::latest();
+        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("DPNS contract");
+        let query = dpns_domain_query(&contract, platform_version);
+
+        let result = verify_documents_with_query(&envelope_only_proof(0), &query, platform_version)
+            .map(|_| ());
+        assert_rejected_envelope(result);
+    }
+
+    /// The floor is a protocol-version table entry: the last generation
+    /// before it still lets a V0 envelope reach Drive.
+    #[test]
+    fn entry_points_accept_legacy_envelope_before_protocol_version_14() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("DPNS contract");
+        let query = dpns_domain_query(&contract, platform_version);
+        let truncated_v0 = envelope_only_proof(0);
+
+        assert_not_an_envelope_rejection(
+            verify_full_identity_by_identity_id(&truncated_v0, false, [0u8; 32], platform_version)
+                .map(|_| ()),
+        );
+        assert_not_an_envelope_rejection(
+            verify_contract(
+                &truncated_v0,
                 None,
                 false,
                 false,
                 [0u8; 32],
                 platform_version,
             )
-            .map(|_| ());
-            assert_rejected_envelope(result, version);
-        }
-    }
-
-    #[test]
-    fn documents_entry_point_rejects_legacy_and_unknown_envelopes() {
-        let platform_version = PlatformVersion::latest();
-        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
-            .expect("DPNS contract");
-        let query = dpns_domain_query(&contract, platform_version);
-
-        for version in [0u32, 2u32] {
-            let result = verify_documents_with_query(
-                &envelope_only_proof(version),
-                &query,
-                platform_version,
-            )
-            .map(|_| ());
-            assert_rejected_envelope(result, version);
-        }
+            .map(|_| ()),
+        );
+        assert_not_an_envelope_rejection(
+            verify_documents_with_query(&truncated_v0, &query, platform_version).map(|_| ()),
+        );
     }
 
     #[test]
@@ -167,9 +195,11 @@ mod tests {
 
         // A V1 discriminant with no payload clears the envelope gate and is
         // then rejected by Drive's own decoder, never by the envelope policy.
-        let results: Vec<Result<(), Error>> = vec![
+        assert_not_an_envelope_rejection(
             verify_full_identity_by_identity_id(&truncated_v1, false, [0u8; 32], platform_version)
                 .map(|_| ()),
+        );
+        assert_not_an_envelope_rejection(
             verify_contract(
                 &truncated_v1,
                 None,
@@ -179,15 +209,9 @@ mod tests {
                 platform_version,
             )
             .map(|_| ()),
+        );
+        assert_not_an_envelope_rejection(
             verify_documents_with_query(&truncated_v1, &query, platform_version).map(|_| ()),
-        ];
-
-        for result in results {
-            let error = result.expect_err("truncated V1 payload cannot verify");
-            assert!(
-                !error.to_string().contains("GroveDB proof envelope"),
-                "V1 envelope must not be rejected by the envelope policy: {error}"
-            );
-        }
+        );
     }
 }

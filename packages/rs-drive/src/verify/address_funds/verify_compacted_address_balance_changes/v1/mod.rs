@@ -16,7 +16,6 @@ const MAX_COMPACTED_PROOF_DECODE_BYTES: usize = 16 * 1024 * 1024;
 /// A compacted row contains at most one configured address chunk. Keep a
 /// separate semantic-object budget after the GroveDB envelope is decoded.
 const MAX_COMPACTED_BALANCE_ROW_DECODE_BYTES: usize = 1024 * 1024;
-const CURRENT_GROVEDB_PROOF_ENVELOPE_VERSION: u32 = 1;
 use dpp::balances::credits::BlockAwareCreditOperation;
 use grovedb::{GroveDb, PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
@@ -24,7 +23,13 @@ use std::collections::BTreeMap;
 
 use super::{CompactedAddressBalanceProof, VerifiedCompactedAddressBalanceChanges};
 
-fn require_current_grovedb_proof(proof: &[u8], label: &str) -> Result<(), Error> {
+/// Reject a nested GroveDB proof envelope older than the floor the protocol
+/// version sets in `SystemLimits::minimum_grovedb_proof_envelope_version`.
+fn require_supported_grovedb_proof(
+    proof: &[u8],
+    label: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
     let config = bincode::config::standard()
         .with_big_endian()
         .with_limit::<16>();
@@ -35,9 +40,13 @@ fn require_current_grovedb_proof(proof: &[u8], label: &str) -> Result<(), Error>
             )))
         })?;
 
-    if version != CURRENT_GROVEDB_PROOF_ENVELOPE_VERSION {
+    let minimum = platform_version
+        .system_limits
+        .minimum_grovedb_proof_envelope_version;
+    if version < minimum {
         return Err(Error::Proof(ProofError::CorruptedProof(format!(
-            "unsupported {label} GroveDB proof envelope version {version}: current-state responses require V1"
+            "{label} GroveDB proof envelope version {version} is below the minimum {minimum} required by protocol version {}",
+            platform_version.protocol_version
         ))));
     }
 
@@ -79,8 +88,16 @@ impl Drive {
             )));
         }
 
-        require_current_grovedb_proof(&proof_envelope.predecessor_proof, "predecessor")?;
-        require_current_grovedb_proof(&proof_envelope.forward_proof, "forward")?;
+        require_supported_grovedb_proof(
+            &proof_envelope.predecessor_proof,
+            "predecessor",
+            platform_version,
+        )?;
+        require_supported_grovedb_proof(
+            &proof_envelope.forward_proof,
+            "forward",
+            platform_version,
+        )?;
 
         let path = vec![
             vec![RootTree::SavedBlockTransactions as u8],
@@ -343,7 +360,7 @@ mod tests {
             assert!(
                 error
                     .to_string()
-                    .contains("current-state responses require V1"),
+                    .contains("GroveDB proof envelope version 0 is below the minimum 1"),
                 "unexpected error: {error}"
             );
         }
