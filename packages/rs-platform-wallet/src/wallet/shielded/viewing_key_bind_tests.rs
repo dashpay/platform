@@ -20,8 +20,10 @@ use crate::changeset::PersistenceError;
 use crate::changeset::PlatformWalletPersistence;
 use crate::changeset::{ClientStartState, PlatformWalletChangeSet, ShieldedSubwalletStartState};
 use crate::test_support::funded_wallet_manager;
+use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
-use crate::wallet::shielded::store::ShieldedStore;
+use crate::wallet::shielded::keys::OrchardKeySet;
+use crate::wallet::shielded::store::{PendingRedrive, ShieldedStore};
 use crate::wallet::shielded::{FileBackedShieldedStore, NetworkShieldedCoordinator, SubwalletId};
 
 /// Persister double for both halves of the round trip:
@@ -568,6 +570,21 @@ async fn a_second_bind_cannot_commit_inside_another_binds_transaction() {
     let coordinator = coordinator_at(&temp_dir("bind_interleave"));
     let wallet_id = wallet.wallet_id();
 
+    // Establish the account registry without hydrating the wallet handle.
+    // Startup registration now checks durable identity guards under the store
+    // lock; this test isolates the later restore interleaving instead.
+    let views = OrchardKeySet::from_seed(&[0x42; 64], wallet.network(), 0)
+        .unwrap()
+        .viewing_keys();
+    coordinator
+        .register_wallet(
+            wallet_id,
+            BTreeMap::from([(0, views)]),
+            WalletPersister::new(wallet_id, persister.clone()),
+        )
+        .await
+        .unwrap();
+
     // Give the restore something to apply so it reaches the store lock.
     let mut snapshot = BTreeMap::new();
     snapshot.insert(
@@ -592,7 +609,7 @@ async fn a_second_bind_cannot_commit_inside_another_binds_transaction() {
         })
     };
     for _ in 0..200 {
-        if !coordinator.registered_subwallets().await.is_empty() {
+        if !wallet.shielded_account_indices().await.is_empty() {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
@@ -748,5 +765,50 @@ async fn rebind_without_persisted_rows_reports_false_and_binds_nothing() {
             .await
             .is_err(),
         "malformed persisted viewing key must surface as an error"
+    );
+}
+
+#[tokio::test]
+async fn should_keep_wallet_and_coordinator_keys_when_guarded_registration_is_rejected() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("bind_identity_guard"));
+    wallet
+        .bind_shielded(&[0x42; 64], &[0], &coordinator)
+        .await
+        .unwrap();
+    let id = SubwalletId::new(wallet.wallet_id(), 0);
+    coordinator
+        .store()
+        .write()
+        .await
+        .arm_redrive(
+            id,
+            PendingRedrive {
+                activity_id: [1; 32],
+                anchor: [2; 32],
+                nullifiers: vec![],
+                st_bytes: vec![3; 64],
+                attempts: 0,
+                identity_nonce_finalized: false,
+                identity_user_abandoned: false,
+            },
+        )
+        .unwrap();
+    wallet
+        .bind_shielded(&[0x42; 64], &[1], &coordinator)
+        .await
+        .expect_err("cannot remove the unresolved debit's owner");
+    assert_eq!(wallet.shielded_account_indices().await, vec![0]);
+    assert_eq!(coordinator.registered_subwallets().await, vec![id]);
+    assert_eq!(
+        coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap()
+            .len(),
+        1
     );
 }

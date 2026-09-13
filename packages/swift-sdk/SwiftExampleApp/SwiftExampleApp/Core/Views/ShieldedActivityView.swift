@@ -221,6 +221,10 @@ struct ShieldedActivityListView: View {
                         Text("Pending")
                             .font(.caption2)
                             .foregroundColor(.orange)
+                    } else if entry.status == 3 {
+                        Text("Unknown")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
                     } else if entry.status == 2 {
                         Text("Failed")
                             .font(.caption2)
@@ -248,7 +252,8 @@ struct ShieldedActivityDetailView: View {
         switch entry.status {
         case 0: return "Pending"
         case 1: return "Confirmed"
-        default: return "Failed"
+        case 2: return "Failed"
+        default: return "Unknown"
         }
     }
 
