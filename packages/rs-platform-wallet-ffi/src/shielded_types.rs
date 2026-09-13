@@ -10,6 +10,9 @@
 
 use std::os::raw::c_char;
 
+#[cfg(feature = "shielded")]
+use platform_wallet::wallet::shielded::{IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus};
+
 /// Cached Platform-to-shielded capacity for one payment account.
 ///
 /// The Rust wallet planner computes every field from the same lexicographic
@@ -106,5 +109,90 @@ impl ShieldedSyncWalletResultFFI {
             error_message: error_ptr,
             ..Self::default()
         }
+    }
+}
+
+/// One durable identity-funded shield recovery record, scoped by the requested
+/// wallet id plus `account_index` and `activity_id`. Optional values are absent
+/// when the signed record cannot be read. The zero payload of an absent value
+/// must not be interpreted as its actual value.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ShieldedIdentityDebitRecoveryRecordFFI {
+    pub account_index: u32,
+    pub activity_id: [u8; 32],
+    pub has_identity_id: bool,
+    pub identity_id: [u8; 32],
+    pub has_nonce: bool,
+    pub nonce: u64,
+    pub has_amount: bool,
+    pub amount: u64,
+    /// 0 Retrying, 1 Parked, 2 Unknown (explicitly abandoned).
+    /// This is distinct from the activity-history status tag.
+    pub status: u8,
+}
+
+#[cfg(feature = "shielded")]
+impl From<IdentityDebitRecoveryRecord> for ShieldedIdentityDebitRecoveryRecordFFI {
+    fn from(record: IdentityDebitRecoveryRecord) -> Self {
+        Self {
+            account_index: record.account_index,
+            activity_id: record.activity_id,
+            has_identity_id: record.identity_id.is_some(),
+            identity_id: record.identity_id.unwrap_or_default(),
+            has_nonce: record.nonce.is_some(),
+            nonce: record.nonce.unwrap_or_default(),
+            has_amount: record.amount.is_some(),
+            amount: record.amount.unwrap_or_default(),
+            status: match record.status {
+                IdentityDebitRecoveryStatus::Retrying => 0,
+                IdentityDebitRecoveryStatus::Parked => 1,
+                IdentityDebitRecoveryStatus::Unknown => 2,
+            },
+        }
+    }
+}
+
+#[cfg(all(test, feature = "shielded"))]
+mod recovery_tests {
+    use super::ShieldedIdentityDebitRecoveryRecordFFI;
+    use platform_wallet::wallet::shielded::{
+        IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus,
+    };
+
+    #[test]
+    fn should_preserve_unreadable_record_scope_without_fabricating_fields() {
+        let ffi = ShieldedIdentityDebitRecoveryRecordFFI::from(IdentityDebitRecoveryRecord {
+            account_index: 9,
+            activity_id: [7; 32],
+            identity_id: None,
+            nonce: None,
+            amount: None,
+            status: IdentityDebitRecoveryStatus::Parked,
+        });
+        assert_eq!(ffi.account_index, 9);
+        assert_eq!(ffi.activity_id, [7; 32]);
+        assert!(!ffi.has_identity_id);
+        assert!(!ffi.has_nonce);
+        assert!(!ffi.has_amount);
+        assert_eq!(ffi.status, 1);
+    }
+
+    #[test]
+    fn should_preserve_maximum_values_and_unknown_after_abandonment() {
+        let ffi = ShieldedIdentityDebitRecoveryRecordFFI::from(IdentityDebitRecoveryRecord {
+            account_index: u32::MAX,
+            activity_id: [7; 32],
+            identity_id: Some([8; 32]),
+            nonce: Some(u64::MAX),
+            amount: Some(u64::MAX),
+            status: IdentityDebitRecoveryStatus::Unknown,
+        });
+        assert_eq!(ffi.account_index, u32::MAX);
+        assert!(ffi.has_identity_id && ffi.has_nonce && ffi.has_amount);
+        assert_eq!(ffi.identity_id, [8; 32]);
+        assert_eq!(ffi.nonce, u64::MAX);
+        assert_eq!(ffi.amount, u64::MAX);
+        assert_eq!(ffi.status, 2);
     }
 }

@@ -34,7 +34,7 @@ data class ShieldedActivityEntity(
     val kindTag: Int,
     /** 0 In, 1 Out, 2 Self. */
     val direction: Int,
-    /** 0 Pending, 1 Confirmed, 2 Failed. */
+    /** 0 Pending, 1 Confirmed, 2 Failed, 3 Unknown. */
     val status: Int,
     /** Principal amount in credits; Swift `UInt64` → [Long]. */
     val amount: Long,

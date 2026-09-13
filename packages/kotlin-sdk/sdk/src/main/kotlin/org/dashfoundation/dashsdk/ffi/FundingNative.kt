@@ -17,6 +17,19 @@ package org.dashfoundation.dashsdk.ffi
  */
 internal object FundingNative {
 
+    external fun shieldedIdentityDebitRecoveryRecords(
+        managerHandle: Long,
+        walletId: ByteArray,
+    ): Array<ShieldedIdentityDebitRecoveryData>
+
+    external fun abandonShieldedIdentityDebit(
+        managerHandle: Long,
+        walletId: ByteArray,
+        accountIndex: Int,
+        activityId: ByteArray,
+        acknowledgePossibleExecution: Boolean,
+    )
+
     /** Kick the ~30s Halo 2 proving-key build onto a background thread. Idempotent. */
     external fun warmUpProver()
 

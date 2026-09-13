@@ -68,6 +68,9 @@ pub enum ShieldedActivityStatus {
     Confirmed,
     /// The operation definitively failed (broadcast rejected on merits).
     Failed,
+    /// The user stopped automatic recovery without proof of success or failure.
+    /// A later scan may still confirm the original payment.
+    Unknown,
 }
 
 /// The classified kind of a shielded operation.

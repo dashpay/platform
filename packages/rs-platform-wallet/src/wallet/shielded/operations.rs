@@ -207,7 +207,7 @@ fn format_addresses_with_info(
 /// Queue a shielded changeset on the persister if one is
 /// attached. No-op if the changeset is empty or no persister
 /// was supplied.
-fn queue_shielded_changeset(
+pub(super) fn queue_shielded_changeset(
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     cs: ShieldedChangeSet,
@@ -804,6 +804,87 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
 // ShieldFromIdentity: identity balance -> shielded pool (Type 21)
 // -------------------------------------------------------------------------
 
+/// Return whether this wallet already has an exact ShieldFromIdentity
+/// transition whose outcome is unresolved. These records are persisted by
+/// the file-backed store before broadcast, so a process restart cannot turn
+/// an ambiguous debit into a fresh transition with the next identity nonce.
+fn has_unresolved_identity_shield<S: ShieldedStore>(
+    store: &S,
+    wallet_id: WalletId,
+    identity_id: [u8; 32],
+) -> Result<bool, S::Error> {
+    use dpp::serialization::PlatformDeserializable;
+    use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
+
+    for (_, redrive) in store.pending_redrives_for_wallet(wallet_id)? {
+        if redrive.identity_user_abandoned && redrive.nullifiers.is_empty() {
+            continue;
+        }
+        match StateTransition::deserialize_from_bytes(&redrive.st_bytes) {
+            Ok(StateTransition::ShieldFromIdentity(transition))
+                if transition.identity_id().to_buffer() == identity_id =>
+            {
+                return Ok(true);
+            }
+            // An empty-nullifier redrive is reserved for identity-funded
+            // shielding. If it is unreadable or decodes to another transition
+            // kind, fail closed because its identity cannot be recovered safely.
+            Err(_) if redrive.nullifiers.is_empty() => return Ok(true),
+            Ok(StateTransition::ShieldFromIdentity(_)) => {}
+            Ok(_) if redrive.nullifiers.is_empty() => return Ok(true),
+            _ => {}
+        }
+    }
+    Ok(false)
+}
+
+/// Persist the exact signed identity debit before any network request. It is
+/// safe to re-broadcast these bytes because their identity nonce is fixed; the
+/// same record also blocks the public API from building a second debit while
+/// the first outcome is unresolved.
+async fn arm_identity_shield_redrive<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    state_transition: &StateTransition,
+) -> Result<[u8; 32], PlatformWalletError> {
+    use dpp::serialization::PlatformSerializable;
+    use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
+
+    let entry = pending_entry.as_ref().ok_or_else(|| {
+        PlatformWalletError::ShieldedBuildError(
+            "ShieldFromIdentity produced no wallet-visible activity entry".to_string(),
+        )
+    })?;
+    let StateTransition::ShieldFromIdentity(transition) = state_transition else {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "expected a ShieldFromIdentity transition".to_string(),
+        ));
+    };
+    let st_bytes = state_transition.serialize_to_bytes().map_err(|e| {
+        PlatformWalletError::ShieldedBuildError(format!(
+            "serialize ShieldFromIdentity retry guard: {e}"
+        ))
+    })?;
+    store
+        .write()
+        .await
+        .arm_redrive(
+            id,
+            PendingRedrive {
+                activity_id: entry.id,
+                anchor: transition.anchor(),
+                nullifiers: vec![],
+                st_bytes,
+                attempts: 0,
+                identity_nonce_finalized: false,
+                identity_user_abandoned: false,
+            },
+        )
+        .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+    Ok(entry.id)
+}
+
 /// Shield credits from a Platform identity's balance straight into the shielded
 /// pool, with the resulting note assigned to `account`'s default Orchard address
 /// (`recipient` `None`) or to a third-party Orchard address.
@@ -819,15 +900,15 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
 /// value (the FFI reports it as such), so the consensus floor must not stand in
 /// for it.
 ///
-/// Failure verdicts are reconciled before the row is marked `Failed`. An identity
-/// shield has no input nullifier, so a rebuilt retry would debit the identity
-/// AGAIN under a fresh nonce; a DAPI that relayed the transition and then
-/// returned a rejection could therefore turn one shield into two. Every
-/// "definitive" failure (a rejected broadcast, a consensus error in the result
-/// wait) is checked against the identity's PROVEN nonce: only when the proof
-/// shows `nonce` was never merged is the row marked `Failed` and the error
-/// returned; otherwise the row stays pending and the caller receives
-/// [`PlatformWalletError::ShieldedSpendUnconfirmed`] and must not rebuild.
+/// Before broadcast, the bundle must produce a wallet-visible activity entry
+/// and the exact signed transition must be persisted. Missing activity or a
+/// failed durable guard write aborts the call without broadcasting. Once
+/// submitted, remote failure verdicts never authorize building
+/// a replacement: an unused nonce can still execute later, and a consumed nonce
+/// may belong to this payment. The row stays pending until the scan observes its
+/// outputs. Proven nonce finality stops rebroadcasts while retaining the guard.
+/// Further calls for the same identity return
+/// [`PlatformWalletError::ShieldedIdentityDebitPending`] before building a proof.
 ///
 /// Returns the identity's proven post-debit balance, which requires the
 /// identity's own `VerifiedPartialIdentity` proof carrying a balance (the SDK's
@@ -840,7 +921,7 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
 /// paths. The caller owns the managed identity and persists the balance
 /// (`PlatformWallet::shielded_shield_from_identity`).
 #[allow(clippy::too_many_arguments)]
-pub async fn shield_from_identity_to<
+pub(in crate::wallet) async fn shield_from_identity_to<
     S: ShieldedStore,
     Sig: Signer<IdentityPublicKey>,
     P: OrchardProver,
@@ -866,6 +947,22 @@ pub async fn shield_from_identity_to<
     } = resolve_shield_recipient(keys, recipient)?;
     let id = SubwalletId::new(wallet_id, account);
     let identity_id = identity.id();
+
+    let has_unresolved = {
+        let store = store.read().await;
+        has_unresolved_identity_shield(&*store, wallet_id, identity_id.to_buffer()).map_err(
+            |e| {
+                PlatformWalletError::ShieldedStoreError(format!(
+                    "could not inspect unresolved identity debits: {e}"
+                ))
+            },
+        )?
+    };
+    if has_unresolved {
+        return Err(PlatformWalletError::ShieldedIdentityDebitPending {
+            identity_id: identity_id.to_buffer(),
+        });
+    }
 
     // A self-shield funded by an identity is its own activity kind so the
     // history shows which identity paid; a third-party recipient stays `Sent`.
@@ -929,10 +1026,8 @@ pub async fn shield_from_identity_to<
     )
     .await;
 
-    let enrich = |e: &dash_sdk::Error| -> PlatformWalletError {
-        crate::error::promote_address_nonce_error(e)
-            .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))
-    };
+    let activity_id =
+        arm_identity_shield_redrive(store, id, &pending_entry, &state_transition).await?;
 
     match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
@@ -941,15 +1036,11 @@ pub async fn shield_from_identity_to<
             return Err(settle_identity_shield_failure(
                 sdk,
                 store,
-                persister,
-                wallet_id,
                 id,
-                &pending_entry,
+                activity_id,
                 identity_id,
                 nonce,
-                account,
                 e,
-                &enrich,
             )
             .await);
         }
@@ -964,7 +1055,8 @@ pub async fn shield_from_identity_to<
     }
 
     // The proof authenticates the identity's post-debit balance (an affected-state
-    // snapshot, not execution evidence); a consensus rejection surfaces as an error.
+    // snapshot, not execution evidence). Remote rejection errors are not
+    // authenticated and therefore leave the debit unresolved.
     // `wait_for_affected_state` only converts the proof generically, so the variant
     // and the identity are enforced here: only this identity's balance proof is
     // accepted as the post-debit balance.
@@ -993,15 +1085,11 @@ pub async fn shield_from_identity_to<
                 return Err(settle_identity_shield_failure(
                     sdk,
                     store,
-                    persister,
-                    wallet_id,
                     id,
-                    &pending_entry,
+                    activity_id,
                     identity_id,
                     nonce,
-                    account,
                     wait_err,
-                    &enrich,
                 )
                 .await);
             }
@@ -1037,8 +1125,9 @@ pub async fn shield_from_identity_to<
     Ok(new_balance)
 }
 
-/// Whether a proven identity nonce word shows that `used` was never merged into the
-/// identity's nonce history, so a transition carrying `used` cannot have executed.
+/// Whether a proven identity nonce word still leaves `used` available to execute.
+/// This is a snapshot, not a promise of non-execution: a relayed transaction can
+/// consume an unused nonce after the proof was fetched.
 ///
 /// Platform stores the identity nonce as the highest merged value (the low
 /// `IDENTITY_NONCE_VALUE_FILTER` bits) plus a bitmask of the up to
@@ -1064,85 +1153,72 @@ pub(crate) fn identity_nonce_proves_unused(stored: IdentityNonce, used: Identity
     missing & (1u64 << (position - 1 + IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES)) != 0
 }
 
-/// Settle an UNAUTHENTICATED failure verdict for an identity shield (a rejected
-/// broadcast or a consensus error in the result wait) against the identity's proven
-/// nonce. The identity nonce is fetched with a proof: when it shows `nonce` was never
-/// merged, the transition cannot have executed, the activity row is marked `Failed`,
-/// and the verdict is returned through `enrich`. Otherwise the transition may have
-/// executed despite the verdict (a relaying DAPI can forge one after the debit
-/// committed), so the row stays pending and the caller receives
-/// [`PlatformWalletError::ShieldedSpendUnconfirmed`]: it must NOT rebuild, because a
-/// fresh nonce would debit the identity again.
-#[allow(clippy::too_many_arguments)]
-async fn settle_identity_shield_failure<
-    S: ShieldedStore,
-    F: Fn(&dash_sdk::Error) -> PlatformWalletError + Sync,
->(
+/// Park exact-byte retries once a proof makes the nonce unavailable. Both
+/// outcomes retain the payment guard: unused may execute later, while finalized
+/// may already have executed. Never resurrect a guard the scan already cleared.
+fn reconcile_identity_shield_nonce<S: ShieldedStore>(
+    store: &mut S,
+    id: SubwalletId,
+    activity_id: [u8; 32],
+    stored_nonce: Option<IdentityNonce>,
+    nonce: IdentityNonce,
+) -> Result<bool, S::Error> {
+    if stored_nonce
+        .map(|stored| identity_nonce_proves_unused(stored, nonce))
+        .unwrap_or(true)
+    {
+        return Ok(false);
+    }
+    if let Some(mut redrive) = store
+        .pending_redrives(id)?
+        .into_iter()
+        .find(|redrive| redrive.activity_id == activity_id)
+    {
+        if !redrive.identity_nonce_finalized && !redrive.identity_user_abandoned {
+            redrive.identity_nonce_finalized = true;
+            store.arm_redrive(id, redrive)?;
+        }
+    }
+    Ok(true)
+}
+
+/// A relay verdict, including an apparent consensus rejection, cannot prove
+/// non-execution. A valid nonce proof may stop futile rebroadcasting but can
+/// never turn that verdict into permission for a fresh-nonce replacement.
+async fn settle_identity_shield_failure<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
-    persister: Option<&WalletPersister>,
-    wallet_id: WalletId,
     id: SubwalletId,
-    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    activity_id: [u8; 32],
     identity_id: Identifier,
     nonce: IdentityNonce,
-    account: u32,
     verdict: dash_sdk::Error,
-    enrich: &F,
 ) -> PlatformWalletError {
-    let proven_nonce = IdentityNonceFetcher::fetch(sdk, identity_id)
-        .await
-        .map(|fetched| fetched.map(|fetcher| fetcher.0).unwrap_or_default());
-    match proven_nonce {
-        Ok(stored) if identity_nonce_proves_unused(stored, nonce) => {
-            record_activity_status(
-                store,
-                persister,
-                wallet_id,
+    let reason = match IdentityNonceFetcher::fetch(sdk, identity_id).await {
+        Ok(fetched) => {
+            let mut store = store.write().await;
+            match reconcile_identity_shield_nonce(
+                &mut *store,
                 id,
-                pending_entry,
-                ShieldedActivityStatus::Failed,
-                None,
-            )
-            .await;
-            enrich(&verdict)
-        }
-        Ok(stored) => {
-            warn!(
-                account,
-                identity = %identity_id,
+                activity_id,
+                fetched.map(|fetcher| fetcher.0),
                 nonce,
-                proven_nonce = stored,
-                verdict = %verdict,
-                "ShieldFromIdentity reported failed, but the proven identity nonce shows the \
-                 transition's nonce as merged; leaving the activity row pending"
-            );
-            PlatformWalletError::ShieldedSpendUnconfirmed {
-                operation: "shield from identity",
-                reason: format!(
-                    "{verdict}; the identity nonce {nonce} is already merged on Platform, so \
-                     the transition may have executed (do not resubmit)"
-                ),
+            ) {
+                Ok(true) => {
+                    "the nonce can no longer execute; awaiting output confirmation".to_string()
+                }
+                Ok(false) => {
+                    "the nonce is unused now, but the signed debit may still execute later"
+                        .to_string()
+                }
+                Err(e) => format!("could not persist nonce reconciliation: {e}"),
             }
         }
-        Err(fetch_err) => {
-            warn!(
-                account,
-                identity = %identity_id,
-                nonce,
-                verdict = %verdict,
-                error = %fetch_err,
-                "ShieldFromIdentity reported failed, but the identity nonce could not be \
-                 verified; leaving the activity row pending"
-            );
-            PlatformWalletError::ShieldedSpendUnconfirmed {
-                operation: "shield from identity",
-                reason: format!(
-                    "{verdict}; the identity nonce could not be verified ({fetch_err}), so the \
-                     transition may have executed (do not resubmit)"
-                ),
-            }
-        }
+        Err(e) => format!("the identity nonce could not be verified: {e}"),
+    };
+    PlatformWalletError::ShieldedSpendUnconfirmed {
+        operation: "shield from identity",
+        reason: format!("{verdict}; {reason}; the original payment remains pending"),
     }
 }
 
@@ -2834,6 +2910,8 @@ async fn arm_redrive_record<S: ShieldedStore>(
         nullifiers: notes.iter().map(|n| n.nullifier).collect(),
         st_bytes,
         attempts: 0,
+        identity_nonce_finalized: false,
+        identity_user_abandoned: false,
     };
     if let Err(e) = store.write().await.arm_redrive(id, redrive) {
         warn!(
@@ -2917,6 +2995,95 @@ async fn bump_redrive_attempts_logged<S: ShieldedStore>(
     }
 }
 
+/// Re-broadcast every unresolved ShieldFromIdentity transition for `wallet_id`.
+/// These records have no nullifiers or spending anchor, so they must not depend
+/// on the note-spend stranded-release pass. Exact-byte retries remain safe even
+/// after the ordinary spend attempt budget is exhausted: the fixed identity
+/// nonce prevents the same transition from debiting twice, while continuing
+/// retries lets a wallet recover after switching away from a failing endpoint.
+pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    wallet_id: WalletId,
+) {
+    use dpp::serialization::PlatformDeserializable;
+    use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
+
+    let redrives = match store.read().await.pending_redrives_for_wallet(wallet_id) {
+        Ok(redrives) => redrives,
+        Err(e) => {
+            warn!(error = %e, "identity redrive: guard lookup failed");
+            return;
+        }
+    };
+    for (id, redrive) in redrives {
+        if !redrive.nullifiers.is_empty()
+            || redrive.identity_nonce_finalized
+            || redrive.identity_user_abandoned
+        {
+            continue;
+        }
+        let state_transition = match StateTransition::deserialize_from_bytes(&redrive.st_bytes) {
+            Ok(state_transition @ StateTransition::ShieldFromIdentity(_)) => state_transition,
+            _ => {
+                warn!("identity redrive: unreadable debit; retaining its retry guard");
+                continue;
+            }
+        };
+        let StateTransition::ShieldFromIdentity(identity_transition) = &state_transition else {
+            continue;
+        };
+        if let Ok(fetched) =
+            IdentityNonceFetcher::fetch(sdk, identity_transition.identity_id()).await
+        {
+            let result = {
+                let mut store = store.write().await;
+                reconcile_identity_shield_nonce(
+                    &mut *store,
+                    id,
+                    redrive.activity_id,
+                    fetched.map(|fetcher| fetcher.0),
+                    identity_transition.nonce(),
+                )
+            };
+            match result {
+                Ok(true) => continue,
+                Ok(false) => {}
+                Err(e) => {
+                    warn!(error = %e, "identity redrive: could not persist nonce finality");
+                    continue;
+                }
+            }
+        }
+        // A host recovery decision may have archived this snapshot while the
+        // nonce request was in flight. Do not initiate a new broadcast from it.
+        // Already submitted network requests cannot be cancelled by this check.
+        let still_active = store
+            .read()
+            .await
+            .pending_redrives(id)
+            .map(|current| {
+                current.iter().any(|record| {
+                    record.activity_id == redrive.activity_id
+                        && record.st_bytes == redrive.st_bytes
+                        && !record.identity_user_abandoned
+                        && !record.identity_nonce_finalized
+                })
+            })
+            .unwrap_or(false);
+        if !still_active {
+            continue;
+        }
+        // Unused or unverified state permits only the original signed bytes.
+        // Even an apparently definitive rejection cannot release the guard:
+        // this request, or an earlier relay, may deliver the debit afterward.
+        if let Err(e) = state_transition.broadcast(sdk, None).await {
+            debug!(error = %e, "identity redrive: original payment remains pending");
+        }
+        bump_redrive_attempts_logged(store, id, &redrive.activity_id).await;
+    }
+}
+
 /// Sync-time re-drive for `id`'s armed unconfirmed spends: for each
 /// [`PendingRedrive`] whose anchor is still in Platform's `recorded`
 /// set and whose attempt budget remains, re-broadcast the stored
@@ -2956,6 +3123,11 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
         }
     };
     for redrive in redrives {
+        // Empty-nullifier identity debits are wallet-wide and are driven by
+        // `redrive_pending_identity_shields`, independently of spending anchors.
+        if redrive.nullifiers.is_empty() {
+            continue;
+        }
         // A pruned anchor is the release pass's call, not ours; an
         // exhausted budget means we've said our three pieces.
         if !recorded.contains(&redrive.anchor) || redrive.attempts >= MAX_REDRIVE_ATTEMPTS {
@@ -3292,6 +3464,196 @@ mod redrive_tests {
     use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
+    use dpp::platform_value::BinaryData;
+    use dpp::serialization::PlatformSerializable;
+    use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
+
+    fn identity_shield_transition(identity_id: [u8; 32], nonce: u64) -> StateTransition {
+        ShieldFromIdentityTransitionV0 {
+            identity_id: identity_id.into(),
+            amount: 1_000,
+            actions: vec![],
+            anchor: [1; 32],
+            proof: vec![],
+            binding_signature: [0; 64],
+            nonce,
+            user_fee_increase: 0,
+            signature_public_key_id: 1,
+            signature: BinaryData::new(vec![]),
+        }
+        .into()
+    }
+
+    #[tokio::test]
+    async fn should_release_only_explicitly_abandoned_guard_and_never_redrive_it() {
+        let wallet_id = [4; 32];
+        let identity_id = [5; 32];
+        let id = SubwalletId::new(wallet_id, 3);
+        let mut store = InMemoryShieldedStore::new();
+        let archived = PendingRedrive {
+            activity_id: [6; 32],
+            anchor: [1; 32],
+            nullifiers: vec![],
+            st_bytes: identity_shield_transition(identity_id, 7)
+                .serialize_to_bytes()
+                .unwrap(),
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: true,
+        };
+        store.arm_redrive(id, archived.clone()).unwrap();
+        assert!(!has_unresolved_identity_shield(&store, wallet_id, identity_id).unwrap());
+        let store = Arc::new(RwLock::new(store));
+        // No mock nonce responses: accidentally retrying would reach an unconfigured SDK.
+        redrive_pending_identity_shields(&Arc::new(dash_sdk::Sdk::new_mock()), &store, wallet_id)
+            .await;
+        assert_eq!(
+            store.read().await.pending_redrives(id).unwrap(),
+            vec![archived.clone()]
+        );
+        let mut active = archived;
+        active.activity_id = [7; 32];
+        active.identity_user_abandoned = false;
+        store
+            .write()
+            .await
+            .arm_redrive(SubwalletId::new(wallet_id, 4), active)
+            .unwrap();
+        assert!(
+            has_unresolved_identity_shield(&*store.read().await, wallet_id, identity_id).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_delayed_identity_debit_guard_when_nonce_is_unused_then_finalized() {
+        use dpp::identity::identity_nonce::validate_identity_nonce_update;
+        let wallet_id = [4; 32];
+        let identity_id = [5; 32];
+        let id = SubwalletId::new(wallet_id, 3);
+        let activity_id = [6; 32];
+        let transition = identity_shield_transition(identity_id, 7);
+        let signed_bytes = transition.serialize_to_bytes().unwrap();
+        let mut store = InMemoryShieldedStore::new();
+        store
+            .arm_redrive(
+                id,
+                PendingRedrive {
+                    activity_id,
+                    anchor: [1; 32],
+                    nullifiers: vec![],
+                    st_bytes: signed_bytes.clone(),
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                },
+            )
+            .unwrap();
+        // A relay returned rejection while retaining the signed debit. Its
+        // accompanying genuine nonce snapshot is still six. Seven can land later.
+        assert!(!reconcile_identity_shield_nonce(&mut store, id, activity_id, Some(6), 7).unwrap());
+        assert!(validate_identity_nonce_update(6, 7, identity_id.into()).is_valid());
+        assert!(
+            has_unresolved_identity_shield(&store, wallet_id, identity_id).unwrap(),
+            "fresh-nonce replacement must stay blocked"
+        );
+        let pending = store.pending_redrives(id).unwrap();
+        assert_eq!(pending[0].st_bytes, signed_bytes);
+        assert!(
+            !pending[0].identity_nonce_finalized,
+            "original bytes remain eligible for safe retry"
+        );
+        // The original then executes. A new nonce would be valid too, which is
+        // why nonce finality must not remove the unresolved-payment guard.
+        assert!(validate_identity_nonce_update(7, 8, identity_id.into()).is_valid());
+        assert!(reconcile_identity_shield_nonce(&mut store, id, activity_id, Some(7), 7).unwrap());
+        assert!(has_unresolved_identity_shield(&store, wallet_id, identity_id).unwrap());
+        assert!(store.pending_redrives(id).unwrap()[0].identity_nonce_finalized);
+        let store = Arc::new(RwLock::new(store));
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+        redrive_pending_identity_shields(&sdk, &store, wallet_id).await;
+        assert_eq!(
+            store.read().await.pending_redrives(id).unwrap()[0].attempts,
+            0,
+            "parked guard must perform no more broadcasts"
+        );
+        // The confirmation path can retire the guard, and nonce observation
+        // racing behind it must not resurrect the resolved payment.
+        store.write().await.clear_redrive(id, &activity_id).unwrap();
+        reconcile_identity_shield_nonce(&mut *store.write().await, id, activity_id, Some(7), 7)
+            .unwrap();
+        assert!(
+            !has_unresolved_identity_shield(&*store.read().await, wallet_id, identity_id).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn should_abort_before_broadcast_when_pending_activity_is_missing() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([4; 32], 0);
+        let error =
+            arm_identity_shield_redrive(&store, id, &None, &identity_shield_transition([5; 32], 1))
+                .await
+                .unwrap_err();
+        assert!(matches!(error, PlatformWalletError::ShieldedBuildError(_)));
+        assert!(store.read().await.pending_redrives(id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn unresolved_identity_debit_is_found_across_shielded_accounts() {
+        let wallet_id = [4; 32];
+        let identity_id = [5; 32];
+        let transition = identity_shield_transition(identity_id, 7);
+        let mut store = InMemoryShieldedStore::new();
+        store
+            .arm_redrive(
+                SubwalletId::new(wallet_id, 3),
+                PendingRedrive {
+                    activity_id: [6; 32],
+                    anchor: [1; 32],
+                    nullifiers: vec![],
+                    st_bytes: transition
+                        .serialize_to_bytes()
+                        .expect("identity shield should serialize"),
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                },
+            )
+            .expect("redrive should arm");
+
+        assert!(
+            has_unresolved_identity_shield(&store, wallet_id, identity_id).expect("guard lookup")
+        );
+        assert!(
+            !has_unresolved_identity_shield(&store, wallet_id, [9; 32]).expect("guard lookup"),
+            "an unrelated identity must remain usable"
+        );
+    }
+
+    #[test]
+    fn corrupt_identity_debit_guard_fails_closed() {
+        let wallet_id = [7; 32];
+        let mut store = InMemoryShieldedStore::new();
+        store
+            .arm_redrive(
+                SubwalletId::new(wallet_id, 0),
+                PendingRedrive {
+                    activity_id: [8; 32],
+                    anchor: [1; 32],
+                    nullifiers: vec![],
+                    st_bytes: vec![0xde, 0xad],
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                },
+            )
+            .expect("redrive should arm");
+
+        assert!(
+            has_unresolved_identity_shield(&store, wallet_id, [9; 32]).expect("guard lookup"),
+            "an unreadable debit marker must not permit a fresh identity nonce"
+        );
+    }
 
     /// On a re-broadcast of our own byte-identical transition,
     /// `NullifierAlreadySpent` means the ORIGINAL executed — the
@@ -3372,6 +3734,88 @@ mod redrive_tests {
         );
     }
 
+    #[tokio::test]
+    async fn identity_redrive_ignores_spend_anchor_and_attempt_limit() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id = [0x45; 32];
+        let previous_account = SubwalletId::new(wallet_id, 7);
+        let activity_id = [0x67; 32];
+        let transition = identity_shield_transition([0x89; 32], 11);
+        store
+            .write()
+            .await
+            .arm_redrive(
+                previous_account,
+                PendingRedrive {
+                    activity_id,
+                    anchor: [0xAB; 32],
+                    nullifiers: vec![],
+                    st_bytes: transition.serialize_to_bytes().expect("serialize"),
+                    attempts: MAX_REDRIVE_ATTEMPTS,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                },
+            )
+            .expect("arm identity guard");
+
+        redrive_pending_identity_shields(&sdk, &store, wallet_id).await;
+
+        let retained = store
+            .read()
+            .await
+            .pending_redrives(previous_account)
+            .expect("retained redrive");
+        assert_eq!(
+            retained.len(),
+            1,
+            "an endpoint error cannot clear the guard"
+        );
+        assert_eq!(
+            retained[0].attempts,
+            MAX_REDRIVE_ATTEMPTS + 1,
+            "identity retries stay live beyond the note-spend attempt budget"
+        );
+    }
+
+    #[tokio::test]
+    async fn ordinary_redrive_pass_leaves_identity_guard_untouched() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id = [0x54; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let anchor = [0x76; 32];
+        let activity_id = [0x98; 32];
+        store
+            .write()
+            .await
+            .arm_redrive(
+                id,
+                PendingRedrive {
+                    activity_id,
+                    anchor,
+                    nullifiers: vec![],
+                    st_bytes: identity_shield_transition([0xBA; 32], 3)
+                        .serialize_to_bytes()
+                        .expect("serialize"),
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                },
+            )
+            .expect("arm identity guard");
+        let recorded = [anchor].into_iter().collect();
+
+        redrive_pending_spends(&sdk, &store, None, wallet_id, id, &recorded).await;
+
+        let retained = store.read().await.pending_redrives(id).expect("guard");
+        assert_eq!(retained.len(), 1);
+        assert_eq!(
+            retained[0].attempts, 0,
+            "the anchor-gated spend pass must not consume identity retry state"
+        );
+    }
+
     /// Decision paths that must NOT touch the network (the mock SDK has
     /// no broadcast expectation, so any attempt would error into the
     /// inconclusive arm and bump the counter): a pruned anchor belongs
@@ -3390,6 +3834,8 @@ mod redrive_tests {
             nullifiers: vec![[activity ^ 0xFF; 32]],
             st_bytes: vec![0xDE, 0xAD], // never deserializes
             attempts,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
         {
             let mut guard = store.write().await;

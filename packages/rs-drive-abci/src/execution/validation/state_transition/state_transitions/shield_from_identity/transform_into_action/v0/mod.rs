@@ -1,4 +1,3 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
@@ -49,9 +48,9 @@ impl ShieldFromIdentityStateTransitionTransformIntoActionValidationV0
     /// cost. A failed proof therefore returns a `BumpIdentityNonceAction` with the
     /// consensus error, which executes as a paid failure: the identity nonce is consumed
     /// and the identity is charged the versioned `shielded_proof_verification_failure`
-    /// penalty on top of the processing metered so far. CheckTx never charges; it only
-    /// admits the verification under `check_tx_proof_verifier`'s permit after the cheap
-    /// checks passed, and rejects the transition on failure.
+    /// penalty on top of the processing metered so far. CheckTx never charges; it returns
+    /// the successful action for complete fee estimation, then its caller admits and runs
+    /// proof verification under the nonce-aware node-local limiter.
     fn transform_into_action_v0(
         &self,
         drive: &Drive,
@@ -77,15 +76,18 @@ impl ShieldFromIdentityStateTransitionTransformIntoActionValidationV0
 
         let ShieldFromIdentityTransition::V0(v0) = self;
 
-        // CheckTx admits the expensive proof only after the signature, nonce, balance
-        // floor, and pool read have passed, and only under its node-local budget.
-        // Proposal and block processing pass `None`.
-        let _check_tx_permit = match check_tx_proof_verifier {
-            Some(verifier) => Some(verifier.try_acquire(v0.actions.len()).ok_or(
-                Error::Execution(ExecutionError::CheckTxProofVerificationBusy),
-            )?),
-            None => None,
-        };
+        // CheckTx must first build and meter the successful action so its full
+        // identity-balance fee gate runs before expensive proof work. Its caller
+        // performs the proof verification under the nonce-aware local limiter
+        // after fee estimation. Proposal and block processing pass `None` and
+        // continue through the paid-failure proof path below.
+        if check_tx_proof_verifier.is_some() {
+            return Ok(ShieldFromIdentityTransitionAction::try_from_transition(
+                self,
+                current_total_balance,
+            )
+            .map(|action| action.into()));
+        }
 
         // Outputs-only bundle entering the pool, exactly like `Shield`. The identity ECDSA
         // signature already binds every bundle field to the identity and nonce, so no extra

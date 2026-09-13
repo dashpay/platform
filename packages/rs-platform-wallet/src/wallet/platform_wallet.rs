@@ -955,6 +955,9 @@ impl PlatformWallet {
         start: crate::changeset::ClientStartState,
         snapshot_generation: u64,
     ) -> Result<(), PlatformWalletError> {
+        // Serialize registration with identity-shield proof construction. Otherwise
+        // an account could disappear before that operation arms its durable guard.
+        let _shield_guard = self.shield_guard.lock().await;
         let install = coordinator.begin_install(self.wallet_id).await;
 
         // A wallet the manager has already removed must not be able to
@@ -987,10 +990,6 @@ impl PlatformWallet {
             )));
         }
 
-        let mut slot = self.shielded_keys.write().await;
-        *slot = Some(account_views.clone());
-        drop(slot);
-
         // Compute idempotence BEFORE registering — after
         // register_wallet the registration always matches.
         let identical = install.registration_matches(&account_views).await;
@@ -1011,8 +1010,10 @@ impl PlatformWallet {
         // the restore path's "is this account registered?" gate sees
         // this wallet's subwallets.
         install
-            .register(account_views, self.persister.clone())
-            .await;
+            .register(account_views.clone(), self.persister.clone())
+            .await?;
+        // Publish wallet keys only after registration accepted the new shape.
+        *self.shielded_keys.write().await = Some(account_views);
 
         // Idempotent re-bind fast path: hosts re-run bind liberally
         // (launch fires it twice — a direct call plus the wallet-set
@@ -1869,6 +1870,28 @@ impl PlatformWallet {
             &prover,
         )
         .await
+    }
+
+    /// Stop retrying one selected identity debit while retaining its unknown
+    /// outcome. Requires explicit acknowledgement that it may already have
+    /// executed or may execute later; this does not cancel the signed payment.
+    #[cfg(feature = "shielded")]
+    pub async fn abandon_shielded_identity_debit(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        account_index: u32,
+        activity_id: [u8; 32],
+        acknowledge_possible_execution: bool,
+    ) -> Result<(), PlatformWalletError> {
+        let _shield_guard = self.shield_guard.lock().await;
+        coordinator
+            .abandon_identity_debit(
+                self.wallet_id(),
+                account_index,
+                activity_id,
+                acknowledge_possible_execution,
+            )
+            .await
     }
 
     /// Shield credits from one of this wallet's Platform identities straight into
