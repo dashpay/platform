@@ -278,15 +278,17 @@ jobs:
             '
           }
 
-          # Deriving `DecodeUntrusted` next to `Decode` cannot change how a
-          # structure's existing fields or variants serialize, but every other
-          # derive stays part of the comparison: swapping `Serialize_repr` for
+          # A derive that only generates a decoder (`DecodeUntrusted`, the
+          # `PlatformDeserialize` family) cannot change how a structure's
+          # existing fields or variants serialize, but every other derive
+          # stays part of the comparison: swapping `Serialize_repr` for
           # `Serialize`, or dropping `Encode`, is a wire change the guard must
           # keep catching. Rewrite each `#[derive(...)]` attribute, single- or
-          # multi-line, as one canonical line with `DecodeUntrusted` removed,
-          # so a rustfmt reflow of the list is not read as a change either.
-          # The fields, the variants and the attributes that do shape the
-          # encoding (serde, repr, platform_serialize) are compared verbatim.
+          # multi-line, as one canonical line with the decoder-only derives
+          # removed, so a rustfmt reflow of the list is not read as a change
+          # either. The fields, the variants and the attributes that do shape
+          # the encoding (serde, repr, platform_serialize) are compared
+          # verbatim.
           normalize_derives() {
             awk '
               function flush_derive(   n, i, item, out) {
@@ -296,6 +298,8 @@ jobs:
                   item = parts[i]
                   gsub(/^[[:space:]]+|[[:space:]]+$/, "", item)
                   if (item == "" || item == "DecodeUntrusted") continue
+                  if (item == "PlatformDeserialize" || item == "PlatformDeserializeTrusted") continue
+                  if (item == "PlatformDeserializeUntrusted") continue
                   out = (out == "" ? item : out ", " item)
                 }
                 print "#[derive(" out ")]"
