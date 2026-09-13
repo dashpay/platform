@@ -25,6 +25,7 @@ impl Drive {
             epoch_tree_path,
             epoch_key_constants::KEY_FINISHED_EPOCH_INFO.to_vec(),
             Element::new_item(serialized),
-        ))
+        )
+        .dont_check())
     }
 }

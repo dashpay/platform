@@ -194,7 +194,8 @@ mod tests {
             prefunded_specialized_balances_for_voting_path_vec(),
             id.to_vec(),
             Element::new_sum_item(-42),
-        );
+        )
+        .dont_check();
         drive
             .grove_apply_batch(
                 crate::util::batch::GroveDbOpBatch::from_operations(vec![op]),

@@ -270,7 +270,7 @@ mod tests {
                     Epoch::new(i as EpochIndex).unwrap().get_path_vec()
                 );
 
-                let GroveOp::InsertOrReplace {
+                let GroveOp::InsertOrReplaceDontCheck {
                     element: Element::SumItem(credits, _),
                 } = operation.op
                 else {
@@ -334,7 +334,7 @@ mod tests {
             let updated_credits: Vec<_> = batch
                 .into_iter()
                 .map(|operation| {
-                    let GroveOp::InsertOrReplace {
+                    let GroveOp::InsertOrReplaceDontCheck {
                         element: Element::SumItem(credits, _),
                     } = operation.op
                     else {

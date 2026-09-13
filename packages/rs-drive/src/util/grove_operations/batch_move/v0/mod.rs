@@ -84,6 +84,7 @@ impl Drive {
                 true,
                 0,
                 (estimated_key_size, estimated_value_size),
+                DisplacedValue::NotParticipant,
                 &drive_version.grove_version,
             )
             .map(|r| r.map(Some)),
@@ -107,11 +108,10 @@ impl Drive {
             }
 
             drive_operations.push(GroveOperation(delete_op));
-            drive_operations.push(GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(
-                to_path,
-                key.to_vec(),
-                element,
-            )));
+            drive_operations.push(GroveOperation(
+                QualifiedGroveDbOp::insert_or_replace_op(to_path, key.to_vec(), element)
+                    .dont_check(),
+            ));
         }
 
         Ok(())

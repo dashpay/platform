@@ -91,7 +91,8 @@ mod tests {
             pool_path.clone(),
             vec![SHIELDED_TOTAL_BALANCE_KEY],
             Element::new_sum_item(balance as i64),
-        );
+        )
+        .dont_check();
 
         drive
             .grove_apply_batch(

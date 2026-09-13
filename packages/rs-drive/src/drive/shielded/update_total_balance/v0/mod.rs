@@ -26,7 +26,8 @@ impl Drive {
                 pool_path,
                 vec![SHIELDED_TOTAL_BALANCE_KEY],
                 Element::new_sum_item(balance_i64),
-            ),
+            )
+            .dont_check(),
         )])
     }
 }
