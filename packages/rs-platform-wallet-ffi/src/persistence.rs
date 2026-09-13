@@ -34,6 +34,8 @@ use platform_wallet::changeset::{
     ProviderKeyExtendedPubKey, PERSISTENCE_CAPABILITIES_VERSION,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
+#[cfg(feature = "shielded")]
+use platform_wallet::wallet::shielded::ShieldedActivityStatus;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
 use std::collections::BTreeMap;
 use std::ffi::CString;
@@ -2879,6 +2881,9 @@ impl PlatformWalletPersistence for FFIPersister {
                             let (identity_id, has_identity_id) = match &e.kind {
                                 platform_wallet::wallet::shielded::ShieldedActivityKind::IdentityCreate {
                                     identity_id,
+                                }
+                                | platform_wallet::wallet::shielded::ShieldedActivityKind::ShieldFromIdentity {
+                                    identity_id,
                                 } => (*identity_id, 1u8),
                                 _ => ([0u8; 32], 0u8),
                             };
@@ -3109,8 +3114,8 @@ impl PlatformWalletPersistence for FFIPersister {
             use crate::shielded_persistence::*;
             use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
             use platform_wallet::wallet::shielded::{
-                ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus,
-                ShieldedDirection, ShieldedNote, ShieldedOutgoingNote, SubwalletId,
+                ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection, ShieldedNote,
+                ShieldedOutgoingNote, SubwalletId,
             };
 
             let mut shielded_state = ShieldedSyncStartState::default();
@@ -3390,6 +3395,9 @@ impl PlatformWalletPersistence for FFIPersister {
                             6 => ShieldedActivityKind::IdentityCreate {
                                 identity_id: ffi.identity_id,
                             },
+                            8 => ShieldedActivityKind::ShieldFromIdentity {
+                                identity_id: ffi.identity_id,
+                            },
                             // 7 and any unknown tag fall back to the
                             // residual — a forward-compat tag we don't yet
                             // model still loads as an opaque spend rather
@@ -3414,21 +3422,7 @@ impl PlatformWalletPersistence for FFIPersister {
                                 ShieldedDirection::SelfTransfer
                             }
                         };
-                        let status = match ffi.status {
-                            0 => ShieldedActivityStatus::Pending,
-                            1 => ShieldedActivityStatus::Confirmed,
-                            2 => ShieldedActivityStatus::Failed,
-                            other => {
-                                // Failed is materially distinct from
-                                // Pending/Confirmed — never let a stray
-                                // byte silently mark an operation failed.
-                                tracing::warn!(
-                                    status = other,
-                                    "unknown shielded-activity status byte on load; folding to Pending so a scan can re-confirm it"
-                                );
-                                ShieldedActivityStatus::Pending
-                            }
-                        };
+                        let status = activity_status_from_tag(ffi.status);
                         let counterparty = if ffi.counterparty_ptr.is_null()
                             || ffi.counterparty_len == 0
                         {
@@ -3948,14 +3942,51 @@ fn activity_direction_tag(d: &platform_wallet::wallet::shielded::ShieldedDirecti
 }
 
 /// Discriminant byte for a `ShieldedActivityStatus` (FFI: 0 Pending,
-/// 1 Confirmed, 2 Failed).
+/// 1 Confirmed, 2 Failed, 3 Unknown).
 #[cfg(feature = "shielded")]
-fn activity_status_tag(s: &platform_wallet::wallet::shielded::ShieldedActivityStatus) -> u8 {
-    use platform_wallet::wallet::shielded::ShieldedActivityStatus::*;
+fn activity_status_tag(s: &ShieldedActivityStatus) -> u8 {
     match s {
-        Pending => 0,
-        Confirmed => 1,
-        Failed => 2,
+        ShieldedActivityStatus::Pending => 0,
+        ShieldedActivityStatus::Confirmed => 1,
+        ShieldedActivityStatus::Failed => 2,
+        ShieldedActivityStatus::Unknown => 3,
+    }
+}
+
+/// Decode the persisted status byte without treating an abandoned payment as failed.
+#[cfg(feature = "shielded")]
+fn activity_status_from_tag(tag: u8) -> ShieldedActivityStatus {
+    match tag {
+        0 => ShieldedActivityStatus::Pending,
+        1 => ShieldedActivityStatus::Confirmed,
+        2 => ShieldedActivityStatus::Failed,
+        3 => ShieldedActivityStatus::Unknown,
+        other => {
+            tracing::warn!(
+                status = other,
+                "unknown shielded-activity status byte on load; folding to Pending so a scan can re-confirm it"
+            );
+            ShieldedActivityStatus::Pending
+        }
+    }
+}
+
+#[cfg(all(test, feature = "shielded"))]
+mod activity_status_tests {
+    use super::{activity_status_from_tag, activity_status_tag};
+    use platform_wallet::wallet::shielded::ShieldedActivityStatus;
+
+    #[test]
+    fn should_roundtrip_abandoned_activity_as_unknown_and_preserve_existing_status_bytes() {
+        for (status, tag) in [
+            (ShieldedActivityStatus::Pending, 0),
+            (ShieldedActivityStatus::Confirmed, 1),
+            (ShieldedActivityStatus::Failed, 2),
+            (ShieldedActivityStatus::Unknown, 3),
+        ] {
+            assert_eq!(activity_status_tag(&status), tag);
+            assert_eq!(activity_status_from_tag(tag), status);
+        }
     }
 }
 

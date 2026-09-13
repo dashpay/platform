@@ -20,6 +20,8 @@ pub mod put_settings;
 pub mod shield;
 #[cfg(feature = "shielded")]
 pub mod shield_from_asset_lock;
+/// Identity balance to shielded pool.
+pub mod shield_from_identity;
 #[cfg(feature = "shielded")]
 pub mod shielded_transfer;
 #[cfg(feature = "shielded")]

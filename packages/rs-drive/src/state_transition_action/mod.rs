@@ -32,6 +32,7 @@ use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTra
 use crate::state_transition_action::shielded::identity_create_from_shielded_pool::IdentityCreateFromShieldedPoolTransitionAction;
 use crate::state_transition_action::shielded::shield::ShieldTransitionAction;
 use crate::state_transition_action::shielded::shield_from_asset_lock::ShieldFromAssetLockTransitionAction;
+use crate::state_transition_action::shielded::shield_from_identity::ShieldFromIdentityTransitionAction;
 use crate::state_transition_action::shielded::shielded_transfer::ShieldedTransferTransitionAction;
 use crate::state_transition_action::shielded::shielded_withdrawal::ShieldedWithdrawalTransitionAction;
 use crate::state_transition_action::shielded::unshield::UnshieldTransitionAction;
@@ -110,6 +111,8 @@ pub enum StateTransitionAction {
     ShieldedWithdrawalAction(ShieldedWithdrawalTransitionAction),
     /// identity create from shielded pool (shielded pool -> new identity)
     IdentityCreateFromShieldedPoolAction(IdentityCreateFromShieldedPoolTransitionAction),
+    /// identity balance to shielded pool
+    ShieldFromIdentityAction(ShieldFromIdentityTransitionAction),
 }
 
 impl StateTransitionAction {
@@ -171,6 +174,7 @@ impl StateTransitionAction {
             StateTransitionAction::IdentityCreateFromShieldedPoolAction(_) => {
                 UserFeeIncrease::default() // 0 (fee is locked by Orchard binding signature)
             }
+            StateTransitionAction::ShieldFromIdentityAction(action) => action.user_fee_increase(),
         }
     }
 }

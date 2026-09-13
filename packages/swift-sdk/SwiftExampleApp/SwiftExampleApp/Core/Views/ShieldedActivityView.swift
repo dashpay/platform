@@ -24,6 +24,8 @@ enum ShieldedActivityKindDisplay {
         case 4: return "Unshielded"
         case 5: return "Withdrawn"
         case 6: return "Identity Created"
+        case 8: return "Shielded from Identity"
+        // 7 (ShieldedSpend) and any tag this build doesn't know yet.
         default: return "Shielded Spend"
         }
     }
@@ -31,7 +33,9 @@ enum ShieldedActivityKindDisplay {
     /// SF Symbol per kind.
     static func icon(_ tag: Int) -> String {
         switch tag {
-        case 0, 1: return "lock.fill"                 // Shield / ShieldFromAssetLock
+        // Shield / ShieldFromAssetLock / ShieldFromIdentity: all three
+        // are value entering the pool.
+        case 0, 1, 8: return "lock.fill"
         case 2: return "arrow.down.circle.fill"       // Received
         case 3: return "arrow.up.circle.fill"         // Sent
         case 4: return "lock.open.fill"               // Unshield
@@ -217,6 +221,10 @@ struct ShieldedActivityListView: View {
                         Text("Pending")
                             .font(.caption2)
                             .foregroundColor(.orange)
+                    } else if entry.status == 3 {
+                        Text("Unknown")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
                     } else if entry.status == 2 {
                         Text("Failed")
                             .font(.caption2)
@@ -244,7 +252,8 @@ struct ShieldedActivityDetailView: View {
         switch entry.status {
         case 0: return "Pending"
         case 1: return "Confirmed"
-        default: return "Failed"
+        case 2: return "Failed"
+        default: return "Unknown"
         }
     }
 
@@ -278,8 +287,10 @@ struct ShieldedActivityDetailView: View {
                     }
                 }
 
-                if entry.kindTag == 6, entry.identityId.count == 32 {
-                    Section("Created Identity") {
+                // Both identity-bearing kinds carry `identityId`: 6 is the
+                // identity that was created, 8 the identity that was debited.
+                if entry.kindTag == 6 || entry.kindTag == 8, entry.identityId.count == 32 {
+                    Section(entry.kindTag == 6 ? "Created Identity" : "Source Identity") {
                         let idHex = entry.identityId.map { String(format: "%02x", $0) }.joined()
                         Text(idHex)
                             .font(.caption.monospaced())

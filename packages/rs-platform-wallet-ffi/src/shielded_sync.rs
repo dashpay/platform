@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use platform_wallet::wallet::shielded::ShieldedSyncSummary;
+use platform_wallet::PlatformWalletError;
 
 use crate::error::*;
 use crate::handle::*;
@@ -307,10 +308,7 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
         Ok(true) => return PlatformWalletFFIResult::ok(),
         Ok(false) => {}
         Err(e) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                format!("bind_shielded_from_persisted failed: {e}"),
-            );
+            return map_shielded_error(e, "bind_shielded_from_persisted");
         }
     }
 
@@ -330,10 +328,7 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
         accounts.as_slice(),
         &coordinator,
     )) {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("bind_shielded failed: {e}"),
-        );
+        return map_shielded_error(e, "bind_shielded");
     }
 
     PlatformWalletFFIResult::ok()
@@ -379,10 +374,7 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
     });
     let result = unwrap_option_or_return!(option);
     if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("configure_shielded failed: {e}"),
-        );
+        return map_shielded_error(e, "configure_shielded");
     }
     PlatformWalletFFIResult::ok()
 }
@@ -448,10 +440,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
         ) {
             return PlatformWalletFFIResult::from(e);
         }
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("clear_shielded failed: {e}"),
-        );
+        return map_shielded_error(e, "clear_shielded");
     }
     PlatformWalletFFIResult::ok()
 }
@@ -562,9 +551,52 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_wallet(
     let result = unwrap_option_or_return!(option);
     match result {
         Ok(_) => PlatformWalletFFIResult::ok(),
-        Err(e) => PlatformWalletFFIResult::err(
+        Err(e) => map_shielded_error(e, "shielded sync"),
+    }
+}
+
+/// Recovery errors must remain typed when opening, binding or syncing durable state,
+/// just as they do when submitting or explicitly abandoning a payment.
+fn map_shielded_error(error: PlatformWalletError, operation: &str) -> PlatformWalletFFIResult {
+    match error {
+        error @ PlatformWalletError::ShieldedRecoveryCorrupted { .. }
+        | error @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. } => error.into(),
+        other => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded sync failed: {e}"),
+            format!("{operation} failed: {other}"),
         ),
+    }
+}
+
+#[cfg(test)]
+mod recovery_error_tests {
+    use super::*;
+
+    #[test]
+    fn should_preserve_recovery_errors_when_configuring_binding_or_syncing() {
+        for (error, expected) in [
+            (
+                PlatformWalletError::ShieldedRecoveryCorrupted {
+                    account_index: None,
+                    reason: "invalid durable recovery envelope".into(),
+                },
+                PlatformWalletFFIResultCode::ErrorShieldedRecoveryCorrupted,
+            ),
+            (
+                PlatformWalletError::ShieldedRecoveryKeysRequired {
+                    account_index: 9,
+                    reason: "account viewing keys required".into(),
+                },
+                PlatformWalletFFIResultCode::ErrorShieldedRecoveryKeysRequired,
+            ),
+        ] {
+            let message = error.to_string();
+            let result = map_shielded_error(error, "configure or bind");
+            assert_eq!(result.code, expected);
+            assert_eq!(
+                unsafe { CStr::from_ptr(result.message) }.to_str().unwrap(),
+                message
+            );
+        }
     }
 }

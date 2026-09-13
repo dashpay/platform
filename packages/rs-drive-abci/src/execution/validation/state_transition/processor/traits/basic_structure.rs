@@ -283,6 +283,30 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     })),
                 }
             }
+            StateTransition::ShieldFromIdentity(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .shield_from_identity_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "shield from identity transition: validate_basic_structure"
+                                .to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "shield from identity transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
             StateTransition::ShieldedTransfer(st) => {
                 match platform_version
                     .drive_abci
@@ -453,6 +477,13 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                 .validation_and_processing
                 .state_transitions
                 .shield_state_transition
+                .basic_structure
+                .is_some(),
+            StateTransition::ShieldFromIdentity(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .shield_from_identity_state_transition
                 .basic_structure
                 .is_some(),
             StateTransition::ShieldedTransfer(_) => platform_version
@@ -843,6 +874,7 @@ mod tests {
                 | StateTransition::IdentityUpdate(_)
                 | StateTransition::IdentityCreditTransfer(_)
                 | StateTransition::MasternodeVote(_)
+                | StateTransition::ShieldFromIdentity(_)
                 | StateTransition::IdentityCreditTransferToAddresses(_)
                 | StateTransition::IdentityCreateFromAddresses(_)
                 | StateTransition::IdentityTopUpFromAddresses(_)

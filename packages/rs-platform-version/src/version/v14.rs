@@ -204,6 +204,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   formats 0–2 (all pre-v14 documents) deserialize exactly as before with
 ///   an unstamped (pre-annotation) layout.
 ///
+/// * `ShieldFromIdentity` (state transition type 21) activates:
+///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
+///   `is_allowed`, and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` is the first
+///   table whose `shield_from_identity_state_transition` row enables basic
+///   structure, identity signature, and nonce validation. It moves credits
+///   from an identity balance straight into the shielded pool: the funding
+///   side is identity-signed like `IdentityCreditTransferToAddresses`, the
+///   pool side is an outputs-only Orchard bundle like `Shield`, and the fee
+///   is metered plus the shielded compute fee, paid from the identity.
+///
 /// The wire surface changes only additively: `GetDocumentsRequestV1`
 /// already carries `selects` / `group_by` / `order_by` / `limit` /
 /// `offset`; the ranked response is an additive `ResultData.ranked`

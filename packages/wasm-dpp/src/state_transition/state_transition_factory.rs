@@ -84,7 +84,8 @@ impl StateTransitionFactoryWasm {
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldFromAssetLock(_)
                 | StateTransition::ShieldedWithdrawal(_)
-                | StateTransition::IdentityCreateFromShieldedPool(_) => Err(JsValue::from_str(
+                | StateTransition::IdentityCreateFromShieldedPool(_)
+                | StateTransition::ShieldFromIdentity(_) => Err(JsValue::from_str(
                     "shielded transitions are not yet supported in wasm-dpp StateTransitionFactory",
                 )),
             },

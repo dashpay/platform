@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 // Re-exported so the public path stays `dpp::shielded::compute_minimum_shielded_fee` (the
 // module and the function share a name but live in different namespaces).
 pub use compute_minimum_shielded_fee::{
-    compute_minimum_shielded_fee, compute_shielded_identity_create_fee,
-    compute_shielded_unshield_fee, compute_shielded_verification_fee,
-    compute_shielded_withdrawal_fee,
+    compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
+    compute_shielded_identity_create_fee, compute_shielded_unshield_fee,
+    compute_shielded_verification_fee, compute_shielded_withdrawal_fee,
 };
 
 // Re-exported so the public paths stay `dpp::shielded::<name>` after moving the sighash preimage
@@ -75,6 +75,31 @@ pub const SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES: u64 = 4100;
 /// evolves, exactly like the per-action note storage does. See
 /// [`compute_minimum_shielded_fee::compute_shielded_unshield_fee`].
 pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
+
+/// Flat component (in effective bytes at the per-byte storage rate) for the identity-side writes a
+/// `ShieldFromIdentity` performs on top of its per-action note inserts: the `UpdateIdentityNonce`
+/// and `RemoveFromIdentityBalance` operations.
+///
+/// The transition's real fee is metered and only known at execution, so its stateless admission
+/// floor needs a conservative stand-in for the metered part: [`compute_minimum_shielded_fee`]
+/// (compute plus the per-action note allowance, which covers the note inserts with headroom)
+/// plus this component. Admission below `amount + floor` is refused BEFORE the Orchard proof is
+/// verified, so a short identity never occupies a proof-verification slot.
+///
+/// What the two writes do: the identity already exists, so neither adds storage. Each rewrites
+/// its element and every Merk node on the path to the root (replaced bytes, charged at the
+/// per-byte processing rate), loads the path, seeks, and rehashes the nodes. Measured at protocol
+/// version 14: the nonce update replaces 563 bytes and the balance debit 320 bytes (883 in
+/// total) for 466,760 credits of processing applied one at a time, 424,400 when batched together
+/// (shared path work). Like every other flat shielded component (`shielded_storage_bytes_per_action`,
+/// `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES`), that variable tree work is folded into ONE flat
+/// effective-byte figure priced at the full storage rate so it tracks the rate as it evolves,
+/// rather than modelled per replaced byte: 466,760 credits is 17.0 effective bytes at 27,400
+/// credits/byte, and 20 leaves headroom for the path growing by about a node (roughly 0.7
+/// effective bytes) each time the identity count doubles. The pool-total update is not priced
+/// separately, exactly as for the other pool-paid transitions. See
+/// [`compute_minimum_shielded_fee::compute_shielded_identity_balance_write_fee`].
+pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 20;
 
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///

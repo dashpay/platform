@@ -576,6 +576,22 @@ pub enum PlatformWalletFFIResultCode {
     /// persisted address state did not come back.
     ErrorPersisterRestore = 54,
 
+    /// Maps `PlatformWalletError::ShieldedIdentityDebitPending`: an earlier
+    /// identity-funded shield is unresolved. This request did not build or
+    /// broadcast a transaction. Wait for shielded sync to reconcile the
+    /// earlier debit before starting another shield from this identity.
+    /// Distinct from `ErrorShieldedSpendUnconfirmed`, which describes the
+    /// outcome of the request that was submitted.
+    ErrorShieldedIdentityDebitPending = 55,
+
+    /// A durable shielded recovery record is malformed or invalid.
+    /// Preserve it for diagnosis; do not submit a replacement payment blindly.
+    ErrorShieldedRecoveryCorrupted = 56,
+
+    /// Shielded recovery requires its account and compatible viewing keys.
+    /// Incompatible keys and damaged ciphertext can produce the same symptom.
+    ErrorShieldedRecoveryKeysRequired = 57,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -786,6 +802,15 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedSpendUnconfirmed { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
+            }
+            PlatformWalletError::ShieldedIdentityDebitPending { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedIdentityDebitPending
+            }
+            PlatformWalletError::ShieldedRecoveryCorrupted { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedRecoveryCorrupted
+            }
+            PlatformWalletError::ShieldedRecoveryKeysRequired { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedRecoveryKeysRequired
             }
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
@@ -1511,6 +1536,22 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    #[test]
+    fn should_preserve_shielded_identity_debit_pending_code_and_message() {
+        let error = PlatformWalletError::ShieldedIdentityDebitPending {
+            identity_id: [7; 32],
+        };
+        let rendered = error.to_string();
+        let result: PlatformWalletFFIResult = error.into();
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedIdentityDebitPending
+        );
+        assert_eq!(result.code as i32, 55, "the host ABI code must stay stable");
+        assert_eq!(message_of(&result), rendered);
     }
 
     #[test]
