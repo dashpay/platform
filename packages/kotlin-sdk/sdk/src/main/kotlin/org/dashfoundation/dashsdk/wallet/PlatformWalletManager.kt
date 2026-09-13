@@ -1685,6 +1685,7 @@ class PlatformWalletManager(
     suspend fun shieldedIdentityDebitRecoveryRecords(
         walletId: ByteArray,
     ): List<ShieldedIdentityDebitRecoveryRecord> = teardownGate.op {
+        require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
         mapNativeErrors {
             FundingNative.shieldedIdentityDebitRecoveryRecords(managerHandle, walletId)
                 .map { ShieldedIdentityDebitRecoveryRecord.fromNative(it) }
@@ -1707,6 +1708,8 @@ class PlatformWalletManager(
         activityId: ByteArray,
         acknowledgePossibleExecution: Boolean,
     ) = teardownGate.op {
+        require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
+        require(activityId.size == 32) { "activityId must be exactly 32 bytes, got ${activityId.size}" }
         mapNativeErrors {
             FundingNative.abandonShieldedIdentityDebit(
                 managerHandle, walletId, accountIndex.toInt(), activityId,
