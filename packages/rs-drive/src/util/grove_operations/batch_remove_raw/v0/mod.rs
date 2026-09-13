@@ -39,26 +39,32 @@ impl Drive {
             validate_tree_at_path_exists: false, //todo: not sure about this one
         };
 
-        let needs_removal_from_state = match current_batch_operations
-            .remove_if_insert(path.to_vec(), key)
-        {
-            Some(
-                GroveOp::InsertOrReplace { element }
-                | GroveOp::InsertOrReplaceDontCheck { element },
-            )
-            | Some(GroveOp::Replace { element } | GroveOp::ReplaceDontCheck { element })
-            | Some(GroveOp::Patch { element, .. } | GroveOp::PatchDontCheck { element, .. }) => {
-                return Ok(Some(element))
-            }
-            Some(GroveOp::InsertTreeWithRootHash { .. }) => {
-                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "we should not be seeing internal grovedb operations",
-                )));
-            }
-            Some(GroveOp::Delete | GroveOp::DeleteDontCheck)
-            | Some(GroveOp::DeleteTree(_, _) | GroveOp::DeleteTreeDontCheck(_, _)) => false,
-            _ => true,
-        };
+        let needs_removal_from_state =
+            match current_batch_operations.remove_if_insert(path.to_vec(), key) {
+                Some(
+                    GroveOp::InsertOrReplace { element }
+                    | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element },
+                )
+                | Some(
+                    GroveOp::Replace { element }
+                    | GroveOp::ReplaceDontCheckForBackwardsReferences { element },
+                )
+                | Some(
+                    GroveOp::Patch { element, .. }
+                    | GroveOp::PatchDontCheckForBackwardsReferences { element, .. },
+                ) => return Ok(Some(element)),
+                Some(GroveOp::InsertTreeWithRootHash { .. }) => {
+                    return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "we should not be seeing internal grovedb operations",
+                    )));
+                }
+                Some(GroveOp::Delete | GroveOp::DeleteDontCheckForBackwardsReferences)
+                | Some(
+                    GroveOp::DeleteTree(_, _)
+                    | GroveOp::DeleteTreeDontCheckForBackwardsReferences(_, _),
+                ) => false,
+                _ => true,
+            };
 
         let maybe_element = self.grove_get_raw_optional(
             path.clone(),
