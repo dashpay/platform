@@ -253,7 +253,7 @@ fn history_api_proof_round_trip(gapped: bool) {
                 version,
                 &provider,
             )
-            .expect_err("history v1 requires GroveDB v1 even with a valid quorum signature");
+            .expect_err("document history requires GroveDB v1 even with a valid quorum signature");
             assert!(error.to_string().contains("unsupported proof version"));
             assert!(drive_proof_verifier::types::DocumentHistoryProofInfo::maybe_from_proof_with_metadata(
                 request, response, Network::Testnet, version, &provider,
