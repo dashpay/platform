@@ -258,8 +258,8 @@ Note: The Orchard protocol requires a minimum of 2 actions per bundle for privac
 action). Bundles with 1 action are structurally invalid.
 
 The totals above are the **base** `compute_minimum_shielded_fee` and apply directly to
-`ShieldedTransfer`. The two pool-paid transitions that write one extra per-transition output add a
-flat storage component on top of this base:
+`ShieldedTransfer`. The three pool-paid transitions that write one extra per-transition output
+add a flat component on top of this base:
 
 - **`Unshield` adds the output-address write cost**: a flat
   `unshield_address_storage_fee = 222 × per_byte_rate = 222 × 27,400 = 6,082,800` credits,
@@ -273,6 +273,12 @@ flat storage component on top of this base:
   `161,097,600 + 112,340,000 = 273,437,600` credits (and likewise `+112,340,000` at every action
   count). See the [Fee Extraction](#fee-extraction-by-transition-type) ShieldedWithdrawal row for
   why this component exists.
+- **`IdentityTopUpFromShieldedPool` adds the identity balance write cost**: a flat
+  `identity_balance_storage_fee = 8 × per_byte_rate = 8 × 27,400 = 219,200` credits,
+  independent of action count, so the top-up fee at any action count is the base plus
+  `219,200`. See the [Fee Extraction](#fee-extraction-by-transition-type) IdentityTopUpFromShieldedPool
+  row for why this component is so much smaller than the address write: it rewrites an existing
+  balance element instead of storing a new entry.
 
 ## Where Fee Validation Runs
 
@@ -345,9 +351,10 @@ shielded pool's total balance is decremented and the fee is booked via the
 `PaidFromShieldedPool` execution event:
 
 ```
-ShieldedTransfer:    pool_balance -= fee_amount          // fee == value_balance
-Unshield:            pool_balance -= unshielding_amount   // gross
-ShieldedWithdrawal:  pool_balance -= unshielding_amount   // gross
+ShieldedTransfer:              pool_balance -= fee_amount          // fee == value_balance
+Unshield:                      pool_balance -= unshielding_amount   // gross
+ShieldedWithdrawal:            pool_balance -= unshielding_amount   // gross
+IdentityTopUpFromShieldedPool: pool_balance -= top_up_amount        // gross
 ```
 
 For `Unshield` and `ShieldedWithdrawal`, `unshielding_amount` is the **gross** amount
@@ -365,6 +372,13 @@ writes a real document into the withdrawals contract. Validation guarantees
 extra write, the booking split (storage routed to the storage pool, the remainder paid to
 the proposer) covers that write instead of zeroing the proposer's processing reward to
 cover it.
+
+For `IdentityTopUpFromShieldedPool`, `top_up_amount` is likewise the gross amount leaving the
+pool: `top_up_amount − fee_amount` is added to the existing identity's balance and
+`fee_amount` (`compute_shielded_identity_top_up_fee`, the base fee plus the flat identity
+balance write component) is booked as the transition fee; validation guarantees
+`top_up_amount ≥ fee_amount`. The identity balance and the pool total are both terms of the
+block conservation equation, so no system-credit adjustment is emitted.
 
 For `ShieldedTransfer`, the pool decreases by exactly the fee (the sender's notes are
 spent and the recipient's notes are created, but the pool's aggregate balance only drops

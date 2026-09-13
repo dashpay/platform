@@ -26,7 +26,9 @@ mod tests {
     use dpp::shielded::SerializedAction;
     use dpp::state_transition::identity_top_up_from_shielded_pool_transition::v0::IdentityTopUpFromShieldedPoolTransitionV0;
     use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
-    use dpp::state_transition::proof_result::StateTransitionProofResult;
+    use dpp::state_transition::proof_result::{
+        StateTransitionProofOutcome, StateTransitionProofResult,
+    };
     use dpp::state_transition::StateTransition;
     use drive::drive::Drive;
     use grovedb_commitment_tree::{
@@ -483,6 +485,12 @@ mod tests {
         )
         .expect("verify");
         assert_ne!(root_hash, [0u8; 32]);
+        // The spent nullifiers identify this exact transition, so the strict SDK
+        // wait (`wait_for_response`) must see an executed outcome, not a snapshot.
+        assert!(
+            matches!(outcome, StateTransitionProofOutcome::ExecutionProved(_)),
+            "a top-up proof must be classified as execution-proving, got {outcome:?}"
+        );
 
         let result = outcome.into_result();
         let StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(proven, statuses) =

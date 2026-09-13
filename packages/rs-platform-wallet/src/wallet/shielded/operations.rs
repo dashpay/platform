@@ -1345,6 +1345,11 @@ mod shield_from_identity_build_error_tests {
 /// gross amount into its sighash, and the broadcast is redrive-safe. The
 /// identity receives `amount` (the fee is carved from the value balance).
 /// Waits for proven execution before marking notes spent.
+///
+/// Returns the identity's proof-attested post-top-up balance when the result
+/// proof carried this identity (`None` only if the proven result had an
+/// unexpected shape, which is logged). The caller persists it for a managed
+/// identity (`PlatformWallet::shielded_identity_top_up_from_pool`).
 #[allow(clippy::too_many_arguments)]
 pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -1356,7 +1361,7 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
     identity_id: Identifier,
     amount: u64,
     prover: &P,
-) -> Result<(), PlatformWalletError> {
+) -> Result<Option<Credits>, PlatformWalletError> {
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
@@ -1435,7 +1440,7 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
     .await;
 
     match result {
-        Ok(()) => {
+        Ok(proof) => {
             record_activity_status(
                 store,
                 persister,
@@ -1456,7 +1461,26 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
                 );
             }
             info!(account, credits = amount, identity = %identity_id, "IdentityTopUpFromShieldedPool broadcast succeeded");
-            Ok(())
+            // The strict wait only succeeds on an execution-proving result; for a
+            // top-up that is the spent nullifiers plus the credited identity.
+            let proven_balance = match proof {
+                StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(proven, _)
+                    if proven.id() == identity_id =>
+                {
+                    Some(proven.balance())
+                }
+                other => {
+                    warn!(
+                        account,
+                        identity = %identity_id,
+                        result = ?other,
+                        "IdentityTopUpFromShieldedPool proof did not carry the credited \
+                         identity; managed balance left for the next identity refresh"
+                    );
+                    None
+                }
+            };
+            Ok(proven_balance)
         }
         Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
         Err(e) => {
@@ -1601,7 +1625,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     .await;
 
     match result {
-        Ok(()) => {
+        Ok(_) => {
             record_activity_status(
                 store,
                 persister,
@@ -1779,7 +1803,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     .await;
 
     match result {
-        Ok(()) => {
+        Ok(_) => {
             record_activity_status(
                 store,
                 persister,
@@ -1947,7 +1971,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     .await;
 
     match result {
-        Ok(()) => {
+        Ok(_) => {
             record_activity_status(
                 store,
                 persister,
@@ -2854,7 +2878,7 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
     notes: &[ShieldedNote],
     state_transition: &StateTransition,
     operation: &'static str,
-) -> Result<(), PlatformWalletError> {
+) -> Result<StateTransitionProofResult, PlatformWalletError> {
     let result = broadcast_shielded_spend(sdk, state_transition, operation).await;
     if matches!(
         &result,
@@ -3250,7 +3274,7 @@ async fn broadcast_shielded_spend(
     sdk: &Arc<dash_sdk::Sdk>,
     state_transition: &StateTransition,
     operation: &'static str,
-) -> Result<(), PlatformWalletError> {
+) -> Result<StateTransitionProofResult, PlatformWalletError> {
     match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
         Err(e) if broadcast_definitely_failed(&e) => {
@@ -3267,10 +3291,13 @@ async fn broadcast_shielded_spend(
         }
     }
 
+    // Strict wait: every nullifier-spend family (transfer, unshield, withdrawal,
+    // identity top-up) is proof-binding, so a snapshot outcome is an error here.
+    // The proven result is returned so callers that credit a known identity can
+    // apply its proof-attested balance.
     state_transition
         .wait_for_response::<StateTransitionProofResult>(sdk, None)
         .await
-        .map(|_| ())
         .map_err(|wait_err| classify_spend_wait_failure(operation, &wait_err))
 }
 

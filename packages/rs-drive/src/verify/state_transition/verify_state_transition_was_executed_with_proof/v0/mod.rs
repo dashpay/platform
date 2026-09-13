@@ -2416,9 +2416,11 @@ impl Drive {
             // Only the identity's post-debit balance is proven; the shielded note
             // and the requested amount are not bound.
             StateTransition::ShieldFromIdentity(_) => false,
-            // Spent nullifiers plus the credited identity do not bind the gross
-            // amount or the fee split.
-            StateTransition::IdentityTopUpFromShieldedPool(_) => false,
+            // Nullifier-spend proof like Unshield: the spent nullifiers bind the
+            // exact Orchard actions of this transition (unlike identity-create
+            // there is no fallback action that spends them on a failed top-up),
+            // and the credited identity is proven alongside.
+            StateTransition::IdentityTopUpFromShieldedPool(_) => true,
         };
 
         Ok(binds)

@@ -1307,6 +1307,36 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_top_up_from_p
     identity_id: *const u8,
     amount: u64,
 ) -> PlatformWalletFFIResult {
+    // The whole body runs under `catch_unwind`, exactly like the shield-to-recipient
+    // export: `block_on_worker` re-panics on a panicking proving task, and a panic
+    // must not reach this `extern "C"` frame, where it would abort the host process.
+    // Notes may already be reserved and the transition may already be broadcast when
+    // the panic strikes, so the ambiguous spend-unconfirmed contract applies.
+    catch_spend_panic("shielded identity top up from pool", || {
+        shielded_identity_top_up_from_pool_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            identity_id,
+            amount,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_identity_top_up_from_pool`], as an ordinary
+/// Rust function so a panic unwinds into [`catch_spend_panic`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn shielded_identity_top_up_from_pool_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    identity_id: *const u8,
+    amount: u64,
+) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
     check_ptr!(identity_id);
@@ -1341,7 +1371,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_top_up_from_p
             )
             .await;
         poke_sync_on_unconfirmed(&r, handle);
-        r
+        // The proof-attested balance is applied to a managed identity inside the
+        // wallet; this export reports only the outcome.
+        r.map(|_| ())
     });
     map_spend_result(result, "shielded identity top up from pool")
 }

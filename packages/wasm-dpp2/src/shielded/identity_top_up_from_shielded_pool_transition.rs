@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::identifier::IdentifierWasm;
 use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::try_vec_to_fixed_bytes;
@@ -123,16 +123,12 @@ impl IdentityTopUpFromShieldedPoolTransitionWasm {
         ))
     }
 
-    /// The identity whose balance receives the top-up.
+    /// The identity whose balance receives the top-up. Read-only: the identity id
+    /// and the gross amount are committed into the Orchard binding signature, so a
+    /// wrapper that changed them would produce a transition consensus must reject.
     #[wasm_bindgen(getter = "identityId")]
     pub fn identity_id(&self) -> IdentifierWasm {
         self.0.identity_id().into()
-    }
-
-    #[wasm_bindgen(setter = "identityId")]
-    pub fn set_identity_id(&mut self, identity_id: IdentifierLikeJs) -> WasmDppResult<()> {
-        self.0.set_identity_id(identity_id.try_into()?);
-        Ok(())
     }
 
     /// Returns the serialized Orchard actions.
