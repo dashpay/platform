@@ -8,7 +8,7 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::operations::delete::DeleteOptions;
 use grovedb::query_result_type::QueryResultType;
-use grovedb::DisplacedValue;
+use grovedb::BackwardsReferences;
 use grovedb::{GroveDb, PathQuery, TransactionArg};
 use grovedb_epoch_based_storage_flags::StorageFlags;
 use grovedb_storage::rocksdb_storage::RocksDbStorage;
@@ -89,7 +89,7 @@ impl Drive {
             let options = DeleteOptions {
                 // Drive stores no backward-reference participants; GroveDB checks the
                 // claim for free from the value it reads for the write.
-                displaced_value: DisplacedValue::NotParticipant,
+                backwards_references: BackwardsReferences::DontCheck,
                 allow_deleting_non_empty_trees: false,
                 deleting_non_empty_trees_returns_error: true,
                 base_root_storage_is_free: true,
@@ -109,7 +109,7 @@ impl Drive {
                     true,
                     0,
                     (estimated_key_size, estimated_value_size),
-                    DisplacedValue::NotParticipant,
+                    BackwardsReferences::DontCheck,
                     &drive_version.grove_version,
                 )
                 .map(|r| r.map(Some)),
