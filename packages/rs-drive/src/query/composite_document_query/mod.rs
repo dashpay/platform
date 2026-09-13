@@ -67,7 +67,9 @@
 //! most that many values); the page takes no cursor and no offset —
 //! paginate with a range clause, exactly as chained queries do. A by-ids
 //! page is proven without its limit, which must therefore cover its ids
-//! (a plain documents query would truncate instead).
+//! (a plain documents query would truncate instead). Every component
+//! carries its limit as its root query's per-instance cap, the form the
+//! merged proof budgets it in.
 //!
 //! Direction: grovedb merges only queries that agree on their walk
 //! direction, so every component walks in the page's. Counts and by-id
@@ -738,12 +740,31 @@ impl<'a> DriveDocumentQuery<'a> {
             || self.internal_clauses.primary_key_equal_clause.is_some()
     }
 
-    /// The page's path query as a component of the proof. A by-ids page
-    /// is built WITHOUT its limit: its ids already bound it, and grovedb
-    /// cannot lift a limit off a query that lands at the merged root
-    /// (which a by-ids page shares with a join on the same type). Every
-    /// other page keeps its limit, which the proof carries as its
-    /// branch's per-instance cap (see [`Self::lift_limit_into_branch_cap`]).
+    /// A component's budget lives on its root query as a per-instance
+    /// cap (`Query::limit`), never on the path query's global
+    /// `SizedQuery::limit` that the plain documents lowering emits. The
+    /// two are not interchangeable once proven: at a layer with subquery
+    /// branches the prover truncates the children it emits under a
+    /// global limit but only the descendant rows under an instance cap.
+    /// The merge would lift a global limit into exactly this cap, so
+    /// authoring it at construction keeps ONE form for validation, the
+    /// merge, the prover and every subset pass of the verifier, whether
+    /// or not the component ends up merged with anything. A component's
+    /// root executes once (its path is a concrete key chain), so "N rows
+    /// per instance" is "N rows".
+    fn budget_as_instance_cap(mut path_query: PathQuery) -> PathQuery {
+        if let Some(limit) = path_query.query.limit.take() {
+            path_query.query.query.limit = Some(limit);
+        }
+        path_query
+    }
+
+    /// The page as a component of the proof, its limit carried as its
+    /// root query's per-instance cap (see [`Self::budget_as_instance_cap`]).
+    /// A by-ids page is built WITHOUT its limit: its ids already bound
+    /// it, and grovedb refuses a budget on a query that lands at the
+    /// merged root (which a by-ids page shares with a join on the same
+    /// type).
     pub fn page_path_query(&self, platform_version: &PlatformVersion) -> Result<PathQuery, Error> {
         if self.page_is_by_ids() {
             let mut unlimited = self.clone();
@@ -755,7 +776,9 @@ impl<'a> DriveDocumentQuery<'a> {
             path_query.query.limit = None;
             return Ok(path_query);
         }
-        self.construct_path_query(None, platform_version)
+        Ok(Self::budget_as_instance_cap(
+            self.construct_path_query(None, platform_version)?,
+        ))
     }
 
     /// The shape rules routing and merging need up front. Document
@@ -765,8 +788,9 @@ impl<'a> DriveDocumentQuery<'a> {
     /// path must be tellable apart by their derived values: a sibling,
     /// which has none, stays alone, and a page only shares the primary
     /// tree with joins when it is itself a by-ids fetch. And no limited
-    /// component may land at the merged root, where grovedb has no
-    /// branch to lift its limit into. A bound sub-query that derives
+    /// component may land at the merged root, where grovedb refuses a
+    /// budget (it would govern every component's rows). A bound
+    /// sub-query that derives
     /// nothing contributes no branch, so the merged root is not fixed by
     /// the shapes: it is the common prefix of whichever components are
     /// present, and a limited component lands on it exactly when every
@@ -780,7 +804,7 @@ impl<'a> DriveDocumentQuery<'a> {
         let mut components: Vec<(Vec<Vec<u8>>, Component, bool)> = Vec::new();
         let page = self.page_path_query(platform_version)?;
         let direction = page.query.query.left_to_right;
-        components.push((page.path, Component::Page, page.query.limit.is_some()));
+        components.push((page.path, Component::Page, page.query.query.limit.is_some()));
         for (index, sub_query) in self.sub_queries.iter().enumerate() {
             let path_query = self.sub_query_proof_path_query(
                 sub_query,
@@ -791,7 +815,7 @@ impl<'a> DriveDocumentQuery<'a> {
             components.push((
                 path_query.path,
                 Component::Sub(index),
-                path_query.query.limit.is_some(),
+                path_query.query.query.limit.is_some(),
             ));
         }
 
@@ -825,8 +849,8 @@ impl<'a> DriveDocumentQuery<'a> {
                 return Err(unsupported(format!(
                     "{} carries a limit and lands at the merged root of the composite proof \
                      (once the bound sub-queries that derive nothing drop out), where grovedb \
-                     has no branch to lift the limit into; give it a clause that narrows its \
-                     path, or split it into a separate request",
+                     refuses a budget; give it a clause that narrows its path, or split it \
+                     into a separate request",
                     match component {
                         Component::Page => "the page".to_string(),
                         Component::Sub(index) => format!("sub-query {}", index),
@@ -1107,7 +1131,7 @@ impl<'a> DriveDocumentQuery<'a> {
         direction: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        match sub_query.kind {
+        let path_query = match sub_query.kind {
             SubQueryKind::Documents => self
                 .sub_query_document_query_with_direction(
                     sub_query,
@@ -1115,11 +1139,12 @@ impl<'a> DriveDocumentQuery<'a> {
                     direction,
                     platform_version,
                 )?
-                .construct_path_query(None, platform_version),
+                .construct_path_query(None, platform_version)?,
             SubQueryKind::Count => self
                 .sub_query_count_query(sub_query, values, platform_version)?
-                .point_lookup_count_path_query(platform_version),
-        }
+                .point_lookup_count_path_query(platform_version)?,
+        };
+        Ok(Self::budget_as_instance_cap(path_query))
     }
 
     /// The page's walk direction: what every component of the merged
@@ -1296,29 +1321,11 @@ impl<'a> DriveDocumentQuery<'a> {
         Ok(true)
     }
 
-    /// A component's path query as the merged proof budgets it. The
-    /// merge lifts a component's global `SizedQuery::limit` into the
-    /// per-instance cap (`Query::limit`) of its branch root, and the
-    /// two budgets are not interchangeable: at a layer with subquery
-    /// branches the prover truncates the children it emits under a
-    /// global limit but only the descendant rows under an instance cap.
-    /// So a subset pass reading one component out of the merged proof
-    /// must use the lifted form, or an ordered page whose index level
-    /// holds more keys than its limit fails the more-data-than-limit
-    /// check, and a proof of the page alone must be built in the lifted
-    /// form too, so that the shape of a page's proof does not depend on
-    /// whether its bound sub-queries derived anything.
-    pub(crate) fn lift_limit_into_branch_cap(mut path_query: PathQuery) -> PathQuery {
-        if let Some(global) = path_query.query.limit.take() {
-            let own = path_query.query.query.limit;
-            path_query.query.query.limit = Some(own.map_or(global, |own| own.min(global)));
-        }
-        path_query
-    }
-
     /// Merges the component path queries into the one query the proof
-    /// covers. A page alone is proven in the same lifted-limit form the
-    /// merge would give it (see [`Self::lift_limit_into_branch_cap`]).
+    /// covers. Components carry their budgets as per-instance caps (see
+    /// [`Self::budget_as_instance_cap`]), which the merge carries along
+    /// on their branches, so a page alone is proven in the very form it
+    /// would have inside a merge.
     pub fn merged_path_query(
         page: &PathQuery,
         sub_path_queries: &[Option<PathQuery>],
@@ -1327,7 +1334,7 @@ impl<'a> DriveDocumentQuery<'a> {
         let mut components: Vec<&PathQuery> = vec![page];
         components.extend(sub_path_queries.iter().flatten());
         if components.len() == 1 {
-            return Ok(Self::lift_limit_into_branch_cap(page.clone()));
+            return Ok(page.clone());
         }
         PathQuery::merge(components, &platform_version.drive.grove_version)
             .map_err(merge_error_to_shape_error)
