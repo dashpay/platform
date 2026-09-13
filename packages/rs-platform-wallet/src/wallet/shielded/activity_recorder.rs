@@ -36,7 +36,7 @@ use super::keys::AccountViewingKeys;
 use super::store::{PendingRedrive, ShieldedNote, SubwalletId};
 use crate::changeset::ShieldedChangeSet;
 
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::shielded::SerializedAction;
 use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
@@ -60,7 +60,7 @@ pub(super) fn identity_redrive_output_cmxs(
             "not an identity debit".to_owned(),
         ));
     }
-    let transition = StateTransition::deserialize_from_bytes(&redrive.st_bytes)
+    let transition = StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes)
         .map_err(|e| IdentityRecoveryError::Malformed(format!("invalid signed transition: {e}")))?;
     let StateTransition::ShieldFromIdentity(transition) = transition else {
         return Err(IdentityRecoveryError::Malformed(

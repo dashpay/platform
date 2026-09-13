@@ -3,7 +3,7 @@ use crate::utils::proof::supported_grovedb_proof;
 use crate::utils::serialization::identifier_to_base58;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
@@ -207,8 +207,11 @@ fn create_contract_lookup_fn<'a>(
         let contract_bytes = contract_uint8.to_vec();
 
         // Deserialize the contract
-        let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
-            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
+        let contract =
+            DataContract::versioned_deserialize_untrusted(&contract_bytes, true, platform_version)
+                .map_err(|e| {
+                    JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e))
+                })?;
 
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         let identifier = contract.id();

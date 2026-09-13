@@ -1,12 +1,16 @@
-use crate::serialization::PlatformDeserializable;
+use crate::serialization::PlatformDeserializableUntrusted;
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 
 impl StateTransition {
-    pub fn deserialize_many(raw_state_transitions: &[Vec<u8>]) -> Result<Vec<Self>, ProtocolError> {
+    pub fn deserialize_many_untrusted(
+        raw_state_transitions: &[Vec<u8>],
+    ) -> Result<Vec<Self>, ProtocolError> {
         raw_state_transitions
             .iter()
-            .map(|raw_state_transition| Self::deserialize_from_bytes(raw_state_transition))
+            .map(|raw_state_transition| {
+                Self::deserialize_from_bytes_untrusted(raw_state_transition)
+            })
             .collect()
     }
 }
@@ -28,7 +32,7 @@ mod tests {
     use crate::prelude::AssetLockProof;
     use crate::serialization::PlatformMessageSignable;
     use crate::serialization::Signable;
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
     use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use crate::state_transition::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
@@ -81,7 +85,7 @@ mod tests {
         let raw_transaction = STANDARD
             .decode(RAW_TRANSACTION_BASE64)
             .expect("base64 transaction should decode");
-        let state_transition = StateTransition::deserialize_from_bytes(&raw_transaction)
+        let state_transition = StateTransition::deserialize_from_bytes_untrusted(&raw_transaction)
             .expect("State transition deserializes correctly");
 
         assert_eq!(
@@ -137,7 +141,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -160,7 +164,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -227,7 +231,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -294,7 +298,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -320,7 +324,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -343,7 +347,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -371,7 +375,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -417,7 +421,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -479,7 +483,7 @@ mod tests {
             // its recursive data during drop so this regression test only exercises decoder behavior.
             std::mem::forget(state_transition);
 
-            let error = StateTransition::deserialize_from_bytes_in_version(
+            let error = StateTransition::deserialize_from_bytes_untrusted_in_version(
                 &bytes,
                 PlatformVersion::latest(),
             )
@@ -534,7 +538,7 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("the state transition should encode below the byte limit");
 
-            let recovered = StateTransition::deserialize_from_bytes_in_version(
+            let recovered = StateTransition::deserialize_from_bytes_untrusted_in_version(
                 &bytes,
                 PlatformVersion::latest(),
             )
@@ -545,7 +549,7 @@ mod tests {
 
     #[test]
     fn deserialize_empty_bytes_should_fail() {
-        let result = StateTransition::deserialize_from_bytes(&[]);
+        let result = StateTransition::deserialize_from_bytes_untrusted(&[]);
         assert!(
             result.is_err(),
             "deserialization of empty bytes should fail"
@@ -554,7 +558,7 @@ mod tests {
 
     #[test]
     fn deserialize_single_byte_should_fail() {
-        let result = StateTransition::deserialize_from_bytes(&[0xFF]);
+        let result = StateTransition::deserialize_from_bytes_untrusted(&[0xFF]);
         assert!(
             result.is_err(),
             "deserialization of a single 0xFF byte should fail"
@@ -586,21 +590,21 @@ mod tests {
         // Truncate to half
         let half = &bytes[..bytes.len() / 2];
         assert!(
-            StateTransition::deserialize_from_bytes(half).is_err(),
+            StateTransition::deserialize_from_bytes_untrusted(half).is_err(),
             "deserialization of truncated-to-half bytes should fail"
         );
 
         // Truncate by removing last byte
         let minus_one = &bytes[..bytes.len() - 1];
         assert!(
-            StateTransition::deserialize_from_bytes(minus_one).is_err(),
+            StateTransition::deserialize_from_bytes_untrusted(minus_one).is_err(),
             "deserialization of bytes missing last byte should fail"
         );
 
         // Keep only first byte
         let first_only = &bytes[..1];
         assert!(
-            StateTransition::deserialize_from_bytes(first_only).is_err(),
+            StateTransition::deserialize_from_bytes_untrusted(first_only).is_err(),
             "deserialization of only the first byte should fail"
         );
     }
@@ -632,7 +636,7 @@ mod tests {
         bytes[mid] ^= 0xFF;
 
         // Should either fail or return a different value - must not panic
-        let result = StateTransition::deserialize_from_bytes(&bytes);
+        let result = StateTransition::deserialize_from_bytes_untrusted(&bytes);
         if let Ok(recovered) = result {
             assert_ne!(
                 state_transition, recovered,
@@ -675,7 +679,7 @@ mod tests {
         // Craft a small payload (~80 bytes) with a Vec<u8> field claiming 8 GB.
         // Without the limit fix this would attempt `vec![0u8; 8_000_000_000]` and abort.
         let payload = craft_oversized_vec_payload(8_000_000_000);
-        let result = StateTransition::deserialize_from_bytes(&payload);
+        let result = StateTransition::deserialize_from_bytes_untrusted(&payload);
         // Must return an error, not OOM-abort the process
         assert!(
             result.is_err(),
@@ -691,7 +695,7 @@ mod tests {
         // or UnexpectedEnd depending on the exact code path). Either way, the
         // deserialization must fail safely without OOM.
         let payload = craft_oversized_vec_payload(200_000);
-        let result = StateTransition::deserialize_from_bytes(&payload);
+        let result = StateTransition::deserialize_from_bytes_untrusted(&payload);
         assert!(
             result.is_err(),
             "Vec length exceeding byte budget must be rejected"
@@ -704,23 +708,23 @@ mod tests {
         // should NOT reject it for byte budget reasons (it will still fail
         // because the data doesn't actually contain 200,000 bytes).
         let payload = craft_oversized_vec_payload(200_000);
-        let result = StateTransition::deserialize_from_bytes_no_limit(&payload);
+        let result = StateTransition::deserialize_from_bytes_untrusted_no_limit(&payload);
         assert!(result.is_err());
         // any other error is fine — the data is garbage
         if let ProtocolError::MaxEncodedBytesReachedError { .. } = result.unwrap_err() {
-            panic!("deserialize_from_bytes_no_limit should NOT enforce byte budget");
+            panic!("deserialize_from_bytes_untrusted_no_limit should NOT enforce byte budget");
         }
     }
 
     #[test]
     fn deserialize_many_empty_list() {
-        let result = StateTransition::deserialize_many(&[]);
+        let result = StateTransition::deserialize_many_untrusted(&[]);
         assert_eq!(result.unwrap(), vec![]);
     }
 
     #[test]
     fn deserialize_many_with_invalid_entry() {
-        let result = StateTransition::deserialize_many(&[vec![0xFF]]);
+        let result = StateTransition::deserialize_many_untrusted(&[vec![0xFF]]);
         assert!(
             result.is_err(),
             "deserialize_many with invalid entry should fail"
@@ -759,7 +763,8 @@ mod tests {
             st3.serialize_to_bytes().unwrap(),
         ];
 
-        let recovered = StateTransition::deserialize_many(&raw).expect("should deserialize all");
+        let recovered =
+            StateTransition::deserialize_many_untrusted(&raw).expect("should deserialize all");
         assert_eq!(recovered.len(), 3);
         assert_eq!(recovered[0], st1);
         assert_eq!(recovered[1], st2);

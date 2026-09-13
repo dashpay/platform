@@ -1,11 +1,13 @@
 use crate::tokens::status::TokenStatus;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Default, Encode, Decode, PartialOrd, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, Default, Encode, Decode, PartialOrd, PartialEq, Eq, DecodeUntrusted,
+)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

@@ -1693,7 +1693,7 @@ impl Drive {
                 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
                 use dpp::asset_lock::StoredAssetLockInfo;
                 use dpp::identity::state_transition::AssetLockProved;
-                use dpp::serialization::PlatformDeserializable;
+                use dpp::serialization::PlatformDeserializableUntrusted;
                 use dpp::state_transition::proof_result::StateTransitionProofResult::{
                     VerifiedAssetLockConsumed, VerifiedAssetLockConsumedWithAddressInfos,
                 };
@@ -1805,7 +1805,7 @@ impl Drive {
                                     StoredAssetLockInfo::FullyConsumed
                                 } else {
                                     StoredAssetLockInfo::PartiallyConsumed(
-                                        AssetLockValue::deserialize_from_bytes(&bytes)?,
+                                        AssetLockValue::deserialize_from_bytes_untrusted(&bytes)?,
                                     )
                                 }
                             }
@@ -1849,7 +1849,9 @@ impl Drive {
                                         StoredAssetLockInfo::FullyConsumed
                                     } else {
                                         StoredAssetLockInfo::PartiallyConsumed(
-                                            AssetLockValue::deserialize_from_bytes(&bytes)?,
+                                            AssetLockValue::deserialize_from_bytes_untrusted(
+                                                &bytes,
+                                            )?,
                                         )
                                     }
                                 }
@@ -1884,7 +1886,7 @@ impl Drive {
                 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
                 use dpp::identity::{IdentityPublicKey, IdentityV0, KeyID};
                 use dpp::prelude::Revision;
-                use dpp::serialization::PlatformDeserializable;
+                use dpp::serialization::PlatformDeserializableUntrusted;
                 use dpp::state_transition::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
                 use dpp::state_transition::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions;
                 use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers;
@@ -2005,7 +2007,8 @@ impl Drive {
                             ))
                         })?;
                         let item_bytes = element.into_item_bytes().map_err(Error::from)?;
-                        let public_key = IdentityPublicKey::deserialize_from_bytes(&item_bytes)?;
+                        let public_key =
+                            IdentityPublicKey::deserialize_from_bytes_untrusted(&item_bytes)?;
                         keys.insert(public_key.id(), public_key);
                     } else {
                         return Err(Error::Proof(ProofError::TooManyElements(
@@ -2088,7 +2091,7 @@ impl Drive {
                 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
                 use dpp::identity::{IdentityPublicKey, IdentityV0, KeyID};
                 use dpp::prelude::Revision;
-                use dpp::serialization::PlatformDeserializable;
+                use dpp::serialization::PlatformDeserializableUntrusted;
                 use dpp::state_transition::identity_top_up_from_shielded_pool_transition::accessors::IdentityTopUpFromShieldedPoolTransitionAccessorsV0;
                 use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers;
                 use std::collections::{BTreeMap, BTreeSet};
@@ -2199,7 +2202,8 @@ impl Drive {
                             ))
                         })?;
                         let item_bytes = element.into_item_bytes().map_err(Error::from)?;
-                        let public_key = IdentityPublicKey::deserialize_from_bytes(&item_bytes)?;
+                        let public_key =
+                            IdentityPublicKey::deserialize_from_bytes_untrusted(&item_bytes)?;
                         keys.insert(public_key.id(), public_key);
                     } else {
                         return Err(Error::Proof(ProofError::TooManyElements(

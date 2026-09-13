@@ -26,7 +26,7 @@ mod tests {
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
     use dpp::prelude::AddressNonce;
-    use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+    use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable, Signable};
     use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
     use dpp::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
     use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
@@ -4042,7 +4042,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_transition_serializes_and_deserializes() {
-            use dpp::serialization::PlatformDeserializable;
+            use dpp::serialization::PlatformDeserializableUntrusted;
 
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1100);
@@ -4069,8 +4069,8 @@ mod tests {
             let serialized = transition.serialize_to_bytes().expect("should serialize");
 
             // Deserialize
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
 
             // Verify round-trip
             let reserialized = deserialized
@@ -4084,7 +4084,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_transition_with_output_serializes() {
-            use dpp::serialization::PlatformDeserializable;
+            use dpp::serialization::PlatformDeserializableUntrusted;
 
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1101);
@@ -4111,8 +4111,8 @@ mod tests {
 
             let serialized = transition.serialize_to_bytes().expect("should serialize");
 
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
 
             let reserialized = deserialized
                 .serialize_to_bytes()
@@ -4122,7 +4122,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_transition_with_multiple_inputs_serializes() {
-            use dpp::serialization::PlatformDeserializable;
+            use dpp::serialization::PlatformDeserializableUntrusted;
 
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(1102);
@@ -4155,8 +4155,8 @@ mod tests {
 
             let serialized = transition.serialize_to_bytes().expect("should serialize");
 
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
 
             let reserialized = deserialized
                 .serialize_to_bytes()
@@ -7550,7 +7550,7 @@ mod tests {
 
     mod serialization_roundtrip {
         use super::*;
-        use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+        use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 
         #[tokio::test]
         async fn test_full_roundtrip_serialization() {
@@ -7586,8 +7586,8 @@ mod tests {
                 .expect("should serialize");
 
             // Deserialize
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
 
             // Compare
             match deserialized {
@@ -7640,8 +7640,8 @@ mod tests {
             let serialized = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
 
             match deserialized {
                 StateTransition::IdentityCreateFromAddresses(
@@ -7697,8 +7697,8 @@ mod tests {
             let serialized = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
 
             match deserialized {
                 StateTransition::IdentityCreateFromAddresses(
@@ -7759,8 +7759,8 @@ mod tests {
             let serialized = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
 
             match deserialized {
                 StateTransition::IdentityCreateFromAddresses(
@@ -7777,7 +7777,7 @@ mod tests {
         async fn test_deserialize_invalid_bytes() {
             let invalid_bytes = vec![0xFF, 0xFF, 0xFF, 0xFF];
 
-            let result = StateTransition::deserialize_from_bytes(&invalid_bytes);
+            let result = StateTransition::deserialize_from_bytes_untrusted(&invalid_bytes);
             assert!(result.is_err(), "Invalid bytes should fail deserialization");
         }
 
@@ -7815,7 +7815,7 @@ mod tests {
             // Truncate the data
             let truncated = &serialized[..serialized.len() / 2];
 
-            let result = StateTransition::deserialize_from_bytes(truncated);
+            let result = StateTransition::deserialize_from_bytes_untrusted(truncated);
             assert!(
                 result.is_err(),
                 "Truncated data should fail deserialization"

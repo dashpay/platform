@@ -40,7 +40,7 @@ pub fn verify_vote_polls_end_date_query_vec(
 
     // Deserialize the query using bincode
     let query: VotePollsByEndDateDriveQuery =
-        bincode::decode_from_slice(&query_cbor.to_vec(), bincode::config::standard())
+        bincode::decode_from_slice_untrusted(&query_cbor.to_vec(), bincode::config::standard())
             .map_err(|e| JsValue::from_str(&format!("Failed to deserialize query: {:?}", e)))?
             .0;
 
@@ -94,7 +94,7 @@ pub fn verify_vote_polls_end_date_query_map(
 
     // Deserialize the query using bincode
     let query: VotePollsByEndDateDriveQuery =
-        bincode::decode_from_slice(&query_cbor.to_vec(), bincode::config::standard())
+        bincode::decode_from_slice_untrusted(&query_cbor.to_vec(), bincode::config::standard())
             .map_err(|e| JsValue::from_str(&format!("Failed to deserialize query: {:?}", e)))?
             .0;
 

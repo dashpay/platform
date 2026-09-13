@@ -15,7 +15,7 @@ use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::{Encoding, decode, encode};
 use dpp::prelude::Identifier;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable, Signable};
 use dpp::state_transition::StateTransition::{
     Batch, DataContractCreate, DataContractUpdate, IdentityCreditTransfer,
     IdentityCreditWithdrawal, IdentityUpdate, MasternodeVote, ShieldFromIdentity,
@@ -252,7 +252,7 @@ impl StateTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<StateTransitionWasm> {
-        let st = StateTransition::deserialize_from_bytes(bytes.as_slice())?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(st.into())
     }
@@ -262,7 +262,7 @@ impl StateTransitionWasm {
         let bytes =
             decode(&hex, Encoding::Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
-        let st = StateTransition::deserialize_from_bytes(bytes.as_slice())?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(st.into())
     }
@@ -272,7 +272,7 @@ impl StateTransitionWasm {
         let bytes = decode(&base64, Encoding::Base64)
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
-        let st = StateTransition::deserialize_from_bytes(bytes.as_slice())?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(st.into())
     }

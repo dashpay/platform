@@ -80,7 +80,7 @@ use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dpp::identity::Purpose;
 use dpp::platform_value::{self};
 use dpp::prelude::{AddressNonce, DataContract, Identifier, Identity};
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
@@ -1501,8 +1501,10 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
 
-        let state_transition = StateTransition::deserialize_from_bytes(&request.state_transition)
-            .map_err(|e| Error::ProtocolError {
+        let state_transition = StateTransition::deserialize_from_bytes_untrusted(
+            &request.state_transition,
+        )
+        .map_err(|e| Error::ProtocolError {
             error: e.to_string(),
         })?;
 

@@ -278,15 +278,69 @@ jobs:
             '
           }
 
+          # A derive that only generates a decoder (`DecodeUntrusted`, the
+          # `PlatformDeserialize` family) cannot change how a structure's
+          # existing fields or variants serialize, but every other derive
+          # stays part of the comparison: swapping `Serialize_repr` for
+          # `Serialize`, or dropping `Encode`, is a wire change the guard must
+          # keep catching. Rewrite each `#[derive(...)]` attribute, single- or
+          # multi-line, as one canonical line with the decoder-only derives
+          # removed, so a rustfmt reflow of the list is not read as a change
+          # either. The fields, the variants and the attributes that do shape
+          # the encoding (serde, repr, platform_serialize) are compared
+          # verbatim.
+          normalize_derives() {
+            awk '
+              function flush_derive(   n, i, item, out) {
+                n = split(buf, parts, ",")
+                out = ""
+                for (i = 1; i <= n; i++) {
+                  item = parts[i]
+                  gsub(/^[[:space:]]+|[[:space:]]+$/, "", item)
+                  if (item == "" || item == "DecodeUntrusted") continue
+                  if (item == "PlatformDeserialize" || item == "PlatformDeserializeTrusted") continue
+                  if (item == "PlatformDeserializeUntrusted") continue
+                  out = (out == "" ? item : out ", " item)
+                }
+                print "#[derive(" out ")]"
+                buf = ""
+              }
+              collecting {
+                if (index($0, ")]")) {
+                  sub(/\)\].*$/, "")
+                  buf = buf " " $0
+                  collecting = 0
+                  flush_derive()
+                } else {
+                  buf = buf " " $0
+                }
+                next
+              }
+              /^[[:space:]]*#\[derive\(/ {
+                sub(/^[[:space:]]*#\[derive\(/, "")
+                if (index($0, ")]")) {
+                  sub(/\)\].*$/, "")
+                  buf = $0
+                  flush_derive()
+                } else {
+                  buf = $0
+                  collecting = 1
+                }
+                next
+              }
+              { print }
+            '
+          }
+
           for file in $CHANGED_RS; do
             if [ ! -f "$file" ]; then continue; fi
             BASE_CONTENT=$(git show "$BASE_PARENT":"$file" 2>/dev/null || true)
             if [ -z "$BASE_CONTENT" ]; then continue; fi
 
-            BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only")
-            PR_APPEND=$(extract_tagged_block "@append_only" < "$file")
-            BASE_IMMUTABLE=$(echo "$BASE_CONTENT" | extract_tagged_block "@immutable")
-            PR_IMMUTABLE=$(extract_tagged_block "@immutable" < "$file")
+            BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only" | normalize_derives)
+            PR_APPEND=$(extract_tagged_block "@append_only" < "$file" | normalize_derives)
+            BASE_IMMUTABLE=$(echo "$BASE_CONTENT" | extract_tagged_block "@immutable" | normalize_derives)
+            PR_IMMUTABLE=$(extract_tagged_block "@immutable" < "$file" | normalize_derives)
 
             if [ -n "$BASE_APPEND" ]; then
               # Check for deletions, ignoring comment-only lines and the tag itself

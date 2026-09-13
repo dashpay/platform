@@ -3,7 +3,7 @@ use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::DataContract;
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
 use std::ops::RangeFull;
@@ -96,7 +96,7 @@ impl Drive {
             };
 
             let contract =
-                DataContract::versioned_deserialize(&stored_bytes, false, platform_version)
+                DataContract::versioned_deserialize_trusted(&stored_bytes, false, platform_version)
                     .map_err(Error::from)?;
 
             contracts.push(contract);

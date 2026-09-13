@@ -1,5 +1,5 @@
 use crate::{InvalidVectorSizeError, ProtocolError};
-use bincode::{BorrowDecode, Decode, Encode};
+use bincode::{BorrowDecode, Encode};
 use serde::{Deserialize, Serialize};
 
 /// Epoch key offset
@@ -100,14 +100,23 @@ impl<'de> Deserialize<'de> for Epoch {
     }
 }
 
-impl<C> Decode<C> for Epoch {
-    fn decode<D: bincode::de::Decoder<Context = C>>(
-        decoder: &mut D,
-    ) -> Result<Self, bincode::error::DecodeError> {
-        let index = EpochIndex::decode(decoder)?;
-        Epoch::new(index).map_err(|e| bincode::error::DecodeError::OtherString(e.to_string()))
-    }
+// Share the wire schema and domain checks across both decoding APIs.
+macro_rules! impl_epoch_decode {
+    ($decode:ident, $decoder:ident, $method:ident, $untrusted:expr) => {
+        impl<C> bincode::$decode<C> for Epoch {
+            fn $method<D: bincode::de::$decoder<Context = C>>(
+                decoder: &mut D,
+            ) -> Result<Self, bincode::error::DecodeError> {
+                let index = EpochIndex::$method(decoder)?;
+                Epoch::new(index)
+                    .map_err(|e| bincode::error::DecodeError::OtherString(e.to_string()))
+            }
+        }
+    };
 }
+impl_epoch_decode!(Decode, Decoder, decode, false);
+impl_epoch_decode!(DecodeUntrusted, UntrustedDecoder, decode_untrusted, true);
+bincode::impl_borrow_decode_untrusted!(Epoch);
 
 impl<'de, C> BorrowDecode<'de, C> for Epoch {
     fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = C>>(

@@ -17,7 +17,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
 
@@ -284,7 +284,7 @@ impl FileBackedShieldedStore {
                 // because its active recovery flags are both false.
                 if !nullifiers.is_empty()
                     && matches!(
-                        StateTransition::deserialize_from_bytes(&st_bytes),
+                        StateTransition::deserialize_from_bytes_trusted(&st_bytes),
                         Ok(StateTransition::ShieldFromIdentity(_))
                     )
                 {
@@ -348,7 +348,7 @@ impl FileBackedShieldedStore {
     /// note nullifiers. A complete outer transition decode is required so
     /// corrupt, unknown, or identity-funded bytes remain fail-closed.
     fn non_identity_note_spend_kind(st_bytes: &[u8]) -> Option<&'static str> {
-        let state_transition = StateTransition::deserialize_from_bytes(st_bytes).ok()?;
+        let state_transition = StateTransition::deserialize_from_bytes_trusted(st_bytes).ok()?;
         if state_transition.serialize_to_bytes().ok()?.as_slice() != st_bytes {
             return None;
         }

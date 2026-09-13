@@ -4,6 +4,10 @@
 //! like [GetIdentityBalanceRequest](dapi_grpc::platform::v0::GetIdentityBalanceRequest) which returns [`u64`].
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
+//!
+//! Binary serialization under `mocks` is for locally generated fixtures. Those
+//! formats explicitly retain ordinary decoding for foreign Core types; network
+//! responses go through the proof verification and request conversion paths.
 
 /// Evonode status
 pub mod evonode_status;
@@ -57,7 +61,7 @@ use {
     bincode::{Decode, Encode},
     dpp::{version as platform_version, ProtocolError},
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
-    platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
+    platform_serialization_derive::{PlatformDeserializeTrusted, PlatformSerialize},
 };
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
@@ -120,7 +124,7 @@ pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize,),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct AddressInfo {
@@ -143,7 +147,7 @@ pub type AddressInfos = RetrievedObjects<PlatformAddress, AddressInfo>;
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize,),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct Contenders {
@@ -197,7 +201,7 @@ impl FromIterator<(Identifier, Option<ContenderWithSerializedDocument>)> for Con
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Clone, derive_more::From, Default)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize,),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct Voter(pub Identifier);
@@ -206,7 +210,7 @@ pub struct Voter(pub Identifier);
 #[derive(Debug, Clone, derive_more::From, Default)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize,),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct Voters(pub BTreeSet<Voter>);
@@ -248,7 +252,7 @@ pub struct KeysInPath {
 #[derive(Debug, derive_more::From, Clone, Copy)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct TotalCreditsInPlatform(pub Credits);
@@ -257,7 +261,7 @@ pub struct TotalCreditsInPlatform(pub Credits);
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct NoParamQuery;
@@ -266,7 +270,7 @@ pub struct NoParamQuery;
 #[derive(Debug, derive_more::From, Clone)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct ElementFetchRequestItem(pub Element);
@@ -364,7 +368,7 @@ impl FromIterator<ContestedResource> for ContestedResources {
 #[derive(Debug, derive_more::From, Clone)]
 #[cfg_attr(
     feature = "mocks",
-    derive(PlatformSerialize, PlatformDeserialize, Encode, Decode),
+    derive(PlatformSerialize, PlatformDeserializeTrusted, Encode, Decode),
     platform_serialize(unversioned)
 )]
 pub struct ContestedVote(
@@ -414,7 +418,7 @@ pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;
 /// - `Decode`: Allows the struct to be deserialized from a binary format using the `bincode` crate.
 /// - `PlatformSerialize`: Enables serialization of the struct using the platform-specific
 ///   serialization format.
-/// - `PlatformDeserialize`: Enables deserialization of the struct using the platform-specific
+/// - `PlatformDeserializeTrusted`: Enables deserialization of the struct using the platform-specific
 ///   deserialization format.
 /// - `platform_serialize(unversioned)`: Specifies that the struct should be serialized
 ///   without including a version field in the serialized data.
@@ -425,7 +429,7 @@ pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct CurrentQuorumsInfo {
@@ -447,7 +451,7 @@ pub struct CurrentQuorumsInfo {
 #[derive(Debug, derive_more::From, Copy, Clone)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct PrefundedSpecializedBalance(pub Credits);
@@ -468,7 +472,7 @@ impl From<&PrefundedSpecializedBalance> for Credits {
 #[derive(Clone, Debug, Default, derive_more::From)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct VotePollsGroupedByTimestamp(pub Vec<(TimestampMillis, Vec<VotePoll>)>);
@@ -676,7 +680,7 @@ pub type TokenDirectPurchasePrices = RetrievedObjects<Identifier, TokenPricingSc
 #[derive(Debug, Clone, Default, derive_more::From)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct TokenPreProgrammedDistributions(
@@ -704,7 +708,7 @@ impl FromIterator<(TimestampMillis, BTreeMap<Identifier, Credits>)>
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct BlockAddressBalanceChanges {
@@ -718,7 +722,7 @@ pub struct BlockAddressBalanceChanges {
 #[derive(Debug, Clone, Default, derive_more::From)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct RecentAddressBalanceChanges(pub Vec<BlockAddressBalanceChanges>);
@@ -734,7 +738,7 @@ impl RecentAddressBalanceChanges {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct CompactedBlockAddressBalanceChanges {
@@ -750,7 +754,7 @@ pub struct CompactedBlockAddressBalanceChanges {
 #[derive(Debug, Clone, Default, derive_more::From)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct RecentCompactedAddressBalanceChanges(pub Vec<CompactedBlockAddressBalanceChanges>);
@@ -801,7 +805,7 @@ impl std::ops::DerefMut for PlatformAddressTrunkState {
 #[derive(Debug, derive_more::From, Clone, Copy)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct ShieldedPoolState(pub u64);
@@ -816,7 +820,7 @@ pub struct ShieldedPoolState(pub u64);
 #[derive(Debug, derive_more::From, Clone, Copy)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct ShieldedNotesCount(pub u64);
@@ -825,7 +829,7 @@ pub struct ShieldedNotesCount(pub u64);
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct ShieldedEncryptedNote {
@@ -850,7 +854,7 @@ pub struct ShieldedEncryptedNote {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct ShieldedEncryptedNotes {
@@ -865,7 +869,7 @@ pub struct ShieldedEncryptedNotes {
 #[derive(Debug, Clone, Default, derive_more::From)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct ShieldedAnchors(pub Vec<[u8; 32]>);
@@ -874,7 +878,7 @@ pub struct ShieldedAnchors(pub Vec<[u8; 32]>);
 #[derive(Debug, Clone, Copy, derive_more::From)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct MostRecentShieldedAnchor(pub [u8; 32]);
@@ -883,7 +887,7 @@ pub struct MostRecentShieldedAnchor(pub [u8; 32]);
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct ShieldedNullifierStatus {
@@ -897,7 +901,7 @@ pub struct ShieldedNullifierStatus {
 #[derive(Debug, Clone, Default, derive_more::From)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct ShieldedNullifierStatuses(pub Vec<ShieldedNullifierStatus>);
@@ -906,7 +910,7 @@ pub struct ShieldedNullifierStatuses(pub Vec<ShieldedNullifierStatus>);
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct ShieldedEncryptedNotesQuery {
@@ -920,7 +924,7 @@ pub struct ShieldedEncryptedNotesQuery {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
     platform_serialize(unversioned)
 )]
 pub struct ShieldedNullifiersQuery(pub Vec<[u8; 32]>);

@@ -1307,7 +1307,7 @@ pub fn prettify_proof(proof: &Proof) -> String {
         .with_big_endian()
         .with_no_limit();
     let grovedb_proof: Result<GroveDBProof, DecodeError> =
-        bincode::decode_from_slice(&proof.grovedb_proof, config).map(|(a, _)| a);
+        bincode::decode_from_slice_untrusted(&proof.grovedb_proof, config).map(|(a, _)| a);
 
     let grovedb_proof_string = match grovedb_proof {
         Ok(proof) => format!("{}", proof),

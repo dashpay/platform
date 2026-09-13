@@ -91,7 +91,7 @@ use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 
@@ -535,10 +535,11 @@ impl NetworkShieldedCoordinator {
             .into_iter()
             .filter(|(_, record)| record.nullifiers.is_empty())
             .map(|(id, record)| {
-                let transition = match StateTransition::deserialize_from_bytes(&record.st_bytes) {
-                    Ok(StateTransition::ShieldFromIdentity(transition)) => Some(transition),
-                    _ => None,
-                };
+                let transition =
+                    match StateTransition::deserialize_from_bytes_trusted(&record.st_bytes) {
+                        Ok(StateTransition::ShieldFromIdentity(transition)) => Some(transition),
+                        _ => None,
+                    };
                 IdentityDebitRecoveryRecord {
                     account_index: id.account_index,
                     activity_id: record.activity_id,

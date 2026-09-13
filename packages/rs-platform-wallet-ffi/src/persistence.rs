@@ -92,6 +92,14 @@ use std::ffi::CStr;
 pub(crate) const TX_CONTEXT_RAW_IN_BLOCK: u32 = 2;
 pub(crate) const TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK: u32 = 3;
 
+/// Byte budget for decoding a host-supplied account extended public key.
+///
+/// The upstream `key-wallet` xpub decoders do not implement
+/// `DecodeUntrusted`, so every decode of persisted `account_xpub_bytes`
+/// (ECDSA, BLS, EdDSA) runs under this explicit limit instead; a complete
+/// xpub of any of the three kinds is under 200 bytes.
+pub(crate) const ACCOUNT_XPUB_DECODE_LIMIT_BYTES: usize = 1024;
+
 /// Versioned C projection of [`PersistenceCapabilities`].
 ///
 /// `version` identifies the stable bit assignment. `reserved` must be ignored
@@ -5031,21 +5039,22 @@ fn build_wallet_start_state(
         // and show stale operator / platform-node keys until it's deleted
         // and re-imported — an accepted, transient dev-only state.
         //
-        // INTENTIONAL(unmaintained-bincode-decoder): the three account-xpub
-        // decodes below run bincode 2.0.1 (RUSTSEC-2025-0141: development
-        // ceased, no CVE, no fix version) over host-supplied bytes. Accepted:
-        // no defect today, and the migration is tracked as its own
-        // supply-chain item, to be paired with the trailing-byte validation
-        // the `flush` decode boundary already defers.
+        // The three account-xpub decodes below run upstream `key-wallet`
+        // decoders that do not implement `DecodeUntrusted` over host-supplied
+        // bytes, so each one carries the explicit
+        // `ACCOUNT_XPUB_DECODE_LIMIT_BYTES` budget. Trailing bytes are still
+        // ignored, the same deferral as the `flush` decode boundary.
         match account_type {
             AccountType::ProviderOperatorKeys => {
-                let (bls_pubkey, _): (ExtendedBLSPubKey, usize) =
-                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                        PersistenceError::backend(format!(
-                            "failed to decode provider BLS xpub: {}",
-                            e
-                        ))
-                    })?;
+                // The BLS decoder reads a Vec<u8> before validating the public
+                // key, so the budget is what bounds its allocation.
+                let (bls_pubkey, _): (ExtendedBLSPubKey, usize) = bincode::decode_from_slice(
+                    xpub_bytes,
+                    config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+                )
+                .map_err(|e| {
+                    PersistenceError::backend(format!("failed to decode provider BLS xpub: {}", e))
+                })?;
                 let bls_account = BLSAccount::new(
                     Some(entry.wallet_id.to_vec()),
                     account_type,
@@ -5064,13 +5073,16 @@ fn build_wallet_start_state(
                 continue;
             }
             AccountType::ProviderPlatformKeys => {
-                let (ed_pubkey, _): (ExtendedEd25519PubKey, usize) =
-                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                        PersistenceError::backend(format!(
-                            "failed to decode provider EdDSA xpub: {}",
-                            e
-                        ))
-                    })?;
+                let (ed_pubkey, _): (ExtendedEd25519PubKey, usize) = bincode::decode_from_slice(
+                    xpub_bytes,
+                    config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+                )
+                .map_err(|e| {
+                    PersistenceError::backend(format!(
+                        "failed to decode provider EdDSA xpub: {}",
+                        e
+                    ))
+                })?;
                 let eddsa_account = EdDSAAccount::new(
                     Some(entry.wallet_id.to_vec()),
                     account_type,
@@ -5096,10 +5108,11 @@ fn build_wallet_start_state(
             _ => {}
         }
 
-        let (account_xpub, _): (ExtendedPubKey, usize) =
-            bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                PersistenceError::backend(format!("failed to decode account xpub: {}", e))
-            })?;
+        let (account_xpub, _): (ExtendedPubKey, usize) = bincode::decode_from_slice(
+            xpub_bytes,
+            config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+        )
+        .map_err(|e| PersistenceError::backend(format!("failed to decode account xpub: {}", e)))?;
         let account =
             Account::from_xpub(Some(entry.wallet_id), account_type, account_xpub, network)
                 .map_err(|e| {
@@ -5695,10 +5708,8 @@ fn build_unused_asset_locks(
             // SAFETY: Same lifetime contract as `transaction_bytes`.
             let proof_bytes =
                 unsafe { slice::from_raw_parts(spec.proof_bytes, spec.proof_bytes_len) };
-            // INTENTIONAL(unmaintained-bincode-decoder): host-supplied bytes
-            // through bincode 2.0.1 (RUSTSEC-2025-0141, unmaintained). Same
-            // accepted risk as the account-xpub decodes in
-            // `build_wallet_start_state`.
+            // The host persisted these bytes from an entry this wallet
+            // wrote, so they decode as our own data.
             let (proof, _) = dpp::bincode::decode_from_slice::<dpp::prelude::AssetLockProof, _>(
                 proof_bytes,
                 config::standard(),
@@ -8997,8 +9008,11 @@ mod tests {
         let restored_type =
             account_type_from_spec(&spec).expect("account type tag round-trips through the spec");
         let raw = unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
-        let (decoded_xpub, _): (ExtendedPubKey, usize) =
-            bincode::decode_from_slice(raw, config::standard()).expect("decode account xpub");
+        let (decoded_xpub, _): (ExtendedPubKey, usize) = bincode::decode_from_slice(
+            raw,
+            config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+        )
+        .expect("decode account xpub");
         assert_eq!(
             decoded_xpub, expected_xpub,
             "the bincode round-trip must preserve the account xpub byte-for-byte"
@@ -9013,6 +9027,41 @@ mod tests {
         assert_eq!(
             restored.account_xpub, expected_xpub,
             "the restored account's xpub must equal the original — the key verify_seed_binds binds against"
+        );
+    }
+
+    /// The BLS xpub decoder is the only account-xpub graph with a
+    /// length-prefixed field (the public key bytes). A host-supplied blob
+    /// whose prefix claims a gigabyte must fail on the decode budget, before
+    /// the decoder reserves memory for the claimed payload.
+    #[test]
+    fn should_reject_inflated_bls_xpub_length_under_the_decode_budget() {
+        use key_wallet::bip32::ChildNumber;
+
+        // network, depth, parent fingerprint, child number: the fixed-width
+        // header every extended key starts with.
+        let mut bytes = bincode::encode_to_vec(
+            (
+                Network::Testnet,
+                0u8,
+                [0u8; 4],
+                ChildNumber::Normal { index: 0 },
+            ),
+            config::standard(),
+        )
+        .expect("encode xpub header");
+        // Vec<u8> length prefix claiming 1 GiB (bincode varint u32 marker),
+        // followed by a single byte of payload.
+        bytes.extend_from_slice(&[0xFC, 0x00, 0x00, 0x00, 0x40, 0x00]);
+
+        let error = bincode::decode_from_slice::<ExtendedBLSPubKey, _>(
+            &bytes,
+            config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+        )
+        .expect_err("a BLS xpub claiming a 1 GiB public key must not decode");
+        assert!(
+            matches!(error, bincode::error::DecodeError::LimitExceeded),
+            "the decode budget must reject the claimed length, got {error:?}"
         );
     }
 

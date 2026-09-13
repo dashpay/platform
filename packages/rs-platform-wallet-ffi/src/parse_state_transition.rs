@@ -20,7 +20,7 @@
 use std::borrow::Cow;
 use std::slice;
 
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
@@ -139,7 +139,7 @@ pub(crate) fn deserialize_transition_with_flexible_framing(
 
     let mut failures: Vec<String> = Vec::with_capacity(attempts.len());
     for (payload, label) in &attempts {
-        match StateTransition::deserialize_from_bytes(payload) {
+        match StateTransition::deserialize_from_bytes_untrusted(payload) {
             Ok(state_transition) => return Ok(state_transition),
             Err(error) => failures.push(format!("{label}: {error}")),
         }

@@ -12,7 +12,7 @@ use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use arc_swap::ArcSwap;
 use dpp::prelude::BlockHeight;
-use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 use dpp::version::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -187,7 +187,7 @@ impl<C> Platform<C> {
                 if checkpoint_state_path.exists() {
                     match std::fs::read(&checkpoint_state_path) {
                         Ok(state_bytes) => {
-                            match PlatformState::versioned_deserialize(
+                            match PlatformState::versioned_deserialize_trusted(
                                 &state_bytes,
                                 platform_version,
                             ) {

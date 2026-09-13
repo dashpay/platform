@@ -19,7 +19,7 @@ use dpp::{
     platform_serialization::{platform_encode_to_vec, platform_versioned_decode_from_slice},
     prelude::{DataContract, Identity},
     serialization::{
-        PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
         PlatformSerializableWithPlatformVersion,
     },
     voting::votes::{resource_vote::ResourceVote, Vote},
@@ -191,7 +191,8 @@ impl MockResponse for DataContract {
     where
         Self: Sized,
     {
-        DataContract::versioned_deserialize(buf, true, sdk.version()).expect("decode data")
+        DataContract::versioned_deserialize_untrusted(buf, true, sdk.version())
+            .expect("decode data")
     }
 }
 
@@ -207,7 +208,8 @@ impl MockResponse for (DataContract, Vec<u8>) {
         Self: Sized,
     {
         (
-            DataContract::versioned_deserialize(buf, true, sdk.version()).expect("decode data"),
+            DataContract::versioned_deserialize_untrusted(buf, true, sdk.version())
+                .expect("decode data"),
             buf.to_vec(),
         )
     }
