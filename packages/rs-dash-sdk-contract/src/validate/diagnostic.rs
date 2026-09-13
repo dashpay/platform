@@ -60,6 +60,15 @@ pub enum DeclarationPath {
     },
     /// A capability requirement.
     Capability(CapabilityRequirement),
+    /// An interface function parameter or its return value.
+    InterfaceParam {
+        /// The interface.
+        interface: String,
+        /// The function.
+        function: String,
+        /// The parameter name, or `return`.
+        param: String,
+    },
 }
 
 impl DeclarationPath {
@@ -127,6 +136,19 @@ impl DeclarationPath {
     pub fn typed_collection(name: impl AsRef<str>) -> Self {
         DeclarationPath::TypedCollection(name.as_ref().to_string())
     }
+
+    /// An interface function parameter path.
+    pub fn interface_param(
+        interface: impl AsRef<str>,
+        function: impl AsRef<str>,
+        param: impl AsRef<str>,
+    ) -> Self {
+        DeclarationPath::InterfaceParam {
+            interface: interface.as_ref().to_string(),
+            function: function.as_ref().to_string(),
+            param: param.as_ref().to_string(),
+        }
+    }
 }
 
 impl fmt::Display for DeclarationPath {
@@ -155,6 +177,14 @@ impl fmt::Display for DeclarationPath {
                 write!(f, "collection {collection}, rule {rule}")
             }
             DeclarationPath::Capability(requirement) => write!(f, "capability {requirement}"),
+            DeclarationPath::InterfaceParam {
+                interface,
+                function,
+                param,
+            } => write!(
+                f,
+                "interface {interface}, function {function}, parameter {param}"
+            ),
         }
     }
 }
@@ -220,13 +250,15 @@ pub enum DiagnosticKind {
         /// Why they conflict.
         reason: String,
     },
-    /// An attribute and a builder declare the same item differently.
+    /// An attribute and a builder declare the same item differently. The
+    /// origins are reported attribute first and builder second whatever the
+    /// declaration order.
     ConflictingDeclaration {
         /// What kind of item.
         what: String,
-        /// The first declaration's origin.
+        /// The attribute origin.
         first: DeclarationOrigin,
-        /// The second declaration's origin.
+        /// The builder origin.
         second: DeclarationOrigin,
     },
     /// Two declarations of the same origin use one collection name.
@@ -755,6 +787,7 @@ mod tests {
             DeclarationPath::entry_param("score.add", "delta"),
             DeclarationPath::rule("scores", "monotonic"),
             DeclarationPath::Capability(CapabilityRequirement::PrivateStore),
+            DeclarationPath::interface_param("math", "add", "return"),
         ];
         for path in paths {
             assert!(!path.to_string().is_empty());
