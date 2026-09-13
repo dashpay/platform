@@ -6,6 +6,11 @@ use crate::address_funds::PlatformAddress;
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
+use crate::state_transition::{
+    address_funds_constructor_dispatch_error, consensus_errors_as_protocol_error,
+    StateTransitionStructureValidation,
+};
+#[cfg(feature = "state-transition-signing")]
 use crate::{
     identity::{
         accessors::IdentityGettersV0,
@@ -22,6 +27,8 @@ use crate::state_transition::identity_credit_transfer_to_addresses_transition::v
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::GetDataContractSecurityLevelRequirementFn;
 #[cfg(feature = "state-transition-signing")]
+use crate::state_transition::StateTransitionType;
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
 impl IdentityCreditTransferToAddressesTransitionMethodsV0
@@ -35,22 +42,43 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
         signer: &S,
         signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
         nonce: IdentityNonce,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
         tracing::debug!("try_from_identity: Started");
         tracing::debug!(identity_id = %identity.id(), "try_from_identity");
         tracing::debug!(recipient_addresses = ?to_recipient_addresses, has_signing_key = signing_withdrawal_key_to_use.is_some(), "try_from_identity inputs");
 
-        let mut transition: StateTransition = IdentityCreditTransferToAddressesTransitionV0 {
+        let transition_v0 = IdentityCreditTransferToAddressesTransitionV0 {
             identity_id: identity.id(),
             recipient_addresses: to_recipient_addresses,
             nonce,
             user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),
+        };
+
+        if let Some(error) = address_funds_constructor_dispatch_error(
+            StateTransitionType::IdentityCreditTransferToAddresses,
+            platform_version,
+        ) {
+            return Err(error);
         }
-        .into();
+
+        // Validate structure before .into() conversion and signing, since this transition
+        // uses sign_external on the StateTransition rather than setting witnesses on the V0 struct.
+        //
+        // LOCKSTEP: this call resolves to the v0 structure check. If a future
+        // v1 basic-structure is introduced for this transition, both the
+        // drive-abci server dispatcher AND this SDK constructor must be
+        // updated together (e.g. by routing through a versioned
+        // `validate_basic_structure` wrapper as IdentityUpdate does).
+        let validation_result = transition_v0.validate_structure(platform_version);
+        if let Some(error) = consensus_errors_as_protocol_error(validation_result) {
+            return Err(error);
+        }
+
+        let mut transition: StateTransition = transition_v0.into();
 
         let identity_public_key = match signing_withdrawal_key_to_use {
             Some(key) => {

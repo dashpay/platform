@@ -57,6 +57,19 @@ pub struct IdentityCreditTransferToAddressesTransitionV0 {
 
 #[cfg(test)]
 mod test {
+    use std::collections::BTreeMap;
+
+    use crate::address_funds::PlatformAddress;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
+    use crate::identity::signer::Signer;
+    use crate::identity::v0::IdentityV0;
+    use crate::identity::{Identity, IdentityPublicKey};
+    use crate::state_transition::identity_credit_transfer_to_addresses_transition::methods::IdentityCreditTransferToAddressesTransitionMethodsV0;
+    use crate::ProtocolError;
+    use async_trait::async_trait;
+    use platform_value::BinaryData;
+    use platform_version::version::PlatformVersion;
 
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 
@@ -173,6 +186,77 @@ mod test {
         assert!(matches!(
             st,
             StateTransition::IdentityCreditTransferToAddresses(_)
+        ));
+    }
+
+    #[derive(Debug)]
+    struct UnreachableIdentitySigner;
+
+    #[async_trait]
+    impl Signer<IdentityPublicKey> for UnreachableIdentitySigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            panic!("sign should not run when protocol gating rejects the constructor")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<crate::address_funds::AddressWitness, ProtocolError> {
+            panic!(
+                "sign_create_witness should not run when protocol gating rejects the constructor"
+            )
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            false
+        }
+    }
+
+    #[tokio::test]
+    async fn try_from_identity_returns_not_active_before_structure_validation() {
+        let mut low_version = PlatformVersion::get(1)
+            .expect("platform version 1 exists")
+            .clone();
+        low_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .identity_credit_transfer_to_addresses_state_transition
+            .basic_structure = None;
+        let identity: Identity = IdentityV0 {
+            id: Identifier::random(),
+            public_keys: BTreeMap::<u32, IdentityPublicKey>::new(),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+        let mut recipient_addresses = BTreeMap::new();
+        recipient_addresses.insert(PlatformAddress::P2pkh([1u8; 20]), 1);
+
+        let result = IdentityCreditTransferToAddressesTransitionV0::try_from_identity(
+            &identity,
+            recipient_addresses,
+            0,
+            &UnreachableIdentitySigner,
+            None,
+            1,
+            &low_version,
+            None,
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ConsensusError(boxed))
+                if matches!(
+                    *boxed,
+                    ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(_))
+                )
         ));
     }
 }

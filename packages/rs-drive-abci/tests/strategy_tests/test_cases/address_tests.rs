@@ -886,11 +886,13 @@ mod tests {
         // The root hash should be valid (32 bytes)
         assert_eq!(root_hash.len(), 32, "root hash should be 32 bytes");
 
-        // Verify trunk query results
+        // Verify trunk query results.
+        // Deterministic with seed=15 and the strategy above, after the
+        // client-side address validation constructor checks.
         assert_eq!(
             trunk_result.elements.len(),
-            32,
-            "trunk query should return 32 elements"
+            43,
+            "trunk query should return 43 elements"
         );
         assert_eq!(
             trunk_result.leaf_keys.len(),
@@ -899,8 +901,8 @@ mod tests {
         );
         assert_eq!(
             trunk_result.chunk_depths,
-            vec![6],
-            "trunk query should have chunk_depths [6]"
+            vec![7],
+            "trunk query should have chunk_depths [7]"
         );
     }
 
@@ -1099,11 +1101,13 @@ mod tests {
         // The root hash should be valid (32 bytes)
         assert_eq!(root_hash.len(), 32, "root hash should be 32 bytes");
 
-        // Verify trunk query results match expected values
+        // Verify trunk query results match expected values.
+        // Deterministic with seed=15 and the strategy above, after the
+        // client-side address validation constructor checks.
         assert_eq!(
             trunk_result.elements.len(),
-            32,
-            "trunk query should return 32 elements after restart"
+            43,
+            "trunk query should return 43 elements after restart"
         );
         assert_eq!(
             trunk_result.leaf_keys.len(),
@@ -1112,8 +1116,8 @@ mod tests {
         );
         assert_eq!(
             trunk_result.chunk_depths,
-            vec![6],
-            "trunk query should have chunk_depths [6] after restart"
+            vec![7],
+            "trunk query should have chunk_depths [7] after restart"
         );
     }
 
@@ -2275,11 +2279,13 @@ mod tests {
             "trunk query should use checkpoint at height 12"
         );
 
-        // Verify trunk query results
+        // Verify trunk query results.
+        // Deterministic with seed=15 and the strategy above, after the
+        // client-side address validation constructor checks.
         assert_eq!(
             trunk_result.elements.len(),
-            32,
-            "trunk query should return 32 elements"
+            43,
+            "trunk query should return 43 elements"
         );
         assert_eq!(
             trunk_result.leaf_keys.len(),
@@ -2288,8 +2294,8 @@ mod tests {
         );
         assert_eq!(
             trunk_result.chunk_depths,
-            vec![6],
-            "trunk query should have chunk_depths [6]"
+            vec![7],
+            "trunk query should have chunk_depths [7]"
         );
 
         // Verify the proof has valid quorum info
@@ -3943,8 +3949,8 @@ mod tests {
         assert_eq!(root_hash.len(), 32, "root hash should be 32 bytes");
         assert_eq!(
             trunk_data.elements.len(),
-            32,
-            "phase 1: trunk should return 32 elements"
+            49,
+            "phase 1: trunk should return 49 elements"
         );
 
         // Record addresses known so far from state transitions

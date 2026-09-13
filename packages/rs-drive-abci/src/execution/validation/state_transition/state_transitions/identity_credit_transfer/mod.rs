@@ -74,8 +74,10 @@ impl StateTransitionBasicStructureValidationV0 for IdentityCreditTransferTransit
             .basic_structure
         {
             Some(0) => {
-                // There is nothing expensive here
-                self.validate_basic_structure_v0()
+                // There is nothing expensive here.
+                // Trait-qualified to avoid name collision with the inherent
+                // DPP method of the same name that this trait delegates to.
+                IdentityCreditTransferStateTransitionStructureValidationV0::validate_basic_structure_v0(self)
             }
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity credit transfer transition: validate_basic_structure".to_string(),

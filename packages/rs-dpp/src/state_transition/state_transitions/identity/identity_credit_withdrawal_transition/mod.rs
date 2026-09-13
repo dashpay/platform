@@ -111,6 +111,103 @@ impl IdentityCreditWithdrawalTransition {
     }
 }
 
+#[cfg(feature = "state-transition-validation")]
+fn basic_structure_rules_v1_for_transition(
+    amount: u64,
+    pooling: crate::withdrawal::Pooling,
+    core_fee_per_byte: u32,
+    output_script: Option<&crate::identity::core_script::CoreScript>,
+    platform_version: &PlatformVersion,
+) -> crate::validation::SimpleConsensusValidationResult {
+    use crate::consensus::basic::identity::{
+        InvalidCreditWithdrawalTransitionCoreFeeError,
+        InvalidCreditWithdrawalTransitionOutputScriptError,
+        InvalidIdentityCreditWithdrawalTransitionAmountError,
+        NotImplementedCreditWithdrawalTransitionPoolingError,
+    };
+    use crate::util::is_non_zero_fibonacci_number::is_non_zero_fibonacci_number;
+    use crate::validation::SimpleConsensusValidationResult;
+    use crate::withdrawal::Pooling;
+
+    let mut result = SimpleConsensusValidationResult::default();
+    let min_withdrawal_amount = platform_version.system_limits.min_withdrawal_amount;
+
+    if amount < min_withdrawal_amount
+        || amount > platform_version.system_limits.max_withdrawal_amount
+    {
+        result.add_error(InvalidIdentityCreditWithdrawalTransitionAmountError::new(
+            amount,
+            min_withdrawal_amount,
+            platform_version.system_limits.max_withdrawal_amount,
+        ));
+    }
+
+    if pooling != Pooling::Never {
+        result.add_error(NotImplementedCreditWithdrawalTransitionPoolingError::new(
+            pooling as u8,
+        ));
+        return result;
+    }
+
+    if !is_non_zero_fibonacci_number(core_fee_per_byte as u64) {
+        result.add_error(InvalidCreditWithdrawalTransitionCoreFeeError::new(
+            core_fee_per_byte,
+            MIN_CORE_FEE_PER_BYTE,
+        ));
+        return result;
+    }
+
+    if let Some(output_script) = output_script {
+        if !output_script.is_p2pkh() && !output_script.is_p2sh() {
+            result.add_error(InvalidCreditWithdrawalTransitionOutputScriptError::new(
+                output_script.clone(),
+            ));
+        }
+    }
+
+    result
+}
+
+#[cfg(feature = "state-transition-validation")]
+impl IdentityCreditWithdrawalTransition {
+    /// Shared v1 basic-structure check.
+    ///
+    /// This is the single source of truth for v1 basic-structure validation:
+    /// the drive-abci server dispatcher
+    /// (`IdentityCreditWithdrawalStateTransitionStructureValidationV1`) and
+    /// the SDK constructor for [`v1::IdentityCreditWithdrawalTransitionV1`]
+    /// both delegate to it so the client cannot drift from the server.
+    ///
+    /// Operates on the enum via generic accessors, matching the prior
+    /// drive-abci impl semantics. When a future v2 basic-structure rule is
+    /// introduced, add a sibling `basic_structure_rules_v2` here and update
+    /// both dispatchers in lockstep.
+    ///
+    /// Named `basic_structure_rules_v1` (rather than the symmetric
+    /// `validate_basic_structure_v1`) to avoid colliding with drive-abci's
+    /// trait method of that name; drive-abci's trait wrapper delegates to
+    /// this rule function.
+    pub fn basic_structure_rules_v1(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> crate::validation::SimpleConsensusValidationResult {
+        match self {
+            IdentityCreditWithdrawalTransition::V0(transition) => {
+                basic_structure_rules_v1_for_transition(
+                    transition.amount,
+                    transition.pooling,
+                    transition.core_fee_per_byte,
+                    Some(&transition.output_script),
+                    platform_version,
+                )
+            }
+            IdentityCreditWithdrawalTransition::V1(transition) => {
+                transition.basic_structure_rules_v1(platform_version)
+            }
+        }
+    }
+}
+
 impl StateTransitionFieldTypes for IdentityCreditWithdrawalTransition {
     fn signature_property_paths() -> Vec<&'static str> {
         vec![SIGNATURE, SIGNATURE_PUBLIC_KEY_ID]
@@ -130,6 +227,8 @@ impl OptionallyAssetLockProved for IdentityCreditWithdrawalTransition {}
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
     use crate::identity::core_script::CoreScript;
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
@@ -301,6 +400,31 @@ mod test {
             .validate_estimated_fee(0, LATEST_PLATFORM_VERSION)
             .expect("validation should succeed");
         assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn basic_structure_uses_versioned_min_withdrawal_amount_v12() {
+        let platform_version = PlatformVersion::get(12).expect("v12 exists");
+        let mut t = make_withdrawal_v1();
+        t.set_amount(999_999);
+        t.set_pooling(Pooling::Never);
+
+        let result = t.basic_structure_rules_v1(platform_version);
+
+        assert_eq!(
+            platform_version.system_limits.min_withdrawal_amount,
+            1_000_000
+        );
+        assert_eq!(result.errors.len(), 1);
+        match &result.errors[0] {
+            ConsensusError::BasicError(
+                BasicError::InvalidIdentityCreditWithdrawalTransitionAmountError(error),
+            ) => {
+                assert_eq!(error.amount(), 999_999);
+                assert_eq!(error.min_amount(), 1_000_000);
+            }
+            error => panic!("unexpected error: {error:?}"),
+        }
     }
 
     #[test]

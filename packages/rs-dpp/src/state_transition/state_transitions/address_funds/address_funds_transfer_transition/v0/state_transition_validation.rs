@@ -14,8 +14,11 @@ use crate::validation::SimpleConsensusValidationResult;
 use platform_version::version::PlatformVersion;
 use std::collections::HashSet;
 
-impl StateTransitionStructureValidation for AddressFundsTransferTransitionV0 {
-    fn validate_structure(
+impl AddressFundsTransferTransitionV0 {
+    /// Validates all structural properties of the transition except for the
+    /// `input_witnesses` count. This is intended for client-side pre-signing
+    /// validation, where witnesses are not yet present.
+    pub fn validate_structure_without_input_witnesses(
         &self,
         platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
@@ -51,17 +54,6 @@ impl StateTransitionStructureValidation for AddressFundsTransferTransitionV0 {
                 BasicError::TransitionOverMaxOutputsError(TransitionOverMaxOutputsError::new(
                     self.outputs.len().min(u16::MAX as usize) as u16,
                     platform_version.dpp.state_transitions.max_address_outputs,
-                ))
-                .into(),
-            );
-        }
-
-        // Validate input witnesses count matches inputs count
-        if self.inputs.len() != self.input_witnesses.len() {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::InputWitnessCountMismatchError(InputWitnessCountMismatchError::new(
-                    self.inputs.len().min(u16::MAX as usize) as u16,
-                    self.input_witnesses.len().min(u16::MAX as usize) as u16,
                 ))
                 .into(),
             );
@@ -221,6 +213,35 @@ impl StateTransitionStructureValidation for AddressFundsTransferTransitionV0 {
         }
 
         SimpleConsensusValidationResult::new()
+    }
+
+    /// Validates that the number of `input_witnesses` matches the number of
+    /// inputs. Intended to be invoked after signing, once witnesses have been
+    /// produced by the signer.
+    pub fn validate_input_witnesses_count(&self) -> SimpleConsensusValidationResult {
+        if self.inputs.len() != self.input_witnesses.len() {
+            return SimpleConsensusValidationResult::new_with_error(
+                BasicError::InputWitnessCountMismatchError(InputWitnessCountMismatchError::new(
+                    self.inputs.len().min(u16::MAX as usize) as u16,
+                    self.input_witnesses.len().min(u16::MAX as usize) as u16,
+                ))
+                .into(),
+            );
+        }
+        SimpleConsensusValidationResult::new()
+    }
+}
+
+impl StateTransitionStructureValidation for AddressFundsTransferTransitionV0 {
+    fn validate_structure(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> SimpleConsensusValidationResult {
+        let result = self.validate_structure_without_input_witnesses(platform_version);
+        if !result.is_valid() {
+            return result;
+        }
+        self.validate_input_witnesses_count()
     }
 }
 

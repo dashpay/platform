@@ -1,3 +1,15 @@
+#[cfg(any(
+    feature = "state-transition-validation",
+    feature = "state-transition-signing"
+))]
+use crate::consensus::basic::identity::{
+    IdentityCreditTransferToSelfError, InvalidIdentityCreditTransferAmountError,
+};
+#[cfg(any(
+    feature = "state-transition-validation",
+    feature = "state-transition-signing"
+))]
+use crate::validation::SimpleConsensusValidationResult;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     identity::{
@@ -14,10 +26,46 @@ use platform_value::Identifier;
 
 use crate::state_transition::identity_credit_transfer_transition::methods::IdentityCreditTransferTransitionMethodsV0;
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+#[cfg(any(
+    feature = "state-transition-validation",
+    feature = "state-transition-signing"
+))]
+use crate::state_transition::identity_credit_transfer_transition::MIN_TRANSFER_AMOUNT;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::GetDataContractSecurityLevelRequirementFn;
+use crate::state_transition::{
+    consensus_errors_as_protocol_error, GetDataContractSecurityLevelRequirementFn,
+};
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
+
+#[cfg(any(
+    feature = "state-transition-validation",
+    feature = "state-transition-signing"
+))]
+impl IdentityCreditTransferTransitionV0 {
+    /// Shared single source of truth for the v0 basic-structure rules of an
+    /// identity credit transfer: rejects self-transfers and amounts below
+    /// `MIN_TRANSFER_AMOUNT`. Used by both the client-side SDK constructor
+    /// (to fail fast before any signing work) and drive-abci's structure
+    /// validator (to enforce the same rules server-side), so the two cannot
+    /// drift.
+    pub fn validate_basic_structure_v0(&self) -> SimpleConsensusValidationResult {
+        if self.identity_id == self.recipient_id {
+            return SimpleConsensusValidationResult::new_with_error(
+                IdentityCreditTransferToSelfError::default().into(),
+            );
+        }
+
+        if self.amount < MIN_TRANSFER_AMOUNT {
+            return SimpleConsensusValidationResult::new_with_error(
+                InvalidIdentityCreditTransferAmountError::new(self.amount, MIN_TRANSFER_AMOUNT)
+                    .into(),
+            );
+        }
+
+        SimpleConsensusValidationResult::new()
+    }
+}
 
 impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
@@ -32,7 +80,7 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
         _platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
-        let mut transition: StateTransition = IdentityCreditTransferTransitionV0 {
+        let transition_v0 = IdentityCreditTransferTransitionV0 {
             identity_id: identity.id(),
             recipient_id: to_identity_with_identifier,
             amount,
@@ -40,8 +88,23 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
             user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),
+        };
+
+        // Pre-signing structure check that mirrors drive-abci's
+        // `IdentityCreditTransferStateTransitionStructureValidationV0`. This
+        // catches self-transfers and below-minimum amounts before any async
+        // signer work is performed.
+        //
+        // LOCKSTEP: hard-coded to the v0 basic-structure check. If a future v1
+        // basic-structure is introduced for this transition, both the
+        // drive-abci server dispatcher AND this SDK constructor must be
+        // updated together.
+        let pre_validation_result = transition_v0.validate_basic_structure_v0();
+        if let Some(error) = consensus_errors_as_protocol_error(pre_validation_result) {
+            return Err(error);
         }
-        .into();
+
+        let mut transition: StateTransition = transition_v0.into();
 
         let identity_public_key = match signing_withdrawal_key_to_use {
             Some(key) => {

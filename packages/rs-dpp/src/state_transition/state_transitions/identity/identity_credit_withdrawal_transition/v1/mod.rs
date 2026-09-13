@@ -19,6 +19,8 @@ use crate::{
     withdrawal::Pooling,
     ProtocolError,
 };
+#[cfg(feature = "state-transition-validation")]
+use platform_version::version::PlatformVersion;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
@@ -45,6 +47,22 @@ pub struct IdentityCreditWithdrawalTransitionV1 {
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
+}
+
+#[cfg(feature = "state-transition-validation")]
+impl IdentityCreditWithdrawalTransitionV1 {
+    pub fn basic_structure_rules_v1(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> crate::validation::SimpleConsensusValidationResult {
+        super::basic_structure_rules_v1_for_transition(
+            self.amount,
+            self.pooling,
+            self.core_fee_per_byte,
+            self.output_script.as_ref(),
+            platform_version,
+        )
+    }
 }
 
 #[cfg(test)]
