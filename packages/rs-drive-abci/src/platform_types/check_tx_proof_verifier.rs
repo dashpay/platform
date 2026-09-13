@@ -1,17 +1,52 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use dpp::identity::identity_nonce::{validate_identity_nonce_update, validate_new_identity_nonce};
 use dpp::platform_value::Identifier;
 
-// These are node-local resource budgets, not consensus limits. A full cache
-// replaces at most one identity per minute, with no accumulated idle-time burst.
-// Each replacement can reopen at most 48 nonce attempts (24 missing + 24 future),
-// so cycling funded identities cannot turn bounded memory into unbounded proof work.
+// Node-local resource budgets, not consensus limits. Memory pressure uses
+// ordinary inactive-entry LRU eviction; it does not impose a newcomer quota.
+// Every uncached identity proof spends weighted work credits, including retries
+// reopened by eviction and new nonces of an existing identity. Permit one wave
+// of the configured concurrent capacity per second, with at most four waves
+// accumulated for a short burst. Cached successes perform no proof work.
 const MAX_TRACKED_IDENTITIES: usize = 4_096;
-const IDENTITY_REPLACEMENT_INTERVAL: Duration = Duration::from_secs(60);
+const IDENTITY_PROOF_BURST_WAVES: u128 = 4;
+const PROOF_CREDIT_SCALE: u128 = 1_000_000_000;
+
+#[derive(Default)]
+struct IdentityProofBudget {
+    credit_nanos: u128,
+    last_refill: Option<Instant>,
+}
+
+impl IdentityProofBudget {
+    fn try_consume(&mut self, now: Instant, weight: usize, capacity: usize) -> bool {
+        let burst = (capacity as u128) * IDENTITY_PROOF_BURST_WAVES * PROOF_CREDIT_SCALE;
+        self.credit_nanos = match self.last_refill {
+            None => burst,
+            Some(last) => self
+                .credit_nanos
+                .saturating_add(
+                    now.saturating_duration_since(last)
+                        .as_nanos()
+                        .saturating_mul(capacity as u128),
+                )
+                .min(burst),
+        };
+        // Test clocks and concurrent callers must never move the refill origin
+        // backward and count the same elapsed time twice.
+        self.last_refill = Some(self.last_refill.map_or(now, |last| last.max(now)));
+        let required = (weight as u128) * PROOF_CREDIT_SCALE;
+        if self.credit_nanos < required {
+            return false;
+        }
+        self.credit_nanos -= required;
+        true
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct VerifiedIdentityProof {
@@ -31,7 +66,7 @@ struct IdentityNonceAttempts {
 #[derive(Default)]
 struct IdentityNonceCache {
     identities: HashMap<[u8; 32], IdentityNonceAttempts>,
-    last_replacement: Option<Instant>,
+    proof_budget: IdentityProofBudget,
 }
 
 /// Node-local admission control for expensive proof verification in CheckTx.
@@ -102,8 +137,8 @@ impl CheckTxProofVerifier {
     /// Reuse only an exact, previously successful proof. The caller must still
     /// validate current signatures, nonce, state and fees before using this cache.
     /// Failed and in-flight attempts reserve their nonce while the identity is
-    /// retained. Bounded, rate-limited identity replacement avoids both unbounded
-    /// memory growth and a permanent denial of admission when the cache fills.
+    /// retained. A bounded proof-work budget also covers evicted attempts, so
+    /// cache churn cannot reopen unlimited verification or monopolize memory.
     pub(crate) fn try_acquire_identity_nonce(
         &self,
         identity_id: [u8; 32],
@@ -171,30 +206,41 @@ impl CheckTxProofVerifier {
                     .retain(|attempted, _| nonce_valid(*attempted));
                 attempts.committed_nonce = committed_nonce;
             }
-            attempts.last_access = now;
             if let Some(verified) = attempts.attempted_nonces.get(&nonce) {
-                return (*verified == Some(proof)).then_some(IdentityProofVerification::Cached);
+                if *verified == Some(proof) {
+                    attempts.last_access = now;
+                    return Some(IdentityProofVerification::Cached);
+                }
+                // Rejected repeats must not keep an attacker's failed entry hot.
+                return None;
             }
         }
 
-        // Capacity rejection must not consume a nonce or an eviction budget.
+        // Reject busy work or an all-in-flight cache without consuming a nonce
+        // or work credit. The temporary permit is not identity-bound yet.
         let mut permit = self.try_acquire(action_count)?;
-        if !cache.identities.contains_key(&identity_id)
+        let victim = if !cache.identities.contains_key(&identity_id)
             && cache.identities.len() >= self.identity_cache_limit
         {
-            if cache.last_replacement.is_some_and(|last| {
-                now.saturating_duration_since(last) < IDENTITY_REPLACEMENT_INTERVAL
-            }) {
-                return None;
-            }
-            let victim = cache
-                .identities
-                .iter()
-                .filter(|(_, attempts)| attempts.in_flight == 0)
-                .min_by_key(|(_, attempts)| attempts.last_access)
-                .map(|(id, _)| *id)?;
+            Some(
+                cache
+                    .identities
+                    .iter()
+                    .filter(|(_, attempts)| attempts.in_flight == 0)
+                    .min_by_key(|(_, attempts)| attempts.last_access)
+                    .map(|(id, _)| *id)?,
+            )
+        } else {
+            None
+        };
+        if !cache
+            .proof_budget
+            .try_consume(now, permit.weight, self.limit)
+        {
+            return None;
+        }
+        if let Some(victim) = victim {
             cache.identities.remove(&victim);
-            cache.last_replacement = Some(now);
         }
         let attempts =
             cache
@@ -207,6 +253,7 @@ impl CheckTxProofVerifier {
                     in_flight: 0,
                     last_access: now,
                 });
+        attempts.last_access = now;
         attempts.attempted_nonces.insert(nonce, None);
         attempts.in_flight += 1;
         permit.identity = Some((identity_id, nonce, proof));
@@ -507,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn should_bound_identity_cache_churn_without_an_idle_time_burst() {
+    fn should_admit_newcomer_bursts_at_full_cache_but_bound_all_uncached_work() {
         let mut verifier = CheckTxProofVerifier::new(1);
         verifier.identity_cache_limit = 2;
         let proof = VerifiedIdentityProof {
@@ -515,34 +562,41 @@ mod tests {
             protocol_version: dpp::version::PlatformVersion::latest().protocol_version,
         };
         let now = Instant::now();
-        for id in [1, 2, 3] {
+        // A full cache must not impose the former one-new-identity/minute gate.
+        for id in 1..=4 {
             drop(
                 verifier
                     .try_acquire_identity_nonce_at([id; 32], None, 1, proof, 1, now)
-                    .expect("initial capacity or one replacement"),
+                    .expect("initial burst, including multiple full-cache newcomers"),
             );
         }
         assert!(verifier
-            .try_acquire_identity_nonce_at([4; 32], None, 1, proof, 1, now)
+            .try_acquire_identity_nonce_at([5; 32], None, 1, proof, 1, now)
             .is_none());
-        assert!(
-            verifier
-                .try_acquire_identity_nonce_at([1; 32], None, 1, proof, 1, now)
-                .is_none(),
-            "cycling an evicted identity must consume the same global replacement budget"
-        );
-        let later = now + IDENTITY_REPLACEMENT_INTERVAL * 10;
+        // Remaining nonces of retained identities share the SAME work budget.
+        assert!(verifier
+            .try_acquire_identity_nonce_at([4; 32], None, 2, proof, 1, now)
+            .is_none());
+        let later = now + Duration::from_secs(1);
         drop(
             verifier
-                .try_acquire_identity_nonce_at([4; 32], None, 1, proof, 1, later)
-                .expect("replacement budget recovers"),
-        );
-        assert!(
-            verifier
                 .try_acquire_identity_nonce_at([5; 32], None, 1, proof, 1, later)
-                .is_none(),
-            "idle time cannot accumulate an eviction burst"
+                .expect("one proof credit refills each second"),
         );
+        assert!(verifier
+            .try_acquire_identity_nonce_at([1; 32], None, 1, proof, 1, later)
+            .is_none());
+        let idle = later + Duration::from_secs(600);
+        for id in 6..=9 {
+            drop(
+                verifier
+                    .try_acquire_identity_nonce_at([id; 32], None, 1, proof, 1, idle)
+                    .unwrap(),
+            );
+        }
+        assert!(verifier
+            .try_acquire_identity_nonce_at([10; 32], None, 1, proof, 1, idle)
+            .is_none());
         assert_eq!(
             verifier
                 .identity_nonce_attempts
@@ -555,7 +609,102 @@ mod tests {
     }
 
     #[test]
-    fn should_not_evict_in_flight_identity_or_spend_replacement_on_busy_capacity() {
+    fn should_not_refresh_failed_entries_or_charge_cached_successes() {
+        let mut verifier = CheckTxProofVerifier::new(1);
+        verifier.identity_cache_limit = 2;
+        let proof = VerifiedIdentityProof {
+            transaction_hash: [2; 32],
+            protocol_version: dpp::version::PlatformVersion::latest().protocol_version,
+        };
+        let now = Instant::now();
+        drop(
+            verifier
+                .try_acquire_identity_nonce_at([1; 32], None, 1, proof, 1, now)
+                .unwrap(),
+        );
+        let IdentityProofVerification::Required(success) = verifier
+            .try_acquire_identity_nonce_at(
+                [2; 32],
+                None,
+                1,
+                proof,
+                1,
+                now + Duration::from_millis(1),
+            )
+            .unwrap()
+        else {
+            panic!("first proof")
+        };
+        success.mark_verified();
+        drop(success);
+        assert!(verifier
+            .try_acquire_identity_nonce_at(
+                [1; 32],
+                None,
+                1,
+                proof,
+                1,
+                now + Duration::from_millis(2)
+            )
+            .is_none());
+        drop(
+            verifier
+                .try_acquire_identity_nonce_at(
+                    [3; 32],
+                    None,
+                    1,
+                    proof,
+                    1,
+                    now + Duration::from_millis(3),
+                )
+                .unwrap(),
+        );
+        assert!(!verifier
+            .identity_nonce_attempts
+            .lock()
+            .unwrap()
+            .identities
+            .contains_key(&[1; 32]));
+        drop(
+            verifier
+                .try_acquire_identity_nonce_at(
+                    [3; 32],
+                    None,
+                    2,
+                    proof,
+                    1,
+                    now + Duration::from_millis(4),
+                )
+                .unwrap(),
+        );
+        let occupied = verifier.try_acquire(1).unwrap();
+        assert!(matches!(
+            verifier.try_acquire_identity_nonce_at(
+                [2; 32],
+                None,
+                1,
+                proof,
+                1,
+                now + Duration::from_millis(5)
+            ),
+            Some(IdentityProofVerification::Cached)
+        ));
+        drop(occupied);
+    }
+
+    #[test]
+    fn should_charge_weighted_proofs_and_not_refill_twice_for_an_older_clock() {
+        let mut budget = IdentityProofBudget::default();
+        let now = Instant::now();
+        assert!(budget.try_consume(now, 8, 2));
+        assert!(!budget.try_consume(now + Duration::from_millis(499), 1, 2));
+        assert!(budget.try_consume(now + Duration::from_millis(500), 1, 2));
+        assert!(!budget.try_consume(now, 1, 2));
+        assert!(!budget.try_consume(now + Duration::from_millis(500), 1, 2));
+    }
+
+    #[test]
+    fn should_not_evict_in_flight_identity_or_spend_work_budget_on_busy_capacity() {
         let mut verifier = CheckTxProofVerifier::new(2);
         verifier.identity_cache_limit = 1;
         let proof = VerifiedIdentityProof {
@@ -582,7 +731,7 @@ mod tests {
             verifier
                 .try_acquire_identity_nonce_at([2; 32], None, 1, proof, 1, now)
                 .is_some(),
-            "failed admission must not consume replacement budget"
+            "failed admission must not consume proof-work budget"
         );
     }
     #[test]

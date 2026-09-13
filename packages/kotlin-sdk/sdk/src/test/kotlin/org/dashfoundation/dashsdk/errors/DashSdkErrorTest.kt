@@ -45,6 +45,21 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun shouldPreserveRecoveryErrorTypesWithoutRetryingBlindly() {
+        for ((code, expected) in mapOf(
+            56 to DashSdkError.PlatformWallet.ShieldedRecoveryCorrupted::class,
+            57 to DashSdkError.PlatformWallet.ShieldedRecoveryKeysRequired::class,
+        )) {
+            val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, "record unreadable")
+            val mapped = DashSdkError.fromNative(native)
+            assertEquals(expected, mapped::class)
+            assertEquals("record unreadable", mapped.message)
+            assertEquals(native, mapped.cause)
+            assertFalse(mapped.isRetryable)
+        }
+    }
+
+    @Test
     fun unknownNativeCodesFallBackToInternalError() {
         // A code in the rs-sdk-ffi range (< the platform-wallet offset) with
         // no dedicated mapping stays an InternalError.

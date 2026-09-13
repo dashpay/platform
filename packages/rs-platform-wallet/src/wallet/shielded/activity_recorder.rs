@@ -41,24 +41,37 @@ use dpp::shielded::SerializedAction;
 use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 
-/// Recover the exact outputs that identify a durable identity debit. This also
-/// checks that the proposed viewing keys can observe the original payment after
-/// restart, when neither the old registration nor its activity row may exist.
-/// Malformed records and keys that recover a different output set fail closed.
+/// Why a durable debit could not be matched to proposed viewing keys.
+#[derive(Debug)]
+pub(super) enum IdentityRecoveryError {
+    Malformed(String),
+    /// Wrong keys and damaged ciphertext/commitment metadata are indistinguishable.
+    OutputsUnrecoverable,
+}
+
+/// Recover the exact outputs identifying a durable debit. Malformed signed
+/// bytes are distinguished from keys that cannot recover the original output set.
 pub(super) fn identity_redrive_output_cmxs(
     redrive: &PendingRedrive,
     keys: &AccountViewingKeys,
-) -> Option<Vec<[u8; 32]>> {
+) -> Result<Vec<[u8; 32]>, IdentityRecoveryError> {
     if !redrive.nullifiers.is_empty() {
-        return None;
+        return Err(IdentityRecoveryError::Malformed(
+            "not an identity debit".to_owned(),
+        ));
     }
-    let StateTransition::ShieldFromIdentity(transition) =
-        StateTransition::deserialize_from_bytes(&redrive.st_bytes).ok()?
-    else {
-        return None;
+    let transition = StateTransition::deserialize_from_bytes(&redrive.st_bytes)
+        .map_err(|e| IdentityRecoveryError::Malformed(format!("invalid signed transition: {e}")))?;
+    let StateTransition::ShieldFromIdentity(transition) = transition else {
+        return Err(IdentityRecoveryError::Malformed(
+            "unexpected transition type".to_owned(),
+        ));
     };
     let cmxs = visible_output_cmxs(transition.actions(), keys);
-    (!cmxs.is_empty() && compute_activity_id(&cmxs) == redrive.activity_id).then_some(cmxs)
+    if cmxs.is_empty() || compute_activity_id(&cmxs) != redrive.activity_id {
+        return Err(IdentityRecoveryError::OutputsUnrecoverable);
+    }
+    Ok(cmxs)
 }
 
 /// Reconstruct the wallet-visible output cmxs from a built bundle's

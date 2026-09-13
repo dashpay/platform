@@ -17,25 +17,60 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use dpp::serialization::PlatformDeserializable;
+use dpp::state_transition::StateTransition;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
 
 use super::store::{
     PendingRedrive, ShieldedNote, ShieldedOutgoingNote, ShieldedStore, StalePendingSpend,
     SubwalletId, SubwalletState,
 };
+use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::WalletId;
 
 /// Error type for [`FileBackedShieldedStore`].
 #[derive(Debug)]
-pub struct FileShieldedStoreError(pub String);
+pub enum FileShieldedStoreError {
+    /// SQLite or commitment-tree operation failed.
+    Storage(String),
+    /// A durable recovery row cannot be interpreted safely. It is retained.
+    RecoveryCorrupted {
+        account_index: Option<u32>,
+        reason: String,
+    },
+}
 
 impl fmt::Display for FileShieldedStoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        match self {
+            Self::Storage(message) => f.write_str(message),
+            Self::RecoveryCorrupted {
+                account_index,
+                reason,
+            } => write!(
+                f,
+                "damaged shielded recovery record (account {account_index:?}): {reason}"
+            ),
+        }
     }
 }
 
 impl StdError for FileShieldedStoreError {}
+
+impl From<FileShieldedStoreError> for PlatformWalletError {
+    fn from(error: FileShieldedStoreError) -> Self {
+        match error {
+            FileShieldedStoreError::Storage(message) => Self::ShieldedStoreError(message),
+            FileShieldedStoreError::RecoveryCorrupted {
+                account_index,
+                reason,
+            } => Self::ShieldedRecoveryCorrupted {
+                account_index,
+                reason,
+            },
+        }
+    }
+}
 
 /// File-backed shielded store: SQLite-persisted commitment tree
 /// plus in-memory per-subwallet decrypted notes / nullifier
@@ -101,7 +136,7 @@ impl FileBackedShieldedStore {
         let path = path.as_ref().to_path_buf();
         let conn = Self::open_tuned_connection(&path)?;
         let tree = ClientPersistentCommitmentTree::open(conn, max_checkpoints)
-            .map_err(|e| FileShieldedStoreError(format!("open commitment tree: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("open commitment tree: {e}")))?;
         let pending_conn = Self::open_tuned_connection(&path)?;
         pending_conn
             .execute(
@@ -114,33 +149,34 @@ impl FileBackedShieldedStore {
                     st_bytes      BLOB    NOT NULL,
                     attempts      INTEGER NOT NULL DEFAULT 0,
                     identity_nonce_finalized INTEGER NOT NULL DEFAULT 0,
+                    identity_user_abandoned INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (wallet_id, account_index, activity_id)
                 )",
                 [],
             )
-            .map_err(|e| FileShieldedStoreError(format!("create pending_spends table: {e}")))?;
-        // Existing stores predate the parked identity-debit state. Keep their
-        // exact-byte retries enabled until a fresh nonce proof finalizes them.
-        let has_finalized_column = {
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("create pending_spends table: {e}"))
+            })?;
+        // Additive, idempotent migration: old guards remain active.
+        let columns = {
             let mut statement = pending_conn
                 .prepare("PRAGMA table_info(shielded_pending_spends)")
-                .map_err(|e| FileShieldedStoreError(format!("inspect pending schema: {e}")))?;
-            let columns = statement
+                .map_err(|e| {
+                    FileShieldedStoreError::Storage(format!("inspect pending schema: {e}"))
+                })?;
+            let rows = statement
                 .query_map([], |row| row.get::<_, String>(1))
-                .map_err(|e| FileShieldedStoreError(format!("read pending schema: {e}")))?;
-            let mut found = false;
-            for column in columns {
-                found |= column
-                    .map_err(|e| FileShieldedStoreError(format!("read pending column: {e}")))?
-                    == "identity_nonce_finalized";
-            }
-            found
+                .map_err(|e| {
+                    FileShieldedStoreError::Storage(format!("read pending schema: {e}"))
+                })?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("read pending column: {e}")))?
         };
-        if !has_finalized_column {
-            pending_conn.execute(
-                "ALTER TABLE shielded_pending_spends ADD COLUMN identity_nonce_finalized INTEGER NOT NULL DEFAULT 0",
-                [],
-            ).map_err(|e| FileShieldedStoreError(format!("upgrade pending schema: {e}")))?;
+        for column in ["identity_nonce_finalized", "identity_user_abandoned"] {
+            if !columns.iter().any(|existing| existing == column) {
+                pending_conn.execute(&format!("ALTER TABLE shielded_pending_spends ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"), [])
+                    .map_err(|e| FileShieldedStoreError::Storage(format!("upgrade pending schema: {e}")))?;
+            }
         }
         let mut store = Self {
             tree: Mutex::new(tree),
@@ -157,16 +193,16 @@ impl FileBackedShieldedStore {
     /// per-subwallet state, re-arming both the redrive record and the
     /// note reservations its nullifiers carry — an unconfirmed
     /// broadcast therefore keeps its notes reserved (and its re-drive
-    /// alive) across restarts. Corrupt rows are dropped with a warning
-    /// rather than failing the open.
+    /// alive) across restarts. Malformed recovery metadata fails the open
+    /// without deleting the row; silently skipping it could enable a duplicate debit.
     fn rehydrate_pending_spends(&mut self) -> Result<(), FileShieldedStoreError> {
         let conn = self.pending_conn.lock().expect("pending_conn mutex");
         let mut stmt = conn
             .prepare(
                 "SELECT wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, \
-                 attempts, identity_nonce_finalized FROM shielded_pending_spends",
+                 attempts, identity_nonce_finalized, identity_user_abandoned FROM shielded_pending_spends",
             )
-            .map_err(|e| FileShieldedStoreError(format!("prepare rehydrate: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("prepare rehydrate: {e}")))?;
         let rows = stmt
             .query_map([], |row| {
                 Ok((
@@ -177,14 +213,11 @@ impl FileBackedShieldedStore {
                     row.get::<_, Vec<u8>>(4)?,
                     row.get::<_, Vec<u8>>(5)?,
                     row.get::<_, u32>(6)?,
-                    match row.get::<_, i64>(7)? {
-                        0 => false,
-                        1 => true,
-                        _ => return Err(rusqlite::Error::InvalidQuery),
-                    },
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, i64>(8)?,
                 ))
             })
-            .map_err(|e| FileShieldedStoreError(format!("query rehydrate: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("query rehydrate: {e}")))?;
         for row in rows {
             let (
                 wallet_id,
@@ -195,21 +228,50 @@ impl FileBackedShieldedStore {
                 st_bytes,
                 attempts,
                 identity_nonce_finalized,
-            ) = row.map_err(|e| FileShieldedStoreError(format!("read rehydrate row: {e}")))?;
+                identity_user_abandoned,
+            ) = row.map_err(|e| FileShieldedStoreError::RecoveryCorrupted {
+                account_index: None,
+                reason: format!("cannot decode recovery row: {e}"),
+            })?;
+            let corrupted = |reason: &str| FileShieldedStoreError::RecoveryCorrupted {
+                account_index: Some(account_index),
+                reason: reason.to_owned(),
+            };
+            if !matches!(identity_nonce_finalized, 0 | 1)
+                || !matches!(identity_user_abandoned, 0 | 1)
+            {
+                return Err(corrupted("invalid recovery-state flag"));
+            }
+            let identity_nonce_finalized = identity_nonce_finalized == 1;
+            let identity_user_abandoned = identity_user_abandoned == 1;
+            if !nullifiers.is_empty() && (identity_nonce_finalized || identity_user_abandoned) {
+                return Err(corrupted("identity recovery flags on a note-spend record"));
+            }
+            // Routing and account purge use the nullifier metadata. It must not
+            // disguise a still-executable identity debit as a note spend merely
+            // because its active recovery flags are both false.
+            if !nullifiers.is_empty()
+                && matches!(
+                    StateTransition::deserialize_from_bytes(&st_bytes),
+                    Ok(StateTransition::ShieldFromIdentity(_))
+                )
+            {
+                return Err(corrupted("identity debit contains note-spend nullifiers"));
+            }
             let (Ok(wallet_id), Ok(activity_id), Ok(anchor)) = (
                 <[u8; 32]>::try_from(wallet_id.as_slice()),
                 <[u8; 32]>::try_from(activity_id.as_slice()),
                 <[u8; 32]>::try_from(anchor.as_slice()),
             ) else {
-                tracing::warn!("dropping corrupt shielded_pending_spends row (bad key widths)");
-                continue;
+                return Err(corrupted(
+                    "invalid wallet, activity, or anchor identifier width",
+                ));
             };
             // Empty nullifiers identify a ShieldFromIdentity retry guard.
             // Its exact transition bytes, rather than note reservations,
             // preserve idempotency across restarts.
             if nullifiers.len() % 32 != 0 {
-                tracing::warn!("dropping corrupt shielded_pending_spends row (bad nullifiers)");
-                continue;
+                return Err(corrupted("invalid nullifier width"));
             }
             let nullifiers: Vec<[u8; 32]> = nullifiers
                 .chunks_exact(32)
@@ -228,6 +290,7 @@ impl FileBackedShieldedStore {
                 st_bytes,
                 attempts,
                 identity_nonce_finalized,
+                identity_user_abandoned,
             });
         }
         Ok(())
@@ -245,7 +308,7 @@ impl FileBackedShieldedStore {
     /// [`reset_commitment_tree`]: ShieldedStore::reset_commitment_tree
     fn open_tuned_connection(path: &Path) -> Result<rusqlite::Connection, FileShieldedStoreError> {
         let conn = rusqlite::Connection::open(path)
-            .map_err(|e| FileShieldedStoreError(format!("open sqlite: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("open sqlite: {e}")))?;
         // Pragmas must be applied before the schema is touched. They survive
         // for the lifetime of the connection; WAL also persists for any
         // subsequent reopen on the same file until explicitly changed.
@@ -255,14 +318,14 @@ impl FileBackedShieldedStore {
             ("temp_store", "MEMORY"),
         ] {
             conn.pragma_update(None, k, v)
-                .map_err(|e| FileShieldedStoreError(format!("PRAGMA {k}={v}: {e}")))?;
+                .map_err(|e| FileShieldedStoreError::Storage(format!("PRAGMA {k}={v}: {e}")))?;
         }
         // Two writer connections share this file (the commitment tree's and
         // `pending_conn`). WAL allows one writer at a time; without a busy
         // timeout a write colliding with the other connection's write txn
         // fails immediately with SQLITE_BUSY instead of briefly waiting.
         conn.busy_timeout(std::time::Duration::from_secs(5))
-            .map_err(|e| FileShieldedStoreError(format!("busy_timeout: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("busy_timeout: {e}")))?;
         Ok(conn)
     }
 
@@ -286,7 +349,9 @@ impl FileBackedShieldedStore {
                 activity_id.as_slice(),
             ],
         )
-        .map_err(|e| FileShieldedStoreError(format!("delete redrive row by activity: {e}")))?;
+        .map_err(|e| {
+            FileShieldedStoreError::Storage(format!("delete redrive row by activity: {e}"))
+        })?;
         Ok(())
     }
 
@@ -305,15 +370,15 @@ impl FileBackedShieldedStore {
                 "SELECT activity_id, nullifiers FROM shielded_pending_spends \
                  WHERE wallet_id = ?1 AND account_index = ?2",
             )
-            .map_err(|e| FileShieldedStoreError(format!("prepare redrive lookup: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("prepare redrive lookup: {e}")))?;
         let rows: Vec<(Vec<u8>, Vec<u8>)> = stmt
             .query_map(
                 rusqlite::params![id.wallet_id.as_slice(), id.account_index],
                 |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?)),
             )
-            .map_err(|e| FileShieldedStoreError(format!("query redrive lookup: {e}")))?
+            .map_err(|e| FileShieldedStoreError::Storage(format!("query redrive lookup: {e}")))?
             .collect::<Result<_, _>>()
-            .map_err(|e| FileShieldedStoreError(format!("read redrive lookup: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("read redrive lookup: {e}")))?;
         drop(stmt);
         for (activity_id, nullifiers) in rows {
             if nullifiers
@@ -325,7 +390,7 @@ impl FileBackedShieldedStore {
                      WHERE wallet_id = ?1 AND account_index = ?2 AND activity_id = ?3",
                     rusqlite::params![id.wallet_id.as_slice(), id.account_index, activity_id],
                 )
-                .map_err(|e| FileShieldedStoreError(format!("delete redrive row: {e}")))?;
+                .map_err(|e| FileShieldedStoreError::Storage(format!("delete redrive row: {e}")))?;
             }
         }
         Ok(())
@@ -440,8 +505,8 @@ impl ShieldedStore for FileBackedShieldedStore {
             let nullifier_blob: Vec<u8> = redrive.nullifiers.iter().flatten().copied().collect();
             conn.execute(
                 "INSERT OR REPLACE INTO shielded_pending_spends \
-                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts, identity_nonce_finalized) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts, identity_nonce_finalized, identity_user_abandoned) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 rusqlite::params![
                     id.wallet_id.as_slice(),
                     id.account_index,
@@ -451,9 +516,10 @@ impl ShieldedStore for FileBackedShieldedStore {
                     redrive.st_bytes,
                     redrive.attempts,
                     redrive.identity_nonce_finalized,
+                    redrive.identity_user_abandoned,
                 ],
             )
-            .map_err(|e| FileShieldedStoreError(format!("persist redrive: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("persist redrive: {e}")))?;
         }
         self.subwallets.entry(id).or_default().arm_redrive(redrive);
         Ok(())
@@ -512,7 +578,7 @@ impl ShieldedStore for FileBackedShieldedStore {
                     next,
                 ],
             )
-            .map_err(|e| FileShieldedStoreError(format!("bump redrive attempts: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("bump redrive attempts: {e}")))?;
         }
         let attempts = self
             .subwallets
@@ -612,29 +678,29 @@ impl ShieldedStore for FileBackedShieldedStore {
         let mut tree = self
             .tree
             .lock()
-            .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("tree mutex poisoned: {e}")))?;
         tree.append(*cmx, retention)
-            .map_err(|e| FileShieldedStoreError(format!("append commitment: {e}")))
+            .map_err(|e| FileShieldedStoreError::Storage(format!("append commitment: {e}")))
     }
 
     fn checkpoint_tree(&mut self, checkpoint_id: u32) -> Result<(), Self::Error> {
         let mut tree = self
             .tree
             .lock()
-            .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("tree mutex poisoned: {e}")))?;
         tree.checkpoint(checkpoint_id)
             .map(|_| ())
-            .map_err(|e| FileShieldedStoreError(format!("checkpoint tree: {e}")))
+            .map_err(|e| FileShieldedStoreError::Storage(format!("checkpoint tree: {e}")))
     }
 
     fn tree_anchor(&self) -> Result<[u8; 32], Self::Error> {
         let tree = self
             .tree
             .lock()
-            .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("tree mutex poisoned: {e}")))?;
         tree.anchor()
             .map(|a| a.to_bytes())
-            .map_err(|e| FileShieldedStoreError(format!("read tree anchor: {e}")))
+            .map_err(|e| FileShieldedStoreError::Storage(format!("read tree anchor: {e}")))
     }
 
     fn witness_at_depth(
@@ -645,25 +711,26 @@ impl ShieldedStore for FileBackedShieldedStore {
         let tree = self
             .tree
             .lock()
-            .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("tree mutex poisoned: {e}")))?;
         // `checkpoint_depth = 0` is the current tree state; deeper values
         // reach older checkpoints so a spend can be built against a root
         // Platform actually recorded (it records one anchor per block, while
         // an index-chunk sync routinely leaves the tree mid-block). The proof
         // uses whichever anchor this witness produces via `MerklePath::root`,
         // so the anchor and the authentication path always agree.
-        tree.witness(Position::from(position), depth)
-            .map_err(|e| FileShieldedStoreError(format!("witness({position}, depth {depth}): {e}")))
+        tree.witness(Position::from(position), depth).map_err(|e| {
+            FileShieldedStoreError::Storage(format!("witness({position}, depth {depth}): {e}"))
+        })
     }
 
     fn tree_size(&self) -> Result<u64, Self::Error> {
         let tree = self
             .tree
             .lock()
-            .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("tree mutex poisoned: {e}")))?;
         let size = tree
             .max_leaf_position()
-            .map_err(|e| FileShieldedStoreError(format!("read tree size: {e}")))?
+            .map_err(|e| FileShieldedStoreError::Storage(format!("read tree size: {e}")))?
             .map(|p| u64::from(p) + 1)
             .unwrap_or(0);
         Ok(size)
@@ -700,7 +767,9 @@ impl ShieldedStore for FileBackedShieldedStore {
                 "DELETE FROM shielded_pending_spends WHERE wallet_id = ?1",
                 rusqlite::params![wallet_id.as_slice()],
             )
-            .map_err(|e| FileShieldedStoreError(format!("purge pending spends for wallet: {e}")))?;
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("purge pending spends for wallet: {e}"))
+            })?;
         }
         // Per-subwallet note / watermark / checkpoint state is
         // in-memory only (`subwallets`); the commitment tree in
@@ -723,7 +792,7 @@ impl ShieldedStore for FileBackedShieldedStore {
                 rusqlite::params![id.wallet_id.as_slice(), id.account_index],
             )
             .map_err(|e| {
-                FileShieldedStoreError(format!("purge pending spends for subwallet: {e}"))
+                FileShieldedStoreError::Storage(format!("purge pending spends for subwallet: {e}"))
             })?;
         }
         let identity_redrives = self
@@ -748,7 +817,9 @@ impl ShieldedStore for FileBackedShieldedStore {
         {
             let conn = self.pending_conn.lock().expect("pending_conn mutex");
             conn.execute("DELETE FROM shielded_pending_spends", [])
-                .map_err(|e| FileShieldedStoreError(format!("purge all pending spends: {e}")))?;
+                .map_err(|e| {
+                    FileShieldedStoreError::Storage(format!("purge all pending spends: {e}"))
+                })?;
         }
         self.subwallets.clear();
         Ok(())
@@ -767,7 +838,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         let mut tree = self
             .tree
             .lock()
-            .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("tree mutex poisoned: {e}")))?;
 
         {
             let conn = Self::open_tuned_connection(&self.path)?;
@@ -781,7 +852,9 @@ impl ShieldedStore for FileBackedShieldedStore {
                  DELETE FROM commitment_tree_shards;
                  DELETE FROM commitment_tree_cap;",
             )
-            .map_err(|e| FileShieldedStoreError(format!("reset commitment tree tables: {e}")))?;
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("reset commitment tree tables: {e}"))
+            })?;
 
             // Durably flush the DELETEs into the main database file with a
             // TRUNCATE checkpoint before this connection is dropped.
@@ -802,12 +875,14 @@ impl ShieldedStore for FileBackedShieldedStore {
             // The prior graceful `drop(store)` in the unit test masked this —
             // a clean close checkpoints, a SIGKILL does not.
             conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
-                .map_err(|e| FileShieldedStoreError(format!("checkpoint after tree reset: {e}")))?;
+                .map_err(|e| {
+                    FileShieldedStoreError::Storage(format!("checkpoint after tree reset: {e}"))
+                })?;
         }
 
         let conn = Self::open_tuned_connection(&self.path)?;
         *tree = ClientPersistentCommitmentTree::open(conn, self.max_checkpoints)
-            .map_err(|e| FileShieldedStoreError(format!("reopen commitment tree: {e}")))?;
+            .map_err(|e| FileShieldedStoreError::Storage(format!("reopen commitment tree: {e}")))?;
         Ok(())
     }
 }
@@ -839,6 +914,7 @@ mod tests {
             st_bytes: vec![0xAB; 96],
             attempts: 0,
             identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
@@ -894,6 +970,7 @@ mod tests {
             st_bytes: vec![0xAB; 96],
             attempts: 0,
             identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
@@ -943,7 +1020,12 @@ mod tests {
                 !record.identity_nonce_finalized,
                 "legacy records must remain retryable"
             );
+            assert!(
+                !record.identity_user_abandoned,
+                "legacy guards require explicit recovery"
+            );
             record.identity_nonce_finalized = true;
+            record.identity_user_abandoned = true;
             store.arm_redrive(id, record).unwrap();
         }
         {
@@ -955,8 +1037,63 @@ mod tests {
                 "parked payment must retain its durable guard"
             );
             assert!(records[0].identity_nonce_finalized);
+            assert!(records[0].identity_user_abandoned);
         }
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn should_reject_corrupt_recovery_metadata_without_discarding_durable_rows() {
+        for corruption in [
+            "wallet_id = x'01'",
+            "activity_id = x'01'",
+            "anchor = x'01'",
+            "nullifiers = x'01'",
+            "account_index = -1",
+            "identity_nonce_finalized = 2",
+            "identity_user_abandoned = -1",
+            "identity_user_abandoned = 1, nullifiers = zeroblob(32)",
+        ] {
+            let path = temp_tree_path("corrupt_recovery_metadata");
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+            store
+                .arm_redrive(
+                    SubwalletId::new([1; 32], 2),
+                    PendingRedrive {
+                        activity_id: [2; 32],
+                        anchor: [3; 32],
+                        nullifiers: vec![],
+                        st_bytes: vec![4; 32],
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                    },
+                )
+                .unwrap();
+            drop(store);
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute(
+                &format!("UPDATE shielded_pending_spends SET {corruption}"),
+                [],
+            )
+            .unwrap();
+            let error = match FileBackedShieldedStore::open_path(&path, 100) {
+                Ok(_) => panic!("must reject {corruption}"),
+                Err(error) => error,
+            };
+            assert!(matches!(
+                crate::error::PlatformWalletError::from(error),
+                crate::error::PlatformWalletError::ShieldedRecoveryCorrupted { .. }
+            ));
+            let count: u32 = conn
+                .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 1, "failed open must preserve damaged row");
+            drop(conn);
+            let _ = std::fs::remove_file(path);
+        }
     }
 
     #[test]
@@ -970,6 +1107,7 @@ mod tests {
             st_bytes: vec![0x34; 24],
             attempts: 0,
             identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
@@ -996,6 +1134,7 @@ mod tests {
             st_bytes: vec![0x34; 24],
             attempts: 0,
             identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
@@ -1044,6 +1183,7 @@ mod tests {
             st_bytes: vec![0x37; 24],
             attempts: 5,
             identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
         let note_spend = PendingRedrive {
             activity_id: [0x48; 32],
@@ -1052,6 +1192,7 @@ mod tests {
             st_bytes: vec![0x7B; 24],
             attempts: 1,
             identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
@@ -1096,6 +1237,7 @@ mod tests {
             st_bytes: vec![0xCD; 32],
             attempts: 0,
             identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
 
         // purge_wallet is scoped: it drops A's rows, keeps B's.
@@ -1172,6 +1314,7 @@ mod tests {
                         st_bytes: vec![0xEF; 32],
                         attempts: 0,
                         identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
                     },
                 )
                 .expect("arm");

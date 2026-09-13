@@ -165,6 +165,35 @@ pub struct PendingRedrive {
     /// again. Stop broadcasting, but keep its unresolved-payment guard until
     /// the scan confirms the outputs. Always false for note-spend redrives.
     pub identity_nonce_finalized: bool,
+    /// The host explicitly accepted that this payment may have executed or may
+    /// still execute. Retain the signed record for reconciliation/audit, but stop
+    /// automatic retries and permit separately authorized new payments.
+    /// This is never a proof of failure and is always false for note spends.
+    pub identity_user_abandoned: bool,
+}
+
+/// What the wallet knows about an identity debit's local recovery state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentityDebitRecoveryStatus {
+    /// The original signed transaction may still be retried.
+    Retrying,
+    /// Its nonce is unavailable; output confirmation is still missing.
+    Parked,
+    /// The user accepted an unknown outcome and stopped automatic recovery.
+    Unknown,
+}
+
+/// An active or explicitly abandoned identity debit retained by the wallet.
+/// Missing decoded fields indicate a damaged record; the wallet/account/activity
+/// key still allows a deliberate, precisely scoped recovery decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentityDebitRecoveryRecord {
+    pub account_index: u32,
+    pub activity_id: [u8; 32],
+    pub identity_id: Option<[u8; 32]>,
+    pub nonce: Option<u64>,
+    pub amount: Option<u64>,
+    pub status: IdentityDebitRecoveryStatus,
 }
 
 /// The result of [`SubwalletState::mark_spent`].
@@ -1176,6 +1205,7 @@ mod tests {
             st_bytes: vec![1, 2, 3],
             attempts: 0,
             identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
 
         // Landing path: mark_spent on one nullifier drops the record.
@@ -1480,6 +1510,7 @@ mod tests {
             st_bytes: vec![0x33; 16],
             attempts: 7,
             identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
         let note_spend = PendingRedrive {
             activity_id: [0x44; 32],
@@ -1488,6 +1519,7 @@ mod tests {
             st_bytes: vec![0x77; 16],
             attempts: 1,
             identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
         store.arm_redrive(id, identity_guard.clone()).unwrap();
         store.arm_redrive(id, note_spend).unwrap();

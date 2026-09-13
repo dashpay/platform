@@ -791,6 +791,7 @@ async fn should_keep_wallet_and_coordinator_keys_when_guarded_registration_is_re
                 st_bytes: vec![3; 64],
                 attempts: 0,
                 identity_nonce_finalized: false,
+                identity_user_abandoned: false,
             },
         )
         .unwrap();

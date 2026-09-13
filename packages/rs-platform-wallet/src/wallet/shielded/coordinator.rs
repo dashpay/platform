@@ -78,15 +78,22 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::RwLock;
 
-use super::activity_recorder::identity_redrive_output_cmxs;
+use super::activity::ShieldedActivityStatus;
+use super::activity_recorder::{identity_redrive_output_cmxs, IdentityRecoveryError};
 use super::file_store::FileBackedShieldedStore;
 use super::keys::AccountViewingKeys;
-use super::store::{ShieldedStore, StalePendingSpend, SubwalletId};
+use super::store::{
+    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, ShieldedStore, StalePendingSpend,
+    SubwalletId,
+};
 use super::CAUGHT_UP_COOLDOWN;
 use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
+use dpp::serialization::PlatformDeserializable;
+use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
+use dpp::state_transition::StateTransition;
 
 /// Network-scoped shielded coordinator.
 ///
@@ -514,6 +521,95 @@ impl NetworkShieldedCoordinator {
             .await
     }
 
+    /// List active and explicitly abandoned identity debits, including those
+    /// whose original account cannot currently be bound. Malformed transition
+    /// bytes leave descriptive fields absent but retain the exact recovery key.
+    pub async fn identity_debit_recovery_records(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<IdentityDebitRecoveryRecord>, PlatformWalletError> {
+        let store = self.store.read().await;
+        Ok(store
+            .pending_redrives_for_wallet(wallet_id)
+            .map_err(PlatformWalletError::from)?
+            .into_iter()
+            .filter(|(_, record)| record.nullifiers.is_empty())
+            .map(|(id, record)| {
+                let transition = match StateTransition::deserialize_from_bytes(&record.st_bytes) {
+                    Ok(StateTransition::ShieldFromIdentity(transition)) => Some(transition),
+                    _ => None,
+                };
+                IdentityDebitRecoveryRecord {
+                    account_index: id.account_index,
+                    activity_id: record.activity_id,
+                    identity_id: transition.as_ref().map(|st| st.identity_id().to_buffer()),
+                    nonce: transition.as_ref().map(|st| st.nonce()),
+                    amount: transition.as_ref().map(|st| st.amount()),
+                    status: if record.identity_user_abandoned {
+                        IdentityDebitRecoveryStatus::Unknown
+                    } else if record.identity_nonce_finalized {
+                        IdentityDebitRecoveryStatus::Parked
+                    } else {
+                        IdentityDebitRecoveryStatus::Retrying
+                    },
+                }
+            })
+            .collect())
+    }
+
+    /// Explicitly stop automatic retries and release the selected debit's guard.
+    /// This does NOT cancel the signed transaction: it may already have executed
+    /// or may execute later (including a request already in flight). The host must
+    /// obtain the user's acknowledgement before passing `true`. A separately
+    /// authorized new payment can therefore debit the identity again.
+    ///
+    /// Retains the exact durable record as Unknown until its outputs are seen.
+    /// Normal wallet callers should use `PlatformWallet::abandon_shielded_identity_debit`
+    /// to serialize this decision with new payments through that wallet.
+    pub async fn abandon_identity_debit(
+        &self,
+        wallet_id: WalletId,
+        account_index: u32,
+        activity_id: [u8; 32],
+        acknowledge_possible_execution: bool,
+    ) -> Result<(), PlatformWalletError> {
+        if !acknowledge_possible_execution {
+            return Err(PlatformWalletError::InvalidParameter(
+                "recovery requires acknowledgement that the original payment may already have executed or could still execute".to_owned()));
+        }
+        let _lifecycle = self.lifecycle.lock().await;
+        let persister = self.persisters.read().await.get(&wallet_id).cloned();
+        let id = SubwalletId::new(wallet_id, account_index);
+        let mut store = self.store.write().await;
+        let mut record = store.pending_redrives(id).map_err(PlatformWalletError::from)?
+            .into_iter().find(|record| record.activity_id == activity_id && record.nullifiers.is_empty())
+            .ok_or_else(|| PlatformWalletError::InvalidParameter("identity debit recovery record not found for this wallet, account, and activity".to_owned()))?;
+        if !record.identity_user_abandoned {
+            record.identity_user_abandoned = true;
+            // Persist first. A write error must leave the active guard intact.
+            store
+                .arm_redrive(id, record)
+                .map_err(PlatformWalletError::from)?;
+        }
+        if let Some(mut entry) = store
+            .get_activity_by_entry_id(id, &activity_id)
+            .map_err(PlatformWalletError::from)?
+        {
+            if entry.status != ShieldedActivityStatus::Confirmed {
+                entry.status = ShieldedActivityStatus::Unknown;
+                store
+                    .save_activity(id, &entry)
+                    .map_err(PlatformWalletError::from)?;
+                super::operations::queue_shielded_changeset(
+                    persister.as_ref(),
+                    wallet_id,
+                    super::activity_recorder::changeset_for_entry(id, entry),
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Open an install transaction for `wallet_id`, taking the
     /// coordinator's lifecycle mutex for the returned guard's lifetime.
     ///
@@ -599,16 +695,32 @@ impl NetworkShieldedCoordinator {
                 .pending_redrives_for_wallet(wallet_id)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
             for (id, redrive) in guards {
-                if redrive.nullifiers.is_empty()
-                    && (account_views.get(&id.account_index).is_none_or(|views| {
-                        registered_count == 0
-                            && identity_redrive_output_cmxs(&redrive, views).is_none()
-                    }) || stale.iter().any(|(stale_id, _)| *stale_id == id))
-                {
-                    return Err(PlatformWalletError::ShieldedStoreError(format!(
-                        "account {} has an unresolved identity debit; keep its original viewing key registered until shielded sync confirms the payment",
-                        id.account_index,
-                    )));
+                if !redrive.nullifiers.is_empty() || redrive.identity_user_abandoned {
+                    continue;
+                }
+                let Some(views) = account_views.get(&id.account_index) else {
+                    return Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
+                        account_index: id.account_index,
+                        reason: "the account owning an unresolved debit is missing".to_owned(),
+                    });
+                };
+                if stale.iter().any(|(stale_id, _)| *stale_id == id) {
+                    return Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
+                        account_index: id.account_index,
+                        reason: "the proposed viewing keys replace those of an unresolved debit"
+                            .to_owned(),
+                    });
+                }
+                if registered_count == 0 {
+                    identity_redrive_output_cmxs(&redrive, views).map_err(|error| match error {
+                        IdentityRecoveryError::Malformed(reason) => PlatformWalletError::ShieldedRecoveryCorrupted {
+                            account_index: Some(id.account_index), reason,
+                        },
+                        IdentityRecoveryError::OutputsUnrecoverable => PlatformWalletError::ShieldedRecoveryKeysRequired {
+                            account_index: id.account_index,
+                            reason: "these keys cannot recover the original output set; use the original viewing keys, or restore a backup if ciphertext or output metadata is damaged".to_owned(),
+                        },
+                    })?;
                 }
             }
         }
@@ -927,8 +1039,21 @@ impl NetworkShieldedCoordinator {
             // dedupe set (`existing_ids`) includes them this session — a
             // rich live entry restored here is never clobbered by a
             // coarser re-derivation. Idempotent (upsert by `entry.id`).
+            let abandoned: HashSet<_> = store
+                .pending_redrives(*id)
+                .map_err(PlatformWalletError::from)?
+                .into_iter()
+                .filter(|record| record.identity_user_abandoned)
+                .map(|record| record.activity_id)
+                .collect();
             for entry in &sub.activity {
-                store.save_activity(*id, entry).map_err(|e| {
+                let mut entry = entry.clone();
+                if abandoned.contains(&entry.id)
+                    && entry.status != ShieldedActivityStatus::Confirmed
+                {
+                    entry.status = ShieldedActivityStatus::Unknown;
+                }
+                store.save_activity(*id, &entry).map_err(|e| {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                 })?;
             }
@@ -1590,6 +1715,31 @@ impl NetworkShieldedCoordinator {
         use super::activity::{derive_activity_from_scan_data, ScanDeriveInput};
 
         for (id, views) in subwallets {
+            // The SQLite recovery choice is authoritative even if the host's
+            // activity write failed or a stale snapshot still says Pending.
+            {
+                let mut store = self.store.write().await;
+                for record in store
+                    .pending_redrives(*id)
+                    .map_err(PlatformWalletError::from)?
+                {
+                    if !record.identity_user_abandoned {
+                        continue;
+                    }
+                    if let Some(mut entry) = store
+                        .get_activity_by_entry_id(*id, &record.activity_id)
+                        .map_err(PlatformWalletError::from)?
+                    {
+                        if entry.status != ShieldedActivityStatus::Confirmed {
+                            entry.status = ShieldedActivityStatus::Unknown;
+                            store
+                                .save_activity(*id, &entry)
+                                .map_err(PlatformWalletError::from)?;
+                            changeset.record_activity_entry(*id, entry);
+                        }
+                    }
+                }
+            }
             // Read pass: snapshot the inputs under a shared lock, then
             // release it before the CPU-bound classification — holding
             // the WRITE lock across the whole derivation would serialize
@@ -1659,7 +1809,7 @@ impl NetworkShieldedCoordinator {
             let confirmed_identity_debits: Vec<[u8; 32]> = redrives
                 .iter()
                 .filter_map(|redrive| {
-                    let cmxs = identity_redrive_output_cmxs(redrive, views)?;
+                    let cmxs = identity_redrive_output_cmxs(redrive, views).ok()?;
                     cmxs.iter()
                         .all(|cmx| observed_cmxs.contains(cmx))
                         .then_some(redrive.activity_id)
@@ -2049,9 +2199,310 @@ mod tests {
                 st_bytes: transition.serialize_to_bytes().unwrap(),
                 attempts: 0,
                 identity_nonce_finalized: true,
+                identity_user_abandoned: false,
             },
             cmxs,
         )
+    }
+
+    #[tokio::test]
+    async fn should_require_scoped_acknowledgement_and_preserve_unknown_recovery_across_restart() {
+        use super::super::activity::{
+            ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection,
+        };
+        use crate::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
+        let dir = temp_dir("explicit_recovery");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let keys = coordinator.accounts.read().await[&id].clone();
+        let (mut guard, cmxs) = identity_guard(&keys);
+        guard.identity_nonce_finalized = false; // nonce can still execute
+        let entry = ShieldedActivityEntry {
+            id: guard.activity_id,
+            kind: ShieldedActivityKind::ShieldFromIdentity {
+                identity_id: [0x42; 32],
+            },
+            direction: ShieldedDirection::In,
+            amount: 2_000,
+            fee: None,
+            counterparty: None,
+            memo: None,
+            block_height: None,
+            status: ShieldedActivityStatus::Pending,
+            created_at_ms: 1,
+            min_note_position: None,
+            note_cmxs: cmxs.clone(),
+            spent_nullifiers: vec![],
+        };
+        {
+            let mut store = coordinator.store.write().await;
+            store.arm_redrive(id, guard.clone()).unwrap();
+            store.save_activity(id, &entry).unwrap();
+        }
+        let listed = coordinator
+            .identity_debit_recovery_records(id.wallet_id)
+            .await
+            .unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(
+            (listed[0].identity_id, listed[0].nonce, listed[0].amount),
+            (Some([0x42; 32]), Some(7), Some(2_000))
+        );
+        assert_eq!(listed[0].status, IdentityDebitRecoveryStatus::Retrying);
+        for (wallet, account, activity, ack) in [
+            (id.wallet_id, 0, guard.activity_id, false),
+            ([0x99; 32], 0, guard.activity_id, true),
+            (id.wallet_id, 1, guard.activity_id, true),
+            (id.wallet_id, 0, [0x99; 32], true),
+        ] {
+            assert!(matches!(
+                coordinator
+                    .abandon_identity_debit(wallet, account, activity, ack)
+                    .await,
+                Err(PlatformWalletError::InvalidParameter(_))
+            ));
+            assert_eq!(
+                coordinator.store.read().await.pending_redrives(id).unwrap(),
+                vec![guard.clone()]
+            );
+        }
+        for _ in 0..2 {
+            coordinator
+                .abandon_identity_debit(id.wallet_id, 0, guard.activity_id, true)
+                .await
+                .unwrap();
+        }
+        let archived = coordinator
+            .store
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap()
+            .remove(0);
+        assert!(archived.identity_user_abandoned);
+        assert_eq!(archived.st_bytes, guard.st_bytes);
+        assert!(!archived.identity_nonce_finalized);
+        assert_eq!(
+            coordinator
+                .store
+                .read()
+                .await
+                .get_activity_by_entry_id(id, &entry.id)
+                .unwrap()
+                .unwrap()
+                .status,
+            ShieldedActivityStatus::Unknown
+        );
+        // A changed account set may now proceed, but cannot erase the audit record.
+        coordinator
+            .register_wallet(
+                id.wallet_id,
+                BTreeMap::new(),
+                WalletPersister::new(id.wallet_id, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            coordinator.store.read().await.pending_redrives(id).unwrap(),
+            vec![archived.clone()]
+        );
+        let path = coordinator.db_path.clone();
+        drop(coordinator);
+        let restarted = NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            dashcore::Network::Testnet,
+            path.clone(),
+            FileBackedShieldedStore::open_path(&path, 100).unwrap(),
+        );
+        assert_eq!(
+            restarted
+                .identity_debit_recovery_records(id.wallet_id)
+                .await
+                .unwrap()[0]
+                .status,
+            IdentityDebitRecoveryStatus::Unknown
+        );
+        restarted
+            .register_wallet(
+                id.wallet_id,
+                BTreeMap::from([(0, keys.clone())]),
+                WalletPersister::new(id.wallet_id, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .unwrap();
+        let snapshot = ShieldedSyncStartState {
+            per_subwallet: BTreeMap::from([(
+                id,
+                ShieldedSubwalletStartState {
+                    activity: vec![entry.clone()],
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        restarted
+            .restore_for_wallet(id.wallet_id, &snapshot)
+            .await
+            .unwrap();
+        assert_eq!(
+            restarted
+                .store
+                .read()
+                .await
+                .get_activity_by_entry_id(id, &entry.id)
+                .unwrap()
+                .unwrap()
+                .status,
+            ShieldedActivityStatus::Unknown,
+            "stale host Pending cannot undo durable recovery"
+        );
+        // The original later lands. Unknown must still become Confirmed.
+        {
+            let mut store = restarted.store.write().await;
+            for (position, cmx) in cmxs.into_iter().enumerate() {
+                let mut note = test_note([position as u8; 32], position as u64, false);
+                note.cmx = cmx;
+                store.save_note(id, &note).unwrap();
+            }
+        }
+        restarted
+            .derive_activity_into_changeset(&[(id, keys)], &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        assert!(restarted
+            .identity_debit_recovery_records(id.wallet_id)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            restarted
+                .store
+                .read()
+                .await
+                .get_activity_by_entry_id(id, &entry.id)
+                .unwrap()
+                .unwrap()
+                .status,
+            ShieldedActivityStatus::Confirmed
+        );
+        drop(restarted);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn should_reject_identity_debit_disguised_as_note_spend_by_damaged_metadata() {
+        let dir = temp_dir("identity_nullifier_corruption");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let keys = coordinator.accounts.read().await[&id].clone();
+        let (mut guard, _) = identity_guard(&keys);
+        // Both flags are false on an ordinary, still-executable identity debit.
+        guard.identity_nonce_finalized = false;
+        coordinator
+            .store
+            .write()
+            .await
+            .arm_redrive(id, guard.clone())
+            .unwrap();
+        let path = coordinator.db_path.clone();
+        drop(coordinator);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute(
+            "UPDATE shielded_pending_spends SET nullifiers = zeroblob(32)",
+            [],
+        )
+        .unwrap();
+        let result = FileBackedShieldedStore::open_path(&path, 100);
+        assert!(matches!(result,
+            Err(super::super::file_store::FileShieldedStoreError::RecoveryCorrupted {
+                account_index: Some(0), ..
+            })), "a valid-width nullifier must not turn an identity guard into purgeable note-spend state");
+        let persisted: Vec<u8> = conn
+            .query_row("SELECT st_bytes FROM shielded_pending_spends", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            persisted, guard.st_bytes,
+            "retain the signed debit for backup recovery"
+        );
+        drop(conn);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn should_surface_damaged_signed_recovery_and_allow_explicit_unknown_without_keys() {
+        let dir = temp_dir("damaged_signed_recovery");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let keys = coordinator.accounts.read().await[&id].clone();
+        let (mut guard, _) = identity_guard(&keys);
+        guard.st_bytes = vec![0xff; 5];
+        coordinator
+            .store
+            .write()
+            .await
+            .arm_redrive(id, guard.clone())
+            .unwrap();
+        let path = coordinator.db_path.clone();
+        drop(coordinator);
+        let restarted = NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            dashcore::Network::Testnet,
+            path.clone(),
+            FileBackedShieldedStore::open_path(&path, 100).unwrap(),
+        );
+        assert!(matches!(
+            restarted
+                .register_wallet(
+                    id.wallet_id,
+                    BTreeMap::from([(0, keys)]),
+                    WalletPersister::new(id.wallet_id, Arc::new(NoPlatformPersistence))
+                )
+                .await,
+            Err(PlatformWalletError::ShieldedRecoveryCorrupted {
+                account_index: Some(0),
+                ..
+            })
+        ));
+        let records = restarted
+            .identity_debit_recovery_records(id.wallet_id)
+            .await
+            .unwrap();
+        assert_eq!(records[0].identity_id, None);
+        assert_eq!(records[0].activity_id, guard.activity_id);
+        // Inject failure into the authoritative store: no partial abandonment.
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch("CREATE TRIGGER reject_recovery BEFORE INSERT ON shielded_pending_spends BEGIN SELECT RAISE(FAIL, 'injected failure'); END;").unwrap();
+        assert!(restarted
+            .abandon_identity_debit(id.wallet_id, 0, guard.activity_id, true)
+            .await
+            .is_err());
+        assert_eq!(
+            restarted.store.read().await.pending_redrives(id).unwrap(),
+            vec![guard.clone()]
+        );
+        conn.execute_batch("DROP TRIGGER reject_recovery;").unwrap();
+        restarted
+            .abandon_identity_debit(id.wallet_id, 0, guard.activity_id, true)
+            .await
+            .unwrap();
+        assert_eq!(
+            restarted
+                .identity_debit_recovery_records(id.wallet_id)
+                .await
+                .unwrap()[0]
+                .status,
+            IdentityDebitRecoveryStatus::Unknown
+        );
+        drop(conn);
+        drop(restarted);
+        let reopened = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        let archived = reopened.pending_redrives(id).unwrap().remove(0);
+        assert!(archived.identity_user_abandoned);
+        assert_eq!(archived.st_bytes, guard.st_bytes);
+        drop(reopened);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[tokio::test]
@@ -2080,14 +2531,19 @@ mod tests {
         let wrong_keys = OrchardKeySet::from_seed(&[0x99; 64], dashcore::Network::Testnet, 0)
             .unwrap()
             .viewing_keys();
-        restarted
-            .register_wallet(
-                id.wallet_id,
-                BTreeMap::from([(0, wrong_keys)]),
-                persister.clone(),
-            )
-            .await
-            .expect_err("same account index must not hide a different viewing key");
+        assert!(matches!(
+            restarted
+                .register_wallet(
+                    id.wallet_id,
+                    BTreeMap::from([(0, wrong_keys)]),
+                    persister.clone()
+                )
+                .await,
+            Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
+                account_index: 0,
+                ..
+            })
+        ));
         assert!(restarted.registered_subwallets().await.is_empty());
         assert_eq!(
             restarted.store().read().await.pending_redrives(id).unwrap(),
@@ -2095,7 +2551,7 @@ mod tests {
         );
         let mut corrupt_guard = guard.clone();
         corrupt_guard.activity_id = [0; 32];
-        assert!(identity_redrive_output_cmxs(&corrupt_guard, &keys).is_none());
+        assert!(identity_redrive_output_cmxs(&corrupt_guard, &keys).is_err());
         restarted
             .register_wallet(id.wallet_id, BTreeMap::from([(0, keys)]), persister)
             .await
@@ -2316,6 +2772,7 @@ mod tests {
             st_bytes: vec![0x33; 64],
             attempts: 0,
             identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
         coordinator
             .store()
@@ -2691,6 +3148,7 @@ mod tests {
             st_bytes: vec![0x73; 64],
             attempts: 0,
             identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
         coordinator
             .store()
@@ -2803,6 +3261,7 @@ mod tests {
                     st_bytes: vec![0x73; 64],
                     attempts: 0,
                     identity_nonce_finalized: true,
+                    identity_user_abandoned: false,
                 },
             )
             .unwrap();

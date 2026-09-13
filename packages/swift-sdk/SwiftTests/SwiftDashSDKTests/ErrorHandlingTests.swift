@@ -217,6 +217,26 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    func testShouldPreserveShieldedRecoveryErrorsFromFFI() {
+        let corrupted = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_RECOVERY_CORRUPTED
+        )
+        let keysRequired = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_RECOVERY_KEYS_REQUIRED
+        )
+        XCTAssertEqual(corrupted.rawValue, 56)
+        XCTAssertEqual(keysRequired.rawValue, 57)
+        let detail = "Cannot read durable identity recovery record"
+        guard case .shieldedRecoveryCorrupted(let corruptedMessage) = PlatformWalletError(
+            code: corrupted, message: detail
+        ) else { return XCTFail("lost typed corruption error") }
+        guard case .shieldedRecoveryKeysRequired(let keyMessage) = PlatformWalletError(
+            code: keysRequired, message: detail
+        ) else { return XCTFail("lost typed keys-required error") }
+        XCTAssertEqual(corruptedMessage, detail)
+        XCTAssertEqual(keyMessage, detail)
+    }
+
     func testShouldPreserveShieldedIdentityDebitPendingFFIResult() {
         let code = PlatformWalletResultCode(
             ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_DEBIT_PENDING

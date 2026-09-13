@@ -206,7 +206,7 @@ fn format_addresses_with_info(
 /// Queue a shielded changeset on the persister if one is
 /// attached. No-op if the changeset is empty or no persister
 /// was supplied.
-fn queue_shielded_changeset(
+pub(super) fn queue_shielded_changeset(
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     cs: ShieldedChangeSet,
@@ -814,6 +814,9 @@ fn has_unresolved_identity_shield<S: ShieldedStore>(
     use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 
     for (_, redrive) in store.pending_redrives_for_wallet(wallet_id)? {
+        if redrive.identity_user_abandoned && redrive.nullifiers.is_empty() {
+            continue;
+        }
         match StateTransition::deserialize_from_bytes(&redrive.st_bytes) {
             Ok(StateTransition::ShieldFromIdentity(transition))
                 if transition.identity_id().to_buffer() == identity_id =>
@@ -872,6 +875,7 @@ async fn arm_identity_shield_redrive<S: ShieldedStore>(
                 st_bytes,
                 attempts: 0,
                 identity_nonce_finalized: false,
+                identity_user_abandoned: false,
             },
         )
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
@@ -1167,7 +1171,7 @@ fn reconcile_identity_shield_nonce<S: ShieldedStore>(
         .into_iter()
         .find(|redrive| redrive.activity_id == activity_id)
     {
-        if !redrive.identity_nonce_finalized {
+        if !redrive.identity_nonce_finalized && !redrive.identity_user_abandoned {
             redrive.identity_nonce_finalized = true;
             store.arm_redrive(id, redrive)?;
         }
@@ -2763,6 +2767,7 @@ async fn arm_redrive_record<S: ShieldedStore>(
         st_bytes,
         attempts: 0,
         identity_nonce_finalized: false,
+        identity_user_abandoned: false,
     };
     if let Err(e) = store.write().await.arm_redrive(id, redrive) {
         warn!(
@@ -2868,7 +2873,10 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
         }
     };
     for (id, redrive) in redrives {
-        if !redrive.nullifiers.is_empty() || redrive.identity_nonce_finalized {
+        if !redrive.nullifiers.is_empty()
+            || redrive.identity_nonce_finalized
+            || redrive.identity_user_abandoned
+        {
             continue;
         }
         let state_transition = match StateTransition::deserialize_from_bytes(&redrive.st_bytes) {
@@ -2902,6 +2910,25 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
                     continue;
                 }
             }
+        }
+        // A host recovery decision may have archived this snapshot while the
+        // nonce request was in flight. Do not initiate a new broadcast from it.
+        // Already submitted network requests cannot be cancelled by this check.
+        let still_active = store
+            .read()
+            .await
+            .pending_redrives(id)
+            .map(|current| {
+                current.iter().any(|record| {
+                    record.activity_id == redrive.activity_id
+                        && record.st_bytes == redrive.st_bytes
+                        && !record.identity_user_abandoned
+                        && !record.identity_nonce_finalized
+                })
+            })
+            .unwrap_or(false);
+        if !still_active {
+            continue;
         }
         // Unused or unverified state permits only the original signed bytes.
         // Even an apparently definitive rejection cannot release the guard:
@@ -3314,6 +3341,46 @@ mod redrive_tests {
     }
 
     #[tokio::test]
+    async fn should_release_only_explicitly_abandoned_guard_and_never_redrive_it() {
+        let wallet_id = [4; 32];
+        let identity_id = [5; 32];
+        let id = SubwalletId::new(wallet_id, 3);
+        let mut store = InMemoryShieldedStore::new();
+        let archived = PendingRedrive {
+            activity_id: [6; 32],
+            anchor: [1; 32],
+            nullifiers: vec![],
+            st_bytes: identity_shield_transition(identity_id, 7)
+                .serialize_to_bytes()
+                .unwrap(),
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: true,
+        };
+        store.arm_redrive(id, archived.clone()).unwrap();
+        assert!(!has_unresolved_identity_shield(&store, wallet_id, identity_id).unwrap());
+        let store = Arc::new(RwLock::new(store));
+        // No mock nonce responses: accidentally retrying would reach an unconfigured SDK.
+        redrive_pending_identity_shields(&Arc::new(dash_sdk::Sdk::new_mock()), &store, wallet_id)
+            .await;
+        assert_eq!(
+            store.read().await.pending_redrives(id).unwrap(),
+            vec![archived.clone()]
+        );
+        let mut active = archived;
+        active.activity_id = [7; 32];
+        active.identity_user_abandoned = false;
+        store
+            .write()
+            .await
+            .arm_redrive(SubwalletId::new(wallet_id, 4), active)
+            .unwrap();
+        assert!(
+            has_unresolved_identity_shield(&*store.read().await, wallet_id, identity_id).unwrap()
+        );
+    }
+
+    #[tokio::test]
     async fn should_keep_delayed_identity_debit_guard_when_nonce_is_unused_then_finalized() {
         use dpp::identity::identity_nonce::validate_identity_nonce_update;
         let wallet_id = [4; 32];
@@ -3333,6 +3400,7 @@ mod redrive_tests {
                     st_bytes: signed_bytes.clone(),
                     attempts: 0,
                     identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
                 },
             )
             .unwrap();
@@ -3404,6 +3472,7 @@ mod redrive_tests {
                         .expect("identity shield should serialize"),
                     attempts: 0,
                     identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
                 },
             )
             .expect("redrive should arm");
@@ -3431,6 +3500,7 @@ mod redrive_tests {
                     st_bytes: vec![0xde, 0xad],
                     attempts: 0,
                     identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
                 },
             )
             .expect("redrive should arm");
@@ -3540,6 +3610,7 @@ mod redrive_tests {
                     st_bytes: transition.serialize_to_bytes().expect("serialize"),
                     attempts: MAX_REDRIVE_ATTEMPTS,
                     identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
                 },
             )
             .expect("arm identity guard");
@@ -3585,6 +3656,7 @@ mod redrive_tests {
                         .expect("serialize"),
                     attempts: 0,
                     identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
                 },
             )
             .expect("arm identity guard");
@@ -3619,6 +3691,7 @@ mod redrive_tests {
             st_bytes: vec![0xDE, 0xAD], // never deserializes
             attempts,
             identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
         {
             let mut guard = store.write().await;

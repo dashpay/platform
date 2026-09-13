@@ -584,6 +584,14 @@ pub enum PlatformWalletFFIResultCode {
     /// outcome of the request that was submitted.
     ErrorShieldedIdentityDebitPending = 55,
 
+    /// A durable shielded recovery record is malformed or invalid.
+    /// Preserve it for diagnosis; do not submit a replacement payment blindly.
+    ErrorShieldedRecoveryCorrupted = 56,
+
+    /// Shielded recovery requires its account and compatible viewing keys.
+    /// Incompatible keys and damaged ciphertext can produce the same symptom.
+    ErrorShieldedRecoveryKeysRequired = 57,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -797,6 +805,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedIdentityDebitPending { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedIdentityDebitPending
+            }
+            PlatformWalletError::ShieldedRecoveryCorrupted { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedRecoveryCorrupted
+            }
+            PlatformWalletError::ShieldedRecoveryKeysRequired { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedRecoveryKeysRequired
             }
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor

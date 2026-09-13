@@ -1681,6 +1681,40 @@ class PlatformWalletManager(
         }
     }
 
+    /** List active and archived durable identity-funded shields for this manager's wallet. */
+    suspend fun shieldedIdentityDebitRecoveryRecords(
+        walletId: ByteArray,
+    ): List<ShieldedIdentityDebitRecoveryRecord> = teardownGate.op {
+        mapNativeErrors {
+            FundingNative.shieldedIdentityDebitRecoveryRecords(managerHandle, walletId)
+                .map { ShieldedIdentityDebitRecoveryRecord.fromNative(it) }
+        }
+    }
+
+    /**
+     * Stop automatic retry of exactly `(walletId, accountIndex, activityId)`.
+     * Archives the complete signed record for later scan confirmation and audit,
+     * preserves an Unknown outcome, and permits a new identity debit after saving.
+     *
+     * This does not cancel an already relayed or in-flight payment. A new payment
+     * may cause an additional debit even if the old nonce is still usable. Obtain
+     * the user's informed acknowledgement before passing true. Acknowledgement
+     * is mandatory, has no default, and false is rejected by the wallet.
+     */
+    suspend fun abandonShieldedIdentityDebit(
+        walletId: ByteArray,
+        accountIndex: UInt,
+        activityId: ByteArray,
+        acknowledgePossibleExecution: Boolean,
+    ) = teardownGate.op {
+        mapNativeErrors {
+            FundingNative.abandonShieldedIdentityDebit(
+                managerHandle, walletId, accountIndex.toInt(), activityId,
+                acknowledgePossibleExecution,
+            )
+        }
+    }
+
     /**
      * Create an identity funded from the shielded pool (Type 20) — port of
      * Swift's `shieldedIdentityCreateFromPool`. Spends a note of the fixed

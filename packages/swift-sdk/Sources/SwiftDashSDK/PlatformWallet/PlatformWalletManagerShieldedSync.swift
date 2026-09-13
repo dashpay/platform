@@ -776,7 +776,10 @@ extension PlatformWalletManager {
     /// confirmed: the shield may already be on chain, so the caller must
     /// NOT retry (a retry would rebuild the bundle and could double-shield;
     /// the next sync reconciles the outcome). Like every shield it spends
-    /// no notes, so nothing is reserved wallet-side.
+    /// no notes. An unresolved debit blocks a fresh shield from that identity
+    /// with `.shieldedIdentityDebitPending`. Inspect durable records with
+    /// `shieldedIdentityDebitRecoveryRecords(walletId:)`; explicit abandonment
+    /// requires acknowledging that another payment may be an additional debit.
     @discardableResult
     public func shieldedShieldFromIdentity(
         walletId: Data,

@@ -1841,6 +1841,28 @@ impl PlatformWallet {
         .await
     }
 
+    /// Stop retrying one selected identity debit while retaining its unknown
+    /// outcome. Requires explicit acknowledgement that it may already have
+    /// executed or may execute later; this does not cancel the signed payment.
+    #[cfg(feature = "shielded")]
+    pub async fn abandon_shielded_identity_debit(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        account_index: u32,
+        activity_id: [u8; 32],
+        acknowledge_possible_execution: bool,
+    ) -> Result<(), PlatformWalletError> {
+        let _shield_guard = self.shield_guard.lock().await;
+        coordinator
+            .abandon_identity_debit(
+                self.wallet_id(),
+                account_index,
+                activity_id,
+                acknowledge_possible_execution,
+            )
+            .await
+    }
+
     /// Shield credits from one of this wallet's Platform identities straight into
     /// the wallet's shielded pool (`ShieldFromIdentity`, type 21). The note is
     /// assigned to `shielded_account`'s default Orchard address; `identity_id` must

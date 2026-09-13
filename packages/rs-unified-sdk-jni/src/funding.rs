@@ -44,8 +44,8 @@
 
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception, JVM};
-use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString};
-use jni::sys::{jboolean, jint, jlong, JNI_FALSE, JNI_TRUE};
+use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString, JValue};
+use jni::sys::{jboolean, jint, jlong, jobjectArray, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
@@ -785,6 +785,114 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             return 0;
         }
         out_balance as i64
+    })
+}
+
+/// List recovery records, freeing the C allocation before JVM object creation.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedIdentityDebitRecoveryRecords(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+) -> jobjectArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        let mut records = ptr::null_mut();
+        let mut count = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_identity_debit_recovery_records(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                &mut records,
+                &mut count,
+            )
+        };
+        let owned = if records.is_null() {
+            Vec::new()
+        } else {
+            let owned = unsafe { std::slice::from_raw_parts(records, count).to_vec() };
+            unsafe {
+                platform_wallet_ffi::platform_wallet_shielded_identity_debit_recovery_records_free(
+                    records, count,
+                );
+            }
+            owned
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let Ok(length) = jint::try_from(owned.len()) else {
+            throw_sdk_exception(env, 1, "Too many identity debit recovery records");
+            return ptr::null_mut();
+        };
+        let class = "org/dashfoundation/dashsdk/ffi/ShieldedIdentityDebitRecoveryData";
+        let Ok(array) = env.new_object_array(length, class, JObject::null()) else {
+            return ptr::null_mut();
+        };
+        for (index, record) in owned.into_iter().enumerate() {
+            let result: jni::errors::Result<()> = env.with_local_frame(8, |env| {
+                let activity = JObject::from(env.byte_array_from_slice(&record.activity_id)?);
+                let identity = if record.has_identity_id {
+                    JObject::from(env.byte_array_from_slice(&record.identity_id)?)
+                } else {
+                    JObject::null()
+                };
+                let row = env.new_object(
+                    class,
+                    "(I[B[BZJZJI)V",
+                    &[
+                        JValue::Int(record.account_index as jint),
+                        JValue::Object(&activity),
+                        JValue::Object(&identity),
+                        JValue::Bool(record.has_nonce as jboolean),
+                        JValue::Long(record.nonce as jlong),
+                        JValue::Bool(record.has_amount as jboolean),
+                        JValue::Long(record.amount as jlong),
+                        JValue::Int(record.status as jint),
+                    ],
+                )?;
+                env.set_object_array_element(&array, index as jint, row)
+            });
+            if result.is_err() {
+                return ptr::null_mut();
+            }
+        }
+        array.into_raw()
+    })
+}
+
+/// Explicit acknowledgement is forwarded without a default; the wallet owns
+/// validation, durable archival and serialization against new identity debits.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_abandonShieldedIdentityDebit(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    account_index: jint,
+    activity_id: JByteArray,
+    acknowledge_possible_execution: jboolean,
+) {
+    guard(&mut env, (), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        let Some(activity) = read_id32(env, &activity_id, "activityId") else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_abandon_shielded_identity_debit(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                account_index as u32,
+                activity.as_ptr(),
+                acknowledge_possible_execution != JNI_FALSE,
+            )
+        };
+        take_pwffi_error(env, result);
     })
 }
 
