@@ -342,7 +342,7 @@ impl Drive {
                             &mut stats,
                         )?;
                         if let Some(references) = index_entries.remove(&document_id) {
-                            let rewrites: Vec<_> = references
+                            let rewrites = references
                                 .iter()
                                 .cloned()
                                 .map(|(path, key, mut element)| {
@@ -355,11 +355,17 @@ impl Drive {
                                             );
                                             *hops = Some(2);
                                         }
-                                        _ => unreachable!("only references are collected"),
+                                        // The inventory only admits references; anything
+                                        // else is corrupt state, reported like the rest.
+                                        _ => {
+                                            return Err(corrupt(
+                                                "unexpected leaf in a historical document index",
+                                            ))
+                                        }
                                     }
-                                    QualifiedGroveDbOp::insert_or_replace_op(path, key, element)
+                                    Ok(QualifiedGroveDbOp::insert_or_replace_op(path, key, element))
                                 })
-                                .collect();
+                                .collect::<Result<Vec<_>, Error>>()?;
                             self.history_migration_batch(
                                 rewrites,
                                 transaction,
