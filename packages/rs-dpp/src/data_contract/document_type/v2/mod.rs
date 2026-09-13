@@ -109,6 +109,15 @@ pub struct DocumentTypeV2 {
     /// indexed, `$ownerId` recoverable from at least one index, immutable /
     /// non-transferable / no history, and per-index terminal typing.
     pub(in crate::data_contract) index_only: bool,
+    /// When true, a deleted document of this type may have its retained
+    /// revisions purged by an erase transition. Requires
+    /// [`Self::documents_keep_history`] and [`Self::documents_can_be_deleted`]
+    /// — erase applies to deleted documents only, so an erase-only type would
+    /// have nothing to act on. The parser enforces the pairing at contract
+    /// registration and the update validator keeps the flag immutable, because
+    /// narrowing it after a first chunk has irreversibly removed revisions
+    /// would strand a partially erased document forever.
+    pub(in crate::data_contract) documents_can_be_erased: bool,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {}
@@ -177,6 +186,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             documents_summable: None,
             range_summable: false,
             index_only: false,
+            documents_can_be_erased: false,
         }
     }
 }
@@ -217,6 +227,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             documents_summable: None,
             range_summable: false,
             index_only: false,
+            documents_can_be_erased: false,
         }
     }
 }

@@ -116,3 +116,7 @@ pub fn cbor_inner_map_value<'a>(
     }
     None
 }
+
+#[cfg(any(test, feature = "fixtures-and-mocks"))]
+/// History proof envelope fixtures.
+pub mod history_proof;

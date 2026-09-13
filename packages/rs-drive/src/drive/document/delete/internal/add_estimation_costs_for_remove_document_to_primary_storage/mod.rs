@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -41,9 +42,15 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 platform_version,
             ),
+            1 => Self::add_estimation_costs_for_remove_document_to_primary_storage_v1(
+                primary_key_path,
+                document_type,
+                estimated_costs_only_with_layer_info,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_remove_document_to_primary_storage".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

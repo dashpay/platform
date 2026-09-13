@@ -1,5 +1,6 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -71,10 +72,17 @@ impl<C> Platform<C> {
                 previous_protocol_version,
                 platform_version,
             ),
+            Some(2) => self.perform_events_on_first_block_of_protocol_change_v2(
+                platform_state,
+                block_info,
+                transaction,
+                previous_protocol_version,
+                platform_version,
+            ),
             None => Ok(()),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "perform_events_on_first_block_of_protocol_change".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -165,7 +173,7 @@ mod tests {
                 received,
             })) => {
                 assert_eq!(method, "perform_events_on_first_block_of_protocol_change");
-                assert_eq!(known_versions, vec![0, 1]);
+                assert_eq!(known_versions, vec![0, 1, 2]);
                 assert_eq!(received, 255);
             }
             _ => panic!("expected UnknownVersionMismatch error"),

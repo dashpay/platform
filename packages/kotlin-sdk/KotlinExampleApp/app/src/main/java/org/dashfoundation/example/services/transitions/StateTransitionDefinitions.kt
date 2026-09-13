@@ -244,6 +244,19 @@ object StateTransitionDefinitions {
             dedicatedRoute = DedicatedTransition.DOCUMENT_ACTIONS,
         ),
         TransitionDefinition(
+            key = "documentErase",
+            category = TransitionCategory.DOCUMENT,
+            label = "Erase Document",
+            description = "Erase the retained revisions of a deleted keep-history document",
+            inputs = listOf(
+                TransitionInput("contractId", contractPicker, "Data contract", true),
+                TransitionInput("documentType", docTypePicker, "Document type", true),
+                TransitionInput("documentId", docPicker, "Document ID", false),
+            ),
+            executable = true,
+            dedicatedRoute = DedicatedTransition.DOCUMENT_ACTIONS,
+        ),
+        TransitionDefinition(
             key = "documentTransfer",
             category = TransitionCategory.DOCUMENT,
             label = "Transfer Document",

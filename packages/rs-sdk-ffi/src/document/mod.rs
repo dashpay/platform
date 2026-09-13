@@ -2,6 +2,7 @@
 
 mod create;
 mod delete;
+mod erase;
 mod helpers;
 mod price;
 mod purchase;
@@ -14,6 +15,7 @@ mod util;
 // Re-export functions from submodules
 pub use create::{dash_sdk_document_create, DashSDKDocumentCreateParams};
 pub use delete::{dash_sdk_document_delete, dash_sdk_document_delete_and_wait};
+pub use erase::{dash_sdk_document_erase, dash_sdk_document_erase_and_wait};
 pub use price::{
     dash_sdk_document_update_price_of_document, dash_sdk_document_update_price_of_document_and_wait,
 };
@@ -23,8 +25,8 @@ pub use queries::average::dash_sdk_document_average;
 pub use queries::info::dash_sdk_document_get_info;
 pub use queries::sum::dash_sdk_document_sum;
 pub use queries::{
-    dash_sdk_document_count, dash_sdk_document_fetch, dash_sdk_document_search,
-    DashSDKDocumentSearchParams,
+    dash_sdk_document_count, dash_sdk_document_fetch, dash_sdk_document_fetch_history,
+    dash_sdk_document_search, DashSDKDocumentHistorySelector, DashSDKDocumentSearchParams,
 };
 pub use replace::{
     dash_sdk_document_replace_on_platform, dash_sdk_document_replace_on_platform_and_wait,

@@ -26,8 +26,8 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
-    DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
+    CAN_BE_DELETED, CAN_BE_ERASED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE,
+    DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
     KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE,
     RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
@@ -1869,6 +1869,112 @@ pub(super) fn apply_doctype_aggregates(
         }
     }
 
+    Ok(())
+}
+
+/// Read the doctype-level `canBeErased` flag out of the raw schema.
+///
+/// Runs before the core parse for the same reason as
+/// [`parse_index_only_keyword`]: the core takes `schema` by value. Only the
+/// generation-3 driver calls this; earlier generations have no such keyword
+/// and their meta-schemas reject it under `full_validation`.
+pub(super) fn parse_can_be_erased_keyword(schema: &Value) -> Result<bool, ProtocolError> {
+    let schema_map_opt = schema.to_map().ok();
+
+    Ok(schema_map_opt
+        .as_ref()
+        .and_then(|schema_map| {
+            Value::inner_optional_bool_value(schema_map, CAN_BE_ERASED)
+                .map_err(consensus_or_protocol_value_error)
+                .transpose()
+        })
+        .transpose()?
+        .unwrap_or(false))
+}
+
+/// Write the `canBeErased` flag onto the parsed document type after checking
+/// the two settings it depends on.
+///
+/// Erase purges the retained revisions of a document that has already been
+/// deleted, so a type that keeps no history has nothing to purge and a type
+/// whose documents can never be deleted can never reach the state erase acts
+/// on. Both are rejected rather than silently ignored: a document type whose
+/// declared behavior and reachable behavior disagree is a contract-authoring
+/// error, not a default.
+///
+/// Runs regardless of `full_validation`, like [`apply_index_only`]: the flag
+/// governs an irreversible operation, so a stored contract must never come
+/// back out of the parser with the flag set on a type that cannot support it.
+pub(super) fn apply_can_be_erased(
+    document_type: &mut DocumentTypeV2,
+    can_be_erased: bool,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !can_be_erased {
+        return Ok(());
+    }
+
+    // A consensus error, not a bare data-contract error: only the consensus
+    // variant becomes a paid rejection with a nonce bump when a signed contract
+    // create or update carries the combination. The bare variant would escape as
+    // an internal execution error and cost the submitter nothing.
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if !document_type.documents_keep_history {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeErased: true` but does not keep history: erase \
+             removes retained revisions, and a type without history has none",
+            name,
+        )));
+    }
+    if !document_type.documents_can_be_deleted {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeErased: true` but `canBeDeleted: false`: erase \
+             applies to deleted documents only, so its documents could never be erased",
+            name,
+        )));
+    }
+
+    document_type.documents_can_be_erased = true;
+    Ok(())
+}
+
+/// Reject a keep-history document type that carries a contested index.
+///
+/// A contested resource is awarded by block processing, outside state
+/// transition validation, at an id derived from the winner rather than from
+/// the contested values. On a keep-history type that award can land on an id
+/// whose retained history already exists, which the storage guard turns into a
+/// deterministic block failure on every validator. Making the combination safe
+/// needs changes to the contested machinery itself, so until then the two are
+/// kept apart at contract registration.
+pub(super) fn reject_contested_keep_history(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !document_type.documents_keep_history {
+        return Ok(());
+    }
+    if let Some((index_name, _)) = document_type
+        .indices
+        .iter()
+        .find(|(_, index)| index.contested_index.is_some())
+    {
+        // Consensus error for the same reason as `apply_can_be_erased`: a
+        // signed contract carrying this combination must be a paid rejection.
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{}\" sets `documentsKeepHistory: true` and declares the \
+                 contested index \"{}\": a contested resource is awarded outside transition \
+                 validation and cannot be combined with retained history",
+                name, index_name,
+            )),
+        ));
+    }
     Ok(())
 }
 

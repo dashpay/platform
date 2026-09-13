@@ -361,6 +361,52 @@ struct QueryDetailView: View {
             let documentId = queryInputs["documentId"] ?? ""
             return try await sdk.documentGet(dataContractId: contractId, documentType: documentType, documentId: documentId)
 
+        case "getDocumentHistory":
+            let contractId = queryInputs["dataContractId"] ?? ""
+            let documentType = queryInputs["documentType"] ?? ""
+            let documentId = queryInputs["documentId"] ?? ""
+            // Every non-empty number must parse, and exactly one selector
+            // group may be given, so a typo or a half cursor is refused
+            // rather than silently read as the first page.
+            func number(_ name: String) throws -> UInt64? {
+                let raw = (queryInputs[name] ?? "").trimmingCharacters(in: .whitespaces)
+                if raw.isEmpty { return nil }
+                guard let value = UInt64(raw) else {
+                    throw SDKError.invalidParameter("\(name) must be a non-negative integer")
+                }
+                return value
+            }
+            let limit = try number("limit").map { UInt32(clamping: $0) }
+            let startAtMs = try number("startAtMs")
+            let startAfterTimeMs = try number("startAfterTimeMs")
+            let startAfterRevision = try number("startAfterRevision")
+            let startAtRevision = try number("startAtRevision")
+            let revision = try number("revision")
+            if (startAfterTimeMs == nil) != (startAfterRevision == nil) {
+                throw SDKError.invalidParameter("Start After needs both its time and its revision")
+            }
+            let groups = [startAtMs != nil, startAfterTimeMs != nil, startAtRevision != nil, revision != nil]
+            if groups.filter({ $0 }).count > 1 {
+                throw SDKError.invalidParameter("Give only one of Start At, Start After, Start At Revision, or Revision")
+            }
+            let selector: DocumentHistorySelector
+            if let revision {
+                selector = .revision(revision)
+            } else if let startAtRevision {
+                selector = .startAtRevision(startAtRevision)
+            } else if let timeMs = startAfterTimeMs, let rev = startAfterRevision {
+                selector = .startAfter(timeMs: timeMs, revision: rev)
+            } else {
+                selector = .startAtTime(ms: startAtMs ?? 0)
+            }
+            return try await sdk.documentGetHistory(
+                dataContractId: contractId,
+                documentType: documentType,
+                documentId: documentId,
+                selector: selector,
+                limit: limit
+            )
+
         // DPNS Queries
         case "getDpnsUsername":
             let identityId = queryInputs["identityId"] ?? ""
@@ -885,6 +931,19 @@ struct QueryDetailView: View {
                 QueryInput(name: "dataContractId", label: "Data Contract ID", required: true),
                 QueryInput(name: "documentType", label: "Document Type", required: true),
                 QueryInput(name: "documentId", label: "Document ID", required: true)
+            ]
+
+        case "getDocumentHistory":
+            return [
+                QueryInput(name: "dataContractId", label: "Data Contract ID", required: true),
+                QueryInput(name: "documentType", label: "Document Type", required: true, placeholder: "A documentsKeepHistory type"),
+                QueryInput(name: "documentId", label: "Document ID", required: true),
+                QueryInput(name: "limit", label: "Limit (max 10)", required: false),
+                QueryInput(name: "startAtMs", label: "Start At (milliseconds)", required: false, placeholder: "First page: inclusive lower time bound"),
+                QueryInput(name: "startAfterTimeMs", label: "Start After Time (milliseconds)", required: false, placeholder: "Next page: last entry's time_ms"),
+                QueryInput(name: "startAfterRevision", label: "Start After Revision", required: false, placeholder: "Next page: last entry's revision"),
+                QueryInput(name: "startAtRevision", label: "Start At Revision", required: false, placeholder: "Revision range instead of time"),
+                QueryInput(name: "revision", label: "Revision", required: false, placeholder: "One revision (limit 1)")
             ]
 
         // DPNS Queries
