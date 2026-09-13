@@ -52,6 +52,7 @@ use dpp::data_contract::document_type::{DocumentPropertyType, IndexLevel, TimeRa
 use dpp::data_contract::DataContract;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
+use grovedb::BackwardsReferences;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg, TreeType};
 use grovedb_path::SubtreePath;
 
@@ -573,6 +574,7 @@ impl Drive {
         let cost_context = self.grove.drop_flat_subtree(
             SubtreePath::from(path_refs.as_slice()),
             key,
+            BackwardsReferences::DontCheck,
             transaction,
             &platform_version.drive.grove_version,
         );

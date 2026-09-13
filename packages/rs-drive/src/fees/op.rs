@@ -495,8 +495,13 @@ impl LowLevelDriveOperation {
                     GroveOp::InsertWithKnownToNotAlreadyExist { element }
                     | GroveOp::InsertIfNotExists { element, .. }
                     | GroveOp::InsertOrReplace { element }
+                    | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element }
                     | GroveOp::Replace { element }
-                    | GroveOp::Patch { element, .. } => element.set_flags(None),
+                    | GroveOp::ReplaceDontCheckForBackwardsReferences { element }
+                    | GroveOp::Patch { element, .. }
+                    | GroveOp::PatchDontCheckForBackwardsReferences { element, .. } => {
+                        element.set_flags(None)
+                    }
                     GroveOp::RefreshReference { flags, .. } => *flags = None,
                     _ => {}
                 }
@@ -1508,7 +1513,10 @@ impl LowLevelDriveOperation {
         key: Vec<u8>,
         element: Element,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(path, key, element))
+        GroveOperation(
+            QualifiedGroveDbOp::insert_or_replace_op(path, key, element)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for replacement of an element at the given path and key
@@ -1517,7 +1525,10 @@ impl LowLevelDriveOperation {
         key: Vec<u8>,
         element: Element,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::replace_op(path, key, element))
+        GroveOperation(
+            QualifiedGroveDbOp::replace_op(path, key, element)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for patching of an element at the given path and key
@@ -1528,12 +1539,10 @@ impl LowLevelDriveOperation {
         element: Element,
         change_in_bytes: i32,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::patch_op(
-            path,
-            key,
-            element,
-            change_in_bytes,
-        ))
+        GroveOperation(
+            QualifiedGroveDbOp::patch_op(path, key, element, change_in_bytes)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for inserting an element at an unknown estimated path and key
@@ -1542,7 +1551,10 @@ impl LowLevelDriveOperation {
         key: KeyInfo,
         element: Element,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::insert_estimated_op(path, key, element))
+        GroveOperation(
+            QualifiedGroveDbOp::insert_estimated_op(path, key, element)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for replacement of an element at an unknown estimated path and key
@@ -1551,7 +1563,10 @@ impl LowLevelDriveOperation {
         key: KeyInfo,
         element: Element,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::replace_estimated_op(path, key, element))
+        GroveOperation(
+            QualifiedGroveDbOp::replace_estimated_op(path, key, element)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for refresh of a reference at the given path and key
@@ -2585,7 +2600,8 @@ mod tests {
 
         match op {
             LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
-                GroveOp::InsertOrReplace { element } => assert!(
+                GroveOp::InsertOrReplace { element }
+                | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => assert!(
                     matches!(element, Element::ProvableSumTree(..)),
                     "expected ProvableSumTree element, got: {:?}",
                     element
@@ -2670,7 +2686,10 @@ mod tests {
             });
             let element = match op {
                 LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
-                    GroveOp::InsertOrReplace { element } => element,
+                    GroveOp::InsertOrReplace { element }
+                    | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => {
+                        element
+                    }
                     other => panic!("expected InsertOrReplace, got {other:?}"),
                 },
                 other => panic!("expected GroveOperation, got {other:?}"),

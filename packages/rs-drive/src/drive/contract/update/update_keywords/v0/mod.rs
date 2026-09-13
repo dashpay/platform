@@ -597,7 +597,10 @@ mod tests {
             .fold((0, 0), |(deletes, inserts), operation| match operation {
                 LowLevelDriveOperation::GroveOperation(op) if op.path.to_path() == group_path => {
                     match op.op {
-                        GroveOp::Delete | GroveOp::DeleteTree(..) => (deletes + 1, inserts),
+                        GroveOp::DeleteDontCheckForBackwardsReferences
+                        | GroveOp::DeleteTreeDontCheckForBackwardsReferences(..) => {
+                            (deletes + 1, inserts)
+                        }
                         _ => (deletes, inserts + 1),
                     }
                 }

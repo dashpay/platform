@@ -46,7 +46,11 @@ fn pending_tree_already_queued(
         }
         if previous.path == candidate.path
             && previous.key == candidate.key
-            && matches!(previous.op, GroveOp::DeleteTree(_, _))
+            && matches!(
+                previous.op,
+                GroveOp::DeleteTree(_, _)
+                    | GroveOp::DeleteTreeDontCheckForBackwardsReferences(_, _)
+            )
         {
             existing_operations.remove(i);
             return Ok(true);
@@ -662,7 +666,7 @@ mod tests {
 
             let element = match ops.pop().expect("one operation must be pushed") {
                 LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
-                    GroveOp::InsertOrReplace { element } => element,
+                    GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => element,
                     other => panic!("{description}: expected InsertOrReplace, got {other:?}"),
                 },
                 other => panic!("{description}: expected GroveOperation, got {other:?}"),
@@ -690,7 +694,7 @@ mod tests {
         assert!(inserted);
         let element = match ops.pop().expect("one operation must be pushed") {
             LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
-                GroveOp::InsertOrReplace { element } => element,
+                GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => element,
                 other => panic!("expected InsertOrReplace, got {other:?}"),
             },
             other => panic!("expected GroveOperation, got {other:?}"),
@@ -751,7 +755,7 @@ mod tests {
         assert!(inserted);
         let element = match ops.pop().expect("one operation must be pushed") {
             LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
-                GroveOp::InsertOrReplace { element } => element,
+                GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => element,
                 other => panic!("expected InsertOrReplace, got {other:?}"),
             },
             other => panic!("expected GroveOperation, got {other:?}"),

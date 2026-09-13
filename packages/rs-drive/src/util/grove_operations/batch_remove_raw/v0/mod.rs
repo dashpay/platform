@@ -9,6 +9,7 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::{GroveOp, KeyInfoPath};
 use grovedb::operations::delete::DeleteOptions;
+use grovedb::BackwardsReferences;
 use grovedb::{Element, GroveDb, TransactionArg};
 use grovedb_path::SubtreePath;
 use grovedb_storage::rocksdb_storage::RocksDbStorage;
@@ -29,6 +30,9 @@ impl Drive {
         let mut current_batch_operations =
             LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
         let options = DeleteOptions {
+            // Drive stores no backward-reference participants; GroveDB checks the
+            // claim for free from the value it reads for the write.
+            backwards_references: BackwardsReferences::DontCheck,
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,
@@ -37,15 +41,28 @@ impl Drive {
 
         let needs_removal_from_state =
             match current_batch_operations.remove_if_insert(path.to_vec(), key) {
-                Some(GroveOp::InsertOrReplace { element })
-                | Some(GroveOp::Replace { element })
-                | Some(GroveOp::Patch { element, .. }) => return Ok(Some(element)),
+                Some(
+                    GroveOp::InsertOrReplace { element }
+                    | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element },
+                )
+                | Some(
+                    GroveOp::Replace { element }
+                    | GroveOp::ReplaceDontCheckForBackwardsReferences { element },
+                )
+                | Some(
+                    GroveOp::Patch { element, .. }
+                    | GroveOp::PatchDontCheckForBackwardsReferences { element, .. },
+                ) => return Ok(Some(element)),
                 Some(GroveOp::InsertTreeWithRootHash { .. }) => {
                     return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                         "we should not be seeing internal grovedb operations",
                     )));
                 }
-                Some(GroveOp::Delete) | Some(GroveOp::DeleteTree(_, _)) => false,
+                Some(GroveOp::Delete | GroveOp::DeleteDontCheckForBackwardsReferences)
+                | Some(
+                    GroveOp::DeleteTree(_, _)
+                    | GroveOp::DeleteTreeDontCheckForBackwardsReferences(_, _),
+                ) => false,
                 _ => true,
             };
 
@@ -79,6 +96,7 @@ impl Drive {
                     true,
                     0,
                     (estimated_key_size, estimated_value_size),
+                    BackwardsReferences::DontCheck,
                     &drive_version.grove_version,
                 )
                 .map(|r| r.map(Some)),
