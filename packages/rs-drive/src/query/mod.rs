@@ -2042,23 +2042,73 @@ impl<'a> DriveDocumentQuery<'a> {
                 &platform_version.drive.grove_version,
             )
             .map_err(Error::from)?;
-            merged.query.limit = limit.map(|a| a.saturating_add(1));
-            // The merged root must be walked ascending regardless of the
-            // page's `orderBy` direction: the `limit + 1` above reserves
-            // one result slot for the cursor document, and the prover
-            // spends the budget in root traversal order. Ascending, the
-            // cursor branch (key `[0]`) is visited first and takes its
-            // reserved slot; descending, the index branch sorts first,
-            // consumes the whole budget mid-timeline, and the prover then
-            // omits the cursor subtree's lower layer — an unverifiable
-            // proof (the verifier extracts the cursor document from the
-            // proof before rebuilding the main query). Only this
-            // synthesized root flips: each input's own query lands intact
-            // inside a subquery branch, keeping in-branch result order.
-            // The verifier never rebuilds the merged query — it runs the
-            // cursor and main queries as separate subset queries — so the
-            // root's direction is not client-visible.
-            merged.query.query.left_to_right = true;
+            // Where the merge lands decides how the two queries combine. An
+            // index-ordered page lives under its index tree while the cursor
+            // lookup lives under the primary-key tree, so the merge synthesizes
+            // a root one level above both with each query in its own branch.
+            // A `$id`-ordered page addresses the primary-key tree directly: the
+            // cursor lookup shares that path (or, for a history-keeping type,
+            // sits one level below it), so the merge point is the page query's
+            // own root layer and the merged query IS that layer.
+            let cursor_on_page_layer = merged.path == main_path_query.path;
+            // The cursor's key on that shared layer: the cursor query's own key
+            // when both paths coincide, otherwise the path component the cursor
+            // query descends through.
+            let cursor_key_on_page_layer: Option<&[u8]> = if !cursor_on_page_layer {
+                None
+            } else if let Some(component) = start_at_path_query.path.get(merged.path.len()) {
+                Some(component.as_slice())
+            } else {
+                match start_at_path_query.query.query.items.as_slice() {
+                    [QueryItem::Key(cursor_key)] => Some(cursor_key.as_slice()),
+                    _ => None,
+                }
+            };
+            // On a shared layer the cursor row is already one of the page's
+            // rows whenever the page's own items cover it (an inclusive
+            // `startAt` on a range, or an `in` list that names the cursor). It
+            // then needs no reserved slot: reserving one would make the layer
+            // return `limit + 1` rows matching the page query, which the
+            // verifier rejects as more data than its limit.
+            let cursor_row_in_page = cursor_key_on_page_layer.is_some_and(|cursor_key| {
+                main_path_query
+                    .query
+                    .query
+                    .items
+                    .iter()
+                    .any(|item| item.contains(cursor_key))
+            });
+            merged.query.limit = limit.map(|a| {
+                if cursor_row_in_page {
+                    a
+                } else {
+                    a.saturating_add(1)
+                }
+            });
+            if !cursor_on_page_layer {
+                // A synthesized root must be walked ascending regardless of
+                // the page's `orderBy` direction: the `limit + 1` above
+                // reserves one result slot for the cursor document, and the
+                // prover spends the budget in root traversal order. Ascending,
+                // the cursor branch (key `[0]`) is visited first and takes its
+                // reserved slot; descending, the index branch sorts first,
+                // consumes the whole budget mid-timeline, and the prover then
+                // omits the cursor subtree's lower layer — an unverifiable
+                // proof (the verifier extracts the cursor document from the
+                // proof before rebuilding the main query). Only this
+                // synthesized root flips: each input's own query lands intact
+                // inside a subquery branch, keeping in-branch result order.
+                // The verifier never rebuilds the merged query — it runs the
+                // cursor and main queries as separate subset queries — so the
+                // root's direction is not client-visible.
+                //
+                // A shared layer has no synthesized root to flip: the merged
+                // query IS the page query's own layer, which the verifier
+                // walks in the requested direction, and the cursor row sits at
+                // the page's boundary, so the requested direction reaches it
+                // first anyway.
+                merged.query.query.left_to_right = true;
+            }
             Ok(merged)
         } else {
             Ok(main_path_query)

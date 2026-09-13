@@ -114,7 +114,11 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
+                                && matches!(
+                                    grove_op.op,
+                                    GroveOp::DeleteTree(_, _)
+                                        | GroveOp::DeleteTreeDontCheckForBackwardsReferences(_, _)
+                                )
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -177,7 +181,11 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
+                                && matches!(
+                                    grove_op.op,
+                                    GroveOp::DeleteTree(_, _)
+                                        | GroveOp::DeleteTreeDontCheckForBackwardsReferences(_, _)
+                                )
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -238,7 +246,11 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
+                                && matches!(
+                                    grove_op.op,
+                                    GroveOp::DeleteTree(_, _)
+                                        | GroveOp::DeleteTreeDontCheckForBackwardsReferences(_, _)
+                                )
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -299,7 +311,11 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
+                                && matches!(
+                                    grove_op.op,
+                                    GroveOp::DeleteTree(_, _)
+                                        | GroveOp::DeleteTreeDontCheckForBackwardsReferences(_, _)
+                                )
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -718,7 +734,7 @@ mod tests {
 
             let element = match ops.pop().expect("one operation must be pushed") {
                 LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
-                    GroveOp::InsertOrReplace { element } => element,
+                    GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => element,
                     other => panic!("{description}: expected InsertOrReplace, got {other:?}"),
                 },
                 other => panic!("{description}: expected GroveOperation, got {other:?}"),
@@ -746,7 +762,7 @@ mod tests {
         assert!(inserted);
         let element = match ops.pop().expect("one operation must be pushed") {
             LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
-                GroveOp::InsertOrReplace { element } => element,
+                GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => element,
                 other => panic!("expected InsertOrReplace, got {other:?}"),
             },
             other => panic!("expected GroveOperation, got {other:?}"),
@@ -807,7 +823,7 @@ mod tests {
         assert!(inserted);
         let element = match ops.pop().expect("one operation must be pushed") {
             LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
-                GroveOp::InsertOrReplace { element } => element,
+                GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => element,
                 other => panic!("expected InsertOrReplace, got {other:?}"),
             },
             other => panic!("expected GroveOperation, got {other:?}"),
