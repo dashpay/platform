@@ -256,7 +256,7 @@ impl MockResponse for drive_proof_verifier::types::DocumentHistoryProofInfo {
                 .expect("decode document history proof info");
         Self {
             history: drive_proof_verifier::types::DocumentHistory::mock_deserialize(sdk, &history),
-            response: dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV1::decode(response.as_slice())
+            response: dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV0::decode(response.as_slice())
                 .expect("decode document history response"),
         }
     }
