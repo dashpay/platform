@@ -212,7 +212,7 @@ impl DocumentHistoryProofV1 {
                 bincode::decode_from_slice(bytes, bincode::config::standard().with_big_endian())
                     .map_err(|_| corrupt("invalid document history proof envelope"))?;
             if envelope != 1 {
-                return Err(invalid("unsupported proof version: document history v1 requires GroveDB v1 proof envelopes"));
+                return Err(invalid("unsupported proof version: document history proofs require GroveDB v1 proof envelopes"));
             }
         }
         Ok(())

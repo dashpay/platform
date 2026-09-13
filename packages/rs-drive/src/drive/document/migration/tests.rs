@@ -480,7 +480,7 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
         );
         let error =
             Drive::verify_document_history_v1(&history_query, &downgraded, document_type, new)
-                .expect_err("history v1 rejects legacy metadata envelopes");
+                .expect_err("document history rejects legacy metadata envelopes");
         assert!(matches!(
             error,
             Error::Query(crate::error::query::QuerySyntaxError::Unsupported(_))
