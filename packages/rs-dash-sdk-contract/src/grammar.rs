@@ -1212,6 +1212,25 @@ mod tests {
     }
 
     #[test]
+    fn should_keep_attribute_and_option_names_unique_and_groups_resolvable() {
+        let mut names: Vec<&str> = ATTRIBUTES.iter().map(|spec| spec.name).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), ATTRIBUTES.len());
+        for spec in ATTRIBUTES {
+            let mut keys: Vec<&str> = spec.keys.iter().map(|key| key.name).collect();
+            keys.sort_unstable();
+            keys.dedup();
+            assert_eq!(keys.len(), spec.keys.len(), "options of {}", spec.name);
+            for group in spec.exactly_one_of {
+                for option in *group {
+                    assert!(keys.contains(option), "{option} of {}", spec.name);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn should_report_unknown_attribute() {
         let diagnostics = check_keys("persisted", &[]);
         assert_eq!(kinds(&diagnostics), ["UnknownAttribute"]);
