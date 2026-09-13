@@ -47,46 +47,6 @@ pub struct DocumentHistoryQueryV1 {
     pub limit: Option<u16>,
 }
 
-/// Versioned history request accepted by the Drive dispatchers.
-#[derive(Debug, Clone)]
-pub enum DocumentHistoryQuery {
-    /// Timestamp-only layout used by released protocols.
-    V0 {
-        /// Contract identifier.
-        contract_id: [u8; 32],
-        /// Document type name.
-        document_type_name: String,
-        /// Document identifier.
-        document_id: [u8; 32],
-        /// Inclusive timestamp lower bound.
-        start_at_ms: u64,
-        /// Page length.
-        limit: Option<u16>,
-        /// Legacy ordinal offset.
-        offset: Option<u16>,
-    },
-    /// Composite-key layout with authenticated lifecycle metadata.
-    V1(DocumentHistoryQueryV1),
-}
-
-/// A history result selected by the protocol's layout.
-#[derive(Debug)]
-pub enum DocumentHistoryResult {
-    /// Timestamp-keyed legacy revisions.
-    V0(std::collections::BTreeMap<u64, Document>),
-    /// Composite revisions and lifecycle metadata.
-    V1(DocumentHistoryV1),
-}
-
-/// Proof material selected by the protocol's layout.
-#[derive(Debug)]
-pub enum DocumentHistoryProof {
-    /// One legacy history proof.
-    V0(Vec<u8>),
-    /// Separate composite-entry and lifecycle proofs.
-    V1(DocumentHistoryProofV1),
-}
-
 /// Lifecycle states supported by live-pointer storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DocumentHistoryState {
@@ -125,13 +85,120 @@ pub struct DocumentHistoryV1 {
     pub lifecycle: DocumentHistoryLifecycle,
 }
 
-/// Separate leaf pagination and metadata proofs.
-#[derive(Debug, Clone)]
+/// The two GroveDB proofs a history page needs, carried as one proof on the
+/// wire.
+///
+/// They answer two queries GroveDB cannot merge: the offset-paginated read of
+/// the document's history tree, and the exact-key absence-proof read of the
+/// current pointer, the lifecycle record and the history tree's count.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentHistoryProofV1 {
     /// Omitted only if metadata proves that the history tree is absent.
     pub entries_proof: Option<Vec<u8>>,
     /// Proves the current pointer and the raw history count-tree element.
     pub metadata_proof: Vec<u8>,
+}
+
+/// Version byte of the only proof envelope layout that exists.
+const DOCUMENT_HISTORY_PROOF_ENVELOPE_V0: u8 = 0;
+
+impl DocumentHistoryProofV1 {
+    /// Encodes both proofs as one byte string: a version byte, the metadata
+    /// proof behind a big-endian `u32` length, then a presence byte for the
+    /// entries proof followed, when present, by its length and bytes.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let entries_len = self
+            .entries_proof
+            .as_ref()
+            .map_or(0, |proof| 4 + proof.len());
+        let mut bytes = Vec::with_capacity(1 + 4 + self.metadata_proof.len() + 1 + entries_len);
+        bytes.push(DOCUMENT_HISTORY_PROOF_ENVELOPE_V0);
+        bytes.extend((self.metadata_proof.len() as u32).to_be_bytes());
+        bytes.extend(&self.metadata_proof);
+        match &self.entries_proof {
+            Some(proof) => {
+                bytes.push(1);
+                bytes.extend((proof.len() as u32).to_be_bytes());
+                bytes.extend(proof);
+            }
+            None => bytes.push(0),
+        }
+        bytes
+    }
+
+    /// Decodes an envelope written by [`Self::to_bytes`], requiring the whole
+    /// input to be consumed: a proof is produced only by a node, so anything
+    /// else is not the proof this code believes it is reading.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
+        fn take<'a>(
+            bytes: &mut &'a [u8],
+            len: usize,
+            what: &'static str,
+        ) -> Result<&'a [u8], Error> {
+            if bytes.len() < len {
+                return Err(corrupt(what));
+            }
+            let (head, tail) = bytes.split_at(len);
+            *bytes = tail;
+            Ok(head)
+        }
+        fn length(bytes: &mut &[u8], what: &'static str) -> Result<usize, Error> {
+            let mut buffer = [0u8; 4];
+            buffer.copy_from_slice(take(bytes, 4, what)?);
+            Ok(u32::from_be_bytes(buffer) as usize)
+        }
+        let mut rest = bytes;
+        let version = take(&mut rest, 1, "document history proof envelope is empty")?[0];
+        if version != DOCUMENT_HISTORY_PROOF_ENVELOPE_V0 {
+            return Err(corrupt("unknown document history proof envelope version"));
+        }
+        let metadata_len = length(
+            &mut rest,
+            "document history proof envelope lacks its metadata proof length",
+        )?;
+        let metadata_proof = take(
+            &mut rest,
+            metadata_len,
+            "document history proof envelope is shorter than its metadata proof",
+        )?
+        .to_vec();
+        let entries_proof = match take(
+            &mut rest,
+            1,
+            "document history proof envelope lacks its entries presence byte",
+        )?[0]
+        {
+            0 => None,
+            1 => {
+                let entries_len = length(
+                    &mut rest,
+                    "document history proof envelope lacks its entries proof length",
+                )?;
+                Some(
+                    take(
+                        &mut rest,
+                        entries_len,
+                        "document history proof envelope is shorter than its entries proof",
+                    )?
+                    .to_vec(),
+                )
+            }
+            _ => {
+                return Err(corrupt(
+                    "document history proof envelope has an invalid entries presence byte",
+                ))
+            }
+        };
+        if !rest.is_empty() {
+            return Err(corrupt(
+                "document history proof envelope has trailing bytes",
+            ));
+        }
+        Ok(Self {
+            entries_proof,
+            metadata_proof,
+        })
+    }
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -193,7 +260,7 @@ impl DocumentHistoryQueryV1 {
 
     /// The leaf-only query required for authenticated count-offset pagination.
     pub fn entries_query(&self, version: &PlatformVersion) -> Result<PathQuery, Error> {
-        Drive::fetch_document_history_query(&DocumentHistoryQuery::V1(self.clone()), version)
+        Drive::fetch_document_history_query(self, version)
     }
 
     pub(crate) fn entries_query_v1(&self) -> Result<PathQuery, Error> {
@@ -559,7 +626,7 @@ mod tests;
 
 #[cfg(feature = "server")]
 impl Drive {
-    /// Fetches composite history through the protocol dispatcher.
+    /// Fetches a page of a historical document's history with its lifecycle.
     pub fn fetch_document_history_v1(
         &self,
         query: &DocumentHistoryQueryV1,
@@ -567,17 +634,10 @@ impl Drive {
         transaction: grovedb::TransactionArg,
         version: &PlatformVersion,
     ) -> Result<DocumentHistoryV1, Error> {
-        match self.fetch_document_history(
-            &DocumentHistoryQuery::V1(query.clone()),
-            document_type,
-            transaction,
-            version,
-        )? {
-            DocumentHistoryResult::V1(history) => Ok(history),
-            _ => Err(invalid("composite history requires history v1")),
-        }
+        self.fetch_document_history(query, document_type, transaction, version)
     }
-    /// Proves composite history through the protocol dispatcher.
+
+    /// Proves a page of a historical document's history with its lifecycle.
     pub fn prove_document_history_v1(
         &self,
         query: &DocumentHistoryQueryV1,
@@ -585,34 +645,62 @@ impl Drive {
         transaction: grovedb::TransactionArg,
         version: &PlatformVersion,
     ) -> Result<(DocumentHistoryV1, DocumentHistoryProofV1), Error> {
-        match self.prove_document_history(
-            &DocumentHistoryQuery::V1(query.clone()),
-            Some(document_type),
-            transaction,
-            version,
-        )? {
-            (Some(history), DocumentHistoryProof::V1(proof)) => Ok((history, proof)),
-            _ => Err(invalid("composite history requires history v1")),
-        }
+        self.prove_document_history(query, document_type, transaction, version)
     }
 }
+
 #[cfg(any(feature = "server", feature = "verify"))]
 impl Drive {
-    /// Verifies composite history through the protocol dispatcher.
+    /// Verifies a proved page of a historical document's history and lifecycle.
     pub fn verify_document_history_v1(
         query: &DocumentHistoryQueryV1,
         proof: &DocumentHistoryProofV1,
         document_type: DocumentTypeRef,
         version: &PlatformVersion,
     ) -> Result<([u8; 32], DocumentHistoryV1), Error> {
-        match Self::verify_document_history(
-            &DocumentHistoryProof::V1(proof.clone()),
-            &DocumentHistoryQuery::V1(query.clone()),
-            document_type,
-            version,
-        )? {
-            (root, Some(DocumentHistoryResult::V1(history))) => Ok((root, history)),
-            _ => Err(invalid("composite history requires history v1")),
+        Self::verify_document_history(proof, query, document_type, version)
+    }
+}
+
+#[cfg(test)]
+mod proof_envelope_tests {
+    use super::DocumentHistoryProofV1;
+
+    #[test]
+    fn should_round_trip_with_and_without_an_entries_proof() {
+        for entries_proof in [Some(vec![1u8, 2, 3]), None, Some(vec![])] {
+            let proof = DocumentHistoryProofV1 {
+                entries_proof,
+                metadata_proof: vec![9u8; 5],
+            };
+            assert_eq!(
+                DocumentHistoryProofV1::from_bytes(&proof.to_bytes()).unwrap(),
+                proof
+            );
         }
+    }
+
+    #[test]
+    fn should_reject_truncated_altered_and_padded_envelopes() {
+        let bytes = DocumentHistoryProofV1 {
+            entries_proof: Some(vec![1u8, 2, 3]),
+            metadata_proof: vec![9u8; 5],
+        }
+        .to_bytes();
+        for cut in [0, 1, 4, 6, 10, bytes.len() - 1] {
+            assert!(
+                DocumentHistoryProofV1::from_bytes(&bytes[..cut]).is_err(),
+                "cut at {cut}"
+            );
+        }
+        let mut padded = bytes.clone();
+        padded.push(0);
+        assert!(DocumentHistoryProofV1::from_bytes(&padded).is_err());
+        let mut wrong_version = bytes.clone();
+        wrong_version[0] = 1;
+        assert!(DocumentHistoryProofV1::from_bytes(&wrong_version).is_err());
+        let mut bad_presence = bytes;
+        bad_presence[1 + 4 + 5] = 2;
+        assert!(DocumentHistoryProofV1::from_bytes(&bad_presence).is_err());
     }
 }

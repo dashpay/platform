@@ -542,61 +542,6 @@ fn should_charge_count_tree_overhead_when_propagating_history_roots() {
 }
 
 #[test]
-fn should_report_legacy_history_as_unsupported_after_activation() {
-    let version = PlatformVersion::get(14).unwrap();
-    let drive = setup_drive_with_initial_state_structure(Some(version));
-    let contract = json_document_to_contract(
-        "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
-        false,
-        version,
-    )
-    .unwrap();
-    let document_type = contract.document_type_for_name("profile").unwrap();
-    let errors = [
-        drive
-            .fetch_document_history_legacy(
-                [1; 32],
-                "profile",
-                document_type,
-                [2; 32],
-                None,
-                0,
-                None,
-                None,
-                version,
-            )
-            .unwrap_err(),
-        drive
-            .prove_document_history_legacy(
-                [1; 32], "profile", [2; 32], None, 0, None, None, version,
-            )
-            .unwrap_err(),
-        Drive::fetch_document_history_query_legacy(
-            [1; 32], "profile", [2; 32], 0, None, None, version,
-        )
-        .unwrap_err(),
-        Drive::verify_document_history_legacy(
-            &[],
-            [1; 32],
-            "profile",
-            document_type,
-            [2; 32],
-            0,
-            None,
-            None,
-            version,
-        )
-        .unwrap_err(),
-    ];
-    for error in errors {
-        assert!(
-            matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
-            "legacy history is a supported method with an obsolete request shape: {error:?}"
-        );
-    }
-}
-
-#[test]
 fn should_reject_history_keys_that_are_not_sixteen_bytes() {
     let version = PlatformVersion::get(14).unwrap();
     let contract = json_document_to_contract(
