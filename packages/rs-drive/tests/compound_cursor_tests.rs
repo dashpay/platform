@@ -167,21 +167,34 @@ fn assert_compound_cursor_pages_for_index(
                 (1..=4).contains(a) && (*b == 5 || *b == 0)
             }) {
                 for limit in [4usize, 100] {
-                    // GroveDB deliberately charges empty subqueries against
-                    // the page's traversal budget. Use the full-page assertion
-                    // for those cases; assert a filled short page when the
-                    // cursor's id subtree still has a matching document (or
-                    // the outer cursor branch is not selected at all).
-                    let cursor_subtree_has_results = rows.iter().any(|row| {
-                        row.0 == cursor.0
-                            && row.1 == cursor.1
-                            && row.1 > 0
-                            && (compare(row, cursor).is_gt()
-                                || (included && compare(row, cursor).is_eq()))
+                    // GroveDB deliberately charges an empty subquery against
+                    // the page's traversal budget, so the page after the
+                    // cursor is one row short exactly when the cursor's
+                    // conditional branch visits nothing: on a non-unique
+                    // index whose cursor key is inside the inner clause, its
+                    // id subtree holds nothing after the cursor; otherwise
+                    // (unique index, or a cursor the clause excludes) the
+                    // cursor's branch has no matching row after the cursor.
+                    let after_cursor = |row: &(u8, u8, Document)| {
+                        compare(row, cursor).is_gt() || (included && compare(row, cursor).is_eq())
+                    };
+                    let cursor_id_subtree_has_results = rows.iter().any(|row| {
+                        row.0 == cursor.0 && row.1 == cursor.1 && row.1 > 0 && after_cursor(row)
                     });
-                    if limit == 4 && in_values.contains(&cursor.0) && !cursor_subtree_has_results {
-                        continue;
-                    }
+                    let cursor_branch_has_results = rows
+                        .iter()
+                        .any(|row| row.0 == cursor.0 && row.1 > 0 && after_cursor(row));
+                    let empty_subtree_charged = in_values.contains(&cursor.0)
+                        && if cursor.1 > 0 && !unique {
+                            !cursor_id_subtree_has_results
+                        } else {
+                            !cursor_branch_has_results
+                        };
+                    let page_limit = if empty_subtree_charged {
+                        limit - 1
+                    } else {
+                        limit
+                    };
                     let mut expected_rows: Vec<_> = rows
                         .iter()
                         .filter(|row| in_values.contains(&row.0) && row.1 > 0)
@@ -193,7 +206,7 @@ fn assert_compound_cursor_pages_for_index(
                     expected_rows.sort_by(|left, right| compare(left, right));
                     let expected: Vec<_> = expected_rows
                         .into_iter()
-                        .take(limit)
+                        .take(page_limit)
                         .map(|row| row.2.id())
                         .collect();
 
@@ -206,7 +219,7 @@ fn assert_compound_cursor_pages_for_index(
                         json!(bs58::encode(cursor.2.id().as_slice()).into_string());
                     let context = format!(
                         "unique={unique}, a={order}, b={inner_order}, included={included}, prove={prove}, \
-                         IN={in_values:?}, cursor=({}, {}, {}), limit={limit}",
+                         IN={in_values:?}, cursor=({}, {}, {}), limit={limit}, charged={empty_subtree_charged}",
                         cursor.0,
                         cursor.1,
                         cursor.2.id()
