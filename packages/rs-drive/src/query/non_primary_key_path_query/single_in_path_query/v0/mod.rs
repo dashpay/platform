@@ -168,13 +168,18 @@ impl<'a> DriveDocumentQuery<'a> {
                         .ok()
                         .flatten();
 
-                    // The cursor's key stays in the level whenever something
-                    // below it still refines the cursor: deeper left-over
-                    // levels, or a non-unique index's id level. Only a unique
-                    // index's terminal key holds the cursor document itself,
-                    // so only there does `included` decide.
+                    // The cursor's key stays in the level whenever a deeper
+                    // left-over level still refines the cursor; a terminal
+                    // key is kept only for startAt. Keeping a non-unique
+                    // terminal key on startAfter would be more complete (the
+                    // documents sharing the cursor's value and ordered after
+                    // its id are skipped today, as in the released lowering),
+                    // but it would visit the cursor's id subtree on every
+                    // page, and whenever the cursor was that value's only
+                    // document GroveDB charges the empty subtree against the
+                    // limit, shortening nearly every startAfter page by one.
                     let non_conditional_included =
-                        !left_over.is_empty() || !unique || *included || start_at_key.is_none();
+                        !left_over.is_empty() || *included || start_at_key.is_none();
 
                     let mut non_conditional_query = Self::inner_query_starts_from_key(
                         start_at_key.clone(),
@@ -717,6 +722,24 @@ impl<'a> DriveDocumentQuery<'a> {
                             &self.order_by,
                             platform_version,
                         )?;
+                        // Whether the cursor's inner key satisfies the inner
+                        // clause. Only such a key may be kept in the cursor's
+                        // range for the id level or deeper levels to paginate
+                        // within; a cursor sitting on a strict bound or past
+                        // the range must not widen the clause's own range.
+                        let cursor_inner_key = match &starts_at_document {
+                            Some((document, _)) => document.get_raw_for_document_type(
+                                subquery_where_clause.field.as_str(),
+                                self.document_type,
+                                None,
+                                platform_version,
+                            )?,
+                            None => None,
+                        };
+                        let cursor_inner_key_in_clause =
+                            cursor_inner_key.as_ref().is_some_and(|key| {
+                                subquery.items.iter().any(|item| item.contains(key))
+                            });
                         let subindex = subquery_where_clause.field.as_bytes().to_vec();
                         query.set_subquery_key(subindex.clone());
                         query.set_subquery(subquery);
@@ -727,9 +750,12 @@ impl<'a> DriveDocumentQuery<'a> {
                             // with the cursor only on the cursor's outer key.
                             // Non-unique or deeper levels must keep the inner
                             // key so their conditional query can paginate
-                            // within it, including document-id ties.
-                            let inner_included =
-                                included || !index.unique || !left_over_index_properties.is_empty();
+                            // within it, including document-id ties — but
+                            // only when that key is inside the clause.
+                            let inner_included = cursor_inner_key_in_clause
+                                && (included
+                                    || !index.unique
+                                    || !left_over_index_properties.is_empty());
                             let mut cursor_subquery = subquery_where_clause.to_path_query(
                                 self.document_type,
                                 &Some((document.clone(), inner_included)),
@@ -753,15 +779,9 @@ impl<'a> DriveDocumentQuery<'a> {
                                     platform_version,
                                 )?
                                 .unwrap_or_default();
-                            let inner_key = document.get_raw_for_document_type(
-                                subquery_where_clause.field.as_str(),
-                                self.document_type,
-                                None,
-                                platform_version,
-                            )?;
                             Self::recursive_conditional_insert_on_query_ordered(
                                 &mut cursor_subquery,
-                                inner_key,
+                                cursor_inner_key,
                                 left_over_index_properties.as_slice(),
                                 index.unique,
                                 &StartAtDocument {

@@ -686,30 +686,93 @@ fn should_paginate_descending_duplicates_on_in_level_with_left_over_property() {
     );
 }
 
+/// Every row (inside or outside the predicate) as a startAt/startAfter
+/// cursor, raw and proven, must yield exactly the predicate's rows ordered
+/// after (or at) the cursor's position in the full ordering.
+fn assert_cursors_over_all_rows(
+    fixture: &LeftOverFixture,
+    where_clauses: serde_json::Value,
+    order_by: serde_json::Value,
+    filter: impl Fn(&[u8; 3]) -> bool,
+    order: &[(usize, bool)],
+) {
+    let full = left_over_oracle(fixture, |_| true, order);
+    let matching = left_over_oracle(fixture, filter, order);
+    for prove in [false, true] {
+        for (position, id) in full.iter().enumerate() {
+            for included in [true, false] {
+                let from = if included { position } else { position + 1 };
+                let expected: Vec<Identifier> = full[from..]
+                    .iter()
+                    .filter(|id| matching.contains(id))
+                    .copied()
+                    .collect();
+                let got = left_over_page(
+                    fixture,
+                    where_clauses.clone(),
+                    order_by.clone(),
+                    100,
+                    Some((*id, included)),
+                    prove,
+                );
+                assert_eq!(
+                    got, expected,
+                    "{where_clauses} {order_by}: prove={prove}, included={included}, cursor position {position}"
+                );
+            }
+        }
+    }
+}
+
 #[test]
-fn should_paginate_duplicates_after_equality_clause_in_both_directions() {
-    // Equality last clause with b left over on a non-unique index: the
-    // cursor's b key must stay in the level so its id level can continue.
-    let rows: Vec<[u8; 3]> = [3u8, 5, 5, 5, 7, 7]
+fn should_not_widen_inner_bound_for_cursor_on_or_past_the_bound() {
+    // Duplicate b=5 values sit exactly on the inner clause bounds; a cursor
+    // at b=5 must not pull the other b=5 documents into a strict range, and
+    // must still paginate within them for an inclusive one.
+    let rows: Vec<[u8; 3]> = [1u8, 2]
         .iter()
-        .map(|b| [1, *b, 0])
-        .chain([[2, 5, 0]])
+        .flat_map(|a| [1u8, 3, 5, 5, 5, 7].iter().map(move |b| [*a, *b, 0]))
         .collect();
+    let fixture = setup_left_over_fixture(&[("a", "asc"), ("b", "asc")], false, &rows);
+    type RowFilter = Box<dyn Fn(&[u8; 3]) -> bool>;
+    let predicates: [(&str, RowFilter); 4] = [
+        ("<", Box::new(|values| values[1] < 5)),
+        ("<=", Box::new(|values| values[1] <= 5)),
+        (">", Box::new(|values| values[1] > 5)),
+        (">=", Box::new(|values| values[1] >= 5)),
+    ];
+    for (operator, filter) in predicates {
+        for inner_ascending in [true, false] {
+            let inner_order = if inner_ascending { "asc" } else { "desc" };
+            assert_cursors_over_all_rows(
+                &fixture,
+                json!([["a", "in", [1, 2]], ["b", operator, 5]]),
+                json!([["a", "asc"], ["b", inner_order]]),
+                |values| (values[0] == 1 || values[0] == 2) && filter(values),
+                &[(0, true), (1, inner_ascending)],
+            );
+        }
+    }
+}
+
+#[test]
+fn should_not_return_empty_page_while_rows_remain_after_equality_with_limit_one() {
+    // An exhausted cursor subtree must not consume the whole page: with
+    // limit 1, every startAfter page must still carry the next row.
+    let rows: Vec<[u8; 3]> = [1u8, 3, 5, 7].iter().map(|b| [1, *b, 0]).collect();
     let fixture = setup_left_over_fixture(&[("a", "asc"), ("b", "asc")], false, &rows);
     for ascending in [true, false] {
         let expected = left_over_oracle(&fixture, |values| values[0] == 1, &[(1, ascending)]);
         let order = if ascending { "asc" } else { "desc" };
-        assert_walk_matches_oracle(
-            &fixture,
-            json!([["a", "==", 1]]),
-            json!([["b", order]]),
-            &expected,
-        );
-        assert_every_cursor_position(
-            &fixture,
-            json!([["a", "==", 1]]),
-            json!([["b", order]]),
-            &expected,
-        );
+        for prove in [false, true] {
+            let got = left_over_walk(
+                &fixture,
+                json!([["a", "==", 1]]),
+                json!([["b", order]]),
+                1,
+                prove,
+            );
+            assert_eq!(got, expected, "prove={prove}, order={order}");
+        }
     }
 }
