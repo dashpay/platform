@@ -1323,14 +1323,28 @@ mod tests {
     }
 
     fn test_fees_for_update_document(using_history: bool, using_transaction: bool) {
+        test_fees_for_update_document_at_version(
+            using_history,
+            using_transaction,
+            if using_history {
+                PlatformVersion::get(13).unwrap()
+            } else {
+                PlatformVersion::latest()
+            },
+        )
+    }
+
+    fn test_fees_for_update_document_at_version(
+        using_history: bool,
+        using_transaction: bool,
+        platform_version: &PlatformVersion,
+    ) {
         let config = DriveConfig {
             batching_consistency_verification: true,
             has_raw_enabled: true,
             default_genesis_time: Some(0),
             ..Default::default()
         };
-
-        let platform_version = PlatformVersion::latest();
 
         let drive: Drive = setup_drive(Some(config));
 
@@ -1358,7 +1372,7 @@ mod tests {
             None,
             None::<fn(&mut DataContract)>,
             transaction.as_ref(),
-            None,
+            Some(platform_version),
         );
 
         let id = Identifier::from([1u8; 32]);
@@ -1418,7 +1432,11 @@ mod tests {
             //Explanation for 1237
 
             //todo
-            1238
+            if platform_version.protocol_version == 14 {
+                1457
+            } else {
+                1238
+            }
         } else {
             //Explanation for 959
 
@@ -1624,19 +1642,41 @@ mod tests {
                 StorageDiskUsageCreditPerByte,
             );
 
-        let expected_added_bytes = if using_history { 313 } else { 1 };
+        let expected_added_bytes = if using_history {
+            if platform_version.protocol_version == 14 {
+                345
+            } else {
+                313
+            }
+        } else {
+            1
+        };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
     fn test_fees_for_update_document_on_index(using_history: bool, using_transaction: bool) {
+        test_fees_for_update_document_on_index_at_version(
+            using_history,
+            using_transaction,
+            if using_history {
+                PlatformVersion::get(13).unwrap()
+            } else {
+                PlatformVersion::latest()
+            },
+        )
+    }
+
+    fn test_fees_for_update_document_on_index_at_version(
+        using_history: bool,
+        using_transaction: bool,
+        platform_version: &PlatformVersion,
+    ) {
         let config = DriveConfig {
             batching_consistency_verification: true,
             has_raw_enabled: true,
             default_genesis_time: Some(0),
             ..Default::default()
         };
-
-        let platform_version = PlatformVersion::latest();
 
         let drive: Drive = setup_drive(Some(config));
 
@@ -1664,7 +1704,7 @@ mod tests {
             None,
             None::<fn(&mut DataContract)>,
             transaction.as_ref(),
-            None,
+            Some(platform_version),
         );
 
         let id = Identifier::from([1u8; 32]);
@@ -1703,7 +1743,15 @@ mod tests {
                 &EPOCH_CHANGE_FEE_VERSION_TEST,
                 StorageDiskUsageCreditPerByte,
             );
-        let expected_added_bytes = if using_history { 1238 } else { 962 };
+        let expected_added_bytes = if using_history {
+            if platform_version.protocol_version == 14 {
+                1457
+            } else {
+                1238
+            }
+        } else {
+            962
+        };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
             // let's delete it, just to make sure everything is working.
@@ -1779,10 +1827,18 @@ mod tests {
             .unwrap();
 
         // We added one byte, and since it is an index, and keys are doubled it's 2 extra bytes
-        let expected_added_bytes = if using_history { 607 } else { 605 };
+        let expected_added_bytes = if using_history && platform_version.protocol_version < 14 {
+            607
+        } else {
+            605
+        };
         assert_eq!(added_bytes, expected_added_bytes);
 
-        let expected_removed_credits = if using_history { 16286655 } else { 16232643 };
+        let expected_removed_credits = if using_history && platform_version.protocol_version < 14 {
+            16286655
+        } else {
+            16232643
+        };
         assert_eq!(*removed_credits, expected_removed_credits);
         let refund_equivalent_bytes = removed_credits.to_unsigned()
             / Epoch::new(0).unwrap().cost_for_known_cost_item(
@@ -1791,7 +1847,11 @@ mod tests {
             );
 
         assert!(expected_added_bytes > refund_equivalent_bytes);
-        let expected_remove_bytes = if using_history { 603 } else { 601 };
+        let expected_remove_bytes = if using_history && platform_version.protocol_version < 14 {
+            603
+        } else {
+            601
+        };
         assert_eq!(refund_equivalent_bytes, expected_remove_bytes); // we refunded 1011 instead of 1014
     }
 
@@ -1836,14 +1896,28 @@ mod tests {
     }
 
     fn test_estimated_fees_for_update_document(using_history: bool, using_transaction: bool) {
+        test_estimated_fees_for_update_document_at_version(
+            using_history,
+            using_transaction,
+            if using_history {
+                PlatformVersion::get(13).unwrap()
+            } else {
+                PlatformVersion::latest()
+            },
+        )
+    }
+
+    fn test_estimated_fees_for_update_document_at_version(
+        using_history: bool,
+        using_transaction: bool,
+        platform_version: &PlatformVersion,
+    ) {
         let config = DriveConfig {
             batching_consistency_verification: true,
             has_raw_enabled: true,
             default_genesis_time: Some(0),
             ..Default::default()
         };
-
-        let platform_version = PlatformVersion::latest();
 
         let drive: Drive = setup_drive(Some(config));
 
@@ -1871,7 +1945,7 @@ mod tests {
             None,
             None::<fn(&mut DataContract)>,
             transaction.as_ref(),
-            None,
+            Some(platform_version),
         );
 
         let id = Identifier::from([1u8; 32]);
@@ -1914,7 +1988,11 @@ mod tests {
             //Explanation for 1237
 
             //todo
-            1238
+            if platform_version.protocol_version == 14 {
+                1448
+            } else {
+                1238
+            }
         } else {
             //Explanation for 959
 
@@ -2071,7 +2149,15 @@ mod tests {
                 StorageDiskUsageCreditPerByte,
             );
 
-        let expected_added_bytes = if using_history { 1239 } else { 963 };
+        let expected_added_bytes = if using_history {
+            if platform_version.protocol_version == 14 {
+                1449
+            } else {
+                1239
+            }
+        } else {
+            963
+        };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
@@ -3523,6 +3609,36 @@ mod tests {
                 assert_eq!(total, 17, "expected 17, got {total} via Entries shape");
             }
             other => panic!("expected Aggregate or Entries, got {other:?}"),
+        }
+    }
+    #[test]
+    fn should_pin_protocol14_history_replacement_fees() {
+        for transaction in [false, true] {
+            test_fees_for_update_document_at_version(
+                true,
+                transaction,
+                PlatformVersion::get(14).unwrap(),
+            );
+        }
+    }
+    #[test]
+    fn should_pin_protocol14_history_index_replacement_fees() {
+        for transaction in [false, true] {
+            test_fees_for_update_document_on_index_at_version(
+                true,
+                transaction,
+                PlatformVersion::get(14).unwrap(),
+            );
+        }
+    }
+    #[test]
+    fn should_pin_protocol14_history_estimated_replacement_fees() {
+        for transaction in [false, true] {
+            test_estimated_fees_for_update_document_at_version(
+                true,
+                transaction,
+                PlatformVersion::get(14).unwrap(),
+            );
         }
     }
 }

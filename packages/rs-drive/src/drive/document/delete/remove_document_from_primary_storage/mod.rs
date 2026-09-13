@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -56,9 +57,18 @@ impl Drive {
                 batch_operations,
                 platform_version,
             ),
+            1 => self.remove_document_from_primary_storage_v1(
+                document_id,
+                document_type,
+                contract_documents_primary_key_path,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_document_from_primary_storage".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

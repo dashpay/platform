@@ -1,28 +1,22 @@
-mod v0;
-
+use crate::drive::document::history::{
+    invalid, DocumentHistoryProofV1, DocumentHistoryQueryV1, DocumentHistoryV1,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
 use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::document::Document;
 use dpp::version::PlatformVersion;
-use std::collections::BTreeMap;
 
 impl Drive {
-    /// Verifies that the document's history is included in the proof.
-    #[allow(clippy::too_many_arguments)]
+    /// Verifies a proved page of a historical document's retained revisions
+    /// and lifecycle, through the method version the protocol selects.
     pub fn verify_document_history(
-        proof: &[u8],
-        contract_id: [u8; 32],
-        document_type_name: &str,
+        proof: &DocumentHistoryProofV1,
+        query: &DocumentHistoryQueryV1,
         document_type: DocumentTypeRef,
-        document_id: [u8; 32],
-        start_at_ms: u64,
-        limit: Option<u16>,
-        offset: Option<u16>,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Option<BTreeMap<u64, Document>>), Error> {
+    ) -> Result<(RootHash, DocumentHistoryV1), Error> {
         match platform_version
             .drive
             .methods
@@ -30,20 +24,15 @@ impl Drive {
             .document
             .verify_document_history
         {
-            0 => Drive::verify_document_history_v0(
-                proof,
-                contract_id,
-                document_type_name,
-                document_type,
-                document_id,
-                start_at_ms,
-                limit,
-                offset,
-                platform_version,
-            ),
+            1 => {
+                Self::verify_document_history_v1_impl(query, proof, document_type, platform_version)
+            }
+            0 => Err(invalid(
+                "document history is served from protocol version 14",
+            )),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "verify_document_history".to_string(),
-                known_versions: vec![0],
+                method: "verify_document_history".to_owned(),
+                known_versions: vec![1],
                 received: version,
             })),
         }

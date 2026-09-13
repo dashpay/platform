@@ -28,6 +28,11 @@ pub struct DPPStateTransitionSerializationVersions {
     /// as `OptionalFeatureVersion`), and the batch basic-structure wire
     /// gate rejects the variant wherever this is `None`.
     pub document_index_only_delete_state_transition: Option<DocumentFeatureVersionBounds>,
+    /// The erase kind, which purges the retained revisions of a deleted
+    /// keep-history document. `None` below protocol version 14 — the kind does
+    /// not exist on the wire there, and the batch basic-structure wire gate
+    /// rejects the variant wherever this is `None`.
+    pub document_erase_state_transition: Option<DocumentFeatureVersionBounds>,
     pub document_transfer_state_transition: DocumentFeatureVersionBounds,
     pub document_update_price_state_transition: DocumentFeatureVersionBounds,
     pub document_purchase_state_transition: DocumentFeatureVersionBounds,

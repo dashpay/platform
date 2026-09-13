@@ -213,10 +213,28 @@ impl Drive {
             document,
             document_and_contract_info.document_type,
             storage_flags,
+            &platform_version.drive,
         );
 
         // next we need to get the old document from storage
-        let old_document_element = if document_type.documents_keep_history() {
+        let old_document_element = if document_type.documents_keep_history()
+            && platform_version
+                .drive
+                .methods
+                .document
+                .insert
+                .add_document_to_primary_storage
+                == 1
+        {
+            self.grove_get(
+                (&contract_documents_primary_key_path).into(),
+                document.id().as_slice(),
+                QueryType::StatefulQuery,
+                transaction,
+                &mut batch_operations,
+                drive_version,
+            )?
+        } else if document_type.documents_keep_history() {
             let contract_documents_keeping_history_primary_key_path_for_document_id =
                 contract_documents_keeping_history_primary_key_path_for_document_id(
                     contract.id_ref().as_bytes(),
@@ -366,6 +384,7 @@ impl Drive {
                     document_and_contract_info.document_type,
                     sum_value,
                     storage_flags,
+                    &platform_version.drive,
                 )
             } else {
                 document_reference.clone()

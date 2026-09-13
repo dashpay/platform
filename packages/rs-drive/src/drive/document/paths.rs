@@ -1,4 +1,33 @@
 use crate::drive::{constants, RootTree};
+
+/// Reserved document-type key containing the lifecycle records of documents
+/// that have been deleted but whose revisions are still retained.
+///
+/// Sits between the primary-key tree at 0 and the history tree at 2. Index
+/// trees are keyed by property names, which cannot start below `0x30`, so no
+/// index can collide with a reserved single-byte key.
+pub const DOCUMENT_LIFECYCLE_TREE_KEY: u8 = 1;
+
+/// Reserved document-type key containing the revision trees.
+pub const DOCUMENT_HISTORY_TREE_KEY: u8 = 2;
+
+/// Path to the lifecycle records of one document type.
+pub fn document_lifecycle_path(contract_id: &[u8], document_type_name: &str) -> Vec<Vec<u8>> {
+    let mut path = contract_document_type_path_vec(contract_id, document_type_name);
+    path.push(vec![DOCUMENT_LIFECYCLE_TREE_KEY]);
+    path
+}
+
+/// Path to all retained revisions of one document.
+pub fn document_history_path(
+    contract_id: &[u8],
+    document_type_name: &str,
+    document_id: &[u8],
+) -> Vec<Vec<u8>> {
+    let mut path = contract_document_type_path_vec(contract_id, document_type_name);
+    path.extend([vec![DOCUMENT_HISTORY_TREE_KEY], document_id.to_vec()]);
+    path
+}
 #[cfg(feature = "server")]
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 #[cfg(feature = "server")]

@@ -1,0 +1,36 @@
+{
+    "$formatVersion": "1",
+    "id": "5Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVf",
+    "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+    "version": 1,
+    "keywords": [],
+    "documentSchemas": {
+        "note": {
+            "type": "object",
+            "documentsKeepHistory": true,
+            "documentsMutable": true,
+            "canBeDeleted": true,
+            "canBeErased": true,
+            "properties": {
+                "message": { "type": "string", "maxLength": 256, "position": 0 }
+            },
+            "required": ["message"],
+            "additionalProperties": false,
+            "$comment": "A keep-history type whose deleted documents may also have their retained revisions purged. Deleting a note removes it from ordinary reads and leaves its revisions readable; erasing removes those revisions a bounded chunk at a time."
+        },
+        "permanentNote": {
+            "type": "object",
+            "documentsKeepHistory": true,
+            "documentsMutable": true,
+            "canBeDeleted": true,
+            "properties": {
+                "message": { "type": "string", "maxLength": 256, "position": 0 }
+            },
+            "required": ["message"],
+            "additionalProperties": false,
+            "$comment": "The same type without canBeErased: its deleted documents keep their revisions forever, which is what the erase refusal is checked against."
+        }
+    },
+    "groups": {},
+    "tokens": {}
+}

@@ -762,6 +762,10 @@
       "type": "boolean",
       "description": "True if the documents can be deleted, default is true"
     },
+    "canBeErased": {
+      "type": "boolean",
+      "description": "True if a deleted document may have its retained revisions purged by an erase transition; requires documentsKeepHistory and canBeDeleted, default is false, immutable on contract update"
+    },
     "transferable": {
       "type": "integer",
       "enum": [
