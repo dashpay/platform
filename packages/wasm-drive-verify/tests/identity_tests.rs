@@ -164,3 +164,35 @@ fn test_verify_identity_by_non_unique_public_key_hash_rejects_v0_outer_proof() {
         "unsupported GroveDB proof envelope version 0",
     );
 }
+
+/// A recorded V1 identity-balance proof from the `drive-proof-verifier`
+/// regression corpus, verified through the exported WASM entry point so a
+/// valid V1 envelope is known to survive the `Uint8Array` copy and the
+/// envelope gate.
+#[wasm_bindgen_test]
+fn test_verify_identity_balance_accepts_recorded_v1_proof() {
+    const PROOF_HEX: &str =
+        include_str!("../../rs-drive-proof-verifier/tests/vectors/identity-balance/proof.hex");
+    const EXPECTED_ROOT_HASH_HEX: &str =
+        "dad905d8fddd7a31089ed57521ff006ec5946b5648d48056bce493357675ab72";
+    const RECORDED_PLATFORM_VERSION: u32 = 12;
+
+    let proof_bytes = hex::decode(PROOF_HEX.trim()).expect("decode recorded proof");
+    assert_eq!(proof_bytes[0], 1, "corpus fixture must be a V1 envelope");
+    let proof = Uint8Array::from(&proof_bytes[..]);
+    let identity_id = Uint8Array::from(&[0x77u8; 32][..]);
+
+    let result = verify_identity_balance_for_identity_id(
+        &proof,
+        &identity_id,
+        false,
+        RECORDED_PLATFORM_VERSION,
+    )
+    .expect("recorded V1 proof must verify");
+
+    assert_eq!(
+        hex::encode(result.root_hash().to_vec()),
+        EXPECTED_ROOT_HASH_HEX
+    );
+    assert_eq!(result.balance(), Some(5_000_000_000));
+}
