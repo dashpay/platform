@@ -1,7 +1,7 @@
 use heck::AsSnakeCase;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, DeriveInput, Expr, Ident, ItemFn};
+use syn::{DeriveInput, Expr, Ident, ItemFn, parse_macro_input};
 
 /// Runs the annotated function body on a thread with the provided stack size.
 ///
