@@ -25,9 +25,7 @@ pub use compute_minimum_shielded_fee::{
 // re-exported (callers use the wrappers; byte-layout tests use the `_v0` impls).
 pub use sighash::{
     compute_platform_sighash, identity_create_from_shielded_extra_sighash_data,
-    identity_create_from_shielded_extra_sighash_data_v0,
-    identity_top_up_from_shielded_extra_sighash_data,
-    identity_top_up_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
+    identity_create_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
     shielded_withdrawal_extra_sighash_data_v0, unshield_extra_sighash_data,
     unshield_extra_sighash_data_v0,
 };
@@ -79,7 +77,6 @@ pub const SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES: u64 = 4100;
 /// [`compute_minimum_shielded_fee::compute_shielded_unshield_fee`].
 pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
 
-<<<<<<< HEAD
 /// Flat component (in effective bytes at the per-byte storage rate) for the identity-side write an
 /// `IdentityTopUpFromShieldedPool` performs on top of its per-action nullifier and note writes:
 /// the single `AddToIdentityBalance` operation, charged as part of the pool-paid flat fee (built
@@ -98,14 +95,9 @@ pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
 /// [`compute_minimum_shielded_fee::compute_shielded_identity_top_up_fee`].
 pub const SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES: u64 = 8;
 
-/// Calibrated effective-byte cost of the identity-side writes a `ShieldFromIdentity` performs on
-/// top of its per-action note inserts: the `UpdateIdentityNonce` and `RemoveFromIdentityBalance`
-/// operations.
-=======
 /// Flat component (in effective bytes at the per-byte storage rate) for the identity-side writes a
 /// `ShieldFromIdentity` performs on top of its per-action note inserts: the `UpdateIdentityNonce`
 /// and `RemoveFromIdentityBalance` operations.
->>>>>>> claude/identity-shielded-pool-transition-847713
 ///
 /// The transition's real fee is metered and only known at execution, so its stateless admission
 /// floor needs a conservative stand-in for the metered part: [`compute_minimum_shielded_fee`]
