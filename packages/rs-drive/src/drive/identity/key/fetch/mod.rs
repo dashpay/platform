@@ -16,7 +16,10 @@ use {
     dpp::identity::{KeyID, Purpose, SecurityLevel},
     grovedb::{PathQuery, SizedQuery},
     integer_encoding::VarInt,
-    std::{collections::BTreeMap, ops::RangeFull},
+    std::{
+        collections::{BTreeMap, BTreeSet},
+        ops::RangeFull,
+    },
 };
 
 #[cfg(feature = "server")]
@@ -1007,8 +1010,14 @@ impl IdentityKeysRequest {
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Fetch a specific key knowing the id
     fn specific_keys_query(key_ids: &[KeyID]) -> Query {
+        // Collapse duplicates before touching the GroveDB query. `Query::insert_key`
+        // already ignores a key it holds, but it rescans every item on each insert,
+        // so a duplicate-heavy list would pay quadratic work for nothing. The
+        // resulting query is identical: GroveDB keeps its items sorted, so the
+        // insertion order does not matter.
+        let distinct_key_ids: BTreeSet<KeyID> = key_ids.iter().copied().collect();
         let mut query = Query::new();
-        for key_id in key_ids {
+        for key_id in distinct_key_ids {
             query.insert_key(key_id.encode_var_vec());
         }
         query
@@ -1290,6 +1299,67 @@ mod tests {
 
         let path_query = request.into_path_query();
         assert_eq!(path_query.query.limit, Some(1));
+    }
+
+    #[test]
+    fn test_specific_keys_query_deduplicates_key_ids_before_building_the_query() {
+        let identity_id: [u8; 32] = [7u8; 32];
+
+        let distinct = IdentityKeysRequest::new_specific_keys_query_without_limit(
+            &identity_id,
+            vec![0, 1, 200, 300],
+        )
+        .into_path_query();
+        assert_eq!(distinct.query.query.items.len(), 4);
+
+        // Ids whose varint encodings do not sort in numeric order, repeated many times.
+        let duplicated: Vec<KeyID> = [300, 0, 200, 1, 0]
+            .into_iter()
+            .cycle()
+            .take(5_000)
+            .collect();
+        let deduplicated =
+            IdentityKeysRequest::new_specific_keys_query_without_limit(&identity_id, duplicated)
+                .into_path_query();
+
+        assert_eq!(deduplicated.path, distinct.path);
+        assert_eq!(deduplicated.query.query.items, distinct.query.query.items);
+        assert_eq!(deduplicated.query.limit, distinct.query.limit);
+    }
+
+    #[test]
+    fn test_fetch_duplicate_key_ids_returns_each_key_once() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::latest();
+
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(77777), platform_version)
+            .expect("expected a random identity");
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        // The limit-setting constructor sizes the limit by the raw list length.
+        let key_ids: Vec<KeyID> = [1, 0].into_iter().cycle().take(1_000).collect();
+        let key_request =
+            IdentityKeysRequest::new_specific_keys_query(&identity.id().to_buffer(), key_ids);
+
+        let public_keys: KeyIDIdentityPublicKeyPairBTreeMap = drive
+            .fetch_identity_keys(key_request, None, platform_version)
+            .expect("expected to fetch keys");
+
+        assert_eq!(public_keys.keys().copied().collect::<Vec<_>>(), vec![0, 1]);
     }
 
     #[test]

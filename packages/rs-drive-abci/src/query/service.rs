@@ -991,6 +991,7 @@ fn query_error_into_status(error: QueryError) -> Status {
         QueryError::NotFound(message) => Status::not_found(message),
         QueryError::InvalidArgument(message) => Status::invalid_argument(message),
         QueryError::Query(error) => Status::invalid_argument(error.to_string()),
+        QueryError::TooManyElements(message) => Status::invalid_argument(message),
         QueryError::ResourceExhausted(message) => Status::resource_exhausted(message),
         _ => {
             tracing::error!("unexpected query error: {:?}", error);
