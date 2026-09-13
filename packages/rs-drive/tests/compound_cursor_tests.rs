@@ -97,10 +97,8 @@ fn assert_compound_cursor_pages_for_index(
     let document_type = contract.document_type_for_name("row").expect("row type");
 
     // Every outer branch has values below, at and above the inner cursor.
-    // Duplicate b=5 values exercise the document-id tie breaker: startAt
-    // continues within the cursor's index key by document id, while
-    // startAfter skips the rest of that key on a non-unique index (visiting
-    // its id subtree would cost a page slot whenever it is exhausted).
+    // Duplicate b=5 values exercise the document-id tie breaker within the
+    // cursor's index key.
     let mut rows: Vec<(u8, u8, Document)> = Vec::new();
     for a in 0u8..=4 {
         for b in [0u8, 1, 3, 5, 5, 7, 9] {
@@ -171,29 +169,10 @@ fn assert_compound_cursor_pages_for_index(
             }) {
                 for limit in [4usize, 100] {
                     // A row is on the page when it sorts after the cursor (or
-                    // at it for startAt), except that startAfter on a
-                    // non-unique index skips the rest of the cursor's exact
-                    // index key.
+                    // at it for startAt); every page is full while rows
+                    // remain, whatever the cursor's branch holds after it.
                     let after_cursor = |row: &(u8, u8, Document)| {
-                        let same_key = row.0 == cursor.0 && row.1 == cursor.1;
-                        if !included && !unique && same_key {
-                            return false;
-                        }
                         compare(row, cursor).is_gt() || (included && compare(row, cursor).is_eq())
-                    };
-                    // GroveDB deliberately charges an empty subquery against
-                    // the page's traversal budget, so the page is one row
-                    // short exactly when the cursor's branch is selected and
-                    // holds no row on the page.
-                    let cursor_branch_has_results = rows
-                        .iter()
-                        .any(|row| row.0 == cursor.0 && row.1 > 0 && after_cursor(row));
-                    let empty_subtree_charged =
-                        in_values.contains(&cursor.0) && !cursor_branch_has_results;
-                    let page_limit = if empty_subtree_charged {
-                        limit - 1
-                    } else {
-                        limit
                     };
                     let mut expected_rows: Vec<_> = rows
                         .iter()
@@ -203,7 +182,7 @@ fn assert_compound_cursor_pages_for_index(
                     expected_rows.sort_by(|left, right| compare(left, right));
                     let expected: Vec<_> = expected_rows
                         .into_iter()
-                        .take(page_limit)
+                        .take(limit)
                         .map(|row| row.2.id())
                         .collect();
 
@@ -216,7 +195,7 @@ fn assert_compound_cursor_pages_for_index(
                         json!(bs58::encode(cursor.2.id().as_slice()).into_string());
                     let context = format!(
                         "unique={unique}, a={order}, b={inner_order}, included={included}, prove={prove}, \
-                         IN={in_values:?}, cursor=({}, {}, {}), limit={limit}, charged={empty_subtree_charged}",
+                         IN={in_values:?}, cursor=({}, {}, {}), limit={limit}",
                         cursor.0,
                         cursor.1,
                         cursor.2.id()
@@ -318,10 +297,6 @@ fn should_verify_complete_compound_cursor_page_descending_start_after() {
 struct LeftOverFixture {
     drive: drive::drive::Drive,
     contract: DataContract,
-    unique: bool,
-    /// Number of index properties; rows agreeing on that prefix of `(a, b,
-    /// c)` share an index key.
-    key_len: usize,
     /// `(a, b, c)` values with the inserted document.
     rows: Vec<([u8; 3], Document)>,
 }
@@ -409,8 +384,6 @@ fn setup_left_over_fixture(
     LeftOverFixture {
         drive,
         contract,
-        unique,
-        key_len: properties.len(),
         rows: inserted,
     }
 }
@@ -462,26 +435,18 @@ fn left_over_oracle_rows(
         .collect()
 }
 
-/// The oracle page for a cursor at `position` of `full`: rows after it (or
-/// at it for startAt) that match, minus, for startAfter on a non-unique
-/// index, the rest of the cursor's exact index key.
+/// The oracle page for a cursor at `position` of `full`: the matching rows
+/// after it (or at it for startAt).
 fn left_over_expected_page(
-    fixture: &LeftOverFixture,
     full: &[([u8; 3], Identifier)],
     matching: &[Identifier],
     position: usize,
     included: bool,
 ) -> Vec<Identifier> {
-    let (cursor_values, _) = full[position];
     let from = if included { position } else { position + 1 };
     full[from..]
         .iter()
         .filter(|(_, id)| matching.contains(id))
-        .filter(|(values, _)| {
-            included
-                || fixture.unique
-                || values[..fixture.key_len] != cursor_values[..fixture.key_len]
-        })
         .map(|(_, id)| *id)
         .collect()
 }
@@ -577,8 +542,7 @@ fn assert_cursors_over_all_rows(
     for prove in [false, true] {
         for (position, (_, id)) in full.iter().enumerate() {
             for included in [true, false] {
-                let expected =
-                    left_over_expected_page(fixture, &full, &matching, position, included);
+                let expected = left_over_expected_page(&full, &matching, position, included);
                 let got = left_over_page(
                     fixture,
                     where_clauses.clone(),
@@ -651,9 +615,8 @@ fn should_include_start_at_cursor_on_unique_in_level_with_left_over_property() {
 #[test]
 fn should_continue_within_duplicates_on_descending_left_over_level() {
     // c is a descending index property left over below the In level, so its
-    // id level walks right to left: a startAt cursor inside a run of equal
-    // (b, c) values must continue below the cursor's id, not above it, and
-    // startAfter skips the rest of that key.
+    // id level walks right to left: a cursor inside a run of equal (b, c)
+    // values must continue below the cursor's id, not above it.
     let fixture = setup_left_over_fixture(
         &[("a", "asc"), ("b", "asc"), ("c", "desc")],
         false,
@@ -733,26 +696,62 @@ fn should_not_widen_outer_bound_for_cursor_on_the_bound() {
 }
 
 #[test]
-fn should_fill_a_limit_one_page_from_the_cursor_branch() {
-    // The cursor's own key is not visited on startAfter, so the next row of
-    // the same branch fills a page of one instead of an exhausted id subtree
-    // consuming it. (A cursor on the LAST row of its branch still yields an
-    // empty page at limit 1: the branch itself is visited and found empty.)
-    let rows: Vec<[u8; 3]> = vec![[1, 5, 0], [1, 7, 0], [2, 7, 0]];
+fn should_fill_a_limit_one_page_after_any_cursor() {
+    // A page of one after every cursor, in both directions: neither the
+    // cursor's exhausted id subtree nor its exhausted outer branch may
+    // consume the page's only slot (GroveDB charges an empty subquery
+    // against the limit, so the lowering must never visit one for the
+    // cursor's sake).
+    let rows: Vec<[u8; 3]> = vec![[1, 5, 0], [1, 7, 0], [2, 7, 0], [3, 1, 0]];
     let fixture = setup_left_over_fixture(&[("a", "asc"), ("b", "asc")], false, &rows);
-    let (_, first) = &fixture.rows[0];
-    let (_, second) = &fixture.rows[1];
-    for prove in [false, true] {
-        let got = left_over_page(
+    for inner_ascending in [true, false] {
+        let inner_order = if inner_ascending { "asc" } else { "desc" };
+        let full = left_over_oracle_rows(&fixture, |_| true, &[(0, true), (1, inner_ascending)]);
+        let matching = left_over_oracle(
             &fixture,
-            json!([["a", "in", [1, 2]], ["b", ">", 0]]),
-            json!([["a", "asc"], ["b", "asc"]]),
-            1,
-            Some((first.id(), false)),
-            prove,
+            |values| (values[0] == 1 || values[0] == 2) && values[1] > 0,
+            &[(0, true), (1, inner_ascending)],
         );
-        assert_eq!(got, vec![second.id()], "prove={prove}");
+        for prove in [false, true] {
+            for (position, (_, id)) in full.iter().enumerate() {
+                let expected: Vec<_> = left_over_expected_page(&full, &matching, position, false)
+                    .into_iter()
+                    .take(1)
+                    .collect();
+                let got = left_over_page(
+                    &fixture,
+                    json!([["a", "in", [1, 2]], ["b", ">", 0]]),
+                    json!([["a", "asc"], ["b", inner_order]]),
+                    1,
+                    Some((*id, false)),
+                    prove,
+                );
+                assert_eq!(
+                    got, expected,
+                    "b={inner_order}, prove={prove}, position {position}"
+                );
+            }
+        }
     }
+}
+
+#[test]
+fn should_continue_within_duplicates_after_an_equality_clause() {
+    // Equality last clause with two left-over levels on a non-unique index:
+    // a startAfter cursor on the first of two documents sharing (a, b, c)
+    // must be followed by the second.
+    let fixture = setup_left_over_fixture(
+        &[("a", "asc"), ("b", "asc"), ("c", "asc")],
+        false,
+        &[[1, 3, 5], [1, 3, 5], [1, 4, 1]],
+    );
+    assert_cursors_over_all_rows(
+        &fixture,
+        json!([["a", "==", 1]]),
+        json!([["b", "asc"]]),
+        |values| values[0] == 1,
+        &[(0, true), (1, true), (2, true)],
+    );
 }
 
 #[test]

@@ -170,14 +170,12 @@ impl<'a> DriveDocumentQuery<'a> {
 
                     // The cursor's key stays in the level whenever a deeper
                     // left-over level still refines the cursor; a terminal
-                    // key is kept only for startAt. Keeping a non-unique
-                    // terminal key on startAfter would be more complete (the
-                    // documents sharing the cursor's value and ordered after
-                    // its id are skipped today, as in the released lowering),
-                    // but it would visit the cursor's id subtree on every
-                    // page, and whenever the cursor was that value's only
-                    // document GroveDB charges the empty subtree against the
-                    // limit, shortening nearly every startAfter page by one.
+                    // key is kept only for an included cursor. An excluded
+                    // terminal key would visit nothing but the cursor's
+                    // exhausted id subtree, which GroveDB charges against
+                    // the limit; the caller therefore lowers `startAfter`
+                    // as an included cursor with a padded limit (see
+                    // `DriveDocumentQuery::pads_cursor_page`).
                     let non_conditional_included =
                         !left_over.is_empty() || *included || start_at_key.is_none();
 
@@ -299,10 +297,10 @@ impl<'a> DriveDocumentQuery<'a> {
 
                 // Same rule as the non-conditional level: the cursor's key
                 // stays whenever a deeper left-over level still refines it;
-                // a terminal key is kept only for startAt. On startAfter a
-                // non-unique terminal key is not visited (see the
-                // non-conditional helper for why), so documents sharing the
-                // cursor's full index key and sorted after its id are skipped.
+                // a terminal key is kept only for an included cursor. (The
+                // caller lowers `startAfter` as an included cursor with a
+                // padded limit, see `DriveDocumentQuery::pads_cursor_page`,
+                // so an excluded terminal key is not reached from there.)
                 let non_conditional_included =
                     !left_over.is_empty() || *included || lower_start_at_key.is_none();
 
@@ -537,10 +535,65 @@ impl<'a> DriveDocumentQuery<'a> {
                         .any(|item| item.contains(key)),
                     None => false,
                 };
+                // The cursor's inner key under an inner clause: whether it
+                // satisfies that clause, whether it stays in the cursor
+                // branch's range (inside the clause, and either the cursor
+                // is included or deeper left-over levels refine it: a
+                // cursor on a strict bound or past the range must not widen
+                // the clause's own range), and whether the branch has
+                // anything left to visit at all. A branch with nothing after
+                // the cursor is left out entirely: visiting it would find
+                // nothing and cost a page slot.
+                let (cursor_inner_key, inner_included, cursor_branch_live) =
+                    match (&starts_at_document, subquery_clause) {
+                        (Some((document, included)), Some(subquery_where_clause))
+                            if sibling_aware_cursor_lowering =>
+                        {
+                            let inner_left_to_right = self
+                                .order_by
+                                .get(subquery_where_clause.field.as_str())
+                                .map(|order_clause| order_clause.ascending)
+                                .unwrap_or(true);
+                            let cursor_inner_key = document.get_raw_for_document_type(
+                                subquery_where_clause.field.as_str(),
+                                self.document_type,
+                                None,
+                                platform_version,
+                            )?;
+                            let clause_items = subquery_where_clause
+                                .to_path_query(
+                                    self.document_type,
+                                    &None,
+                                    inner_left_to_right,
+                                    platform_version,
+                                )?
+                                .items;
+                            let cursor_inner_key_in_clause =
+                                cursor_inner_key.as_ref().is_some_and(|key| {
+                                    clause_items.iter().any(|item| item.contains(key))
+                                });
+                            let inner_included = cursor_inner_key_in_clause
+                                && (*included || !left_over_index_properties.is_empty());
+                            let cursor_branch_live = !subquery_where_clause
+                                .to_path_query(
+                                    self.document_type,
+                                    &Some((document.clone(), inner_included)),
+                                    inner_left_to_right,
+                                    platform_version,
+                                )?
+                                .items
+                                .is_empty();
+                            (cursor_inner_key, inner_included, cursor_branch_live)
+                        }
+                        _ => (None, false, true),
+                    };
                 let starts_at_document_with_branch_included = if sibling_aware_cursor_lowering {
-                    starts_at_document
-                        .as_ref()
-                        .map(|(document, _)| (document.clone(), cursor_outer_key_in_clause))
+                    starts_at_document.as_ref().map(|(document, _)| {
+                        (
+                            document.clone(),
+                            cursor_outer_key_in_clause && cursor_branch_live,
+                        )
+                    })
                 } else {
                     None
                 };
@@ -737,39 +790,18 @@ impl<'a> DriveDocumentQuery<'a> {
                             &self.order_by,
                             platform_version,
                         )?;
-                        // Whether the cursor's inner key satisfies the inner
-                        // clause. Only such a key may be kept in the cursor's
-                        // range for the id level or deeper levels to paginate
-                        // within; a cursor sitting on a strict bound or past
-                        // the range must not widen the clause's own range.
-                        let cursor_inner_key = match &starts_at_document {
-                            Some((document, _)) => document.get_raw_for_document_type(
-                                subquery_where_clause.field.as_str(),
-                                self.document_type,
-                                None,
-                                platform_version,
-                            )?,
-                            None => None,
-                        };
-                        let cursor_inner_key_in_clause =
-                            cursor_inner_key.as_ref().is_some_and(|key| {
-                                subquery.items.iter().any(|item| item.contains(key))
-                            });
                         let subindex = subquery_where_clause.field.as_bytes().to_vec();
                         query.set_subquery_key(subindex.clone());
                         query.set_subquery(subquery);
 
-                        if let Some((document, included)) = starts_at_document {
+                        if let (Some((document, included)), true) =
+                            (starts_at_document, cursor_branch_live)
+                        {
                             // The default subquery above keeps the original
                             // predicate on every later sibling. Intersect it
-                            // with the cursor only on the cursor's outer key.
-                            // The cursor's inner key stays when it is inside
-                            // the clause and either the cursor is included or
-                            // deeper left-over levels refine it; a terminal
-                            // key is never visited on startAfter (an exhausted
-                            // id subtree would cost a page slot).
-                            let inner_included = cursor_inner_key_in_clause
-                                && (included || !left_over_index_properties.is_empty());
+                            // with the cursor only on the cursor's outer key
+                            // (see `inner_included` above for what the
+                            // cursor's own range keeps).
                             let mut cursor_subquery = subquery_where_clause.to_path_query(
                                 self.document_type,
                                 &Some((document.clone(), inner_included)),
