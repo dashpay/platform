@@ -124,7 +124,10 @@ mod tests {
         assert_eq!(batch.len(), expected_pending_refunds.len());
 
         for operation in batch.into_iter() {
-            assert!(matches!(operation.op, GroveOp::DeleteDontCheck));
+            assert!(matches!(
+                operation.op,
+                GroveOp::DeleteDontCheckForBackwardsReferences
+            ));
 
             assert_eq!(operation.path.to_path(), pending_epoch_refunds_path_vec());
 

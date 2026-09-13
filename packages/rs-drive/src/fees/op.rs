@@ -2451,7 +2451,7 @@ mod tests {
         match op {
             LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
                 GroveOp::InsertOrReplace { element }
-                | GroveOp::InsertOrReplaceDontCheck { element } => assert!(
+                | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => assert!(
                     matches!(element, Element::ProvableSumTree(..)),
                     "expected ProvableSumTree element, got: {:?}",
                     element
@@ -2537,7 +2537,9 @@ mod tests {
             let element = match op {
                 LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
                     GroveOp::InsertOrReplace { element }
-                    | GroveOp::InsertOrReplaceDontCheck { element } => element,
+                    | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => {
+                        element
+                    }
                     other => panic!("expected InsertOrReplace, got {other:?}"),
                 },
                 other => panic!("expected GroveOperation, got {other:?}"),

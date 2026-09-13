@@ -116,7 +116,8 @@ impl Drive {
                                 && grove_op.path == path
                                 && matches!(
                                     grove_op.op,
-                                    GroveOp::DeleteTree(_, _) | GroveOp::DeleteTreeDontCheck(_, _)
+                                    GroveOp::DeleteTree(_, _)
+                                        | GroveOp::DeleteTreeDontCheckForBackwardsReferences(_, _)
                                 )
                             {
                                 found = true;
@@ -182,7 +183,8 @@ impl Drive {
                                 && grove_op.path == path
                                 && matches!(
                                     grove_op.op,
-                                    GroveOp::DeleteTree(_, _) | GroveOp::DeleteTreeDontCheck(_, _)
+                                    GroveOp::DeleteTree(_, _)
+                                        | GroveOp::DeleteTreeDontCheckForBackwardsReferences(_, _)
                                 )
                             {
                                 found = true;
@@ -246,7 +248,8 @@ impl Drive {
                                 && grove_op.path == path
                                 && matches!(
                                     grove_op.op,
-                                    GroveOp::DeleteTree(_, _) | GroveOp::DeleteTreeDontCheck(_, _)
+                                    GroveOp::DeleteTree(_, _)
+                                        | GroveOp::DeleteTreeDontCheckForBackwardsReferences(_, _)
                                 )
                             {
                                 found = true;
@@ -310,7 +313,8 @@ impl Drive {
                                 && grove_op.path == path
                                 && matches!(
                                     grove_op.op,
-                                    GroveOp::DeleteTree(_, _) | GroveOp::DeleteTreeDontCheck(_, _)
+                                    GroveOp::DeleteTree(_, _)
+                                        | GroveOp::DeleteTreeDontCheckForBackwardsReferences(_, _)
                                 )
                             {
                                 found = true;
@@ -730,7 +734,7 @@ mod tests {
 
             let element = match ops.pop().expect("one operation must be pushed") {
                 LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
-                    GroveOp::InsertOrReplaceDontCheck { element } => element,
+                    GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => element,
                     other => panic!("{description}: expected InsertOrReplace, got {other:?}"),
                 },
                 other => panic!("{description}: expected GroveOperation, got {other:?}"),
@@ -758,7 +762,7 @@ mod tests {
         assert!(inserted);
         let element = match ops.pop().expect("one operation must be pushed") {
             LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
-                GroveOp::InsertOrReplaceDontCheck { element } => element,
+                GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => element,
                 other => panic!("expected InsertOrReplace, got {other:?}"),
             },
             other => panic!("expected GroveOperation, got {other:?}"),
@@ -819,7 +823,7 @@ mod tests {
         assert!(inserted);
         let element = match ops.pop().expect("one operation must be pushed") {
             LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
-                GroveOp::InsertOrReplaceDontCheck { element } => element,
+                GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => element,
                 other => panic!("expected InsertOrReplace, got {other:?}"),
             },
             other => panic!("expected GroveOperation, got {other:?}"),

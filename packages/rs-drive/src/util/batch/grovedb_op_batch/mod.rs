@@ -347,7 +347,7 @@ impl fmt::Display for GroveDbOpBatch {
             writeln!(f, "   Key: {}", key_string)?;
             match &op.op {
                 GroveOp::InsertOrReplace { element }
-                | GroveOp::InsertOrReplaceDontCheck { element }
+                | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element }
                 | GroveOp::InsertWithKnownToNotAlreadyExist { element }
                 | GroveOp::InsertIfNotExists { element, .. } => {
                     let flags = element.get_flags();
@@ -713,13 +713,13 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
             let op = if matches!(
                 op,
                 &GroveOp::InsertOrReplace { .. }
-                    | &GroveOp::InsertOrReplaceDontCheck { .. }
+                    | &GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { .. }
                     | &GroveOp::InsertWithKnownToNotAlreadyExist { .. }
                     | &GroveOp::InsertIfNotExists { .. }
                     | &GroveOp::Replace { .. }
-                    | &GroveOp::ReplaceDontCheck { .. }
+                    | &GroveOp::ReplaceDontCheckForBackwardsReferences { .. }
                     | &GroveOp::Patch { .. }
-                    | &GroveOp::PatchDontCheck { .. }
+                    | &GroveOp::PatchDontCheckForBackwardsReferences { .. }
             ) {
                 self.operations.remove(index).op
             } else {

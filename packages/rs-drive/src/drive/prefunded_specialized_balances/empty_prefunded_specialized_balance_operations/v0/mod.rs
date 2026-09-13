@@ -105,9 +105,9 @@ mod tests {
                 matches!(
                     qualified.op,
                     GroveOp::Delete
-                        | GroveOp::DeleteDontCheck
+                        | GroveOp::DeleteDontCheckForBackwardsReferences
                         | GroveOp::DeleteTree { .. }
-                        | GroveOp::DeleteTreeDontCheck { .. }
+                        | GroveOp::DeleteTreeDontCheckForBackwardsReferences { .. }
                 )
             }
             _ => false,
