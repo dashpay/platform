@@ -1510,7 +1510,7 @@ fn verify_document_history_response_v0(
             });
         }
     }
-    verify_tenderdash_proof(proof, metadata, &root, provider)?;
+    verify_tenderdash_proof(proof, metadata, &root, provider, platform_version)?;
     Ok((
         Some(DocumentHistory {
             entries: history.entries,
