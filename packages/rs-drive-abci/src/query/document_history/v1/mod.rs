@@ -79,29 +79,18 @@ impl<C> Platform<C> {
                 QueryError::InvalidArgument("document type does not keep history".to_owned()),
             ));
         }
-        let (history, entries_proof, metadata_proof) = if request.prove {
+        let (history, proof) = if request.prove {
             let (history, proofs) = self.drive.prove_document_history_v1(
                 &query,
                 document_type,
                 None,
                 platform_version,
             )?;
-            let entries_proof = proofs
-                .entries_proof
-                .map(|proof| {
-                    self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
-                        .map(|(_, proof)| proof)
-                })
-                .transpose()?;
-            let metadata_proof = Some(
-                self.response_proof_v0(
-                    platform_state,
-                    proofs.metadata_proof,
-                    GroveDBToUse::Current,
-                )?
-                .1,
-            );
-            (history, entries_proof, metadata_proof)
+            // Both GroveDB proofs travel inside one proof object, signed once.
+            let proof = self
+                .response_proof_v0(platform_state, proofs.to_bytes(), GroveDBToUse::Current)?
+                .1;
+            (history, Some(proof))
         } else {
             (
                 self.drive.fetch_document_history_v1(
@@ -110,7 +99,6 @@ impl<C> Platform<C> {
                     None,
                     platform_version,
                 )?,
-                None,
                 None,
             )
         };
@@ -138,8 +126,7 @@ impl<C> Platform<C> {
                     } as i32,
                     remaining_revisions: history.lifecycle.remaining_revisions,
                 }),
-                entries_proof,
-                metadata_proof,
+                proof,
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             },
         ))

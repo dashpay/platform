@@ -1809,22 +1809,8 @@ message GetDocumentsResponse {
 }
 
 message GetDocumentHistoryRequest {
-  message GetDocumentHistoryRequestV0 {
-    bytes data_contract_id = 1; // The ID of the data contract
-    string document_type_name = 2; // The document type name
-    bytes document_id = 3; // The document ID
-    google.protobuf.UInt32Value limit =
-        4; // The maximum number of history entries to return
-    google.protobuf.UInt32Value offset =
-        5; // The offset for pagination through the document history
-    uint64 start_at_ms = 6 [
-      jstype = JS_STRING
-    ];              // Only return results after this time in milliseconds
-    bool prove = 7; // Flag to request a proof as the response
-  }
   // Reads the retained revisions of a historical document (a type with
-  // documentsKeepHistory) from protocol version 14 on; v0 stays on the wire
-  // for nodes and clients below that version.
+  // documentsKeepHistory). Served from protocol version 14 on.
   message GetDocumentHistoryRequestV1 {
     // Exclusive cursor returned with a page. Several revisions can share a
     // block time, so resuming needs the revision as well as the time.
@@ -1844,35 +1830,16 @@ message GetDocumentHistoryRequest {
       uint64 revision = 9 [ jstype = JS_STRING ];
     }
   }
+  // The timestamp-keyed v0 request served by earlier protocol versions is
+  // gone: no released network stores such history, and the protocol 14
+  // storage migration leaves nothing for it to read.
+  reserved 1;
   oneof version {
-    GetDocumentHistoryRequestV0 v0 = 1;
     GetDocumentHistoryRequestV1 v1 = 2;
   }
 }
 
 message GetDocumentHistoryResponse {
-  message GetDocumentHistoryResponseV0 {
-    // Represents a single entry in a document's history
-    message DocumentHistoryEntry {
-      uint64 date = 1 [ jstype = JS_STRING ]; // The date of the history entry
-      bytes value = 2; // The value of the document at this point in history
-    }
-
-    // Collection of document history entries
-    message DocumentHistory {
-      repeated DocumentHistoryEntry document_entries =
-          1; // List of history entries
-    }
-
-    oneof result {
-      DocumentHistory document_history =
-          1; // The actual history of the document
-      Proof proof =
-          2; // Cryptographic proof of the document history, if requested
-    }
-
-    ResponseMetadata metadata = 3; // Metadata about the blockchain state
-  }
   // A page of a historical document's retained revisions, with the
   // document's lifecycle as of the same block. Only document types with
   // documentsKeepHistory retain history; every field here describes such a
@@ -1897,17 +1864,17 @@ message GetDocumentHistoryResponse {
     }
     repeated Entry entries = 1;
     Lifecycle lifecycle = 2;
-    // Two proofs because they answer two GroveDB queries that cannot be
-    // merged: entries_proof is the offset-paginated proof over the
-    // document's history tree, metadata_proof is the exact-key absence proof
-    // over the current pointer, the lifecycle record and the history tree's
-    // count. Both commit to the same root hash under one signature.
-    Proof entries_proof = 3;
-    Proof metadata_proof = 4;
-    ResponseMetadata metadata = 5;
+    // One proof object. Its grovedb_proof carries two GroveDB proofs in a
+    // small versioned envelope, because they answer two queries GroveDB
+    // cannot merge: the offset-paginated proof over the document's history
+    // tree and the exact-key absence proof over the current pointer, the
+    // lifecycle record and the history tree's count. Both commit to the
+    // same root hash, signed once.
+    Proof proof = 3;
+    ResponseMetadata metadata = 4;
   }
+  reserved 1;
   oneof version {
-    GetDocumentHistoryResponseV0 v0 = 1;
     GetDocumentHistoryResponseV1 v1 = 2;
   }
 }

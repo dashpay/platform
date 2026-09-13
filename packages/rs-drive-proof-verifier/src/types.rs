@@ -131,7 +131,8 @@ pub struct DocumentHistory {
 pub struct DocumentHistoryProofInfo {
     /// Decoded and verified history page.
     pub history: DocumentHistory,
-    /// Original entries, lifecycle, metadata, and both quorum-signed proofs.
+    /// Original entries, lifecycle, metadata, and the quorum-signed proof whose
+    /// GroveDB payload carries both underlying GroveDB proofs.
     pub response:
         dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV1,
 }

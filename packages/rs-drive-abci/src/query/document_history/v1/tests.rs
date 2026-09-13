@@ -11,6 +11,7 @@ use dpp::data_contract::TokenConfiguration;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
+use drive::drive::document::history::DocumentHistoryProofV1;
 use drive::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use drive_proof_verifier::types::DocumentHistory;
 use drive_proof_verifier::{ContextProvider, ContextProviderError, FromProof};
@@ -225,21 +226,26 @@ fn history_api_proof_round_trip(gapped: bool) {
             };
             response.entries.clear();
             response.lifecycle.as_mut().unwrap().remaining_revisions = 3;
-            response.metadata_proof.as_mut().unwrap().grovedb_proof =
+            let proof = response.proof.as_mut().unwrap();
+            let mut proofs = DocumentHistoryProofV1::from_bytes(&proof.grovedb_proof).unwrap();
+            proofs.metadata_proof =
                 drive::util::test_helpers::history_proof::downgrade_history_count(
-                    &response.metadata_proof.as_ref().unwrap().grovedb_proof,
+                    &proofs.metadata_proof,
                     Some(3),
                     version,
                 );
-            response.entries_proof.as_mut().unwrap().grovedb_proof = platform
-                .drive
-                .grove_get_proved_path_query(
-                    &query.entries_query(version).unwrap(),
-                    None,
-                    &mut vec![],
-                    &version.drive,
-                )
-                .unwrap();
+            proofs.entries_proof = Some(
+                platform
+                    .drive
+                    .grove_get_proved_path_query(
+                        &query.entries_query(version).unwrap(),
+                        None,
+                        &mut vec![],
+                        &version.drive,
+                    )
+                    .unwrap(),
+            );
+            proof.grovedb_proof = proofs.to_bytes();
             let error = DocumentHistory::maybe_from_proof(
                 request.clone(),
                 response.clone(),
@@ -343,17 +349,31 @@ fn history_api_proof_round_trip(gapped: bool) {
         let result = verify(response.clone()).unwrap().unwrap();
         assert_eq!(result.entries, expected.entries);
         assert_eq!(result.lifecycle, Some(expected.lifecycle));
-        let mut legacy_metadata = response.clone();
-        let bytes = &mut legacy_metadata
-            .metadata_proof
-            .as_mut()
-            .unwrap()
-            .grovedb_proof;
-        *bytes =
-            drive::util::test_helpers::history_proof::downgrade_history_count(bytes, None, version);
+        let with_proofs = |mut response: GetDocumentHistoryResponseV1,
+                           edit: &dyn Fn(&mut DocumentHistoryProofV1)| {
+            let proof = response.proof.as_mut().unwrap();
+            let mut proofs = DocumentHistoryProofV1::from_bytes(&proof.grovedb_proof).unwrap();
+            edit(&mut proofs);
+            proof.grovedb_proof = proofs.to_bytes();
+            response
+        };
+        let legacy_metadata = with_proofs(response.clone(), &|proofs| {
+            proofs.metadata_proof =
+                drive::util::test_helpers::history_proof::downgrade_history_count(
+                    &proofs.metadata_proof,
+                    None,
+                    version,
+                );
+        });
         let error =
             verify(legacy_metadata).expect_err("metadata always requires a GroveDB v1 envelope");
         assert!(error.to_string().contains("unsupported proof version"));
+        let mut torn = response.clone();
+        torn.proof.as_mut().unwrap().grovedb_proof.push(0);
+        assert!(
+            verify(torn).is_err(),
+            "a proof envelope with trailing bytes is not the proof the node produced"
+        );
         let mut bad_count = response.clone();
         bad_count.lifecycle.as_mut().unwrap().remaining_revisions += 1;
         assert!(
@@ -364,20 +384,27 @@ fn history_api_proof_round_trip(gapped: bool) {
         bad_state.lifecycle.as_mut().unwrap().state = 100;
         assert!(verify(bad_state).is_err());
         let mut bad_signature = response.clone();
-        bad_signature.metadata_proof.as_mut().unwrap().signature[0] ^= 1;
+        bad_signature.proof.as_mut().unwrap().signature[0] ^= 1;
         assert!(verify(bad_signature).is_err());
-        if response.entries_proof.is_some() {
-            let mut downgraded = response.clone();
-            let bytes = &mut downgraded.entries_proof.as_mut().unwrap().grovedb_proof;
-            *bytes = drive::util::test_helpers::history_proof::downgrade_history_count(
-                bytes, None, version,
-            );
+        let has_entries_proof =
+            DocumentHistoryProofV1::from_bytes(&response.proof.as_ref().unwrap().grovedb_proof)
+                .unwrap()
+                .entries_proof
+                .is_some();
+        if has_entries_proof {
+            let downgraded = with_proofs(response.clone(), &|proofs| {
+                let bytes = proofs.entries_proof.as_ref().unwrap();
+                proofs.entries_proof = Some(
+                    drive::util::test_helpers::history_proof::downgrade_history_count(
+                        bytes, None, version,
+                    ),
+                );
+            });
             assert!(
                 verify(downgraded).is_err(),
                 "entries also require an authenticated V1 envelope"
             );
-            let mut missing = response.clone();
-            missing.entries_proof = None;
+            let missing = with_proofs(response.clone(), &|proofs| proofs.entries_proof = None);
             assert!(verify(missing).is_err());
         }
         if !response.entries.is_empty() {
