@@ -6295,4 +6295,890 @@ mod tests {
         .unwrap_err();
         assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
     }
+
+    /// Every direct-proof `FromProof` path rejects a legacy envelope before
+    /// its bytes reach Drive, whatever else the request carries. The provider
+    /// panics if touched, so a case that reaches it has lost the gate.
+    mod legacy_envelope_gate {
+        use super::*;
+        use crate::types::groups::{GroupActionSigners, GroupActions, Groups};
+        use crate::types::identity_token_balance::{
+            IdentitiesTokenBalances, IdentityTokenBalances,
+        };
+        use crate::types::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
+        use crate::types::token_status::TokenStatuses;
+        use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
+        use dpp::data_contract::group::Group;
+        use dpp::tokens::contract_info::TokenContractInfo;
+
+        fn legacy_proof() -> Proof {
+            Proof {
+                grovedb_proof: bincode::encode_to_vec(
+                    0u32,
+                    bincode::config::standard().with_big_endian(),
+                )
+                .expect("V0 envelope discriminant should encode"),
+                ..Proof::default()
+            }
+        }
+
+        fn id(byte: u8) -> Vec<u8> {
+            vec![byte; 32]
+        }
+
+        macro_rules! request {
+            ($module:ident, $v0:ident, $request:ident { $($field:ident: $value:expr),* $(,)? }) => {
+                {
+                    // Some request bodies list every field; keep one macro
+                    // shape for all of them.
+                    #[allow(clippy::needless_update)]
+                    let body = platform::$module::$v0 {
+                        $($field: $value,)*
+                        ..Default::default()
+                    };
+                    platform::$request {
+                        version: Some(platform::$module::Version::V0(body)),
+                    }
+                }
+            };
+        }
+
+        macro_rules! legacy_response {
+            ($module:ident, $v0_module:ident, $v0:ident, $response:ident) => {
+                platform::$response {
+                    version: Some(platform::$module::Version::V0(platform::$module::$v0 {
+                        result: Some(platform::$module::$v0_module::Result::Proof(legacy_proof())),
+                        metadata: Some(ResponseMetadata::default()),
+                    })),
+                }
+            };
+        }
+
+        macro_rules! assert_rejects_legacy_envelope {
+            ($target:ty, $request_type:ty, $request:expr, $response:expr) => {{
+                let error = <$target as FromProof<$request_type>>::maybe_from_proof(
+                    $request,
+                    $response,
+                    Network::Testnet,
+                    PlatformVersion::latest(),
+                    &unreachable_provider(),
+                )
+                .expect_err(concat!(
+                    stringify!($target),
+                    " must reject a legacy envelope"
+                ));
+                assert!(
+                    matches!(
+                        error,
+                        Error::UnsupportedGroveDBProofVersion {
+                            version: 0,
+                            minimum: 1,
+                            ..
+                        }
+                    ),
+                    "{}: {error:?}",
+                    stringify!($target)
+                );
+            }};
+        }
+
+        #[test]
+        fn identity_queries() {
+            assert_rejects_legacy_envelope!(
+                Identity,
+                platform::GetIdentityRequest,
+                request!(
+                    get_identity_request,
+                    GetIdentityRequestV0,
+                    GetIdentityRequest {
+                        id: id(1),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_identity_response,
+                    get_identity_response_v0,
+                    GetIdentityResponseV0,
+                    GetIdentityResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                Identity,
+                platform::GetIdentityByPublicKeyHashRequest,
+                request!(
+                    get_identity_by_public_key_hash_request,
+                    GetIdentityByPublicKeyHashRequestV0,
+                    GetIdentityByPublicKeyHashRequest {
+                        public_key_hash: vec![1; 20],
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_identity_by_public_key_hash_response,
+                    get_identity_by_public_key_hash_response_v0,
+                    GetIdentityByPublicKeyHashResponseV0,
+                    GetIdentityByPublicKeyHashResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                IdentityPublicKeys,
+                platform::GetIdentityKeysRequest,
+                request!(
+                    get_identity_keys_request,
+                    GetIdentityKeysRequestV0,
+                    GetIdentityKeysRequest {
+                        identity_id: id(1),
+                        request_type: Some(platform::KeyRequestType {
+                            request: Some(platform::key_request_type::Request::AllKeys(
+                                platform::AllKeys {}
+                            )),
+                        }),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_identity_keys_response,
+                    get_identity_keys_response_v0,
+                    GetIdentityKeysResponseV0,
+                    GetIdentityKeysResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                IdentityNonceFetcher,
+                platform::GetIdentityNonceRequest,
+                request!(
+                    get_identity_nonce_request,
+                    GetIdentityNonceRequestV0,
+                    GetIdentityNonceRequest {
+                        identity_id: id(1),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_identity_nonce_response,
+                    get_identity_nonce_response_v0,
+                    GetIdentityNonceResponseV0,
+                    GetIdentityNonceResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                IdentityContractNonceFetcher,
+                platform::GetIdentityContractNonceRequest,
+                request!(
+                    get_identity_contract_nonce_request,
+                    GetIdentityContractNonceRequestV0,
+                    GetIdentityContractNonceRequest {
+                        identity_id: id(1),
+                        contract_id: id(2),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_identity_contract_nonce_response,
+                    get_identity_contract_nonce_response_v0,
+                    GetIdentityContractNonceResponseV0,
+                    GetIdentityContractNonceResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                IdentityBalance,
+                platform::GetIdentityBalanceRequest,
+                request!(
+                    get_identity_balance_request,
+                    GetIdentityBalanceRequestV0,
+                    GetIdentityBalanceRequest {
+                        id: id(1),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_identity_balance_response,
+                    get_identity_balance_response_v0,
+                    GetIdentityBalanceResponseV0,
+                    GetIdentityBalanceResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                IdentityBalances,
+                platform::GetIdentitiesBalancesRequest,
+                request!(
+                    get_identities_balances_request,
+                    GetIdentitiesBalancesRequestV0,
+                    GetIdentitiesBalancesRequest {
+                        ids: vec![id(1)],
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_identities_balances_response,
+                    get_identities_balances_response_v0,
+                    GetIdentitiesBalancesResponseV0,
+                    GetIdentitiesBalancesResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                IdentityBalanceAndRevision,
+                platform::GetIdentityBalanceAndRevisionRequest,
+                request!(
+                    get_identity_balance_and_revision_request,
+                    GetIdentityBalanceAndRevisionRequestV0,
+                    GetIdentityBalanceAndRevisionRequest {
+                        id: id(1),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_identity_balance_and_revision_response,
+                    get_identity_balance_and_revision_response_v0,
+                    GetIdentityBalanceAndRevisionResponseV0,
+                    GetIdentityBalanceAndRevisionResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                IdentitiesContractKeys,
+                platform::GetIdentitiesContractKeysRequest,
+                request!(
+                    get_identities_contract_keys_request,
+                    GetIdentitiesContractKeysRequestV0,
+                    GetIdentitiesContractKeysRequest {
+                        identities_ids: vec![id(1)],
+                        contract_id: id(2),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_identities_contract_keys_response,
+                    get_identities_contract_keys_response_v0,
+                    GetIdentitiesContractKeysResponseV0,
+                    GetIdentitiesContractKeysResponse
+                )
+            );
+        }
+
+        #[test]
+        fn contract_and_address_queries() {
+            assert_rejects_legacy_envelope!(
+                DataContract,
+                platform::GetDataContractRequest,
+                request!(
+                    get_data_contract_request,
+                    GetDataContractRequestV0,
+                    GetDataContractRequest {
+                        id: id(1),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_data_contract_response,
+                    get_data_contract_response_v0,
+                    GetDataContractResponseV0,
+                    GetDataContractResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                (DataContract, Vec<u8>),
+                platform::GetDataContractRequest,
+                request!(
+                    get_data_contract_request,
+                    GetDataContractRequestV0,
+                    GetDataContractRequest {
+                        id: id(1),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_data_contract_response,
+                    get_data_contract_response_v0,
+                    GetDataContractResponseV0,
+                    GetDataContractResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                DataContracts,
+                platform::GetDataContractsRequest,
+                request!(
+                    get_data_contracts_request,
+                    GetDataContractsRequestV0,
+                    GetDataContractsRequest {
+                        ids: vec![id(1)],
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_data_contracts_response,
+                    get_data_contracts_response_v0,
+                    GetDataContractsResponseV0,
+                    GetDataContractsResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                DataContractHistory,
+                platform::GetDataContractHistoryRequest,
+                request!(
+                    get_data_contract_history_request,
+                    GetDataContractHistoryRequestV0,
+                    GetDataContractHistoryRequest {
+                        id: id(1),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_data_contract_history_response,
+                    get_data_contract_history_response_v0,
+                    GetDataContractHistoryResponseV0,
+                    GetDataContractHistoryResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                AddressInfos,
+                platform::GetAddressesInfosRequest,
+                request!(
+                    get_addresses_infos_request,
+                    GetAddressesInfosRequestV0,
+                    GetAddressesInfosRequest { prove: true }
+                ),
+                legacy_response!(
+                    get_addresses_infos_response,
+                    get_addresses_infos_response_v0,
+                    GetAddressesInfosResponseV0,
+                    GetAddressesInfosResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                RecentAddressBalanceChanges,
+                platform::GetRecentAddressBalanceChangesRequest,
+                request!(
+                    get_recent_address_balance_changes_request,
+                    GetRecentAddressBalanceChangesRequestV0,
+                    GetRecentAddressBalanceChangesRequest {
+                        start_height: 1,
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_recent_address_balance_changes_response,
+                    get_recent_address_balance_changes_response_v0,
+                    GetRecentAddressBalanceChangesResponseV0,
+                    GetRecentAddressBalanceChangesResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                PrefundedSpecializedBalance,
+                platform::GetPrefundedSpecializedBalanceRequest,
+                request!(
+                    get_prefunded_specialized_balance_request,
+                    GetPrefundedSpecializedBalanceRequestV0,
+                    GetPrefundedSpecializedBalanceRequest {
+                        id: id(1),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_prefunded_specialized_balance_response,
+                    get_prefunded_specialized_balance_response_v0,
+                    GetPrefundedSpecializedBalanceResponseV0,
+                    GetPrefundedSpecializedBalanceResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                VotePollsGroupedByTimestamp,
+                platform::GetVotePollsByEndDateRequest,
+                request!(
+                    get_vote_polls_by_end_date_request,
+                    GetVotePollsByEndDateRequestV0,
+                    GetVotePollsByEndDateRequest { prove: true }
+                ),
+                legacy_response!(
+                    get_vote_polls_by_end_date_response,
+                    get_vote_polls_by_end_date_response_v0,
+                    GetVotePollsByEndDateResponseV0,
+                    GetVotePollsByEndDateResponse
+                )
+            );
+        }
+
+        #[test]
+        fn system_queries() {
+            assert_rejects_legacy_envelope!(
+                ExtendedEpochInfos,
+                platform::GetEpochsInfoRequest,
+                request!(
+                    get_epochs_info_request,
+                    GetEpochsInfoRequestV0,
+                    GetEpochsInfoRequest {
+                        count: 1,
+                        ascending: true,
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_epochs_info_response,
+                    get_epochs_info_response_v0,
+                    GetEpochsInfoResponseV0,
+                    GetEpochsInfoResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                FinalizedEpochInfos,
+                platform::GetFinalizedEpochInfosRequest,
+                request!(
+                    get_finalized_epoch_infos_request,
+                    GetFinalizedEpochInfosRequestV0,
+                    GetFinalizedEpochInfosRequest {
+                        end_epoch_index: 1,
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_finalized_epoch_infos_response,
+                    get_finalized_epoch_infos_response_v0,
+                    GetFinalizedEpochInfosResponseV0,
+                    GetFinalizedEpochInfosResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                ProtocolVersionUpgrades,
+                platform::GetProtocolVersionUpgradeStateRequest,
+                request!(
+                    get_protocol_version_upgrade_state_request,
+                    GetProtocolVersionUpgradeStateRequestV0,
+                    GetProtocolVersionUpgradeStateRequest { prove: true }
+                ),
+                legacy_response!(
+                    get_protocol_version_upgrade_state_response,
+                    get_protocol_version_upgrade_state_response_v0,
+                    GetProtocolVersionUpgradeStateResponseV0,
+                    GetProtocolVersionUpgradeStateResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                MasternodeProtocolVotes,
+                platform::GetProtocolVersionUpgradeVoteStatusRequest,
+                request!(
+                    get_protocol_version_upgrade_vote_status_request,
+                    GetProtocolVersionUpgradeVoteStatusRequestV0,
+                    GetProtocolVersionUpgradeVoteStatusRequest {
+                        count: 1,
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_protocol_version_upgrade_vote_status_response,
+                    get_protocol_version_upgrade_vote_status_response_v0,
+                    GetProtocolVersionUpgradeVoteStatusResponseV0,
+                    GetProtocolVersionUpgradeVoteStatusResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                Elements,
+                platform::GetPathElementsRequest,
+                request!(
+                    get_path_elements_request,
+                    GetPathElementsRequestV0,
+                    GetPathElementsRequest { prove: true }
+                ),
+                legacy_response!(
+                    get_path_elements_response,
+                    get_path_elements_response_v0,
+                    GetPathElementsResponseV0,
+                    GetPathElementsResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                TotalCreditsInPlatform,
+                platform::GetTotalCreditsInPlatformRequest,
+                request!(
+                    get_total_credits_in_platform_request,
+                    GetTotalCreditsInPlatformRequestV0,
+                    GetTotalCreditsInPlatformRequest { prove: true }
+                ),
+                legacy_response!(
+                    get_total_credits_in_platform_response,
+                    get_total_credits_in_platform_response_v0,
+                    GetTotalCreditsInPlatformResponseV0,
+                    GetTotalCreditsInPlatformResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                ProposerBlockCounts,
+                platform::GetEvonodesProposedEpochBlocksByIdsRequest,
+                request!(
+                    get_evonodes_proposed_epoch_blocks_by_ids_request,
+                    GetEvonodesProposedEpochBlocksByIdsRequestV0,
+                    GetEvonodesProposedEpochBlocksByIdsRequest {
+                        epoch: Some(1),
+                        ids: vec![id(1)],
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_evonodes_proposed_epoch_blocks_response,
+                    get_evonodes_proposed_epoch_blocks_response_v0,
+                    GetEvonodesProposedEpochBlocksResponseV0,
+                    GetEvonodesProposedEpochBlocksResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                ProposerBlockCounts,
+                platform::GetEvonodesProposedEpochBlocksByRangeRequest,
+                request!(
+                    get_evonodes_proposed_epoch_blocks_by_range_request,
+                    GetEvonodesProposedEpochBlocksByRangeRequestV0,
+                    GetEvonodesProposedEpochBlocksByRangeRequest {
+                        epoch: Some(1),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_evonodes_proposed_epoch_blocks_response,
+                    get_evonodes_proposed_epoch_blocks_response_v0,
+                    GetEvonodesProposedEpochBlocksResponseV0,
+                    GetEvonodesProposedEpochBlocksResponse
+                )
+            );
+        }
+
+        #[test]
+        fn shielded_queries() {
+            assert_rejects_legacy_envelope!(
+                ShieldedPoolState,
+                platform::GetShieldedPoolStateRequest,
+                request!(
+                    get_shielded_pool_state_request,
+                    GetShieldedPoolStateRequestV0,
+                    GetShieldedPoolStateRequest { prove: true }
+                ),
+                legacy_response!(
+                    get_shielded_pool_state_response,
+                    get_shielded_pool_state_response_v0,
+                    GetShieldedPoolStateResponseV0,
+                    GetShieldedPoolStateResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                ShieldedNotesCount,
+                platform::GetShieldedNotesCountRequest,
+                request!(
+                    get_shielded_notes_count_request,
+                    GetShieldedNotesCountRequestV0,
+                    GetShieldedNotesCountRequest { prove: true }
+                ),
+                legacy_response!(
+                    get_shielded_notes_count_response,
+                    get_shielded_notes_count_response_v0,
+                    GetShieldedNotesCountResponseV0,
+                    GetShieldedNotesCountResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                ShieldedAnchors,
+                platform::GetShieldedAnchorsRequest,
+                request!(
+                    get_shielded_anchors_request,
+                    GetShieldedAnchorsRequestV0,
+                    GetShieldedAnchorsRequest { prove: true }
+                ),
+                legacy_response!(
+                    get_shielded_anchors_response,
+                    get_shielded_anchors_response_v0,
+                    GetShieldedAnchorsResponseV0,
+                    GetShieldedAnchorsResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                MostRecentShieldedAnchor,
+                platform::GetMostRecentShieldedAnchorRequest,
+                request!(
+                    get_most_recent_shielded_anchor_request,
+                    GetMostRecentShieldedAnchorRequestV0,
+                    GetMostRecentShieldedAnchorRequest { prove: true }
+                ),
+                legacy_response!(
+                    get_most_recent_shielded_anchor_response,
+                    get_most_recent_shielded_anchor_response_v0,
+                    GetMostRecentShieldedAnchorResponseV0,
+                    GetMostRecentShieldedAnchorResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                ShieldedEncryptedNotes,
+                platform::GetShieldedEncryptedNotesRequest,
+                request!(
+                    get_shielded_encrypted_notes_request,
+                    GetShieldedEncryptedNotesRequestV0,
+                    GetShieldedEncryptedNotesRequest {
+                        count: 1,
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_shielded_encrypted_notes_response,
+                    get_shielded_encrypted_notes_response_v0,
+                    GetShieldedEncryptedNotesResponseV0,
+                    GetShieldedEncryptedNotesResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                ShieldedNullifierStatuses,
+                platform::GetShieldedNullifiersRequest,
+                request!(
+                    get_shielded_nullifiers_request,
+                    GetShieldedNullifiersRequestV0,
+                    GetShieldedNullifiersRequest {
+                        nullifiers: vec![id(1)],
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_shielded_nullifiers_response,
+                    get_shielded_nullifiers_response_v0,
+                    GetShieldedNullifiersResponseV0,
+                    GetShieldedNullifiersResponse
+                )
+            );
+        }
+
+        #[test]
+        fn token_and_group_queries() {
+            assert_rejects_legacy_envelope!(
+                IdentityTokenBalances,
+                platform::GetIdentityTokenBalancesRequest,
+                request!(
+                    get_identity_token_balances_request,
+                    GetIdentityTokenBalancesRequestV0,
+                    GetIdentityTokenBalancesRequest {
+                        identity_id: id(1),
+                        token_ids: vec![id(2)],
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_identity_token_balances_response,
+                    get_identity_token_balances_response_v0,
+                    GetIdentityTokenBalancesResponseV0,
+                    GetIdentityTokenBalancesResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                IdentitiesTokenBalances,
+                platform::GetIdentitiesTokenBalancesRequest,
+                request!(
+                    get_identities_token_balances_request,
+                    GetIdentitiesTokenBalancesRequestV0,
+                    GetIdentitiesTokenBalancesRequest {
+                        token_id: id(2),
+                        identity_ids: vec![id(1)],
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_identities_token_balances_response,
+                    get_identities_token_balances_response_v0,
+                    GetIdentitiesTokenBalancesResponseV0,
+                    GetIdentitiesTokenBalancesResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                IdentityTokenInfos,
+                platform::GetIdentityTokenInfosRequest,
+                request!(
+                    get_identity_token_infos_request,
+                    GetIdentityTokenInfosRequestV0,
+                    GetIdentityTokenInfosRequest {
+                        identity_id: id(1),
+                        token_ids: vec![id(2)],
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_identity_token_infos_response,
+                    get_identity_token_infos_response_v0,
+                    GetIdentityTokenInfosResponseV0,
+                    GetIdentityTokenInfosResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                IdentitiesTokenInfos,
+                platform::GetIdentitiesTokenInfosRequest,
+                request!(
+                    get_identities_token_infos_request,
+                    GetIdentitiesTokenInfosRequestV0,
+                    GetIdentitiesTokenInfosRequest {
+                        token_id: id(2),
+                        identity_ids: vec![id(1)],
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_identities_token_infos_response,
+                    get_identities_token_infos_response_v0,
+                    GetIdentitiesTokenInfosResponseV0,
+                    GetIdentitiesTokenInfosResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                TokenStatuses,
+                platform::GetTokenStatusesRequest,
+                request!(
+                    get_token_statuses_request,
+                    GetTokenStatusesRequestV0,
+                    GetTokenStatusesRequest {
+                        token_ids: vec![id(2)],
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_token_statuses_response,
+                    get_token_statuses_response_v0,
+                    GetTokenStatusesResponseV0,
+                    GetTokenStatusesResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                TotalSingleTokenBalance,
+                platform::GetTokenTotalSupplyRequest,
+                request!(
+                    get_token_total_supply_request,
+                    GetTokenTotalSupplyRequestV0,
+                    GetTokenTotalSupplyRequest {
+                        token_id: id(2),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_token_total_supply_response,
+                    get_token_total_supply_response_v0,
+                    GetTokenTotalSupplyResponseV0,
+                    GetTokenTotalSupplyResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                TokenContractInfo,
+                platform::GetTokenContractInfoRequest,
+                request!(
+                    get_token_contract_info_request,
+                    GetTokenContractInfoRequestV0,
+                    GetTokenContractInfoRequest {
+                        token_id: id(2),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_token_contract_info_response,
+                    get_token_contract_info_response_v0,
+                    GetTokenContractInfoResponseV0,
+                    GetTokenContractInfoResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                TokenDirectPurchasePrices,
+                platform::GetTokenDirectPurchasePricesRequest,
+                request!(
+                    get_token_direct_purchase_prices_request,
+                    GetTokenDirectPurchasePricesRequestV0,
+                    GetTokenDirectPurchasePricesRequest {
+                        token_ids: vec![id(2)],
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_token_direct_purchase_prices_response,
+                    get_token_direct_purchase_prices_response_v0,
+                    GetTokenDirectPurchasePricesResponseV0,
+                    GetTokenDirectPurchasePricesResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                TokenPreProgrammedDistributions,
+                platform::GetTokenPreProgrammedDistributionsRequest,
+                request!(
+                    get_token_pre_programmed_distributions_request,
+                    GetTokenPreProgrammedDistributionsRequestV0,
+                    GetTokenPreProgrammedDistributionsRequest {
+                        token_id: id(2),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_token_pre_programmed_distributions_response,
+                    get_token_pre_programmed_distributions_response_v0,
+                    GetTokenPreProgrammedDistributionsResponseV0,
+                    GetTokenPreProgrammedDistributionsResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                Group,
+                platform::GetGroupInfoRequest,
+                request!(
+                    get_group_info_request,
+                    GetGroupInfoRequestV0,
+                    GetGroupInfoRequest {
+                        contract_id: id(2),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_group_info_response,
+                    get_group_info_response_v0,
+                    GetGroupInfoResponseV0,
+                    GetGroupInfoResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                Groups,
+                platform::GetGroupInfosRequest,
+                request!(
+                    get_group_infos_request,
+                    GetGroupInfosRequestV0,
+                    GetGroupInfosRequest {
+                        contract_id: id(2),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_group_infos_response,
+                    get_group_infos_response_v0,
+                    GetGroupInfosResponseV0,
+                    GetGroupInfosResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                GroupActions,
+                platform::GetGroupActionsRequest,
+                request!(
+                    get_group_actions_request,
+                    GetGroupActionsRequestV0,
+                    GetGroupActionsRequest {
+                        contract_id: id(2),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_group_actions_response,
+                    get_group_actions_response_v0,
+                    GetGroupActionsResponseV0,
+                    GetGroupActionsResponse
+                )
+            );
+            assert_rejects_legacy_envelope!(
+                GroupActionSigners,
+                platform::GetGroupActionSignersRequest,
+                request!(
+                    get_group_action_signers_request,
+                    GetGroupActionSignersRequestV0,
+                    GetGroupActionSignersRequest {
+                        contract_id: id(2),
+                        action_id: id(3),
+                        prove: true
+                    }
+                ),
+                legacy_response!(
+                    get_group_action_signers_response,
+                    get_group_action_signers_response_v0,
+                    GetGroupActionSignersResponseV0,
+                    GetGroupActionSignersResponse
+                )
+            );
+        }
+    }
 }
