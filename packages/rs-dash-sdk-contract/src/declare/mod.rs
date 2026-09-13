@@ -35,7 +35,9 @@ pub use index::{
     ContestedResolution, ContestedSpec, Countability, IndexOnlySpec, IndexSpec, RankedCount,
     Ranking, TimeRangeSpec,
 };
-pub use module::{InterfaceSpec, InternalFunctionSpec, ModuleSpec, IMPLICIT_MODULE};
+pub use module::{
+    implicit_module, InterfaceSpec, InternalFunctionSpec, ModuleSpec, IMPLICIT_MODULE,
+};
 pub use rule::{ActionScope, FieldContext, GuardExpr, Literal, RuleKind, RuleSpec};
 
 use crate::manifest::CanonicalManifest;

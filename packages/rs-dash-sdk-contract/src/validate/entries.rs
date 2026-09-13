@@ -4,7 +4,7 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use crate::declare::{ContractDeclaration, EntrySpec, Receiver, IMPLICIT_MODULE};
+use crate::declare::{implicit_module, ContractDeclaration, EntrySpec, Receiver};
 use crate::identity::{entry_export_symbol, ModuleName};
 use crate::manifest::{MethodEntry, MethodTable, ModuleTable};
 use crate::validate::collections::{check_value_type, CollectionKinds};
@@ -19,17 +19,7 @@ pub(super) fn validate_entries(
 ) -> MethodTable {
     let entries = dedupe(
         &declaration.entries,
-        |a, b| a.name == b.name,
-        |spec| spec.origin,
-        |a, b| {
-            let mut left = a.clone();
-            left.origin = b.origin;
-            left == *b
-        },
-        |_, _| {},
         |spec| DeclarationPath::entry(&spec.name),
-        "entry",
-        || DiagnosticKind::DuplicateMethod,
         diagnostics,
     );
 
@@ -57,14 +47,12 @@ pub(super) fn validate_entries(
 
         let module = resolve_module(entry, modules, single_module, &path, diagnostics);
 
-        let kind = entry.receiver.collection().and_then(|name| {
-            collections
-                .iter()
-                .find(|(candidate, _)| candidate == name)
-                .map(|(_, kind)| *kind)
-        });
+        let summary = entry
+            .receiver
+            .collection()
+            .and_then(|name| collections.iter().find(|summary| &summary.name == name));
         if let Some(name) = entry.receiver.collection() {
-            if kind.is_none() {
+            if summary.is_none() {
                 diagnostics.push(Diagnostic::new(
                     path.clone(),
                     DiagnosticKind::ReceiverCollectionUnknown {
@@ -73,28 +61,20 @@ pub(super) fn validate_entries(
                 ));
             }
         }
-        if entry.receiver.is_mutable() {
+        if let Receiver::Mut(name) = &entry.receiver {
             if entry.read_only {
                 diagnostics.push(Diagnostic::new(
                     path.clone(),
                     DiagnosticKind::ReadOnlyEntryWithMutableReceiver,
                 ));
             }
-            if let Receiver::Mut(name) = &entry.receiver {
-                let immutable = declaration
-                    .collections
-                    .iter()
-                    .find(|collection| &collection.name == name)
-                    .map(|collection| !collection.mutable)
-                    .unwrap_or(false);
-                if immutable {
-                    diagnostics.push(Diagnostic::new(
-                        path.clone(),
-                        DiagnosticKind::MutableReceiverOnImmutableCollection {
-                            collection: name.to_string(),
-                        },
-                    ));
-                }
+            if summary.is_some_and(|summary| !summary.mutable) {
+                diagnostics.push(Diagnostic::new(
+                    path.clone(),
+                    DiagnosticKind::MutableReceiverOnImmutableCollection {
+                        collection: name.to_string(),
+                    },
+                ));
             }
         }
 
@@ -124,7 +104,10 @@ pub(super) fn validate_entries(
             module,
             export,
             receiver: entry.receiver.clone(),
-            takes_document_id: MethodEntry::takes_document_id(&entry.receiver, kind),
+            takes_document_id: MethodEntry::receiver_takes_document_id(
+                &entry.receiver,
+                summary.map(|summary| summary.kind),
+            ),
             read_only: entry.read_only,
             params: entry.params.clone(),
             returns: entry.returns.clone(),
@@ -163,10 +146,7 @@ fn resolve_module(
                 .modules
                 .first()
                 .map(|module| module.name.clone())
-                .unwrap_or_else(|| {
-                    ModuleName::new(IMPLICIT_MODULE)
-                        .expect("the implicit module name satisfies the grammar")
-                })
+                .unwrap_or_else(implicit_module)
         }
     }
 }

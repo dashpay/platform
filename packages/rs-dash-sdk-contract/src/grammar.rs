@@ -16,6 +16,7 @@
 //! The spellings themselves are provisional under the shared allocation
 //! register entry for the Rust macro grammar.
 
+use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -257,8 +258,6 @@ const TIME_RANGE_KEYS: &[KeySpec] = &[
     },
 ];
 
-const COLLECTION_COMMON_KEYS_DOC: &str = "see the persistent attribute";
-
 const PERSISTENT_KEYS: &[KeySpec] = &[
     KeySpec {
         name: "collection",
@@ -405,37 +404,37 @@ const SINGLETON_KEYS: &[KeySpec] = &[
         name: "schema",
         value: ValueShape::Int,
         required: false,
-        doc: COLLECTION_COMMON_KEYS_DOC,
+        doc: "author-declared schema revision, at least 1, default 1",
     },
     KeySpec {
         name: "write",
         value: ValueShape::Choice(&WRITE),
         required: false,
-        doc: COLLECTION_COMMON_KEYS_DOC,
+        doc: "who may write the singleton, default `any`",
     },
     KeySpec {
         name: "security_level",
         value: ValueShape::Choice(&SECURITY_LEVEL),
         required: false,
-        doc: COLLECTION_COMMON_KEYS_DOC,
+        doc: "signature security level required to write, default `high`",
     },
     KeySpec {
         name: "encryption_key",
         value: ValueShape::Choice(&KEY_REQUIREMENT),
         required: false,
-        doc: COLLECTION_COMMON_KEYS_DOC,
+        doc: "identity encryption bounded key requirement, default none",
     },
     KeySpec {
         name: "decryption_key",
         value: ValueShape::Choice(&KEY_REQUIREMENT),
         required: false,
-        doc: COLLECTION_COMMON_KEYS_DOC,
+        doc: "identity decryption bounded key requirement, default none",
     },
     KeySpec {
         name: "store",
         value: ValueShape::Choice(&STORE),
         required: false,
-        doc: COLLECTION_COMMON_KEYS_DOC,
+        doc: "document store, default `public`",
     },
 ];
 
@@ -988,23 +987,16 @@ fn check_options(
 }
 
 fn choice_reason(value: &str, choices: &Choices) -> String {
-    let mut reason = String::new();
-    reason.push_str("value ");
-    reason.push('"');
-    reason.push_str(value);
-    reason.push('"');
-    reason.push_str(" is not one of [");
-    for (i, allowed) in choices.allowed.iter().enumerate() {
-        if i > 0 {
-            reason.push_str(", ");
-        }
-        reason.push('"');
-        reason.push_str(allowed);
-        reason.push('"');
-    }
-    reason.push_str("]: ");
-    reason.push_str(choices.explain);
-    reason
+    let allowed: Vec<String> = choices
+        .allowed
+        .iter()
+        .map(|allowed| format!("\"{allowed}\""))
+        .collect();
+    format!(
+        "value \"{value}\" is not one of [{}]: {}",
+        allowed.join(", "),
+        choices.explain
+    )
 }
 
 fn check_choice(value: &str, choices: &Choices) -> Result<(), String> {
@@ -1046,10 +1038,7 @@ fn check_value(
             Err("expects a bare flag, a boolean or a list of strings".to_string())
         }
         (ValueShape::Nested(keys), GivenValue::Nested(options)) => {
-            let mut nested = String::new();
-            nested.push_str(attribute);
-            nested.push('.');
-            nested.push_str(key.name);
+            let nested = format!("{attribute}.{}", key.name);
             check_options(&nested, keys, &[], options, diagnostics);
             Ok(())
         }
@@ -1061,11 +1050,7 @@ fn check_value(
             let mut seen: Vec<&str> = Vec::new();
             for entry in entries {
                 if seen.contains(&entry.name) {
-                    let mut reason = String::new();
-                    reason.push_str("key ");
-                    reason.push_str(entry.name);
-                    reason.push_str(" is repeated");
-                    return Err(reason);
+                    return Err(format!("key {} is repeated", entry.name));
                 }
                 seen.push(entry.name);
                 match (map_value, entry.value) {
@@ -1074,11 +1059,7 @@ fn check_value(
                         check_choice(value, choices)?;
                     }
                     _ => {
-                        let mut reason = String::new();
-                        reason.push_str("key ");
-                        reason.push_str(entry.name);
-                        reason.push_str(" expects a string value");
-                        return Err(reason);
+                        return Err(format!("key {} expects a string value", entry.name));
                     }
                 }
             }
