@@ -485,11 +485,13 @@ mod tests {
         )
         .expect("verify");
         assert_ne!(root_hash, [0u8; 32]);
-        // The spent nullifiers identify this exact transition, so the strict SDK
-        // wait (`wait_for_response`) must see an executed outcome, not a snapshot.
+        // Spent nullifiers and the identity's balance are a snapshot at the
+        // proof's block: they cannot tell this top-up apart from a competing
+        // spend of the same notes (see the competing-spend test below), so the
+        // outcome is affected state and wallets use the affected-state wait.
         assert!(
-            matches!(outcome, StateTransitionProofOutcome::ExecutionProved(_)),
-            "a top-up proof must be classified as execution-proving, got {outcome:?}"
+            matches!(outcome, StateTransitionProofOutcome::AffectedState(_)),
+            "a top-up proof must be classified as affected state, got {outcome:?}"
         );
 
         let result = outcome.into_result();
@@ -510,6 +512,124 @@ mod tests {
         assert!(
             statuses.iter().all(|(_, spent)| *spent),
             "all nullifiers must be spent"
+        );
+    }
+
+    #[test]
+    fn test_competing_spend_of_the_same_notes_is_not_proven_as_this_top_up() {
+        // Two top-ups authorized over the same note share its nullifier but
+        // credit different identities. Once one executes, a proof for the other
+        // still verifies (its nullifiers are spent and its identity exists), so
+        // the outcome must stay a snapshot: execution evidence here would tell
+        // a wallet its top-up landed when it did not.
+        let platform_version = PlatformVersion::latest();
+        let platform = setup_platform();
+        let initial_balance = dash_to_credits!(0.1);
+        let loser = add_identity(&platform, 6, initial_balance);
+        let winner = add_identity(&platform, 7, initial_balance);
+        let (loser_actions, _, anchor, loser_proof, loser_sig) =
+            build_valid_bundle(&loser.id(), GROSS_AMOUNT);
+        let (winner_actions, _, winner_anchor, winner_proof, winner_sig) =
+            build_valid_bundle(&winner.id(), GROSS_AMOUNT);
+        assert_eq!(anchor, winner_anchor);
+        assert_eq!(
+            loser_actions
+                .iter()
+                .map(|a| a.nullifier)
+                .collect::<Vec<_>>(),
+            winner_actions
+                .iter()
+                .map(|a| a.nullifier)
+                .collect::<Vec<_>>(),
+            "both bundles must spend the same note"
+        );
+        let num_actions = winner_actions.len();
+        seed_pool(&platform, &anchor, NOTE_VALUE);
+
+        let winning = create_transition(
+            winner.id(),
+            winner_actions,
+            GROSS_AMOUNT,
+            anchor,
+            winner_proof,
+            winner_sig,
+        );
+        let losing = create_transition(
+            loser.id(),
+            loser_actions,
+            GROSS_AMOUNT,
+            anchor,
+            loser_proof,
+            loser_sig,
+        );
+
+        // Only the winner executes.
+        let transition_bytes = winning.serialize_to_bytes().expect("serialize");
+        let platform_state = platform.state.load();
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![transition_bytes],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("process");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("commit");
+        assert_eq!(
+            identity_balance(&platform, winner.id()),
+            initial_balance + GROSS_AMOUNT - top_up_fee(num_actions)
+        );
+        assert_eq!(identity_balance(&platform, loser.id()), initial_balance);
+
+        // The loser's proof verifies: its nullifiers are spent (by the winner)
+        // and its identity exists. That is exactly why it cannot bind execution.
+        let proof_bytes = platform
+            .drive
+            .prove_state_transition(&losing, None, platform_version)
+            .expect("prove")
+            .into_data()
+            .expect("proof data");
+        let (_, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+            &losing,
+            &BlockInfo::default(),
+            &proof_bytes,
+            &|_| Ok(None),
+            platform_version,
+        )
+        .expect("the losing top-up's proof verifies as a snapshot");
+        assert!(
+            matches!(outcome, StateTransitionProofOutcome::AffectedState(_)),
+            "a proof that cannot tell competing spends apart must not claim execution, got {outcome:?}"
+        );
+        let result = outcome.into_result();
+        let StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(proven, statuses) =
+            result
+        else {
+            panic!("expected VerifiedIdentityWithShieldedNullifiers, got {result:?}");
+        };
+        assert_eq!(proven.id(), loser.id());
+        assert_eq!(
+            proven.balance(),
+            initial_balance,
+            "the snapshot shows the losing identity was never credited"
+        );
+        assert!(
+            statuses.iter().all(|(_, spent)| *spent),
+            "the shared nullifiers are spent by the winner"
         );
     }
 }
