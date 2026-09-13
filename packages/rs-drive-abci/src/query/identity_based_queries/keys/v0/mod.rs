@@ -662,7 +662,7 @@ mod tests {
         use dpp::identity::accessors::IdentityGettersV0;
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
         use dpp::identity::{Identity, IdentityPublicKey, KeyID};
-        use dpp::serialization::PlatformDeserializable;
+        use dpp::serialization::PlatformDeserializableUntrusted;
         use drive::drive::identity::key::fetch::KeyRequestType as DriveKeyRequestType;
         use drive::drive::Drive;
         use drive::grovedb::GroveDb;
@@ -723,7 +723,7 @@ mod tests {
             keys.keys_bytes
                 .into_iter()
                 .map(|bytes| {
-                    let key = IdentityPublicKey::deserialize_from_bytes(&bytes)
+                    let key = IdentityPublicKey::deserialize_from_bytes_untrusted(&bytes)
                         .expect("expected a serialized identity public key");
                     (key.id(), key)
                 })
@@ -772,7 +772,7 @@ mod tests {
                     let bytes = element
                         .into_item_bytes()
                         .expect("key element should be an item");
-                    let key = IdentityPublicKey::deserialize_from_bytes(&bytes)
+                    let key = IdentityPublicKey::deserialize_from_bytes_untrusted(&bytes)
                         .expect("expected a serialized identity public key");
                     (key.id(), key)
                 })
