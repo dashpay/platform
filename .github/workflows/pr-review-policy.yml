@@ -1,4 +1,4 @@
-name: PR review policy
+name: PR Hygiene policy
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed, edited]
@@ -16,4 +16,4 @@ permissions:
   statuses: write
 jobs:
   policy:
-    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@a95eab4ec0938e9022edd0c82591d052408a38a5
+    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@36581c5a53672f06faf8ad2dc1c33b3ec5481d55
