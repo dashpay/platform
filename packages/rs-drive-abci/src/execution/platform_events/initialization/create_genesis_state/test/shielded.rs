@@ -197,7 +197,7 @@ impl<C> Platform<C> {
             })?;
             tracing::info!(
                 total_count = stats.total_count,
-                combined_root = format!("{}", hex::encode(stats.combined_root)),
+                combined_root = hex::encode(stats.combined_root),
                 "create_data_for_shielded_pool: snapshot applied"
             );
             // Record the anchor at height 1 so wallets see the same anchor

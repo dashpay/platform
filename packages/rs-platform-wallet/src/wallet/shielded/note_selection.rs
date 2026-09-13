@@ -116,7 +116,7 @@ pub fn select_notes(
 
     // Sort by value descending (largest first)
     let mut sorted = unspent_only;
-    sorted.sort_by(|a, b| b.value.cmp(&a.value));
+    sorted.sort_by_key(|note| std::cmp::Reverse(note.value));
 
     let mut selected = Vec::new();
     let mut accumulated = 0u64;

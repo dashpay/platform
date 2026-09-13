@@ -710,8 +710,8 @@ impl WasmSdk {
         if let Some(keys_map) = keys_result {
             for (identity_id, purposes_map) in keys_map {
                 let identity_keys: Vec<IdentityPublicKeyWasm> = purposes_map
-                    .into_iter()
-                    .filter_map(|(_, key_opt)| key_opt.map(IdentityPublicKeyWasm::from))
+                    .into_values()
+                    .filter_map(|key_opt| key_opt.map(IdentityPublicKeyWasm::from))
                     .collect();
 
                 if !identity_keys.is_empty() {
@@ -1076,8 +1076,8 @@ impl WasmSdk {
         if let Some(keys_map) = keys_result {
             for (identity_id, purposes_map) in keys_map {
                 let identity_keys: Vec<IdentityPublicKeyWasm> = purposes_map
-                    .into_iter()
-                    .filter_map(|(_, key_opt)| key_opt.map(IdentityPublicKeyWasm::from))
+                    .into_values()
+                    .filter_map(|key_opt| key_opt.map(IdentityPublicKeyWasm::from))
                     .collect();
 
                 if !identity_keys.is_empty() {

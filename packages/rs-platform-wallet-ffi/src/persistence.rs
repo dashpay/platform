@@ -3880,11 +3880,9 @@ impl PlatformWalletPersistence for FFIPersister {
         let flags = unsafe { slice::from_raw_parts(flags_ptr, count) };
 
         let mut out = Vec::with_capacity(count);
-        for (chunk, flag) in raw.chunks_exact(32).zip(flags) {
-            let mut bytes = [0u8; 32];
-            bytes.copy_from_slice(chunk);
+        for (chunk, flag) in raw.as_chunks::<32>().0.iter().zip(flags) {
             out.push(ListedCoreTxid {
-                txid: dashcore::Txid::from_byte_array(bytes),
+                txid: dashcore::Txid::from_byte_array(*chunk),
                 spends_wallet_input: flag & 0x01 != 0,
             });
         }
@@ -3924,10 +3922,7 @@ unsafe fn decode_cmx_array(ptr: *const u8, count: usize) -> Vec<[u8; 32]> {
         return Vec::new();
     };
     let bytes = slice::from_raw_parts(ptr, byte_len);
-    bytes
-        .chunks_exact(32)
-        .filter_map(|c| <[u8; 32]>::try_from(c).ok())
-        .collect()
+    bytes.as_chunks::<32>().0.to_vec()
 }
 
 /// Discriminant byte for a `ShieldedDirection` (FFI: 0 In, 1 Out, 2 Self).
