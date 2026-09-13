@@ -822,7 +822,9 @@ impl IdentityKeysRequest {
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Make a request for specific keys for the identity
     pub fn new_specific_keys_query(identity_id: &[u8; 32], key_ids: Vec<KeyID>) -> Self {
-        let limit = key_ids.len() as u16;
+        // Saturate rather than truncate: a list longer than u16::MAX must not wrap
+        // to a small (or zero) limit that would silently drop keys.
+        let limit = u16::try_from(key_ids.len()).unwrap_or(u16::MAX);
         IdentityKeysRequest {
             identity_id: *identity_id,
             request_type: SpecificKeys(key_ids),
@@ -1281,6 +1283,15 @@ mod tests {
         let path_query = request.into_path_query();
         assert_eq!(path_query.path.len(), 3);
         assert_eq!(path_query.query.limit, Some(3));
+    }
+
+    #[test]
+    fn test_new_specific_keys_query_saturates_limit_for_oversized_lists() {
+        let identity_id: [u8; 32] = [8u8; 32];
+        let key_ids: Vec<KeyID> = vec![0; u16::MAX as usize + 1];
+        let request = IdentityKeysRequest::new_specific_keys_query(&identity_id, key_ids);
+
+        assert_eq!(request.limit, Some(u16::MAX));
     }
 
     #[test]

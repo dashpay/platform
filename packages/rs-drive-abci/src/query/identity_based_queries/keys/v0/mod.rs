@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::response_metadata::CheckpointUsed;
-use dpp::identity::{KeyID, Purpose, SecurityLevel};
+use dpp::identity::{Purpose, SecurityLevel};
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{
@@ -36,7 +36,9 @@ fn from_i32_to_key_kind_request_type(value: i32) -> Option<KeyKindRequestType> {
 /// becomes one GroveDB key item, and an id the identity does not have still
 /// costs an absence proof, so the response `limit` alone does not bound the
 /// work. Duplicates are collapsed before the bound is applied so that the
-/// bound measures the work the node would actually do.
+/// bound measures the work the node would actually do, and the collection
+/// stops as soon as the bound is exceeded so a rejected request never
+/// materializes its whole distinct set.
 fn convert_key_request_type(
     request_type: dapi_grpc::platform::v0::key_request_type::Request,
     max_specific_key_ids: u16,
@@ -46,13 +48,15 @@ fn convert_key_request_type(
             Ok(KeyRequestType::AllKeys)
         }
         dapi_grpc::platform::v0::key_request_type::Request::SpecificKeys(specific_keys) => {
-            let key_ids: BTreeSet<KeyID> = specific_keys.key_ids.into_iter().collect();
-            if key_ids.len() > max_specific_key_ids as usize {
-                return Err(QueryError::TooManyElements(format!(
-                    "trying to get {} specific keys, maximum is {}",
-                    key_ids.len(),
-                    max_specific_key_ids
-                )));
+            let mut key_ids = BTreeSet::new();
+            for key_id in specific_keys.key_ids {
+                key_ids.insert(key_id);
+                if key_ids.len() > max_specific_key_ids as usize {
+                    return Err(QueryError::TooManyElements(format!(
+                        "trying to get more than {} specific keys",
+                        max_specific_key_ids
+                    )));
+                }
             }
             Ok(KeyRequestType::SpecificKeys(key_ids.into_iter().collect()))
         }
@@ -657,7 +661,7 @@ mod tests {
         use dpp::block::block_info::BlockInfo;
         use dpp::identity::accessors::IdentityGettersV0;
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-        use dpp::identity::{Identity, IdentityPublicKey};
+        use dpp::identity::{Identity, IdentityPublicKey, KeyID};
         use dpp::serialization::PlatformDeserializable;
         use drive::drive::identity::key::fetch::KeyRequestType as DriveKeyRequestType;
         use drive::drive::Drive;
@@ -782,11 +786,7 @@ mod tests {
 
             // One more distinct id than the bound allows.
             let key_ids: Vec<u32> = (0..=max as u32).collect();
-            let expected_message = format!(
-                "trying to get {} specific keys, maximum is {}",
-                key_ids.len(),
-                max
-            );
+            let expected_message = format!("trying to get more than {} specific keys", max);
 
             for prove in [false, true] {
                 let result = platform
