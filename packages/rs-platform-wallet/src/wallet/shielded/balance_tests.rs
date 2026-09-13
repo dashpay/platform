@@ -11,6 +11,7 @@ use super::{
     ShieldedStore, SubwalletId,
 };
 use crate::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
+use crate::error::PlatformWalletError;
 use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
 use drive_proof_verifier::types::{ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery};
 
@@ -49,7 +50,8 @@ async fn register(coordinator: &NetworkShieldedCoordinator, wallet_id: [u8; 32],
             views,
             WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence)),
         )
-        .await;
+        .await
+        .expect("register test wallet");
 }
 
 fn note(n: u8, value: u64, is_spent: bool) -> ShieldedNote {
@@ -239,6 +241,8 @@ async fn local_balance_restores_funds_and_durable_pending_reservations_offline()
                     nullifiers: vec![[2; 32]],
                     st_bytes: vec![7; 32],
                     attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
                 },
             )
             .unwrap();
@@ -344,5 +348,61 @@ async fn local_balance_waits_for_atomic_store_and_lifecycle_updates() {
     assert_eq!(
         read.await.unwrap(),
         ShieldedLocalBalanceState::RestoreIncomplete
+    );
+}
+
+#[tokio::test]
+async fn should_reject_restored_local_balance_overflow() {
+    let path = tree_path();
+    let coordinator = coordinator(&path);
+    let wallet = [7; 32];
+    let id = SubwalletId::new(wallet, 0);
+    register(&coordinator, wallet, &[0]).await;
+    let start = ShieldedSyncStartState {
+        per_subwallet: BTreeMap::from([(
+            id,
+            ShieldedSubwalletStartState {
+                notes: vec![note(1, u64::MAX, false), note(2, 1, false)],
+                ..Default::default()
+            },
+        )]),
+        ..Default::default()
+    };
+    coordinator
+        .restore_for_wallet(wallet, &start)
+        .await
+        .unwrap();
+    coordinator.mark_hydrated(wallet, true).await;
+
+    let error = coordinator
+        .local_balance_snapshot(wallet)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        PlatformWalletError::ShieldedStoreError(message)
+            if message == "spendable shielded balance exceeds u64"
+    ));
+
+    // Reservations and spent notes are excluded before checked aggregation.
+    // The largest representable spendable balance remains valid.
+    coordinator
+        .store()
+        .write()
+        .await
+        .mark_pending(id, &[2; 32])
+        .unwrap();
+    assert_eq!(
+        ready(&coordinator, wallet).await.accounts[&0].spendable_credits,
+        u64::MAX
+    );
+    {
+        let mut store = coordinator.store().write().await;
+        store.clear_pending(id, &[2; 32]).unwrap();
+        store.mark_spent(id, &[2; 32]).unwrap();
+    }
+    assert_eq!(
+        ready(&coordinator, wallet).await.accounts[&0].spendable_credits,
+        u64::MAX
     );
 }

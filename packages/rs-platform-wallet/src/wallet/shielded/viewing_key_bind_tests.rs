@@ -342,6 +342,8 @@ async fn bind_persists_viewing_keys_and_restart_rebinds_seedlessly() {
                 nullifiers: vec![[2; 32]],
                 st_bytes: vec![9; 32],
                 attempts: 0,
+                identity_nonce_finalized: false,
+                identity_user_abandoned: false,
             },
         )
         .expect("persist pending reservation");

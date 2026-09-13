@@ -519,6 +519,17 @@ impl ShieldedStore for FileBackedShieldedStore {
             .unwrap_or_default())
     }
 
+    fn spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error> {
+        // Host-restored rows may be corrupt. Never publish a wrapped balance
+        // or panic while reading them, including through the sync path.
+        self.get_unspent_notes(id)?
+            .iter()
+            .try_fold(0u64, |balance, note| balance.checked_add(note.value))
+            .ok_or_else(|| {
+                FileShieldedStoreError::Storage("spendable shielded balance exceeds u64".into())
+            })
+    }
+
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error> {
         Ok(self
             .subwallets
