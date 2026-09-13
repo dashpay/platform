@@ -1734,7 +1734,7 @@ message GetDocumentsResponse {
 message GetDocumentHistoryRequest {
   // Reads the retained revisions of a historical document (a type with
   // documentsKeepHistory). Served from protocol version 14 on.
-  message GetDocumentHistoryRequestV1 {
+  message GetDocumentHistoryRequestV0 {
     // Exclusive cursor returned with a page. Several revisions can share a
     // block time, so resuming needs the revision as well as the time.
     message Cursor {
@@ -1753,12 +1753,11 @@ message GetDocumentHistoryRequest {
       uint64 revision = 9 [ jstype = JS_STRING ];
     }
   }
-  // The timestamp-keyed v0 request served by earlier protocol versions is
-  // gone: no released network stores such history, and the protocol 14
-  // storage migration leaves nothing for it to read.
-  reserved 1;
+  // This shape replaces the timestamp-keyed request that earlier releases
+  // served under the same version: no released network stores such history,
+  // and the protocol 14 storage migration leaves nothing for it to read.
   oneof version {
-    GetDocumentHistoryRequestV1 v1 = 2;
+    GetDocumentHistoryRequestV0 v0 = 1;
   }
 }
 
@@ -1767,7 +1766,7 @@ message GetDocumentHistoryResponse {
   // document's lifecycle as of the same block. Only document types with
   // documentsKeepHistory retain history; every field here describes such a
   // historical document.
-  message GetDocumentHistoryResponseV1 {
+  message GetDocumentHistoryResponseV0 {
     // One retained revision of the historical document.
     message Entry {
       uint64 time_ms = 1 [ jstype = JS_STRING ];
@@ -1796,9 +1795,8 @@ message GetDocumentHistoryResponse {
     Proof proof = 3;
     ResponseMetadata metadata = 4;
   }
-  reserved 1;
   oneof version {
-    GetDocumentHistoryResponseV1 v1 = 2;
+    GetDocumentHistoryResponseV0 v0 = 1;
   }
 }
 

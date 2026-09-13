@@ -145,8 +145,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    provable count tree keyed by `encode_u64(block_time_ms) || encode_u64(sequence)`,
 ///    where the sequence is `$revision` or 1 when no revision is present.
 ///    The activation hook migrates existing histories and index references in the
-///    block transaction. History v1 authenticates pages and lifecycle counts with
-///    separate proofs. This is non-additive: history v0 and `block_time_ms`
+///    block transaction. The history query authenticates pages and lifecycle
+///    counts inside one proof envelope. This is non-additive: the query's
+///    message shape is replaced under the same wire version, and `block_time_ms`
 ///    point-in-time reads are rejected for keep-history types after activation;
 ///    SDKs older than this release cannot read those documents.
 ///
@@ -248,7 +249,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: total credits history for the withdrawal limit and keep-history activation migration
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
-        query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked/HAVING routing, committed-time IN_TIME_RANGE and document history v1
+        query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked/HAVING routing, committed-time IN_TIME_RANGE and structure B document history
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {

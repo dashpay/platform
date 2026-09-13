@@ -1,6 +1,6 @@
 use super::*;
 use crate::query::tests::setup_platform;
-use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Cursor;
+use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v0::Cursor;
 use dapi_grpc::platform::v0::{
     GetDocumentHistoryRequest, GetDocumentHistoryResponse, Proof, ResponseMetadata,
 };
@@ -202,7 +202,7 @@ fn history_api_proof_round_trip(gapped: bool) {
                 DocumentHistorySelector::StartAtRevision(3),
             ),
         ] {
-            let request = GetDocumentHistoryRequestV1 {
+            let request = GetDocumentHistoryRequestV0 {
                 data_contract_id: contract.id().to_vec(),
                 document_type_name: "profile".into(),
                 document_id: document.id().to_vec(),
@@ -213,7 +213,7 @@ fn history_api_proof_round_trip(gapped: bool) {
             let mut time_request = request.clone();
             time_request.selector = Some(Selector::StartAtMs(0));
             let mut response = platform
-                .query_document_history_v1(time_request, &state, version)
+                .query_document_history_v0(time_request, &state, version)
                 .unwrap()
                 .into_data()
                 .unwrap();
@@ -295,7 +295,7 @@ fn history_api_proof_round_trip(gapped: bool) {
         ),
     ];
     for (id, wire_selector, selector) in selections {
-        let request = GetDocumentHistoryRequestV1 {
+        let request = GetDocumentHistoryRequestV0 {
             data_contract_id: contract.id().to_vec(),
             document_type_name: "profile".into(),
             document_id: id.to_vec(),
@@ -304,7 +304,7 @@ fn history_api_proof_round_trip(gapped: bool) {
             selector: Some(wire_selector),
         };
         let mut response = platform
-            .query_document_history_v1(request.clone(), &state, version)
+            .query_document_history_v0(request.clone(), &state, version)
             .unwrap()
             .into_data()
             .unwrap();
@@ -320,7 +320,7 @@ fn history_api_proof_round_trip(gapped: bool) {
             .fetch_document_history_v1(&query, document_type, None, version)
             .unwrap();
         let request: GetDocumentHistoryRequest = request.into();
-        let verify = |response: GetDocumentHistoryResponseV1| {
+        let verify = |response: GetDocumentHistoryResponseV0| {
             DocumentHistory::maybe_from_proof(
                 request.clone(),
                 GetDocumentHistoryResponse::from(response),
@@ -349,7 +349,7 @@ fn history_api_proof_round_trip(gapped: bool) {
         let result = verify(response.clone()).unwrap().unwrap();
         assert_eq!(result.entries, expected.entries);
         assert_eq!(result.lifecycle, Some(expected.lifecycle));
-        let with_proofs = |mut response: GetDocumentHistoryResponseV1,
+        let with_proofs = |mut response: GetDocumentHistoryResponseV0,
                            edit: &dyn Fn(&mut DocumentHistoryProofV1)| {
             let proof = response.proof.as_mut().unwrap();
             let mut proofs = DocumentHistoryProofV1::from_bytes(&proof.grovedb_proof).unwrap();
@@ -417,7 +417,7 @@ fn history_api_proof_round_trip(gapped: bool) {
 #[test]
 fn should_reject_missing_selectors_before_reading_state() {
     let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-    let request = GetDocumentHistoryRequestV1 {
+    let request = GetDocumentHistoryRequestV0 {
         data_contract_id: vec![1; 32],
         document_type_name: "note".into(),
         document_id: vec![2; 32],
@@ -426,7 +426,7 @@ fn should_reject_missing_selectors_before_reading_state() {
         prove: false,
     };
     assert!(!platform
-        .query_document_history_v1(request, &state, version)
+        .query_document_history_v0(request, &state, version)
         .unwrap()
         .is_valid());
 }
