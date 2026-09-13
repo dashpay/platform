@@ -17,7 +17,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
 
@@ -193,8 +193,10 @@ impl FileBackedShieldedStore {
     /// per-subwallet state, re-arming both the redrive record and the
     /// note reservations its nullifiers carry — an unconfirmed
     /// broadcast therefore keeps its notes reserved (and its re-drive
-    /// alive) across restarts. Malformed recovery metadata fails the open
-    /// without deleting the row; silently skipping it could enable a duplicate debit.
+    /// alive) across restarts. Malformed metadata for a possible identity debit
+    /// fails the open without deleting the row. A row whose exact transition
+    /// bytes prove it spends shielded notes can be retained and skipped safely:
+    /// Platform's nullifier set still prevents those notes from being spent twice.
     fn rehydrate_pending_spends(&mut self) -> Result<(), FileShieldedStoreError> {
         let conn = self.pending_conn.lock().expect("pending_conn mutex");
         let mut stmt = conn
@@ -205,20 +207,36 @@ impl FileBackedShieldedStore {
             .map_err(|e| FileShieldedStoreError::Storage(format!("prepare rehydrate: {e}")))?;
         let rows = stmt
             .query_map([], |row| {
-                Ok((
-                    row.get::<_, Vec<u8>>(0)?,
-                    row.get::<_, u32>(1)?,
-                    row.get::<_, Vec<u8>>(2)?,
-                    row.get::<_, Vec<u8>>(3)?,
-                    row.get::<_, Vec<u8>>(4)?,
-                    row.get::<_, Vec<u8>>(5)?,
-                    row.get::<_, u32>(6)?,
-                    row.get::<_, i64>(7)?,
-                    row.get::<_, i64>(8)?,
-                ))
+                // Read a separate copy of the exact transition bytes first so
+                // another malformed column cannot hide a provable note spend.
+                // A malformed st_bytes value remains unclassifiable and must
+                // fail closed.
+                let classifiable_st_bytes = row.get::<_, Vec<u8>>(5).ok();
+                let decoded: rusqlite::Result<_> = (|| {
+                    Ok((
+                        row.get::<_, Vec<u8>>(0)?,
+                        row.get::<_, u32>(1)?,
+                        row.get::<_, Vec<u8>>(2)?,
+                        row.get::<_, Vec<u8>>(3)?,
+                        row.get::<_, Vec<u8>>(4)?,
+                        row.get::<_, Vec<u8>>(5)?,
+                        row.get::<_, u32>(6)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, i64>(8)?,
+                    ))
+                })();
+                Ok((classifiable_st_bytes, decoded))
             })
             .map_err(|e| FileShieldedStoreError::Storage(format!("query rehydrate: {e}")))?;
         for row in rows {
+            let (classifiable_st_bytes, decoded) =
+                row.map_err(|e| FileShieldedStoreError::RecoveryCorrupted {
+                    account_index: None,
+                    reason: format!("cannot decode recovery row: {e}"),
+                })?;
+            let note_spend_kind = classifiable_st_bytes
+                .as_deref()
+                .and_then(Self::non_identity_note_spend_kind);
             let (
                 wallet_id,
                 account_index,
@@ -229,71 +247,123 @@ impl FileBackedShieldedStore {
                 attempts,
                 identity_nonce_finalized,
                 identity_user_abandoned,
-            ) = row.map_err(|e| FileShieldedStoreError::RecoveryCorrupted {
-                account_index: None,
-                reason: format!("cannot decode recovery row: {e}"),
-            })?;
-            let corrupted = |reason: &str| FileShieldedStoreError::RecoveryCorrupted {
-                account_index: Some(account_index),
-                reason: reason.to_owned(),
+            ) = match decoded {
+                Ok(decoded) => decoded,
+                Err(error) => {
+                    if let Some(kind) = note_spend_kind {
+                        tracing::warn!(
+                            transition = kind,
+                            error = %error,
+                            "retaining but skipping a damaged shielded note-spend recovery row"
+                        );
+                        continue;
+                    }
+                    return Err(FileShieldedStoreError::RecoveryCorrupted {
+                        account_index: None,
+                        reason: format!("cannot decode recovery row: {error}"),
+                    });
+                }
             };
-            if !matches!(identity_nonce_finalized, 0 | 1)
-                || !matches!(identity_user_abandoned, 0 | 1)
-            {
-                return Err(corrupted("invalid recovery-state flag"));
-            }
-            let identity_nonce_finalized = identity_nonce_finalized == 1;
-            let identity_user_abandoned = identity_user_abandoned == 1;
-            if !nullifiers.is_empty() && (identity_nonce_finalized || identity_user_abandoned) {
-                return Err(corrupted("identity recovery flags on a note-spend record"));
-            }
-            // Routing and account purge use the nullifier metadata. It must not
-            // disguise a still-executable identity debit as a note spend merely
-            // because its active recovery flags are both false.
-            if !nullifiers.is_empty()
-                && matches!(
-                    StateTransition::deserialize_from_bytes(&st_bytes),
-                    Ok(StateTransition::ShieldFromIdentity(_))
-                )
-            {
-                return Err(corrupted("identity debit contains note-spend nullifiers"));
-            }
-            let (Ok(wallet_id), Ok(activity_id), Ok(anchor)) = (
-                <[u8; 32]>::try_from(wallet_id.as_slice()),
-                <[u8; 32]>::try_from(activity_id.as_slice()),
-                <[u8; 32]>::try_from(anchor.as_slice()),
-            ) else {
-                return Err(corrupted(
-                    "invalid wallet, activity, or anchor identifier width",
-                ));
+            let decoded = (|| {
+                let corrupted = |reason: &str| FileShieldedStoreError::RecoveryCorrupted {
+                    account_index: Some(account_index),
+                    reason: reason.to_owned(),
+                };
+                if !matches!(identity_nonce_finalized, 0 | 1)
+                    || !matches!(identity_user_abandoned, 0 | 1)
+                {
+                    return Err(corrupted("invalid recovery-state flag"));
+                }
+                let identity_nonce_finalized = identity_nonce_finalized == 1;
+                let identity_user_abandoned = identity_user_abandoned == 1;
+                if !nullifiers.is_empty() && (identity_nonce_finalized || identity_user_abandoned) {
+                    return Err(corrupted("identity recovery flags on a note-spend record"));
+                }
+                // Routing and account purge use the nullifier metadata. It must not
+                // disguise a still-executable identity debit as a note spend merely
+                // because its active recovery flags are both false.
+                if !nullifiers.is_empty()
+                    && matches!(
+                        StateTransition::deserialize_from_bytes(&st_bytes),
+                        Ok(StateTransition::ShieldFromIdentity(_))
+                    )
+                {
+                    return Err(corrupted("identity debit contains note-spend nullifiers"));
+                }
+                let (Ok(wallet_id), Ok(activity_id), Ok(anchor)) = (
+                    <[u8; 32]>::try_from(wallet_id.as_slice()),
+                    <[u8; 32]>::try_from(activity_id.as_slice()),
+                    <[u8; 32]>::try_from(anchor.as_slice()),
+                ) else {
+                    return Err(corrupted(
+                        "invalid wallet, activity, or anchor identifier width",
+                    ));
+                };
+                // Empty nullifiers identify a ShieldFromIdentity retry guard.
+                // Its exact transition bytes, rather than note reservations,
+                // preserve idempotency across restarts.
+                if nullifiers.len() % 32 != 0 {
+                    return Err(corrupted("invalid nullifier width"));
+                }
+                let nullifiers: Vec<[u8; 32]> = nullifiers
+                    .chunks_exact(32)
+                    .map(|c| <[u8; 32]>::try_from(c).expect("chunks_exact(32)"))
+                    .collect();
+                Ok((
+                    SubwalletId::new(wallet_id, account_index),
+                    PendingRedrive {
+                        activity_id,
+                        anchor,
+                        nullifiers,
+                        st_bytes,
+                        attempts,
+                        identity_nonce_finalized,
+                        identity_user_abandoned,
+                    },
+                ))
+            })();
+            let (id, redrive) = match decoded {
+                Ok(decoded) => decoded,
+                Err(error) => {
+                    if let Some(kind) = note_spend_kind {
+                        tracing::warn!(
+                            transition = kind,
+                            account_index,
+                            reason = %error,
+                            "retaining but skipping a damaged shielded note-spend recovery row"
+                        );
+                        continue;
+                    }
+                    return Err(error);
+                }
             };
-            // Empty nullifiers identify a ShieldFromIdentity retry guard.
-            // Its exact transition bytes, rather than note reservations,
-            // preserve idempotency across restarts.
-            if nullifiers.len() % 32 != 0 {
-                return Err(corrupted("invalid nullifier width"));
-            }
-            let nullifiers: Vec<[u8; 32]> = nullifiers
-                .chunks_exact(32)
-                .map(|c| <[u8; 32]>::try_from(c).expect("chunks_exact(32)"))
-                .collect();
-            let id = SubwalletId::new(wallet_id, account_index);
             let sw = self.subwallets.entry(id).or_default();
-            for n in &nullifiers {
+            for n in &redrive.nullifiers {
                 sw.mark_pending(n);
-                sw.set_pending_spend(n, anchor, activity_id);
+                sw.set_pending_spend(n, redrive.anchor, redrive.activity_id);
             }
-            sw.arm_redrive(PendingRedrive {
-                activity_id,
-                anchor,
-                nullifiers,
-                st_bytes,
-                attempts,
-                identity_nonce_finalized,
-                identity_user_abandoned,
-            });
+            sw.arm_redrive(redrive);
         }
         Ok(())
+    }
+
+    /// Identify only transition families whose funding comes from shielded
+    /// note nullifiers. A complete outer transition decode is required so
+    /// corrupt, unknown, or identity-funded bytes remain fail-closed.
+    fn non_identity_note_spend_kind(st_bytes: &[u8]) -> Option<&'static str> {
+        let state_transition = StateTransition::deserialize_from_bytes(st_bytes).ok()?;
+        if state_transition.serialize_to_bytes().ok()?.as_slice() != st_bytes {
+            return None;
+        }
+        match state_transition {
+            StateTransition::ShieldedTransfer(_) => Some("shielded transfer"),
+            StateTransition::Unshield(_) => Some("unshield"),
+            StateTransition::ShieldedWithdrawal(_) => Some("shielded withdrawal"),
+            StateTransition::IdentityCreateFromShieldedPool(_) => {
+                Some("identity create from shielded pool")
+            }
+            _ => None,
+        }
     }
 
     /// Open a `rusqlite::Connection` on `path` with the same WAL /
@@ -1050,6 +1120,7 @@ mod tests {
             "anchor = x'01'",
             "nullifiers = x'01'",
             "account_index = -1",
+            "st_bytes = 'not a blob'",
             "identity_nonce_finalized = 2",
             "identity_user_abandoned = -1",
             "identity_user_abandoned = 1, nullifiers = zeroblob(32)",
@@ -1094,6 +1165,193 @@ mod tests {
             drop(conn);
             let _ = std::fs::remove_file(path);
         }
+    }
+
+    #[test]
+    fn should_skip_only_damaged_rows_proven_to_spend_shielded_notes() {
+        use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+
+        for corruption in [
+            "wallet_id = x'01'",
+            "activity_id = x'01'",
+            "anchor = x'01'",
+            "nullifiers = x'01'",
+            "account_index = -1",
+            "attempts = -1",
+            "identity_nonce_finalized = 2",
+            "identity_user_abandoned = -1",
+            "identity_user_abandoned = 1, nullifiers = zeroblob(32)",
+        ] {
+            let path = temp_tree_path("damaged_note_spend_recovery");
+            let note_id = SubwalletId::new([0x31; 32], 2);
+            let guard_id = SubwalletId::new([0x41; 32], 3);
+            let note_transition: StateTransition = ShieldedTransferTransitionV0 {
+                actions: vec![],
+                value_balance: 1_000,
+                anchor: [0x51; 32],
+                proof: vec![],
+                binding_signature: [0; 64],
+            }
+            .into();
+            let guard = PendingRedrive {
+                activity_id: [0x61; 32],
+                anchor: [0x71; 32],
+                nullifiers: vec![],
+                st_bytes: vec![0x81; 32],
+                attempts: 0,
+                identity_nonce_finalized: false,
+                identity_user_abandoned: false,
+            };
+            {
+                let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+                store
+                    .arm_redrive(
+                        note_id,
+                        PendingRedrive {
+                            activity_id: [0x21; 32],
+                            anchor: [0x51; 32],
+                            nullifiers: vec![[0x91; 32]],
+                            st_bytes: note_transition.serialize_to_bytes().unwrap(),
+                            attempts: 0,
+                            identity_nonce_finalized: false,
+                            identity_user_abandoned: false,
+                        },
+                    )
+                    .unwrap();
+                store.arm_redrive(guard_id, guard.clone()).unwrap();
+            }
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute(
+                &format!("UPDATE shielded_pending_spends SET {corruption} WHERE wallet_id = ?1"),
+                [note_id.wallet_id.as_slice()],
+            )
+            .unwrap();
+
+            let store = FileBackedShieldedStore::open_path(&path, 100)
+                .unwrap_or_else(|error| panic!("must tolerate {corruption}: {error}"));
+            assert!(store.pending_redrives(note_id).unwrap().is_empty());
+            assert!(store.stale_pending_spends(note_id).unwrap().is_empty());
+            assert_eq!(store.pending_redrives(guard_id).unwrap(), vec![guard]);
+            let count: u32 = conn
+                .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(
+                count, 2,
+                "damaged note row must remain available for repair"
+            );
+            drop(store);
+            drop(conn);
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    #[test]
+    fn should_fail_closed_when_identity_debit_has_note_spend_metadata() {
+        use dpp::platform_value::BinaryData;
+        use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
+
+        let path = temp_tree_path("identity_debit_note_metadata");
+        let id = SubwalletId::new([0xA1; 32], 4);
+        let transition: StateTransition = ShieldFromIdentityTransitionV0 {
+            identity_id: [0xB1; 32].into(),
+            amount: 1_000,
+            actions: vec![],
+            anchor: [0xC1; 32],
+            proof: vec![],
+            binding_signature: [0; 64],
+            nonce: 7,
+            user_fee_increase: 0,
+            signature_public_key_id: 1,
+            signature: BinaryData::new(vec![]),
+        }
+        .into();
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: [0xD1; 32],
+                        anchor: [0xC1; 32],
+                        nullifiers: vec![],
+                        st_bytes: transition.serialize_to_bytes().unwrap(),
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                    },
+                )
+                .unwrap();
+        }
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute(
+            "UPDATE shielded_pending_spends SET nullifiers = zeroblob(32)",
+            [],
+        )
+        .unwrap();
+        assert!(matches!(
+            FileBackedShieldedStore::open_path(&path, 100),
+            Err(FileShieldedStoreError::RecoveryCorrupted { .. })
+        ));
+        let count: u32 = conn
+            .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 1, "identity guard must remain durable");
+        drop(conn);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn should_fail_closed_for_note_spend_bytes_with_trailing_data() {
+        use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+
+        let path = temp_tree_path("note_spend_trailing_data");
+        let id = SubwalletId::new([0xE1; 32], 5);
+        let transition: StateTransition = ShieldedTransferTransitionV0 {
+            actions: vec![],
+            value_balance: 1_000,
+            anchor: [0xF1; 32],
+            proof: vec![],
+            binding_signature: [0; 64],
+        }
+        .into();
+        let mut st_bytes = transition.serialize_to_bytes().unwrap();
+        st_bytes.push(0xFF);
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: [0xD2; 32],
+                        anchor: [0xF1; 32],
+                        nullifiers: vec![[0xC2; 32]],
+                        st_bytes,
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                    },
+                )
+                .unwrap();
+        }
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute("UPDATE shielded_pending_spends SET wallet_id = x'01'", [])
+            .unwrap();
+        assert!(matches!(
+            FileBackedShieldedStore::open_path(&path, 100),
+            Err(FileShieldedStoreError::RecoveryCorrupted { .. })
+        ));
+        let count: u32 = conn
+            .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 1, "ambiguous row must remain durable");
+        drop(conn);
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
