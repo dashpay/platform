@@ -109,11 +109,13 @@ identity_balance_after = identity_balance_before - amount - fee
 
 `user_fee_increase` applies to the metered processing portion. The stateless
 floor requires `identity_balance >= amount + compute_shielded_identity_balance_write_fee`,
-the conservative complete fee (`compute_minimum_shielded_fee` plus the calibrated
+the conservative complete fee (`compute_minimum_shielded_fee` plus the flat
 `SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES` identity-write component at the
-storage rate: 16 effective bytes, the measured 424,400 credits of processing for the
-nonce and balance replacements, which add no storage), so an identity that could not
-pay the complete fee is refused before the Orchard proof is verified. The authoritative gate is the identity-paid fee
+storage rate: 20 effective bytes covering the nonce and balance rewrites, which add no
+storage but replace 883 bytes of Merk path for a measured 466,760 credits of
+processing, folded into one flat figure with headroom like the other shielded
+components), so an identity that could not pay the complete fee is refused before the
+Orchard proof is verified. The authoritative gate is the identity-paid fee
 validation of the execution event (`Paid`), which rejects with
 `IdentityInsufficientBalanceError`. The identity balance and the pool total are
 both terms of the block conservation equation, so the converter emits no
