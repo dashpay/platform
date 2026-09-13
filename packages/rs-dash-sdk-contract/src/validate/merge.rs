@@ -90,14 +90,6 @@ impl Identified for ModuleSpec {
         sorted(&self.uses) == sorted(&other.uses)
     }
 
-    fn merge(&mut self, other: &Self) {
-        for interface in &other.uses {
-            if !self.uses.contains(interface) {
-                self.uses.push(interface.clone());
-            }
-        }
-    }
-
     fn duplicate() -> DiagnosticKind {
         DiagnosticKind::DuplicateModule
     }
@@ -244,36 +236,63 @@ pub(super) fn sorted<T: Clone + Ord>(items: &[T]) -> Vec<T> {
     sorted
 }
 
-/// Deduplicates `items` by identity, reporting duplicates and conflicts at
-/// `path`, and returns the kept specs in first-seen order.
+/// Deduplicates `items` by identity and returns one spec per identity in
+/// first-seen order.
+///
+/// Items are grouped by identity before anything is judged, so the outcome
+/// does not depend on declaration order: every repeated declaration of one
+/// origin is a duplicate whatever its content, every attribute-versus-builder
+/// pair that disagrees is a conflict, and a builder that agrees with the
+/// attribute is merged into it (which, for a collection, adds its indexes).
 pub(super) fn dedupe<T: Identified>(
     items: &[T],
     path: impl Fn(&T) -> DeclarationPath,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Vec<T> {
-    let mut kept: Vec<T> = Vec::new();
+    let mut groups: Vec<Vec<&T>> = Vec::new();
     for item in items {
-        let Some(existing) = kept
-            .iter_mut()
-            .find(|existing| existing.same_identity(item))
-        else {
-            kept.push(item.clone());
-            continue;
-        };
-        if existing.origin() == item.origin() {
-            diagnostics.push(Diagnostic::new(path(item), T::duplicate()));
-        } else if existing.equivalent(item) {
-            existing.merge(item);
-        } else {
-            diagnostics.push(Diagnostic::new(
-                path(item),
-                DiagnosticKind::ConflictingDeclaration {
-                    what: T::WHAT.to_string(),
-                    first: existing.origin(),
-                    second: item.origin(),
-                },
-            ));
+        match groups.iter_mut().find(|group| group[0].same_identity(item)) {
+            Some(group) => group.push(item),
+            None => groups.push(alloc::vec![item]),
         }
     }
-    kept
+
+    groups
+        .into_iter()
+        .map(|group| {
+            let path = path(group[0]);
+            for origin in [DeclarationOrigin::Attribute, DeclarationOrigin::Builder] {
+                let repeats = group.iter().filter(|item| item.origin() == origin).count();
+                for _ in 1..repeats {
+                    diagnostics.push(Diagnostic::new(path.clone(), T::duplicate()));
+                }
+            }
+            let of = |origin: DeclarationOrigin| {
+                group
+                    .iter()
+                    .copied()
+                    .filter(move |item| item.origin() == origin)
+            };
+            let conflict = of(DeclarationOrigin::Attribute).any(|attribute| {
+                of(DeclarationOrigin::Builder).any(|builder| !attribute.equivalent(builder))
+            });
+            if conflict {
+                diagnostics.push(Diagnostic::new(
+                    path,
+                    DiagnosticKind::ConflictingDeclaration {
+                        what: T::WHAT.to_string(),
+                        first: DeclarationOrigin::Attribute,
+                        second: DeclarationOrigin::Builder,
+                    },
+                ));
+            }
+            let mut kept = group[0].clone();
+            for item in &group[1..] {
+                if kept.equivalent(item) {
+                    kept.merge(item);
+                }
+            }
+            kept
+        })
+        .collect()
 }

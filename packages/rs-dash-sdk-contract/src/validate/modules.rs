@@ -9,6 +9,7 @@ use crate::declare::{
 };
 use crate::identity::{InterfaceName, ModuleName};
 use crate::manifest::{Binding, InterfaceEntry, ModuleEntry, ModuleTable};
+use crate::validate::collections::check_value_type;
 use crate::validate::diagnostic::{DeclarationPath, Diagnostic, DiagnosticKind};
 use crate::validate::merge::{dedupe, sorted};
 
@@ -56,9 +57,11 @@ pub(super) fn validate_modules(
             }
             let mut params: Vec<&str> = Vec::new();
             for param in &function.params {
+                let param_path =
+                    DeclarationPath::interface_param(&interface.name, &function.name, &param.name);
                 if params.contains(&param.name.as_str()) {
                     diagnostics.push(Diagnostic::new(
-                        DeclarationPath::interface(&interface.name),
+                        param_path.clone(),
                         DiagnosticKind::DuplicateParameter {
                             param: param.name.clone(),
                         },
@@ -66,7 +69,13 @@ pub(super) fn validate_modules(
                 } else {
                     params.push(&param.name);
                 }
+                check_value_type(&param_path, &param.ty, diagnostics);
             }
+            check_value_type(
+                &DeclarationPath::interface_param(&interface.name, &function.name, "return"),
+                &function.returns,
+                diagnostics,
+            );
         }
     }
 
