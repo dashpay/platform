@@ -368,15 +368,15 @@ impl<'a> DriveDocumentQuery<'a> {
             )));
         }
         let index = self.find_best_index(platform_version)?;
-        let ordered_clauses: Vec<&WhereClause> = index
+        let last_equal_clause = index
             .properties
             .iter()
             .filter_map(|field| self.internal_clauses.equal_clauses.get(field.name.as_str()))
-            .collect();
+            .next_back();
         let (last_clause, last_clause_is_range, subquery_clause) =
             match self.internal_clauses.in_clauses.first() {
                 None => match &self.internal_clauses.range_clause {
-                    None => (ordered_clauses.last().copied(), false, None),
+                    None => (last_equal_clause, false, None),
                     Some(where_clause) => (Some(where_clause), true, None),
                 },
                 Some(in_clause) => match &self.internal_clauses.range_clause {
@@ -452,7 +452,7 @@ impl<'a> DriveDocumentQuery<'a> {
         // would misalign every level below the hole.
         if !query_covers_index_prefix_contiguously(
             &index.properties,
-            &|field| self.internal_clauses.equal_clauses.contains_key(field),
+            |field: &str| self.internal_clauses.equal_clauses.contains_key(field),
             last_clause,
             subquery_clause,
             intermediate_values.len(),
@@ -638,13 +638,19 @@ impl<'a> DriveDocumentQuery<'a> {
                 match subquery_clause {
                     None => {
                         if sibling_aware_cursor_lowering {
-                            let (document, included) = starts_at_document
-                                .as_ref()
-                                .expect("starts_at_document was checked above");
-
-                            let (first, deeper_left_over) = left_over_index_properties
-                                .split_first()
-                                .expect("left_over_index_properties was checked above");
+                            let Some((document, included)) = starts_at_document.as_ref() else {
+                                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                    "sibling-aware cursor lowering requires a cursor document",
+                                )));
+                            };
+                            let Some((first, deeper_left_over)) =
+                                left_over_index_properties.split_first()
+                            else {
+                                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                    "sibling-aware cursor lowering requires left-over index \
+                                     properties",
+                                )));
+                            };
                             let first_left_to_right = self
                                 .order_by
                                 .get(first.name.as_str())
@@ -892,7 +898,7 @@ impl<'a> DriveDocumentQuery<'a> {
 #[cfg(any(feature = "server", feature = "verify"))]
 fn query_covers_index_prefix_contiguously(
     index_properties: &[IndexProperty],
-    is_equality_field: &dyn Fn(&str) -> bool,
+    is_equality_field: impl Fn(&str) -> bool,
     last_clause: Option<&WhereClause>,
     subquery_clause: Option<&WhereClause>,
     equality_prefix_len: usize,
@@ -948,7 +954,7 @@ mod tests {
         let terminal = clause("b", WhereOperator::Equal);
         assert!(query_covers_index_prefix_contiguously(
             &index_properties,
-            &is_equality,
+            is_equality,
             Some(&terminal),
             None,
             1,
@@ -958,7 +964,7 @@ mod tests {
         let range = clause("c", WhereOperator::GreaterThan);
         assert!(query_covers_index_prefix_contiguously(
             &index_properties,
-            &is_equality,
+            is_equality,
             Some(&range),
             None,
             2,
@@ -968,7 +974,7 @@ mod tests {
         let in_clause = clause("b", WhereOperator::In);
         assert!(query_covers_index_prefix_contiguously(
             &index_properties,
-            &|field| field == "a",
+            |field: &str| field == "a",
             Some(&in_clause),
             Some(&range),
             1,
@@ -977,7 +983,7 @@ mod tests {
         // No clauses at all (order-by-only use of the index).
         assert!(query_covers_index_prefix_contiguously(
             &index_properties,
-            &|_| false,
+            |_: &str| false,
             None,
             None,
             0,
@@ -993,7 +999,7 @@ mod tests {
         let terminal = clause("c", WhereOperator::Equal);
         assert!(!query_covers_index_prefix_contiguously(
             &index_properties,
-            &|field| field == "a" || field == "c",
+            |field: &str| field == "a" || field == "c",
             Some(&terminal),
             None,
             1,
@@ -1004,7 +1010,7 @@ mod tests {
         let range = clause("c", WhereOperator::GreaterThan);
         assert!(!query_covers_index_prefix_contiguously(
             &index_properties,
-            &|field| field == "a",
+            |field: &str| field == "a",
             Some(&range),
             None,
             1,
@@ -1014,7 +1020,7 @@ mod tests {
         let terminal = clause("b", WhereOperator::Equal);
         assert!(!query_covers_index_prefix_contiguously(
             &index_properties,
-            &|field| field == "b",
+            |field: &str| field == "b",
             Some(&terminal),
             None,
             0,
