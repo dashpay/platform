@@ -1,6 +1,6 @@
 use crate::error::MapGroveDbError;
 use crate::types::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
-use crate::verify::verify_tenderdash_proof;
+use crate::verify::{current_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
     get_identities_token_infos_request, get_identity_token_infos_request,
@@ -57,7 +57,7 @@ impl FromProof<GetIdentityTokenInfosRequest> for IdentityTokenInfos {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_token_infos_for_identity_id(
-            crate::verify::current_grovedb_proof_bytes(&proof)?,
+            current_grovedb_proof_bytes(&proof)?,
             &token_ids,
             identity_id,
             false,
@@ -116,7 +116,7 @@ impl FromProof<GetIdentitiesTokenInfosRequest> for IdentitiesTokenInfos {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_token_infos_for_identity_ids(
-            crate::verify::current_grovedb_proof_bytes(&proof)?,
+            current_grovedb_proof_bytes(&proof)?,
             token_id,
             &identity_ids,
             false,

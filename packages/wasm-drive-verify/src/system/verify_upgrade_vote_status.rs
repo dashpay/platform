@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::current_grovedb_proof;
 use crate::utils::serialization::identifier_to_base58;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -53,7 +54,7 @@ pub fn verify_upgrade_vote_status(
     };
 
     let (root_hash, vote_status_map) = Drive::verify_upgrade_vote_status(
-        crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+        current_grovedb_proof(&proof_vec)?,
         start_protx_hash_array,
         count,
         platform_version,

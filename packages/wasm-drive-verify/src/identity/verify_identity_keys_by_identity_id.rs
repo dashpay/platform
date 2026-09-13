@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::current_grovedb_proof;
 use dpp::identity::identity_public_key::IdentityPublicKey;
 use dpp::identity::PartialIdentity;
 use dpp::version::PlatformVersion;
@@ -153,7 +154,7 @@ pub fn verify_identity_keys_by_identity_id(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, identity_option) = Drive::verify_identity_keys_by_identity_id(
-        crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+        current_grovedb_proof(&proof_vec)?,
         key_request,
         with_revision,
         with_balance,

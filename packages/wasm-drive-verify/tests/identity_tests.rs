@@ -104,3 +104,63 @@ fn test_verify_identity_nonce_invalid_identity_id() {
         "Invalid identity_id length. Expected 32 bytes",
     );
 }
+
+/// A bincode-encoded GroveDB proof envelope discriminant with no payload.
+/// Version 1 is the only envelope the public entry points accept.
+fn envelope_only_proof(version: u32) -> Uint8Array {
+    let bytes = bincode::encode_to_vec(version, bincode::config::standard().with_big_endian())
+        .expect("encode envelope version");
+    Uint8Array::from(&bytes[..])
+}
+
+#[wasm_bindgen_test]
+fn test_verify_identity_rejects_legacy_v0_envelope() {
+    let proof = envelope_only_proof(0);
+    let identity_id = Uint8Array::from(&mock_identifier()[..]);
+    let platform_version = test_platform_version();
+
+    let result = verify_full_identity_by_identity_id(&proof, false, &identity_id, platform_version);
+    assert_error_contains(
+        &result.map(|_| ()),
+        "unsupported GroveDB proof envelope version 0",
+    );
+}
+
+#[wasm_bindgen_test]
+fn test_verify_identity_by_non_unique_public_key_hash_rejects_v0_inner_proof() {
+    let inner_proof = envelope_only_proof(0);
+    let outer_proof = envelope_only_proof(1);
+    let public_key_hash = Uint8Array::from(&[0u8; 20][..]);
+    let platform_version = test_platform_version();
+
+    let result = verify_full_identity_by_non_unique_public_key_hash(
+        Some(inner_proof),
+        &outer_proof,
+        &public_key_hash,
+        None,
+        platform_version,
+    );
+    assert_error_contains(
+        &result.map(|_| ()),
+        "unsupported GroveDB proof envelope version 0",
+    );
+}
+
+#[wasm_bindgen_test]
+fn test_verify_identity_by_non_unique_public_key_hash_rejects_v0_outer_proof() {
+    let outer_proof = envelope_only_proof(0);
+    let public_key_hash = Uint8Array::from(&[0u8; 20][..]);
+    let platform_version = test_platform_version();
+
+    let result = verify_full_identity_by_non_unique_public_key_hash(
+        None,
+        &outer_proof,
+        &public_key_hash,
+        None,
+        platform_version,
+    );
+    assert_error_contains(
+        &result.map(|_| ()),
+        "unsupported GroveDB proof envelope version 0",
+    );
+}

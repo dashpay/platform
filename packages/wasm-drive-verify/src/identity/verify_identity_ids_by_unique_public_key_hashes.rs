@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::current_grovedb_proof;
 use crate::utils::serialization::{bytes_to_base58, identifier_to_base58};
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -62,7 +63,7 @@ pub fn verify_identity_ids_by_unique_public_key_hashes_vec(
 
     let (root_hash, identity_ids_vec): (RootHash, Vec<([u8; 20], Option<[u8; 32]>)>) =
         Drive::verify_identity_ids_by_unique_public_key_hashes(
-            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            current_grovedb_proof(&proof_vec)?,
             is_proof_subset,
             &public_key_hashes_vec,
             platform_version,
@@ -134,7 +135,7 @@ pub fn verify_identity_ids_by_unique_public_key_hashes_map(
 
     let (root_hash, identity_ids_map): (RootHash, BTreeMap<[u8; 20], Option<[u8; 32]>>) =
         Drive::verify_identity_ids_by_unique_public_key_hashes(
-            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            current_grovedb_proof(&proof_vec)?,
             is_proof_subset,
             &public_key_hashes_vec,
             platform_version,

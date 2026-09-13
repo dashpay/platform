@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::current_grovedb_proof;
 use crate::utils::serialization::identifier_to_base58;
 use dpp::tokens::status::TokenStatus;
 use dpp::version::PlatformVersion;
@@ -63,7 +64,7 @@ pub fn verify_token_statuses_vec(
 
     let (root_hash, statuses_vec): (RootHash, Vec<([u8; 32], Option<TokenStatus>)>) =
         drive::drive::Drive::verify_token_statuses(
-            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            current_grovedb_proof(&proof_vec)?,
             &token_ids_vec,
             verify_subset_of_proof,
             platform_version,
@@ -140,7 +141,7 @@ pub fn verify_token_statuses_map(
 
     let (root_hash, statuses_map): (RootHash, BTreeMap<[u8; 32], Option<TokenStatus>>) =
         drive::drive::Drive::verify_token_statuses(
-            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            current_grovedb_proof(&proof_vec)?,
             &token_ids_vec,
             verify_subset_of_proof,
             platform_version,

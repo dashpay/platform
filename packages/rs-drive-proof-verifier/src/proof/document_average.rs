@@ -22,7 +22,7 @@
 //! `DocumentAverageMode`.
 
 use crate::error::MapGroveDbError;
-use crate::verify::verify_tenderdash_proof;
+use crate::verify::{current_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error};
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::version::PlatformVersion;
@@ -47,7 +47,7 @@ pub fn verify_point_lookup_count_and_sum_proof(
 ) -> Result<Vec<AverageEntry>, Error> {
     let (root_hash, entries) = query
         .verify_point_lookup_count_and_sum_proof(
-            crate::verify::current_grovedb_proof_bytes(proof)?,
+            current_grovedb_proof_bytes(proof)?,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
@@ -78,7 +78,7 @@ pub fn verify_distinct_count_and_sum_proof(
 ) -> Result<Vec<AverageEntry>, Error> {
     let (root_hash, entries) = query
         .verify_distinct_count_and_sum_proof(
-            crate::verify::current_grovedb_proof_bytes(proof)?,
+            current_grovedb_proof_bytes(proof)?,
             limit,
             left_to_right,
             platform_version,
@@ -148,10 +148,7 @@ pub fn verify_aggregate_count_and_sum_proof(
     provider: &dyn ContextProvider,
 ) -> Result<(u64, i64), Error> {
     let (root_hash, count, sum) = query
-        .verify_aggregate_count_and_sum_proof(
-            crate::verify::current_grovedb_proof_bytes(proof)?,
-            platform_version,
-        )
+        .verify_aggregate_count_and_sum_proof(current_grovedb_proof_bytes(proof)?, platform_version)
         .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -180,7 +177,7 @@ pub fn verify_primary_key_count_sum_tree_proof(
     provider: &dyn ContextProvider,
 ) -> Result<(u64, i64), Error> {
     let (root_hash, count, sum) = DriveDocumentSumQuery::verify_primary_key_count_sum_tree_proof(
-        crate::verify::current_grovedb_proof_bytes(proof)?,
+        current_grovedb_proof_bytes(proof)?,
         contract_id,
         document_type_name,
         platform_version,
@@ -222,7 +219,7 @@ pub fn verify_carrier_aggregate_count_and_sum_proof(
 ) -> Result<Vec<AverageEntry>, Error> {
     let (root_hash, per_key_count_sum) = query
         .verify_carrier_aggregate_count_and_sum_proof(
-            crate::verify::current_grovedb_proof_bytes(proof)?,
+            current_grovedb_proof_bytes(proof)?,
             limit,
             left_to_right,
             platform_version,

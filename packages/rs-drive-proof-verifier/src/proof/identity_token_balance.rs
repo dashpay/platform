@@ -1,6 +1,6 @@
 use crate::error::MapGroveDbError;
 use crate::types::identity_token_balance::{IdentitiesTokenBalances, IdentityTokenBalances};
-use crate::verify::verify_tenderdash_proof;
+use crate::verify::{current_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
     get_identities_token_balances_request, get_identity_token_balances_request,
@@ -57,7 +57,7 @@ impl FromProof<GetIdentityTokenBalancesRequest> for IdentityTokenBalances {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_token_balances_for_identity_id(
-            crate::verify::current_grovedb_proof_bytes(&proof)?,
+            current_grovedb_proof_bytes(&proof)?,
             &token_ids,
             identity_id,
             false,
@@ -117,7 +117,7 @@ impl FromProof<GetIdentitiesTokenBalancesRequest> for IdentitiesTokenBalances {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_token_balances_for_identity_ids(
-            crate::verify::current_grovedb_proof_bytes(&proof)?,
+            current_grovedb_proof_bytes(&proof)?,
             token_id,
             &identity_ids,
             false,

@@ -1,6 +1,6 @@
 use crate::error::MapGroveDbError;
 use crate::types::token_status::TokenStatuses;
-use crate::verify::verify_tenderdash_proof;
+use crate::verify::{current_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
     get_token_statuses_request, GetTokenStatusesRequest, GetTokenStatusesResponse, Proof,
@@ -47,7 +47,7 @@ impl FromProof<GetTokenStatusesRequest> for TokenStatuses {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_token_statuses(
-            crate::verify::current_grovedb_proof_bytes(&proof)?,
+            current_grovedb_proof_bytes(&proof)?,
             &token_ids,
             false,
             platform_version,

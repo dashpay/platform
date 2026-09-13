@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::current_grovedb_proof;
 use crate::utils::serialization::identifier_to_base58;
 use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
@@ -74,7 +75,7 @@ pub fn verify_token_pre_programmed_distributions_vec(
     type DistributionVec = Vec<(Identifier, TokenAmount)>;
     let (root_hash, distributions_vec): (RootHash, Vec<(TimestampMillis, DistributionVec)>) =
         drive::drive::Drive::verify_token_pre_programmed_distributions(
-            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            current_grovedb_proof(&proof_vec)?,
             token_id_bytes,
             start_at,
             limit,
@@ -155,7 +156,7 @@ pub fn verify_token_pre_programmed_distributions_map(
     type DistributionMap = BTreeMap<Identifier, TokenAmount>;
     let (root_hash, distributions_map): (RootHash, BTreeMap<TimestampMillis, DistributionMap>) =
         drive::drive::Drive::verify_token_pre_programmed_distributions(
-            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            current_grovedb_proof(&proof_vec)?,
             token_id_bytes,
             start_at,
             limit,

@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::current_grovedb_proof;
 use crate::utils::serialization::identifier_to_base58;
 use dpp::tokens::info::IdentityTokenInfo;
 use dpp::version::PlatformVersion;
@@ -81,7 +82,7 @@ pub fn verify_token_infos_for_identity_ids_vec(
 
     let (root_hash, token_infos_vec): (RootHash, Vec<([u8; 32], Option<IdentityTokenInfo>)>) =
         drive::drive::Drive::verify_token_infos_for_identity_ids(
-            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            current_grovedb_proof(&proof_vec)?,
             token_id_bytes,
             &identity_ids_vec,
             is_proof_subset,
@@ -155,7 +156,7 @@ pub fn verify_token_infos_for_identity_ids_map(
 
     let (root_hash, token_infos_map): (RootHash, BTreeMap<[u8; 32], Option<IdentityTokenInfo>>) =
         drive::drive::Drive::verify_token_infos_for_identity_ids(
-            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            current_grovedb_proof(&proof_vec)?,
             token_id_bytes,
             &identity_ids_vec,
             is_proof_subset,

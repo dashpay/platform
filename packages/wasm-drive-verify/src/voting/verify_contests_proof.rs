@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::current_grovedb_proof;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
@@ -80,10 +81,7 @@ pub fn verify_contests_proof(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, contests_vec) = query
-        .verify_contests_proof(
-            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
-            platform_version,
-        )
+        .verify_contests_proof(current_grovedb_proof(&proof_vec)?, platform_version)
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert Values to JS array

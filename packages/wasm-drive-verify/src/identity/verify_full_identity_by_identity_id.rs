@@ -2,6 +2,7 @@ use crate::utils::error::{format_error, format_result_error, ErrorCategory};
 use crate::utils::getters::VecU8ToUint8Array;
 use crate::utils::logging::{debug, error, PerfLogger};
 use crate::utils::platform_version::get_platform_version_with_validation;
+use crate::utils::proof::current_grovedb_proof;
 use crate::utils::serialization::identity_to_js_value;
 use drive::drive::Drive;
 use js_sys::Uint8Array;
@@ -53,7 +54,7 @@ pub fn verify_full_identity_by_identity_id(
     let platform_version = get_platform_version_with_validation(platform_version_number)?;
 
     let (root_hash, identity_option) = Drive::verify_full_identity_by_identity_id(
-        crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+        current_grovedb_proof(&proof_vec)?,
         is_proof_subset,
         identity_id_bytes,
         platform_version,

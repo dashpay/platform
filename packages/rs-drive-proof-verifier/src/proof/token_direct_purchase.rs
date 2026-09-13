@@ -1,3 +1,4 @@
+use crate::verify::current_grovedb_proof_bytes;
 use std::collections::BTreeSet;
 
 use dapi_grpc::platform::{
@@ -57,7 +58,7 @@ impl FromProof<GetTokenDirectPurchasePricesRequest> for TokenDirectPurchasePrice
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, tokens): (_, Self) = Drive::verify_token_direct_selling_prices(
-            crate::verify::current_grovedb_proof_bytes(proof)?,
+            current_grovedb_proof_bytes(proof)?,
             &token_ids,
             false,
             platform_version,

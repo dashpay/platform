@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::current_grovedb_proof;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use js_sys::Uint8Array;
@@ -44,7 +45,7 @@ pub fn verify_contract(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, contract_option) = Drive::verify_contract(
-        crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+        current_grovedb_proof(&proof_vec)?,
         contract_known_keeps_history,
         is_proof_subset,
         in_multiple_contract_proof_form,

@@ -1,5 +1,5 @@
 use crate::error::MapGroveDbError;
-use crate::verify::verify_tenderdash_proof;
+use crate::verify::{current_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -45,10 +45,7 @@ where
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, documents) = request
-            .verify_proof(
-                crate::verify::current_grovedb_proof_bytes(proof)?,
-                platform_version,
-            )
+            .verify_proof(current_grovedb_proof_bytes(proof)?, platform_version)
             .map_drive_error(proof, mtd)?;
 
         let count = documents.len() as u64;
@@ -85,10 +82,7 @@ pub fn verify_aggregate_count_proof(
     provider: &dyn ContextProvider,
 ) -> Result<u64, Error> {
     let (root_hash, count) = query
-        .verify_aggregate_count_proof(
-            crate::verify::current_grovedb_proof_bytes(proof)?,
-            platform_version,
-        )
+        .verify_aggregate_count_proof(current_grovedb_proof_bytes(proof)?, platform_version)
         .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -130,7 +124,7 @@ pub fn verify_distinct_count_proof(
 ) -> Result<Vec<SplitCountEntry>, Error> {
     let (root_hash, entries) = query
         .verify_distinct_count_proof(
-            crate::verify::current_grovedb_proof_bytes(proof)?,
+            current_grovedb_proof_bytes(proof)?,
             limit,
             left_to_right,
             platform_version,
@@ -194,10 +188,7 @@ pub fn verify_point_lookup_count_proof(
     provider: &dyn ContextProvider,
 ) -> Result<Vec<SplitCountEntry>, Error> {
     let (root_hash, entries) = query
-        .verify_point_lookup_count_proof(
-            crate::verify::current_grovedb_proof_bytes(proof)?,
-            platform_version,
-        )
+        .verify_point_lookup_count_proof(current_grovedb_proof_bytes(proof)?, platform_version)
         .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -224,7 +215,7 @@ pub fn verify_primary_key_count_tree_proof(
     provider: &dyn ContextProvider,
 ) -> Result<u64, Error> {
     let (root_hash, count) = DriveDocumentCountQuery::verify_primary_key_count_tree_proof(
-        crate::verify::current_grovedb_proof_bytes(proof)?,
+        current_grovedb_proof_bytes(proof)?,
         contract_id,
         document_type_name,
         platform_version,
@@ -287,7 +278,7 @@ pub fn verify_carrier_aggregate_count_proof(
 ) -> Result<Vec<SplitCountEntry>, Error> {
     let (root_hash, per_key_counts) = query
         .verify_carrier_aggregate_count_proof(
-            crate::verify::current_grovedb_proof_bytes(proof)?,
+            current_grovedb_proof_bytes(proof)?,
             limit,
             left_to_right,
             platform_version,

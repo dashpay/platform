@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::current_grovedb_proof;
 use crate::utils::serialization::bytes_to_base58;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -58,7 +59,7 @@ pub fn verify_epoch_proposers_by_range_vec(
 
     let (root_hash, proposers_vec): (RootHash, Vec<(Vec<u8>, u64)>) =
         Drive::verify_epoch_proposers(
-            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            current_grovedb_proof(&proof_vec)?,
             epoch_index,
             proposer_query_type,
             platform_version,
@@ -117,7 +118,7 @@ pub fn verify_epoch_proposers_by_range_map(
 
     let (root_hash, proposers_map): (RootHash, BTreeMap<Vec<u8>, u64>) =
         Drive::verify_epoch_proposers(
-            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            current_grovedb_proof(&proof_vec)?,
             epoch_index,
             proposer_query_type,
             platform_version,
@@ -176,7 +177,7 @@ pub fn verify_epoch_proposers_by_ids_vec(
 
     let (root_hash, proposers_vec): (RootHash, Vec<(Vec<u8>, u64)>) =
         Drive::verify_epoch_proposers(
-            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            current_grovedb_proof(&proof_vec)?,
             epoch_index,
             proposer_query_type,
             platform_version,
@@ -237,7 +238,7 @@ pub fn verify_epoch_proposers_by_ids_map(
 
     let (root_hash, proposers_map): (RootHash, BTreeMap<Vec<u8>, u64>) =
         Drive::verify_epoch_proposers(
-            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+            current_grovedb_proof(&proof_vec)?,
             epoch_index,
             proposer_query_type,
             platform_version,

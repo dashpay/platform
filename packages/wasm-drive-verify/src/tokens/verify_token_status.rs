@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::current_grovedb_proof;
 use dpp::tokens::status::TokenStatus;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -43,7 +44,7 @@ pub fn verify_token_status(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, status_option) = Drive::verify_token_status(
-        crate::utils::proof::current_grovedb_proof(&proof_vec)?,
+        current_grovedb_proof(&proof_vec)?,
         token_id_bytes,
         verify_subset_of_proof,
         platform_version,

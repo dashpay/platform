@@ -5,6 +5,7 @@ use crate::utils::error::{
 };
 use crate::utils::getters::VecU8ToUint8Array;
 use crate::utils::platform_version::get_platform_version_with_validation;
+use crate::utils::proof::current_grovedb_proof;
 use crate::utils::serialization::document_to_js_value;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
@@ -119,10 +120,7 @@ pub fn verify_document_proof(
     };
 
     let (root_hash, documents) = query
-        .verify_proof(
-            crate::utils::proof::current_grovedb_proof(&proof_vec)?,
-            platform_version,
-        )
+        .verify_proof(current_grovedb_proof(&proof_vec)?, platform_version)
         .map_err(|e| format_result_error(ErrorCategory::VerificationError, e))?;
 
     // Convert documents to JS array

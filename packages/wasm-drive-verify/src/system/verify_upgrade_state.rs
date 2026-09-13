@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::current_grovedb_proof;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use js_sys::{Object, Reflect, Uint8Array};
@@ -33,11 +34,9 @@ pub fn verify_upgrade_state(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, upgrade_state_map) = Drive::verify_upgrade_state(
-        crate::utils::proof::current_grovedb_proof(&proof_vec)?,
-        platform_version,
-    )
-    .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
+    let (root_hash, upgrade_state_map) =
+        Drive::verify_upgrade_state(current_grovedb_proof(&proof_vec)?, platform_version)
+            .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert IntMap<ProtocolVersion, u64> to JS object
     let js_obj = Object::new();
