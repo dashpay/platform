@@ -46,7 +46,8 @@ use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
-    compute_shielded_unshield_fee, compute_shielded_withdrawal_fee, ShieldedMemo,
+    compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
+    compute_shielded_withdrawal_fee, ShieldedMemo,
 };
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::ProtocolError;
@@ -177,6 +178,7 @@ fn shielded_fee_formula(
         1 => Some(compute_shielded_unshield_fee),
         2 => Some(compute_shielded_withdrawal_fee),
         3 => Some(compute_shielded_identity_balance_write_fee),
+        4 => Some(compute_shielded_identity_top_up_fee),
         _ => None,
     }
 }
@@ -195,7 +197,9 @@ fn shielded_fee_formula(
 /// - `3` → ShieldFromIdentity (`compute_shielded_identity_balance_write_fee`:
 ///   the conservative complete-fee floor, compute + note storage allowance +
 ///   identity write allowance, that consensus requires the identity to hold on
-///   top of the amount; the exact fee is metered at execution).
+///   top of the amount; the exact fee is metered at execution),
+/// - `4` → IdentityTopUpFromShieldedPool (`compute_shielded_identity_top_up_fee`:
+///   base + the flat identity-balance write cost, carved from the value balance).
 ///
 /// `num_actions` is the Orchard action count of the bundle the host will
 /// build (a single-note spend with change is 2 actions). The fee is
@@ -227,7 +231,7 @@ pub unsafe extern "C" fn platform_wallet_shielded_estimate_fee(
     let Some(formula) = shielded_fee_formula(kind) else {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            format!("unknown shielded fee kind {kind} (expected 0/1/2/3)"),
+            format!("unknown shielded fee kind {kind} (expected 0/1/2/3/4)"),
         );
     };
     let Some(platform_version) =
@@ -1279,6 +1283,99 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity(
         }
         Err(e) => map_spend_result(Err(e), "shielded shield from identity"),
     }
+}
+
+/// Top up an existing Platform identity's balance from the wallet's shielded
+/// notes: the Type 22 `IdentityTopUpFromShieldedPool` transition. The identity
+/// receives `amount`; the flat pool-paid fee (`platform_wallet_shielded_estimate_fee`
+/// kind 4) is spent from the notes on top. The identity only has to exist on
+/// Platform; it does not have to be managed by this wallet.
+///
+/// `identity_id` is the 32-byte identity id. `mnemonic_resolver_handle`
+/// supplies the transient spend authority exactly as for
+/// `platform_wallet_manager_shielded_unshield`.
+///
+/// # Safety
+/// - `wallet_id_bytes` and `identity_id` must each point to 32 readable bytes.
+/// - `mnemonic_resolver_handle` must be a valid, non-destroyed handle.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_top_up_from_pool(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    identity_id: *const u8,
+    amount: u64,
+) -> PlatformWalletFFIResult {
+    // The whole body runs under `catch_unwind`, exactly like the shield-to-recipient
+    // export: `block_on_worker` re-panics on a panicking proving task, and a panic
+    // must not reach this `extern "C"` frame, where it would abort the host process.
+    // Notes may already be reserved and the transition may already be broadcast when
+    // the panic strikes, so the ambiguous spend-unconfirmed contract applies.
+    catch_spend_panic("shielded identity top up from pool", || {
+        shielded_identity_top_up_from_pool_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            identity_id,
+            amount,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_identity_top_up_from_pool`], as an ordinary
+/// Rust function so a panic unwinds into [`catch_spend_panic`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn shielded_identity_top_up_from_pool_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    identity_id: *const u8,
+    amount: u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
+    check_ptr!(identity_id);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let identity_id = unwrap_result_or_return!(read_identifier(identity_id));
+
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+
+    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+    ) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
+
+    let result = block_on_worker(async move {
+        let prover = CachedOrchardProver::new();
+        let r = wallet
+            .shielded_identity_top_up_from_pool(
+                &coordinator,
+                seed.as_ref(),
+                account,
+                &identity_id,
+                amount,
+                &prover,
+            )
+            .await;
+        poke_sync_on_unconfirmed(&r, handle);
+        // The proof-attested balance is applied to a managed identity inside the
+        // wallet; this export reports only the outcome.
+        r.map(|_| ())
+    });
+    map_spend_result(result, "shielded identity top up from pool")
 }
 
 /// Shield: spend credits from a Platform Payment account into a

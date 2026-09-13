@@ -351,12 +351,15 @@ pub struct PlatformWallet {
     pub(crate) shielded_keys:
         Arc<RwLock<Option<std::collections::BTreeMap<u32, super::shielded::AccountViewingKeys>>>>,
     /// Per-wallet single-flight guard for shield-class operations
-    /// (Type 15). Two concurrent `shield` calls on one wallet would
-    /// each fetch the same address nonce and build with `nonce + 1`, so
-    /// the second to reach drive-abci is rejected as a replay after a
-    /// ~30 s proof. Holding this across fetch → build → broadcast
-    /// serializes the double-tap / retry-while-proving case. `Arc` so
-    /// cloned wallet handles share the one lock.
+    /// (Type 15, and the identity-side Types 21 and 22). Two concurrent
+    /// `shield` calls on one wallet would each fetch the same address
+    /// nonce and build with `nonce + 1`, so the second to reach
+    /// drive-abci is rejected as a replay after a ~30 s proof. Holding
+    /// this across fetch → build → broadcast serializes the double-tap /
+    /// retry-while-proving case. The identity-side operations also apply
+    /// the proof-attested absolute identity balance, so holding it across
+    /// their waits keeps those writes in execution order. `Arc` so cloned
+    /// wallet handles share the one lock.
     #[cfg(feature = "shielded")]
     pub(crate) shield_guard: Arc<tokio::sync::Mutex<()>>,
     /// Set once this wallet has been removed from the manager, to stop
@@ -1428,6 +1431,68 @@ impl PlatformWallet {
             &prover,
         )
         .await
+    }
+
+    /// Top up an existing Platform identity's balance from `account`'s
+    /// shielded notes (`IdentityTopUpFromShieldedPool`, type 22). The identity
+    /// need not belong to this wallet: it only has to exist on Platform. The
+    /// identity receives `amount`; the flat pool-paid fee comes out of the
+    /// spent notes on top. `seed` supplies the transient spend authority (see
+    /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_identity_top_up_from_pool<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        identity_id: &Identifier,
+        amount: u64,
+        prover: P,
+    ) -> Result<Option<Credits>, PlatformWalletError> {
+        // Single-flight with the other shield-class operations. The proof
+        // result carries the identity's absolute post-execution balance, so
+        // two top-ups (or a top-up and a shield-from-identity debit) whose
+        // waits completed out of execution order would let the older balance
+        // overwrite the newer one. Held across build -> broadcast -> wait ->
+        // reconcile.
+        let _shield_guard = self.shield_guard.lock().await;
+
+        let keyset = self.derive_spend_keyset(seed, account).await?;
+        let proven_balance = super::shielded::operations::identity_top_up_from_pool(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            &keyset,
+            account,
+            *identity_id,
+            amount,
+            &prover,
+        )
+        .await?;
+
+        // The target may be one of this wallet's identities. Apply the proof-attested
+        // balance rather than adding `amount` locally: the fee is carved from the
+        // gross amount and a negative-credit identity absorbs part of a top-up, so
+        // only the proven value is right. A foreign identity is simply not managed.
+        if let Some(balance) = proven_balance {
+            let mut wm = self.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .and_then(|info| info.identity_manager.managed_identity_mut(identity_id));
+            if let Some(managed) = managed {
+                managed.identity.set_balance(balance);
+                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
+                    tracing::error!(
+                        identity = %identity_id,
+                        error = %e,
+                        "Failed to persist identity balance update after shielded top-up"
+                    );
+                }
+            }
+        }
+
+        Ok(proven_balance)
     }
 
     /// Withdraw from `account`'s notes to a Core L1 address

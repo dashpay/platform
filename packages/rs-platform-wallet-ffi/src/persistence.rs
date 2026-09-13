@@ -2884,6 +2884,9 @@ impl PlatformWalletPersistence for FFIPersister {
                                 }
                                 | platform_wallet::wallet::shielded::ShieldedActivityKind::ShieldFromIdentity {
                                     identity_id,
+                                }
+                                | platform_wallet::wallet::shielded::ShieldedActivityKind::IdentityTopUp {
+                                    identity_id,
                                 } => (*identity_id, 1u8),
                                 _ => ([0u8; 32], 0u8),
                             };
@@ -3396,6 +3399,9 @@ impl PlatformWalletPersistence for FFIPersister {
                                 identity_id: ffi.identity_id,
                             },
                             8 => ShieldedActivityKind::ShieldFromIdentity {
+                                identity_id: ffi.identity_id,
+                            },
+                            9 => ShieldedActivityKind::IdentityTopUp {
                                 identity_id: ffi.identity_id,
                             },
                             // 7 and any unknown tag fall back to the

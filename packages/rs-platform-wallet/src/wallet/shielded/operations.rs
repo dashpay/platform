@@ -57,7 +57,8 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::shielded::builder::{
-    build_identity_create_from_shielded_pool_transition, build_shield_from_identity_transition,
+    build_identity_create_from_shielded_pool_transition,
+    build_identity_top_up_from_shielded_pool_transition, build_shield_from_identity_transition,
     build_shield_transition, build_shielded_transfer_transition,
     build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver, SpendableNote,
 };
@@ -272,6 +273,7 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
     use dpp::state_transition::shielded_transfer_transition::accessors::ShieldedTransferTransitionAccessorsV0;
     use dpp::state_transition::shielded_withdrawal_transition::accessors::ShieldedWithdrawalTransitionAccessorsV0;
     use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+    use dpp::state_transition::identity_top_up_from_shielded_pool_transition::accessors::IdentityTopUpFromShieldedPoolTransitionAccessorsV0;
     use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
     use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAccessorsV0;
 
@@ -283,6 +285,7 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
         StateTransition::ShieldedWithdrawal(t) => t.actions(),
         StateTransition::IdentityCreateFromShieldedPool(t) => t.actions(),
         StateTransition::ShieldFromIdentity(t) => t.actions(),
+        StateTransition::IdentityTopUpFromShieldedPool(t) => t.actions(),
         _ => &[],
     }
 }
@@ -1333,6 +1336,191 @@ mod shield_from_identity_build_error_tests {
 }
 
 // -------------------------------------------------------------------------
+// IdentityTopUpFromShieldedPool: shielded pool -> existing identity (Type 22)
+// -------------------------------------------------------------------------
+
+/// Top up an existing Platform identity's balance from `account`'s shielded
+/// notes. Mirrors [`unshield`]: notes are reserved for `amount + fee` under
+/// [`ShieldedFeeKind::IdentityTopUp`], the spend bundle binds the identity and
+/// gross amount into its sighash, and the broadcast is redrive-safe. The
+/// identity receives `amount` (the fee is carved from the value balance).
+/// Waits for proven execution before marking notes spent.
+///
+/// Returns the identity's proof-attested post-top-up balance when the result
+/// proof carried this identity (`None` only if the proven result had an
+/// unexpected shape, which is logged). The caller persists it for a managed
+/// identity (`PlatformWallet::shielded_identity_top_up_from_pool`).
+#[allow(clippy::too_many_arguments)]
+pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    identity_id: Identifier,
+    amount: u64,
+    prover: &P,
+) -> Result<Option<Credits>, PlatformWalletError> {
+    let views = keys.viewing_keys();
+    let change_addr = default_orchard_address(&views)?;
+    let id = SubwalletId::new(wallet_id, account);
+
+    let (selected_notes, total_input, exact_fee) =
+        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::IdentityTopUp).await?;
+
+    info!(
+        account,
+        credits = amount,
+        fee = exact_fee,
+        inputs = selected_notes.len(),
+        total_input,
+        identity = %identity_id,
+        "IdentityTopUpFromShieldedPool"
+    );
+
+    let mut pending_entry = None;
+    let result = async {
+        let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        let anchor_bytes = anchor.to_bytes();
+
+        let (state_transition, fee_used) = build_identity_top_up_from_shielded_pool_transition(
+            spends,
+            identity_id,
+            amount,
+            &change_addr,
+            &keys.full_viewing_key,
+            &keys.spend_auth_key,
+            anchor,
+            prover,
+            [0u8; 36],
+            sdk.version(),
+        )
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        debug_assert_eq!(
+            fee_used, exact_fee,
+            "builder fee must match the reserved identity top up fee"
+        );
+
+        pending_entry = record_pending_activity(
+            store,
+            persister,
+            wallet_id,
+            id,
+            &views,
+            LiveEntryParams {
+                kind: ShieldedActivityKind::IdentityTopUp {
+                    identity_id: identity_id.to_buffer(),
+                },
+                direction: ShieldedDirection::Out,
+                amount,
+                fee: Some(fee_used),
+                counterparty: Some(identity_id.to_vec()),
+                memo: None,
+                actions: shielded_actions(&state_transition),
+                spent_notes: &selected_notes,
+            },
+        )
+        .await;
+        arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
+
+        trace!("IdentityTopUpFromShieldedPool: state transition built, broadcasting...");
+        // Type 22 is classified affected state: its nullifiers are shared with any
+        // competing spend of the same notes and the identity's balance is a
+        // snapshot, so the strict wait would reject every success. The snapshot
+        // still proves the reserved notes are consumed and authenticates the
+        // credited identity's balance; the shield, shield-from-identity and
+        // identity-create paths accept the same class of outcome.
+        broadcast_shielded_spend_with_redrive(
+            sdk,
+            store,
+            id,
+            &pending_entry,
+            anchor_bytes,
+            &selected_notes,
+            &state_transition,
+            "identity top up from shielded pool",
+            SpendResultWait::AffectedState,
+        )
+        .await
+    }
+    .await;
+
+    match result {
+        Ok(proof) => {
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                ShieldedActivityStatus::Confirmed,
+                None,
+            )
+            .await;
+            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
+            {
+                warn!(
+                    account,
+                    error = %e,
+                    "IdentityTopUpFromShieldedPool broadcast succeeded but local spent-state \
+                     update failed; will heal on next sync"
+                );
+            }
+            info!(account, credits = amount, identity = %identity_id, "IdentityTopUpFromShieldedPool broadcast succeeded");
+            // The affected-state wait returns the spent nullifiers plus the
+            // credited identity as a snapshot at the proof's block. The notes are
+            // spent either way; the identity's proven balance is the balance at
+            // that block, never derived from the requested amount.
+            //
+            // The row is confirmed here on purpose. The snapshot cannot tell this
+            // top-up apart from a competing spend of the same notes, but only this
+            // wallet's spending key can author one and the notes were reserved
+            // locally, so spent nullifiers are treated as this transition's
+            // execution, the same policy the transfer, unshield and withdrawal
+            // paths apply. Until the protocol stores a transition-bound receipt
+            // (a follow-up that would make every nullifier-spend family
+            // execution-proving), a second device on the same seed can show a
+            // confirmed row for a top-up its sibling displaced; immediate
+            // confirmation was chosen over a pending row for that edge case.
+            let proven_balance = match proof {
+                StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(proven, _)
+                    if proven.id() == identity_id =>
+                {
+                    Some(proven.balance())
+                }
+                other => {
+                    warn!(
+                        account,
+                        identity = %identity_id,
+                        result = ?other,
+                        "IdentityTopUpFromShieldedPool proof did not carry the credited \
+                         identity; managed balance left for the next identity refresh"
+                    );
+                    None
+                }
+            };
+            Ok(proven_balance)
+        }
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
+        Err(e) => {
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                ShieldedActivityStatus::Failed,
+                None,
+            )
+            .await;
+            cancel_pending(store, id, &selected_notes).await;
+            Err(e)
+        }
+    }
+}
+
+// -------------------------------------------------------------------------
 // ShieldFromAssetLock: Core L1 asset lock -> shielded pool (Type 18)
 // (orchestrated entry point lives in `wallet/shielded/fund_from_asset_lock.rs`)
 // -------------------------------------------------------------------------
@@ -1451,13 +1639,14 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             &selected_notes,
             &state_transition,
             "unshield",
+            SpendResultWait::ExecutionProved,
         )
         .await
     }
     .await;
 
     match result {
-        Ok(()) => {
+        Ok(_) => {
             record_activity_status(
                 store,
                 persister,
@@ -1629,13 +1818,14 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             &selected_notes,
             &state_transition,
             "transfer",
+            SpendResultWait::ExecutionProved,
         )
         .await
     }
     .await;
 
     match result {
-        Ok(()) => {
+        Ok(_) => {
             record_activity_status(
                 store,
                 persister,
@@ -1797,13 +1987,14 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             &selected_notes,
             &state_transition,
             "withdraw",
+            SpendResultWait::ExecutionProved,
         )
         .await
     }
     .await;
 
     match result {
-        Ok(()) => {
+        Ok(_) => {
             record_activity_status(
                 store,
                 persister,
@@ -2710,8 +2901,9 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
     notes: &[ShieldedNote],
     state_transition: &StateTransition,
     operation: &'static str,
-) -> Result<(), PlatformWalletError> {
-    let result = broadcast_shielded_spend(sdk, state_transition, operation).await;
+    wait: SpendResultWait,
+) -> Result<StateTransitionProofResult, PlatformWalletError> {
+    let result = broadcast_shielded_spend(sdk, state_transition, operation, wait).await;
     if matches!(
         &result,
         Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
@@ -3102,11 +3294,26 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
 /// cheaply queryable as an identity row, so ambiguity is surfaced
 /// directly and reconciled by the next nullifier sync. The proven
 /// result is discarded; only the confirmation matters.
+/// How [`broadcast_shielded_spend`] waits for an already-broadcast spend's
+/// result, mirroring the verifier's classification of the family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpendResultWait {
+    /// The family is classified execution-proving (transfer, unshield,
+    /// withdrawal): a snapshot outcome is an error.
+    ExecutionProved,
+    /// The proof only authenticates the affected keys' state at the proof's
+    /// block (identity top-up: the spent nullifiers are shared with any
+    /// competing spend of the same notes and the credited identity's balance
+    /// is a snapshot). Accepted as that snapshot.
+    AffectedState,
+}
+
 async fn broadcast_shielded_spend(
     sdk: &Arc<dash_sdk::Sdk>,
     state_transition: &StateTransition,
     operation: &'static str,
-) -> Result<(), PlatformWalletError> {
+    wait: SpendResultWait,
+) -> Result<StateTransitionProofResult, PlatformWalletError> {
     match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
         Err(e) if broadcast_definitely_failed(&e) => {
@@ -3123,11 +3330,23 @@ async fn broadcast_shielded_spend(
         }
     }
 
-    state_transition
-        .wait_for_response::<StateTransitionProofResult>(sdk, None)
-        .await
-        .map(|_| ())
-        .map_err(|wait_err| classify_spend_wait_failure(operation, &wait_err))
+    // The verifier's classification of the family decides the wait: a
+    // proof-binding family rejects a snapshot outcome, an affected-state family
+    // accepts it. Either way the proven result is returned so callers that
+    // credit a known identity can apply its proof-attested balance.
+    let waited = match wait {
+        SpendResultWait::ExecutionProved => {
+            state_transition
+                .wait_for_response::<StateTransitionProofResult>(sdk, None)
+                .await
+        }
+        SpendResultWait::AffectedState => {
+            state_transition
+                .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
+                .await
+        }
+    };
+    waited.map_err(|wait_err| classify_spend_wait_failure(operation, &wait_err))
 }
 
 /// Classify a `wait_for_response` failure for an already-broadcast

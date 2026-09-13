@@ -214,6 +214,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   pool side is an outputs-only Orchard bundle like `Shield`, and the fee
 ///   is metered plus the shielded compute fee, paid from the identity.
 ///
+/// * `IdentityTopUpFromShieldedPool` (state transition type 22) activates at the
+///   same gate (`IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION = 14`,
+///   `DRIVE_ABCI_VALIDATION_VERSIONS_V10` row). It spends shielded notes like
+///   `Unshield` and credits an EXISTING identity's balance instead of a platform
+///   address: pool-paid flat fee (`compute_shielded_identity_top_up_fee`), no
+///   platform signature, the target identity and gross amount bound into the
+///   Orchard sighash, and no system-credit adjustment (pool and identity balances
+///   are both conservation-equation terms).
+///
 /// The wire surface changes only additively: `GetDocumentsRequestV1`
 /// already carries `selects` / `group_by` / `order_by` / `limit` /
 /// `offset`; the ranked response is an additive `ResultData.ranked`

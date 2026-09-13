@@ -47,7 +47,7 @@ public final class PersistentShieldedActivity {
     /// Kind discriminant (`ShieldedActivityKind::tag`): 0 Shield,
     /// 1 ShieldFromAssetLock, 2 Received, 3 Sent, 4 Unshield,
     /// 5 Withdrawal, 6 IdentityCreate, 7 ShieldedSpend,
-    /// 8 ShieldFromIdentity.
+    /// 8 ShieldFromIdentity, 9 IdentityTopUp (from the pool).
     public var kindTag: Int
     /// Direction: 0 In, 1 Out, 2 Self.
     public var direction: Int
@@ -88,7 +88,8 @@ public final class PersistentShieldedActivity {
 
     /// Identity id (32 bytes) when the kind carries one: the created
     /// identity for `kindTag == 6` (IdentityCreate), the debited identity
-    /// for `kindTag == 8` (ShieldFromIdentity). Empty otherwise.
+    /// for `kindTag == 8` (ShieldFromIdentity), the credited identity for
+    /// `kindTag == 9` (IdentityTopUp from the pool). Empty otherwise.
     public var identityId: Data
     /// Counterparty bytes (43B Orchard / 21B PlatformAddress / Core
     /// script) when present; empty otherwise.

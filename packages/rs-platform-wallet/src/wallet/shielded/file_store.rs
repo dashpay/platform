@@ -359,6 +359,9 @@ impl FileBackedShieldedStore {
             StateTransition::IdentityCreateFromShieldedPool(_) => {
                 Some("identity create from shielded pool")
             }
+            StateTransition::IdentityTopUpFromShieldedPool(_) => {
+                Some("identity top up from shielded pool")
+            }
             _ => None,
         }
     }

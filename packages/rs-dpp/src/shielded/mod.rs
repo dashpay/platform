@@ -15,8 +15,9 @@ use serde::{Deserialize, Serialize};
 // module and the function share a name but live in different namespaces).
 pub use compute_minimum_shielded_fee::{
     compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
-    compute_shielded_identity_create_fee, compute_shielded_unshield_fee,
-    compute_shielded_verification_fee, compute_shielded_withdrawal_fee,
+    compute_shielded_identity_create_fee, compute_shielded_identity_top_up_fee,
+    compute_shielded_unshield_fee, compute_shielded_verification_fee,
+    compute_shielded_withdrawal_fee,
 };
 
 // Re-exported so the public paths stay `dpp::shielded::<name>` after moving the sighash preimage
@@ -24,7 +25,9 @@ pub use compute_minimum_shielded_fee::{
 // re-exported (callers use the wrappers; byte-layout tests use the `_v0` impls).
 pub use sighash::{
     compute_platform_sighash, identity_create_from_shielded_extra_sighash_data,
-    identity_create_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
+    identity_create_from_shielded_extra_sighash_data_v0,
+    identity_top_up_from_shielded_extra_sighash_data,
+    identity_top_up_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
     shielded_withdrawal_extra_sighash_data_v0, unshield_extra_sighash_data,
     unshield_extra_sighash_data_v0,
 };
@@ -75,6 +78,24 @@ pub const SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES: u64 = 4100;
 /// evolves, exactly like the per-action note storage does. See
 /// [`compute_minimum_shielded_fee::compute_shielded_unshield_fee`].
 pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
+
+/// Flat component (in effective bytes at the per-byte storage rate) for the identity-side write an
+/// `IdentityTopUpFromShieldedPool` performs on top of its per-action nullifier and note writes:
+/// the single `AddToIdentityBalance` operation, charged as part of the pool-paid flat fee (built
+/// like `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES`).
+///
+/// What the write does: the identity must already exist, so it adds no storage. It rewrites the
+/// balance element and every Merk node on the path to the root (replaced bytes, charged at the
+/// per-byte processing rate), loads the path, seeks, and rehashes the nodes. Measured at protocol
+/// version 14: 320 replaced bytes, 886 loaded bytes, 12 seeks and 14 hash calls for 175,320
+/// credits of processing. Like every other flat shielded component, that variable tree work is
+/// folded into one flat effective-byte figure priced at the full storage rate so it tracks the
+/// rate as it evolves, rather than modelled per replaced byte: 175,320 credits is 6.4 effective
+/// bytes at 27,400 credits/byte, and 8 leaves headroom for the path growing by about a node
+/// (roughly 0.7 effective bytes) each time the identity count doubles. The pool-total update is
+/// not priced separately, exactly as for the other pool-paid transitions. See
+/// [`compute_minimum_shielded_fee::compute_shielded_identity_top_up_fee`].
+pub const SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES: u64 = 8;
 
 /// Flat component (in effective bytes at the per-byte storage rate) for the identity-side writes a
 /// `ShieldFromIdentity` performs on top of its per-action note inserts: the `UpdateIdentityNonce`

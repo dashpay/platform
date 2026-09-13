@@ -552,6 +552,20 @@ impl ExecutionEvent<'_> {
                     user_fee_increase,
                 })
             }
+            StateTransitionAction::IdentityTopUpFromShieldedPoolAction(ref top_up_action) => {
+                // Pool-paid exactly like Unshield: the flat fee is carved from the value
+                // balance and routed to the fee pools; the identity receives the rest.
+                // There is no transparent address output to track.
+                let fee_amount = top_up_action.fee_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromShieldedPool {
+                    operations,
+                    fees_to_add_to_pool: fee_amount,
+                    added_to_balance_outputs: None,
+                    chargeable_failure: false,
+                })
+            }
             StateTransitionAction::ShieldFromIdentityAction(ref shield_action) => {
                 // Identity-paid, exactly the IdentityCreditTransferToAddresses model, plus the
                 // shielded COMPUTE fee (proof verification + per-action processing) that GroveDB

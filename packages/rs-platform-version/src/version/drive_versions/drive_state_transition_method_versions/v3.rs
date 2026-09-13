@@ -63,6 +63,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V3: DriveStateTransitionMethodV
                 shielded_withdrawal_transition: 0,
                 identity_create_from_shielded_pool_transition: 0,
                 shield_from_identity_transition: 0,
+                identity_top_up_from_shielded_pool_transition: 0,
             },
         document_from_action: DriveDocumentFromActionVersions {
             document_from_create_transition_action: 0,

@@ -507,6 +507,31 @@ impl Drive {
                     &platform_version.drive.grove_version,
                 )?
             }
+            StateTransition::IdentityTopUpFromShieldedPool(st) => {
+                use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
+                use dpp::state_transition::identity_top_up_from_shielded_pool_transition::accessors::IdentityTopUpFromShieldedPoolTransitionAccessorsV0;
+
+                // Spent nullifiers AND the credited identity in one STRICT merged proof,
+                // exactly the IdentityCreateFromShieldedPool shape.
+                let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+                let mut nf_query = grovedb::Query::new();
+                nf_query.insert_keys(nullifier_keys);
+                let nullifier_pq = PathQuery::new(
+                    shielded_credit_pool_nullifiers_path_vec(),
+                    grovedb::SizedQuery::new(nf_query, None, None),
+                );
+
+                let mut identity_pq = Drive::full_identity_query(
+                    &st.identity_id().to_buffer(),
+                    &platform_version.drive.grove_version,
+                )?;
+                identity_pq.query.limit = None;
+
+                PathQuery::merge(
+                    vec![&nullifier_pq, &identity_pq],
+                    &platform_version.drive.grove_version,
+                )?
+            }
             StateTransition::ShieldFromIdentity(st) => {
                 // The identity's post-debit balance; the shielded note is not proven
                 // (the client learns it through shielded sync, as after `Shield`).
