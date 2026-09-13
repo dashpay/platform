@@ -1472,6 +1472,17 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
             // credited identity as a snapshot at the proof's block. The notes are
             // spent either way; the identity's proven balance is the balance at
             // that block, never derived from the requested amount.
+            //
+            // The row is confirmed here on purpose. The snapshot cannot tell this
+            // top-up apart from a competing spend of the same notes, but only this
+            // wallet's spending key can author one and the notes were reserved
+            // locally, so spent nullifiers are treated as this transition's
+            // execution, the same policy the transfer, unshield and withdrawal
+            // paths apply. Until the protocol stores a transition-bound receipt
+            // (a follow-up that would make every nullifier-spend family
+            // execution-proving), a second device on the same seed can show a
+            // confirmed row for a top-up its sibling displaced; immediate
+            // confirmation was chosen over a pending row for that edge case.
             let proven_balance = match proof {
                 StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(proven, _)
                     if proven.id() == identity_id =>
