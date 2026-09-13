@@ -7,7 +7,7 @@ use crate::declare::{ContractDeclaration, FieldContext, RuleKind};
 use crate::manifest::{CollectionManifest, ModuleTable, RuleManifest};
 use crate::validate::collections::has_property_path;
 use crate::validate::diagnostic::{DeclarationPath, Diagnostic, DiagnosticKind};
-use crate::validate::merge::dedupe;
+use crate::validate::merge::{dedupe, sorted};
 
 pub(super) fn validate_rules(
     declaration: &ContractDeclaration,
@@ -17,22 +17,7 @@ pub(super) fn validate_rules(
 ) -> Vec<RuleManifest> {
     let rules = dedupe(
         &declaration.rules,
-        |a, b| a.collection == b.collection && a.name == b.name,
-        |spec| spec.origin,
-        |a, b| {
-            let mut left = a.clone();
-            left.origin = b.origin;
-            left.actions.sort();
-            left.actions.dedup();
-            let mut right = b.clone();
-            right.actions.sort();
-            right.actions.dedup();
-            left == right
-        },
-        |_, _| {},
         |spec| DeclarationPath::rule(&spec.collection, &spec.name),
-        "rule",
-        || DiagnosticKind::DuplicateRule,
         diagnostics,
     );
 
@@ -51,9 +36,7 @@ pub(super) fn validate_rules(
                     },
                 ));
             }
-            let mut actions = rule.actions.clone();
-            actions.sort();
-            actions.dedup();
+            let actions = sorted(&rule.actions);
             if actions.is_empty() {
                 diagnostics.push(Diagnostic::new(
                     path.clone(),
