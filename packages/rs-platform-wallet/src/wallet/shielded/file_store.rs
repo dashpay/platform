@@ -305,10 +305,7 @@ impl FileBackedShieldedStore {
                 if nullifiers.len() % 32 != 0 {
                     return Err(corrupted("invalid nullifier width"));
                 }
-                let nullifiers: Vec<[u8; 32]> = nullifiers
-                    .chunks_exact(32)
-                    .map(|c| <[u8; 32]>::try_from(c).expect("chunks_exact(32)"))
-                    .collect();
+                let nullifiers: Vec<[u8; 32]> = nullifiers.as_chunks::<32>().0.to_vec();
                 Ok((
                     SubwalletId::new(wallet_id, account_index),
                     PendingRedrive {
@@ -452,8 +449,10 @@ impl FileBackedShieldedStore {
         drop(stmt);
         for (activity_id, nullifiers) in rows {
             if nullifiers
-                .chunks_exact(32)
-                .any(|c| c == nullifier.as_slice())
+                .as_chunks::<32>()
+                .0
+                .iter()
+                .any(|c| c.as_slice() == nullifier.as_slice())
             {
                 conn.execute(
                     "DELETE FROM shielded_pending_spends \

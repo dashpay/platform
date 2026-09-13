@@ -159,7 +159,7 @@ impl<C> Platform<C> {
             // Load checkpoint platform states from disk
             let mut checkpoint_platform_states = BTreeMap::new();
             let checkpoints = drive.checkpoints.load();
-            for (&block_height, _checkpoint_info) in checkpoints.iter() {
+            for &block_height in checkpoints.keys() {
                 let checkpoint_state_path = config
                     .db_path
                     .join("checkpoints")

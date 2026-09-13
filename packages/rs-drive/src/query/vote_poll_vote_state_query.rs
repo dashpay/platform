@@ -1081,7 +1081,7 @@ mod tests {
         assert!(
             matches!(&items[0], QueryItem::RangeAfter(..)),
             "expected RangeAfter, got {:?}",
-            &items[0]
+            items[0]
         );
 
         // Subquery path should point to document storage [vec![0]]
@@ -1120,7 +1120,7 @@ mod tests {
         assert!(
             matches!(&items[0], QueryItem::RangeFull(..)),
             "expected RangeFull, got {:?}",
-            &items[0]
+            items[0]
         );
 
         // Subquery path should point to vote tally [vec![1]]
