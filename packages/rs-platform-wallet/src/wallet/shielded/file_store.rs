@@ -113,11 +113,35 @@ impl FileBackedShieldedStore {
                     nullifiers    BLOB    NOT NULL,
                     st_bytes      BLOB    NOT NULL,
                     attempts      INTEGER NOT NULL DEFAULT 0,
+                    identity_nonce_finalized INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (wallet_id, account_index, activity_id)
                 )",
                 [],
             )
             .map_err(|e| FileShieldedStoreError(format!("create pending_spends table: {e}")))?;
+        // Existing stores predate the parked identity-debit state. Keep their
+        // exact-byte retries enabled until a fresh nonce proof finalizes them.
+        let has_finalized_column = {
+            let mut statement = pending_conn
+                .prepare("PRAGMA table_info(shielded_pending_spends)")
+                .map_err(|e| FileShieldedStoreError(format!("inspect pending schema: {e}")))?;
+            let columns = statement
+                .query_map([], |row| row.get::<_, String>(1))
+                .map_err(|e| FileShieldedStoreError(format!("read pending schema: {e}")))?;
+            let mut found = false;
+            for column in columns {
+                found |= column
+                    .map_err(|e| FileShieldedStoreError(format!("read pending column: {e}")))?
+                    == "identity_nonce_finalized";
+            }
+            found
+        };
+        if !has_finalized_column {
+            pending_conn.execute(
+                "ALTER TABLE shielded_pending_spends ADD COLUMN identity_nonce_finalized INTEGER NOT NULL DEFAULT 0",
+                [],
+            ).map_err(|e| FileShieldedStoreError(format!("upgrade pending schema: {e}")))?;
+        }
         let mut store = Self {
             tree: Mutex::new(tree),
             path,
@@ -140,7 +164,7 @@ impl FileBackedShieldedStore {
         let mut stmt = conn
             .prepare(
                 "SELECT wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, \
-                 attempts FROM shielded_pending_spends",
+                 attempts, identity_nonce_finalized FROM shielded_pending_spends",
             )
             .map_err(|e| FileShieldedStoreError(format!("prepare rehydrate: {e}")))?;
         let rows = stmt
@@ -153,12 +177,25 @@ impl FileBackedShieldedStore {
                     row.get::<_, Vec<u8>>(4)?,
                     row.get::<_, Vec<u8>>(5)?,
                     row.get::<_, u32>(6)?,
+                    match row.get::<_, i64>(7)? {
+                        0 => false,
+                        1 => true,
+                        _ => return Err(rusqlite::Error::InvalidQuery),
+                    },
                 ))
             })
             .map_err(|e| FileShieldedStoreError(format!("query rehydrate: {e}")))?;
         for row in rows {
-            let (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts) =
-                row.map_err(|e| FileShieldedStoreError(format!("read rehydrate row: {e}")))?;
+            let (
+                wallet_id,
+                account_index,
+                activity_id,
+                anchor,
+                nullifiers,
+                st_bytes,
+                attempts,
+                identity_nonce_finalized,
+            ) = row.map_err(|e| FileShieldedStoreError(format!("read rehydrate row: {e}")))?;
             let (Ok(wallet_id), Ok(activity_id), Ok(anchor)) = (
                 <[u8; 32]>::try_from(wallet_id.as_slice()),
                 <[u8; 32]>::try_from(activity_id.as_slice()),
@@ -190,6 +227,7 @@ impl FileBackedShieldedStore {
                 nullifiers,
                 st_bytes,
                 attempts,
+                identity_nonce_finalized,
             });
         }
         Ok(())
@@ -402,8 +440,8 @@ impl ShieldedStore for FileBackedShieldedStore {
             let nullifier_blob: Vec<u8> = redrive.nullifiers.iter().flatten().copied().collect();
             conn.execute(
                 "INSERT OR REPLACE INTO shielded_pending_spends \
-                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts, identity_nonce_finalized) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 rusqlite::params![
                     id.wallet_id.as_slice(),
                     id.account_index,
@@ -412,6 +450,7 @@ impl ShieldedStore for FileBackedShieldedStore {
                     nullifier_blob,
                     redrive.st_bytes,
                     redrive.attempts,
+                    redrive.identity_nonce_finalized,
                 ],
             )
             .map_err(|e| FileShieldedStoreError(format!("persist redrive: {e}")))?;
@@ -799,6 +838,7 @@ mod tests {
             nullifiers: vec![[3u8; 32], [4u8; 32]],
             st_bytes: vec![0xAB; 96],
             attempts: 0,
+            identity_nonce_finalized: false,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
@@ -853,6 +893,7 @@ mod tests {
             nullifiers: vec![],
             st_bytes: vec![0xAB; 96],
             attempts: 0,
+            identity_nonce_finalized: false,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
@@ -870,6 +911,81 @@ mod tests {
     }
 
     #[test]
+    fn should_upgrade_old_redrive_schema_and_preserve_finalized_guard_on_reopen() {
+        let path = temp_tree_path("redrive_schema_upgrade");
+        let id = SubwalletId::new([0x91; 32], 2);
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE shielded_pending_spends (
+                wallet_id BLOB NOT NULL, account_index INTEGER NOT NULL,
+                activity_id BLOB NOT NULL, anchor BLOB NOT NULL, nullifiers BLOB NOT NULL,
+                st_bytes BLOB NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(wallet_id, account_index, activity_id));",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO shielded_pending_spends VALUES (?1, 2, ?2, ?3, ?4, ?5, 0)",
+                rusqlite::params![
+                    id.wallet_id.as_slice(),
+                    [0x12u8; 32].as_slice(),
+                    [0x23u8; 32].as_slice(),
+                    Vec::<u8>::new(),
+                    vec![0x34u8; 24]
+                ],
+            )
+            .unwrap();
+        }
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+            let mut record = store.pending_redrives(id).unwrap().remove(0);
+            assert!(
+                !record.identity_nonce_finalized,
+                "legacy records must remain retryable"
+            );
+            record.identity_nonce_finalized = true;
+            store.arm_redrive(id, record).unwrap();
+        }
+        {
+            let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+            let records = store.pending_redrives(id).unwrap();
+            assert_eq!(
+                records.len(),
+                1,
+                "parked payment must retain its durable guard"
+            );
+            assert!(records[0].identity_nonce_finalized);
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn should_keep_retry_state_when_persisting_nonce_finality_fails() {
+        let path = temp_tree_path("redrive_park_failure");
+        let id = SubwalletId::new([0x91; 32], 2);
+        let record = PendingRedrive {
+            activity_id: [0x12; 32],
+            anchor: [0x23; 32],
+            nullifiers: vec![],
+            st_bytes: vec![0x34; 24],
+            attempts: 0,
+            identity_nonce_finalized: false,
+        };
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+            store.arm_redrive(id, record.clone()).unwrap();
+            store.pending_conn.lock().unwrap().execute_batch("CREATE TRIGGER reject_redrive_insert BEFORE INSERT ON shielded_pending_spends BEGIN SELECT RAISE(FAIL, 'injected insert failure'); END;").unwrap();
+            let mut parked = record.clone();
+            parked.identity_nonce_finalized = true;
+            assert!(store.arm_redrive(id, parked).is_err());
+            assert_eq!(store.pending_redrives(id).unwrap(), vec![record.clone()]);
+        }
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        assert_eq!(store.pending_redrives(id).unwrap(), vec![record]);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn clear_redrive_sql_failure_keeps_memory_and_durable_guard() {
         let path = temp_tree_path("clear_redrive_failure");
         let id = SubwalletId::new([0x91; 32], 2);
@@ -879,6 +995,7 @@ mod tests {
             nullifiers: vec![],
             st_bytes: vec![0x34; 24],
             attempts: 0,
+            identity_nonce_finalized: false,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
@@ -926,6 +1043,7 @@ mod tests {
             nullifiers: vec![],
             st_bytes: vec![0x37; 24],
             attempts: 5,
+            identity_nonce_finalized: false,
         };
         let note_spend = PendingRedrive {
             activity_id: [0x48; 32],
@@ -933,6 +1051,7 @@ mod tests {
             nullifiers: vec![[0x6A; 32]],
             st_bytes: vec![0x7B; 24],
             attempts: 1,
+            identity_nonce_finalized: false,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
@@ -976,6 +1095,7 @@ mod tests {
             nullifiers: vec![[nf; 32]],
             st_bytes: vec![0xCD; 32],
             attempts: 0,
+            identity_nonce_finalized: false,
         };
 
         // purge_wallet is scoped: it drops A's rows, keeps B's.
@@ -1051,6 +1171,7 @@ mod tests {
                         nullifiers: vec![nf],
                         st_bytes: vec![0xEF; 32],
                         attempts: 0,
+                        identity_nonce_finalized: false,
                     },
                 )
                 .expect("arm");

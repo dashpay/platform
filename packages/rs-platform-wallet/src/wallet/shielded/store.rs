@@ -132,14 +132,16 @@ pub struct ShieldedOutgoingNote {
 /// Platform's recorded set (the spend can then never execute).
 pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>);
 
-/// A re-drivable broadcast-accepted-but-unconfirmed spend: the signed
+/// An unresolved signed transition and its durable retry guard: the signed
 /// transition bytes plus everything the sync-time re-drive needs to
 /// resolve the ambiguity actively — re-broadcast the transition
 /// ([`nullifiers`](Self::nullifiers) detect a landing, `anchor` feeds
 /// the prune backstop, `activity_id` links the UI row, `attempts`
 /// bounds the retries.
 ///
-/// Armed only on the ambiguous outcome (`ShieldedSpendUnconfirmed`):
+/// Identity-funded shields arm this record before broadcast and have no input
+/// nullifiers. Their guard survives even after rebroadcasting stops. Note spends
+/// arm it only on the ambiguous outcome (`ShieldedSpendUnconfirmed`):
 /// the broadcast was accepted but the result wait failed, so the spend
 /// may or may not have executed. Re-broadcasting the byte-identical
 /// transition is fund-safe — identical nullifiers cannot double-spend —
@@ -159,6 +161,10 @@ pub struct PendingRedrive {
     pub st_bytes: Vec<u8>,
     /// Re-broadcast attempts made so far.
     pub attempts: u32,
+    /// A proven identity nonce has made this exact debit impossible to execute
+    /// again. Stop broadcasting, but keep its unresolved-payment guard until
+    /// the scan confirms the outputs. Always false for note-spend redrives.
+    pub identity_nonce_finalized: bool,
 }
 
 /// The result of [`SubwalletState::mark_spent`].
@@ -1169,6 +1175,7 @@ mod tests {
             nullifiers: vec![n1, n2],
             st_bytes: vec![1, 2, 3],
             attempts: 0,
+            identity_nonce_finalized: false,
         };
 
         // Landing path: mark_spent on one nullifier drops the record.
@@ -1472,6 +1479,7 @@ mod tests {
             nullifiers: vec![],
             st_bytes: vec![0x33; 16],
             attempts: 7,
+            identity_nonce_finalized: false,
         };
         let note_spend = PendingRedrive {
             activity_id: [0x44; 32],
@@ -1479,6 +1487,7 @@ mod tests {
             nullifiers: vec![[0x66; 32]],
             st_bytes: vec![0x77; 16],
             attempts: 1,
+            identity_nonce_finalized: false,
         };
         store.arm_redrive(id, identity_guard.clone()).unwrap();
         store.arm_redrive(id, note_spend).unwrap();

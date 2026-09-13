@@ -1,14 +1,37 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use dpp::identity::identity_nonce::{validate_identity_nonce_update, validate_new_identity_nonce};
 use dpp::platform_value::Identifier;
 
+// These are node-local resource budgets, not consensus limits. A full cache
+// replaces at most one identity per minute, with no accumulated idle-time burst.
+// Each replacement can reopen at most 48 nonce attempts (24 missing + 24 future),
+// so cycling funded identities cannot turn bounded memory into unbounded proof work.
+const MAX_TRACKED_IDENTITIES: usize = 4_096;
+const IDENTITY_REPLACEMENT_INTERVAL: Duration = Duration::from_secs(60);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct VerifiedIdentityProof {
+    transaction_hash: [u8; 32],
+    protocol_version: u32,
+}
+
 #[derive(Debug)]
 struct IdentityNonceAttempts {
+    protocol_version: u32,
     committed_nonce: Option<u64>,
-    attempted_nonces: BTreeSet<u64>,
+    attempted_nonces: BTreeMap<u64, Option<VerifiedIdentityProof>>,
+    in_flight: usize,
+    last_access: Instant,
+}
+
+#[derive(Default)]
+struct IdentityNonceCache {
+    identities: HashMap<[u8; 32], IdentityNonceAttempts>,
+    last_replacement: Option<Instant>,
 }
 
 /// Node-local admission control for expensive proof verification in CheckTx.
@@ -19,7 +42,8 @@ struct IdentityNonceAttempts {
 pub struct CheckTxProofVerifier {
     in_flight_weight: AtomicUsize,
     limit: usize,
-    identity_nonce_attempts: Mutex<HashMap<[u8; 32], IdentityNonceAttempts>>,
+    identity_cache_limit: usize,
+    identity_nonce_attempts: Mutex<IdentityNonceCache>,
 }
 
 impl Default for CheckTxProofVerifier {
@@ -28,9 +52,13 @@ impl Default for CheckTxProofVerifier {
             .map(|parallelism| parallelism.get())
             .unwrap_or(1);
         let limit = (available_cores / 4).clamp(1, 4);
-
         Self::new(limit)
     }
+}
+
+pub(crate) enum IdentityProofVerification<'a> {
+    Cached,
+    Required(CheckTxProofVerifierPermit<'a>),
 }
 
 impl CheckTxProofVerifier {
@@ -38,7 +66,8 @@ impl CheckTxProofVerifier {
         Self {
             in_flight_weight: AtomicUsize::new(0),
             limit: limit.max(1),
-            identity_nonce_attempts: Mutex::new(HashMap::new()),
+            identity_cache_limit: MAX_TRACKED_IDENTITIES,
+            identity_nonce_attempts: Mutex::new(IdentityNonceCache::default()),
         }
     }
 
@@ -46,17 +75,12 @@ impl CheckTxProofVerifier {
         &self,
         action_count: usize,
     ) -> Option<CheckTxProofVerifierPermit<'_>> {
-        // Verification cost grows with the bundle. Charge one local capacity
-        // unit per two actions, while allowing a single proof to fit on nodes
-        // whose conservative default budget is one unit.
         let weight = action_count.max(1).div_ceil(2).min(self.limit);
         let mut current = self.in_flight_weight.load(Ordering::Acquire);
-
         loop {
             if current.saturating_add(weight) > self.limit {
                 return None;
             }
-
             match self.in_flight_weight.compare_exchange_weak(
                 current,
                 current + weight,
@@ -67,6 +91,7 @@ impl CheckTxProofVerifier {
                     return Some(CheckTxProofVerifierPermit {
                         verifier: self,
                         weight,
+                        identity: None,
                     })
                 }
                 Err(observed) => current = observed,
@@ -74,62 +99,160 @@ impl CheckTxProofVerifier {
         }
     }
 
-    /// Admit at most one ShieldFromIdentity proof attempt per identity nonce
-    /// while that nonce remains valid against committed state. Platform accepts
-    /// a window of missing and future identity nonces, so every attempted nonce
-    /// in that window must be retained; remembering only the latest value would
-    /// allow a caller to alternate two nonces and repeat proof work indefinitely.
-    ///
-    /// When committed state changes, attempts that nonce validation now rejects
-    /// are pruned. The key is reserved only after global proof capacity is
-    /// available, so a busy node cannot strand an honest request.
+    /// Reuse only an exact, previously successful proof. The caller must still
+    /// validate current signatures, nonce, state and fees before using this cache.
+    /// Failed and in-flight attempts reserve their nonce while the identity is
+    /// retained. Bounded, rate-limited identity replacement avoids both unbounded
+    /// memory growth and a permanent denial of admission when the cache fills.
     pub(crate) fn try_acquire_identity_nonce(
         &self,
         identity_id: [u8; 32],
         committed_nonce: Option<u64>,
         nonce: u64,
+        transaction_hash: [u8; 32],
         action_count: usize,
-    ) -> Option<CheckTxProofVerifierPermit<'_>> {
-        let permit = self.try_acquire(action_count)?;
-        let mut attempts = self
+        protocol_version: u32,
+    ) -> Option<IdentityProofVerification<'_>> {
+        self.try_acquire_identity_nonce_at(
+            identity_id,
+            committed_nonce,
+            nonce,
+            VerifiedIdentityProof {
+                transaction_hash,
+                protocol_version,
+            },
+            action_count,
+            Instant::now(),
+        )
+    }
+
+    fn try_acquire_identity_nonce_at(
+        &self,
+        identity_id: [u8; 32],
+        committed_nonce: Option<u64>,
+        nonce: u64,
+        proof: VerifiedIdentityProof,
+        action_count: usize,
+        now: Instant,
+    ) -> Option<IdentityProofVerification<'_>> {
+        let identifier = Identifier::new(identity_id);
+        let nonce_valid = |attempted| {
+            committed_nonce
+                .map(|committed| validate_identity_nonce_update(committed, attempted, identifier))
+                .unwrap_or_else(|| validate_new_identity_nonce(attempted, identifier))
+                .is_valid()
+        };
+        // Also enforce the finite nonce window here so every insertion preserves
+        // the memory bound, independently of the caller's admission checks.
+        if !nonce_valid(nonce) {
+            return None;
+        }
+        let mut cache = self
             .identity_nonce_attempts
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let identity_attempts =
-            attempts
-                .entry(identity_id)
-                .or_insert_with(|| IdentityNonceAttempts {
-                    committed_nonce,
-                    attempted_nonces: BTreeSet::new(),
-                });
-        if identity_attempts.committed_nonce != committed_nonce {
-            let identifier = Identifier::new(identity_id);
-            identity_attempts.attempted_nonces.retain(|attempted| {
-                committed_nonce
-                    .map(|committed| {
-                        validate_identity_nonce_update(committed, *attempted, identifier)
-                    })
-                    .unwrap_or_else(|| validate_new_identity_nonce(*attempted, identifier))
-                    .errors
-                    .is_empty()
-            });
-            identity_attempts.committed_nonce = committed_nonce;
+        if let Some(attempts) = cache.identities.get_mut(&identity_id) {
+            if proof.protocol_version < attempts.protocol_version {
+                return None;
+            }
+            if proof.protocol_version > attempts.protocol_version {
+                if attempts.in_flight != 0 {
+                    return None;
+                }
+                // A new active protocol may change proof rules. Reverify once
+                // under that version; stale callers cannot toggle back and
+                // repeatedly reopen the old nonce window.
+                attempts.protocol_version = proof.protocol_version;
+                attempts.attempted_nonces.clear();
+            }
+            if attempts.committed_nonce != committed_nonce {
+                attempts
+                    .attempted_nonces
+                    .retain(|attempted, _| nonce_valid(*attempted));
+                attempts.committed_nonce = committed_nonce;
+            }
+            attempts.last_access = now;
+            if let Some(verified) = attempts.attempted_nonces.get(&nonce) {
+                return (*verified == Some(proof)).then_some(IdentityProofVerification::Cached);
+            }
         }
 
-        if !identity_attempts.attempted_nonces.insert(nonce) {
-            return None;
+        // Capacity rejection must not consume a nonce or an eviction budget.
+        let mut permit = self.try_acquire(action_count)?;
+        if !cache.identities.contains_key(&identity_id)
+            && cache.identities.len() >= self.identity_cache_limit
+        {
+            if cache.last_replacement.is_some_and(|last| {
+                now.saturating_duration_since(last) < IDENTITY_REPLACEMENT_INTERVAL
+            }) {
+                return None;
+            }
+            let victim = cache
+                .identities
+                .iter()
+                .filter(|(_, attempts)| attempts.in_flight == 0)
+                .min_by_key(|(_, attempts)| attempts.last_access)
+                .map(|(id, _)| *id)?;
+            cache.identities.remove(&victim);
+            cache.last_replacement = Some(now);
         }
-        Some(permit)
+        let attempts =
+            cache
+                .identities
+                .entry(identity_id)
+                .or_insert_with(|| IdentityNonceAttempts {
+                    protocol_version: proof.protocol_version,
+                    committed_nonce,
+                    attempted_nonces: BTreeMap::new(),
+                    in_flight: 0,
+                    last_access: now,
+                });
+        attempts.attempted_nonces.insert(nonce, None);
+        attempts.in_flight += 1;
+        permit.identity = Some((identity_id, nonce, proof));
+        Some(IdentityProofVerification::Required(permit))
     }
 }
 
 pub(crate) struct CheckTxProofVerifierPermit<'a> {
     verifier: &'a CheckTxProofVerifier,
     weight: usize,
+    identity: Option<([u8; 32], u64, VerifiedIdentityProof)>,
+}
+
+impl CheckTxProofVerifierPermit<'_> {
+    /// Call only after Orchard verification succeeded. Dropping an unmarked
+    /// permit retains a failed attempt, never a successful cached result.
+    pub(crate) fn mark_verified(&self) {
+        if let Some((identity_id, nonce, proof)) = self.identity {
+            let mut cache = self
+                .verifier
+                .identity_nonce_attempts
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Some(attempt) = cache
+                .identities
+                .get_mut(&identity_id)
+                .and_then(|attempts| attempts.attempted_nonces.get_mut(&nonce))
+            {
+                *attempt = Some(proof);
+            }
+        }
+    }
 }
 
 impl Drop for CheckTxProofVerifierPermit<'_> {
     fn drop(&mut self) {
+        if let Some((identity_id, _, _)) = self.identity {
+            let mut cache = self
+                .verifier
+                .identity_nonce_attempts
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Some(attempts) = cache.identities.get_mut(&identity_id) {
+                attempts.in_flight -= 1;
+            }
+        }
         let previous = self
             .verifier
             .in_flight_weight
@@ -208,25 +331,25 @@ mod tests {
         let identity_id = [7; 32];
 
         let first = verifier
-            .try_acquire_identity_nonce(identity_id, Some(3), 4, 1)
+            .try_acquire_identity_nonce(identity_id, Some(3), 4, [0; 32], 1, 1)
             .expect("first identity nonce attempt");
         drop(first);
 
         assert!(
             verifier
-                .try_acquire_identity_nonce(identity_id, Some(3), 4, 1)
+                .try_acquire_identity_nonce(identity_id, Some(3), 4, [0; 32], 1, 1)
                 .is_none(),
             "the same identity nonce must not repeatedly consume proof capacity"
         );
         assert!(
             verifier
-                .try_acquire_identity_nonce(identity_id, Some(3), 5, 1)
+                .try_acquire_identity_nonce(identity_id, Some(3), 5, [0; 32], 1, 1)
                 .is_some(),
             "an advanced nonce remains admissible"
         );
         assert!(
             verifier
-                .try_acquire_identity_nonce([8; 32], Some(3), 4, 1)
+                .try_acquire_identity_nonce([8; 32], Some(3), 4, [0; 32], 1, 1)
                 .is_some(),
             "another identity remains admissible"
         );
@@ -239,25 +362,25 @@ mod tests {
 
         drop(
             verifier
-                .try_acquire_identity_nonce(identity_id, Some(3), 4, 1)
+                .try_acquire_identity_nonce(identity_id, Some(3), 4, [0; 32], 1, 1)
                 .expect("first future nonce"),
         );
         drop(
             verifier
-                .try_acquire_identity_nonce(identity_id, Some(3), 5, 1)
+                .try_acquire_identity_nonce(identity_id, Some(3), 5, [0; 32], 1, 1)
                 .expect("second future nonce"),
         );
 
         assert!(
             verifier
-                .try_acquire_identity_nonce(identity_id, Some(3), 4, 1)
+                .try_acquire_identity_nonce(identity_id, Some(3), 4, [0; 32], 1, 1)
                 .is_none(),
             "alternating back to an earlier attempted nonce must not repeat proof work"
         );
 
         drop(
             verifier
-                .try_acquire_identity_nonce(identity_id, Some(5), 6, 1)
+                .try_acquire_identity_nonce(identity_id, Some(5), 6, [0; 32], 1, 1)
                 .expect("new nonce after committed state advances"),
         );
         let attempts = verifier
@@ -266,10 +389,11 @@ mod tests {
             .expect("attempts lock");
         assert_eq!(
             attempts
+                .identities
                 .get(&identity_id)
                 .expect("identity attempts")
                 .attempted_nonces,
-            BTreeSet::from([6]),
+            BTreeMap::from([(6, None)]),
             "nonces that committed state now rejects must be pruned"
         );
     }
@@ -281,14 +405,21 @@ mod tests {
 
         drop(
             verifier
-                .try_acquire_identity_nonce(identity_id, Some(3), 4, 1)
+                .try_acquire_identity_nonce(identity_id, Some(3), 4, [0; 32], 1, 1)
                 .expect("future nonce"),
         );
 
         let committed_with_four_missing = 5 | (1 << 40);
         assert!(
             verifier
-                .try_acquire_identity_nonce(identity_id, Some(committed_with_four_missing), 4, 1,)
+                .try_acquire_identity_nonce(
+                    identity_id,
+                    Some(committed_with_four_missing),
+                    4,
+                    [0; 32],
+                    1,
+                    1
+                )
                 .is_none(),
             "a still-admissible missing nonce must remain protected after state advances"
         );
@@ -309,7 +440,7 @@ mod tests {
                 scope.spawn(move || {
                     start.wait();
                     if let Some(permit) =
-                        verifier.try_acquire_identity_nonce([7; 32], Some(3), 4, 1)
+                        verifier.try_acquire_identity_nonce([7; 32], Some(3), 4, [0; 32], 1, 1)
                     {
                         admitted.fetch_add(1, Ordering::AcqRel);
                         drop(permit);
@@ -327,14 +458,152 @@ mod tests {
         let occupied = verifier.try_acquire(1).expect("occupied capacity");
 
         assert!(verifier
-            .try_acquire_identity_nonce([10; 32], None, 1, 1)
+            .try_acquire_identity_nonce([10; 32], None, 1, [0; 32], 1, 1)
             .is_none());
         drop(occupied);
         assert!(
             verifier
-                .try_acquire_identity_nonce([10; 32], None, 1, 1)
+                .try_acquire_identity_nonce([10; 32], None, 1, [0; 32], 1, 1)
                 .is_some(),
             "capacity rejection must not consume the identity nonce attempt"
         );
+    }
+    #[test]
+    fn should_reuse_only_exact_successful_proofs_without_capacity() {
+        let verifier = CheckTxProofVerifier::new(1);
+        let version = dpp::version::PlatformVersion::latest().protocol_version;
+        let required = verifier
+            .try_acquire_identity_nonce([1; 32], None, 1, [2; 32], 2, version)
+            .unwrap();
+        let IdentityProofVerification::Required(permit) = required else {
+            panic!("first proof must verify")
+        };
+        permit.mark_verified();
+        drop(permit);
+        let occupied = verifier.try_acquire(2).unwrap();
+        assert!(matches!(
+            verifier.try_acquire_identity_nonce([1; 32], None, 1, [2; 32], 2, version),
+            Some(IdentityProofVerification::Cached)
+        ));
+        assert!(
+            verifier
+                .try_acquire_identity_nonce([1; 32], None, 1, [3; 32], 2, version)
+                .is_none(),
+            "different bytes must not reuse success"
+        );
+        assert!(
+            verifier
+                .try_acquire_identity_nonce([1; 32], None, 1, [2; 32], 2, version + 1)
+                .is_none(),
+            "another protocol version must not reuse success"
+        );
+        assert!(
+            verifier
+                .try_acquire_identity_nonce([1; 32], Some(1), 1, [2; 32], 2, version)
+                .is_none(),
+            "committed nonce must still reject exact bytes"
+        );
+        drop(occupied);
+    }
+
+    #[test]
+    fn should_bound_identity_cache_churn_without_an_idle_time_burst() {
+        let mut verifier = CheckTxProofVerifier::new(1);
+        verifier.identity_cache_limit = 2;
+        let proof = VerifiedIdentityProof {
+            transaction_hash: [2; 32],
+            protocol_version: dpp::version::PlatformVersion::latest().protocol_version,
+        };
+        let now = Instant::now();
+        for id in [1, 2, 3] {
+            drop(
+                verifier
+                    .try_acquire_identity_nonce_at([id; 32], None, 1, proof, 1, now)
+                    .expect("initial capacity or one replacement"),
+            );
+        }
+        assert!(verifier
+            .try_acquire_identity_nonce_at([4; 32], None, 1, proof, 1, now)
+            .is_none());
+        assert!(
+            verifier
+                .try_acquire_identity_nonce_at([1; 32], None, 1, proof, 1, now)
+                .is_none(),
+            "cycling an evicted identity must consume the same global replacement budget"
+        );
+        let later = now + IDENTITY_REPLACEMENT_INTERVAL * 10;
+        drop(
+            verifier
+                .try_acquire_identity_nonce_at([4; 32], None, 1, proof, 1, later)
+                .expect("replacement budget recovers"),
+        );
+        assert!(
+            verifier
+                .try_acquire_identity_nonce_at([5; 32], None, 1, proof, 1, later)
+                .is_none(),
+            "idle time cannot accumulate an eviction burst"
+        );
+        assert_eq!(
+            verifier
+                .identity_nonce_attempts
+                .lock()
+                .unwrap()
+                .identities
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn should_not_evict_in_flight_identity_or_spend_replacement_on_busy_capacity() {
+        let mut verifier = CheckTxProofVerifier::new(2);
+        verifier.identity_cache_limit = 1;
+        let proof = VerifiedIdentityProof {
+            transaction_hash: [2; 32],
+            protocol_version: dpp::version::PlatformVersion::latest().protocol_version,
+        };
+        let now = Instant::now();
+        let first = verifier
+            .try_acquire_identity_nonce_at([1; 32], None, 1, proof, 1, now)
+            .unwrap();
+        assert!(
+            verifier
+                .try_acquire_identity_nonce_at([2; 32], None, 1, proof, 1, now)
+                .is_none(),
+            "active identity cannot be evicted"
+        );
+        drop(first);
+        let occupied = verifier.try_acquire(4).unwrap();
+        assert!(verifier
+            .try_acquire_identity_nonce_at([2; 32], None, 1, proof, 1, now)
+            .is_none());
+        drop(occupied);
+        assert!(
+            verifier
+                .try_acquire_identity_nonce_at([2; 32], None, 1, proof, 1, now)
+                .is_some(),
+            "failed admission must not consume replacement budget"
+        );
+    }
+    #[test]
+    fn should_reverify_after_protocol_advance_without_allowing_version_oscillation() {
+        let verifier = CheckTxProofVerifier::new(1);
+        let version = dpp::version::PlatformVersion::latest().protocol_version;
+        for active_version in [version, version + 1] {
+            let Some(IdentityProofVerification::Required(permit)) =
+                verifier.try_acquire_identity_nonce([1; 32], None, 1, [2; 32], 1, active_version)
+            else {
+                panic!("each new protocol must verify")
+            };
+            permit.mark_verified();
+            drop(permit);
+            assert!(matches!(
+                verifier.try_acquire_identity_nonce([1; 32], None, 1, [2; 32], 1, active_version),
+                Some(IdentityProofVerification::Cached)
+            ));
+        }
+        assert!(verifier
+            .try_acquire_identity_nonce([1; 32], None, 1, [2; 32], 1, version)
+            .is_none());
     }
 }

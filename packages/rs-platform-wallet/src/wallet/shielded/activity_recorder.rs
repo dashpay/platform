@@ -33,10 +33,33 @@ use super::activity::{
     ShieldedDirection,
 };
 use super::keys::AccountViewingKeys;
-use super::store::{ShieldedNote, SubwalletId};
+use super::store::{PendingRedrive, ShieldedNote, SubwalletId};
 use crate::changeset::ShieldedChangeSet;
 
+use dpp::serialization::PlatformDeserializable;
 use dpp::shielded::SerializedAction;
+use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
+use dpp::state_transition::StateTransition;
+
+/// Recover the exact outputs that identify a durable identity debit. This also
+/// checks that the proposed viewing keys can observe the original payment after
+/// restart, when neither the old registration nor its activity row may exist.
+/// Malformed records and keys that recover a different output set fail closed.
+pub(super) fn identity_redrive_output_cmxs(
+    redrive: &PendingRedrive,
+    keys: &AccountViewingKeys,
+) -> Option<Vec<[u8; 32]>> {
+    if !redrive.nullifiers.is_empty() {
+        return None;
+    }
+    let StateTransition::ShieldFromIdentity(transition) =
+        StateTransition::deserialize_from_bytes(&redrive.st_bytes).ok()?
+    else {
+        return None;
+    };
+    let cmxs = visible_output_cmxs(transition.actions(), keys);
+    (!cmxs.is_empty() && compute_activity_id(&cmxs) == redrive.activity_id).then_some(cmxs)
+}
 
 /// Reconstruct the wallet-visible output cmxs from a built bundle's
 /// serialized actions, using the wallet's own viewing keys — the same

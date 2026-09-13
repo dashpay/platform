@@ -78,10 +78,12 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::RwLock;
 
+use super::activity_recorder::identity_redrive_output_cmxs;
 use super::file_store::FileBackedShieldedStore;
 use super::keys::AccountViewingKeys;
 use super::store::{ShieldedStore, StalePendingSpend, SubwalletId};
 use super::CAUGHT_UP_COOLDOWN;
+use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
@@ -333,7 +335,7 @@ impl ShieldedInstall<'_> {
         &self,
         account_views: BTreeMap<u32, AccountViewingKeys>,
         persister: WalletPersister,
-    ) {
+    ) -> Result<(), PlatformWalletError> {
         self.coordinator
             .register_locked(self.wallet_id, account_views, persister)
             .await
@@ -494,6 +496,10 @@ impl NetworkShieldedCoordinator {
     /// record of which key produced them. It covers state left by builds
     /// that predated the refusal.
     ///
+    /// Registration fails before replacing keys or purging notes if it would
+    /// remove or re-key an account with an unresolved identity-funded debit.
+    /// Rebind that original account and let sync reconcile the payment first.
+    ///
     /// [`ShieldedWallet`]: super::ShieldedWallet
     /// [`PlatformWallet::bind_shielded`]: crate::wallet::PlatformWallet::bind_shielded
     pub async fn register_wallet(
@@ -501,7 +507,7 @@ impl NetworkShieldedCoordinator {
         wallet_id: WalletId,
         account_views: BTreeMap<u32, AccountViewingKeys>,
         persister: WalletPersister,
-    ) {
+    ) -> Result<(), PlatformWalletError> {
         self.begin_install(wallet_id)
             .await
             .register(account_views, persister)
@@ -546,7 +552,7 @@ impl NetworkShieldedCoordinator {
         wallet_id: WalletId,
         account_views: BTreeMap<u32, AccountViewingKeys>,
         persister: WalletPersister,
-    ) {
+    ) -> Result<(), PlatformWalletError> {
         // Subwallets the new registration drops or re-keys. Their
         // store state must go: a dropped account would otherwise
         // keep unspendable notes and a stale watermark alive, and a
@@ -573,42 +579,39 @@ impl NetworkShieldedCoordinator {
         // a watermark for it from an earlier session), so any shape
         // change invalidates the wallet's hydrated flag even when
         // nothing is purged.
-        let shape_changed = !stale.is_empty() || {
-            let accounts = self.accounts.read().await;
-            let registered_count = accounts
-                .keys()
-                .filter(|id| id.wallet_id == wallet_id)
-                .count();
-            registered_count != account_views.len()
-        };
+        let registered_count = self
+            .accounts
+            .read()
+            .await
+            .keys()
+            .filter(|id| id.wallet_id == wallet_id)
+            .count();
+        let shape_changed = !stale.is_empty() || registered_count != account_views.len();
 
-        // An unresolved identity debit can land after this re-registration.
-        // Keep the old viewing key in the coordinator until its guard resolves,
-        // so the scan can still observe the output and clear the wallet-wide
-        // lock. A store read failure is treated conservatively as guarded.
-        let guarded_stale: Vec<(SubwalletId, AccountViewingKeys)> = if stale.is_empty() {
-            Vec::new()
-        } else {
+        // Do not change the owner/key of an unresolved payment. Inspect durable
+        // wallet-wide guards as well as `stale`: after restart the old account
+        // may not yet be in the registry. An initial registration must cover
+        // those durable owners. Later binds that only retain/add accounts cannot
+        // displace an owner, so they keep their store-lock-free fast path.
+        if !stale.is_empty() || registered_count == 0 {
             let store = self.store.read().await;
-            stale
-                .iter()
-                .filter_map(|(id, views)| match store.pending_redrives(*id) {
-                    Ok(redrives) => redrives
-                        .iter()
-                        .any(|redrive| redrive.nullifiers.is_empty())
-                        .then(|| (*id, views.clone())),
-                    Err(e) => {
-                        tracing::warn!(
-                            wallet_id = %hex::encode(id.wallet_id),
-                            account = id.account_index,
-                            error = %e,
-                            "Could not inspect identity guards during re-register; retaining old viewing key"
-                        );
-                        Some((*id, views.clone()))
-                    }
-                })
-                .collect()
-        };
+            let guards = store
+                .pending_redrives_for_wallet(wallet_id)
+                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+            for (id, redrive) in guards {
+                if redrive.nullifiers.is_empty()
+                    && (account_views.get(&id.account_index).is_none_or(|views| {
+                        registered_count == 0
+                            && identity_redrive_output_cmxs(&redrive, views).is_none()
+                    }) || stale.iter().any(|(stale_id, _)| *stale_id == id))
+                {
+                    return Err(PlatformWalletError::ShieldedStoreError(format!(
+                        "account {} has an unresolved identity debit; keep its original viewing key registered until shielded sync confirms the payment",
+                        id.account_index,
+                    )));
+                }
+            }
+        }
 
         // Persister FIRST, accounts second. `sync()` snapshots
         // `accounts` at pass start and looks the persister up only
@@ -629,9 +632,6 @@ impl NetworkShieldedCoordinator {
             accounts.retain(|id, _| id.wallet_id != wallet_id);
             for (account_index, views) in account_views {
                 accounts.insert(SubwalletId::new(wallet_id, account_index), views);
-            }
-            for (id, views) in &guarded_stale {
-                accounts.insert(*id, views.clone());
             }
         }
 
@@ -663,6 +663,7 @@ impl NetworkShieldedCoordinator {
                 }
             }
         }
+        Ok(())
     }
 
     /// Whether `wallet_id`'s per-subwallet store state has been
@@ -1284,24 +1285,11 @@ impl NetworkShieldedCoordinator {
         // pass can never schedule them. After activity derivation has first
         // cleared guards for outputs observed by this scan, drive each still-
         // unresolved byte-identical transition once per wallet. Wallet-wide
-        // enumeration also includes a guard retained under a previously bound
-        // account after re-key or removal.
+        // enumeration includes guards rehydrated from the durable store.
         let wallet_ids: HashSet<WalletId> = subwallets.iter().map(|(id, _)| id.wallet_id).collect();
-        let wallet_persisters: Vec<(WalletId, Option<WalletPersister>)> = {
-            let persisters = self.persisters.read().await;
-            wallet_ids
-                .into_iter()
-                .map(|wallet_id| (wallet_id, persisters.get(&wallet_id).cloned()))
-                .collect()
-        };
-        for (wallet_id, persister) in wallet_persisters {
-            super::operations::redrive_pending_identity_shields(
-                &self.sdk,
-                &self.store,
-                persister.as_ref(),
-                wallet_id,
-            )
-            .await;
+        for wallet_id in wallet_ids {
+            super::operations::redrive_pending_identity_shields(&self.sdk, &self.store, wallet_id)
+                .await;
         }
 
         // The note-side changeset already carries saves, synced
@@ -1608,7 +1596,7 @@ impl NetworkShieldedCoordinator {
             // every other store consumer for the full window. Anything a
             // live recorder lands between the two passes is caught by the
             // overlap re-check under the write lock below.
-            let (input, existing_cmxs) = {
+            let (input, existing_cmxs, redrives) = {
                 let store = self.store.read().await;
                 let notes = store.get_all_notes(*id).map_err(|e| {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
@@ -1650,17 +1638,49 @@ impl NetworkShieldedCoordinator {
                         own_addresses,
                     },
                     existing_cmxs,
+                    store.pending_redrives(*id).map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                    })?,
                 )
             };
 
             // Lock-free classification.
             let derived = derive_activity_from_scan_data(&input, &existing_cmxs);
-            if derived.new_entries.is_empty() && derived.confirmations.is_empty() {
+            // The host may have lost the live activity row, and one scan batch
+            // may merge several payments into a different activity id. Match
+            // the signed debit's complete output set against proven scan data
+            // independently of activity grouping and status upgrades.
+            let observed_cmxs: HashSet<[u8; 32]> = input
+                .notes
+                .iter()
+                .map(|note| note.cmx)
+                .chain(input.outgoing.iter().map(|note| note.cmx))
+                .collect();
+            let confirmed_identity_debits: Vec<[u8; 32]> = redrives
+                .iter()
+                .filter_map(|redrive| {
+                    let cmxs = identity_redrive_output_cmxs(redrive, views)?;
+                    cmxs.iter()
+                        .all(|cmx| observed_cmxs.contains(cmx))
+                        .then_some(redrive.activity_id)
+                })
+                .collect();
+            if derived.new_entries.is_empty()
+                && derived.confirmations.is_empty()
+                && confirmed_identity_debits.is_empty()
+            {
                 continue;
             }
 
             // Write pass: only the upserts hold the write lock.
             let mut store = self.store.write().await;
+            // Persist guard removal before any activity upsert. A failed clear
+            // remains retryable even when the activity is already Confirmed.
+            for activity_id in confirmed_identity_debits {
+                store.clear_redrive(*id, &activity_id).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+            }
             // Re-check cmx overlap against the CURRENT activity rows
             // before inserting: a live recorder may have written a richer
             // row (kind / fee / memo / created identity id) for the same
@@ -1696,10 +1716,8 @@ impl NetworkShieldedCoordinator {
                     // flips a still-Pending raced row.
                     continue;
                 }
-                // A dropped and later re-bound account may have retained only
-                // its wallet-wide identity-debit guard. The rediscovered entry
-                // has the same cmx-derived id as the original live entry, so
-                // resolve that guard before saving the reconstructed row.
+                // Retire note-spend redrives linked to the reconstructed row.
+                // Identity debits use the complete output-set check above.
                 let owners: Vec<SubwalletId> = store
                     .pending_redrives_for_wallet(id.wallet_id)
                     .map_err(|e| {
@@ -1707,7 +1725,8 @@ impl NetworkShieldedCoordinator {
                     })?
                     .into_iter()
                     .filter_map(|(owner, redrive)| {
-                        (redrive.activity_id == entry.id).then_some(owner)
+                        (!redrive.nullifiers.is_empty() && redrive.activity_id == entry.id)
+                            .then_some(owner)
                     })
                     .collect();
                 for owner in owners {
@@ -1769,11 +1788,9 @@ impl NetworkShieldedCoordinator {
                     super::activity::ShieldedActivityStatus::Confirmed,
                     Some(height),
                 );
-                // The unresolved identity-debit guard can survive under the
-                // account that originally received the note, even after that
-                // account is removed and later re-bound. Resolve every matching
-                // row wallet-wide, and persist those deletions before making the
-                // Confirmed activity suppress future cleanup attempts.
+                // Retire note-spend redrives before the Confirmed activity
+                // suppresses later status upgrades. Identity debits were
+                // reconciled separately from their complete output sets above.
                 let owners: Vec<SubwalletId> = store
                     .pending_redrives_for_wallet(id.wallet_id)
                     .map_err(|e| {
@@ -1781,7 +1798,8 @@ impl NetworkShieldedCoordinator {
                     })?
                     .into_iter()
                     .filter_map(|(owner, redrive)| {
-                        (redrive.activity_id == entry_id).then_some(owner)
+                        (!redrive.nullifiers.is_empty() && redrive.activity_id == entry_id)
+                            .then_some(owner)
                     })
                     .collect();
                 for owner in owners {
@@ -1927,6 +1945,227 @@ mod tests {
     use crate::wallet::persister::NoPlatformPersistence;
     use crate::wallet::shielded::keys::OrchardKeySet;
 
+    use crate::changeset::ShieldedChangeSet;
+    use crate::wallet::shielded::activity::compute_activity_id;
+    use crate::wallet::shielded::store::PendingRedrive;
+    use dpp::platform_value::BinaryData;
+    use dpp::serialization::PlatformSerializable;
+    use dpp::shielded::SerializedAction;
+    use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
+    use dpp::state_transition::StateTransition;
+    use grovedb_commitment_tree::{
+        DashMemo, Domain, ExtractedNoteCommitment, Note, NoteValue, Nullifier, OrchardDomain,
+        RandomSeed, Rho, ValueCommitTrapdoor, ValueCommitment,
+    };
+    use rand::{rngs::OsRng, RngCore};
+
+    fn encrypted_identity_action(keys: &AccountViewingKeys) -> SerializedAction {
+        let recipient = keys.default_address;
+        let ovk = keys.outgoing_viewing_key.clone();
+        let value_credits = 1_000;
+        let memo = [0; 36];
+        let mut rng = OsRng;
+
+        let (nf, rho) = loop {
+            let mut b = [0u8; 32];
+            rng.fill_bytes(&mut b);
+            if let (Some(nf), Some(rho)) = (
+                Nullifier::from_bytes(&b).into_option(),
+                Rho::from_bytes(&b).into_option(),
+            ) {
+                break (nf, rho);
+            }
+        };
+        let rseed = loop {
+            let mut b = [0u8; 32];
+            rng.fill_bytes(&mut b);
+            if let Some(rseed) = RandomSeed::from_bytes(b, &rho).into_option() {
+                break rseed;
+            }
+        };
+        let value = NoteValue::from_raw(value_credits);
+        let note = Note::from_parts(recipient, value, rho, rseed)
+            .into_option()
+            .expect("valid note parts");
+        let cmx = ExtractedNoteCommitment::from(note.commitment());
+
+        let rcv = loop {
+            let mut b = [0u8; 32];
+            rng.fill_bytes(&mut b);
+            if let Some(rcv) = ValueCommitTrapdoor::from_bytes(b).into_option() {
+                break rcv;
+            }
+        };
+        let cv = ValueCommitment::derive(value - NoteValue::from_raw(0), rcv);
+
+        let ne =
+            grovedb_commitment_tree::OrchardNoteEncryption::<DashMemo>::new(Some(ovk), note, memo);
+        let epk = OrchardDomain::<DashMemo>::epk_bytes(ne.epk());
+        let enc = ne.encrypt_note_plaintext();
+        let out = ne.encrypt_outgoing_plaintext(&cv, &cmx, &mut rng);
+
+        let mut encrypted_note = Vec::with_capacity(216);
+        encrypted_note.extend_from_slice(&epk.0);
+        encrypted_note.extend_from_slice(enc.as_ref());
+        encrypted_note.extend_from_slice(&out);
+        assert_eq!(encrypted_note.len(), 216, "wire note must be 216 bytes");
+
+        SerializedAction {
+            cmx: cmx.to_bytes(),
+            nullifier: nf.to_bytes(),
+            cv_net: cv.to_bytes(),
+            rk: [0; 32],
+            spend_auth_sig: [0; 64],
+            encrypted_note,
+        }
+    }
+
+    fn identity_guard(keys: &AccountViewingKeys) -> (PendingRedrive, Vec<[u8; 32]>) {
+        // Real IVK/OVK encryption, without an expensive proof: this test exercises
+        // recovery of stored wire bytes, not consensus admission.
+        let actions = vec![
+            encrypted_identity_action(keys),
+            encrypted_identity_action(keys),
+        ];
+        let cmxs: Vec<_> = actions.iter().map(|action| action.cmx).collect();
+        let transition: StateTransition = ShieldFromIdentityTransitionV0 {
+            identity_id: [0x42; 32].into(),
+            amount: 2_000,
+            actions,
+            anchor: [1; 32],
+            proof: vec![],
+            binding_signature: [0; 64],
+            nonce: 7,
+            user_fee_increase: 0,
+            signature_public_key_id: 1,
+            signature: BinaryData::new(vec![]),
+        }
+        .into();
+        (
+            PendingRedrive {
+                activity_id: compute_activity_id(&cmxs),
+                anchor: [1; 32],
+                nullifiers: vec![],
+                st_bytes: transition.serialize_to_bytes().unwrap(),
+                attempts: 0,
+                identity_nonce_finalized: true,
+            },
+            cmxs,
+        )
+    }
+
+    #[tokio::test]
+    async fn should_reject_unobservable_identity_debit_keys_after_restart() {
+        let dir = temp_dir("guard_key_restart");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let keys = coordinator.accounts.read().await[&id].clone();
+        let (guard, _) = identity_guard(&keys);
+        coordinator
+            .store()
+            .write()
+            .await
+            .arm_redrive(id, guard.clone())
+            .unwrap();
+        let path = coordinator.db_path.clone();
+        drop(coordinator);
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        let restarted = NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            dashcore::Network::Testnet,
+            path,
+            store,
+        );
+        let persister = WalletPersister::new(id.wallet_id, Arc::new(NoPlatformPersistence));
+        let wrong_keys = OrchardKeySet::from_seed(&[0x99; 64], dashcore::Network::Testnet, 0)
+            .unwrap()
+            .viewing_keys();
+        restarted
+            .register_wallet(
+                id.wallet_id,
+                BTreeMap::from([(0, wrong_keys)]),
+                persister.clone(),
+            )
+            .await
+            .expect_err("same account index must not hide a different viewing key");
+        assert!(restarted.registered_subwallets().await.is_empty());
+        assert_eq!(
+            restarted.store().read().await.pending_redrives(id).unwrap(),
+            vec![guard.clone()]
+        );
+        let mut corrupt_guard = guard.clone();
+        corrupt_guard.activity_id = [0; 32];
+        assert!(identity_redrive_output_cmxs(&corrupt_guard, &keys).is_none());
+        restarted
+            .register_wallet(id.wallet_id, BTreeMap::from([(0, keys)]), persister)
+            .await
+            .expect("original keys must remain usable after restart");
+        assert_eq!(restarted.registered_subwallets().await, vec![id]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn should_reconcile_identity_debit_outputs_without_live_activity_in_merged_scan() {
+        let dir = temp_dir("guard_merged_scan");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let keys = coordinator.accounts.read().await[&id].clone();
+        let (guard, cmxs) = identity_guard(&keys);
+        let unrelated = encrypted_identity_action(&keys).cmx;
+        let subwallets = vec![(id, keys)];
+        {
+            let mut store = coordinator.store().write().await;
+            store.arm_redrive(id, guard.clone()).unwrap();
+            // The live row was lost. A batch includes an unrelated output and
+            // only part of the original payment, which cannot yet retire its guard.
+            for (position, cmx) in [unrelated, cmxs[0]].into_iter().enumerate() {
+                let mut note = test_note([position as u8; 32], position as u64, false);
+                note.cmx = cmx;
+                store.save_note(id, &note).unwrap();
+            }
+        }
+        let mut changeset = ShieldedChangeSet::default();
+        coordinator
+            .derive_activity_into_changeset(&subwallets, &mut changeset)
+            .await
+            .unwrap();
+        {
+            let mut store = coordinator.store().write().await;
+            assert_eq!(store.pending_redrives(id).unwrap(), vec![guard.clone()]);
+            let entries = store.get_activity(id, 0, usize::MAX).unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_ne!(
+                entries[0].id, guard.activity_id,
+                "scan batch has a different aggregate id"
+            );
+            let mut note = test_note([2; 32], 2, false);
+            note.cmx = cmxs[1];
+            store.save_note(id, &note).unwrap();
+        }
+        // All outputs are now observed, despite the original row still being absent.
+        for _ in 0..2 {
+            coordinator
+                .derive_activity_into_changeset(&subwallets, &mut changeset)
+                .await
+                .unwrap();
+            assert!(coordinator
+                .store()
+                .read()
+                .await
+                .pending_redrives(id)
+                .unwrap()
+                .is_empty());
+        }
+        let path = coordinator.db_path.clone();
+        drop(coordinator);
+        let reopened = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        assert!(
+            reopened.pending_redrives(id).unwrap().is_empty(),
+            "clear must survive restart"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Unique temp directory for a test's SQLite tree (no `tempfile` dev-dep).
     fn temp_dir(tag: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
@@ -1958,7 +2197,8 @@ mod tests {
         let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
         coordinator
             .register_wallet(wallet_id, account_views, persister)
-            .await;
+            .await
+            .expect("register wallet");
         coordinator
     }
 
@@ -2075,6 +2315,7 @@ mod tests {
             nullifiers: vec![],
             st_bytes: vec![0x33; 64],
             attempts: 0,
+            identity_nonce_finalized: false,
         };
         coordinator
             .store()
@@ -2338,7 +2579,8 @@ mod tests {
         both.insert(1u32, views1);
         coordinator
             .register_wallet(wallet_id, both, persister.clone())
-            .await;
+            .await
+            .expect("register wallet");
         {
             let mut store = coordinator.store().write().await;
             store
@@ -2356,7 +2598,8 @@ mod tests {
         only0.insert(0u32, views0);
         coordinator
             .register_wallet(wallet_id, only0, persister)
-            .await;
+            .await
+            .expect("register wallet");
 
         let store = coordinator.store().read().await;
         assert_eq!(
@@ -2415,7 +2658,8 @@ mod tests {
         let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
         coordinator
             .register_wallet(wallet_id, views, persister)
-            .await;
+            .await
+            .expect("register wallet");
 
         let store = coordinator.store().read().await;
         assert!(
@@ -2428,7 +2672,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rekey_retains_old_viewing_key_while_identity_debit_is_unresolved() {
+    async fn should_reject_rekey_without_replacing_keys_or_purging_guarded_notes() {
         let dir = temp_dir("reg_rekey_identity_guard");
         let coordinator = coordinator_with_one_wallet(&dir).await;
         let wallet_id: WalletId = [0x11; 32];
@@ -2446,6 +2690,7 @@ mod tests {
             nullifiers: vec![],
             st_bytes: vec![0x73; 64],
             attempts: 0,
+            identity_nonce_finalized: false,
         };
         coordinator
             .store()
@@ -2458,11 +2703,19 @@ mod tests {
             .expect("derive viewing keys")
             .viewing_keys();
         let mut views = BTreeMap::new();
-        views.insert(0u32, rekeyed);
+        views.insert(0u32, rekeyed.clone());
+        {
+            let mut store = coordinator.store().write().await;
+            store
+                .save_note(id, &test_note([0xC0; 32], 3, false))
+                .unwrap();
+            store.set_last_synced_note_index(id, 77).unwrap();
+        }
         let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
         coordinator
             .register_wallet(wallet_id, views, persister)
-            .await;
+            .await
+            .expect_err("guarded rekey must fail");
 
         assert_eq!(
             coordinator
@@ -2473,7 +2726,7 @@ mod tests {
                 .expect("guarded account")
                 .to_fvk_bytes(),
             old_views.to_fvk_bytes(),
-            "the scan must retain the key that can observe the in-flight output"
+            "a rejected registration must retain the original key"
         );
         assert_eq!(
             coordinator
@@ -2482,9 +2735,105 @@ mod tests {
                 .await
                 .pending_redrives(id)
                 .expect("identity guard"),
-            vec![identity_guard]
+            vec![identity_guard.clone()]
         );
 
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .last_synced_note_index(id)
+                .unwrap(),
+            77,
+            "a rejected registration must not purge the original notes or watermark"
+        );
+        coordinator
+            .store()
+            .write()
+            .await
+            .clear_redrive(id, &identity_guard.activity_id)
+            .unwrap();
+        coordinator
+            .register_wallet(
+                wallet_id,
+                BTreeMap::from([(0, rekeyed.clone())]),
+                WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            coordinator
+                .accounts
+                .read()
+                .await
+                .get(&id)
+                .unwrap()
+                .to_fvk_bytes(),
+            rekeyed.to_fvk_bytes()
+        );
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .last_synced_note_index(id)
+                .unwrap(),
+            0
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn should_reject_omitting_guarded_account_including_after_restart() {
+        let dir = temp_dir("reg_omitted_guard");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        coordinator
+            .store()
+            .write()
+            .await
+            .arm_redrive(
+                id,
+                super::super::store::PendingRedrive {
+                    activity_id: [0x71; 32],
+                    anchor: [0x72; 32],
+                    nullifiers: vec![],
+                    st_bytes: vec![0x73; 64],
+                    attempts: 0,
+                    identity_nonce_finalized: true,
+                },
+            )
+            .unwrap();
+        let views = OrchardKeySet::from_seed(&[0x42; 64], dashcore::Network::Testnet, 1)
+            .unwrap()
+            .viewing_keys();
+        let registration = BTreeMap::from([(1, views)]);
+        let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+        assert!(coordinator
+            .register_wallet(wallet_id, registration.clone(), persister.clone())
+            .await
+            .is_err());
+        assert_eq!(coordinator.registered_subwallets().await, vec![id]);
+        // Reopen the durable store with no in-memory accounts, as at startup.
+        let path = coordinator.db_path.clone();
+        drop(coordinator);
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        let restarted = NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            dashcore::Network::Testnet,
+            path,
+            store,
+        );
+        assert!(
+            restarted
+                .register_wallet(wallet_id, registration, persister)
+                .await
+                .is_err(),
+            "durable guard must prevent omission even before its owner is registered"
+        );
+        assert!(restarted.registered_subwallets().await.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -2512,7 +2861,8 @@ mod tests {
         same.insert(0u32, views0.clone());
         coordinator
             .register_wallet(wallet_id, same.clone(), persister.clone())
-            .await;
+            .await
+            .expect("register wallet");
         assert!(
             coordinator.is_hydrated(wallet_id).await,
             "identical re-register must not clear hydration"
@@ -2526,7 +2876,8 @@ mod tests {
         expanded.insert(1u32, views1);
         coordinator
             .register_wallet(wallet_id, expanded, persister.clone())
-            .await;
+            .await
+            .expect("register wallet");
         assert!(
             !coordinator.is_hydrated(wallet_id).await,
             "a changed account set invalidates prior hydration"

@@ -609,6 +609,10 @@ fn map_spend_result(
                 e.to_string(),
             )
         }
+        // An earlier identity debit is unresolved; this request was never
+        // built or broadcast. Preserve that distinction from an unconfirmed
+        // submission so hosts can wait for the original payment's sync.
+        Err(e @ PlatformWalletError::ShieldedIdentityDebitPending { .. }) => e.into(),
         // Retryable: the wallet couldn't build the spend against any
         // Platform-recorded anchor yet (its commitment tree is mid-block after
         // an index-chunk sync). Nothing was broadcast and the notes were
@@ -2468,6 +2472,22 @@ mod tests {
             map_spend_result(Ok(()), "shielded transfer").code,
             PlatformWalletFFIResultCode::Success
         );
+    }
+
+    #[test]
+    fn should_map_shielded_identity_debit_pending_without_claiming_submission() {
+        let error = PlatformWalletError::ShieldedIdentityDebitPending {
+            identity_id: [7; 32],
+        };
+        let rendered = error.to_string();
+        let result = map_spend_result(Err(error), "shielded shield from identity");
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedIdentityDebitPending
+        );
+        assert_eq!(message_of(&result), rendered);
+        assert!(message_of(&result).contains("this request was not started"));
     }
 
     /// A key-unavailable signer completion preserved under `Sdk` by the wallet

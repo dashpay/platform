@@ -217,6 +217,23 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    func testShouldPreserveShieldedIdentityDebitPendingFFIResult() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_DEBIT_PENDING
+        )
+        XCTAssertEqual(code, .errorShieldedIdentityDebitPending)
+        XCTAssertEqual(code.rawValue, 55)
+
+        let rendered = "Identity has an unresolved shielded debit; "
+            + "this request was not started. Wait for shielded sync"
+        let error = PlatformWalletError(code: code, message: rendered)
+        guard case .shieldedIdentityDebitPending(let message) = error else {
+            return XCTFail("expected typed shieldedIdentityDebitPending error")
+        }
+        XCTAssertEqual(message, rendered)
+        XCTAssertEqual(error.errorDescription, rendered)
+    }
+
     func testShieldedInsufficientBalanceFFIResultMapping() {
         XCTAssertEqual(
             PlatformWalletResultCode(

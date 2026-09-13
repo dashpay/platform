@@ -854,6 +854,11 @@ pub enum PlatformWalletError {
         reason: String,
     },
 
+    /// A previous identity-funded shield is unresolved. This new call did not
+    /// build or broadcast a transaction; wait for the original payment's sync.
+    #[error("Identity {} has an unresolved shielded debit; this request was not started. Wait for shielded sync", hex::encode(identity_id))]
+    ShieldedIdentityDebitPending { identity_id: [u8; 32] },
+
     /// A shielded transition (`operation` is `"shield"`, `"unshield"`, `"transfer"` or
     /// `"withdraw"`) was **broadcast and accepted by the relay**, but the SDK could not confirm
     /// its execution result (the result-proof fetch/verify failed — e.g. a transient DAPI/proof
@@ -868,7 +873,7 @@ pub enum PlatformWalletError {
     /// The identity-create sibling is [`Self::ShieldedBroadcastUnconfirmed`], which additionally
     /// carries the derived identity id so the caller can hold the registration slot.
     #[error(
-        "Shielded {operation} broadcast succeeded but its execution result could not be \
+        "Shielded {operation} was submitted but its execution result could not be \
          confirmed; it may already be executed on chain — do not re-submit \
          (the next sync reconciles the outcome): {reason}"
     )]

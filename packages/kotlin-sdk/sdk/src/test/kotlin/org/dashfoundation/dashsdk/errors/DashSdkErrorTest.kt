@@ -32,6 +32,19 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun shouldPreserveShieldedIdentityDebitPendingWithoutClaimingSubmission() {
+        val message = "Identity has an unresolved shielded debit; " +
+            "this request was not started. Wait for shielded sync"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 55, message)
+        val mapped = DashSdkError.fromNative(native)
+
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedIdentityDebitPending)
+        assertEquals(message, mapped.message)
+        assertEquals(native, mapped.cause)
+        assertFalse("wait for the earlier debit to reconcile before retrying", mapped.isRetryable)
+    }
+
+    @Test
     fun unknownNativeCodesFallBackToInternalError() {
         // A code in the rs-sdk-ffi range (< the platform-wallet offset) with
         // no dedicated mapping stays an InternalError.

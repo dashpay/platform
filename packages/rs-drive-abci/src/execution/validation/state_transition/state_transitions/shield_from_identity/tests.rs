@@ -414,7 +414,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_check_tx_validates_full_metered_fee_before_proof() {
+    async fn should_reject_below_admission_floor_before_metering_or_proof() {
         let platform_version = PlatformVersion::latest();
         let mut platform = setup_platform();
         let mut rng = StdRng::seed_from_u64(31);
@@ -464,7 +464,11 @@ mod tests {
             [ConsensusError::StateError(
                 StateError::IdentityInsufficientBalanceError(_)
             )],
-            "the metered fee gate must reject before the dummy Orchard proof is verified"
+            "the admission floor must reject before the dummy Orchard proof is verified"
+        );
+        assert!(
+            result.data.expect("check tx result").fee_result.is_none(),
+            "the early floor rejects before execution-event fee estimation"
         );
     }
 
@@ -876,6 +880,52 @@ mod tests {
             platform_version,
         )
         .await;
+
+        let raw = st.serialize_to_bytes().expect("serialize");
+        {
+            let state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            let first = platform
+                .check_tx(
+                    &raw,
+                    CheckTxLevel::FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("first admission");
+            assert!(
+                first.is_valid(),
+                "valid proof must be admitted: {:?}",
+                first.errors
+            );
+            let occupied = platform
+                .check_tx_proof_verifier
+                .try_acquire(usize::MAX)
+                .unwrap();
+            let retry = platform
+                .check_tx(
+                    &raw,
+                    CheckTxLevel::FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("identical retry after eviction");
+            assert!(
+                retry.is_valid(),
+                "verified retry must bypass proof capacity: {:?}",
+                retry.errors
+            );
+            assert!(
+                retry.data.unwrap().fee_result.is_some(),
+                "cached proof must not skip current fee validation"
+            );
+            drop(occupied);
+        }
 
         // CheckTx must never mutate committed state for this transition type.
         {
