@@ -5724,6 +5724,10 @@ mod tests {
             #[tokio::test]
             async fn test_non_proved_prefunded_specialized_balance_request_after_many_votes() {
                 let platform_version = PlatformVersion::latest();
+                let vote_fees = &platform_version.fee_version.vote_resolution_fund_fees;
+                let contribution =
+                    vote_fees.contested_document_vote_resolution_fund_required_amount;
+                let vote_cost = vote_fees.contested_document_single_vote_cost;
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
                     .build_with_mock_rpc()
@@ -5748,7 +5752,7 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(start_balance, dash_to_credits!(0.4));
+                assert_eq!(start_balance, 2 * contribution);
 
                 let (_contender_3, _contender_4, _) = create_dpns_identity_name_contest(
                     &mut platform,
@@ -5767,7 +5771,7 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(start_balance_after_more_contenders, dash_to_credits!(0.8));
+                assert_eq!(start_balance_after_more_contenders, 4 * contribution);
 
                 for i in 0..50 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
@@ -5799,7 +5803,7 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(balance_after_50_votes, dash_to_credits!(0.795));
+                assert_eq!(balance_after_50_votes, 4 * contribution - 50 * vote_cost);
 
                 for i in 0..5 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
@@ -5831,12 +5835,16 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(balance_after_55_votes, dash_to_credits!(0.7945));
+                assert_eq!(balance_after_55_votes, 4 * contribution - 55 * vote_cost);
             }
 
             #[tokio::test]
             async fn test_proved_prefunded_specialized_balance_request_after_many_votes() {
                 let platform_version = PlatformVersion::latest();
+                let vote_fees = &platform_version.fee_version.vote_resolution_fund_fees;
+                let contribution =
+                    vote_fees.contested_document_vote_resolution_fund_required_amount;
+                let vote_cost = vote_fees.contested_document_single_vote_cost;
                 let mut platform = TestPlatformBuilder::new()
                     .with_latest_protocol_version()
                     .build_with_mock_rpc()
@@ -5861,7 +5869,7 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(start_balance, dash_to_credits!(0.4));
+                assert_eq!(start_balance, 2 * contribution);
 
                 let (_contender_3, _contender_4, _) = create_dpns_identity_name_contest(
                     &mut platform,
@@ -5880,7 +5888,7 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(start_balance_after_more_contenders, dash_to_credits!(0.8));
+                assert_eq!(start_balance_after_more_contenders, 4 * contribution);
 
                 for i in 0..50 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
@@ -5912,7 +5920,7 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(balance_after_50_votes, dash_to_credits!(0.795));
+                assert_eq!(balance_after_50_votes, 4 * contribution - 50 * vote_cost);
 
                 for i in 0..5 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
@@ -5944,7 +5952,7 @@ mod tests {
                     platform_version,
                 );
 
-                assert_eq!(balance_after_55_votes, dash_to_credits!(0.7945));
+                assert_eq!(balance_after_55_votes, 4 * contribution - 55 * vote_cost);
             }
         }
 

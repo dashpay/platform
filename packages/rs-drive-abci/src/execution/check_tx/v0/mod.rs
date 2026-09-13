@@ -1,6 +1,10 @@
 use crate::error::Error;
 use crate::execution::check_tx::{CheckTxLevel, CheckTxResult};
 use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
+use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
+    StateTransitionHasShieldedProofValidationV0, StateTransitionShieldedProofValidationV0,
+};
+use crate::platform_types::check_tx_proof_verifier::IdentityProofVerification;
 
 #[cfg(test)]
 use crate::platform_types::event_execution_result::EventExecutionResult;
@@ -157,7 +161,7 @@ where
 
         let validation_result = state_transition_to_execution_event_for_check_tx(
             platform_ref,
-            state_transition,
+            &state_transition,
             check_tx_level,
             &self.check_tx_proof_verifier,
             platform_version,
@@ -185,9 +189,47 @@ where
                 platform_ref.state.previous_fee_versions(),
             )?;
 
-            let (estimated_fee_result, errors) = validation_result.into_data_and_errors()?;
+            let (estimated_fee_result, mut errors) = validation_result.into_data_and_errors()?;
 
             check_tx_result.fee_result = Some(estimated_fee_result);
+
+            // Orchard verification is intentionally last.
+            // The preliminary balance floor includes an identity-write allowance;
+            // the execution-event fee check remains the authoritative check
+            // against actual metered writes before expensive proof work.
+            if errors.is_empty() && matches!(check_tx_level, CheckTxLevel::FirstTimeCheck) {
+                if let Some((identity_id, nonce)) =
+                    state_transition.shielded_proof_identity_nonce_admission_key()
+                {
+                    let committed_nonce = platform_ref.drive.fetch_identity_nonce(
+                        identity_id,
+                        true,
+                        None,
+                        platform_version,
+                    )?;
+                    let verification = self
+                        .check_tx_proof_verifier
+                        .try_acquire_identity_nonce(
+                            identity_id,
+                            committed_nonce,
+                            nonce,
+                            hash_single(raw_tx),
+                            state_transition.shielded_proof_action_count(),
+                            platform_version.protocol_version,
+                        )
+                        .ok_or(Error::Execution(
+                            ExecutionError::CheckTxProofVerificationBusy,
+                        ))?;
+                    if let IdentityProofVerification::Required(permit) = verification {
+                        let proof_result =
+                            state_transition.validate_shielded_proof(platform_version)?;
+                        if proof_result.is_valid() {
+                            permit.mark_verified();
+                        }
+                        errors.extend(proof_result.errors);
+                    }
+                }
+            }
 
             Ok(ValidationResult::new_with_data_and_errors(
                 check_tx_result,

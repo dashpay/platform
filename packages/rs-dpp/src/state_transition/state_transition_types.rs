@@ -42,6 +42,8 @@ pub enum StateTransitionType {
     ShieldFromAssetLock = 18,
     ShieldedWithdrawal = 19,
     IdentityCreateFromShieldedPool = 20,
+    ShieldFromIdentity = 21,
+    IdentityTopUpFromShieldedPool = 22,
 }
 
 impl std::fmt::Display for StateTransitionType {
@@ -124,6 +126,14 @@ mod tests {
                 StateTransitionType::IdentityCreateFromShieldedPool,
                 "IdentityCreateFromShieldedPool",
             ),
+            (
+                StateTransitionType::ShieldFromIdentity,
+                "ShieldFromIdentity",
+            ),
+            (
+                StateTransitionType::IdentityTopUpFromShieldedPool,
+                "IdentityTopUpFromShieldedPool",
+            ),
         ];
         for (variant, expected) in cases {
             assert_eq!(
@@ -159,6 +169,8 @@ mod tests {
             (18, StateTransitionType::ShieldFromAssetLock),
             (19, StateTransitionType::ShieldedWithdrawal),
             (20, StateTransitionType::IdentityCreateFromShieldedPool),
+            (21, StateTransitionType::ShieldFromIdentity),
+            (22, StateTransitionType::IdentityTopUpFromShieldedPool),
         ];
         for (val, expected) in pairs {
             let result = StateTransitionType::try_from(val).unwrap();
@@ -168,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_try_from_u8_invalid() {
-        assert!(StateTransitionType::try_from(21u8).is_err());
+        assert!(StateTransitionType::try_from(23u8).is_err());
         assert!(StateTransitionType::try_from(255u8).is_err());
     }
 
@@ -196,6 +208,8 @@ mod tests {
             StateTransitionType::ShieldFromAssetLock,
             StateTransitionType::ShieldedWithdrawal,
             StateTransitionType::IdentityCreateFromShieldedPool,
+            StateTransitionType::ShieldFromIdentity,
+            StateTransitionType::IdentityTopUpFromShieldedPool,
         ];
         for variant in all_variants {
             let val: u8 = variant.into();

@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::supported_grovedb_proof;
 use crate::utils::serialization::document_to_js_value;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
@@ -119,7 +120,7 @@ pub fn verify_start_at_document_in_proof(
 
     let (root_hash, document_option) = query
         .verify_start_at_document_in_proof(
-            &proof_vec,
+            supported_grovedb_proof(&proof_vec, platform_version)?,
             is_proof_subset,
             document_id_bytes,
             platform_version,

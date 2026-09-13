@@ -21,7 +21,7 @@
 //! path proves.
 
 use crate::error::MapGroveDbError;
-use crate::verify::verify_tenderdash_proof;
+use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -63,10 +63,13 @@ pub fn verify_composite_documents_proof(
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, CompositeDocuments), Error> {
     let (root_hash, result) = query
-        .verify_composite_documents_proof(&proof.grovedb_proof, platform_version)
+        .verify_composite_documents_proof(
+            supported_grovedb_proof_bytes(proof, platform_version)?,
+            platform_version,
+        )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
     Ok((
         root_hash,

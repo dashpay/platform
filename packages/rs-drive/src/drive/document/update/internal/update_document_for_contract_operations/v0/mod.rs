@@ -160,7 +160,7 @@ impl Drive {
             .is_document_size()
             || estimated_costs_only_with_layer_info.is_some()
         {
-            return self.add_document_for_contract_operations(
+            return self.add_document_for_contract_operations_without_ttl_drain(
                 document_and_contract_info,
                 true, // we say we should override as this skips an unnecessary check
                 block_info,

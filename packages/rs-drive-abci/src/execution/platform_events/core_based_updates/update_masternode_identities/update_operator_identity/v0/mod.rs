@@ -128,17 +128,17 @@ where
                             }
                         }
                     }
-                    if needs_change_platform_node_id
-                        && old_masternode.state.platform_node_id.is_some()
-                    {
-                        if key.data().as_slice()
-                            == old_masternode.state.platform_node_id.as_ref().unwrap()
+                    if needs_change_platform_node_id {
+                        if let Some(old_platform_node_id) =
+                            old_masternode.state.platform_node_id.as_ref()
                         {
-                            return Some(key_id);
-                        } else if platform_node_id_change.as_ref().unwrap().as_slice()
-                            == key.data().as_slice()
-                        {
-                            old_operator_node_id_to_re_enable = Some(key_id);
+                            if key.data().as_slice() == old_platform_node_id {
+                                return Some(key_id);
+                            } else if platform_node_id_change.as_ref().unwrap().as_slice()
+                                == key.data().as_slice()
+                            {
+                                old_operator_node_id_to_re_enable = Some(key_id);
+                            }
                         }
                     }
                     None

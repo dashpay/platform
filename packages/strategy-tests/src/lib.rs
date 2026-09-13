@@ -2838,7 +2838,7 @@ impl Strategy {
 
                 // If there are contract updates, use the mapping to update their ID and owner ID too
                 if let Some(contract_updates) = contract_updates {
-                    for (_, updated_contract) in contract_updates.iter_mut() {
+                    for updated_contract in contract_updates.values_mut() {
                         let updated_contract_data = updated_contract.data_contract_mut();
                         if let Some(new_updated_id) = id_mapping.get(&updated_contract_data.id()) {
                             updated_contract_data.set_id(*new_updated_id);

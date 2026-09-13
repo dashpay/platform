@@ -23,6 +23,41 @@ use std::collections::BTreeMap;
 
 use super::{CompactedAddressBalanceProof, VerifiedCompactedAddressBalanceChanges};
 
+/// Reject a nested GroveDB proof envelope older than the floor the protocol
+/// version sets in `SystemLimits::minimum_grovedb_proof_envelope_version`.
+fn require_supported_grovedb_proof(
+    proof: &[u8],
+    label: &'static str,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    let config = bincode::config::standard()
+        .with_big_endian()
+        .with_limit::<16>();
+    let (version, _): (u32, usize) =
+        bincode::decode_from_slice(proof, config).map_err(|error| {
+            Error::Proof(ProofError::InvalidGroveDBProofEnvelope {
+                proof: label,
+                reason: error.to_string(),
+            })
+        })?;
+
+    let minimum = platform_version
+        .system_limits
+        .minimum_grovedb_proof_envelope_version;
+    if version < minimum {
+        return Err(Error::Proof(
+            ProofError::UnsupportedGroveDBProofEnvelopeVersion {
+                proof: label,
+                version,
+                minimum,
+                protocol_version: platform_version.protocol_version,
+            },
+        ));
+    }
+
+    Ok(())
+}
+
 impl Drive {
     /// Verifies compacted address balance changes proof.
     ///
@@ -57,6 +92,17 @@ impl Drive {
                 "compacted address balance proof contains trailing bytes".to_string(),
             )));
         }
+
+        require_supported_grovedb_proof(
+            &proof_envelope.predecessor_proof,
+            "predecessor proof",
+            platform_version,
+        )?;
+        require_supported_grovedb_proof(
+            &proof_envelope.forward_proof,
+            "forward proof",
+            platform_version,
+        )?;
 
         let path = vec![
             vec![RootTree::SavedBlockTransactions as u8],
@@ -281,6 +327,61 @@ mod tests {
                 .any(|(start, end, _)| *start <= interior_height && interior_height <= *end),
             "the compacted range containing the requested height must be returned"
         );
+    }
+
+    #[test]
+    fn rejects_v0_envelope_in_either_compacted_proof_half() {
+        let (drive, max_blocks) = setup_drive_with_compacted_ranges();
+        let platform_version = PlatformVersion::latest();
+        let start_block_height = max_blocks / 2;
+        let proof = drive
+            .prove_compacted_address_balance_changes(
+                start_block_height,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("should prove compacted ranges");
+        let config = bincode::config::standard().with_big_endian();
+
+        for predecessor in [true, false] {
+            let (mut envelope, _): (CompactedAddressBalanceProof, usize) =
+                bincode::decode_from_slice(&proof, config).expect("decode compacted envelope");
+            let nested_proof = if predecessor {
+                &mut envelope.predecessor_proof
+            } else {
+                &mut envelope.forward_proof
+            };
+            assert_eq!(nested_proof.first(), Some(&1), "fixture should use V1");
+            nested_proof[0] = 0;
+            let tampered = bincode::encode_to_vec(envelope, config)
+                .expect("encode tampered compacted envelope");
+
+            let error = Drive::verify_compacted_address_balance_changes(
+                &tampered,
+                start_block_height,
+                None,
+                platform_version,
+            )
+            .expect_err("V0 nested proof must be rejected");
+            let expected_proof = if predecessor {
+                "predecessor proof"
+            } else {
+                "forward proof"
+            };
+            assert!(
+                matches!(
+                    &error,
+                    Error::Proof(ProofError::UnsupportedGroveDBProofEnvelopeVersion {
+                        proof,
+                        version: 0,
+                        minimum: 1,
+                        ..
+                    }) if *proof == expected_proof
+                ),
+                "unexpected error: {error}"
+            );
+        }
     }
 
     #[test]

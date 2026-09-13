@@ -1,8 +1,21 @@
 use crate::version::system_limits::SystemLimits;
 
-/// System limits for protocol version 14 and above.
+/// System limits for protocol version 14 and above. Relative to the last
+/// released table (V3) this changes the withdrawal limit, adds the
+/// time-range overlap-factor cap, adds the time-range TTL pair, and raises
+/// the GroveDB proof envelope floor (the TTL and floor fields joined this
+/// still-unreleased table in place rather than spawning a new version):
 ///
-/// Identical to [`super::v3::SYSTEM_LIMITS_V3`] except for two changes:
+/// * `max_time_range_ttl_seconds` is set to one week: the ceiling on the
+///   `ttl` a `timeRange` index transform may declare. The cap is what makes
+///   the ephemeral-bytes fee model safe — a flat processing rate is only an
+///   honest price for transitional storage while the lifetime it covers is
+///   bounded. See `book/src/drive/time-range-ttl.md`.
+/// * `min_time_range_ttl_drop_operations_per_write` is set to 32. Drive
+///   raises this floor according to the merged grid's tree structure and
+///   overlap, so cleanup can retire trees faster than writes create them.
+///
+/// The withdrawal and overlap-factor changes:
 ///
 /// * The daily withdrawal limit becomes relative: `daily_withdrawal_limit_percent` is set to 15,
 ///   so Platform pools at most 15% of the total credits it held a day ago into asset unlock
@@ -14,6 +27,9 @@ use crate::version::system_limits::SystemLimits;
 ///   24 overlapping windows per timestamp (a day-long window sliding hourly). The rule cannot
 ///   exist before v14 because the `timeRange` keyword itself is only admitted by the v14
 ///   document meta-schema.
+/// * `minimum_grovedb_proof_envelope_version` becomes 1: clients verifying with v14 reject
+///   the legacy GroveDB V0 proof envelope, whose item binding leaves returned item bytes
+///   unauthenticated. Every live network has emitted V1 envelopes since v13.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -41,4 +57,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
     max_time_range_overlap_factor: Some(24),
+    max_time_range_ttl_seconds: Some(604_800), // one week
+    min_time_range_ttl_drop_operations_per_write: Some(32),
+    minimum_grovedb_proof_envelope_version: 1, // clients reject legacy V0 GroveDB proof envelopes from v14
 };
