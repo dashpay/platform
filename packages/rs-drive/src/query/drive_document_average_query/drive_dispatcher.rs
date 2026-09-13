@@ -2029,6 +2029,7 @@ mod tests {
                     range_seconds: 21_600,
                     step_seconds: 7_200,
                     phase_seconds: 0,
+                    ttl_seconds: None,
                 },
             }],
         };

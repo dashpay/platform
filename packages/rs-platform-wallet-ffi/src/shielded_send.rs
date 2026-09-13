@@ -45,14 +45,19 @@ use std::os::raw::c_char;
 use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
 use dpp::shielded::{
-    compute_minimum_shielded_fee, compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
-    ShieldedMemo,
+    compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
+    compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
+    compute_shielded_withdrawal_fee, ShieldedMemo,
 };
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::ProtocolError;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
 use platform_wallet::PlatformWalletError;
-use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
+use rs_sdk_ffi::{
+    MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner,
+    DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX,
+};
 
 use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
@@ -60,7 +65,9 @@ use crate::error::*;
 use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::{block_on_worker, runtime};
-use crate::shielded_types::ShieldedShieldPreflightFFI;
+use crate::shielded_types::{ShieldedIdentityDebitRecoveryRecordFFI, ShieldedShieldPreflightFFI};
+use crate::types::read_identifier;
+use crate::unwrap_result_or_return;
 
 /// A serialized `PlatformAddress` is exactly 21 bytes (1-byte variant tag + 20-byte hash).
 const PLATFORM_ADDRESS_LEN: usize = 21;
@@ -170,6 +177,8 @@ fn shielded_fee_formula(
         0 => Some(compute_minimum_shielded_fee),
         1 => Some(compute_shielded_unshield_fee),
         2 => Some(compute_shielded_withdrawal_fee),
+        3 => Some(compute_shielded_identity_balance_write_fee),
+        4 => Some(compute_shielded_identity_top_up_fee),
         _ => None,
     }
 }
@@ -184,7 +193,13 @@ fn shielded_fee_formula(
 /// - `1` → Unshield (`compute_shielded_unshield_fee` — base + the flat
 ///   `AddBalanceToAddress` output-write cost),
 /// - `2` → ShieldedWithdrawal (`compute_shielded_withdrawal_fee` — base +
-///   the flat Core withdrawal-document cost).
+///   the flat Core withdrawal-document cost),
+/// - `3` → ShieldFromIdentity (`compute_shielded_identity_balance_write_fee`:
+///   the conservative complete-fee floor, compute + note storage allowance +
+///   identity write allowance, that consensus requires the identity to hold on
+///   top of the amount; the exact fee is metered at execution),
+/// - `4` → IdentityTopUpFromShieldedPool (`compute_shielded_identity_top_up_fee`:
+///   base + the flat identity-balance write cost, carved from the value balance).
 ///
 /// `num_actions` is the Orchard action count of the bundle the host will
 /// build (a single-note spend with change is 2 actions). The fee is
@@ -216,7 +231,7 @@ pub unsafe extern "C" fn platform_wallet_shielded_estimate_fee(
     let Some(formula) = shielded_fee_formula(kind) else {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            format!("unknown shielded fee kind {kind} (expected 0/1/2)"),
+            format!("unknown shielded fee kind {kind} (expected 0/1/2/3/4)"),
         );
     };
     let Some(platform_version) =
@@ -598,6 +613,12 @@ fn map_spend_result(
                 e.to_string(),
             )
         }
+        // An earlier identity debit is unresolved; this request was never
+        // built or broadcast. Preserve that distinction from an unconfirmed
+        // submission so hosts can wait for the original payment's sync.
+        Err(e @ PlatformWalletError::ShieldedIdentityDebitPending { .. })
+        | Err(e @ PlatformWalletError::ShieldedRecoveryCorrupted { .. })
+        | Err(e @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. }) => e.into(),
         // Retryable: the wallet couldn't build the spend against any
         // Platform-recorded anchor yet (its commitment tree is mid-block after
         // an index-chunk sync). Nothing was broadcast and the notes were
@@ -631,11 +652,32 @@ fn map_spend_result(
                 format!("{operation} failed: {e}"),
             )
         }
+        // A structured key-unavailable signer completion that the wallet layer
+        // preserved verbatim under `Sdk` (`preserve_signer_key_unavailable_or`,
+        // reached by the identity-signed shield from identity). Restore code 31
+        // here as the blanket `From` conversion does, so hosts route to key
+        // repair instead of reading a generic wallet failure. Structural
+        // position-0 check only, never a substring sniff of the rendering.
+        Err(e) if is_preserved_signer_key_unavailable(&e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable,
+            format!("{operation} failed: {e}"),
+        ),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
         ),
     }
+}
+
+/// True when `error` is a key-unavailable signer completion the wallet layer
+/// preserved under `Sdk`: the reserved marker at position 0 of a
+/// `ProtocolError::Generic` payload (never a substring of the rendering).
+fn is_preserved_signer_key_unavailable(error: &PlatformWalletError) -> bool {
+    matches!(
+        error,
+        PlatformWalletError::Sdk(dash_sdk::Error::Protocol(ProtocolError::Generic(s)))
+            if s.starts_with(DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX)
+    )
 }
 
 /// Render a caught panic payload as a human-readable string.
@@ -1158,6 +1200,182 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
             .await
     });
     map_spend_result(result, "shielded shield")
+}
+
+/// Shield credits from one of the wallet's Platform identities straight into
+/// the wallet's shielded pool: the Type 21 `ShieldFromIdentity` transition.
+/// The note lands on `shielded_account`'s default Orchard address; the identity
+/// is debited `amount` plus the metered fee plus the shielded compute fee.
+///
+/// `identity_id` is the 32-byte identity id; the identity must be managed by
+/// this wallet. `signer_identity_handle` is a `*const SignerHandle` produced by
+/// `dash_sdk_signer_create_with_ctx` that can sign with the identity's TRANSFER
+/// key (the same handle credit transfers use). The caller retains ownership.
+///
+/// `out_new_balance`, when non-null, receives the identity's proven
+/// post-debit balance; the wallet's managed identity is updated and persisted
+/// with it before this returns. The activity row stays pending until the
+/// shielded scan observes the note on-chain. A result proof that is not this
+/// identity's balance proof, or a failure verdict the proven identity nonce
+/// cannot rule out, is reported as `ErrorShieldedSpendUnconfirmed` (the
+/// transition may have executed; do not resubmit, the next sync reconciles).
+///
+/// A signer that reports the TRANSFER key unavailable surfaces as code 31
+/// (`ErrorSigningKeyUnavailable`), the same key-repair signal the other
+/// identity-signed operations use.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `identity_id` must point to 32 readable bytes.
+/// - `signer_identity_handle` must be a valid, non-destroyed `*const SignerHandle`
+///   that outlives this call and points at a `VTableSigner` with the callback
+///   variant.
+/// - `out_new_balance` must be null or point to writable `u64` storage.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    shielded_account: u32,
+    identity_id: *const u8,
+    amount: u64,
+    signer_identity_handle: *const SignerHandle,
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(identity_id);
+    check_ptr!(signer_identity_handle);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let identity_id = unwrap_result_or_return!(read_identifier(identity_id));
+
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+
+    // Same pointer round-trip as `platform_wallet_manager_shielded_shield`: the
+    // borrow is re-materialized inside the synchronously-awaited worker task.
+    let signer_addr = signer_identity_handle as usize;
+
+    let result = block_on_worker(async move {
+        // SAFETY: valid for the duration of this synchronously-awaited task per
+        // the caller's documented lifetime contract.
+        let identity_signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+        let prover = CachedOrchardProver::new();
+        wallet
+            .shielded_shield_from_identity(
+                &coordinator,
+                shielded_account,
+                &identity_id,
+                amount,
+                identity_signer,
+                &prover,
+            )
+            .await
+    });
+    match result {
+        Ok(new_balance) => {
+            if !out_new_balance.is_null() {
+                *out_new_balance = new_balance;
+            }
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => map_spend_result(Err(e), "shielded shield from identity"),
+    }
+}
+
+/// Top up an existing Platform identity's balance from the wallet's shielded
+/// notes: the Type 22 `IdentityTopUpFromShieldedPool` transition. The identity
+/// receives `amount`; the flat pool-paid fee (`platform_wallet_shielded_estimate_fee`
+/// kind 4) is spent from the notes on top. The identity only has to exist on
+/// Platform; it does not have to be managed by this wallet.
+///
+/// `identity_id` is the 32-byte identity id. `mnemonic_resolver_handle`
+/// supplies the transient spend authority exactly as for
+/// `platform_wallet_manager_shielded_unshield`.
+///
+/// # Safety
+/// - `wallet_id_bytes` and `identity_id` must each point to 32 readable bytes.
+/// - `mnemonic_resolver_handle` must be a valid, non-destroyed handle.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_top_up_from_pool(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    identity_id: *const u8,
+    amount: u64,
+) -> PlatformWalletFFIResult {
+    // The whole body runs under `catch_unwind`, exactly like the shield-to-recipient
+    // export: `block_on_worker` re-panics on a panicking proving task, and a panic
+    // must not reach this `extern "C"` frame, where it would abort the host process.
+    // Notes may already be reserved and the transition may already be broadcast when
+    // the panic strikes, so the ambiguous spend-unconfirmed contract applies.
+    catch_spend_panic("shielded identity top up from pool", || {
+        shielded_identity_top_up_from_pool_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            identity_id,
+            amount,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_identity_top_up_from_pool`], as an ordinary
+/// Rust function so a panic unwinds into [`catch_spend_panic`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn shielded_identity_top_up_from_pool_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    identity_id: *const u8,
+    amount: u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
+    check_ptr!(identity_id);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let identity_id = unwrap_result_or_return!(read_identifier(identity_id));
+
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+
+    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+    ) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
+
+    let result = block_on_worker(async move {
+        let prover = CachedOrchardProver::new();
+        let r = wallet
+            .shielded_identity_top_up_from_pool(
+                &coordinator,
+                seed.as_ref(),
+                account,
+                &identity_id,
+                amount,
+                &prover,
+            )
+            .await;
+        poke_sync_on_unconfirmed(&r, handle);
+        // The proof-attested balance is applied to a managed identity inside the
+        // wallet; this export reports only the outcome.
+        r.map(|_| ())
+    });
+    map_spend_result(result, "shielded identity top up from pool")
 }
 
 /// Shield: spend credits from a Platform Payment account into a
@@ -1882,6 +2100,117 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_seed_pool_notes(
     }
 }
 
+/// List active and archived durable identity-funded shield recovery records.
+/// The manager must own `wallet_id_bytes`. Unreadable records still expose their
+/// account/activity scope, with absent identity, nonce and amount fields.
+///
+/// On success the caller owns `out_records` and must free it exactly once with
+/// `platform_wallet_shielded_identity_debit_recovery_records_free`, passing the
+/// returned count. Empty results and all errors initialize the outputs to
+/// null/zero. No keys or signed transaction bytes cross this boundary.
+///
+/// # Safety
+/// `wallet_id_bytes` must address 32 readable bytes. Both output pointers must
+/// be writable and must not alias any input or each other.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_debit_recovery_records(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    out_records: *mut *mut ShieldedIdentityDebitRecoveryRecordFFI,
+    out_count: *mut usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_records);
+    check_ptr!(out_count);
+    *out_records = std::ptr::null_mut();
+    *out_count = 0;
+    check_ptr!(wallet_id_bytes);
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let (_wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let result =
+        block_on_worker(
+            async move { coordinator.identity_debit_recovery_records(wallet_id).await },
+        );
+    match result {
+        Ok(records) => {
+            let records: Box<[ShieldedIdentityDebitRecoveryRecordFFI]> =
+                records.into_iter().map(Into::into).collect();
+            if !records.is_empty() {
+                *out_count = records.len();
+                *out_records = Box::into_raw(records).cast();
+            }
+            PlatformWalletFFIResult::ok()
+        }
+        Err(error) => error.into(),
+    }
+}
+
+/// Free a recovery-record list returned by its list function. Null is a no-op.
+///
+/// # Safety
+/// `records` and `count` must be the original returned pointer/count pair,
+/// not previously freed. No borrowed row pointer may be used after this call.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_shielded_identity_debit_recovery_records_free(
+    records: *mut ShieldedIdentityDebitRecoveryRecordFFI,
+    count: usize,
+) {
+    if !records.is_null() {
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            records, count,
+        )));
+    }
+}
+
+/// Explicitly abandon automatic retry of the exact identity debit selected by
+/// `(wallet_id_bytes, account_index, activity_id_bytes)`. Durably archives its
+/// complete signed recovery record for later scan confirmation and audit, and
+/// leaves its activity outcome Unknown, never Failed. Releases the guard against
+/// a new identity debit only after durable archival succeeds.
+///
+/// This DOES NOT cancel any already relayed or in-flight payment. A new payment
+/// may cause an additional debit even when the old nonce is still usable.
+/// `acknowledge_possible_execution` is mandatory and must be true; false is an
+/// invalid parameter. The caller must obtain the user's informed acknowledgement.
+///
+/// # Safety
+/// Both id pointers must address 32 readable bytes for the duration of this call.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_abandon_shielded_identity_debit(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    account_index: u32,
+    activity_id_bytes: *const u8,
+    acknowledge_possible_execution: bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(activity_id_bytes);
+    let mut wallet_id = [0u8; 32];
+    let mut activity_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    std::ptr::copy_nonoverlapping(activity_id_bytes, activity_id.as_mut_ptr(), 32);
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    match block_on_worker(async move {
+        wallet
+            .abandon_shielded_identity_debit(
+                &coordinator,
+                account_index,
+                activity_id,
+                acknowledge_possible_execution,
+            )
+            .await
+    }) {
+        Ok(()) => PlatformWalletFFIResult::ok(),
+        Err(error) => error.into(),
+    }
+}
+
 /// Resolve a wallet without requiring shielded coordinator configuration.
 ///
 /// Cached capacity preflight needs only the wallet's Platform Payment account;
@@ -1955,7 +2284,14 @@ fn resolve_wallet_and_coordinator(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event_handler::EventHandlerCallbacks;
+    use crate::manager::{platform_wallet_manager_create, platform_wallet_manager_destroy};
+    use crate::persistence::PersistenceCallbacks;
+    use crate::shielded_sync::platform_wallet_manager_configure_shielded;
     use dpp::shielded::MEMO_PAYLOAD_SIZE;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use platform_wallet::wallet::shielded::store::PendingRedrive;
+    use platform_wallet::wallet::shielded::{FileBackedShieldedStore, ShieldedStore, SubwalletId};
 
     #[test]
     fn encode_memo_text_none_is_empty() {
@@ -1981,6 +2317,245 @@ mod tests {
             ShieldedMemo::from_bytes(&bytes),
             ShieldedMemo::Text("thanks for lunch".to_string())
         );
+    }
+
+    fn recovery_test_manager() -> Handle {
+        unsafe extern "C" fn begin(_: *mut std::ffi::c_void, _: *const u8) -> i32 {
+            0
+        }
+        unsafe extern "C" fn end(_: *mut std::ffi::c_void, _: *const u8, _: bool) -> i32 {
+            0
+        }
+        let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let persistence = PersistenceCallbacks {
+            on_changeset_begin_fn: Some(begin),
+            on_changeset_end_fn: Some(end),
+            ..Default::default()
+        };
+        let events = EventHandlerCallbacks {
+            context: std::ptr::null_mut(),
+            on_wallet_event_fn: None,
+            on_error_fn: None,
+            on_platform_address_sync_completed_fn: None,
+            on_shielded_sync_completed_fn: None,
+            on_shielded_sync_progress_fn: None,
+            on_shielded_tree_progress_fn: None,
+            release_fn: None,
+        };
+        let mut handle = NULL_HANDLE;
+        let created = unsafe {
+            platform_wallet_manager_create(
+                &sdk as *const dash_sdk::Sdk as *const std::ffi::c_void,
+                &persistence,
+                &events,
+                &mut handle,
+            )
+        };
+        assert_eq!(created.code, PlatformWalletFFIResultCode::Success);
+        handle
+    }
+
+    #[test]
+    fn should_preserve_corrupt_durable_recovery_error_through_exported_configure() {
+        let handle = recovery_test_manager();
+        let path = std::env::temp_dir().join(format!(
+            "shielded-ffi-corrupt-recovery-{}-{handle}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&path).expect("temporary store directory");
+        let db_path = path.join("tree.sqlite");
+        let mut store = FileBackedShieldedStore::open_path(&db_path, 100).expect("create store");
+        // Persist contradictory metadata through the store's public write API:
+        // an identity-abandonment flag cannot describe a note-spend reservation.
+        // Reopening must reject this row rather than discard its recovery guard.
+        store
+            .arm_redrive(
+                SubwalletId::new([7; 32], 9),
+                PendingRedrive {
+                    activity_id: [8; 32],
+                    anchor: [9; 32],
+                    nullifiers: vec![[10; 32]],
+                    st_bytes: vec![11; 32],
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: true,
+                },
+            )
+            .expect("seed malformed durable metadata");
+        drop(store);
+        let db_path_c = std::ffi::CString::new(db_path.to_str().expect("temporary path UTF-8"))
+            .expect("temporary path without NUL");
+        let result =
+            unsafe { platform_wallet_manager_configure_shielded(handle, db_path_c.as_ptr()) };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedRecoveryCorrupted
+        );
+        let message = unsafe { CStr::from_ptr(result.message) }.to_str().unwrap();
+        assert!(
+            message.contains("identity recovery flags on a note-spend record"),
+            "{message}"
+        );
+        assert_eq!(
+            unsafe { platform_wallet_manager_destroy(handle) }.code,
+            PlatformWalletFFIResultCode::Success
+        );
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn should_scope_recovery_calls_to_manager_wallet_and_require_acknowledgement() {
+        let handle = recovery_test_manager();
+        let path = std::env::temp_dir().join(format!(
+            "shielded-ffi-recovery-{}-{handle}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&path).expect("temporary store directory");
+        let wallet_id = PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(handle, |manager| {
+                runtime().block_on(async {
+                    manager
+                        .configure_shielded(path.join("tree.sqlite"))
+                        .await
+                        .expect("configure shielded store");
+                    manager
+                        .create_wallet_from_seed_bytes(
+                            key_wallet::Network::Testnet,
+                            &[7; 64],
+                            WalletAccountCreationOptions::Default,
+                            Some(0),
+                        )
+                        .await
+                        .expect("register wallet")
+                        .wallet_id()
+                })
+            })
+            .expect("live manager");
+        let mut rows = std::ptr::null_mut();
+        let mut count = 0;
+        let listed = unsafe {
+            platform_wallet_manager_shielded_identity_debit_recovery_records(
+                handle,
+                wallet_id.as_ptr(),
+                &mut rows,
+                &mut count,
+            )
+        };
+        assert_eq!(listed.code, PlatformWalletFFIResultCode::Success);
+        assert!(rows.is_null());
+        assert_eq!(count, 0);
+        let activity_id = [9; 32];
+        let unacknowledged = unsafe {
+            platform_wallet_manager_abandon_shielded_identity_debit(
+                handle,
+                wallet_id.as_ptr(),
+                0,
+                activity_id.as_ptr(),
+                false,
+            )
+        };
+        assert_eq!(
+            unacknowledged.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        let other_wallet_id = [8; 32];
+        let wrong_wallet = unsafe {
+            platform_wallet_manager_abandon_shielded_identity_debit(
+                handle,
+                other_wallet_id.as_ptr(),
+                0,
+                activity_id.as_ptr(),
+                true,
+            )
+        };
+        assert_eq!(
+            wrong_wallet.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        let wrong_wallet_list = unsafe {
+            platform_wallet_manager_shielded_identity_debit_recovery_records(
+                handle,
+                other_wallet_id.as_ptr(),
+                &mut rows,
+                &mut count,
+            )
+        };
+        assert_eq!(
+            wrong_wallet_list.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert!(rows.is_null());
+        assert_eq!(count, 0);
+        assert_eq!(
+            unsafe { platform_wallet_manager_destroy(handle) }.code,
+            PlatformWalletFFIResultCode::Success
+        );
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn should_preserve_recovery_errors_through_spend_mapper() {
+        for (error, code) in [
+            (
+                PlatformWalletError::ShieldedRecoveryCorrupted {
+                    account_index: Some(9),
+                    reason: "invalid durable record".into(),
+                },
+                PlatformWalletFFIResultCode::ErrorShieldedRecoveryCorrupted,
+            ),
+            (
+                PlatformWalletError::ShieldedRecoveryKeysRequired {
+                    account_index: 9,
+                    reason: "cannot decrypt with bound keys".into(),
+                },
+                PlatformWalletFFIResultCode::ErrorShieldedRecoveryKeysRequired,
+            ),
+        ] {
+            let message = error.to_string();
+            let result = map_spend_result(Err(error), "shield from identity");
+            assert_eq!(result.code, code);
+            assert_eq!(
+                unsafe { CStr::from_ptr(result.message) }.to_str().unwrap(),
+                message
+            );
+        }
+    }
+
+    #[test]
+    fn should_clear_recovery_list_outputs_on_invalid_handle() {
+        let wallet_id = [7; 32];
+        let mut records = std::ptr::dangling_mut();
+        let mut count = usize::MAX;
+        let result = unsafe {
+            platform_wallet_manager_shielded_identity_debit_recovery_records(
+                NULL_HANDLE,
+                wallet_id.as_ptr(),
+                &mut records,
+                &mut count,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        assert!(records.is_null());
+        assert_eq!(count, 0);
+        unsafe {
+            platform_wallet_shielded_identity_debit_recovery_records_free(records, count);
+        }
+    }
+
+    #[test]
+    fn should_reject_abandonment_without_a_valid_manager() {
+        let wallet_id = [7; 32];
+        let activity_id = [8; 32];
+        let result = unsafe {
+            platform_wallet_manager_abandon_shielded_identity_debit(
+                NULL_HANDLE,
+                wallet_id.as_ptr(),
+                9,
+                activity_id.as_ptr(),
+                true,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
     }
 
     #[test]
@@ -2352,6 +2927,55 @@ mod tests {
         assert_eq!(
             map_spend_result(Ok(()), "shielded transfer").code,
             PlatformWalletFFIResultCode::Success
+        );
+    }
+
+    #[test]
+    fn should_map_shielded_identity_debit_pending_without_claiming_submission() {
+        let error = PlatformWalletError::ShieldedIdentityDebitPending {
+            identity_id: [7; 32],
+        };
+        let rendered = error.to_string();
+        let result = map_spend_result(Err(error), "shielded shield from identity");
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedIdentityDebitPending
+        );
+        assert_eq!(message_of(&result), rendered);
+        assert!(message_of(&result).contains("this request was not started"));
+    }
+
+    /// A key-unavailable signer completion preserved under `Sdk` by the wallet
+    /// layer must keep code 31 through `map_spend_result` (the shield from
+    /// identity path) instead of flattening to `ErrorWalletOperation`; a
+    /// generic protocol error that only mentions the marker mid-string must
+    /// NOT be promoted.
+    #[test]
+    fn map_spend_result_preserves_signing_key_unavailable_code() {
+        let unavailable: Result<(), PlatformWalletError> = Err(PlatformWalletError::Sdk(
+            dash_sdk::Error::Protocol(ProtocolError::Generic(format!(
+                "{DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX}transfer key missing"
+            ))),
+        ));
+        let result = map_spend_result(unavailable, "shielded shield from identity");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+        );
+        assert!(
+            message_of(&result).contains("transfer key missing"),
+            "the signer's rendering must survive into the message"
+        );
+
+        let foreign: Result<(), PlatformWalletError> = Err(PlatformWalletError::Sdk(
+            dash_sdk::Error::Protocol(ProtocolError::Generic(format!(
+                "signer said: {DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX}mid-string"
+            ))),
+        ));
+        assert_eq!(
+            map_spend_result(foreign, "shielded shield from identity").code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
         );
     }
 

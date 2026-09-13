@@ -9,8 +9,21 @@ use dpp::state_transition::data_contract_create_transition::DataContractCreateTr
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
 
 impl BumpIdentityNonceAction {
+    /// from borrowed shield from identity transition (the paid penalty for a failed
+    /// Orchard proof: the identity nonce is consumed and the fees are charged)
+    pub fn from_borrowed_shield_from_identity_transition(
+        value: &ShieldFromIdentityTransition,
+    ) -> Self {
+        match value {
+            ShieldFromIdentityTransition::V0(v0) => {
+                BumpIdentityNonceActionV0::from_borrowed_shield_from_identity(v0).into()
+            }
+        }
+    }
+
     /// from identity update
     pub fn from_identity_update_transition(value: IdentityUpdateTransition) -> Self {
         match value {

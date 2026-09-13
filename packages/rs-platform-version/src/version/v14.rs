@@ -22,7 +22,7 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DR
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
-use crate::version::fee::v2::FEE_VERSION2;
+use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v3::SYSTEM_DATA_CONTRACT_VERSIONS_V3;
 use crate::version::system_limits::v4::SYSTEM_LIMITS_V4;
@@ -212,6 +212,25 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    authenticated root; every live network has emitted V1 envelopes since
 ///    v13 (grove version 3), so no honest response is affected.
 ///
+/// * `ShieldFromIdentity` (state transition type 21) activates:
+///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
+///   `is_allowed`, and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` is the first
+///   table whose `shield_from_identity_state_transition` row enables basic
+///   structure, identity signature, and nonce validation. It moves credits
+///   from an identity balance straight into the shielded pool: the funding
+///   side is identity-signed like `IdentityCreditTransferToAddresses`, the
+///   pool side is an outputs-only Orchard bundle like `Shield`, and the fee
+///   is metered plus the shielded compute fee, paid from the identity.
+///
+/// * `IdentityTopUpFromShieldedPool` (state transition type 22) activates at the
+///   same gate (`IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION = 14`,
+///   `DRIVE_ABCI_VALIDATION_VERSIONS_V10` row). It spends shielded notes like
+///   `Unshield` and credits an EXISTING identity's balance instead of a platform
+///   address: pool-paid flat fee (`compute_shielded_identity_top_up_fee`), no
+///   platform signature, the target identity and gross amount bound into the
+///   Orchard sighash, and no system-credit adjustment (pool and identity balances
+///   are both conservation-equation terms).
+///
 /// The wire surface changes only additively: `GetDocumentsRequestV1`
 /// already carries `selects` / `group_by` / `order_by` / `limit` /
 /// `offset`; the ranked response is an additive `ResultData.ranked`
@@ -247,8 +266,11 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
-    fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + GroveDB proof envelope floor (V1)
+    // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
+    // the shared storage table; it is dead below v14 (the `ttl` grammar
+    // does not parse), so no table fork is needed.
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
@@ -258,6 +280,27 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
 mod tests {
     use super::*;
     use crate::version::v13::PLATFORM_V13;
+
+    #[test]
+    fn should_halve_only_the_contested_document_fee_at_protocol_14() {
+        for protocol_version in 1..14 {
+            let version = PlatformVersion::get(protocol_version).expect("known protocol version");
+            assert_eq!(
+                version
+                    .fee_version
+                    .vote_resolution_fund_fees
+                    .contested_document_vote_resolution_fund_required_amount,
+                20_000_000_000,
+                "protocol {protocol_version} must preserve the 0.2 DASH contribution"
+            );
+        }
+
+        let mut expected_fees = PLATFORM_V13.fee_version.clone();
+        expected_fees
+            .vote_resolution_fund_fees
+            .contested_document_vote_resolution_fund_required_amount = 10_000_000_000;
+        assert_eq!(PLATFORM_V14.fee_version, expected_fees);
+    }
 
     /// The ranked / boolean-HAVING routing gate lives in v14's own query
     /// table, so flipping it touches only v14: a v13 node keeps running
