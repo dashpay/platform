@@ -65,7 +65,7 @@ impl DriveDocumentQuery<'_> {
             .filter_map(|(_path, _key, element)| element)
             .map(|element| element.into_item_bytes().map_err(Error::from))
             .collect::<Result<Vec<Vec<u8>>, Error>>()?;
-        let documents = self.strip_cursor_from_page(documents, platform_version)?;
+        let (documents, _skipped) = self.strip_cursor_from_page(documents, platform_version)?;
         Ok((root_hash, documents))
     }
 }

@@ -459,12 +459,27 @@ fn left_over_page(
     cursor: Option<(Identifier, bool)>,
     prove: bool,
 ) -> Vec<Identifier> {
+    left_over_page_with_offset(fixture, where_clauses, order_by, limit, None, cursor, prove)
+}
+
+fn left_over_page_with_offset(
+    fixture: &LeftOverFixture,
+    where_clauses: serde_json::Value,
+    order_by: serde_json::Value,
+    limit: usize,
+    offset: Option<usize>,
+    cursor: Option<(Identifier, bool)>,
+    prove: bool,
+) -> Vec<Identifier> {
     let platform_version = PlatformVersion::latest();
     let document_type = fixture
         .contract
         .document_type_for_name("row")
         .expect("row type");
     let mut query_value = json!({"where": where_clauses, "orderBy": order_by, "limit": limit});
+    if let Some(offset) = offset {
+        query_value["offset"] = json!(offset);
+    }
     if let Some((id, included)) = cursor {
         query_value[if included { "startAt" } else { "startAfter" }] =
             json!(bs58::encode(id.as_slice()).into_string());
@@ -730,6 +745,49 @@ fn should_fill_a_limit_one_page_after_any_cursor() {
                     got, expected,
                     "b={inner_order}, prove={prove}, position {position}"
                 );
+            }
+        }
+    }
+}
+
+#[test]
+fn should_apply_an_offset_after_the_start_after_cursor() {
+    // A page offset skips rows after the cursor, never the cursor's own
+    // reserved slot: the page must start exactly `offset` rows past the
+    // cursor in both directions, raw and proven.
+    let rows: Vec<[u8; 3]> = vec![[1, 5, 0], [1, 7, 0], [2, 7, 0], [2, 9, 0], [3, 1, 0]];
+    let fixture = setup_left_over_fixture(&[("a", "asc"), ("b", "asc")], false, &rows);
+    for inner_ascending in [true, false] {
+        let inner_order = if inner_ascending { "asc" } else { "desc" };
+        let full = left_over_oracle_rows(&fixture, |_| true, &[(0, true), (1, inner_ascending)]);
+        let matching = left_over_oracle(
+            &fixture,
+            |values| (values[0] == 1 || values[0] == 2) && values[1] > 0,
+            &[(0, true), (1, inner_ascending)],
+        );
+        for prove in [false, true] {
+            for (position, (_, id)) in full.iter().enumerate() {
+                for (offset, limit) in [(1usize, 1usize), (1, 2), (2, 1), (2, 100)] {
+                    let expected: Vec<_> =
+                        left_over_expected_page(&full, &matching, position, false)
+                            .into_iter()
+                            .skip(offset)
+                            .take(limit)
+                            .collect();
+                    let got = left_over_page_with_offset(
+                        &fixture,
+                        json!([["a", "in", [1, 2]], ["b", ">", 0]]),
+                        json!([["a", "asc"], ["b", inner_order]]),
+                        limit,
+                        Some(offset),
+                        Some((*id, false)),
+                        prove,
+                    );
+                    assert_eq!(
+                        got, expected,
+                        "b={inner_order}, prove={prove}, position {position}, offset {offset}, limit {limit}"
+                    );
+                }
             }
         }
     }

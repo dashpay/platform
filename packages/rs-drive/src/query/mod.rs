@@ -2025,7 +2025,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 platform_version,
             )
         }?;
-        self.pad_cursor_page_limit(&mut main_path_query, platform_version);
+        self.pad_cursor_page_limit(&mut main_path_query, platform_version)?;
         if !include_start_at_for_proof {
             return Ok(main_path_query);
         }
@@ -2135,7 +2135,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 platform_version,
             )
         }?;
-        self.pad_cursor_page_limit(&mut path_query, platform_version);
+        self.pad_cursor_page_limit(&mut path_query, platform_version)?;
         Ok(path_query)
     }
 
@@ -2172,36 +2172,55 @@ impl<'a> DriveDocumentQuery<'a> {
 
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Reserves the cursor document's slot on a padded `startAfter` page
-    /// (see [`Self::pads_cursor_page`]).
+    /// (see [`Self::pads_cursor_page`]). A page offset is folded into the
+    /// fetch and applied by [`Self::strip_cursor_from_page`] once the
+    /// cursor document is gone: left to GroveDB, the offset would consume
+    /// the cursor row itself and the page would start one row early.
     fn pad_cursor_page_limit(
         &self,
         path_query: &mut PathQuery,
         platform_version: &PlatformVersion,
-    ) {
-        if self.pads_cursor_page(platform_version) {
-            path_query.query.limit = path_query.query.limit.map(|limit| limit.saturating_add(1));
+    ) -> Result<(), Error> {
+        if !self.pads_cursor_page(platform_version) {
+            return Ok(());
         }
+        let offset = path_query.query.offset.take().unwrap_or(0);
+        if let Some(limit) = path_query.query.limit {
+            let padded = limit
+                .checked_add(1)
+                .and_then(|limit| limit.checked_add(offset))
+                .ok_or_else(|| {
+                    Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                        "limit {limit} and offset {offset} are too large together with a \
+                         startAfter cursor"
+                    )))
+                })?;
+            path_query.query.limit = Some(padded);
+        }
+        Ok(())
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Drops the cursor document from a page produced by a padded
-    /// `startAfter` query (see [`Self::pads_cursor_page`]) and trims the
-    /// page back to the query's limit. When the cursor document matches
-    /// the query it is the page's first row, since the lowering excludes
-    /// everything ordered before it; a cursor outside the query's clauses
-    /// is simply absent and the trim restores the limit.
+    /// `startAfter` query (see [`Self::pads_cursor_page`]), applies the
+    /// query's offset, and trims the page back to the query's limit,
+    /// returning the page with the number of rows the offset skipped.
+    /// When the cursor document matches the query it is the page's first
+    /// row, since the lowering excludes everything ordered before it; a
+    /// cursor outside the query's clauses is simply absent and the trim
+    /// restores the limit.
     pub(crate) fn strip_cursor_from_page(
         &self,
         mut serialized_documents: Vec<Vec<u8>>,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<Vec<u8>>, Error> {
+    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
         use dpp::document::DocumentV0Getters;
         if !self.pads_cursor_page(platform_version) {
-            return Ok(serialized_documents);
+            return Ok((serialized_documents, 0));
         }
         let Some(start_at) = self.start_at else {
-            return Ok(serialized_documents);
+            return Ok((serialized_documents, 0));
         };
         if let Some(first) = serialized_documents.first() {
             let document = Document::from_bytes(first, self.document_type, platform_version)?;
@@ -2209,10 +2228,12 @@ impl<'a> DriveDocumentQuery<'a> {
                 serialized_documents.remove(0);
             }
         }
+        let skipped = (self.offset.unwrap_or(0) as usize).min(serialized_documents.len());
+        serialized_documents.drain(..skipped);
         if let Some(limit) = self.limit {
             serialized_documents.truncate(limit as usize);
         }
-        Ok(serialized_documents)
+        Ok((serialized_documents, skipped as u16))
     }
 
     #[cfg(feature = "server")]
@@ -2221,13 +2242,13 @@ impl<'a> DriveDocumentQuery<'a> {
         &self,
         mut elements: QueryResultElements,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryResultElements, Error> {
+    ) -> Result<(QueryResultElements, u16), Error> {
         use dpp::document::DocumentV0Getters;
         if !self.pads_cursor_page(platform_version) {
-            return Ok(elements);
+            return Ok((elements, 0));
         }
         let Some(start_at) = self.start_at else {
-            return Ok(elements);
+            return Ok((elements, 0));
         };
         let first_element = match elements.elements.first() {
             Some(QueryResultElement::ElementResultItem(element))
@@ -2249,10 +2270,12 @@ impl<'a> DriveDocumentQuery<'a> {
         if first_is_cursor {
             elements.elements.remove(0);
         }
+        let skipped = (self.offset.unwrap_or(0) as usize).min(elements.elements.len());
+        elements.elements.drain(..skipped);
         if let Some(limit) = self.limit {
             elements.elements.truncate(limit as usize);
         }
-        Ok(elements)
+        Ok((elements, skipped as u16))
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
@@ -2945,10 +2968,8 @@ impl<'a> DriveDocumentQuery<'a> {
             }
             _ => {
                 let (data, skipped) = query_result?;
-                Ok((
-                    self.strip_cursor_from_page(data, platform_version)?,
-                    skipped,
-                ))
+                let (data, cursor_skipped) = self.strip_cursor_from_page(data, platform_version)?;
+                Ok((data, skipped.saturating_add(cursor_skipped)))
             }
         }
     }
@@ -2990,10 +3011,9 @@ impl<'a> DriveDocumentQuery<'a> {
             }
             _ => {
                 let (data, skipped) = query_result?;
-                Ok((
-                    self.strip_cursor_from_elements(data, platform_version)?,
-                    skipped,
-                ))
+                let (data, cursor_skipped) =
+                    self.strip_cursor_from_elements(data, platform_version)?;
+                Ok((data, skipped.saturating_add(cursor_skipped)))
             }
         }
     }
