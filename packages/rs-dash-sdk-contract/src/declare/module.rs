@@ -18,6 +18,11 @@ use crate::identity::{InterfaceName, ModuleName};
 /// Provisional.
 pub const IMPLICIT_MODULE: &str = "main";
 
+/// The implicit module as a [`ModuleName`].
+pub fn implicit_module() -> ModuleName {
+    ModuleName::new(IMPLICIT_MODULE).expect("the implicit module name satisfies the module grammar")
+}
+
 /// A WASM module target.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModuleSpec {
@@ -106,5 +111,15 @@ impl InterfaceSpec {
             returns,
         });
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_name_the_implicit_module_main() {
+        assert_eq!(implicit_module().as_str(), IMPLICIT_MODULE);
     }
 }

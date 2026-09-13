@@ -6,17 +6,26 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::declare::{
-    CollectionKind, CollectionSpec, ContractDeclaration, FieldSpec, FieldType, IndexSpec,
-    IntegerWidth, RankedCount, ReferenceTarget, TypedCollectionSpec, ValueType,
+    CollectionKind, CollectionSpec, ContractDeclaration, Countability, FieldSpec, FieldType,
+    IndexSpec, IntegerWidth, RankedCount, ReferenceTarget, TypedCollectionSpec, ValueType,
 };
 use crate::identity::{CollectionName, PropertyPath};
 use crate::manifest::{CollectionManifest, IndexManifest, TypedCollectionManifest};
 use crate::validate::diagnostic::{DeclarationPath, Diagnostic, DiagnosticKind};
 use crate::validate::merge::dedupe;
 
-/// The collections a contract declares, by name and kind, for the entry and
-/// rule checks.
-pub(super) type CollectionKinds = Vec<(CollectionName, CollectionKind)>;
+/// What the entry checks need to know about each validated collection.
+pub(super) struct CollectionSummary {
+    /// The collection's identity.
+    pub(super) name: CollectionName,
+    /// Documents or singleton.
+    pub(super) kind: CollectionKind,
+    /// Whether documents may be replaced.
+    pub(super) mutable: bool,
+}
+
+/// The validated collections, for the entry checks.
+pub(super) type CollectionKinds = Vec<CollectionSummary>;
 
 pub(super) fn validate_collections(
     declaration: &ContractDeclaration,
@@ -24,17 +33,7 @@ pub(super) fn validate_collections(
 ) -> (Vec<CollectionManifest>, CollectionKinds) {
     let collections = dedupe(
         &declaration.collections,
-        |a, b| a.name == b.name,
-        |spec| spec.origin,
-        |a, b| a.same_shape_ignoring_indexes(b),
-        |kept, next| {
-            for index in &next.indexes {
-                kept.indexes.push(index.clone());
-            }
-        },
         |spec| DeclarationPath::collection(&spec.name),
-        "collection",
-        || DiagnosticKind::DuplicateCollection,
         diagnostics,
     );
 
@@ -47,7 +46,11 @@ pub(super) fn validate_collections(
 
     let kinds = manifests
         .iter()
-        .map(|manifest| (manifest.name.clone(), manifest.kind))
+        .map(|manifest| CollectionSummary {
+            name: manifest.name.clone(),
+            kind: manifest.kind,
+            mutable: manifest.mutable,
+        })
         .collect();
     (manifests, kinds)
 }
@@ -156,17 +159,7 @@ fn validate_collection(
 
     let indexes = dedupe(
         &collection.indexes,
-        |a, b| a.name == b.name,
-        |spec| spec.origin,
-        |a, b| {
-            let mut left = a.clone();
-            left.origin = b.origin;
-            left == *b
-        },
-        |_, _| {},
         |spec| DeclarationPath::index(&collection.name, &spec.name),
-        "index",
-        || DiagnosticKind::DuplicateIndex,
         diagnostics,
     );
     let mut index_manifests: Vec<IndexManifest> = indexes
@@ -480,7 +473,7 @@ fn validate_index(
             }
         }
         if !count.is_countable() {
-            count = crate::declare::Countability::Countable;
+            count = Countability::Countable;
         }
         sum = Some(average.clone());
         if index.range_average {
@@ -595,17 +588,7 @@ pub(super) fn validate_typed_collections(
 ) -> Vec<TypedCollectionManifest> {
     let typed = dedupe(
         &declaration.typed_collections,
-        |a, b| a.id == b.id,
-        |spec| spec.origin,
-        |a, b| {
-            let mut left = a.clone();
-            left.origin = b.origin;
-            left == *b
-        },
-        |_, _| {},
         |spec| DeclarationPath::typed_collection(&spec.id),
-        "typed collection",
-        || DiagnosticKind::DuplicateCollection,
         diagnostics,
     );
     let mut manifests: Vec<TypedCollectionManifest> = typed

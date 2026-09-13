@@ -4,11 +4,13 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use crate::declare::{ContractDeclaration, InterfaceSpec, ModuleSpec, IMPLICIT_MODULE};
+use crate::declare::{
+    implicit_module, ContractDeclaration, InterfaceSpec, InternalFunctionSpec, ModuleSpec,
+};
 use crate::identity::{InterfaceName, ModuleName};
 use crate::manifest::{Binding, InterfaceEntry, ModuleEntry, ModuleTable};
 use crate::validate::diagnostic::{DeclarationPath, Diagnostic, DiagnosticKind};
-use crate::validate::merge::dedupe;
+use crate::validate::merge::{dedupe, sorted};
 
 pub(super) fn validate_modules(
     declaration: &ContractDeclaration,
@@ -16,37 +18,16 @@ pub(super) fn validate_modules(
 ) -> ModuleTable {
     let mut modules = dedupe(
         &declaration.modules,
-        |a, b| a.name == b.name,
-        |spec| spec.origin,
-        |a, b| sorted_uses(a) == sorted_uses(b),
-        |kept, next| {
-            for interface in &next.uses {
-                if !kept.uses.contains(interface) {
-                    kept.uses.push(interface.clone());
-                }
-            }
-        },
         |spec| DeclarationPath::module(&spec.name),
-        "module",
-        || DiagnosticKind::DuplicateModule,
         diagnostics,
     );
     if modules.is_empty() {
-        modules.push(ModuleSpec::new(
-            ModuleName::new(IMPLICIT_MODULE)
-                .expect("the implicit module name satisfies the grammar"),
-        ));
+        modules.push(ModuleSpec::new(implicit_module()));
     }
 
     let interfaces = dedupe(
         &declaration.interfaces,
-        |a, b| a.name == b.name,
-        |spec| spec.origin,
-        |a, b| a.provider == b.provider && sorted_functions(a) == sorted_functions(b),
-        |_, _| {},
         |spec| DeclarationPath::interface(&spec.name),
-        "interface",
-        || DiagnosticKind::DuplicateInterface,
         diagnostics,
     );
 
@@ -160,13 +141,10 @@ pub(super) fn validate_modules(
 }
 
 fn sorted_uses(module: &ModuleSpec) -> Vec<InterfaceName> {
-    let mut uses = module.uses.clone();
-    uses.sort();
-    uses.dedup();
-    uses
+    sorted(&module.uses)
 }
 
-fn sorted_functions(interface: &InterfaceSpec) -> Vec<crate::declare::InternalFunctionSpec> {
+fn sorted_functions(interface: &InterfaceSpec) -> Vec<InternalFunctionSpec> {
     let mut functions = interface.functions.clone();
     functions.sort_by(|a, b| a.name.cmp(&b.name));
     functions

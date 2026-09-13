@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use crate::declare::*;
 use crate::identity::*;
 use crate::manifest::CanonicalManifest;
-use crate::validate::{validate, Diagnostic, DiagnosticKind};
+use crate::validate::{validate, DeclarationPath, Diagnostic, DiagnosticKind};
 
 fn collection(name: &str) -> CollectionName {
     CollectionName::new(name).unwrap()
@@ -374,10 +374,10 @@ fn should_report_duplicate_token_cost_action() {
 }
 
 #[test]
-fn should_report_duplicate_export_symbol_when_the_scheme_collides() {
-    // The scheme is injective today, so the diagnostic is reached through the
-    // method identity check: identical names are `DuplicateMethod`, and the
-    // export check sees the same symbol twice.
+fn should_keep_export_symbols_distinct_for_distinct_method_names() {
+    // The export scheme is injective, so `DuplicateExportSymbol` is a defence
+    // against a future scheme change and is not producible today: identical
+    // names are caught as a duplicate or conflicting method first.
     let declaration = ContractDeclaration::new()
         .entry(EntrySpec::new(method("a.b")).with_origin(DeclarationOrigin::Attribute))
         .entry(
@@ -403,10 +403,7 @@ fn should_report_duplicate_export_symbol_when_the_scheme_collides() {
 #[test]
 fn should_report_invalid_name_through_the_newtypes() {
     let error = CollectionName::new("bad name").unwrap_err();
-    let diagnostic = Diagnostic::invalid_name(
-        crate::validate::DeclarationPath::collection("bad name"),
-        error,
-    );
+    let diagnostic = Diagnostic::invalid_name(DeclarationPath::collection("bad name"), error);
     assert_eq!(diagnostic.kind.name(), "InvalidName");
     assert_eq!(diagnostic.code(), "DSC0020");
 }
