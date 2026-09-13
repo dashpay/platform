@@ -119,6 +119,21 @@ pub struct SystemLimits {
     /// including shared grids and deep suffixes. Each drop is O(1).
     /// `None` disables cleanup on versions predating the `ttl` key.
     pub min_time_range_ttl_drop_operations_per_write: Option<u16>,
+    /// Lowest GroveDB proof envelope version a client accepts from a
+    /// current-state response.
+    ///
+    /// Read by `drive-proof-verifier`'s `supported_grovedb_proof_bytes` and
+    /// `verify_tenderdash_proof`, by `wasm-drive-verify`'s
+    /// `supported_grovedb_proof`, and by Drive's
+    /// `verify_compacted_address_balance_changes` v1 for its nested proofs.
+    ///
+    /// `0` keeps accepting the legacy V0 envelope. Protocol version 14 raises
+    /// the floor to `1`: V0's item binding lets a prover return different
+    /// item bytes under the same authenticated root, so a quorum signature on
+    /// the root does not make a V0 payload safe. GroveDB emits V1 from grove
+    /// version 3 (protocol version 13), so every live network already serves
+    /// V1 by the time the floor applies.
+    pub minimum_grovedb_proof_envelope_version: u32,
 }
 
 #[cfg(test)]

@@ -52,4 +52,5 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_time_range_overlap_factor: None,
     max_time_range_ttl_seconds: None,
     min_time_range_ttl_drop_operations_per_write: None,
+    minimum_grovedb_proof_envelope_version: 0, // V0 envelopes stay accepted until v14
 };
