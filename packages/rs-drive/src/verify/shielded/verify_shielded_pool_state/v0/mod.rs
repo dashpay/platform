@@ -92,7 +92,7 @@ mod tests {
             vec![SHIELDED_TOTAL_BALANCE_KEY],
             Element::new_sum_item(balance as i64),
         )
-        .dont_check();
+        .dont_check_for_backwards_references();
 
         drive
             .grove_apply_batch(

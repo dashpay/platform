@@ -969,7 +969,7 @@ mod grovedb_op_batch_tests {
         let mut batch = GroveDbOpBatch::new();
         let op =
             QualifiedGroveDbOp::insert_or_replace_op(vec![vec![1]], vec![2], Element::empty_tree())
-                .dont_check();
+                .dont_check_for_backwards_references();
         batch.push(op);
         assert_eq!(batch.len(), 1);
         assert!(!batch.is_empty());
@@ -979,9 +979,9 @@ mod grovedb_op_batch_tests {
     fn from_operations() {
         let ops = vec![
             QualifiedGroveDbOp::insert_or_replace_op(vec![vec![1]], vec![2], Element::empty_tree())
-                .dont_check(),
+                .dont_check_for_backwards_references(),
             QualifiedGroveDbOp::insert_or_replace_op(vec![vec![3]], vec![4], Element::empty_tree())
-                .dont_check(),
+                .dont_check_for_backwards_references(),
         ];
         let batch = GroveDbOpBatch::from_operations(ops);
         assert_eq!(batch.len(), 2);
@@ -1006,9 +1006,9 @@ mod grovedb_op_batch_tests {
         let mut batch = GroveDbOpBatch::new();
         let ops = vec![
             QualifiedGroveDbOp::insert_or_replace_op(vec![vec![1]], vec![2], Element::empty_tree())
-                .dont_check(),
+                .dont_check_for_backwards_references(),
             QualifiedGroveDbOp::insert_or_replace_op(vec![vec![3]], vec![4], Element::empty_tree())
-                .dont_check(),
+                .dont_check_for_backwards_references(),
         ];
         batch.extend(ops);
         assert_eq!(batch.len(), 2);

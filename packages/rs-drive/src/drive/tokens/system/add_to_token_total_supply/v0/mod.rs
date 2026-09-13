@@ -139,7 +139,7 @@ impl Drive {
                     token_id.to_vec(),
                     SumItem(new_total, None),
                 )
-                .dont_check();
+                .dont_check_for_backwards_references();
                 drive_operations.push(GroveOperation(replace_op));
                 new_total as u64 - total_token_supply_in_platform
             } else if allow_first_mint {

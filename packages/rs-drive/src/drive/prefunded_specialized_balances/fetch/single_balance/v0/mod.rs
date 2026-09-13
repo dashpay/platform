@@ -195,7 +195,7 @@ mod tests {
             id.to_vec(),
             Element::new_sum_item(-42),
         )
-        .dont_check();
+        .dont_check_for_backwards_references();
         drive
             .grove_apply_batch(
                 crate::util::batch::GroveDbOpBatch::from_operations(vec![op]),

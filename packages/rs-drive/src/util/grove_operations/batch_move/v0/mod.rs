@@ -110,7 +110,7 @@ impl Drive {
             drive_operations.push(GroveOperation(delete_op));
             drive_operations.push(GroveOperation(
                 QualifiedGroveDbOp::insert_or_replace_op(to_path, key.to_vec(), element)
-                    .dont_check(),
+                    .dont_check_for_backwards_references(),
             ));
         }
 

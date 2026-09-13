@@ -1382,7 +1382,10 @@ impl LowLevelDriveOperation {
         key: Vec<u8>,
         element: Element,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(path, key, element).dont_check())
+        GroveOperation(
+            QualifiedGroveDbOp::insert_or_replace_op(path, key, element)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for replacement of an element at the given path and key
@@ -1391,7 +1394,10 @@ impl LowLevelDriveOperation {
         key: Vec<u8>,
         element: Element,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::replace_op(path, key, element).dont_check())
+        GroveOperation(
+            QualifiedGroveDbOp::replace_op(path, key, element)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for patching of an element at the given path and key
@@ -1403,7 +1409,8 @@ impl LowLevelDriveOperation {
         change_in_bytes: i32,
     ) -> Self {
         GroveOperation(
-            QualifiedGroveDbOp::patch_op(path, key, element, change_in_bytes).dont_check(),
+            QualifiedGroveDbOp::patch_op(path, key, element, change_in_bytes)
+                .dont_check_for_backwards_references(),
         )
     }
 
@@ -1413,7 +1420,10 @@ impl LowLevelDriveOperation {
         key: KeyInfo,
         element: Element,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::insert_estimated_op(path, key, element).dont_check())
+        GroveOperation(
+            QualifiedGroveDbOp::insert_estimated_op(path, key, element)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for replacement of an element at an unknown estimated path and key
@@ -1422,7 +1432,10 @@ impl LowLevelDriveOperation {
         key: KeyInfo,
         element: Element,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::replace_estimated_op(path, key, element).dont_check())
+        GroveOperation(
+            QualifiedGroveDbOp::replace_estimated_op(path, key, element)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for refresh of a reference at the given path and key
