@@ -42,7 +42,9 @@ fn should_activate_compound_cursor_lowering_only_at_protocol_v14() {
     }
     let query_versions = &PlatformVersion::latest().drive.methods.document.query;
     assert_eq!(query_versions.non_primary_key_path_query, 1);
-    assert_eq!(query_versions.non_primary_key_single_in_path_query, 1);
+    // v14 activates the new lowering through the parent dispatcher; its first
+    // implementation remains v0 because it is unreachable in older protocols.
+    assert_eq!(query_versions.non_primary_key_single_in_path_query, 0);
 }
 
 fn assert_compound_cursor_pages(ascending: bool, included: bool, prove: bool) {

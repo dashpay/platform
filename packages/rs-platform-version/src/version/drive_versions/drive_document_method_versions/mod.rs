@@ -69,9 +69,7 @@ pub struct DriveDocumentQueryMethodVersions {
     /// from its v1 on. Present in every version table so the slot
     /// exists for older protocol versions; unreachable while
     /// `non_primary_key_path_query` is 0, whose v0 lowering carries its
-    /// own frozen single-`In` construction. Version 1 restricts the
-    /// inner cursor bound of an `In`/range pair to the cursor's outer
-    /// branch, leaving later siblings' predicates intact.
+    /// own frozen single-`In` construction.
     pub non_primary_key_single_in_path_query: FeatureVersion,
     /// Lowering for query shapes with multiple non-primary-key `In`
     /// clauses on consecutive index properties, producing multi-level

@@ -6,7 +6,6 @@
 //! construction.
 
 mod v0;
-mod v1;
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -36,14 +35,9 @@ impl<'a> DriveDocumentQuery<'a> {
                 starts_at_document,
                 platform_version,
             ),
-            1 => self.get_non_primary_key_single_in_path_query_v1(
-                document_type_path,
-                starts_at_document,
-                platform_version,
-            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DriveDocumentQuery::get_non_primary_key_single_in_path_query".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }
