@@ -9,15 +9,13 @@ use dpp::document::Document;
 use dpp::identity::Identity;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use drive::error::proof::ProofError;
 use drive::query::DriveDocumentQuery;
 
 fn supported_grovedb_proof<'a>(
     proof: &'a [u8],
     platform_version: &PlatformVersion,
 ) -> Result<&'a [u8], drive::error::Error> {
-    validate_supported_grovedb_proof(proof, platform_version)
-        .map_err(|error| drive::error::Error::Proof(ProofError::CorruptedProof(error)))?;
+    validate_supported_grovedb_proof(proof, platform_version)?;
     Ok(proof)
 }
 
@@ -87,19 +85,31 @@ mod tests {
     }
 
     fn assert_rejected_envelope(result: Result<(), Error>) {
-        match result {
-            Err(Error::Proof(ProofError::CorruptedProof(message))) => assert!(
-                message.contains("GroveDB proof envelope version 0 is below the minimum 1"),
-                "unexpected message: {message}"
+        let error = result.expect_err("V0 envelope must be rejected");
+        assert!(
+            matches!(
+                error,
+                Error::Proof(ProofError::UnsupportedGroveDBProofEnvelopeVersion {
+                    proof: "proof",
+                    version: 0,
+                    minimum: 1,
+                    ..
+                })
             ),
-            other => panic!("expected envelope rejection, got {other:?}"),
-        }
+            "expected envelope rejection, got {error:?}"
+        );
     }
 
     fn assert_not_an_envelope_rejection(result: Result<(), Error>) {
         let error = result.expect_err("payload without a proof body cannot verify");
         assert!(
-            !error.to_string().contains("GroveDB proof envelope"),
+            !matches!(
+                error,
+                Error::Proof(
+                    ProofError::UnsupportedGroveDBProofEnvelopeVersion { .. }
+                        | ProofError::InvalidGroveDBProofEnvelope { .. }
+                )
+            ),
             "must not be rejected by the envelope policy: {error}"
         );
     }

@@ -35,6 +35,7 @@ pub(crate) fn require_supported_grovedb_proof_bytes(
         .minimum_grovedb_proof_envelope_version;
     if version < minimum {
         return Err(Error::UnsupportedGroveDBProofVersion {
+            proof: "proof",
             version,
             minimum,
             protocol_version: platform_version.protocol_version,

@@ -123,7 +123,7 @@ fn test_verify_identity_rejects_legacy_v0_envelope() {
     let result = verify_full_identity_by_identity_id(&proof, false, &identity_id, platform_version);
     assert_error_contains(
         &result.map(|_| ()),
-        "GroveDB proof envelope version 0 is below the minimum 1",
+        "unsupported GroveDB proof envelope version 0 in the proof",
     );
 }
 
@@ -143,7 +143,7 @@ fn test_verify_identity_by_non_unique_public_key_hash_rejects_v0_inner_proof() {
     );
     assert_error_contains(
         &result.map(|_| ()),
-        "GroveDB proof envelope version 0 is below the minimum 1",
+        "unsupported GroveDB proof envelope version 0 in the proof",
     );
 }
 
@@ -162,7 +162,7 @@ fn test_verify_identity_by_non_unique_public_key_hash_rejects_v0_outer_proof() {
     );
     assert_error_contains(
         &result.map(|_| ()),
-        "GroveDB proof envelope version 0 is below the minimum 1",
+        "unsupported GroveDB proof envelope version 0 in the proof",
     );
 }
 

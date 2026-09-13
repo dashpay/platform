@@ -27,7 +27,7 @@ use super::{CompactedAddressBalanceProof, VerifiedCompactedAddressBalanceChanges
 /// version sets in `SystemLimits::minimum_grovedb_proof_envelope_version`.
 fn require_supported_grovedb_proof(
     proof: &[u8],
-    label: &str,
+    label: &'static str,
     platform_version: &PlatformVersion,
 ) -> Result<(), Error> {
     let config = bincode::config::standard()
@@ -35,19 +35,24 @@ fn require_supported_grovedb_proof(
         .with_limit::<16>();
     let (version, _): (u32, usize) =
         bincode::decode_from_slice(proof, config).map_err(|error| {
-            Error::Proof(ProofError::CorruptedProof(format!(
-                "invalid {label} GroveDB proof envelope: {error}"
-            )))
+            Error::Proof(ProofError::InvalidGroveDBProofEnvelope {
+                proof: label,
+                reason: error.to_string(),
+            })
         })?;
 
     let minimum = platform_version
         .system_limits
         .minimum_grovedb_proof_envelope_version;
     if version < minimum {
-        return Err(Error::Proof(ProofError::CorruptedProof(format!(
-            "{label} GroveDB proof envelope version {version} is below the minimum {minimum} required by protocol version {}",
-            platform_version.protocol_version
-        ))));
+        return Err(Error::Proof(
+            ProofError::UnsupportedGroveDBProofEnvelopeVersion {
+                proof: label,
+                version,
+                minimum,
+                protocol_version: platform_version.protocol_version,
+            },
+        ));
     }
 
     Ok(())
@@ -90,12 +95,12 @@ impl Drive {
 
         require_supported_grovedb_proof(
             &proof_envelope.predecessor_proof,
-            "predecessor",
+            "predecessor proof",
             platform_version,
         )?;
         require_supported_grovedb_proof(
             &proof_envelope.forward_proof,
-            "forward",
+            "forward proof",
             platform_version,
         )?;
 
@@ -357,10 +362,21 @@ mod tests {
                 platform_version,
             )
             .expect_err("V0 nested proof must be rejected");
+            let expected_proof = if predecessor {
+                "predecessor proof"
+            } else {
+                "forward proof"
+            };
             assert!(
-                error
-                    .to_string()
-                    .contains("GroveDB proof envelope version 0 is below the minimum 1"),
+                matches!(
+                    &error,
+                    Error::Proof(ProofError::UnsupportedGroveDBProofEnvelopeVersion {
+                        proof,
+                        version: 0,
+                        minimum: 1,
+                        ..
+                    }) if *proof == expected_proof
+                ),
                 "unexpected error: {error}"
             );
         }

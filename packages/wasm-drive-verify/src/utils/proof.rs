@@ -2,6 +2,8 @@
 
 use crate::utils::error::{format_error, ErrorCategory};
 use dpp::version::PlatformVersion;
+use drive::error::proof::ProofError;
+use drive::error::Error;
 use wasm_bindgen::JsValue;
 
 /// Reject GroveDB proof envelopes older than the floor the protocol version
@@ -11,20 +13,29 @@ use wasm_bindgen::JsValue;
 pub(crate) fn validate_supported_grovedb_proof(
     proof: &[u8],
     platform_version: &PlatformVersion,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let config = bincode::config::standard()
         .with_big_endian()
         .with_limit::<16>();
-    let (version, _): (u32, usize) = bincode::decode_from_slice(proof, config)
-        .map_err(|error| format!("invalid GroveDB proof envelope: {error}"))?;
+    let (version, _): (u32, usize) =
+        bincode::decode_from_slice(proof, config).map_err(|error| {
+            Error::Proof(ProofError::InvalidGroveDBProofEnvelope {
+                proof: "proof",
+                reason: error.to_string(),
+            })
+        })?;
 
     let minimum = platform_version
         .system_limits
         .minimum_grovedb_proof_envelope_version;
     if version < minimum {
-        return Err(format!(
-            "GroveDB proof envelope version {version} is below the minimum {minimum} required by protocol version {}",
-            platform_version.protocol_version
+        return Err(Error::Proof(
+            ProofError::UnsupportedGroveDBProofEnvelopeVersion {
+                proof: "proof",
+                version,
+                minimum,
+                protocol_version: platform_version.protocol_version,
+            },
         ));
     }
 
@@ -36,7 +47,7 @@ pub(crate) fn supported_grovedb_proof<'a>(
     platform_version: &PlatformVersion,
 ) -> Result<&'a [u8], JsValue> {
     validate_supported_grovedb_proof(proof, platform_version)
-        .map_err(|error| format_error(ErrorCategory::VerificationError, &error))?;
+        .map_err(|error| format_error(ErrorCategory::VerificationError, &error.to_string()))?;
     Ok(proof)
 }
 
@@ -44,6 +55,8 @@ pub(crate) fn supported_grovedb_proof<'a>(
 mod tests {
     use super::validate_supported_grovedb_proof;
     use dpp::version::PlatformVersion;
+    use drive::error::proof::ProofError;
+    use drive::error::Error;
 
     fn envelope(version: u32) -> Vec<u8> {
         bincode::encode_to_vec(version, bincode::config::standard().with_big_endian())
@@ -56,8 +69,40 @@ mod tests {
             .expect_err("V0 must be rejected");
 
         assert!(
-            error.contains("version 0 is below the minimum 1"),
-            "unexpected message: {error}"
+            matches!(
+                error,
+                Error::Proof(ProofError::UnsupportedGroveDBProofEnvelopeVersion {
+                    proof: "proof",
+                    version: 0,
+                    minimum: 1,
+                    ..
+                })
+            ),
+            "unexpected error: {error}"
+        );
+        let Error::Proof(proof_error) = error else {
+            panic!("expected a proof error");
+        };
+        assert_eq!(
+            proof_error.to_string(),
+            format!(
+                "unsupported GroveDB proof envelope version 0 in the proof: protocol version {} requires at least version 1",
+                PlatformVersion::latest().protocol_version
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_bytes_without_an_envelope_discriminant() {
+        let error = validate_supported_grovedb_proof(&[], PlatformVersion::latest())
+            .expect_err("empty bytes carry no envelope");
+
+        assert!(
+            matches!(
+                error,
+                Error::Proof(ProofError::InvalidGroveDBProofEnvelope { proof: "proof", .. })
+            ),
+            "unexpected error: {error}"
         );
     }
 
