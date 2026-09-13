@@ -47,6 +47,7 @@ crate that has what the change needs, and no lower.
 | A client API | `packages/rs-sdk` | Follow the query checklist in `packages/rs-sdk/README.md`. |
 | A JavaScript binding | `packages/wasm-dpp2`, `packages/wasm-sdk` | Mirror the Rust shape; never validate. See `packages/wasm-dpp2/CONVENTIONS.md`. |
 | Mobile orchestration (sync, identity registration, DashPay) | `packages/rs-platform-wallet` | The FFI crates and the Swift and Kotlin SDKs marshal; they do not decide. |
+| A contract-author declaration or diagnostic | `packages/rs-dash-sdk-contract` | Builds for `wasm32v1-none` with `--no-default-features`; native limits are not duplicated there, they surface through `dash-contract-build`. See [Contract Declarations](../dashvm/contract-declarations.md). |
 
 Three boundaries are enforced by CI and worth knowing by name:
 
