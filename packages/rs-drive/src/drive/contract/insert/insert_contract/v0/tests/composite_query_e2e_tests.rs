@@ -1821,3 +1821,86 @@ fn should_bootstrap_a_limited_lookup_that_feeds_a_later_binding() {
     assert_eq!(verified.page_documents, materialized.page_documents);
     assert_eq!(verified.sub_results, materialized.sub_results);
 }
+
+/// An empty index branch on the page's walk. The fixture preallocates
+/// `like.byHashtagPost` buckets when a post is inserted, so post C,
+/// which nobody liked, holds an empty bucket the newest-first walk
+/// visits before B's and A's. Grovedb charges that bucket against a
+/// global limit but not against the per-instance cap the proof carries,
+/// so a page materialized through the plain lowering would stop one row
+/// short of the proven page, and the counts derived from it would leave
+/// the proof missing a branch. Materialization runs the proof's own
+/// query, so both sides agree.
+#[test]
+fn should_materialize_the_page_under_the_proofs_budget_past_an_empty_index_branch() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let mut page = DriveDocumentQuery {
+        contract: &feed,
+        document_type: feed.document_type_for_name("like").expect("like"),
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            }],
+            pv,
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(2),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+    page.order_by.insert(
+        "postId".to_string(),
+        OrderClause {
+            field: "postId".to_string(),
+            ascending: false,
+        },
+    );
+    let query = page.with_sub_queries(vec![bound(
+        &feed,
+        "repost",
+        SubQueryKind::Count,
+        BindingSource::Page,
+        "postId",
+        "postId",
+        None,
+    )]);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    // Past C's empty bucket: B's one like, then the first of A's two.
+    let liked: Vec<[u8; 32]> = materialized
+        .page_documents
+        .iter()
+        .map(|d| {
+            d.properties()
+                .get("postId")
+                .expect("postId present")
+                .to_identifier()
+                .expect("identifier")
+                .to_buffer()
+        })
+        .collect();
+    assert_eq!(liked, vec![POST_B, POST_A]);
+    assert_eq!(
+        counts(&materialized.sub_results[0]),
+        BTreeMap::from([(POST_A, 1), (POST_B, 2)])
+    );
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}

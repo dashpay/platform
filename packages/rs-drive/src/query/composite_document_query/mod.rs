@@ -1772,32 +1772,72 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 }
 
+/// Whether a grovedb error says the queried path does not exist yet (no
+/// document of the type, no entry under the index), which a query
+/// answers with no rows.
+#[cfg(feature = "server")]
+fn is_absent_path(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::GroveDB(e) if matches!(
+            e.as_ref(),
+            grovedb::Error::PathKeyNotFound(_)
+                | grovedb::Error::PathNotFound(_)
+                | grovedb::Error::PathParentLayerNotFound(_)
+        )
+    )
+}
+
 #[cfg(feature = "server")]
 impl<'a> DriveDocumentQuery<'a> {
-    /// Materializes a documents query without a proof: indexOnly
-    /// projections are synthesized, stored documents deserialized.
-    fn materialize_documents(
+    /// Materializes a documents component without a proof, from the
+    /// very path query the proof covers. The plain documents lowering
+    /// would walk the same selection under a global limit, and grovedb
+    /// charges an empty index branch (a preallocated bucket nobody wrote
+    /// to yet) against a global limit but not against the per-instance
+    /// cap the component carries (see [`Self::budget_as_instance_cap`]),
+    /// so the two can fill a page differently. Everything derived from
+    /// the page rides on this selection, so it has to be the proof's.
+    /// indexOnly projections are synthesized from their positions,
+    /// stored documents deserialized.
+    fn materialize_component(
         query: &DriveDocumentQuery<'a>,
+        path_query: &PathQuery,
         drive: &crate::drive::Drive,
         transaction: grovedb::TransactionArg,
         drive_operations: &mut Vec<crate::fees::op::LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
+        use grovedb::query_result_type::QueryResultType;
+
         if query.document_type.index_only() {
-            let (documents, _skipped) = query.execute_index_only_documents_no_proof_internal(
-                drive,
+            let results = match drive.grove_get_path_query(
+                path_query,
                 transaction,
+                QueryResultType::QueryPathKeyElementTrioResultType,
                 drive_operations,
+                &platform_version.drive,
+            ) {
+                Err(error) if is_absent_path(&error) => return Ok(Vec::new()),
+                other => other?.0,
+            };
+            return Self::decode_document_trios(
+                query,
+                results.to_path_key_elements(),
                 platform_version,
-            )?;
-            return Ok(documents);
+            );
         }
-        let (serialized, _skipped) = query.execute_raw_results_no_proof_internal(
-            drive,
+        // Stored documents sit behind index references: the serialized
+        // read follows them, a trio read would hand back the references.
+        let serialized = match drive.grove_get_path_query_serialized_results(
+            path_query,
             transaction,
             drive_operations,
-            platform_version,
-        )?;
+            &platform_version.drive,
+        ) {
+            Err(error) if is_absent_path(&error) => return Ok(Vec::new()),
+            other => other?.0,
+        };
         serialized
             .into_iter()
             .map(|bytes| {
@@ -1837,8 +1877,15 @@ impl<'a> DriveDocumentQuery<'a> {
                     direction,
                     platform_version,
                 )?;
-                let documents = Self::materialize_documents(
+                let path_query = self.sub_query_proof_path_query(
+                    sub_query,
+                    values,
+                    direction,
+                    platform_version,
+                )?;
+                let documents = Self::materialize_component(
                     &query,
+                    &path_query,
                     drive,
                     transaction,
                     drive_operations,
@@ -1899,9 +1946,11 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<CompositeDocumentsResult, Error> {
         self.validate_composite(platform_version)?;
 
-        let direction = self.page_direction(platform_version)?;
-        let page_documents = Self::materialize_documents(
+        let page_path_query = self.page_path_query(platform_version)?;
+        let direction = page_path_query.query.query.left_to_right;
+        let page_documents = Self::materialize_component(
             self,
+            &page_path_query,
             drive,
             transaction,
             drive_operations,
@@ -1957,7 +2006,8 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<u8>, Vec<Document>), Error> {
         self.validate_composite(platform_version)?;
-        let direction = self.page_direction(platform_version)?;
+        let page_path_query = self.page_path_query(platform_version)?;
+        let direction = page_path_query.query.query.left_to_right;
 
         // Block commits are seconds apart while an attempt is
         // milliseconds, so a bracket collision is rare and two in a row
@@ -1972,8 +2022,14 @@ impl<'a> DriveDocumentQuery<'a> {
                 .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()?;
 
-            let page_documents =
-                Self::materialize_documents(self, drive, None, drive_operations, platform_version)?;
+            let page_documents = Self::materialize_component(
+                self,
+                &page_path_query,
+                drive,
+                None,
+                drive_operations,
+                platform_version,
+            )?;
             // Sub-queries that feed later bindings are materialized in
             // order; everything else is only derived.
             let mut derived: Vec<DerivedValues> = Vec::with_capacity(self.sub_queries.len());

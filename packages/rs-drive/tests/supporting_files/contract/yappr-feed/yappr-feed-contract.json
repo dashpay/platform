@@ -87,7 +87,8 @@
             }
           ],
           "countable": "countable",
-          "terminal": "$ownerId"
+          "terminal": "$ownerId",
+          "preallocated": true
         },
         {
           "name": "byPost",
