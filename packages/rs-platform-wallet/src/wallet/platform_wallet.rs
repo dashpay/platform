@@ -351,12 +351,15 @@ pub struct PlatformWallet {
     pub(crate) shielded_keys:
         Arc<RwLock<Option<std::collections::BTreeMap<u32, super::shielded::AccountViewingKeys>>>>,
     /// Per-wallet single-flight guard for shield-class operations
-    /// (Type 15). Two concurrent `shield` calls on one wallet would
-    /// each fetch the same address nonce and build with `nonce + 1`, so
-    /// the second to reach drive-abci is rejected as a replay after a
-    /// ~30 s proof. Holding this across fetch → build → broadcast
-    /// serializes the double-tap / retry-while-proving case. `Arc` so
-    /// cloned wallet handles share the one lock.
+    /// (Type 15, and the identity-side Types 21 and 22). Two concurrent
+    /// `shield` calls on one wallet would each fetch the same address
+    /// nonce and build with `nonce + 1`, so the second to reach
+    /// drive-abci is rejected as a replay after a ~30 s proof. Holding
+    /// this across fetch → build → broadcast serializes the double-tap /
+    /// retry-while-proving case. The identity-side operations also apply
+    /// the proof-attested absolute identity balance, so holding it across
+    /// their waits keeps those writes in execution order. `Arc` so cloned
+    /// wallet handles share the one lock.
     #[cfg(feature = "shielded")]
     pub(crate) shield_guard: Arc<tokio::sync::Mutex<()>>,
     /// Set once this wallet has been removed from the manager, to stop
@@ -1446,6 +1449,14 @@ impl PlatformWallet {
         amount: u64,
         prover: P,
     ) -> Result<Option<Credits>, PlatformWalletError> {
+        // Single-flight with the other shield-class operations. The proof
+        // result carries the identity's absolute post-execution balance, so
+        // two top-ups (or a top-up and a shield-from-identity debit) whose
+        // waits completed out of execution order would let the older balance
+        // overwrite the newer one. Held across build -> broadcast -> wait ->
+        // reconcile.
+        let _shield_guard = self.shield_guard.lock().await;
+
         let keyset = self.derive_spend_keyset(seed, account).await?;
         let proven_balance = super::shielded::operations::identity_top_up_from_pool(
             &self.sdk,
