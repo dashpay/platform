@@ -667,16 +667,6 @@ pub struct WalletRestoreEntryFFI {
     /// unresolved asset locks.
     pub unresolved_asset_lock_tx_records: *const UnresolvedAssetLockTxRecordFFI,
     pub unresolved_asset_lock_tx_records_count: usize,
-    /// Outgoing transactions the host still holds as unconfirmed
-    /// (mempool context, no block height), oldest `first_seen` first.
-    ///
-    /// Replayed at load through the ordinary mempool check so their
-    /// spend effect is restored — see
-    /// [`UnconfirmedOutgoingTxRecordFFI`]. `null` / `0` when the wallet
-    /// has none. Each entry's `tx_bytes` buffer is Swift-owned and
-    /// freed by `LoadWalletListFreeFn`.
-    pub unconfirmed_outgoing_tx_records: *const UnconfirmedOutgoingTxRecordFFI,
-    pub unconfirmed_outgoing_tx_records_count: usize,
     /// Persisted provider special transactions (ProRegTx / ProUpServTx /
     /// ProUpRegTx / ProUpRevTx) re-staged onto the wallet's provider-key
     /// accounts so rust-dashcore #876 retention keeps them resident and
@@ -703,6 +693,21 @@ pub struct WalletRestoreEntryFFI {
     /// re-apply a fresh chainlock.
     pub last_applied_chain_lock_bytes: *const u8,
     pub last_applied_chain_lock_bytes_len: usize,
+    /// Outgoing transactions the host still holds as unconfirmed
+    /// (mempool context, no block height), oldest `first_seen` first.
+    ///
+    /// Replayed at load through the ordinary mempool check so their
+    /// spend effect is restored — see
+    /// [`UnconfirmedOutgoingTxRecordFFI`]. `null` / `0` when the wallet
+    /// has none. Each entry's `tx_bytes` buffer is Swift-owned and
+    /// freed by `LoadWalletListFreeFn`.
+    ///
+    /// Appended at the end deliberately. This is a `#[repr(C)]` struct
+    /// shared across the FFI boundary, so a field inserted anywhere else
+    /// shifts the offsets of everything after it; keeping additions here
+    /// leaves every existing field where it was.
+    pub unconfirmed_outgoing_tx_records: *const UnconfirmedOutgoingTxRecordFFI,
+    pub unconfirmed_outgoing_tx_records_count: usize,
 }
 
 /// Every field named explicitly so that adding a field to this ABI struct
@@ -735,14 +740,14 @@ impl Default for WalletRestoreEntryFFI {
             tracked_asset_locks_count: 0,
             unresolved_asset_lock_tx_records: std::ptr::null(),
             unresolved_asset_lock_tx_records_count: 0,
-            unconfirmed_outgoing_tx_records: std::ptr::null(),
-            unconfirmed_outgoing_tx_records_count: 0,
             provider_special_txs: std::ptr::null(),
             provider_special_txs_count: 0,
             core_address_pools: std::ptr::null(),
             core_address_pools_count: 0,
             last_applied_chain_lock_bytes: std::ptr::null(),
             last_applied_chain_lock_bytes_len: 0,
+            unconfirmed_outgoing_tx_records: std::ptr::null(),
+            unconfirmed_outgoing_tx_records_count: 0,
         }
     }
 }
