@@ -159,11 +159,12 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 54] = [
+    const VERSIONED_RESPONSES: [&str; 55] = [
         "GetDataContractHistoryResponse",
         "GetDataContractsLatestVersionsResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
+        "GetDocumentHistoryResponse",
         "GetDocumentsResponse",
         "GetIdentitiesByPublicKeyHashesResponse",
         "GetIdentitiesResponse",
@@ -239,13 +240,6 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     //   - Implementing the v1 dispatch arm in `drive-abci`.
     const VERSIONED_AT_V1_REQUESTS: [&str; 1] = ["GetDocumentsRequest"];
     const VERSIONED_AT_V1_RESPONSES: [&str; 1] = ["GetDocumentsResponse"];
-
-    platform = platform
-        .message_attribute(
-            "GetDocumentHistoryResponse",
-            r#"#[derive(::dash_platform_macros::VersionedGrpcMessage)]"#,
-        )
-        .message_attribute("GetDocumentHistoryResponse", r#"#[grpc_versions(0)]"#);
 
     // Derive VersionedGrpcMessage on requests
     for msg in VERSIONED_REQUESTS {

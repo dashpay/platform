@@ -5,7 +5,9 @@ use dapi_grpc::platform::v0::get_document_history_request::{
     get_document_history_request_v0::Selector, GetDocumentHistoryRequestV0,
 };
 use dapi_grpc::platform::v0::get_document_history_response::{
-    get_document_history_response_v0::{lifecycle::State, Entry, Lifecycle},
+    get_document_history_response_v0::{
+        lifecycle::State, Entry, History, Lifecycle, Result as ResponseResult,
+    },
     GetDocumentHistoryResponseV0,
 };
 use dpp::check_validation_result_with_data;
@@ -79,8 +81,8 @@ impl<C> Platform<C> {
                 QueryError::InvalidArgument("document type does not keep history".to_owned()),
             ));
         }
-        let (history, proof) = if request.prove {
-            let (history, proofs) = self.drive.prove_document_history_v1(
+        let result = if request.prove {
+            let (_, proofs) = self.drive.prove_document_history_v1(
                 &query,
                 document_type,
                 None,
@@ -90,34 +92,29 @@ impl<C> Platform<C> {
             let proof = self
                 .response_proof_v0(platform_state, proofs.to_bytes(), GroveDBToUse::Current)?
                 .1;
-            (history, Some(proof))
+            ResponseResult::Proof(proof)
         } else {
-            (
-                self.drive.fetch_document_history_v1(
-                    &query,
-                    document_type,
-                    None,
-                    platform_version,
-                )?,
+            let history = self.drive.fetch_document_history_v1(
+                &query,
+                document_type,
                 None,
-            )
-        };
-        let entries = history
-            .entries
-            .into_iter()
-            .map(|entry| {
-                Ok(Entry {
-                    time_ms: entry.time_ms,
-                    revision: entry.revision,
-                    document: entry
-                        .document
-                        .serialize(document_type, contract, platform_version)
-                        .map_err(Error::Protocol)?,
+                platform_version,
+            )?;
+            let entries = history
+                .entries
+                .into_iter()
+                .map(|entry| {
+                    Ok(Entry {
+                        time_ms: entry.time_ms,
+                        revision: entry.revision,
+                        document: entry
+                            .document
+                            .serialize(document_type, contract, platform_version)
+                            .map_err(Error::Protocol)?,
+                    })
                 })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-        Ok(QueryValidationResult::new_with_data(
-            GetDocumentHistoryResponseV0 {
+                .collect::<Result<Vec<_>, Error>>()?;
+            ResponseResult::History(History {
                 entries,
                 lifecycle: Some(Lifecycle {
                     state: match history.lifecycle.state {
@@ -126,7 +123,11 @@ impl<C> Platform<C> {
                     } as i32,
                     remaining_revisions: history.lifecycle.remaining_revisions,
                 }),
-                proof,
+            })
+        };
+        Ok(QueryValidationResult::new_with_data(
+            GetDocumentHistoryResponseV0 {
+                result: Some(result),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             },
         ))

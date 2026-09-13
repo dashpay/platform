@@ -1861,16 +1861,23 @@ message GetDocumentHistoryResponse {
       // Revisions the history still retains for the document.
       uint64 remaining_revisions = 2 [ jstype = JS_STRING ];
     }
-    repeated Entry entries = 1;
-    Lifecycle lifecycle = 2;
-    // One proof object. Its grovedb_proof carries two GroveDB proofs in a
-    // small versioned envelope, because they answer two queries GroveDB
-    // cannot merge: the offset-paginated proof over the document's history
-    // tree and the exact-key absence proof over the current pointer, the
-    // lifecycle record and the history tree's count. Both commit to the
-    // same root hash, signed once.
-    Proof proof = 3;
-    ResponseMetadata metadata = 4;
+    // A page of retained revisions and the document's lifecycle as of the
+    // same block.
+    message History {
+      repeated Entry entries = 1;
+      Lifecycle lifecycle = 2;
+    }
+    oneof result {
+      History history = 1;
+      // One proof object. Its grovedb_proof carries two GroveDB proofs in a
+      // small versioned envelope, because they answer two queries GroveDB
+      // cannot merge: the offset-paginated proof over the document's history
+      // tree and the exact-key absence proof over the current pointer, the
+      // lifecycle record and the history tree's count. Both commit to the
+      // same root hash, signed once.
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
   }
   oneof version {
     GetDocumentHistoryResponseV0 v0 = 1;
