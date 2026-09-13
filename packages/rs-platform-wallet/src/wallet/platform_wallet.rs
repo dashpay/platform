@@ -35,6 +35,7 @@ use crate::error::PlatformWalletError;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
@@ -954,6 +955,9 @@ impl PlatformWallet {
         start: crate::changeset::ClientStartState,
         snapshot_generation: u64,
     ) -> Result<(), PlatformWalletError> {
+        // Serialize registration with identity-shield proof construction. Otherwise
+        // an account could disappear before that operation arms its durable guard.
+        let _shield_guard = self.shield_guard.lock().await;
         let install = coordinator.begin_install(self.wallet_id).await;
 
         // A wallet the manager has already removed must not be able to
@@ -986,10 +990,6 @@ impl PlatformWallet {
             )));
         }
 
-        let mut slot = self.shielded_keys.write().await;
-        *slot = Some(account_views.clone());
-        drop(slot);
-
         // Compute idempotence BEFORE registering — after
         // register_wallet the registration always matches.
         let identical = install.registration_matches(&account_views).await;
@@ -1010,8 +1010,10 @@ impl PlatformWallet {
         // the restore path's "is this account registered?" gate sees
         // this wallet's subwallets.
         install
-            .register(account_views, self.persister.clone())
-            .await;
+            .register(account_views.clone(), self.persister.clone())
+            .await?;
+        // Publish wallet keys only after registration accepted the new shape.
+        *self.shielded_keys.write().await = Some(account_views);
 
         // Idempotent re-bind fast path: hosts re-run bind liberally
         // (launch fires it twice — a direct call plus the wallet-set
@@ -1838,6 +1840,205 @@ impl PlatformWallet {
         )
         .await
     }
+
+    /// Stop retrying one selected identity debit while retaining its unknown
+    /// outcome. Requires explicit acknowledgement that it may already have
+    /// executed or may execute later; this does not cancel the signed payment.
+    #[cfg(feature = "shielded")]
+    pub async fn abandon_shielded_identity_debit(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        account_index: u32,
+        activity_id: [u8; 32],
+        acknowledge_possible_execution: bool,
+    ) -> Result<(), PlatformWalletError> {
+        let _shield_guard = self.shield_guard.lock().await;
+        coordinator
+            .abandon_identity_debit(
+                self.wallet_id(),
+                account_index,
+                activity_id,
+                acknowledge_possible_execution,
+            )
+            .await
+    }
+
+    /// Shield credits from one of this wallet's Platform identities straight into
+    /// the wallet's shielded pool (`ShieldFromIdentity`, type 21). The note is
+    /// assigned to `shielded_account`'s default Orchard address; `identity_id` must
+    /// be an identity this wallet manages, and `signer` must hold its TRANSFER key
+    /// (typically the same `Signer<IdentityPublicKey>` used for credit transfers).
+    ///
+    /// The identity is debited `amount` plus the metered fee plus the shielded
+    /// compute fee. Returns the proven post-debit balance, which is also applied
+    /// to the managed identity and persisted. A result proof that is not this
+    /// identity's balance proof reports the spend as unconfirmed
+    /// ([`PlatformWalletError::ShieldedSpendUnconfirmed`]), as does any failure
+    /// verdict the proven identity nonce cannot rule out (do not rebuild on it).
+    /// The activity row stays pending until the shielded scan observes the note
+    /// on-chain; the balance proof alone does not confirm it.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_shield_from_identity<S, P>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        shielded_account: u32,
+        identity_id: &Identifier,
+        amount: u64,
+        signer: &S,
+        prover: P,
+    ) -> Result<Credits, PlatformWalletError>
+    where
+        S: dpp::identity::signer::Signer<IdentityPublicKey> + Send + Sync,
+        P: dpp::shielded::builder::OrchardProver,
+    {
+        self.shielded_shield_from_identity_impl(
+            coordinator,
+            shielded_account,
+            None,
+            identity_id,
+            amount,
+            [0u8; 36],
+            signer,
+            prover,
+        )
+        .await
+    }
+
+    /// [`shielded_shield_from_identity`](Self::shielded_shield_from_identity) with
+    /// the note paid to a THIRD-PARTY Orchard address (`recipient_raw_43`, same shape
+    /// as [`shielded_transfer_to`](Self::shielded_transfer_to)) and an optional memo.
+    /// An address this account's own IVK recognizes is rejected; self-shields use the
+    /// entry point without a recipient.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_shield_from_identity_to_recipient<S, P>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        shielded_account: u32,
+        identity_id: &Identifier,
+        recipient_raw_43: &[u8; 43],
+        amount: u64,
+        memo: [u8; 36],
+        signer: &S,
+        prover: P,
+    ) -> Result<Credits, PlatformWalletError>
+    where
+        S: dpp::identity::signer::Signer<IdentityPublicKey> + Send + Sync,
+        P: dpp::shielded::builder::OrchardProver,
+    {
+        let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
+            grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
+        )
+        .ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "invalid Orchard payment address bytes".to_string(),
+            )
+        })?;
+        self.shielded_shield_from_identity_impl(
+            coordinator,
+            shielded_account,
+            Some(recipient),
+            identity_id,
+            amount,
+            memo,
+            signer,
+            prover,
+        )
+        .await
+    }
+
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    async fn shielded_shield_from_identity_impl<S, P>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        shielded_account: u32,
+        recipient: Option<grovedb_commitment_tree::PaymentAddress>,
+        identity_id: &Identifier,
+        amount: u64,
+        memo: [u8; 36],
+        signer: &S,
+        prover: P,
+    ) -> Result<Credits, PlatformWalletError>
+    where
+        S: dpp::identity::signer::Signer<IdentityPublicKey> + Send + Sync,
+        P: dpp::shielded::builder::OrchardProver,
+    {
+        if amount == 0 {
+            return Err(PlatformWalletError::ShieldedBuildError(
+                "amount must be > 0".to_string(),
+            ));
+        }
+
+        // Single-flight with the address-funded shields: the identity nonce is
+        // fetched inside the operation, and two concurrent builds would race it.
+        let _shield_guard = self.shield_guard.lock().await;
+
+        let identity = {
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
+            info.identity_manager
+                .identity(identity_id)
+                .map(|m| m.identity.clone())
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
+        };
+
+        let keyset = {
+            let guard = self.shielded_keys.read().await;
+            let keys = guard
+                .as_ref()
+                .ok_or(PlatformWalletError::ShieldedNotBound)?;
+            keys.get(&shielded_account)
+                .ok_or_else(|| {
+                    PlatformWalletError::ShieldedKeyDerivation(format!(
+                        "shielded account {shielded_account} not bound"
+                    ))
+                })?
+                .clone()
+        };
+        let new_balance = super::shielded::operations::shield_from_identity_to(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            &keyset,
+            shielded_account,
+            recipient.as_ref(),
+            &identity,
+            amount,
+            memo,
+            signer,
+            &prover,
+        )
+        .await?;
+
+        // The operation only received a clone of the identity, so the managed
+        // identity still carries the pre-debit balance. Apply the proven
+        // post-debit balance and persist the snapshot (the pattern
+        // `transfer_credits_to_addresses_with_external_signer` follows).
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .and_then(|info| info.identity_manager.managed_identity_mut(identity_id));
+            if let Some(managed) = managed {
+                managed.identity.set_balance(new_balance);
+                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
+                    tracing::error!(
+                        identity = %identity_id,
+                        error = %e,
+                        "Failed to persist identity balance update after shield from identity"
+                    );
+                }
+            }
+        }
+
+        Ok(new_balance)
+    }
 }
 
 impl PlatformWallet {
@@ -1859,6 +2060,11 @@ impl PlatformWallet {
     }
 
     /// Load persisted state for this wallet.
+    ///
+    /// Calls the backend inline, without the `spawn_blocking` offload that
+    /// [`PlatformWalletManager::load_from_persistor`](crate::manager::PlatformWalletManager::load_from_persistor)
+    /// and wallet registration use. A slow backend blocks the calling thread —
+    /// an async caller's runtime worker included.
     pub fn load_persisted(&self) -> Result<ClientStartState, PersistenceError> {
         self.persister.load()
     }
@@ -1928,6 +2134,9 @@ impl PlatformWallet {
     /// accounts that exist at that point; a second call after
     /// account bootstrap picks up the rest without regressing
     /// anything.
+    ///
+    /// Inherits [`load_persisted`](Self::load_persisted)'s inline read with no
+    /// offload. A host that wants one must wrap this call itself.
     pub async fn load_and_apply_persisted(
         &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -2305,19 +2514,19 @@ mod shield_input_selection_tests {
         // Real account snapshot: the leading address is below the reserve, so
         // capacity must come from the usable suffix, not the account total.
         assert!(
-            297_264_780 <= reserve(),
+            197_264_780 <= reserve(),
             "regression shape requires the leading address to stay below the reserve; \
-             re-seed the balances if the versioned reserve drops under 297_264_780"
+             re-seed the balances if the versioned reserve drops under 197_264_780"
         );
         let candidates = vec![
-            (addr(1), 297_264_780),
+            (addr(1), 197_264_780),
             (addr(2), 2_000_000_000),
             (addr(3), 1_623_849_220),
         ];
         let plan = plan(candidates).unwrap();
         let expected_max = 3_623_849_220 - reserve();
 
-        assert_eq!(plan.preflight.account_balance_credits, 3_921_114_000);
+        assert_eq!(plan.preflight.account_balance_credits, 3_821_114_000);
         assert_eq!(plan.preflight.usable_balance_credits, 3_623_849_220);
         assert_eq!(plan.preflight.fee_reserve_credits, reserve());
         assert_eq!(plan.preflight.max_shieldable_credits, expected_max);

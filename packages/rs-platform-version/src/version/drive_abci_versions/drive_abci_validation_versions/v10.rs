@@ -181,7 +181,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 },
                 is_allowed: 0,
                 document_create_transition_structure_validation: 1,
-                document_delete_transition_structure_validation: 0,
+                // Reject deletes on legacy keep-history types as paid consensus errors.
+                // Protocols through 13 retain the original internal-error outcome.
+                document_delete_transition_structure_validation: 1,
                 document_index_only_delete_transition_structure_validation: 0,
                 document_replace_transition_structure_validation: 0,
                 document_transfer_transition_structure_validation: 0,
@@ -313,6 +315,14 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                     state: 0,
                     transform_into_action: 0,
                 },
+            shield_from_identity_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: Some(0),
+                advanced_structure: None,
+                identity_signatures: Some(0),
+                nonce: Some(0),
+                state: 0,
+                transform_into_action: 0,
+            },
         },
         has_nonce_validation: 1,
         has_address_witness_validation: 0,

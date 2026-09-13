@@ -50,6 +50,8 @@ pub mod identity_create_from_shielded_pool;
 pub mod shield;
 /// Module for shield from asset lock transition validation
 pub mod shield_from_asset_lock;
+/// Shield from identity (identity balance to shielded pool)
+pub mod shield_from_identity;
 /// Common validation logic shared by shielded transitions (proof verification)
 pub mod shielded_common;
 /// Module for shielded transfer transition validation

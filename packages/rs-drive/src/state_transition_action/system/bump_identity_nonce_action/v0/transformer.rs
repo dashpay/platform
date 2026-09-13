@@ -9,9 +9,25 @@ use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCred
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
 use dpp::state_transition::StateTransitionHasUserFeeIncrease;
 
 impl BumpIdentityNonceActionV0 {
+    /// from borrowed shield from identity
+    pub fn from_borrowed_shield_from_identity(value: &ShieldFromIdentityTransitionV0) -> Self {
+        let ShieldFromIdentityTransitionV0 {
+            identity_id,
+            nonce,
+            user_fee_increase,
+            ..
+        } = value;
+        BumpIdentityNonceActionV0 {
+            identity_id: *identity_id,
+            identity_nonce: *nonce,
+            user_fee_increase: *user_fee_increase,
+        }
+    }
+
     /// from identity update
     pub fn from_identity_update(value: IdentityUpdateTransitionV0) -> Self {
         let IdentityUpdateTransitionV0 {

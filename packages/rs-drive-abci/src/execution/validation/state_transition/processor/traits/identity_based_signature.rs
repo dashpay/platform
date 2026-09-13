@@ -64,6 +64,7 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::DataContractUpdate(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::Batch(_)
+            | StateTransition::ShieldFromIdentity(_)
             | StateTransition::IdentityCreditTransferToAddresses(_) => {
                 //Basic signature verification
                 Ok(self.validate_state_transition_identity_signed(
@@ -188,6 +189,7 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::IdentityUpdate(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_)
+            | StateTransition::ShieldFromIdentity(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::IdentityTopUpFromAddresses(_) => true,
         }
@@ -216,6 +218,7 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::IdentityUpdate(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_)
+            | StateTransition::ShieldFromIdentity(_)
             | StateTransition::IdentityCreditTransferToAddresses(_) => true,
         }
     }

@@ -62,6 +62,7 @@ pub mod masternode_update_service;
 pub mod masternode_withdrawal;
 pub mod memory_explorer;
 pub mod mnemonic_words;
+pub mod parse_state_transition;
 pub mod persistence;
 pub mod platform_address_sync;
 pub mod platform_address_types;

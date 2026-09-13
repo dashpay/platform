@@ -1253,6 +1253,86 @@ message GetDocumentsRequest {
       string outer_document_type = 2;
     }
     ChainedJoin chained = 13;
+
+    // Composite mode — a page plus sub-queries DERIVED from its
+    // results, answered as ONE merged proof over one state root.
+    //
+    // Presence of any `sub_queries` selects composite mode: this
+    // request's own `data_contract_id` / `document_type` /
+    // `where_clauses` / `order_by` / `limit` describe the PAGE, and
+    // every sub-query's `IN` clause is derived by the node from the
+    // page's (or an earlier sub-query's) proven documents. The
+    // verifier re-derives every sub-query from the proven page with
+    // the same builders, re-merges, and verifies the whole
+    // composition — so the composition cannot be steered by the
+    // responding node, and a node that predates this field (proto3
+    // unknown field) serves a page-only proof that FAILS CLOSED
+    // client-side.
+    //
+    // Mode gates (rejected otherwise): `limit` is REQUIRED on the
+    // page (at most 100 — it bounds every derived clause); `selects`
+    // must be empty or a single DOCUMENTS projection; `group_by`,
+    // `having`, time-range clauses, cursors and `offset` are
+    // rejected (paginate with a range clause on the page's ordering
+    // property); `chained` and `sub_queries` are mutually exclusive.
+    // See `SubQuery` for the per-sub-query rules.
+    message SubQuery {
+      // The contract this sub-query targets. Empty = the page's own
+      // contract; otherwise any contract (profiles keyed by owner,
+      // names keyed by identity).
+      bytes data_contract_id = 1;
+      string document_type = 2;
+      // The FIXED clauses — everything but the derived `IN`, which
+      // must not be named here.
+      repeated WhereClause where_clauses = 3;
+      // Ordering (documents only). Every component of the merged proof
+      // walks in the page's direction: a bound field missing from here
+      // is appended in that direction by the node and the verifier
+      // alike, and an ordering that disagrees with the page's direction
+      // is refused (turning a limited lookup around would change the
+      // rows it returns).
+      repeated OrderClause order_by = 4;
+      // Documents lookups on a non-unique index REQUIRE a limit: it
+      // caps the rows the lookup returns in total, in walk order, like
+      // an ordinary IN query's limit (at most 100). Lookups already
+      // bounded by their values (a unique index, or an indexOnly
+      // terminal with every prefix fixed), by-id joins (completeness is
+      // set equality) and counts take none.
+      optional uint32 limit = 5;
+      enum Kind {
+        // The matching documents.
+        DOCUMENTS = 0;
+        // One count per derived value from the `countable` index
+        // covering the fixed clauses plus the bound field. Must be
+        // bound, and must not share its index path with a documents
+        // component (the count reads the value trees the documents
+        // query descends past).
+        COUNT = 1;
+      }
+      Kind kind = 6;
+      // The derived clause `<field> IN <values>`. Absent = a SIBLING:
+      // an independent documents query proven under the same root.
+      message Binding {
+        // Whose proven documents supply the values: `0` = the page,
+        // `n` = `sub_queries[n - 1]` (which must precede this one and
+        // be a DOCUMENTS sub-query).
+        uint32 source = 1;
+        // The source property read off each document: `$id`,
+        // `$ownerId`, or an identifier-typed property (dotted paths
+        // reach nested properties). Documents without it contribute
+        // nothing.
+        string source_property = 2;
+        // The sub-query field receiving the `IN` clause. `$id` makes
+        // this a by-id JOIN: the source property must then declare
+        // `refersTo: permanentDocument` targeting this document type,
+        // so every derived id resolves and a missing document is an
+        // invalid proof. Otherwise `$ownerId` or an indexed property
+        // (a LOOKUP, where absence is a proven fact).
+        string field = 3;
+      }
+      Binding bind = 7;
+    }
+    repeated SubQuery sub_queries = 14;
   }
 
   oneof version {
@@ -1605,6 +1685,10 @@ message GetDocumentsResponse {
         // among the inner projections, deduplicated). Routed when
         // the request's `chained` message is present.
         ChainedDocuments chained = 6;
+        // Composite-mode result: the page plus one result per
+        // sub-query, in request order. Routed when the request
+        // carries `sub_queries`.
+        CompositeDocuments composite = 7;
       }
     }
 
@@ -1613,6 +1697,25 @@ message GetDocumentsResponse {
     message ChainedDocuments {
       repeated bytes inner_documents = 1;
       repeated bytes outer_documents = 2;
+    }
+
+    // A composite query's page and per-sub-query results, documents
+    // serialized with their own document type.
+    message CompositeDocuments {
+      // The page, exactly as the page query alone would return it.
+      repeated bytes page_documents = 1;
+      message SubQueryResult {
+        oneof result {
+          // DOCUMENTS: a by-id join in first-appearance order of the
+          // derived ids; a lookup or sibling in query order.
+          Documents documents = 1;
+          // COUNT: one entry per derived value that has a count tree
+          // (a value with no entry counts zero), keyed by the
+          // value's index-key bytes.
+          CountEntries counts = 2;
+        }
+      }
+      repeated SubQueryResult sub_results = 2;
     }
 
     oneof result {

@@ -32,9 +32,27 @@ package org.dashfoundation.dashsdk.ffi
  *   [onWalletChangesetAccountBegin] / [onWalletChangesetAccountEnd].
  * - Persist slots return `Int` (0 = ok, non-zero flips the round's
  *   success flag so [onChangesetEnd] delivers the rollback).
+ * - A plain non-zero return means "failed, do not retry". A handler that
+ *   can classify its own failure may instead return one of the two
+ *   sentinels `platform-wallet-ffi` defines — [PERSIST_RC_TRANSIENT] for
+ *   a retryable failure after which nothing was applied, or
+ *   [PERSIST_RC_CONSTRAINT] for an integrity violation. The native side
+ *   forwards the classification to its caller (surfacing as
+ *   `DashSdkError.PlatformWallet.PersisterStoreTransient` and friends) and
+ *   never retries on the handler's behalf. Returning the transient
+ *   sentinel from a ROUND callback additionally asserts that a failed
+ *   round is rolled back whole — see `PersistenceCallbacks` in
+ *   `rs-platform-wallet-ffi/src/persistence.rs` for the exact contract.
  * - Load slots return flattened representations (`Array<...>` / typed
  *   holder objects) that the trampoline re-packs into Rust-owned FFI
- *   structs; Kotlin never allocates native memory.
+ *   structs; Kotlin never allocates native memory. **Only the
+ *   `Int`-returning persist slots can carry a sentinel.** A load has no
+ *   `Int` to put one in, so every load failure — a thrown exception
+ *   included — reaches Rust as a fatal, unclassified error, and no load
+ *   on this binding can report itself as transient or constraint-class.
+ *   A subclass must therefore let a failed load THROW: returning an empty
+ *   array reports a successful restore of nothing, which Rust reads as a
+ *   fresh device, turning a store fault into apparent data loss.
  *
  * ## Threading
  *
@@ -49,6 +67,39 @@ package org.dashfoundation.dashsdk.ffi
  * signer-backed drain relies on the recurring sweep to re-enqueue.
  */
 abstract class NativePersistenceBridge {
+
+    companion object {
+        // Both values are the ABI defined by
+        // `packages/rs-platform-wallet-ffi/src/persistence.rs` and must
+        // change only together with it.
+
+        /**
+         * A retryable failure after which nothing was applied. Returning it
+         * from a callback inside a changeset round also asserts that the
+         * failed round was rolled back whole.
+         *
+         * The round-end callback is the exception: failing it when the round
+         * had already failed means the rollback itself did not complete, so
+         * what reached the store is unknown. Rust classifies that as fatal and
+         * withholds the retry regardless of this value — re-issuing a
+         * changeset the store could neither apply nor undo risks merging it
+         * twice. This sentinel is honoured at round end only on a clean
+         * round, where the commit failed but the rollback succeeded.
+         */
+        const val PERSIST_RC_TRANSIENT: Int = -2
+
+        /** A constraint / integrity violation — the data is wrong, not the store. */
+        const val PERSIST_RC_CONSTRAINT: Int = -3
+
+        /**
+         * `PersistenceCapabilities::CORE_SWEEP_REMOVAL` (bit 11, `0x800`).
+         * The one Kotlin home of this bit: `PlatformWalletPersistenceHandler`
+         * declares it through [persistenceCapabilitiesBits] and the public
+         * diagnostic mirror (`PlatformWalletPersistenceCapabilities`) aliases
+         * it, so the declaration and the mirror can never drift apart.
+         */
+        const val CAPABILITY_CORE_SWEEP_REMOVAL: Long = 0x800
+    }
 
     /**
      * Versioned semantic capability declaration consumed when JNI builds the
@@ -293,6 +344,98 @@ abstract class NativePersistenceBridge {
 
     /** Close the current account bucket. Descriptor `([BI)I`. */
     open fun onWalletChangesetAccountEnd(walletId: ByteArray, accountIndex: Int): Int = 0
+
+    /**
+     * Transactions the wallet removed in one sweep batch: [txidCount] raw
+     * 32-byte txids packed back to back in [txids], the single transaction
+     * [supersededBy] that settled their inputs, and the
+     * [releasedOutpointCount] 36-byte outpoint keys (raw txid followed by a
+     * little-endian vout, the same packing as `onWalletChangesetTransaction`'s
+     * `inputOutpoints`) packed in [releasedOutpoints] that this batch
+     * actually freed. Descriptor `([B[BI[B[BIZI)I`.
+     *
+     * Order within a round, stated once here (`store()` in
+     * `rs-platform-wallet-ffi/src/persistence.rs`): native fires the
+     * changeset callback — the header, then every account slice
+     * (transactions, then `utxos_added`, then `utxos_spent` per account) —
+     * then the chainlock-height slot ([onWalletChangesetChainLockHeight])
+     * when the round carries a chainlock, then this slot once PER BATCH in
+     * the round's emission order, and only when the round swept
+     * something. Batches are non-commutative — each release is true only
+     * of the wallet its own sweep saw, and a later batch can keep spent a
+     * coin an earlier one freed — so an implementation must apply every
+     * call's holds before its releases and must apply the calls in order.
+     * It may buffer them until the round's end (the handler does, so the
+     * co-swept set spans the round), but it must never reorder them.
+     *
+     * [hasWinnerMinedHeight] says whether [winnerMinedHeight] is the
+     * winner's own mined block height (a block-context sweep) or
+     * meaningless (an InstantSend-locked winner not yet mined). It keys the
+     * lifetime of the durable claim every non-released input retains: a
+     * stamped hold is collectible once the chainlock finality boundary
+     * reaches the stamp, while the unmined case leaves the SAME hold
+     * UNSTAMPED — an IS-locked winner has no mining deadline, so no
+     * boundary can prove the held input's funding delivered-or-never — and
+     * no collector may ever remove an unstamped hold: it resolves only
+     * through proof, when the funding TXO materializes it, a later
+     * block-context sweep re-stamps it, or a release deletes it. An
+     * implementation that drops the hold instead (either by skipping it
+     * for an unmined winner or by aging it out) deletes the only
+     * cross-restart carrier of a consumed coin's spend claim and later
+     * restores that coin as spendable.
+     *
+     * Each removed transaction was a recorded spend that its winner beat to
+     * one of its inputs, so it can never confirm. Every other slot on this
+     * bus is additive; this is the only removal, and an implementation that
+     * ignores it keeps dead rows that are handed back at the next load and
+     * re-create a balance the wallet has already corrected.
+     *
+     * [releasedOutpoints] is wallet-scoped, not attributed per removal: an
+     * implementation holds every input of every row it deletes, so it only
+     * needs to know which of them came free. Everything else it holds was
+     * taken by the transaction that won those inputs and must stay spent.
+     * The set cannot be inferred from [supersededBy] — that transaction may
+     * pay entirely to outside addresses and never be reported here at all.
+     *
+     * Native delivers these through the persistence extension's
+     * size-negotiated sweep callback (not the wallet-changeset struct, whose
+     * bare-pointer ABI cannot version itself). The JNI layer wires that
+     * slot only when the concrete bridge OVERRIDES this method
+     * (`rs-unified-sdk-jni/src/persistence.rs`, `bridge_overrides`), and
+     * Rust's own derivation — slot present AND
+     * [CAPABILITY_CORE_SWEEP_REMOVAL] declared through
+     * [persistenceCapabilitiesBits] — is the gate: a subclass that declares
+     * the bit without overriding never has the slot wired, so Rust strips
+     * the bit and the sync watermark with it rather than trusting a
+     * removal that would never be applied. This default is therefore the
+     * benign ignore, never reached in production for a wired slot.
+     */
+    open fun onWalletChangesetTransactionsSwept(
+        walletId: ByteArray,
+        txids: ByteArray,
+        txidCount: Int,
+        supersededBy: ByteArray,
+        releasedOutpoints: ByteArray,
+        releasedOutpointCount: Int,
+        hasWinnerMinedHeight: Boolean,
+        winnerMinedHeight: Int,
+    ): Int = 0
+
+    /**
+     * The round's numeric chainlock height, fired on every round whose
+     * changeset carries a chainlock, after the changeset callback and
+     * before the sweep batches (see [onWalletChangesetTransactionsSwept]
+     * for the full order). Descriptor `([BI)I`.
+     *
+     * The bincode chainlock blob on the header call is opaque to Kotlin,
+     * and this scalar is the half of the swept-tombstone collection
+     * boundary `min(chainlockHeight, syncedHeight)` an implementation
+     * cannot otherwise know. Purely additive: a host that ignores it
+     * simply never collects tombstones, which is the safe direction —
+     * holding a tombstone forever is junk, collecting one early is a
+     * wrongly-freed claim.
+     */
+    open fun onWalletChangesetChainLockHeight(walletId: ByteArray, height: Int): Int = 0
 
     // ── Identities ────────────────────────────────────────────────────
 
@@ -626,6 +769,10 @@ abstract class NativePersistenceBridge {
     ): Int = 0
 
     // ── Load callbacks ────────────────────────────────────────────────
+    //
+    // These return objects rather than `Int`, so [PERSIST_RC_TRANSIENT] and
+    // [PERSIST_RC_CONSTRAINT] cannot be expressed here: a failing load
+    // reaches Rust as a fatal, unclassified error however it fails.
 
     /**
      * `on_load_wallet_list_fn`. Returns the persisted wallet list as an

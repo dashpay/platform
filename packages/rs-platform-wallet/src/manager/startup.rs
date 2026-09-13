@@ -966,8 +966,10 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
 
     /// Record that a scan was abandoned before it could answer every index.
     ///
-    /// Mirrors what `discover` publishes for itself; needed separately because
-    /// a scan dropped mid-await never reaches its own bookkeeping.
+    /// Mirrors what `discover` publishes for itself, retry policy included;
+    /// needed separately because a scan dropped mid-await never reaches its own
+    /// bookkeeping. This is the verdict least affordable to lose — the one that
+    /// re-opens the identity question on the next launch.
     async fn record_identity_scan_cut_off(&self, wallet_id: &WalletId) {
         // Coverage of nothing: the scan was dropped mid-await, so it answered
         // no index and may not clear one an earlier scan left open.
@@ -985,12 +987,15 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             identity_scan_state: Some(recorded),
             ..Default::default()
         };
+        // Single attempt, not retried — the outcome is logged and swallowed
+        // either way: an abandoned scan must not turn a shutdown into an error.
         if let Err(e) = self.persister.store(*wallet_id, changeset) {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
+                transient = e.is_transient(),
                 error = %e,
-                "failed to persist an abandoned scan's verdict; the next launch may take the \
-                 warm shortcut over an incomplete identity set"
+                "abandoned scan's verdict could not be persisted; the next launch will take \
+                 the warm shortcut over an identity set nothing proved complete"
             );
         }
     }
@@ -1375,8 +1380,8 @@ mod tests {
     }
 
     fn seed_for(phrase: &str) -> [u8; 64] {
-        use key_wallet::mnemonic::{Language, Mnemonic};
-        Mnemonic::from_phrase(phrase, Language::English)
+        use key_wallet::mnemonic::Mnemonic;
+        Mnemonic::from_phrase(phrase)
             .expect("valid test mnemonic")
             .to_seed("")
     }
@@ -1684,10 +1689,11 @@ mod tests {
     ///
     /// Driven with a zero budget so no branch depends on network timing: every
     /// step is abandoned at its deadline and what is asserted is purely which
-    /// verdict came out. ("No verdict at all" is not reachable here — the
-    /// harness's mock SDK answers no probe, so creating the wallet already
-    /// leaves one — and it is the accessor's own documented contract that an
-    /// absent verdict reads as unknown rather than incomplete.)
+    /// verdict came out. The incomplete verdict is planted through the same
+    /// `record_identity_scan` the scans use: registration records none (the
+    /// wallet is external-signable by then, so the resident-key probe never
+    /// runs), and it is the accessor's own documented contract that an absent
+    /// verdict reads as unknown rather than incomplete.
     #[tokio::test]
     async fn a_recorded_incomplete_scan_reaches_the_outcome() {
         use crate::changeset::IdentityScanStateEntry;
@@ -1702,19 +1708,20 @@ mod tests {
         let owning =
             SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
 
-        // The wallet arrives with an unanswered index on record — a real
-        // incomplete scan, produced by the mock SDK refusing every probe
-        // during wallet creation, not a hand-planted flag.
+        // The wallet arrives with an unanswered index on record — the verdict
+        // an abandoned scan leaves behind (index 0 probed, unanswered),
+        // recorded the way the scans record theirs.
         let covered_through;
         {
-            let wm = manager.wallet_manager.read().await;
-            let verdict = wm
-                .get_wallet_info(&wallet_id)
-                .expect("wallet info")
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .record_identity_scan(wallet_id, IdentityScanStateEntry::incomplete(0, 1, vec![0]));
+            let verdict = info
                 .identity_manager
                 .identity_scan_state(&wallet_id)
                 .cloned()
-                .expect("precondition: the creation scan recorded a verdict");
+                .expect("precondition: the planted verdict is on record");
             assert!(
                 !verdict.complete,
                 "precondition: that verdict must be the incomplete one"
@@ -1756,7 +1763,7 @@ mod tests {
             let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
             // Coverage matters: a verdict only clears the gaps it walked, so
             // this stand-in for a clean rescan has to span the same indices
-            // the creation scan left unanswered.
+            // the planted verdict left unanswered.
             info.identity_manager.record_identity_scan(
                 wallet_id,
                 IdentityScanStateEntry::completed(0, covered_through),

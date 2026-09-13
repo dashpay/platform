@@ -2437,6 +2437,7 @@ struct ShieldedActivityStorageDetailView: View {
         case 5: name = "Withdrawal"
         case 6: name = "IdentityCreate"
         case 7: name = "ShieldedSpend"
+        case 8: name = "ShieldFromIdentity"
         default: return "Unknown(\(tag))"
         }
         return "\(name) (\(tag))"

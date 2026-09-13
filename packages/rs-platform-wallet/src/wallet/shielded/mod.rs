@@ -57,7 +57,8 @@ pub use keys::{AccountViewingKeys, OrchardKeySet};
 pub use prover::CachedOrchardProver;
 pub use seed_pool::{SeedPoolOutcome, SeedPoolProgress, DEFAULT_SEED_POOL_TARGET_NOTES};
 pub use store::{
-    InMemoryShieldedStore, ShieldedNote, ShieldedOutgoingNote, ShieldedStore, SubwalletId,
+    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, InMemoryShieldedStore, ShieldedNote,
+    ShieldedOutgoingNote, ShieldedStore, SubwalletId,
 };
 pub use sync::{ShieldedSyncSummary, SyncNotesResult};
 

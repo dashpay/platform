@@ -40,6 +40,7 @@ pub struct DPPStateTransitionSerializationVersions {
     pub shield_from_asset_lock_state_transition: FeatureVersionBounds,
     pub shielded_withdrawal_state_transition: FeatureVersionBounds,
     pub identity_create_from_shielded_pool_state_transition: FeatureVersionBounds,
+    pub shield_from_identity_state_transition: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

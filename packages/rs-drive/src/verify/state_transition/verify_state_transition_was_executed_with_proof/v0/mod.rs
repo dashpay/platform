@@ -2080,6 +2080,31 @@ impl Drive {
                     VerifiedIdentityWithShieldedNullifiers(identity, statuses),
                 ))
             }
+            StateTransition::ShieldFromIdentity(st) => {
+                use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
+                // snapshot of the identity's balance at the proof's block
+                let identity_id = st.identity_id();
+                let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
+                    proof,
+                    identity_id.into_buffer(),
+                    false,
+                    platform_version,
+                )?;
+                let balance = balance.ok_or(Error::Proof(ProofError::IncorrectProof(format!(
+                    "proof did not contain balance for identity {} expected to exist because of state transition (shield from identity)",
+                    identity_id
+                ))))?;
+                Ok((
+                    root_hash,
+                    VerifiedPartialIdentity(PartialIdentity {
+                        id: identity_id,
+                        loaded_public_keys: Default::default(),
+                        balance: Some(balance),
+                        revision: None,
+                        not_found_public_keys: Default::default(),
+                    }),
+                ))
+            }
         }?;
 
         let outcome = if Self::state_transition_proof_binds_execution(
@@ -2214,6 +2239,9 @@ impl Drive {
             // complete Orchard request, denomination context, or fallback
             // address.
             StateTransition::IdentityCreateFromShieldedPool(_) => false,
+            // Only the identity's post-debit balance is proven; the shielded note
+            // and the requested amount are not bound.
+            StateTransition::ShieldFromIdentity(_) => false,
         };
 
         Ok(binds)

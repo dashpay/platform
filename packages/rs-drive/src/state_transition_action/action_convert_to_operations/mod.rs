@@ -110,6 +110,9 @@ impl DriveHighLevelOperationConverter for StateTransitionAction {
             StateTransitionAction::ShieldAction(shield_action) => {
                 shield_action.into_high_level_drive_operations(epoch, platform_version)
             }
+            StateTransitionAction::ShieldFromIdentityAction(action) => {
+                action.into_high_level_drive_operations(epoch, platform_version)
+            }
             StateTransitionAction::ShieldedTransferAction(shielded_transfer_action) => {
                 shielded_transfer_action.into_high_level_drive_operations(epoch, platform_version)
             }

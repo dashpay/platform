@@ -23,6 +23,10 @@ pub struct DriveDocumentQueryMethodVersions {
     /// Chained document queries (provable semi-join): the version slot
     /// shared by the no-proof and the two-proof execution paths.
     pub query_chained_documents: FeatureVersion,
+    /// Composite document queries (a page plus sub-queries derived from
+    /// its results, one merged proof): the version slot shared by the
+    /// no-proof and the proof execution paths.
+    pub query_composite_documents: FeatureVersion,
     pub query_contested_documents: FeatureVersion,
     pub query_contested_documents_vote_state: FeatureVersion,
     pub query_documents_with_flags: FeatureVersion,

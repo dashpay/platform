@@ -19,6 +19,9 @@ use versioned_feature_core::FeatureVersionBounds;
 // it. Generation 3 admits the ranked keywords unconditionally — it exists if
 // and only if the meta-schema is v3, so it needs no version read of its own.
 //
+// Generation 3 also rejects keep-history document types that allow deletion
+// during full validation. Earlier parser generations retain released behavior.
+//
 // `document_type_schema` moves to 3 in the same step: generation 3 and
 // meta-schema v3 are introduced together and pair by construction. Under v2 the
 // ranked keys still fail an index entry's `additionalProperties: false`, so v5

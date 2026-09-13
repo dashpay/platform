@@ -132,14 +132,16 @@ pub struct ShieldedOutgoingNote {
 /// Platform's recorded set (the spend can then never execute).
 pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>);
 
-/// A re-drivable broadcast-accepted-but-unconfirmed spend: the signed
+/// An unresolved signed transition and its durable retry guard: the signed
 /// transition bytes plus everything the sync-time re-drive needs to
 /// resolve the ambiguity actively — re-broadcast the transition
 /// ([`nullifiers`](Self::nullifiers) detect a landing, `anchor` feeds
 /// the prune backstop, `activity_id` links the UI row, `attempts`
 /// bounds the retries.
 ///
-/// Armed only on the ambiguous outcome (`ShieldedSpendUnconfirmed`):
+/// Identity-funded shields arm this record before broadcast and have no input
+/// nullifiers. Their guard survives even after rebroadcasting stops. Note spends
+/// arm it only on the ambiguous outcome (`ShieldedSpendUnconfirmed`):
 /// the broadcast was accepted but the result wait failed, so the spend
 /// may or may not have executed. Re-broadcasting the byte-identical
 /// transition is fund-safe — identical nullifiers cannot double-spend —
@@ -159,6 +161,39 @@ pub struct PendingRedrive {
     pub st_bytes: Vec<u8>,
     /// Re-broadcast attempts made so far.
     pub attempts: u32,
+    /// A proven identity nonce has made this exact debit impossible to execute
+    /// again. Stop broadcasting, but keep its unresolved-payment guard until
+    /// the scan confirms the outputs. Always false for note-spend redrives.
+    pub identity_nonce_finalized: bool,
+    /// The host explicitly accepted that this payment may have executed or may
+    /// still execute. Retain the signed record for reconciliation/audit, but stop
+    /// automatic retries and permit separately authorized new payments.
+    /// This is never a proof of failure and is always false for note spends.
+    pub identity_user_abandoned: bool,
+}
+
+/// What the wallet knows about an identity debit's local recovery state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentityDebitRecoveryStatus {
+    /// The original signed transaction may still be retried.
+    Retrying,
+    /// Its nonce is unavailable; output confirmation is still missing.
+    Parked,
+    /// The user accepted an unknown outcome and stopped automatic recovery.
+    Unknown,
+}
+
+/// An active or explicitly abandoned identity debit retained by the wallet.
+/// Missing decoded fields indicate a damaged record; the wallet/account/activity
+/// key still allows a deliberate, precisely scoped recovery decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentityDebitRecoveryRecord {
+    pub account_index: u32,
+    pub activity_id: [u8; 32],
+    pub identity_id: Option<[u8; 32]>,
+    pub nonce: Option<u64>,
+    pub amount: Option<u64>,
+    pub status: IdentityDebitRecoveryStatus,
 }
 
 /// The result of [`SubwalletState::mark_spent`].
@@ -265,6 +300,14 @@ pub trait ShieldedStore: Send + Sync {
 
     /// Every armed redrive record for `id`.
     fn pending_redrives(&self, id: SubwalletId) -> Result<Vec<PendingRedrive>, Self::Error>;
+
+    /// Every armed redrive record for a wallet, paired with the subwallet
+    /// that owns its durable row. Previously bound accounts remain visible
+    /// here while they retain a wallet-wide identity-debit guard.
+    fn pending_redrives_for_wallet(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<(SubwalletId, PendingRedrive)>, Self::Error>;
 
     /// Increment the attempt counter on `id`'s redrive keyed by
     /// `activity_id`, returning the new count (`0` when no such record
@@ -439,9 +482,10 @@ pub trait ShieldedStore: Send + Sync {
     /// rather than resuming behind the stale watermark.
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error>;
 
-    /// Drop the per-subwallet state (and any durable redrive rows)
-    /// for exactly ONE subwallet, leaving every other subwallet of
-    /// the same wallet — and the shared commitment tree — intact.
+    /// Drop the account-scoped state and nullifier-backed redrives for exactly
+    /// one subwallet, leaving every other subwallet and the shared commitment
+    /// tree intact. Empty-nullifier identity-debit guards are wallet-wide and
+    /// survive until authenticated resolution or an explicit wallet purge.
     ///
     /// The account-scoped sibling of [`Self::purge_wallet`]. Used by
     /// the coordinator when a re-bind changes a wallet's account set:
@@ -684,6 +728,14 @@ impl SubwalletState {
         self.redrives.values().cloned().collect()
     }
 
+    pub(super) fn identity_redrives(&self) -> Vec<PendingRedrive> {
+        self.redrives
+            .values()
+            .filter(|redrive| redrive.nullifiers.is_empty())
+            .cloned()
+            .collect()
+    }
+
     /// Current attempt count for `activity_id`'s redrive, if armed.
     pub(super) fn redrive_attempts(&self, activity_id: &[u8; 32]) -> Option<u32> {
         self.redrives.get(activity_id).map(|r| r.attempts)
@@ -694,7 +746,7 @@ impl SubwalletState {
         self.redrives
             .get_mut(activity_id)
             .map(|r| {
-                r.attempts += 1;
+                r.attempts = r.attempts.saturating_add(1);
                 r.attempts
             })
             .unwrap_or(0)
@@ -880,6 +932,23 @@ impl ShieldedStore for InMemoryShieldedStore {
             .unwrap_or_default())
     }
 
+    fn pending_redrives_for_wallet(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<(SubwalletId, PendingRedrive)>, Self::Error> {
+        Ok(self
+            .subwallets
+            .iter()
+            .filter(|(id, _)| id.wallet_id == wallet_id)
+            .flat_map(|(id, subwallet)| {
+                subwallet
+                    .pending_redrives()
+                    .into_iter()
+                    .map(|redrive| (*id, redrive))
+            })
+            .collect())
+    }
+
     fn bump_redrive_attempts(
         &mut self,
         id: SubwalletId,
@@ -1019,7 +1088,18 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn purge_subwallet(&mut self, id: SubwalletId) -> Result<(), Self::Error> {
+        let identity_redrives = self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::identity_redrives)
+            .unwrap_or_default();
         self.subwallets.remove(&id);
+        if !identity_redrives.is_empty() {
+            let retained = self.subwallets.entry(id).or_default();
+            for redrive in identity_redrives {
+                retained.arm_redrive(redrive);
+            }
+        }
         Ok(())
     }
 
@@ -1124,6 +1204,8 @@ mod tests {
             nullifiers: vec![n1, n2],
             st_bytes: vec![1, 2, 3],
             attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
 
         // Landing path: mark_spent on one nullifier drops the record.
@@ -1413,6 +1495,46 @@ mod tests {
         assert!(
             store.stale_pending_spends(id).unwrap().is_empty(),
             "a reservation with no recorded anchor must not surface as stale"
+        );
+    }
+
+    #[test]
+    fn account_purge_retains_wallet_wide_identity_guard_only() {
+        let wallet_id = [0x81; 32];
+        let id = SubwalletId::new(wallet_id, 4);
+        let mut store = InMemoryShieldedStore::new();
+        let identity_guard = PendingRedrive {
+            activity_id: [0x11; 32],
+            anchor: [0x22; 32],
+            nullifiers: vec![],
+            st_bytes: vec![0x33; 16],
+            attempts: 7,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+        };
+        let note_spend = PendingRedrive {
+            activity_id: [0x44; 32],
+            anchor: [0x55; 32],
+            nullifiers: vec![[0x66; 32]],
+            st_bytes: vec![0x77; 16],
+            attempts: 1,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+        };
+        store.arm_redrive(id, identity_guard.clone()).unwrap();
+        store.arm_redrive(id, note_spend).unwrap();
+
+        store.purge_subwallet(id).unwrap();
+
+        assert_eq!(
+            store.pending_redrives(id).unwrap(),
+            vec![identity_guard.clone()],
+            "account removal must keep the unresolved identity debit but discard account spends"
+        );
+        assert_eq!(
+            store.pending_redrives_for_wallet(wallet_id).unwrap(),
+            vec![(id, identity_guard)],
+            "the retained guard must remain visible to wallet-wide admission and redrive"
         );
     }
 }

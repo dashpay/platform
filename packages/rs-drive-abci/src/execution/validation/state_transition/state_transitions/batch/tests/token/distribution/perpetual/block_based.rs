@@ -785,6 +785,7 @@ mod random {
     /// Given a random distribution function with min=10, max=30,
     /// When I claim tokens at various heights,
     /// Then I get a distribution of balances that is close to the maximum entropy.
+    #[allow(clippy::disallowed_methods)] // test-only entropy estimate, never touches state
     #[tokio::test]
     #[ignore]
     async fn test_block_based_perpetual_random_10_30_entropy() {
@@ -860,6 +861,7 @@ mod random {
 
     // HELPERS //
 
+    #[allow(clippy::disallowed_methods)] // test-only entropy estimate, never touches state
     fn calculate_entropy(data: &[u64]) -> f64 {
         let mut counts = BTreeMap::new();
         let len = data.len() as f64;
@@ -2165,6 +2167,7 @@ mod polynomial {
 mod logarithmic {
 
     use super::test_suite::check_heights;
+    use super::INITIAL_BALANCE;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,Logarithmic};
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{MAX_DISTRIBUTION_PARAM, MAX_LOG_A_PARAM, MIN_LOG_A_PARAM};
 
@@ -2310,6 +2313,57 @@ mod logarithmic {
         )
         .await
     }
+    /// The tuple from the cross-architecture app-hash report. Under the pre-v14 evaluator
+    /// `floor(32767 * ln(2 * m / n))` is 31403 on aarch64-musl and 31402 on x86_64-musl.
+    /// The distribution starts at the contract registration step, `o = 1`, so the first
+    /// interval after registration evaluates `x - s + o = 2`. Through the full
+    /// `TokenClaimTransition` path at the latest protocol version, the mint must be 31402
+    /// on every architecture.
+    fn cross_arch_boundary_tuple() -> DistributionFunction {
+        Logarithmic {
+            a: 32_767,
+            d: 1,
+            m: 1_874_222_771,
+            n: 1_437_590_544,
+            o: 1,
+            start_moment: None,
+            b: 0,
+            min_value: None,
+            max_value: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn log_distribution_cross_arch_boundary_interval_1() -> Result<(), String> {
+        // Registration at step 0 (block 1 / interval 1), claim at block 1 covers step 1:
+        // ln(2 * m / n) * a = 31402. Claiming at block 2 adds step 2: ln(3 * m / n) * a.
+        test_logarithmic(
+            cross_arch_boundary_tuple(),
+            &[
+                (1, INITIAL_BALANCE + 31_402, true),
+                (2, INITIAL_BALANCE + 31_402 + 44_688, true),
+            ],
+            1,
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn log_distribution_cross_arch_boundary_interval_100() -> Result<(), String> {
+        // Mainnet's minimum block interval. The cycle normalisation divides both the
+        // registration height and the claim height by 100, so the first claimable
+        // boundary evaluates the same relative step and the same 31402.
+        test_logarithmic(
+            cross_arch_boundary_tuple(),
+            &[
+                (50, INITIAL_BALANCE, false),
+                (100, INITIAL_BALANCE + 31_402, true),
+            ],
+            100,
+        )
+        .await
+    }
+
     /// f(x) = (a * log(m * (x - s + o) / n)) / d + b
     async fn test_logarithmic(
         dist: DistributionFunction,
@@ -2332,6 +2386,7 @@ mod logarithmic {
 
 mod inverted_logarithmic {
     use super::test_suite::check_heights;
+    use platform_version::version::PlatformVersion;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,InvertedLogarithmic};
 
     #[tokio::test]
@@ -2353,9 +2408,13 @@ mod inverted_logarithmic {
             (2, 100_001, false),
             (50000, 100_001, false),
         ];
-        let x_1 = dist.evaluate(0, 1).expect("expected to evaluate");
+        let x_1 = dist
+            .evaluate(0, 1, PlatformVersion::latest())
+            .expect("expected to evaluate");
         assert_eq!(x_1, 1); // This is ln (1/ (1 - 1 + 1)), or basically ln(1) = 1
-        let x_2 = dist.evaluate(0, 2).expect("expected to evaluate");
+        let x_2 = dist
+            .evaluate(0, 2, PlatformVersion::latest())
+            .expect("expected to evaluate");
         assert_eq!(x_2, 0); // This is ln (1/ (1 - 1 + 2)), or basically ln(1/2) = 0
         run_test(dist, &steps, 1).await
     }
@@ -2387,12 +2446,24 @@ mod inverted_logarithmic {
             min_value: None,       // min_value: Option<u64>,
             max_value: None,       // max_value: Option<u64>,
         };
-        let x_1 = dist.evaluate(0, 1).expect("expected to evaluate");
-        let x_2 = dist.evaluate(0, 2).expect("expected to evaluate");
-        let x_1000 = dist.evaluate(0, 1000).expect("expected to evaluate");
-        let x_4000 = dist.evaluate(0, 4000).expect("expected to evaluate");
-        let x_5000 = dist.evaluate(0, 5000).expect("expected to evaluate");
-        let x_6000 = dist.evaluate(0, 6000).expect("expected to evaluate");
+        let x_1 = dist
+            .evaluate(0, 1, PlatformVersion::latest())
+            .expect("expected to evaluate");
+        let x_2 = dist
+            .evaluate(0, 2, PlatformVersion::latest())
+            .expect("expected to evaluate");
+        let x_1000 = dist
+            .evaluate(0, 1000, PlatformVersion::latest())
+            .expect("expected to evaluate");
+        let x_4000 = dist
+            .evaluate(0, 4000, PlatformVersion::latest())
+            .expect("expected to evaluate");
+        let x_5000 = dist
+            .evaluate(0, 5000, PlatformVersion::latest())
+            .expect("expected to evaluate");
+        let x_6000 = dist
+            .evaluate(0, 6000, PlatformVersion::latest())
+            .expect("expected to evaluate");
         assert_eq!(x_1, 85171);
         assert_eq!(x_2, 78240);
         assert_eq!(x_1000, 16094);
@@ -2470,10 +2541,18 @@ mod inverted_logarithmic {
             min_value: None,       // min_value: Option<u64>,
             max_value: None,       // max_value: Option<u64>,
         };
-        let x_1 = dist.evaluate(0, 1).expect("expected to evaluate");
-        let x_2 = dist.evaluate(0, 2).expect("expected to evaluate");
-        let x_1000 = dist.evaluate(0, 1000).expect("expected to evaluate");
-        let x_4000 = dist.evaluate(0, 4000).expect("expected to evaluate");
+        let x_1 = dist
+            .evaluate(0, 1, PlatformVersion::latest())
+            .expect("expected to evaluate");
+        let x_2 = dist
+            .evaluate(0, 2, PlatformVersion::latest())
+            .expect("expected to evaluate");
+        let x_1000 = dist
+            .evaluate(0, 1000, PlatformVersion::latest())
+            .expect("expected to evaluate");
+        let x_4000 = dist
+            .evaluate(0, 4000, PlatformVersion::latest())
+            .expect("expected to evaluate");
         assert_eq!(x_1, 1351);
         assert_eq!(x_2, 1352);
         assert_eq!(x_1000, 1984);

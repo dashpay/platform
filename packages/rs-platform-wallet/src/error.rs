@@ -14,6 +14,41 @@ pub enum PlatformWalletError {
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
 
+    /// The persister failed to load the client start state during rehydration.
+    ///
+    /// Scope: emitted by manager rehydration (`load_from_persistor` and the
+    /// post-registration rehydration) and by the DashPay sent-payment
+    /// reconcile reads. The shielded-build reads still flatten their failure
+    /// into `ShieldedBuildError(String)`.
+    ///
+    /// This and the sibling `Persister*` variants carry their typed
+    /// [`PersistenceError`](crate::changeset::PersistenceError) rather than a
+    /// flattened string, so its retry classification survives — a transient
+    /// `SQLITE_BUSY` stays distinguishable from a permanent failure, in-crate
+    /// and across the C ABI (`platform-wallet-ffi` maps each variant and kind
+    /// to its own `PlatformWalletFFIResultCode`). They are separate variants
+    /// so a failed write is never reported as a failed read.
+    #[error("failed to load persisted client state: {0}")]
+    PersisterLoad(#[source] crate::changeset::PersistenceError),
+
+    /// The persister failed to store the wallet-registration changeset.
+    /// See [`Self::PersisterLoad`] for why the typed cause is carried.
+    ///
+    /// Scope: wallet registration is the only write that reports this today.
+    /// A contact un-ignore flattens its failure into `Persistence(String)`,
+    /// the asset-lock pool write returns the raw `PersistenceError` on its own
+    /// signature, and the fire-and-forget writes (DPNS marketplace, platform
+    /// addresses, asset-lock tracking) log and swallow it. A host branching on
+    /// the classification gets it for registration and nowhere else yet.
+    #[error("failed to persist wallet registration changeset: {0}")]
+    PersisterStore(#[source] crate::changeset::PersistenceError),
+
+    /// Restoring persisted platform-address state into a freshly registered
+    /// wallet failed. Boxed to break the recursion; the inner variant and its
+    /// `#[source]` chain survive intact.
+    #[error("failed to restore persisted platform-address state: {0}")]
+    PersisterRestore(#[source] Box<PlatformWalletError>),
+
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
 
@@ -819,6 +854,22 @@ pub enum PlatformWalletError {
         reason: String,
     },
 
+    /// A previous identity-funded shield is unresolved. This new call did not
+    /// build or broadcast a transaction; wait for the original payment's sync.
+    #[error("Identity {} has an unresolved shielded debit; this request was not started. Wait for shielded sync", hex::encode(identity_id))]
+    ShieldedIdentityDebitPending { identity_id: [u8; 32] },
+
+    /// Durable recovery data cannot safely identify or reconstruct a payment.
+    #[error("shielded recovery record is damaged (account {account_index:?}): {reason}; restore a known-good backup or inspect recovery records before explicitly accepting an unknown payment outcome")]
+    ShieldedRecoveryCorrupted {
+        account_index: Option<u32>,
+        reason: String,
+    },
+
+    /// An unresolved payment still needs compatible account viewing keys.
+    #[error("shielded account {account_index} is required for payment recovery: {reason}; restore its original viewing keys or inspect the unresolved payment before choosing recovery")]
+    ShieldedRecoveryKeysRequired { account_index: u32, reason: String },
+
     /// A shielded transition (`operation` is `"shield"`, `"unshield"`, `"transfer"` or
     /// `"withdraw"`) was **broadcast and accepted by the relay**, but the SDK could not confirm
     /// its execution result (the result-proof fetch/verify failed — e.g. a transient DAPI/proof
@@ -833,7 +884,7 @@ pub enum PlatformWalletError {
     /// The identity-create sibling is [`Self::ShieldedBroadcastUnconfirmed`], which additionally
     /// carries the derived identity id so the caller can hold the registration slot.
     #[error(
-        "Shielded {operation} broadcast succeeded but its execution result could not be \
+        "Shielded {operation} was submitted but its execution result could not be \
          confirmed; it may already be executed on chain — do not re-submit \
          (the next sync reconciles the outcome): {reason}"
     )]
@@ -905,6 +956,49 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sub-wallet not bound: call bind_shielded first")]
     ShieldedNotBound,
+}
+
+impl PlatformWalletError {
+    /// A persister `load` failed.
+    ///
+    /// There is deliberately no blanket `From<PersistenceError>`: the
+    /// conversion is undecidable from the value, because a `PersistenceError`
+    /// does not record whether a load, a store or a flush produced it, so an
+    /// inferred one would silently label failed writes as failed reads. Pick
+    /// the constructor naming the operation that actually failed.
+    pub fn from_load_failure(source: crate::changeset::PersistenceError) -> Self {
+        Self::PersisterLoad(source)
+    }
+
+    /// A persister `store` failed. See [`Self::from_load_failure`] for why no
+    /// blanket conversion exists.
+    ///
+    /// `persister` is the one that failed: this is where the "transient means
+    /// nothing was committed, so re-issue it" promise is MADE — to the caller,
+    /// and across the C ABI as `ErrorPersisterStoreTransient` — so this is
+    /// where it is enforced. A `Transient` classification is narrowed to
+    /// `Fatal` unless the persister attests
+    /// [`store_transient_is_reissuable`](crate::changeset::PlatformWalletPersistence::store_transient_is_reissuable),
+    /// which is fail-closed. The `#[source]` chain survives the narrowing.
+    pub fn from_store_failure<P>(persister: &P, source: crate::changeset::PersistenceError) -> Self
+    where
+        P: crate::changeset::PlatformWalletPersistence + ?Sized,
+    {
+        use crate::changeset::PersistenceErrorKind;
+        let source = match source.kind() {
+            Some(PersistenceErrorKind::Transient) if !persister.store_transient_is_reissuable() => {
+                source.with_kind(PersistenceErrorKind::Fatal)
+            }
+            _ => source,
+        };
+        Self::PersisterStore(source)
+    }
+
+    /// Restoring persisted platform-address state failed. Boxes `source`, so
+    /// callers never write `Box::new`.
+    pub fn from_restore_failure(source: PlatformWalletError) -> Self {
+        Self::PersisterRestore(Box::new(source))
+    }
 }
 
 /// Check whether an SDK error indicates that an InstantSend lock proof was

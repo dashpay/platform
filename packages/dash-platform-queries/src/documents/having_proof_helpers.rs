@@ -96,6 +96,7 @@ pub(super) fn verify_having_query(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<Vec<RankedEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+    request.ensure_no_sub_queries()?;
     let proof = response
         .proof()
         .or(Err(drive_proof_verifier::Error::NoProofInResult))?;

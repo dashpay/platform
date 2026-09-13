@@ -33,11 +33,13 @@ use crate::wallet::PlatformWallet;
 /// manager lifecycle write (wallet insert / remove / load) is publishing
 /// a new one. That infallibility is load-bearing, not a convenience.
 /// `on_wallet_event` is synchronous and the bus neither retries nor
-/// coalesces, so a snapshot missed here is gone for good: nothing
-/// guarantees a later event carries the same correction, and until one
-/// does the wallet displays superseded totals. A fallible lookup (the
-/// previous `RwLock::try_read`) dropped exactly that snapshot whenever
-/// it raced a lifecycle write.
+/// coalesces, so a snapshot missed here is gone for good — and
+/// `TransactionsSwept` can be the *only* event carrying a corrected
+/// (lower) balance, since the winner that settled the inputs need not be
+/// wallet-relevant and so may never produce a later balance-bearing
+/// event. A fallible lookup (the previous `RwLock::try_read`) dropped
+/// exactly that snapshot when it raced a lifecycle write, leaving
+/// removed funds on display indefinitely.
 pub struct BalanceUpdateHandler {
     wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
 }
@@ -58,6 +60,15 @@ impl EventHandler for BalanceUpdateHandler {
                 wallet_id, balance, ..
             }
             | WalletEvent::BlockProcessed {
+                wallet_id, balance, ..
+            }
+            // A sweep is the one event that can lower the balance: the
+            // removed transactions' outputs are gone from the UTXO set.
+            // The snapshot it carries is post-removal, like every other
+            // variant's, so it routes identically — dropping it would
+            // leave the corrected-away amount on screen until the next
+            // balance-bearing event happened to arrive.
+            | WalletEvent::TransactionsSwept {
                 wallet_id, balance, ..
             } => (wallet_id, balance),
             // No balance on SyncHeightAdvanced — checkpoint advance only.

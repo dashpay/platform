@@ -230,7 +230,39 @@ impl<C> Platform<C> {
             having,
             offset,
             chained,
+            sub_queries,
         } = request_v1;
+
+        // Composite mode owns its own shape and routes before the
+        // SELECT machinery: the request's clauses describe the PAGE,
+        // and the sub-queries are derived from it.
+        if !sub_queries.is_empty() {
+            if chained.is_some() {
+                return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                    QuerySyntaxError::Unsupported(
+                        "a request carries either `chained` or `sub_queries`, not both: a \
+                         chained join is one sub-query shape"
+                            .to_string(),
+                    ),
+                )));
+            }
+            return self.dispatch_composite_v1(
+                data_contract_id,
+                document_type,
+                sub_queries,
+                proto_where_clauses,
+                proto_order_by,
+                limit,
+                start,
+                prove,
+                proto_selects,
+                group_by,
+                having,
+                offset,
+                platform_state,
+                platform_version,
+            );
+        }
 
         // Chained mode owns its own (deliberately narrow) shape and
         // routes before the SELECT machinery: the request's clauses

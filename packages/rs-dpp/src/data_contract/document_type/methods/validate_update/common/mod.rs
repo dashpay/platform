@@ -1,8 +1,8 @@
 //! Helpers shared by every generation of `DocumentTypeRef::validate_update`
 //! (`v0`, `v1`, …). Only the parts of the update-validation flow that differ
 //! between generations live in the per-version modules; the config, byte-array
-//! encoding and JSON-schema compatibility checks below are generation
-//! independent.
+//! encoding and JSON-schema compatibility checks below use options selected by
+//! the versioned validator.
 
 use crate::consensus::basic::data_contract::IncompatibleDocumentTypeSchemaError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
@@ -16,6 +16,15 @@ use crate::data_contract::errors::DataContractError;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
+
+/// Per-update exceptions selected by the versioned validator. Defaults retain
+/// the original immutable-config behavior for earlier protocol versions.
+#[derive(Default)]
+pub(super) struct UpdateValidationOptions {
+    /// Allow the verified true-to-false deletion flag correction while both
+    /// the old and new document types keep history.
+    pub(super) allow_history_delete_repair: bool,
+}
 
 impl DocumentTypeRef<'_> {
     /// A byte array property whose `minItems == maxItems` is serialized as raw,
@@ -89,6 +98,16 @@ impl DocumentTypeRef<'_> {
         &self,
         new_document_type: DocumentTypeRef,
     ) -> SimpleConsensusValidationResult {
+        self.validate_config_with_options(new_document_type, &UpdateValidationOptions::default())
+    }
+
+    /// Only protocol 14's update validator permits repairing the unusable delete
+    /// flag. Earlier generations keep the original immutable-config behavior.
+    pub(super) fn validate_config_with_options(
+        &self,
+        new_document_type: DocumentTypeRef,
+        options: &UpdateValidationOptions,
+    ) -> SimpleConsensusValidationResult {
         if new_document_type.creation_restriction_mode() != self.creation_restriction_mode() {
             return SimpleConsensusValidationResult::new_with_error(
                 DocumentTypeUpdateError::new(
@@ -134,7 +153,9 @@ impl DocumentTypeRef<'_> {
             );
         }
 
-        if new_document_type.documents_can_be_deleted() != self.documents_can_be_deleted() {
+        if new_document_type.documents_can_be_deleted() != self.documents_can_be_deleted()
+            && !options.allow_history_delete_repair
+        {
             return SimpleConsensusValidationResult::new_with_error(
                 DocumentTypeUpdateError::new(
                     self.data_contract_id(),
@@ -377,12 +398,25 @@ impl DocumentTypeRef<'_> {
         new_document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        self.validate_schema_with_options(
+            new_document_type,
+            platform_version,
+            &UpdateValidationOptions::default(),
+        )
+    }
+
+    pub(super) fn validate_schema_with_options(
+        &self,
+        new_document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+        options: &UpdateValidationOptions,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // All good if schema is the same
         if self.schema() == new_document_type.schema() {
             return Ok(SimpleConsensusValidationResult::new());
         }
 
-        let old_document_schema_json = match self.schema().try_to_validating_json() {
+        let mut old_document_schema_json = match self.schema().try_to_validating_json() {
             Ok(json_value) => json_value,
             Err(e) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -395,7 +429,8 @@ impl DocumentTypeRef<'_> {
             }
         };
 
-        let new_document_schema_json = match new_document_type.schema().try_to_validating_json() {
+        let mut new_document_schema_json = match new_document_type.schema().try_to_validating_json()
+        {
             Ok(json_value) => json_value,
             Err(e) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -407,6 +442,18 @@ impl DocumentTypeRef<'_> {
                 ));
             }
         };
+
+        if options.allow_history_delete_repair {
+            // The parsed flags already proved this is the one permitted config
+            // correction. It changes neither property encoding nor history.
+            // Strip only the top-level flag, including the legacy omitted-key
+            // case; a property named canBeDeleted must still be validated.
+            for schema in [&mut old_document_schema_json, &mut new_document_schema_json] {
+                if let Some(map) = schema.as_object_mut() {
+                    map.remove("canBeDeleted");
+                }
+            }
+        }
 
         let compatibility_validation_result = validate_schema_compatibility(
             &old_document_schema_json,

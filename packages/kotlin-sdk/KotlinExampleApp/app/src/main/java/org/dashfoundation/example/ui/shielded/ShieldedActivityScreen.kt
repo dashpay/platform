@@ -122,13 +122,15 @@ private fun kindLabel(kindTag: Int): String = when (kindTag) {
     4 -> "Unshielded"
     5 -> "Withdrawn"
     6 -> "Identity Created"
+    8 -> "Shielded from Identity"
     else -> "Shielded Spend"
 }
 
 private fun statusLabel(status: Int): String = when (status) {
     0 -> "Pending"
     1 -> "Confirmed"
-    else -> "Failed"
+    2 -> "Failed"
+    else -> "Unknown"
 }
 
 /** 1 DASH = 1e11 credits; signed by direction (0 In +, 1 Out −, 2 Self). */

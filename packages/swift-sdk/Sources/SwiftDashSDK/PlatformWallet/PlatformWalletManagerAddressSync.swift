@@ -225,7 +225,12 @@ extension PlatformWalletManager {
                 "PlatformWalletManager not configured"
             )
         }
+        return try Self.readIsPlatformAddressSyncing(handle)
+    }
 
+    /// The native read behind [`isPlatformAddressSyncing()`] (an atomic
+    /// load, never parks); also what the progress poller runs.
+    nonisolated static func readIsPlatformAddressSyncing(_ handle: Handle) throws -> Bool {
         var syncing = false
         try platform_wallet_manager_platform_address_sync_is_syncing(handle, &syncing).check()
         return syncing

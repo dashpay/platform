@@ -12,6 +12,10 @@
 - [Monorepo Overview](architecture/overview.md)
 - [Component Pipeline](architecture/component-pipeline.md)
 
+# Contributing
+
+- [Coding Conventions](contributing/coding-conventions.md)
+
 # Versioning
 
 - [Platform Version](versioning/platform-version.md)

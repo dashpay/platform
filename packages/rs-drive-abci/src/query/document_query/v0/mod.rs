@@ -655,6 +655,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let request = GetDocumentsRequestV0 {
@@ -729,6 +730,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let request = GetDocumentsRequestV0 {
@@ -815,6 +817,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let request = GetDocumentsRequestV0 {
@@ -988,6 +991,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let where_clauses = serialize_vec_to_cbor(
@@ -1156,6 +1160,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let where_clauses = serialize_vec_to_cbor(
@@ -1312,6 +1317,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let mut where_clauses: Vec<_> = drive_document_query
@@ -1479,6 +1485,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let mut where_clauses: Vec<_> = drive_document_query
@@ -1663,6 +1670,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let mut where_clauses: Vec<_> = drive_document_query

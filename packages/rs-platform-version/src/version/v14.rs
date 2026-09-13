@@ -10,7 +10,7 @@ use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v3::STATE_TRANSITION_SERIALIZATION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_versions::v3::STATE_TRANSITION_VERSIONS_V3;
-use crate::version::dpp_versions::dpp_token_versions::v2::TOKEN_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_token_versions::v3::TOKEN_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_validation_versions::v5::DPP_VALIDATION_VERSIONS_V5;
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
@@ -22,7 +22,7 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DR
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
-use crate::version::fee::v2::FEE_VERSION2;
+use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v3::SYSTEM_DATA_CONTRACT_VERSIONS_V3;
 use crate::version::system_limits::v4::SYSTEM_LIMITS_V4;
@@ -30,9 +30,9 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// v14 hosts five consensus changes:
+/// v14 hosts six consensus changes:
 ///
-/// 1. **Contract-level ranked aggregates** (this branch): an index can
+/// 1. **Contract-level ranked aggregates**: an index can
 ///    declare that its groups are rankable by an aggregate, so a query like
 ///    "top 5 restaurants by average grade" is served from an ordered
 ///    secondary tree in O(log n + k) with a proof, instead of being rejected.
@@ -122,6 +122,23 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    provable over the current or any named window. `unique: true` is
 ///    admitted only for non-overlapping windows (`range == step`) sourced
 ///    from the immutable `$createdAt`.
+/// 6. **Deterministic token reward math**: `DistributionFunction::evaluate`
+///    (logarithmic, inverted-logarithmic, exponential and polynomial perpetual
+///    distributions) computes `ln`/`exp`/`pow` through the pinned pure-Rust
+///    `libm` crate instead of the platform C library. musl's `log` takes an
+///    FMA path on aarch64 and a non-FMA path on x86_64, so the two disagree by
+///    1 ulp on some inputs; a contract owner could pick parameters whose reward
+///    sat within that ulp of an integer, and `floor` then minted different
+///    amounts on the two architectures, splitting the app hash both at claim
+///    time and at contract registration (validation evaluates the start
+///    value). Gated on `distribution_function_evaluate_version` so both
+///    architectures switch at the same height; pre-v14 blocks replay on the
+///    old math byte-for-byte. `log`/`exp` have no architecture dispatch and
+///    `pow`'s only arch-touching call is the correctly-rounded `sqrt`, so the
+///    result is bit-identical on every target Platform builds for. The goal
+///    is determinism, not correct rounding: on a boundary tuple the host
+///    libm (glibc, macOS) can still be 1 ulp away, so anything predicting
+///    rewards with host math may differ from consensus by one unit.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type
@@ -187,6 +204,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   formats 0–2 (all pre-v14 documents) deserialize exactly as before with
 ///   an unstamped (pre-annotation) layout.
 ///
+/// * `ShieldFromIdentity` (state transition type 21) activates:
+///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
+///   `is_allowed`, and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` is the first
+///   table whose `shield_from_identity_state_transition` row enables basic
+///   structure, identity signature, and nonce validation. It moves credits
+///   from an identity balance straight into the shielded pool: the funding
+///   side is identity-signed like `IdentityCreditTransferToAddresses`, the
+///   pool side is an outputs-only Orchard bundle like `Shield`, and the fee
+///   is metered plus the shielded compute fee, paid from the identity.
+///
 /// The wire surface changes only additively: `GetDocumentsRequestV1`
 /// already carries `selects` / `group_by` / `order_by` / `limit` /
 /// `offset`; the ranked response is an additive `ResultData.ranked`
@@ -216,7 +243,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
-        token_versions: TOKEN_VERSIONS_V2,
+        token_versions: TOKEN_VERSIONS_V3, // changed: distribution_function_evaluate v1 — deterministic libm for token reward math
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago
         factory_versions: DPP_FACTORY_VERSIONS_V1,
@@ -225,8 +252,8 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
-    fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal 15% of total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32)
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
@@ -236,6 +263,27 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
 mod tests {
     use super::*;
     use crate::version::v13::PLATFORM_V13;
+
+    #[test]
+    fn should_halve_only_the_contested_document_fee_at_protocol_14() {
+        for protocol_version in 1..14 {
+            let version = PlatformVersion::get(protocol_version).expect("known protocol version");
+            assert_eq!(
+                version
+                    .fee_version
+                    .vote_resolution_fund_fees
+                    .contested_document_vote_resolution_fund_required_amount,
+                20_000_000_000,
+                "protocol {protocol_version} must preserve the 0.2 DASH contribution"
+            );
+        }
+
+        let mut expected_fees = PLATFORM_V13.fee_version.clone();
+        expected_fees
+            .vote_resolution_fund_fees
+            .contested_document_vote_resolution_fund_required_amount = 10_000_000_000;
+        assert_eq!(PLATFORM_V14.fee_version, expected_fees);
+    }
 
     /// The ranked / boolean-HAVING routing gate lives in v14's own query
     /// table, so flipping it touches only v14: a v13 node keeps running

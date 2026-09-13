@@ -530,6 +530,7 @@ pub(super) fn likes_query<'a>(
         start_at_included: false,
         block_time_ms: None,
         resolved_time_ranges: vec![],
+        sub_queries: vec![],
     }
 }
 
@@ -2406,6 +2407,7 @@ fn beat_synthesis_over_bucketed_index_is_refused() {
                 ttl_seconds: None,
             },
         }],
+        sub_queries: vec![],
     };
     let error = drive
         .query_documents(query, None, false, None, None)
@@ -2980,6 +2982,7 @@ fn pin_query<'a>(
         start_at_included: false,
         block_time_ms: None,
         resolved_time_ranges: vec![],
+        sub_queries: vec![],
     }
 }
 

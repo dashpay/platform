@@ -645,24 +645,41 @@ impl DocumentPropertyType {
         }
     }
 
+    /// Reads exactly `len` bytes. The length comes from the (possibly
+    /// untrusted) serialized document itself, so it must never size an
+    /// allocation: the buffer grows only as bytes actually arrive, and a
+    /// prefix that claims more than the document holds is rejected once the
+    /// input runs out.
+    fn read_exact_bounded(
+        buf: &mut BufReader<&[u8]>,
+        len: usize,
+        what: &str,
+    ) -> Result<Vec<u8>, DataContractError> {
+        let mut value = Vec::new();
+        buf.by_ref()
+            .take(len as u64)
+            .read_to_end(&mut value)
+            .map_err(|_| {
+                DataContractError::CorruptedSerialization(format!(
+                    "error reading {what} of length {len} from serialized document"
+                ))
+            })?;
+        if value.len() != len {
+            return Err(DataContractError::CorruptedSerialization(format!(
+                "{what} declares {len} bytes but only {} remain in the serialized document",
+                value.len()
+            )));
+        }
+        Ok(value)
+    }
+
     fn read_varint_value(buf: &mut BufReader<&[u8]>) -> Result<Vec<u8>, DataContractError> {
         let bytes: usize = buf.read_varint().map_err(|_| {
             DataContractError::CorruptedSerialization(
                 "error reading varint length from serialized document".to_string(),
             )
         })?;
-        if bytes == 0 {
-            Ok(vec![])
-        } else {
-            let mut value: Vec<u8> = vec![0u8; bytes];
-            buf.read_exact(&mut value).map_err(|_| {
-                DataContractError::CorruptedSerialization(format!(
-                    "error reading varint of length {} from serialized document",
-                    bytes
-                ))
-            })?;
-            Ok(value)
-        }
+        Self::read_exact_bounded(buf, bytes, "varint value")
     }
 
     /// Reads an optional value from the buffer
@@ -794,13 +811,18 @@ impl DocumentPropertyType {
                     (Some(min), Some(max)) if min == max => {
                         // if min == max, then we don't need a varint for the length
                         let len = min as usize;
-                        let mut bytes = vec![0; len];
-                        buf.read_exact(&mut bytes).map_err(|_| {
-                            DataContractError::DecodingContractError(DecodingError::new(format!(
-                                "expected to read {} bytes (min size for byte array)",
-                                len
-                            )))
-                        })?;
+                        // Schema-bounded (u16), so never an allocation hazard; routed
+                        // through the bounded reader for uniformity while keeping the
+                        // error variant this arm has always produced.
+                        let bytes = Self::read_exact_bounded(buf, len, "fixed-size byte array")
+                            .map_err(|_| {
+                                DataContractError::DecodingContractError(DecodingError::new(
+                                    format!(
+                                        "expected to read {} bytes (min size for byte array)",
+                                        len
+                                    ),
+                                ))
+                            })?;
                         // To save space we use predefined types for most popular blob sizes
                         // so we don't need to store the size of the blob
                         match bytes.len() {
@@ -834,12 +856,7 @@ impl DocumentPropertyType {
                         "error reading varint of object length".to_string(),
                     )
                 })?;
-                let mut object_bytes = vec![0u8; object_byte_len];
-                buf.read_exact(&mut object_bytes).map_err(|_| {
-                    DataContractError::CorruptedSerialization(
-                        "error reading object bytes".to_string(),
-                    )
-                })?;
+                let object_bytes = Self::read_exact_bounded(buf, object_byte_len, "object")?;
                 // Wrap the bytes in a BufReader
                 let mut object_buf_reader = BufReader::new(&object_bytes[..]);
                 let mut finished_buffer = false;
@@ -4238,6 +4255,71 @@ mod tests {
     // -----------------------------------------------------------------------
     // read_optionally_from() tests
     // -----------------------------------------------------------------------
+
+    /// A serialized document is untrusted input: a length prefix must never
+    /// size an allocation before it has been checked against the bytes that
+    /// are actually present. Before this check a two-byte string field
+    /// declaring a multi-gigabyte length aborted the process on allocation.
+    #[test]
+    fn test_read_optionally_from_rejects_length_prefix_longer_than_input() {
+        use std::io::BufReader;
+        let prop = DocumentPropertyType::String(StringPropertySizes {
+            min_length: None,
+            max_length: None,
+        });
+        // varint 2^62 followed by two bytes of payload
+        let mut data = vec![0xffu8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3f];
+        data.extend_from_slice(b"ab");
+        let mut reader = BufReader::new(data.as_slice());
+        let err = prop
+            .read_optionally_from(&mut reader, true)
+            .expect_err("oversized length prefix must be rejected, not allocated");
+        assert!(
+            err.to_string()
+                .contains("remain in the serialized document"),
+            "unexpected error: {err}"
+        );
+
+        let object = DocumentPropertyType::Object(IndexMap::new());
+        let mut reader = BufReader::new(data.as_slice());
+        let err = object
+            .read_optionally_from(&mut reader, true)
+            .expect_err("oversized object length must be rejected, not allocated");
+        assert!(
+            err.to_string()
+                .contains("remain in the serialized document"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// The guard must not reject a prefix that exactly consumes the rest of
+    /// the document: that is the normal shape of a document's last field.
+    #[test]
+    fn test_read_optionally_from_accepts_length_prefix_equal_to_remaining_input() {
+        use std::io::BufReader;
+        let prop = DocumentPropertyType::String(StringPropertySizes {
+            min_length: None,
+            max_length: None,
+        });
+        let mut data = vec![2u8];
+        data.extend_from_slice(b"ab");
+        let mut reader = BufReader::new(data.as_slice());
+        let (value, finished) = prop
+            .read_optionally_from(&mut reader, true)
+            .expect("exact-length prefix must decode");
+        assert_eq!(value, Some(Value::Text("ab".to_string())));
+        assert!(!finished);
+
+        // One byte short of the declared length is still a rejection.
+        let mut reader = BufReader::new(&data[..2]);
+        let err = prop
+            .read_optionally_from(&mut reader, true)
+            .expect_err("short input must be rejected");
+        assert!(
+            err.to_string().contains("only 1 remain"),
+            "unexpected error: {err}"
+        );
+    }
 
     #[test]
     fn test_read_optionally_from_optional_marker_none() {

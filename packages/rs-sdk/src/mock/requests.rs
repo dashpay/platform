@@ -863,3 +863,88 @@ impl MockResponse for drive_proof_verifier::ChainedDocuments {
         }
     }
 }
+
+/// Wire shape for one `CompositeDocuments` sub-result mock round-trip:
+/// `(is_documents, documents, count triples)`, only one side populated.
+type MockCompositeSubResult = (bool, Vec<Vec<u8>>, DocumentSplitCountTriples);
+
+/// Wire shape for `CompositeDocuments` mock round-trip: the page as a
+/// per-document CBOR list, then one entry per sub-query.
+type MockCompositeShape = (Vec<Vec<u8>>, Vec<MockCompositeSubResult>);
+
+impl MockResponse for drive_proof_verifier::CompositeDocuments {
+    /// The page and every documents sub-result as per-document CBOR,
+    /// count sub-results as `(in_key, key, count)` triples, all
+    /// bincode-framed in request order — list order IS the answer
+    /// (page order, a join's first-appearance order), so a map-shaped
+    /// encoding would destroy it.
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        let encode = |documents: &[Document]| -> Vec<Vec<u8>> {
+            documents
+                .iter()
+                .map(|d| d.to_cbor().expect("encode document"))
+                .collect()
+        };
+        let shape: MockCompositeShape = (
+            encode(&self.page_documents),
+            self.sub_results
+                .iter()
+                .map(|result| match result {
+                    drive_proof_verifier::CompositeSubQueryResult::Documents(documents) => {
+                        (true, encode(documents), Vec::new())
+                    }
+                    drive_proof_verifier::CompositeSubQueryResult::Counts(entries) => (
+                        false,
+                        Vec::new(),
+                        entries
+                            .iter()
+                            .map(|e| (e.in_key.clone(), e.key.clone(), e.count))
+                            .collect(),
+                    ),
+                })
+                .collect(),
+        );
+        bincode::encode_to_vec(shape, bincode_config).expect("encode CompositeDocuments")
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let ((page, sub_results), _): (MockCompositeShape, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode CompositeDocuments");
+        let decode = |bufs: Vec<Vec<u8>>| -> Vec<Document> {
+            bufs.into_iter()
+                .map(|b| {
+                    Document::from_cbor(&b, None, None, sdk.version()).expect("decode document")
+                })
+                .collect()
+        };
+        drive_proof_verifier::CompositeDocuments {
+            page_documents: decode(page),
+            sub_results: sub_results
+                .into_iter()
+                .map(|(is_documents, documents, triples)| {
+                    if is_documents {
+                        drive_proof_verifier::CompositeSubQueryResult::Documents(decode(documents))
+                    } else {
+                        drive_proof_verifier::CompositeSubQueryResult::Counts(
+                            triples
+                                .into_iter()
+                                .map(
+                                    |(in_key, key, count)| drive_proof_verifier::SplitCountEntry {
+                                        in_key,
+                                        key,
+                                        count,
+                                    },
+                                )
+                                .collect(),
+                        )
+                    }
+                })
+                .collect(),
+        }
+    }
+}

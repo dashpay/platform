@@ -106,6 +106,7 @@ pub fn verify_document_proof_keep_serialized(
         // verification fails closed. Use the SDK's FromProof path (which
         // resolves from the signed metadata time) for those proofs.
         resolved_time_ranges: vec![],
+        sub_queries: vec![],
     };
 
     let (root_hash, serialized_docs) = query

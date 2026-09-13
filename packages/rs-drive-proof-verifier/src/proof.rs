@@ -2,6 +2,10 @@
 /// proofs — the inner indexOnly page and the outer by-ids fetch derived
 /// from its proven values — bound to one quorum-signed root.
 pub mod chained_document;
+/// Verified composite-document result: a page plus the sub-queries
+/// derived from it (joins, lookups, counts, siblings), ONE merged
+/// grovedb proof bound to one quorum-signed root.
+pub mod composite_document;
 /// Verified average result. Holds the `(count, sum)` pair recovered
 /// from a `CountSumTree` / PCPS proof; client divides to obtain the
 /// average. Lights up alongside grovedb PR 670's

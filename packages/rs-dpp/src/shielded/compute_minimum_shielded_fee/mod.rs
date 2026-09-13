@@ -4,6 +4,7 @@ use crate::fee::Credits;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 use v0::compute_minimum_shielded_fee_v0;
+use v0::compute_shielded_identity_balance_write_fee_v0;
 use v0::compute_shielded_identity_create_fee_v0;
 use v0::compute_shielded_unshield_fee_v0;
 use v0::compute_shielded_verification_fee_v0;
@@ -112,6 +113,37 @@ pub fn compute_shielded_unshield_fee(
         0 => compute_shielded_unshield_fee_v0(num_actions, platform_version),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "compute_shielded_unshield_fee".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Computes the conservative **admission floor** (in credits) of a shielded transition that also
+/// writes an identity balance (`ShieldFromIdentity`): [`compute_minimum_shielded_fee`] plus the
+/// flat identity-write component (`SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES` effective bytes
+/// at the per-byte storage rate: the nonce and balance rewrites' replace-only tree work, folded
+/// into one flat figure like the other shielded components).
+///
+/// The transition's authoritative fee is metered at execution; this floor stands in for it where
+/// state is not yet available, so that an identity that could not pay the complete fee is refused
+/// before the expensive Orchard proof verification runs. It is also the client-side estimate of
+/// the total fee.
+///
+/// Dispatches on the SAME version key (`dpp.methods.compute_minimum_shielded_fee`) as
+/// [`compute_minimum_shielded_fee`] so the formulas evolve together across protocol versions.
+///
+/// # Parameters
+/// - `num_actions`: number of Orchard actions in the bundle
+/// - `platform_version`: protocol version (determines the formula version and fee constants)
+pub fn compute_shielded_identity_balance_write_fee(
+    num_actions: usize,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    match platform_version.dpp.methods.compute_minimum_shielded_fee {
+        0 => compute_shielded_identity_balance_write_fee_v0(num_actions, platform_version),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "compute_shielded_identity_balance_write_fee".to_string(),
             known_versions: vec![0],
             received: version,
         }),

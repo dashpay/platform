@@ -27,6 +27,7 @@
 //!   suite's fixture and assertion helpers.
 
 mod chained_query_e2e_tests;
+mod composite_query_e2e_tests;
 mod countable_e2e_tests;
 mod index_only_e2e_tests;
 mod noncounted_sibling_e2e_tests;
