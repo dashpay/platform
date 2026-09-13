@@ -3,7 +3,9 @@ use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::fee::Credits;
 use bincode::{Decode, DecodeUntrusted, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use thiserror::Error;
 
@@ -16,7 +18,8 @@ use thiserror::Error;
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
 #[error("Contest for document {document_id} was not paid for, needs payment of {expected_amount} Credits")]

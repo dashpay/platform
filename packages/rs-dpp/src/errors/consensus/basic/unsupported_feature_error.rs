@@ -2,7 +2,9 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 
 use thiserror::Error;
 
@@ -15,7 +17,8 @@ use thiserror::Error;
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
 #[error("feature {feature_name} is not supported. This validation was done in protocol version {current_protocol_version}")]

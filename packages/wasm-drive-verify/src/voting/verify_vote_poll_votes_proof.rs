@@ -4,7 +4,8 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::serialization::{
-    PlatformDeserializable, PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+    PlatformDeserializableUntrusted,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
 };
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -55,15 +56,16 @@ pub fn verify_vote_poll_votes_proof(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
-        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
+    let contract =
+        DataContract::versioned_deserialize_untrusted(&contract_bytes, true, platform_version)
+            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
     let contract_arc = Arc::new(contract);
 
     // Parse the contestant ID
     let contestant_id_identifier = Identifier::from_bytes(&contestant_id.to_vec())
         .map_err(|e| JsValue::from_str(&format!("Invalid contestant ID: {:?}", e)))?;
 
-    let vote_poll = ContestedDocumentResourceVotePoll::deserialize_from_bytes(
+    let vote_poll = ContestedDocumentResourceVotePoll::deserialize_from_bytes_untrusted(
         &contested_document_resource_vote_poll_bytes.to_vec(),
     )
     .map_err(|e| JsValue::from_str(&format!("Invalid vote poll: {:?}", e)))?;

@@ -813,14 +813,14 @@ fn has_unresolved_identity_shield<S: ShieldedStore>(
     wallet_id: WalletId,
     identity_id: [u8; 32],
 ) -> Result<bool, S::Error> {
-    use dpp::serialization::PlatformDeserializable;
+    use dpp::serialization::PlatformDeserializableTrusted;
     use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 
     for (_, redrive) in store.pending_redrives_for_wallet(wallet_id)? {
         if redrive.identity_user_abandoned && redrive.nullifiers.is_empty() {
             continue;
         }
-        match StateTransition::deserialize_from_bytes(&redrive.st_bytes) {
+        match StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes) {
             Ok(StateTransition::ShieldFromIdentity(transition))
                 if transition.identity_id().to_buffer() == identity_id =>
             {
@@ -3054,7 +3054,7 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     wallet_id: WalletId,
 ) {
-    use dpp::serialization::PlatformDeserializable;
+    use dpp::serialization::PlatformDeserializableTrusted;
     use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 
     let redrives = match store.read().await.pending_redrives_for_wallet(wallet_id) {
@@ -3071,13 +3071,14 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
         {
             continue;
         }
-        let state_transition = match StateTransition::deserialize_from_bytes(&redrive.st_bytes) {
-            Ok(state_transition @ StateTransition::ShieldFromIdentity(_)) => state_transition,
-            _ => {
-                warn!("identity redrive: unreadable debit; retaining its retry guard");
-                continue;
-            }
-        };
+        let state_transition =
+            match StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes) {
+                Ok(state_transition @ StateTransition::ShieldFromIdentity(_)) => state_transition,
+                _ => {
+                    warn!("identity redrive: unreadable debit; retaining its retry guard");
+                    continue;
+                }
+            };
         let StateTransition::ShieldFromIdentity(identity_transition) = &state_transition else {
             continue;
         };
@@ -3158,7 +3159,7 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
     id: SubwalletId,
     recorded: &std::collections::HashSet<[u8; 32]>,
 ) {
-    use dpp::serialization::PlatformDeserializable;
+    use dpp::serialization::PlatformDeserializableTrusted;
 
     let redrives = match store.read().await.pending_redrives(id) {
         Ok(r) => r,
@@ -3181,7 +3182,7 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
         if !recorded.contains(&redrive.anchor) || redrive.attempts >= MAX_REDRIVE_ATTEMPTS {
             continue;
         }
-        let st = match StateTransition::deserialize_from_bytes(&redrive.st_bytes) {
+        let st = match StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes) {
             Ok(st) => st,
             Err(e) => {
                 warn!(

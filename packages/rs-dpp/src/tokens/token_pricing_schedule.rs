@@ -2,7 +2,9 @@ use crate::balances::credits::TokenAmount;
 use crate::errors::ProtocolError;
 use crate::fee::Credits;
 use bincode::{Decode, DecodeUntrusted, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -23,7 +25,8 @@ use std::fmt::{self, Display, Formatter};
     Ord,
     PartialOrd,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
 #[cfg_attr(

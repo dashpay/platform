@@ -1,7 +1,9 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 use crate::prelude::Identifier;
@@ -17,7 +19,8 @@ use bincode::{Decode, DecodeUntrusted, Encode};
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
 #[error("Data Contract {data_contract_id} doesn't define document with the type {document_type}")]

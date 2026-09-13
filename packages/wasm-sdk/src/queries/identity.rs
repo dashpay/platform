@@ -431,14 +431,13 @@ impl WasmSdk {
                 result: Some(get_identity_response_v0::Result::Identity(identity_bytes)),
                 ..
             })) => {
-                use dash_sdk::dpp::serialization::PlatformDeserializable;
-                let identity = Identity::deserialize_from_bytes(identity_bytes.as_slice())
-                    .map_err(|e| {
-                        WasmSdkError::serialization(format!(
-                            "Failed to deserialize identity: {}",
-                            e
-                        ))
-                    })?;
+                use dash_sdk::dpp::serialization::PlatformDeserializableUntrusted;
+                let identity = Identity::deserialize_from_bytes_untrusted(
+                    identity_bytes.as_slice(),
+                )
+                .map_err(|e| {
+                    WasmSdkError::serialization(format!("Failed to deserialize identity: {}", e))
+                })?;
                 Ok(identity.into())
             }
             _ => Err(WasmSdkError::not_found("Identity not found")),

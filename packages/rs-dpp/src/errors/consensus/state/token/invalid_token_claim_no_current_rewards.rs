@@ -4,7 +4,7 @@ use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode::{Decode, Encode, DecodeUntrusted};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize};
 use thiserror::Error;
 
 #[derive(
@@ -16,7 +16,8 @@ use thiserror::Error;
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
 #[error(

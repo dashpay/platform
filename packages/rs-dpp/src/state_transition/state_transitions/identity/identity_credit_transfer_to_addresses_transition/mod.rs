@@ -22,7 +22,9 @@ use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use fields::*;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 #[cfg(feature = "serde-conversion")]
@@ -36,7 +38,8 @@ pub type IdentityCreditTransferToAddressesTransitionLatest =
     Clone,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,

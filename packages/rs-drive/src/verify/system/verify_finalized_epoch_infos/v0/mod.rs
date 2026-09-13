@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::verify::RootHash;
 use dpp::block::epoch::{EpochIndex, EPOCH_KEY_OFFSET};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use grovedb::{Element, GroveDb};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
@@ -120,7 +120,7 @@ impl Drive {
                 };
 
                 // Deserialize the FinalizedEpochInfo
-                match FinalizedEpochInfo::deserialize_from_bytes(item_bytes) {
+                match FinalizedEpochInfo::deserialize_from_bytes_untrusted(item_bytes) {
                     Ok(epoch_info) => Some(Ok((epoch_index, epoch_info))),
                     Err(e) => Some(Err(e.into())),
                 }

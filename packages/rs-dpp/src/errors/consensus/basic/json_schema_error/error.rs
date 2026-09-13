@@ -6,7 +6,9 @@ use crate::errors::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "json-schema-validation")]
 use jsonschema::ValidationError;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Value;
 #[cfg(feature = "json-schema-validation")]
 use serde_json::Value as JsonValue;
@@ -20,7 +22,8 @@ use thiserror::Error;
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
 #[error("JsonSchemaError: {error_summary}, path: {instance_path}")]

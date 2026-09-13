@@ -9,7 +9,9 @@ use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -26,7 +28,8 @@ use serde::{Deserialize, Serialize};
     Eq,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     DecodeUntrusted,
 )]
@@ -88,7 +91,7 @@ impl GroupActionAccessors for GroupAction {
 #[cfg(test)]
 mod deserialize_limit_tests {
     use super::*;
-    use crate::serialization::PlatformDeserializable;
+    use crate::serialization::PlatformDeserializableUntrusted;
 
     /// A proof element is untrusted input: a note length prefix must be
     /// rejected against the byte budget before it sizes an allocation.
@@ -111,7 +114,7 @@ mod deserialize_limit_tests {
         // note length prefix claiming 8 GB, with no bytes following it
         buf.extend_from_slice(&bincode::encode_to_vec(8_000_000_000u64, config).unwrap());
 
-        let err = GroupAction::deserialize_from_bytes(&buf)
+        let err = GroupAction::deserialize_from_bytes_untrusted(&buf)
             .expect_err("oversized length prefix must be rejected");
         assert!(
             matches!(err, ProtocolError::MaxEncodedBytesReachedError { .. }),

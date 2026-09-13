@@ -181,7 +181,7 @@ pub(in crate::execution) mod tests {
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use dpp::tokens::token_amount_on_contract_token::{DocumentActionTokenCost, DocumentActionTokenEffect};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
-    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 
     /// We add an identity, but we also add the same amount to system credits
     pub(in crate::execution) fn setup_identity_with_system_credits(
@@ -837,7 +837,7 @@ pub(in crate::execution) mod tests {
     ) -> DataContract {
         // Deserialize the data contract from bytes
         let mut data_contract =
-            DataContract::versioned_deserialize(&contract_bytes, false, platform_version)
+            DataContract::versioned_deserialize_untrusted(&contract_bytes, false, platform_version)
                 .expect("expected to deserialize data contract");
 
         // Get identity info based on the enum variant

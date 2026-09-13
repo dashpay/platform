@@ -4,7 +4,7 @@ use crate::utils::serialization::document_to_js_value;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 use dpp::version::PlatformVersion;
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use indexmap::IndexMap;
@@ -67,8 +67,9 @@ pub fn verify_start_at_document_in_proof(
         ));
     };
 
-    let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
-        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
+    let contract =
+        DataContract::versioned_deserialize_untrusted(&contract_bytes, true, platform_version)
+            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
 
     // Get document type
     let document_type = contract

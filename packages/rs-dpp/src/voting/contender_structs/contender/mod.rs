@@ -7,13 +7,15 @@ use crate::document::Document;
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
-use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use crate::voting::contender_structs::contender::v0::ContenderV0;
 use crate::voting::contender_structs::ContenderWithSerializedDocumentV0;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
@@ -45,7 +47,8 @@ pub enum Contender {
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
 #[cfg_attr(
@@ -223,7 +226,9 @@ impl Contender {
         Self: Sized,
     {
         let serialized_contender =
-            ContenderWithSerializedDocument::deserialize_from_bytes(serialized_contender)?;
+            ContenderWithSerializedDocument::deserialize_from_bytes_untrusted(
+                serialized_contender,
+            )?;
         serialized_contender.try_into_contender(document_type, platform_version)
     }
 }
@@ -388,8 +393,9 @@ mod tests {
             assert!(!bytes.is_empty());
 
             // Deserialize back
-            let restored = ContenderWithSerializedDocument::deserialize_from_bytes(&bytes)
-                .expect("should deserialize from bytes");
+            let restored =
+                ContenderWithSerializedDocument::deserialize_from_bytes_untrusted(&bytes)
+                    .expect("should deserialize from bytes");
 
             assert_eq!(wrapped, restored);
         }
@@ -407,8 +413,9 @@ mod tests {
             let bytes = wrapped
                 .serialize_to_bytes()
                 .expect("should serialize to bytes");
-            let restored = ContenderWithSerializedDocument::deserialize_from_bytes(&bytes)
-                .expect("should deserialize from bytes");
+            let restored =
+                ContenderWithSerializedDocument::deserialize_from_bytes_untrusted(&bytes)
+                    .expect("should deserialize from bytes");
 
             assert_eq!(wrapped, restored);
         }

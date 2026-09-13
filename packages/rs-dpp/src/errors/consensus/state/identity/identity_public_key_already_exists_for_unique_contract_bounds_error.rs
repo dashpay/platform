@@ -3,7 +3,9 @@ use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::identity::{KeyID, Purpose};
 use bincode::{Decode, DecodeUntrusted, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use thiserror::Error;
 
@@ -16,7 +18,8 @@ use thiserror::Error;
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
 #[error("Identity Public Key with id {new_key_id} for identity {identity_id:?} conflicts for purpose {purpose} with key {old_key_id} in the contract bounds of {contract_id:?}")]

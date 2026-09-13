@@ -9,7 +9,9 @@ use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use serde::{Deserialize, Serialize};
 
 /// Finalized Epoch information
@@ -24,7 +26,8 @@ use serde::{Deserialize, Serialize};
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     From,
     DecodeUntrusted,
 )]

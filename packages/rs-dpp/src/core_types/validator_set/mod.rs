@@ -9,7 +9,9 @@ use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::{ProTxHash, QuorumHash};
 #[cfg(feature = "core-types-serialization")]
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -32,7 +34,8 @@ pub mod v0;
         Encode,
         Decode,
         DecodeUntrusted,
-        PlatformDeserialize,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
         PlatformSerialize
     ),
     platform_serialize(limit = 15000, unversioned)

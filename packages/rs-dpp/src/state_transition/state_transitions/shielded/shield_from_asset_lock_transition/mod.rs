@@ -29,7 +29,9 @@ use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_versioning::PlatformVersioned;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -39,7 +41,8 @@ use serde::{Deserialize, Serialize};
     Clone,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,

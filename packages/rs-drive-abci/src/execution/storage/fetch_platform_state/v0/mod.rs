@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
-use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::query::TransactionArg;
@@ -16,7 +16,7 @@ impl<C> Platform<C> {
             .fetch_platform_state_bytes(transaction, platform_version)
             .map_err(Error::Drive)?
             .map(|bytes| {
-                let result = PlatformState::versioned_deserialize(&bytes, platform_version)
+                let result = PlatformState::versioned_deserialize_trusted(&bytes, platform_version)
                     .map_err(Error::Protocol);
 
                 if result.is_err() {

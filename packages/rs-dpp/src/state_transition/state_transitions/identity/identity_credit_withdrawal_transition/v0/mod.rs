@@ -50,11 +50,13 @@ mod test {
     use crate::identity::core_script::CoreScript;
     use crate::identity::KeyID;
     use crate::prelude::{IdentityNonce, UserFeeIncrease};
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
     use crate::state_transition::identity_credit_withdrawal_transition::v0::Pooling;
     use crate::ProtocolError;
     use bincode::{Decode, DecodeUntrusted, Encode};
-    use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+    use platform_serialization_derive::{
+        PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+    };
     use platform_value::{BinaryData, Identifier};
     use rand::Rng;
     use std::fmt::Debug;
@@ -65,7 +67,8 @@ mod test {
         Clone,
         Encode,
         Decode,
-        PlatformDeserialize,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
         PlatformSerialize,
         PartialEq,
         DecodeUntrusted,
@@ -81,7 +84,8 @@ mod test {
         Clone,
         Encode,
         Decode,
-        PlatformDeserialize,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
         PlatformSerialize,
         PartialEq,
         DecodeUntrusted,
@@ -98,7 +102,8 @@ mod test {
         Clone,
         Encode,
         Decode,
-        PlatformDeserialize,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
         PlatformSerialize,
         PartialEq,
         DecodeUntrusted,
@@ -116,7 +121,8 @@ mod test {
         Clone,
         Encode,
         Decode,
-        PlatformDeserialize,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
         PlatformSerialize,
         PartialEq,
         DecodeUntrusted,
@@ -135,7 +141,8 @@ mod test {
         Clone,
         Encode,
         Decode,
-        PlatformDeserialize,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
         PlatformSerialize,
         PartialEq,
         DecodeUntrusted,
@@ -155,7 +162,8 @@ mod test {
         Clone,
         Encode,
         Decode,
-        PlatformDeserialize,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
         PlatformSerialize,
         PartialEq,
         DecodeUntrusted,
@@ -176,7 +184,8 @@ mod test {
         Clone,
         Encode,
         Decode,
-        PlatformDeserialize,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
         PlatformSerialize,
         PartialEq,
         DecodeUntrusted,
@@ -198,7 +207,8 @@ mod test {
         Clone,
         Encode,
         Decode,
-        PlatformDeserialize,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
         PlatformSerialize,
         PartialEq,
         DecodeUntrusted,
@@ -221,7 +231,8 @@ mod test {
         Clone,
         Encode,
         Decode,
-        PlatformDeserialize,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
         PlatformSerialize,
         PartialEq,
         DecodeUntrusted,
@@ -240,15 +251,15 @@ mod test {
     }
 
     fn test_identity_credit_withdrawal_transition<
-        T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
+        T: PlatformSerializable + PlatformDeserializableUntrusted + Debug + PartialEq,
     >(
         transition: T,
     ) where
         <T as PlatformSerializable>::Error: std::fmt::Debug,
     {
         let serialized = T::serialize_to_bytes(&transition).expect("expected to serialize");
-        let deserialized =
-            T::deserialize_from_bytes(serialized.as_slice()).expect("expected to deserialize");
+        let deserialized = T::deserialize_from_bytes_untrusted(serialized.as_slice())
+            .expect("expected to deserialize");
         assert_eq!(transition, deserialized);
     }
 

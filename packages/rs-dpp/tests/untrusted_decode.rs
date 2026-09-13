@@ -3,28 +3,36 @@ use dpp::address_funds::AddressWitness;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::prelude::AssetLockProof;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
 
 // The derive's default crate path mirrors its in-crate DPP use.
 mod serialization {
-    pub use dpp::serialization::PlatformDeserializable;
+    pub use dpp::serialization::PlatformDeserializableTrusted;
 }
 use dpp::ProtocolError;
 
-#[derive(bincode::Encode, bincode::Decode, platform_serialization_derive::PlatformDeserialize)]
-#[platform_serialize(unversioned, trusted)]
+#[derive(
+    bincode::Encode, bincode::Decode, platform_serialization_derive::PlatformDeserializeTrusted,
+)]
+#[platform_serialize(unversioned)]
 struct LocalFixture(Vec<u8>);
 
+/// A type that only ever decodes bytes it wrote itself derives the trusted
+/// side alone and needs no `DecodeUntrusted` on its graph.
 #[test]
-fn should_allow_explicitly_trusted_fixtures_without_untrusted_traits() {
+fn should_allow_trusted_only_fixtures_without_untrusted_traits() {
+    use dpp::serialization::PlatformDeserializableTrusted;
+
     let bytes = bincode::encode_to_vec(
         LocalFixture(vec![1, 2, 3]),
         config::standard().with_big_endian(),
     )
     .unwrap();
     assert_eq!(
-        LocalFixture::deserialize_from_bytes(&bytes).unwrap().0,
+        LocalFixture::deserialize_from_bytes_trusted(&bytes)
+            .unwrap()
+            .0,
         [1, 2, 3]
     );
 }
@@ -36,8 +44,8 @@ fn should_reject_missing_script_in_unlimited_state_transition_decoder() {
     let mut bytes =
         bincode::encode_to_vec((5u32, 0u32, [0u8; 32], 1_000u64, 1u32, 0u32), config).unwrap();
     bytes.extend(bincode::encode_to_vec(u64::MAX, config).unwrap());
-    assert!(StateTransition::deserialize_from_bytes_no_limit(&bytes).is_err());
-    assert!(StateTransition::deserialize_from_bytes(&bytes).is_err());
+    assert!(StateTransition::deserialize_from_bytes_untrusted_no_limit(&bytes).is_err());
+    assert!(StateTransition::deserialize_from_bytes_untrusted(&bytes).is_err());
 }
 
 #[test]
@@ -112,8 +120,10 @@ fn should_preserve_foreign_txid_serde_encoding_in_consensus_errors() {
     let config = config::standard().with_big_endian();
     let bytes = bincode::encode_to_vec(&value, config).unwrap();
     let decoded =
-        IdentityAssetLockProofLockedTransactionMismatchError::deserialize_from_bytes(&bytes)
-            .unwrap();
+        IdentityAssetLockProofLockedTransactionMismatchError::deserialize_from_bytes_untrusted(
+            &bytes,
+        )
+        .unwrap();
     assert_eq!(decoded, value);
     let ordinary = bincode::decode_from_slice::<
         IdentityAssetLockProofLockedTransactionMismatchError,

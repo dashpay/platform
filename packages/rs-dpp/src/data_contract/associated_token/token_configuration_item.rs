@@ -7,7 +7,9 @@ use crate::data_contract::GroupContractPosition;
 use crate::ProtocolError;
 use bincode::{DecodeUntrusted, Encode};
 use platform_serialization::de::Decode;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -21,7 +23,8 @@ use std::fmt;
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PartialEq,
     Eq,
     DecodeUntrusted,

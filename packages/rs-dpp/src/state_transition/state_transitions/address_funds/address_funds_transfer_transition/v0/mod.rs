@@ -13,7 +13,9 @@ use crate::prelude::{AddressNonce, UserFeeIncrease};
 use crate::serialization::json_safe_fields;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +26,8 @@ use serde::{Deserialize, Serialize};
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSignable,
     PartialEq,
     DecodeUntrusted,
@@ -56,21 +59,21 @@ pub struct AddressFundsTransferTransitionV0 {
 #[cfg(test)]
 mod test {
 
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 
     use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
     use std::fmt::Debug;
 
     fn address_funds_transfer_transition_serialization_deserialization<
-        T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
+        T: PlatformSerializable + PlatformDeserializableUntrusted + Debug + PartialEq,
     >(
         transition: T,
     ) where
         <T as PlatformSerializable>::Error: std::fmt::Debug,
     {
         let serialized = T::serialize_to_bytes(&transition).expect("expected to serialize");
-        let deserialized =
-            T::deserialize_from_bytes(serialized.as_slice()).expect("expected to deserialize");
+        let deserialized = T::deserialize_from_bytes_untrusted(serialized.as_slice())
+            .expect("expected to deserialize");
         assert_eq!(transition, deserialized);
     }
 

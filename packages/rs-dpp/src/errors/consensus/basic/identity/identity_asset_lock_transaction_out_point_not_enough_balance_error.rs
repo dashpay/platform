@@ -4,11 +4,22 @@ use crate::errors::ProtocolError;
 use crate::fee::Credits;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::Txid;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
 )]
 #[error("Asset lock transaction {transaction_id} output {output_index} only has {credits_left} credits left out of {initial_asset_lock_credits} initial credits on the asset lock but needs {credits_required} credits to start processing")]
 #[platform_serialize(unversioned)]

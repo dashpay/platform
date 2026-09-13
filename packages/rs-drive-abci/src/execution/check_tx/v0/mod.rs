@@ -24,7 +24,7 @@ use crate::execution::types::state_transition_container::v0::{
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
 #[cfg(test)]
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 #[cfg(test)]
 use dpp::state_transition::StateTransition;
 use dpp::util::hash::hash_single;
@@ -45,8 +45,8 @@ where
         raw_tx: Vec<u8>,
         transaction: &Transaction,
     ) -> Result<EventExecutionResult, Error> {
-        let state_transition =
-            StateTransition::deserialize_from_bytes(raw_tx.as_slice()).map_err(Error::Protocol)?;
+        let state_transition = StateTransition::deserialize_from_bytes_untrusted(raw_tx.as_slice())
+            .map_err(Error::Protocol)?;
 
         let state_read_guard = self.state.load();
 
@@ -370,8 +370,9 @@ mod tests {
             217, 221, 43, 251, 104, 84, 78, 35, 20, 237, 188, 237, 240, 216, 62, 79, 208, 96, 149,
             116, 62, 82, 187, 135, 219,
         ];
-        let state_transitions = StateTransition::deserialize_many(std::slice::from_ref(&tx))
-            .expect("expected a state transition");
+        let state_transitions =
+            StateTransition::deserialize_many_untrusted(std::slice::from_ref(&tx))
+                .expect("expected a state transition");
         let state_transition = state_transitions.first().unwrap();
         let StateTransition::DataContractCreate(contract_create) = state_transition else {
             panic!("expecting a data contract create");

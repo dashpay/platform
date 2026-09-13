@@ -1,5 +1,7 @@
 use crate::ProtocolError;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use std::fmt::{Debug, Display, Formatter};
 
 use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
@@ -25,7 +27,8 @@ pub const IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES: u64 = 40;
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
 /// The result of the merge of the identity contract nonce

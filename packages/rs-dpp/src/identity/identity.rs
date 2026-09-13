@@ -20,7 +20,9 @@ use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 #[cfg(feature = "identity-serialization")]
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 
 use crate::fee::Credits;
@@ -42,7 +44,8 @@ use std::collections::{BTreeMap, BTreeSet};
         Encode,
         Decode,
         DecodeUntrusted,
-        PlatformDeserialize,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
         PlatformSerialize
     ),
     platform_serialize(limit = 15000, unversioned)

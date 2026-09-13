@@ -27,7 +27,9 @@ use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE;
 use derive_more::From;
 use fields::*;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 #[cfg(feature = "serde-conversion")]
@@ -63,7 +65,8 @@ pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTran
     Clone,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,
@@ -132,7 +135,7 @@ impl OptionallyAssetLockProved for IdentityCreditWithdrawalTransition {}
 mod test {
     use super::*;
     use crate::identity::core_script::CoreScript;
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
     use crate::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
     use crate::state_transition::{
         StateTransitionEstimatedFeeValidation, StateTransitionHasUserFeeIncrease,
@@ -185,7 +188,7 @@ mod test {
     fn test_serialization_roundtrip_v0() {
         let t = make_withdrawal_v0();
         let bytes = t.serialize_to_bytes().expect("should serialize");
-        let restored = IdentityCreditWithdrawalTransition::deserialize_from_bytes(&bytes)
+        let restored = IdentityCreditWithdrawalTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("should deserialize");
         assert_eq!(t, restored);
     }
@@ -194,7 +197,7 @@ mod test {
     fn test_serialization_roundtrip_v1() {
         let t = make_withdrawal_v1();
         let bytes = t.serialize_to_bytes().expect("should serialize");
-        let restored = IdentityCreditWithdrawalTransition::deserialize_from_bytes(&bytes)
+        let restored = IdentityCreditWithdrawalTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("should deserialize");
         assert_eq!(t, restored);
     }

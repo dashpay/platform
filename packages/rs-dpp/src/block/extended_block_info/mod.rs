@@ -10,7 +10,9 @@ use crate::serialization::ValueConvertible;
 use crate::version::FeatureVersion;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use serde::{Deserialize, Serialize};
 
 pub mod v0;
@@ -28,7 +30,8 @@ pub mod v0;
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     From,
     DecodeUntrusted,
 )]
@@ -151,7 +154,7 @@ impl ExtendedBlockInfoV0Setters for ExtendedBlockInfo {
 mod tests {
     use super::*;
     use crate::block::block_info::BlockInfo;
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 
     #[test]
     fn test_extended_block_info_bincode() {
@@ -171,8 +174,9 @@ mod tests {
             PlatformSerializable::serialize_to_bytes(&block_info).expect("expected to serialize");
 
         // Deserialize from the vector
-        let decoded: ExtendedBlockInfo = PlatformDeserializable::deserialize_from_bytes(&encoded)
-            .expect("expected to deserialize");
+        let decoded: ExtendedBlockInfo =
+            PlatformDeserializableUntrusted::deserialize_from_bytes_untrusted(&encoded)
+                .expect("expected to deserialize");
 
         assert_eq!(block_info, decoded);
     }

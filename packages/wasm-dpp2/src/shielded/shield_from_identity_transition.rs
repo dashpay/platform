@@ -9,7 +9,7 @@ use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::UserFeeIncrease;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
 use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
@@ -277,7 +277,7 @@ impl ShieldFromIdentityTransitionWasm {
 
     #[wasm_bindgen(js_name = fromBytes)]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<ShieldFromIdentityTransitionWasm> {
-        let st = StateTransition::deserialize_from_bytes(&bytes)?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(&bytes)?;
         match st {
             StateTransition::ShieldFromIdentity(inner) => Ok(inner.into()),
             _ => Err(WasmDppError::invalid_argument(

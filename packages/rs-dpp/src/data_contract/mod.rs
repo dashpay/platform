@@ -1,13 +1,17 @@
 use crate::serialization::{
-    PlatformDeserializableWithBytesLenFromVersionedStructure,
-    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
-    PlatformLimitDeserializableFromVersionedStructure, PlatformSerializableWithPlatformVersion,
+    PlatformDeserializableWithBytesLenFromVersionedStructureTrusted,
+    PlatformDeserializableWithBytesLenFromVersionedStructureUntrusted,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
+    PlatformLimitDeserializableFromVersionedStructureTrusted,
+    PlatformLimitDeserializableFromVersionedStructureUntrusted,
+    PlatformSerializableWithPlatformVersion,
 };
 use std::collections::BTreeMap;
 
 use derive_more::From;
 
-use bincode::config::{BigEndian, Configuration};
+use bincode::config::{BigEndian, Config, Configuration, Limit, NoLimit, Varint};
 use once_cell::sync::Lazy;
 
 pub mod errors;
@@ -166,8 +170,43 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
     }
 }
 
-impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for DataContract {
-    fn versioned_deserialize(
+/// Decodes the stored serialization format with the ordinary decoder: bytes
+/// this node wrote itself (Drive state, wallet storage).
+fn decode_serialization_format_trusted<C: Config>(
+    data: &[u8],
+    config: C,
+    what: &str,
+) -> Result<(DataContractInSerializationFormat, usize), ProtocolError> {
+    bincode::borrow_decode_from_slice(data, config)
+        .map_err(|e| PlatformDeserializationError(format!("unable to deserialize {}: {}", what, e)))
+}
+
+/// Decodes the serialization format with the untrusted decoder: bytes from a
+/// peer, a client, a proof or a host caller.
+fn decode_serialization_format_untrusted<C: Config>(
+    data: &[u8],
+    config: C,
+    what: &str,
+) -> Result<(DataContractInSerializationFormat, usize), ProtocolError> {
+    bincode::borrow_decode_from_slice_untrusted(data, config)
+        .map_err(|e| PlatformDeserializationError(format!("unable to deserialize {}: {}", what, e)))
+}
+
+fn no_limit_config() -> Configuration<BigEndian, Varint, NoLimit> {
+    bincode::config::standard()
+        .with_big_endian()
+        .with_no_limit()
+}
+
+fn contract_limit_config() -> Configuration<BigEndian, Varint, Limit<CONTRACT_DESERIALIZATION_LIMIT>>
+{
+    bincode::config::standard()
+        .with_big_endian()
+        .with_limit::<CONTRACT_DESERIALIZATION_LIMIT>()
+}
+
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted for DataContract {
+    fn versioned_deserialize_trusted(
         data: &[u8],
         full_validation: bool,
         platform_version: &PlatformVersion,
@@ -175,18 +214,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
     where
         Self: Sized,
     {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
-        let data_contract_in_serialization_format: DataContractInSerializationFormat =
-            bincode::borrow_decode_from_slice_untrusted(data, config)
-                .map_err(|e| {
-                    PlatformDeserializationError(format!(
-                        "unable to deserialize DataContract: {}",
-                        e
-                    ))
-                })?
-                .0;
+        let (data_contract_in_serialization_format, _) =
+            decode_serialization_format_trusted(data, no_limit_config(), "DataContract")?;
         DataContract::try_from_platform_versioned(
             data_contract_in_serialization_format,
             full_validation,
@@ -196,8 +225,28 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
     }
 }
 
-impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
-    fn versioned_deserialize_with_bytes_len(
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted for DataContract {
+    fn versioned_deserialize_untrusted(
+        data: &[u8],
+        full_validation: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let (data_contract_in_serialization_format, _) =
+            decode_serialization_format_untrusted(data, no_limit_config(), "DataContract")?;
+        DataContract::try_from_platform_versioned(
+            data_contract_in_serialization_format,
+            full_validation,
+            &mut vec![],
+            platform_version,
+        )
+    }
+}
+
+impl PlatformDeserializableWithBytesLenFromVersionedStructureTrusted for DataContract {
+    fn versioned_deserialize_with_bytes_len_trusted(
         data: &[u8],
         full_validation: bool,
         platform_version: &PlatformVersion,
@@ -205,17 +254,8 @@ impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
     where
         Self: Sized,
     {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
         let (data_contract_in_serialization_format, len) =
-            bincode::borrow_decode_from_slice_untrusted::<
-                DataContractInSerializationFormat,
-                Configuration<BigEndian>,
-            >(data, config)
-            .map_err(|e| {
-                PlatformDeserializationError(format!("unable to deserialize DataContract: {}", e))
-            })?;
+            decode_serialization_format_trusted(data, no_limit_config(), "DataContract")?;
         Ok((
             DataContract::try_from_platform_versioned(
                 data_contract_in_serialization_format,
@@ -228,26 +268,65 @@ impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
     }
 }
 
-impl PlatformLimitDeserializableFromVersionedStructure for DataContract {
-    fn versioned_limit_deserialize(
+impl PlatformDeserializableWithBytesLenFromVersionedStructureUntrusted for DataContract {
+    fn versioned_deserialize_with_bytes_len_untrusted(
+        data: &[u8],
+        full_validation: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, usize), ProtocolError>
+    where
+        Self: Sized,
+    {
+        let (data_contract_in_serialization_format, len) =
+            decode_serialization_format_untrusted(data, no_limit_config(), "DataContract")?;
+        Ok((
+            DataContract::try_from_platform_versioned(
+                data_contract_in_serialization_format,
+                full_validation,
+                &mut vec![],
+                platform_version,
+            )?,
+            len,
+        ))
+    }
+}
+
+impl PlatformLimitDeserializableFromVersionedStructureTrusted for DataContract {
+    fn versioned_limit_deserialize_trusted(
         data: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_limit::<CONTRACT_DESERIALIZATION_LIMIT>();
-        let data_contract_in_serialization_format: DataContractInSerializationFormat =
-            bincode::borrow_decode_from_slice_untrusted(data, config)
-                .map_err(|e| {
-                    PlatformDeserializationError(format!(
-                        "unable to deserialize DataContract with limit: {}",
-                        e
-                    ))
-                })?
-                .0;
+        let (data_contract_in_serialization_format, _) = decode_serialization_format_trusted(
+            data,
+            contract_limit_config(),
+            "DataContract with limit",
+        )?;
+        // we always want to validate when we have a limit, because limit means the data isn't coming from Drive
+        DataContract::try_from_platform_versioned(
+            data_contract_in_serialization_format,
+            true,
+            &mut vec![],
+            platform_version,
+        )
+    }
+}
+
+impl PlatformLimitDeserializableFromVersionedStructureUntrusted for DataContract {
+    fn versioned_limit_deserialize_untrusted(
+        data: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let (data_contract_in_serialization_format, _) = decode_serialization_format_untrusted(
+            data,
+            contract_limit_config(),
+            "DataContract with limit",
+        )?;
         // we always want to validate when we have a limit, because limit means the data isn't coming from Drive
         DataContract::try_from_platform_versioned(
             data_contract_in_serialization_format,
@@ -351,7 +430,7 @@ mod tests {
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
     use crate::data_contract::DataContract;
-    use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+    use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::system_data_contracts::load_system_data_contract;
     use crate::tests::fixtures::{
@@ -377,8 +456,9 @@ mod tests {
                 .default_current_version as u8
         );
 
-        let unserialized = DataContract::versioned_deserialize(&serialized, true, platform_version)
-            .expect("expected to deserialize data contract");
+        let unserialized =
+            DataContract::versioned_deserialize_untrusted(&serialized, true, platform_version)
+                .expect("expected to deserialize data contract");
 
         assert_eq!(data_contract, unserialized);
     }

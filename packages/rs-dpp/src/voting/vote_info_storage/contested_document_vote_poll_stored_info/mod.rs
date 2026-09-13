@@ -9,7 +9,9 @@ use crate::voting::vote_info_storage::contested_document_vote_poll_winner_info::
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::fmt;
@@ -62,7 +64,8 @@ impl ContestedDocumentVotePollStatus {
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
@@ -219,7 +222,7 @@ impl ContestedDocumentVotePollStoredInfoV0Getters for ContestedDocumentVotePollS
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 
     fn sb(time: u64, height: u64) -> BlockInfo {
         BlockInfo {
@@ -286,8 +289,9 @@ mod tests {
         let pv = PlatformVersion::latest();
         let info = ContestedDocumentVotePollStoredInfo::new(sb(1, 1), pv).unwrap();
         let bytes = info.serialize_to_bytes().expect("serialize");
-        let restored = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(&bytes)
-            .expect("deserialize");
+        let restored =
+            ContestedDocumentVotePollStoredInfo::deserialize_from_bytes_untrusted(&bytes)
+                .expect("deserialize");
         assert_eq!(info, restored);
     }
 

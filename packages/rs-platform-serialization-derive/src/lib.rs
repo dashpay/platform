@@ -15,7 +15,7 @@ use crate::serialize_enum::derive_platform_serialize_enum;
 use crate::serialize_struct::derive_platform_serialize_struct;
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::{parse_macro_input, Data, DeriveInput, Expr, Lit, LitInt, LitStr, Meta, Path};
 
 struct VersionAttributes {
@@ -24,13 +24,67 @@ struct VersionAttributes {
     platform_serialize_limit: Option<usize>,
     untagged: bool,
     unversioned: bool,
-    trusted: bool,
+    trust: DecodeTrust,
     platform_serialize_into: Option<Path>,
     platform_version_path: Option<LitStr>,
     #[allow(dead_code)] // TODO this is never read
     allow_prepend_version: bool,
     #[allow(dead_code)] // TODO this is never read
     force_prepend_version: bool,
+}
+
+/// Which bincode decoder a derived deserialization runs.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DecodeTrust {
+    /// Bytes this node wrote itself: Drive state read back from GroveDB,
+    /// wallet storage, locally generated fixtures. Ordinary decoding, which
+    /// reserves each collection from its length prefix.
+    Trusted,
+    /// Bytes from a peer, a client, a proof or a host caller. Untrusted
+    /// decoding, which reserves nothing from a length prefix before the
+    /// elements it announces have actually been read.
+    Untrusted,
+}
+
+/// The trait and method names one trust level derives.
+struct TrustNames {
+    decode_from_slice: proc_macro2::TokenStream,
+    deserializable: Ident,
+    deserialize: Ident,
+    deserialize_no_limit: Ident,
+    from_versioned_structure: Ident,
+    versioned_deserialize: Ident,
+    limit_from_versioned_structure: Ident,
+    versioned_limit_deserialize: Ident,
+}
+
+impl DecodeTrust {
+    fn names(self) -> TrustNames {
+        let (trait_suffix, fn_suffix, decode_from_slice) = match self {
+            DecodeTrust::Trusted => ("Trusted", "trusted", quote! { bincode::decode_from_slice }),
+            DecodeTrust::Untrusted => (
+                "Untrusted",
+                "untrusted",
+                quote! { bincode::decode_from_slice_untrusted },
+            ),
+        };
+        TrustNames {
+            decode_from_slice,
+            deserializable: format_ident!("PlatformDeserializable{}", trait_suffix),
+            deserialize: format_ident!("deserialize_from_bytes_{}", fn_suffix),
+            deserialize_no_limit: format_ident!("deserialize_from_bytes_{}_no_limit", fn_suffix),
+            from_versioned_structure: format_ident!(
+                "PlatformDeserializableFromVersionedStructure{}",
+                trait_suffix
+            ),
+            versioned_deserialize: format_ident!("versioned_deserialize_{}", fn_suffix),
+            limit_from_versioned_structure: format_ident!(
+                "PlatformLimitDeserializableFromVersionedStructure{}",
+                trait_suffix
+            ),
+            versioned_limit_deserialize: format_ident!("versioned_limit_deserialize_{}", fn_suffix),
+        }
+    }
 }
 
 impl VersionAttributes {
@@ -113,7 +167,6 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
     let mut platform_serialize_limit = None;
     let mut untagged = false;
     let mut unversioned = false;
-    let mut trusted = false;
     let mut platform_serialize_into = None;
     let mut platform_version_path = None;
     let mut crate_name: Ident = Ident::new("crate", Span::call_site()); // default value is "crate"
@@ -133,8 +186,6 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
                     crate_name = syn::parse_str(&crate_name_str.value()).unwrap();
                 } else if meta.path.is_ident("passthrough") {
                     passthrough = true;
-                } else if meta.path.is_ident("trusted") {
-                    trusted = true;
                 } else if meta.path.is_ident("unversioned") {
                     unversioned = true;
                 } else if meta.path.is_ident("allow_prepend_version") {
@@ -188,7 +239,7 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
         platform_serialize_limit,
         untagged,
         unversioned,
-        trusted,
+        trust: DecodeTrust::Trusted,
         platform_serialize_into,
         platform_version_path,
         allow_prepend_version,
@@ -224,20 +275,44 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
     }
 }
 
-/// Derive Platform deserialization using bincode's untrusted native decoder.
+/// Derive Platform deserialization for bytes this node wrote itself.
 ///
-/// Serialized types and their fields need `DecodeUntrusted`, including when
-/// decoding through the no-limit entry point. Existing configured budgets and
-/// domain validation still apply; untrusted decoding adds no universal budget.
-/// Local mock formats containing ordinary-only foreign types may explicitly use
-/// `#[platform_serialize(unversioned, trusted)]`. Do not use that exception for
-/// network input or imported data. The separate `PlatformVersionedDecode` APIs
-/// retain their ordinary decoding contract for existing internal and mock callers.
+/// Implements `PlatformDeserializableTrusted` (`deserialize_from_bytes_trusted`)
+/// and, for versioned structures, the `...FromVersionedStructureTrusted` twins,
+/// all running bincode's ordinary decoder, which reserves each collection from
+/// its length prefix. Use the trusted entry points for Drive state read back
+/// from GroveDB, wallet storage and locally generated fixtures; never for bytes
+/// that arrived from a peer, a client, a proof or a host caller, which go
+/// through [`PlatformDeserializeUntrusted`]. A type can derive both.
+///
+/// This derive also emits the type's `PlatformVersionedDecode` implementation,
+/// which the versioned (non-`unversioned`) structures and the SDK mocks rely on.
 #[proc_macro_derive(
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
     attributes(platform_error_type, platform_serialize)
 )]
-pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
+pub fn derive_platform_deserialize_trusted(input: TokenStream) -> TokenStream {
+    derive_platform_deserialize(input, DecodeTrust::Trusted)
+}
+
+/// Derive Platform deserialization for bytes from outside this node.
+///
+/// Implements `PlatformDeserializableUntrusted` (`deserialize_from_bytes_untrusted`)
+/// running bincode's untrusted decoder, so a short input whose length prefix
+/// claims a huge collection fails before anything is reserved for it. The type
+/// and every field need `DecodeUntrusted`. Existing configured budgets and
+/// domain validation still apply; untrusted decoding adds no universal budget.
+/// Versioned structures have no untrusted form: `PlatformVersionedDecode` is an
+/// ordinary decoder, so this derive requires `platform_serialize(unversioned)`.
+#[proc_macro_derive(
+    PlatformDeserializeUntrusted,
+    attributes(platform_error_type, platform_serialize)
+)]
+pub fn derive_platform_deserialize_untrusted(input: TokenStream) -> TokenStream {
+    derive_platform_deserialize(input, DecodeTrust::Untrusted)
+}
+
+fn derive_platform_deserialize(input: TokenStream, trust: DecodeTrust) -> TokenStream {
     let cloned_token_stream_input = input.clone();
 
     let input = parse_macro_input!(input as DeriveInput);
@@ -261,7 +336,6 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
 
     let mut passthrough = false;
     let mut unversioned = false;
-    let mut trusted = false;
     let mut platform_serialize_limit = None;
     let mut untagged = false;
     let mut platform_serialize_into = None;
@@ -283,8 +357,6 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
                     crate_name = syn::parse_str(&crate_name_str.value()).unwrap();
                 } else if meta.path.is_ident("passthrough") {
                     passthrough = true;
-                } else if meta.path.is_ident("trusted") {
-                    trusted = true;
                 } else if meta.path.is_ident("unversioned") {
                     unversioned = true;
                 } else if meta.path.is_ident("allow_prepend_version") {
@@ -338,7 +410,7 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
         platform_serialize_limit,
         untagged,
         unversioned,
-        trusted,
+        trust,
         platform_serialize_into,
         platform_version_path,
         allow_prepend_version,

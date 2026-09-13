@@ -26,7 +26,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use {
     crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},
     dpp::{
-        fee::Credits, identity::IdentityPublicKey, serialization::PlatformDeserializable,
+        fee::Credits, identity::IdentityPublicKey, serialization::PlatformDeserializableTrusted,
         version::PlatformVersion,
     },
     grovedb::{
@@ -176,7 +176,7 @@ fn element_to_identity_public_key(element: Element) -> Result<IdentityPublicKey,
         )));
     };
 
-    IdentityPublicKey::deserialize_from_bytes(value.as_slice()).map_err(Error::from)
+    IdentityPublicKey::deserialize_from_bytes_trusted(value.as_slice()).map_err(Error::from)
 }
 
 #[cfg(feature = "server")]

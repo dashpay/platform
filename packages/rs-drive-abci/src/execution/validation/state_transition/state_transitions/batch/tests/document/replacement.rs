@@ -1261,7 +1261,7 @@ mod replacement_tests {
         use crate::execution::check_tx::CheckTxLevel;
         use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
         use crate::platform_types::platform::PlatformRef;
-        use dpp::serialization::PlatformDeserializable;
+        use dpp::serialization::PlatformDeserializableUntrusted;
         use dpp::state_transition::StateTransition;
 
         let platform_version = PlatformVersion::latest();
@@ -1447,7 +1447,7 @@ mod replacement_tests {
         // 4) Re-submitting identical bytes through CheckTx FirstTimeCheck must
         //    hit the nonce check first and reject.
         let replayed_state_transition =
-            StateTransition::deserialize_from_bytes(&replace_serialized)
+            StateTransition::deserialize_from_bytes_untrusted(&replace_serialized)
                 .expect("expected to deserialize replayed transition");
 
         let platform_state = platform.state.load();

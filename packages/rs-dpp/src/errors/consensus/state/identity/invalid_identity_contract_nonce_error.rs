@@ -1,7 +1,9 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
-use crate::ProtocolError; // needed for PlatformDeserialize and PlatformSerialize
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use crate::ProtocolError; // needed for PlatformDeserializeTrusted, PlatformDeserializeUntrusted and PlatformSerialize
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
 
@@ -19,7 +21,8 @@ use bincode::{Decode, DecodeUntrusted, Encode};
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]

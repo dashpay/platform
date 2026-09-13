@@ -1,4 +1,4 @@
-use crate::VersionAttributes;
+use crate::{DecodeTrust, TrustNames, VersionAttributes};
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
@@ -14,8 +14,7 @@ pub(super) fn derive_platform_deserialize_enum(
 ) -> TokenStream {
     let VersionAttributes {
         passthrough,
-        unversioned,
-        trusted,
+        trust,
         platform_version_path,
         platform_serialize_limit,
         untagged,
@@ -23,12 +22,16 @@ pub(super) fn derive_platform_deserialize_enum(
         ..
     } = version_attributes;
 
-    // Ordinary decoding is an explicit opt-in for locally generated fixtures.
-    let decode_from_slice = if trusted {
-        quote! { bincode::decode_from_slice }
-    } else {
-        quote! { bincode::decode_from_slice_untrusted }
-    };
+    let TrustNames {
+        decode_from_slice,
+        deserializable,
+        deserialize,
+        deserialize_no_limit,
+        from_versioned_structure,
+        versioned_deserialize,
+        limit_from_versioned_structure,
+        versioned_limit_deserialize,
+    } = trust.names();
 
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
@@ -37,24 +40,16 @@ pub(super) fn derive_platform_deserialize_enum(
         #crate_name::#error_type::PlatformDeserializationError(format!("unable to deserialize {} : {}", stringify!(#name), e))
     })};
 
-    // if we have passthrough or untagged we can't decode directly
-    let bincode_decode_body = if !passthrough && !untagged {
-        if unversioned {
-            let bincode_decode_body: proc_macro2::TokenStream =
-                crate::derive_bincode::derive_decode_inner(token_stream_input.clone())
-                    .unwrap_or_else(|e| e.into_token_stream())
-                    .into();
-            quote! {
-                #bincode_decode_body
-            }
-        } else {
-            let bincode_decode_body: proc_macro2::TokenStream =
-                crate::derive_bincode::derive_decode_inner(token_stream_input.clone())
-                    .unwrap_or_else(|e| e.into_token_stream())
-                    .into();
-            quote! {
-                #bincode_decode_body
-            }
+    // if we have passthrough or untagged we can't decode directly. Only the
+    // trusted derive emits the ordinary `PlatformVersionedDecode` body, so a
+    // type deriving both trust levels gets it exactly once.
+    let bincode_decode_body = if !passthrough && !untagged && trust == DecodeTrust::Trusted {
+        let bincode_decode_body: proc_macro2::TokenStream =
+            crate::derive_bincode::derive_decode_inner(token_stream_input.clone())
+                .unwrap_or_else(|e| e.into_token_stream())
+                .into();
+        quote! {
+            #bincode_decode_body
         }
     } else {
         quote! {}
@@ -137,8 +132,8 @@ pub(super) fn derive_platform_deserialize_enum(
             };
 
             let without_limit = quote! {
-                impl #impl_generics #crate_name::serialization::PlatformDeserializableFromVersionedStructure for #name #ty_generics #where_clause {
-                    fn versioned_deserialize(
+                impl #impl_generics #crate_name::serialization::#from_versioned_structure for #name #ty_generics #where_clause {
+                    fn #versioned_deserialize(
                         data: &[u8],
                         platform_version: &platform_version::version::PlatformVersion,
                     ) -> Result<Self, ProtocolError>
@@ -181,8 +176,8 @@ pub(super) fn derive_platform_deserialize_enum(
                 };
 
                 quote! {
-                    impl #impl_generics #crate_name::serialization::PlatformLimitDeserializableFromVersionedStructure for #name #ty_generics #where_clause {
-                        fn versioned_limit_deserialize(
+                    impl #impl_generics #crate_name::serialization::#limit_from_versioned_structure for #name #ty_generics #where_clause {
+                        fn #versioned_limit_deserialize(
                             data: &[u8],
                             platform_version: &platform_version::version::PlatformVersion,
                         ) -> Result<Self, ProtocolError>
@@ -221,8 +216,8 @@ pub(super) fn derive_platform_deserialize_enum(
             })
         };
         quote! {
-            impl #impl_generics #crate_name::serialization::PlatformDeserializable for #name #ty_generics #where_clause {
-                fn deserialize_from_bytes(
+            impl #impl_generics #crate_name::serialization::#deserializable for #name #ty_generics #where_clause {
+                fn #deserialize(
                     data: &[u8]
                 ) -> Result<Self, ProtocolError>
                 where
@@ -231,7 +226,7 @@ pub(super) fn derive_platform_deserialize_enum(
                     #decode_from_slice(&data, config).map(|(a,_)| a)#limit_map_err
                 }
 
-                fn deserialize_from_bytes_no_limit(
+                fn #deserialize_no_limit(
                     data: &[u8]
                 ) -> Result<Self, ProtocolError>
                 where
@@ -243,8 +238,8 @@ pub(super) fn derive_platform_deserialize_enum(
         }
     } else {
         quote! {
-            impl #impl_generics #crate_name::serialization::PlatformDeserializable for #name #ty_generics #where_clause {
-                fn deserialize_from_bytes(
+            impl #impl_generics #crate_name::serialization::#deserializable for #name #ty_generics #where_clause {
+                fn #deserialize(
                     data: &[u8]
                 ) -> Result<Self, ProtocolError>
                 where
@@ -253,7 +248,7 @@ pub(super) fn derive_platform_deserialize_enum(
                     #decode_from_slice(&data, config).map(|(a,_)| a)#map_err
                 }
 
-                fn deserialize_from_bytes_no_limit(
+                fn #deserialize_no_limit(
                     data: &[u8]
                 ) -> Result<Self, ProtocolError>
                 where

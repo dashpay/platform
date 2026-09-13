@@ -11,7 +11,9 @@ use thiserror::Error;
 
 use crate::consensus::signature::invalid_signature_public_key_purpose_error::InvalidSignaturePublicKeyPurposeError;
 use crate::errors::ProtocolError;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 
 #[derive(
     Error,
@@ -20,7 +22,8 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     Clone,
     DecodeUntrusted,
 )]

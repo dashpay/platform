@@ -4,7 +4,9 @@ use crate::ProtocolError;
 use bincode::{DecodeUntrusted, Encode};
 use derive_more::From;
 use platform_serialization::de::Decode;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
@@ -17,7 +19,8 @@ pub mod v0;
     Clone,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformVersioned,
     From,

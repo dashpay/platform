@@ -121,7 +121,7 @@ mod tests {
     use crate::platform_types::platform_state::PlatformState;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
-    use dpp::serialization::PlatformDeserializable;
+    use dpp::serialization::PlatformDeserializableTrusted;
     use drive::query::VotePollsByEndDateDriveQuery;
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
@@ -4120,7 +4120,7 @@ mod tests {
 
                 // Let's try deserializing
 
-                let vote_poll = VotePoll::deserialize_from_bytes(
+                let vote_poll = VotePoll::deserialize_from_bytes_trusted(
                     serialized_contested_vote_poll_bytes.as_slice(),
                 )
                 .expect("expected to deserialize");
@@ -4377,7 +4377,7 @@ mod tests {
 
                 // Let's try deserializing
 
-                let vote_poll_1 = VotePoll::deserialize_from_bytes(
+                let vote_poll_1 = VotePoll::deserialize_from_bytes_trusted(
                     serialized_contested_vote_poll_bytes_1.as_slice(),
                 )
                 .expect("expected to deserialize");
@@ -4403,7 +4403,7 @@ mod tests {
 
                 // Let's try deserializing
 
-                let vote_poll_2 = VotePoll::deserialize_from_bytes(
+                let vote_poll_2 = VotePoll::deserialize_from_bytes_trusted(
                     serialized_contested_vote_poll_bytes_2.as_slice(),
                 )
                 .expect("expected to deserialize");

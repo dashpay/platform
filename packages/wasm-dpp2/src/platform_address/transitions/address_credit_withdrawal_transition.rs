@@ -15,7 +15,7 @@ use crate::utils::{
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::UserFeeIncrease;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
 use dpp::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
@@ -136,7 +136,7 @@ impl AddressCreditWithdrawalTransitionWasm {
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<AddressCreditWithdrawalTransitionWasm> {
         let rs_transition =
-            AddressCreditWithdrawalTransition::deserialize_from_bytes(bytes.as_slice())?;
+            AddressCreditWithdrawalTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
         Ok(AddressCreditWithdrawalTransitionWasm(rs_transition))
     }
 

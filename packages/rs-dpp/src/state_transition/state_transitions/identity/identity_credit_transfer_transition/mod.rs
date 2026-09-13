@@ -21,7 +21,9 @@ use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use fields::*;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 #[cfg(feature = "serde-conversion")]
@@ -38,7 +40,8 @@ pub type IdentityCreditTransferTransitionLatest = IdentityCreditTransferTransiti
     Clone,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,
@@ -99,7 +102,7 @@ impl StateTransitionFieldTypes for IdentityCreditTransferTransition {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
     use crate::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
     use crate::state_transition::{
         StateTransitionEstimatedFeeValidation, StateTransitionHasUserFeeIncrease,
@@ -135,7 +138,7 @@ mod test {
     fn test_serialization_roundtrip() {
         let transition = make_transfer();
         let bytes = transition.serialize_to_bytes().expect("should serialize");
-        let restored = IdentityCreditTransferTransition::deserialize_from_bytes(&bytes)
+        let restored = IdentityCreditTransferTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("should deserialize");
         assert_eq!(transition, restored);
     }

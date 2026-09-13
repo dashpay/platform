@@ -3,7 +3,9 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::GroupContractPosition;
 use crate::errors::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use std::error::Error;
 use std::fmt;
 
@@ -16,7 +18,8 @@ use std::fmt;
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]

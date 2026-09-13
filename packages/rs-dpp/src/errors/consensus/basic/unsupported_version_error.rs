@@ -2,7 +2,9 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 
 use thiserror::Error;
 
@@ -15,7 +17,8 @@ use thiserror::Error;
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
 #[error("version {received_version:?} is not supported. Supported versions are {min_version:?} to {max_version:?}")]
@@ -62,7 +65,7 @@ impl From<UnsupportedVersionError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::serialization::PlatformDeserializable;
+    use crate::serialization::PlatformDeserializableUntrusted;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use platform_version::version::LATEST_PLATFORM_VERSION;
 
@@ -77,7 +80,8 @@ mod tests {
             .expect("expected to serialize");
 
         let recovered_consensus_error =
-            ConsensusError::deserialize_from_bytes(&serialized_bytes).expect("should deserialize");
+            ConsensusError::deserialize_from_bytes_untrusted(&serialized_bytes)
+                .expect("should deserialize");
 
         assert_eq!(consensus_error, recovered_consensus_error);
     }

@@ -1,7 +1,7 @@
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode, DecodeUntrusted};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -207,7 +207,8 @@ impl fmt::Display for TokenDistributionType {
     Decode,
     Encode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     Debug,
     Clone,
     PartialEq,

@@ -9,7 +9,9 @@ use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use crate::validation::SimpleConsensusValidationResult;
 use bincode::{Decode, DecodeUntrusted, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
@@ -32,7 +34,8 @@ pub type GroupRequiredPower = u32;
     Decode,
     Encode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     Debug,
     Clone,
     PartialEq,

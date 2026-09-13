@@ -16,7 +16,9 @@ use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::signer;
 #[cfg(feature = "state-transition-validation")]
 use dashcore::signer::double_sha;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_version::version::{PlatformVersion, ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
 
 #[cfg(any(
@@ -73,7 +75,7 @@ use crate::identity::Purpose;
 use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::{AddressNonce, AssetLockProof, UserFeeIncrease};
-use crate::serialization::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializableUntrusted, Signable};
 use crate::state_transition::address_credit_withdrawal_transition::{
     AddressCreditWithdrawalTransition, AddressCreditWithdrawalTransitionSignable,
 };
@@ -454,7 +456,8 @@ macro_rules! call_errorable_method_identity_signed {
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSignable,
     From,
     PartialEq,
@@ -840,7 +843,7 @@ pub struct StateTransitionSigningOptions {
 
 impl StateTransition {
     #[allow(unused_variables)]
-    pub fn deserialize_from_bytes_in_version(
+    pub fn deserialize_from_bytes_untrusted_in_version(
         bytes: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -850,7 +853,7 @@ impl StateTransition {
             .map(usize::from);
         let state_transition =
             platform_value::with_value_decode_depth_limit(max_value_depth, || {
-                StateTransition::deserialize_from_bytes(bytes)
+                StateTransition::deserialize_from_bytes_untrusted(bytes)
             })?;
         #[cfg(all(feature = "state-transitions", feature = "validation"))]
         {
@@ -2386,12 +2389,12 @@ mod tests {
 
     #[test]
     fn test_state_transition_platform_serialize_roundtrip() {
-        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
         let original = sample_transfer_st();
         let bytes =
             PlatformSerializable::serialize_to_bytes(&original).expect("serialize should succeed");
-        let restored =
-            StateTransition::deserialize_from_bytes(&bytes).expect("deserialize should succeed");
+        let restored = StateTransition::deserialize_from_bytes_untrusted(&bytes)
+            .expect("deserialize should succeed");
         assert_eq!(original, restored);
     }
 
@@ -2401,9 +2404,11 @@ mod tests {
         let original = sample_transfer_st();
         let bytes =
             PlatformSerializable::serialize_to_bytes(&original).expect("serialize succeeds");
-        let restored =
-            StateTransition::deserialize_from_bytes_in_version(&bytes, PlatformVersion::latest())
-                .expect("deserialize_from_bytes_in_version should succeed");
+        let restored = StateTransition::deserialize_from_bytes_untrusted_in_version(
+            &bytes,
+            PlatformVersion::latest(),
+        )
+        .expect("deserialize_from_bytes_in_version should succeed");
         assert_eq!(original, restored);
     }
 
@@ -3216,34 +3221,34 @@ mod tests {
     // --- serialize round-trip for variants beyond credit transfer. ---
     #[test]
     fn test_serialize_roundtrip_identity_update() {
-        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
         let original = sample_identity_update_st();
         let bytes =
             PlatformSerializable::serialize_to_bytes(&original).expect("serialize should succeed");
-        let restored =
-            StateTransition::deserialize_from_bytes(&bytes).expect("deserialize should succeed");
+        let restored = StateTransition::deserialize_from_bytes_untrusted(&bytes)
+            .expect("deserialize should succeed");
         assert_eq!(original, restored);
     }
 
     #[test]
     fn test_serialize_roundtrip_data_contract_update() {
-        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
         let original = sample_data_contract_update_st();
         let bytes =
             PlatformSerializable::serialize_to_bytes(&original).expect("serialize should succeed");
-        let restored =
-            StateTransition::deserialize_from_bytes(&bytes).expect("deserialize should succeed");
+        let restored = StateTransition::deserialize_from_bytes_untrusted(&bytes)
+            .expect("deserialize should succeed");
         assert_eq!(original, restored);
     }
 
     #[test]
     fn test_serialize_roundtrip_batch_empty() {
-        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
         let original = sample_batch_st_empty();
         let bytes =
             PlatformSerializable::serialize_to_bytes(&original).expect("serialize should succeed");
-        let restored =
-            StateTransition::deserialize_from_bytes(&bytes).expect("deserialize should succeed");
+        let restored = StateTransition::deserialize_from_bytes_untrusted(&bytes)
+            .expect("deserialize should succeed");
         assert_eq!(original, restored);
     }
 
@@ -3273,7 +3278,7 @@ mod tests {
             low_version.protocol_version
         );
 
-        let err = StateTransition::deserialize_from_bytes_in_version(&bytes, low_version)
+        let err = StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, low_version)
             .expect_err("expected StateTransitionIsNotActiveError for sub-12 protocol");
         match err {
             ProtocolError::StateTransitionError(
@@ -3400,10 +3405,11 @@ mod tests {
 
     #[test]
     fn test_withdrawal_v1_serialize_roundtrip_via_state_transition() {
-        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
         let original = sample_withdrawal_v1_st();
         let bytes = PlatformSerializable::serialize_to_bytes(&original).expect("serialize ok");
-        let restored = StateTransition::deserialize_from_bytes(&bytes).expect("deserialize ok");
+        let restored =
+            StateTransition::deserialize_from_bytes_untrusted(&bytes).expect("deserialize ok");
         assert_eq!(original, restored);
         // The restored variant must still be V1, not V0 — exercises the
         // feature-version dispatch in deserialize.
