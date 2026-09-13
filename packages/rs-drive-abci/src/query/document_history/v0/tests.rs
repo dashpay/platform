@@ -100,6 +100,15 @@ fn signed_proof(
     }
 }
 
+/// The proof a proved history response answers with; a proved response never
+/// carries the history itself.
+fn proof_mut(response: &mut GetDocumentHistoryResponseV0) -> &mut Proof {
+    match response.result.as_mut() {
+        Some(ResponseResult::Proof(proof)) => proof,
+        _ => panic!("a proved history query answers with a proof"),
+    }
+}
+
 #[test]
 fn should_round_trip_history_api_through_quorum_and_grove_proof_verification() {
     history_api_proof_round_trip(false);
@@ -224,9 +233,7 @@ fn history_api_proof_round_trip(gapped: bool) {
                 selector,
                 limit: None,
             };
-            response.entries.clear();
-            response.lifecycle.as_mut().unwrap().remaining_revisions = 3;
-            let proof = response.proof.as_mut().unwrap();
+            let proof = proof_mut(&mut response);
             let mut proofs = DocumentHistoryProofV1::from_bytes(&proof.grovedb_proof).unwrap();
             proofs.metadata_proof =
                 drive::util::test_helpers::history_proof::downgrade_history_count(
@@ -254,7 +261,10 @@ fn history_api_proof_round_trip(gapped: bool) {
                 &provider,
             )
             .expect_err("document history requires GroveDB v1 even with a valid quorum signature");
-            assert!(error.to_string().contains("unsupported proof version"));
+            assert!(matches!(
+                error,
+                drive_proof_verifier::Error::UnsupportedGroveDBProofVersion { .. }
+            ));
             assert!(drive_proof_verifier::types::DocumentHistoryProofInfo::maybe_from_proof_with_metadata(
                 request, response, Network::Testnet, version, &provider,
             ).is_err());
@@ -303,7 +313,8 @@ fn history_api_proof_round_trip(gapped: bool) {
             prove: true,
             selector: Some(wire_selector),
         };
-        let mut response = platform
+        let request_v0 = request.clone();
+        let response = platform
             .query_document_history_v0(request.clone(), &state, version)
             .unwrap()
             .into_data()
@@ -348,10 +359,47 @@ fn history_api_proof_round_trip(gapped: bool) {
         );
         let result = verify(response.clone()).unwrap().unwrap();
         assert_eq!(result.entries, expected.entries);
-        assert_eq!(result.lifecycle, Some(expected.lifecycle));
+        assert_eq!(result.lifecycle, Some(expected.lifecycle.clone()));
+        // Without a proof the same query answers with the history itself.
+        let mut plain_request = request_v0.clone();
+        plain_request.prove = false;
+        let plain = platform
+            .query_document_history_v0(plain_request, &state, version)
+            .unwrap()
+            .into_data()
+            .unwrap();
+        let Some(ResponseResult::History(history)) = plain.result else {
+            panic!("an unproved history query answers with the history");
+        };
+        assert_eq!(
+            history
+                .entries
+                .iter()
+                .map(|entry| (entry.time_ms, entry.revision))
+                .collect::<Vec<_>>(),
+            expected
+                .entries
+                .iter()
+                .map(|entry| (entry.time_ms, entry.revision))
+                .collect::<Vec<_>>()
+        );
+        let lifecycle = history
+            .lifecycle
+            .expect("the history carries its lifecycle");
+        assert_eq!(
+            lifecycle.remaining_revisions,
+            expected.lifecycle.remaining_revisions
+        );
+        assert_eq!(
+            lifecycle.state,
+            match expected.lifecycle.state {
+                DocumentHistoryState::Active => State::Active,
+                DocumentHistoryState::Absent => State::Absent,
+            } as i32
+        );
         let with_proofs = |mut response: GetDocumentHistoryResponseV0,
                            edit: &dyn Fn(&mut DocumentHistoryProofV1)| {
-            let proof = response.proof.as_mut().unwrap();
+            let proof = proof_mut(&mut response);
             let mut proofs = DocumentHistoryProofV1::from_bytes(&proof.grovedb_proof).unwrap();
             edit(&mut proofs);
             proof.grovedb_proof = proofs.to_bytes();
@@ -367,30 +415,26 @@ fn history_api_proof_round_trip(gapped: bool) {
         });
         let error =
             verify(legacy_metadata).expect_err("metadata always requires a GroveDB v1 envelope");
-        assert!(error.to_string().contains("unsupported proof version"));
+        assert!(matches!(
+            error,
+            drive_proof_verifier::Error::UnsupportedGroveDBProofVersion { .. }
+        ));
         let mut torn = response.clone();
-        torn.proof.as_mut().unwrap().grovedb_proof.push(0);
+        proof_mut(&mut torn).grovedb_proof.push(0);
         assert!(
             verify(torn).is_err(),
             "a proof envelope with trailing bytes is not the proof the node produced"
         );
-        let mut bad_count = response.clone();
-        bad_count.lifecycle.as_mut().unwrap().remaining_revisions += 1;
-        assert!(
-            verify(bad_count).is_err(),
-            "wire counts must match the authenticated tree count"
-        );
-        let mut bad_state = response.clone();
-        bad_state.lifecycle.as_mut().unwrap().state = 100;
-        assert!(verify(bad_state).is_err());
         let mut bad_signature = response.clone();
-        bad_signature.proof.as_mut().unwrap().signature[0] ^= 1;
+        proof_mut(&mut bad_signature).signature[0] ^= 1;
         assert!(verify(bad_signature).is_err());
-        let has_entries_proof =
-            DocumentHistoryProofV1::from_bytes(&response.proof.as_ref().unwrap().grovedb_proof)
+        let has_entries_proof = {
+            let mut probe = response.clone();
+            DocumentHistoryProofV1::from_bytes(&proof_mut(&mut probe).grovedb_proof)
                 .unwrap()
                 .entries_proof
-                .is_some();
+                .is_some()
+        };
         if has_entries_proof {
             let downgraded = with_proofs(response.clone(), &|proofs| {
                 let bytes = proofs.entries_proof.as_ref().unwrap();
@@ -406,10 +450,6 @@ fn history_api_proof_round_trip(gapped: bool) {
             );
             let missing = with_proofs(response.clone(), &|proofs| proofs.entries_proof = None);
             assert!(verify(missing).is_err());
-        }
-        if !response.entries.is_empty() {
-            response.entries[0].revision += 1;
-            assert!(verify(response).is_err());
         }
     }
 }

@@ -1406,25 +1406,12 @@ fn verify_document_history_response_v0(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<DocumentHistory>, ResponseMetadata, Proof), Error> {
-    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use drive::drive::document::history::{
         DocumentHistoryProofV1, DocumentHistoryQueryV1, DocumentHistorySelector,
-        DocumentHistoryState,
     };
     use platform::get_document_history_request::get_document_history_request_v0::Selector;
-    use platform::get_document_history_response::{
-        get_document_history_response_v0::lifecycle::State, Version,
-    };
-    let Some(Version::V0(response)) = &response.version else {
-        return Err(Error::ResponseDecodeError {
-            error: "history response version does not match request".to_owned(),
-        });
-    };
-    let proof = response.proof.as_ref().ok_or(Error::NoProofInResult)?;
-    let metadata = response
-        .metadata
-        .as_ref()
-        .ok_or(Error::EmptyResponseMetadata)?;
+    let proof = response.proof().or(Err(Error::NoProofInResult))?;
+    let metadata = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
     let contract_id = Identifier::from_bytes(&request.data_contract_id).map_err(|error| {
         Error::ProtocolError {
             error: error.to_string(),
@@ -1466,51 +1453,22 @@ fn verify_document_history_response_v0(
         .map_err(|error| Error::ProtocolError {
             error: error.to_string(),
         })?;
-    // One proof object on the wire carries both GroveDB proofs.
+    // One proof object on the wire carries both GroveDB proofs, so the
+    // envelope floor is checked on each nested proof rather than on the
+    // payload as a whole.
     let proofs = DocumentHistoryProofV1::from_bytes(&proof.grovedb_proof)
         .map_drive_error(proof, metadata)?;
+    require_supported_grovedb_proof_bytes(&proofs.metadata_proof, platform_version)?;
+    if let Some(entries_proof) = &proofs.entries_proof {
+        require_supported_grovedb_proof_bytes(entries_proof, platform_version)?;
+    }
     proofs
         .validate_envelopes()
         .map_drive_error(proof, metadata)?;
     let (root, history) =
         Drive::verify_document_history_v1(&query, &proofs, document_type, platform_version)
             .map_drive_error(proof, metadata)?;
-    let claimed = response
-        .lifecycle
-        .as_ref()
-        .ok_or_else(|| Error::ResponseDecodeError {
-            error: "history response has no lifecycle metadata".to_owned(),
-        })?;
-    let expected_state = match history.lifecycle.state {
-        DocumentHistoryState::Active => State::Active,
-        DocumentHistoryState::Absent => State::Absent,
-    } as i32;
-    if claimed.state != expected_state
-        || claimed.remaining_revisions != history.lifecycle.remaining_revisions
-    {
-        return Err(Error::ResponseDecodeError {
-            error: "history lifecycle metadata differs from its proof".to_owned(),
-        });
-    }
-    if response.entries.len() != history.entries.len() {
-        return Err(Error::ResponseDecodeError {
-            error: "history entries differ from their proof".to_owned(),
-        });
-    }
-    for (claimed, entry) in response.entries.iter().zip(&history.entries) {
-        if claimed.time_ms != entry.time_ms
-            || claimed.revision != entry.revision
-            || claimed.document
-                != entry
-                    .document
-                    .serialize(document_type, &contract, platform_version)?
-        {
-            return Err(Error::ResponseDecodeError {
-                error: "history entry differs from its proof".to_owned(),
-            });
-        }
-    }
-    verify_tenderdash_proof(proof, metadata, &root, provider, platform_version)?;
+    verify_tenderdash_signature(proof, metadata, &root, provider)?;
     Ok((
         Some(DocumentHistory {
             entries: history.entries,
@@ -3483,12 +3441,14 @@ mod tests {
     }
 
     fn document_history_response_with_proof_and_metadata() -> platform::GetDocumentHistoryResponse {
-        use platform::get_document_history_response::{GetDocumentHistoryResponseV0, Version};
+        use platform::get_document_history_response::{
+            get_document_history_response_v0, GetDocumentHistoryResponseV0, Version,
+        };
         platform::GetDocumentHistoryResponse {
             version: Some(Version::V0(GetDocumentHistoryResponseV0 {
-                entries: vec![],
-                lifecycle: None,
-                proof: Some(Proof::default()),
+                result: Some(get_document_history_response_v0::Result::Proof(
+                    Proof::default(),
+                )),
                 metadata: Some(ResponseMetadata::default()),
             })),
         }
@@ -5081,13 +5041,15 @@ mod tests {
 
     #[test]
     fn document_history_empty_response_metadata() {
-        use platform::get_document_history_response::{GetDocumentHistoryResponseV0, Version};
+        use platform::get_document_history_response::{
+            get_document_history_response_v0, GetDocumentHistoryResponseV0, Version,
+        };
         let request = platform::GetDocumentHistoryRequest::default();
         let response = platform::GetDocumentHistoryResponse {
             version: Some(Version::V0(GetDocumentHistoryResponseV0 {
-                entries: vec![],
-                lifecycle: None,
-                proof: Some(Proof::default()),
+                result: Some(get_document_history_response_v0::Result::Proof(
+                    Proof::default(),
+                )),
                 metadata: None,
             })),
         };

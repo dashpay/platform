@@ -808,10 +808,16 @@ impl WasmSdk {
         let result = DocumentHistoryProofInfo::fetch(self.as_ref(), query)
             .await?
             .ok_or_else(|| WasmSdkError::not_found("document history response is missing"))?;
+        use dapi_grpc::platform::v0::get_document_history_response::get_document_history_response_v0::Result as ResponseResult;
+        let Some(ResponseResult::Proof(proof)) = result.response.result else {
+            return Err(WasmSdkError::generic(
+                "verified document history response carries no proof",
+            ));
+        };
         Ok(DocumentHistoryProofMetadataResponseWasm {
             data: document_history_to_js(result.history, contract_id, &document_type_name)?,
             metadata: result.response.metadata.expect("verified metadata").into(),
-            proof: result.response.proof.expect("verified proof").into(),
+            proof: proof.into(),
         })
     }
 
