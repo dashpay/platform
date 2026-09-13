@@ -5700,25 +5700,28 @@ fn build_unused_asset_locks(
             })?;
 
         // Decode the optional bincode-encoded proof.
-        let proof: Option<dpp::prelude::AssetLockProof> =
-            if spec.proof_bytes.is_null() || spec.proof_bytes_len == 0 {
-                None
-            } else {
-                // SAFETY: Same lifetime contract as `transaction_bytes`.
-                let proof_bytes =
-                    unsafe { slice::from_raw_parts(spec.proof_bytes, spec.proof_bytes_len) };
-                let (proof, _) = dpp::bincode::decode_from_slice_untrusted::<
-                    dpp::prelude::AssetLockProof,
-                    _,
-                >(proof_bytes, config::standard())
-                .map_err(|e| {
-                    PersistenceError::backend(format!(
-                        "tracked asset lock: failed to decode proof: {}",
-                        e
-                    ))
-                })?;
-                Some(proof)
-            };
+        let proof: Option<dpp::prelude::AssetLockProof> = if spec.proof_bytes.is_null()
+            || spec.proof_bytes_len == 0
+        {
+            None
+        } else {
+            // SAFETY: Same lifetime contract as `transaction_bytes`.
+            let proof_bytes =
+                unsafe { slice::from_raw_parts(spec.proof_bytes, spec.proof_bytes_len) };
+            // The host persisted these bytes from an entry this wallet
+            // wrote, so they decode as our own data.
+            let (proof, _) = dpp::bincode::decode_from_slice::<dpp::prelude::AssetLockProof, _>(
+                proof_bytes,
+                config::standard(),
+            )
+            .map_err(|e| {
+                PersistenceError::backend(format!(
+                    "tracked asset lock: failed to decode proof: {}",
+                    e
+                ))
+            })?;
+            Some(proof)
+        };
 
         let funding_type = funding_type_from_u8(spec.funding_type)?;
         let status = status_from_u8(spec.status)?;

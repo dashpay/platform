@@ -87,15 +87,14 @@ impl AssetLockEntryWire {
         })
     }
 
-    /// Reconstruct the [`AssetLockEntry`], natively decoding the proof through
-    /// the untrusted decoder so its declared lengths are never pre-allocated.
+    /// Reconstruct the [`AssetLockEntry`], natively decoding the proof.
     /// Rejects trailing bytes past the typed proof length, mirroring
     /// `IdentityKeyWire::into_entry` and the outer `blob::decode` guard.
     fn into_entry(self) -> Result<AssetLockEntry, WalletStorageError> {
         let proof = match self.proof {
             Some(bytes) => {
                 let (proof, consumed): (AssetLockProof, usize) =
-                    bincode::decode_from_slice_untrusted(&bytes, blob::bounded_config())?;
+                    bincode::decode_from_slice(&bytes, blob::bounded_config())?;
                 if consumed != bytes.len() {
                     return Err(WalletStorageError::blob_decode(
                         "unexpected trailing bytes in asset_locks proof bincode",
