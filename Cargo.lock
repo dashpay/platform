@@ -1936,6 +1936,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "dash-sdk-contract"
+version = "4.2.0-dev.8"
+dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "dash-sdk-cxx"
 version = "5.0.1"
 dependencies = [
