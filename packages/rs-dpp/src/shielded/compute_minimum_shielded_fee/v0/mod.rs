@@ -198,12 +198,13 @@ pub fn compute_shielded_unshield_fee_v0(
 ///            + SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES × (disk + processing) credits/byte`
 ///
 /// [`compute_minimum_shielded_fee_v0`] plus one flat component for the identity-side writes
-/// (nonce and balance replacements), built the same way as
-/// [`compute_shielded_unshield_fee_v0`]'s address-write component but calibrated to those
-/// replacements' measured processing cost (they add no storage). The transition's real fee is
-/// metered at execution; this floor is the conservative stand-in the stateless balance pre-check
-/// uses so that a short identity is refused before the Orchard proof is verified, and the
-/// client-side estimate of the total fee.
+/// (the nonce and balance rewrites), built the same way as
+/// [`compute_shielded_unshield_fee_v0`]'s address-write component: the writes' replace-only tree
+/// work (they add no storage) folded into a flat effective-byte figure with headroom, see
+/// `SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES`. The transition's real fee is metered at
+/// execution; this floor is the conservative stand-in the stateless balance pre-check uses so
+/// that a short identity is refused before the Orchard proof is verified, and the client-side
+/// estimate of the total fee.
 ///
 /// All arithmetic is checked: an overflow (only reachable via pathological fee constants)
 /// surfaces as `ProtocolError::Overflow` instead of silently wrapping.
@@ -266,9 +267,9 @@ pub fn compute_shielded_identity_balance_write_fee_v0(
 /// counts) surfaces as `ProtocolError::Overflow` instead of silently wrapping.
 /// Flat fee for `IdentityTopUpFromShieldedPool`: the base shielded minimum plus the flat
 /// identity-balance write component, built like `compute_shielded_unshield_fee_v0`'s address
-/// write component but calibrated to the measured processing cost of replacing the existing
-/// identity's balance element (it adds no storage; see
-/// `SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES`).
+/// write component: the balance rewrite's replace-only tree work (it adds no storage) folded
+/// into a flat effective-byte figure with headroom, see
+/// `SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES`.
 pub fn compute_shielded_identity_top_up_fee_v0(
     num_actions: usize,
     platform_version: &PlatformVersion,
