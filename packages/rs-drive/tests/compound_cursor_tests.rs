@@ -296,3 +296,420 @@ fn should_verify_complete_compound_cursor_page_descending_start_at() {
 fn should_verify_complete_compound_cursor_page_descending_start_after() {
     assert_compound_cursor_pages(false, false, true);
 }
+
+// ---------------------------------------------------------------------------
+// Left-over-level coverage: cursors whose refinement continues below the
+// clause levels (a third index property, or a non-unique id level under an
+// `In` or equality level). Every case compares the executed page — raw and
+// proof-verified — against an independently ordered oracle, and paginates
+// with `startAfter` until exhaustion to catch both omissions and repeats.
+// ---------------------------------------------------------------------------
+
+struct LeftOverFixture {
+    drive: drive::drive::Drive,
+    contract: DataContract,
+    /// `(a, b, c)` values with the inserted document.
+    rows: Vec<([u8; 3], Document)>,
+}
+
+fn setup_left_over_fixture(
+    properties: &[(&str, &str)],
+    unique: bool,
+    rows: &[[u8; 3]],
+) -> LeftOverFixture {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(None);
+    let index_properties: Vec<dpp::platform_value::Value> = properties
+        .iter()
+        .map(|(name, direction)| platform_value!({ *name: *direction }))
+        .collect();
+    let contract = DataContract::from_value(
+        platform_value!({
+            "$formatVersion": "0",
+            "id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
+            "version": 1,
+            "ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
+            "documentSchemas": {
+                "row": {
+                    "type": "object",
+                    "indices": [{"name": "abc", "unique": unique, "properties": index_properties}],
+                    "properties": {
+                        "a": {"type": "integer", "position": 0},
+                        "b": {"type": "integer", "position": 1},
+                        "c": {"type": "integer", "position": 2}
+                    },
+                    "required": ["a", "b", "c"],
+                    "additionalProperties": false
+                }
+            }
+        }),
+        false,
+        platform_version,
+    )
+    .expect("should create left-over contract");
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            None,
+            platform_version,
+        )
+        .expect("should apply contract");
+    let document_type = contract.document_type_for_name("row").expect("row type");
+    let mut inserted = Vec::new();
+    for (index, values) in rows.iter().enumerate() {
+        let seed = index as u8 + 1;
+        let mut document = document_type
+            .create_document_from_data(
+                platform_value!({"a": values[0], "b": values[1], "c": values[2]}),
+                Identifier::from([100; 32]),
+                1,
+                1,
+                [seed; 32],
+                platform_version,
+            )
+            .expect("should create row");
+        document.set_id(Identifier::from([seed; 32]));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                true,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("should insert row");
+        inserted.push((*values, document));
+    }
+    LeftOverFixture {
+        drive,
+        contract,
+        rows: inserted,
+    }
+}
+
+/// Oracle ordering: `order` lists `(property index, ascending)` for every
+/// index level in index order; ids tie-break in the last level's direction.
+fn left_over_oracle(
+    fixture: &LeftOverFixture,
+    filter: impl Fn(&[u8; 3]) -> bool,
+    order: &[(usize, bool)],
+) -> Vec<Identifier> {
+    let mut rows: Vec<&([u8; 3], Document)> = fixture
+        .rows
+        .iter()
+        .filter(|(values, _)| filter(values))
+        .collect();
+    rows.sort_by(|left, right| {
+        for (property, ascending) in order {
+            let ordering = left.0[*property].cmp(&right.0[*property]);
+            let ordering = if *ascending {
+                ordering
+            } else {
+                ordering.reverse()
+            };
+            if ordering.is_ne() {
+                return ordering;
+            }
+        }
+        let ordering = left.1.id().cmp(&right.1.id());
+        if order.last().is_none_or(|(_, ascending)| *ascending) {
+            ordering
+        } else {
+            ordering.reverse()
+        }
+    });
+    rows.into_iter()
+        .map(|(_, document)| document.id())
+        .collect()
+}
+
+fn left_over_page(
+    fixture: &LeftOverFixture,
+    where_clauses: serde_json::Value,
+    order_by: serde_json::Value,
+    limit: usize,
+    cursor: Option<(Identifier, bool)>,
+    prove: bool,
+) -> Vec<Identifier> {
+    let platform_version = PlatformVersion::latest();
+    let document_type = fixture
+        .contract
+        .document_type_for_name("row")
+        .expect("row type");
+    let mut query_value = json!({"where": where_clauses, "orderBy": order_by, "limit": limit});
+    if let Some((id, included)) = cursor {
+        query_value[if included { "startAt" } else { "startAfter" }] =
+            json!(bs58::encode(id.as_slice()).into_string());
+    }
+    let query_bytes = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("should serialize query");
+    let query = DriveDocumentQuery::from_cbor(
+        &query_bytes,
+        &fixture.contract,
+        document_type,
+        &fixture.drive.config,
+        platform_version,
+    )
+    .unwrap_or_else(|error| panic!("{query_value}: {error}"));
+    let results = if prove {
+        query
+            .execute_with_proof_only_get_elements(&fixture.drive, None, None, platform_version)
+            .unwrap_or_else(|error| panic!("{query_value}: {error}"))
+            .1
+    } else {
+        query
+            .execute_raw_results_no_proof(&fixture.drive, None, None, platform_version)
+            .unwrap_or_else(|error| panic!("{query_value}: {error}"))
+            .0
+    };
+    results
+        .iter()
+        .map(|bytes| {
+            Document::from_bytes(bytes, document_type, platform_version)
+                .expect("should deserialize result")
+                .id()
+        })
+        .collect()
+}
+
+/// Walks every page with `startAfter` on the previous page's last row.
+fn left_over_walk(
+    fixture: &LeftOverFixture,
+    where_clauses: serde_json::Value,
+    order_by: serde_json::Value,
+    limit: usize,
+    prove: bool,
+) -> Vec<Identifier> {
+    let mut all = Vec::new();
+    let mut cursor = None;
+    for _ in 0..100 {
+        let page = left_over_page(
+            fixture,
+            where_clauses.clone(),
+            order_by.clone(),
+            limit,
+            cursor,
+            prove,
+        );
+        let Some(last) = page.last() else {
+            break;
+        };
+        cursor = Some((*last, false));
+        all.extend(page);
+    }
+    all
+}
+
+/// Every cursor position, startAt and startAfter, raw and proven, must
+/// yield exactly the oracle suffix.
+fn assert_every_cursor_position(
+    fixture: &LeftOverFixture,
+    where_clauses: serde_json::Value,
+    order_by: serde_json::Value,
+    expected: &[Identifier],
+) {
+    for prove in [false, true] {
+        for (position, id) in expected.iter().enumerate() {
+            for included in [true, false] {
+                let got = left_over_page(
+                    fixture,
+                    where_clauses.clone(),
+                    order_by.clone(),
+                    100,
+                    Some((*id, included)),
+                    prove,
+                );
+                let from = if included { position } else { position + 1 };
+                assert_eq!(
+                    got,
+                    expected[from..].to_vec(),
+                    "prove={prove}, included={included}, cursor position {position}"
+                );
+            }
+        }
+    }
+}
+
+fn assert_walk_matches_oracle(
+    fixture: &LeftOverFixture,
+    where_clauses: serde_json::Value,
+    order_by: serde_json::Value,
+    expected: &[Identifier],
+) {
+    for prove in [false, true] {
+        for limit in [2usize, 3, 5] {
+            let got = left_over_walk(
+                fixture,
+                where_clauses.clone(),
+                order_by.clone(),
+                limit,
+                prove,
+            );
+            assert_eq!(got, expected.to_vec(), "prove={prove}, limit={limit}");
+        }
+    }
+}
+
+fn three_level_rows() -> Vec<[u8; 3]> {
+    let mut rows = Vec::new();
+    for a in [1u8, 2] {
+        for b in [3u8, 5] {
+            // Duplicate (b, c) values exercise the id level under c.
+            for c in [1u8, 7, 7, 7] {
+                rows.push([a, b, c]);
+            }
+        }
+    }
+    rows
+}
+
+#[test]
+fn should_include_start_at_cursor_on_unique_index_with_left_over_level() {
+    // Range outside, In inside, and c left over on a unique index: the
+    // cursor's c key holds the cursor document, so startAt must keep it.
+    let mut rows = Vec::new();
+    for a in [1u8, 2] {
+        for b in [3u8, 5] {
+            for c in [1u8, 7, 9] {
+                rows.push([a, b, c]);
+            }
+        }
+    }
+    let fixture = setup_left_over_fixture(&[("a", "asc"), ("b", "asc"), ("c", "asc")], true, &rows);
+    let expected = left_over_oracle(
+        &fixture,
+        |values| values[0] > 0 && (values[1] == 3 || values[1] == 5),
+        &[(0, true), (1, true), (2, true)],
+    );
+    assert_every_cursor_position(
+        &fixture,
+        json!([["a", ">", 0], ["b", "in", [3, 5]]]),
+        json!([["a", "asc"], ["b", "asc"]]),
+        &expected,
+    );
+}
+
+#[test]
+fn should_include_start_at_cursor_on_unique_in_level_with_left_over_property() {
+    // `In` last clause with b left over on a unique index (no inner clause).
+    let rows: Vec<[u8; 3]> = [1u8, 2]
+        .iter()
+        .flat_map(|a| [3u8, 5, 7].iter().map(move |b| [*a, *b, 0]))
+        .collect();
+    let fixture = setup_left_over_fixture(&[("a", "asc"), ("b", "asc")], true, &rows);
+    let expected = left_over_oracle(
+        &fixture,
+        |values| values[0] == 1 || values[0] == 2,
+        &[(0, true), (1, true)],
+    );
+    assert_every_cursor_position(
+        &fixture,
+        json!([["a", "in", [1, 2]]]),
+        json!([["a", "asc"], ["b", "asc"]]),
+        &expected,
+    );
+}
+
+#[test]
+fn should_paginate_descending_duplicates_on_left_over_level_without_gaps() {
+    // c is a descending index property left over below the In level, so its
+    // id level walks right to left: the cursor bound must continue below the
+    // cursor's id, not above it.
+    let fixture = setup_left_over_fixture(
+        &[("a", "asc"), ("b", "asc"), ("c", "desc")],
+        false,
+        &three_level_rows(),
+    );
+    let expected = left_over_oracle(
+        &fixture,
+        |values| values[0] > 0 && (values[1] == 3 || values[1] == 5),
+        &[(0, true), (1, false), (2, false)],
+    );
+    assert_walk_matches_oracle(
+        &fixture,
+        json!([["a", ">", 0], ["b", "in", [3, 5]]]),
+        json!([["a", "asc"], ["b", "desc"]]),
+        &expected,
+    );
+}
+
+#[test]
+fn should_paginate_ascending_duplicates_on_left_over_level_without_gaps() {
+    let fixture = setup_left_over_fixture(
+        &[("a", "asc"), ("b", "asc"), ("c", "asc")],
+        false,
+        &three_level_rows(),
+    );
+    let expected = left_over_oracle(
+        &fixture,
+        |values| values[0] > 0 && (values[1] == 3 || values[1] == 5),
+        &[(0, true), (1, true), (2, true)],
+    );
+    assert_walk_matches_oracle(
+        &fixture,
+        json!([["a", ">", 0], ["b", "in", [3, 5]]]),
+        json!([["a", "asc"], ["b", "asc"]]),
+        &expected,
+    );
+}
+
+#[test]
+fn should_paginate_descending_duplicates_on_in_level_with_left_over_property() {
+    // `In` last clause, b left over and ordered descending, duplicate b values.
+    let rows: Vec<[u8; 3]> = [1u8, 2]
+        .iter()
+        .flat_map(|a| [3u8, 5, 5, 5].iter().map(move |b| [*a, *b, 0]))
+        .collect();
+    let fixture = setup_left_over_fixture(&[("a", "asc"), ("b", "asc")], false, &rows);
+    let expected = left_over_oracle(
+        &fixture,
+        |values| values[0] == 1 || values[0] == 2,
+        &[(0, true), (1, false)],
+    );
+    assert_walk_matches_oracle(
+        &fixture,
+        json!([["a", "in", [1, 2]]]),
+        json!([["a", "asc"], ["b", "desc"]]),
+        &expected,
+    );
+}
+
+#[test]
+fn should_paginate_duplicates_after_equality_clause_in_both_directions() {
+    // Equality last clause with b left over on a non-unique index: the
+    // cursor's b key must stay in the level so its id level can continue.
+    let rows: Vec<[u8; 3]> = [3u8, 5, 5, 5, 7, 7]
+        .iter()
+        .map(|b| [1, *b, 0])
+        .chain([[2, 5, 0]])
+        .collect();
+    let fixture = setup_left_over_fixture(&[("a", "asc"), ("b", "asc")], false, &rows);
+    for ascending in [true, false] {
+        let expected = left_over_oracle(&fixture, |values| values[0] == 1, &[(1, ascending)]);
+        let order = if ascending { "asc" } else { "desc" };
+        assert_walk_matches_oracle(
+            &fixture,
+            json!([["a", "==", 1]]),
+            json!([["b", order]]),
+            &expected,
+        );
+        assert_every_cursor_position(
+            &fixture,
+            json!([["a", "==", 1]]),
+            json!([["b", order]]),
+            &expected,
+        );
+    }
+}

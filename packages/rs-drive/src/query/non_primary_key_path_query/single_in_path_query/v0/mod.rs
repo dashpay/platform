@@ -22,6 +22,34 @@ use indexmap::IndexMap;
 
 impl<'a> DriveDocumentQuery<'a> {
     #[cfg(any(feature = "server", feature = "verify"))]
+    /// Counterpart of [`Self::inner_query_from_starts_at_for_id`] for
+    /// this lowering: the document-id bound follows the id level's walk
+    /// direction, so a right-to-left id level (a descending last
+    /// property with duplicate values) continues below the cursor's id
+    /// instead of above it. Only non-unique id levels take a direction;
+    /// a unique index's id level holds NULL-valued documents and always
+    /// walks left to right through the v0 helper.
+    pub(in crate::query) fn inner_query_from_starts_at_for_id_ordered(
+        starts_at_document: Option<&StartAtDocument>,
+        left_to_right: bool,
+    ) -> Query {
+        match starts_at_document {
+            None => {
+                let mut inner_query = Query::new_with_direction(left_to_right);
+                inner_query.insert_all();
+                inner_query
+            }
+            Some(StartAtDocument {
+                document, included, ..
+            }) => Self::inner_query_starts_from_key(
+                Some(document.id().to_vec()),
+                left_to_right,
+                *included,
+            ),
+        }
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Counterpart of [`Self::recursive_create_query`] for this
     /// lowering: identical cursor threading, but recursion goes through
     /// [`Self::recursive_insert_on_query_ordered_with_cursor`] so every
@@ -97,12 +125,14 @@ impl<'a> DriveDocumentQuery<'a> {
                     }
                     false => {
                         query.set_subquery_key(vec![0]);
-                        // we just get all by document id order ascending
-                        let full_query =
-                            Self::inner_query_from_starts_at_for_id(None, default_left_to_right);
+                        // Every id level walks in the level's direction.
+                        let full_query = Self::inner_query_from_starts_at_for_id_ordered(
+                            None,
+                            default_left_to_right,
+                        );
                         query.set_subquery(full_query);
 
-                        let inner_query = Self::inner_query_from_starts_at_for_id(
+                        let inner_query = Self::inner_query_from_starts_at_for_id_ordered(
                             starts_at_document,
                             default_left_to_right,
                         );
@@ -138,9 +168,13 @@ impl<'a> DriveDocumentQuery<'a> {
                         .ok()
                         .flatten();
 
-                    // We should always include if we have left_over
+                    // The cursor's key stays in the level whenever something
+                    // below it still refines the cursor: deeper left-over
+                    // levels, or a non-unique index's id level. Only a unique
+                    // index's terminal key holds the cursor document itself,
+                    // so only there does `included` decide.
                     let non_conditional_included =
-                        !left_over.is_empty() || *included || start_at_key.is_none();
+                        !left_over.is_empty() || !unique || *included || start_at_key.is_none();
 
                     let mut non_conditional_query = Self::inner_query_starts_from_key(
                         start_at_key.clone(),
@@ -223,7 +257,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         );
                     }
                     false => {
-                        let inner_query = Self::inner_query_from_starts_at_for_id(
+                        let inner_query = Self::inner_query_from_starts_at_for_id_ordered(
                             Some(starts_at_document),
                             default_left_to_right,
                         );
@@ -245,7 +279,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 let StartAtDocument {
                     document,
                     document_type,
-                    ..
+                    included,
                 } = starts_at_document;
 
                 let lower_start_at_key = document
@@ -258,9 +292,13 @@ impl<'a> DriveDocumentQuery<'a> {
                     .ok()
                     .flatten();
 
-                // We include it if we are not unique,
-                // or if we are unique but the value is empty
-                let non_conditional_included = !unique || lower_start_at_key.is_none();
+                // Same rule as the non-conditional level above: the cursor's
+                // key stays whenever a deeper level (left-over properties or
+                // a non-unique id level) still refines the cursor; a unique
+                // index's terminal key IS the cursor document, so `included`
+                // decides there.
+                let non_conditional_included =
+                    !unique || !left_over.is_empty() || *included || lower_start_at_key.is_none();
 
                 let mut non_conditional_query = Self::inner_query_starts_from_key(
                     lower_start_at_key.clone(),
@@ -611,14 +649,16 @@ impl<'a> DriveDocumentQuery<'a> {
                             match cursor_in_bucket {
                                 Some((document, included)) if !index.unique => {
                                     query.set_subquery_key(vec![0]);
-                                    query.set_subquery(Self::inner_query_from_starts_at_for_id(
-                                        Some(&StartAtDocument {
-                                            document: document.clone(),
-                                            document_type: self.document_type,
-                                            included,
-                                        }),
-                                        left_to_right,
-                                    ));
+                                    query.set_subquery(
+                                        Self::inner_query_from_starts_at_for_id_ordered(
+                                            Some(&StartAtDocument {
+                                                document: document.clone(),
+                                                document_type: self.document_type,
+                                                included,
+                                            }),
+                                            left_to_right,
+                                        ),
+                                    );
                                 }
                                 cursor => {
                                     if matches!(cursor, Some((_, false))) {
@@ -719,37 +759,20 @@ impl<'a> DriveDocumentQuery<'a> {
                                 None,
                                 platform_version,
                             )?;
-                            if !index.unique && left_over_index_properties.is_empty() {
-                                // The terminal id bound follows the range's
-                                // direction, including descending duplicate
-                                // index values. The legacy id helper always
-                                // bounds from below, even for a reverse walk.
-                                let id_query = Self::inner_query_starts_from_key(
-                                    Some(document.id().to_vec()),
-                                    order_clause.ascending,
+                            Self::recursive_conditional_insert_on_query_ordered(
+                                &mut cursor_subquery,
+                                inner_key,
+                                left_over_index_properties.as_slice(),
+                                index.unique,
+                                &StartAtDocument {
+                                    document,
+                                    document_type: self.document_type,
                                     included,
-                                );
-                                cursor_subquery.add_conditional_subquery(
-                                    QueryItem::Key(inner_key.unwrap_or_default()),
-                                    Some(vec![vec![0]]),
-                                    Some(id_query),
-                                );
-                            } else {
-                                Self::recursive_conditional_insert_on_query_ordered(
-                                    &mut cursor_subquery,
-                                    inner_key,
-                                    left_over_index_properties.as_slice(),
-                                    index.unique,
-                                    &StartAtDocument {
-                                        document,
-                                        document_type: self.document_type,
-                                        included,
-                                    },
-                                    order_clause.ascending,
-                                    &self.order_by,
-                                    platform_version,
-                                )?;
-                            }
+                                },
+                                order_clause.ascending,
+                                &self.order_by,
+                                platform_version,
+                            )?;
                             query.add_conditional_subquery(
                                 QueryItem::Key(outer_key),
                                 Some(vec![subindex]),
