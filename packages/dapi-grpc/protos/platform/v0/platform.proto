@@ -1822,7 +1822,12 @@ message GetDocumentHistoryRequest {
     ];              // Only return results after this time in milliseconds
     bool prove = 7; // Flag to request a proof as the response
   }
+  // Reads the retained revisions of a historical document (a type with
+  // documentsKeepHistory) from protocol version 14 on; v0 stays on the wire
+  // for nodes and clients below that version.
   message GetDocumentHistoryRequestV1 {
+    // Exclusive cursor returned with a page. Several revisions can share a
+    // block time, so resuming needs the revision as well as the time.
     message Cursor {
       uint64 time_ms = 1 [ jstype = JS_STRING ];
       uint64 revision = 2 [ jstype = JS_STRING ];
@@ -1868,22 +1873,35 @@ message GetDocumentHistoryResponse {
 
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
+  // A page of a historical document's retained revisions, with the
+  // document's lifecycle as of the same block. Only document types with
+  // documentsKeepHistory retain history; every field here describes such a
+  // historical document.
   message GetDocumentHistoryResponseV1 {
+    // One retained revision of the historical document.
     message Entry {
       uint64 time_ms = 1 [ jstype = JS_STRING ];
       uint64 revision = 2 [ jstype = JS_STRING ];
       bytes document = 3;
     }
+    // Where the historical document stands: still current, or gone with
+    // nothing retained. Later protocol versions add the states between.
     message Lifecycle {
       enum State {
         ACTIVE = 0;
         ABSENT = 1;
       }
       State state = 1;
+      // Revisions the history still retains for the document.
       uint64 remaining_revisions = 2 [ jstype = JS_STRING ];
     }
     repeated Entry entries = 1;
     Lifecycle lifecycle = 2;
+    // Two proofs because they answer two GroveDB queries that cannot be
+    // merged: entries_proof is the offset-paginated proof over the
+    // document's history tree, metadata_proof is the exact-key absence proof
+    // over the current pointer, the lifecycle record and the history tree's
+    // count. Both commit to the same root hash under one signature.
     Proof entries_proof = 3;
     Proof metadata_proof = 4;
     ResponseMetadata metadata = 5;
