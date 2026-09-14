@@ -1,7 +1,6 @@
 //! Single-slot mnemonic-driven identity-authentication key derivation.
 
-use std::ffi::{c_void, CString};
-use std::os::raw::c_char;
+use std::ffi::CString;
 
 use crate::types::{FFINetwork, Network};
 use dashcore::PrivateKey as DashPrivateKey;
@@ -11,11 +10,11 @@ use zeroize::Zeroizing;
 
 use crate::error::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
-use crate::identity_keys_from_mnemonic::{parse_mnemonic_any_language, zeroize_and_free_row};
-use crate::{check_ptr, unwrap_result_or_return};
-use rs_sdk_ffi::{
-    mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
+use crate::identity_keys_from_mnemonic::{
+    parse_mnemonic_any_language, resolve_seed_from_resolver, zeroize_and_free_row,
 };
+use crate::{check_ptr, unwrap_result_or_return};
+use rs_sdk_ffi::MnemonicResolverHandle;
 
 /// Derive a single ECDSA identity-authentication keypair at
 /// `(identity_index, key_index)` from a BIP-39 mnemonic.
@@ -42,27 +41,20 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot(
         unwrap_result_or_return!(CStr::from_ptr(passphrase_cstr).to_str())
     };
 
-    derive_at_slot_inner(
-        mnemonic_str,
-        passphrase_str,
-        network,
-        identity_index,
-        key_index,
-        out_row,
-    )
+    let mnemonic = unwrap_result_or_return!(parse_mnemonic_any_language(mnemonic_str));
+    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(passphrase_str));
+    drop(mnemonic);
+
+    derive_at_slot_inner(&seed, network, identity_index, key_index, out_row)
 }
 
 unsafe fn derive_at_slot_inner(
-    mnemonic_str: &str,
-    passphrase_str: &str,
+    seed: &Zeroizing<[u8; 64]>,
     network: FFINetwork,
     identity_index: u32,
     key_index: u32,
     out_row: *mut IdentityKeyPreviewFFI,
 ) -> PlatformWalletFFIResult {
-    let mnemonic = unwrap_result_or_return!(parse_mnemonic_any_language(mnemonic_str));
-    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(passphrase_str));
-
     let kw_network: Network = network.into();
     let master = unwrap_result_or_return!(ExtendedPrivKey::new_master(kw_network, seed.as_ref()));
 
@@ -145,51 +137,17 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot_with_resolver(
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
 
-    let mut mnemonic_buf: Zeroizing<[u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]> =
-        Zeroizing::new([0u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]);
-    let mut mnemonic_len: usize = 0;
+    // Shared vtable consumer: folds in the wallet's stored BIP-39
+    // passphrase, so the slot preview matches what the wallet signs with.
+    let seed: Zeroizing<[u8; 64]> = match resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &*(wallet_id_bytes as *const [u8; 32]),
+    ) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
 
-    let resolver = &*mnemonic_resolver_handle;
-    let resolver_vtable = &*resolver.vtable;
-    let rc = (resolver_vtable.resolve)(
-        resolver.ctx as *const c_void,
-        wallet_id_bytes,
-        mnemonic_buf.as_mut_ptr() as *mut c_char,
-        MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-        &mut mnemonic_len,
-    );
-    match rc {
-        x if x == mnemonic_resolver_result::SUCCESS => {}
-        x if x == mnemonic_resolver_result::NOT_FOUND => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic resolver: no mnemonic stored for the supplied wallet_id",
-            );
-        }
-        x if x == mnemonic_resolver_result::BUFFER_TOO_SMALL => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic resolver: mnemonic exceeded the FFI buffer capacity",
-            );
-        }
-        _ => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic resolver: failed (other / Keychain access error)",
-            );
-        }
-    }
-
-    let mnemonic_str = unwrap_result_or_return!(std::str::from_utf8(&mnemonic_buf[..mnemonic_len]));
-
-    derive_at_slot_inner(
-        mnemonic_str,
-        "",
-        network,
-        identity_index,
-        key_index,
-        out_row,
-    )
+    derive_at_slot_inner(&seed, network, identity_index, key_index, out_row)
 }
 
 /// Free a row populated by [`dash_sdk_derive_identity_key_at_slot`].

@@ -53,6 +53,7 @@ pub use manager::platform_address_sync::{
     PlatformAddressSyncManager, PlatformAddressSyncSummary, WalletSyncOutcome,
     DEFAULT_SYNC_INTERVAL_SECS,
 };
+pub use manager::seed_from_mnemonic;
 pub use manager::PlatformWalletManager;
 pub use spv::SpvRuntime;
 pub use wallet::asset_lock::manager::AssetLockManager;

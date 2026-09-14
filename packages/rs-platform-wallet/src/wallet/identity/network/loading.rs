@@ -142,7 +142,9 @@ impl IdentityWallet {
     /// the key material a key-resident wallet would.
     ///
     /// `master` must be the BIP-32 master node for this wallet on its
-    /// network (`ExtendedPrivKey::new_master(network, mnemonic.to_seed(""))`),
+    /// network (`ExtendedPrivKey::new_master(network, seed)` where `seed`
+    /// is the wallet's BIP-39 seed, i.e. `mnemonic.to_seed(passphrase)`
+    /// with the wallet's stored passphrase, or `""` when it has none),
     /// same as [`Self::discover_from_master`].
     pub async fn load_identity_by_index_from_master(
         &self,

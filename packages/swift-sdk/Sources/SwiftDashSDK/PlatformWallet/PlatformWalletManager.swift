@@ -191,9 +191,26 @@ struct PlatformWalletNativeTeardownCalls: @unchecked Sendable {
 /// before hopping to the destroy queue. Every field is a plain value type.
 struct PlatformWalletCreateParams: Sendable {
     let mnemonic: String
+    /// Optional BIP-39 passphrase ("25th word"). `nil` / empty means none
+    /// and produces exactly the wallet a passphrase-less create does.
+    let seedPassphrase: String?
     let network: Network
     let accountOptions: UInt32
     let birthHeight: UInt32?
+}
+
+/// `body` receives a C string for `passphrase` (or `nil` when absent), the
+/// shape every passphrase-taking FFI export takes: NULL means "no
+/// passphrase". Shared with `Mnemonic.toSeed` so the "empty is the same as
+/// absent" rule is decided in exactly one place.
+func withOptionalPassphraseCString<R>(
+    _ passphrase: String?,
+    _ body: (UnsafePointer<CChar>?) throws -> R
+) rethrows -> R {
+    if let passphrase, !passphrase.isEmpty {
+        return try passphrase.withCString { try body($0) }
+    }
+    return try body(nil)
 }
 
 /// Native entry point used by the off-main create orchestration in
@@ -208,7 +225,7 @@ struct PlatformWalletCreateParams: Sendable {
 /// a process-global registry, so an arbitrary non-zero test value is not
 /// guaranteed to miss a live Rust entry owned by another test.
 struct PlatformWalletNativeCreateCalls: @unchecked Sendable {
-    /// Mirrors `platform_wallet_manager_create_wallet_from_mnemonic_with_birth_height`,
+    /// Mirrors `platform_wallet_manager_create_wallet_from_mnemonic_with_passphrase_and_birth_height`,
     /// folding the two out-params into the return value (the 32-byte wallet
     /// id already copied into a `Data`).
     typealias Call = @Sendable (Handle, PlatformWalletCreateParams)
@@ -222,16 +239,19 @@ struct PlatformWalletNativeCreateCalls: @unchecked Sendable {
             var walletId: FFIByteTuple32 =
                 (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
             let result = params.mnemonic.withCString { mnemonicPtr in
-                platform_wallet_manager_create_wallet_from_mnemonic_with_birth_height(
-                    managerHandle,
-                    mnemonicPtr,
-                    params.network.ffiValue,
-                    params.accountOptions,
-                    params.birthHeight != nil,
-                    params.birthHeight ?? 0,
-                    &walletHandle,
-                    &walletId
-                )
+                withOptionalPassphraseCString(params.seedPassphrase) { passphrasePtr in
+                    platform_wallet_manager_create_wallet_from_mnemonic_with_passphrase_and_birth_height(
+                        managerHandle,
+                        mnemonicPtr,
+                        passphrasePtr,
+                        params.network.ffiValue,
+                        params.accountOptions,
+                        params.birthHeight != nil,
+                        params.birthHeight ?? 0,
+                        &walletHandle,
+                        &walletId
+                    )
+                }
             }
             let idData = withUnsafeBytes(of: &walletId) { Data($0) }
             return (result, walletHandle, idData)
@@ -1238,9 +1258,17 @@ public class PlatformWalletManager: ObservableObject {
     /// (including DashPay payments) received before this device knew the wallet;
     /// without it, history — and the coreHeight rescan backfill — is clamped to
     /// the tip. `Some(h)` pins a known funding height.
+    ///
+    /// `seedPassphrase` is the optional BIP-39 passphrase ("25th word").
+    /// `nil` / empty means none. A non-empty passphrase folds into the seed
+    /// (`PBKDF2(mnemonic, passphrase)`), so the wallet id differs from the
+    /// passphrase-less one. The caller must persist it with
+    /// `WalletStorage.storePassphrase(_:for:)` under the returned wallet id,
+    /// or the resolver-backed signer will derive the wrong keys.
     @discardableResult
     public func createWallet(
         mnemonic: String,
+        seedPassphrase: String? = nil,
         network: Network,
         name: String? = nil,
         createDefaultAccounts: Bool = true,
@@ -1253,6 +1281,7 @@ public class PlatformWalletManager: ObservableObject {
             fields: [
                 "birth_height_provided": .boolean(birthHeight != nil),
                 "network": .publicText(String(describing: network)),
+                "seed_passphrase": .boolean(!(seedPassphrase ?? "").isEmpty),
                 "source": .publicText("mnemonic"),
             ]
         )
@@ -1264,16 +1293,19 @@ public class PlatformWalletManager: ObservableObject {
 
         do {
             try mnemonic.withCString { mnemonicPtr in
-                try platform_wallet_manager_create_wallet_from_mnemonic_with_birth_height(
-                    handle,
-                    mnemonicPtr,
-                    network.ffiValue,
-                    accountOptions,
-                    birthHeight != nil,
-                    birthHeight ?? 0,
-                    &walletHandle,
-                    &walletId
-                ).check()
+                try withOptionalPassphraseCString(seedPassphrase) { passphrasePtr in
+                    try platform_wallet_manager_create_wallet_from_mnemonic_with_passphrase_and_birth_height(
+                        handle,
+                        mnemonicPtr,
+                        passphrasePtr,
+                        network.ffiValue,
+                        accountOptions,
+                        birthHeight != nil,
+                        birthHeight ?? 0,
+                        &walletHandle,
+                        &walletId
+                    ).check()
+                }
             }
         } catch {
             SDKLogger.event(
@@ -1285,7 +1317,7 @@ public class PlatformWalletManager: ObservableObject {
                     "source": .publicText("mnemonic"),
                 ],
                 error: error,
-                redacting: [mnemonic]
+                redacting: [mnemonic, seedPassphrase ?? ""]
             )
             throw error
         }
@@ -1321,9 +1353,12 @@ public class PlatformWalletManager: ObservableObject {
     /// (native create + publish); [`shutdown()`] drains admitted creates
     /// before taking the handle, so a create whose FFI persisted wallet
     /// data can never be failed retroactively by a concurrent teardown.
+    ///
+    /// `seedPassphrase` follows the sync overload's contract.
     @discardableResult
     public func createWallet(
         mnemonic: String,
+        seedPassphrase: String? = nil,
         network: Network,
         name: String? = nil,
         createDefaultAccounts: Bool = true,
@@ -1339,6 +1374,7 @@ public class PlatformWalletManager: ObservableObject {
         let h = handle
         let params = PlatformWalletCreateParams(
             mnemonic: mnemonic,
+            seedPassphrase: seedPassphrase,
             network: network,
             accountOptions: createDefaultAccounts ? 1 : 0,
             birthHeight: birthHeight)
@@ -1399,6 +1435,7 @@ public class PlatformWalletManager: ObservableObject {
                 "birth_height_provided": .boolean(params.birthHeight != nil),
                 "network": .publicText(String(describing: params.network)),
                 "off_main_thread": .boolean(offMain),
+                "seed_passphrase": .boolean(!(params.seedPassphrase ?? "").isEmpty),
                 "source": .publicText("mnemonic"),
             ]
         )
@@ -1417,7 +1454,7 @@ public class PlatformWalletManager: ObservableObject {
                     "source": .publicText("mnemonic"),
                 ],
                 error: PlatformWalletError(code: result.code, message: result.message),
-                redacting: [params.mnemonic]
+                redacting: [params.mnemonic, params.seedPassphrase ?? ""]
             )
             return .failure(PlatformWalletError(code: result.code, message: result.message))
         }
@@ -2048,11 +2085,12 @@ public class PlatformWalletManager: ObservableObject {
         // (loadFromPersistor's log-and-continue) is unchanged.
         do {
             let storedMarker = persistenceHandler?.seedBindingMarker(walletId: walletId)
-            // Attribute-only stamp of the mnemonic Keychain item (secret never
+            // Attribute-only stamp of the mnemonic Keychain item plus the
+            // passphrase item when the wallet has one (secrets never
             // materialized). Rust binds the marker to it, so any rewrite of
-            // the item invalidates the cached verification. `nil` (attributes
-            // unreadable) disables the cache for this launch — Rust then
-            // always runs the full check and hands back no marker.
+            // either item invalidates the cached verification. `nil`
+            // (attributes unreadable) disables the cache for this launch —
+            // Rust then always runs the full check and hands back no marker.
             let keychainStamp = walletStorage.mnemonicKeychainStamp(for: walletId)
             // Set only when a full verification ran and bound — the signal to
             // persist the fresh marker. Freed unconditionally below.
@@ -2562,8 +2600,13 @@ public class PlatformWalletManager: ObservableObject {
         let remaining = try persistenceHandler.walletRowCountAcrossNetworks(walletId: walletId)
         if remaining == 0 {
             let storage = WalletStorage()
-            // Delete metadata first so the mnemonic remains available for retry.
+            // Delete metadata first so the mnemonic remains available for
+            // retry. The passphrase goes before the mnemonic for the same
+            // reason: a passphrase orphaned without its mnemonic is inert,
+            // a mnemonic orphaned without its passphrase resolves to the
+            // wrong wallet.
             try storage.deleteMetadata(for: walletId)
+            try storage.deletePassphrase(for: walletId)
             try storage.deleteMnemonic(for: walletId)
         }
     }

@@ -11,10 +11,11 @@ private func scrubBytes(_ bytes: inout [UInt8]) {
     }
 }
 
-/// Best-effort in-memory obfuscation for mnemonic UTF-8 bytes while
+/// Best-effort in-memory obfuscation for secret UTF-8 bytes (the
+/// mnemonic, and the BIP-39 passphrase when the wallet has one) while
 /// they sit on the Swift heap between the Keychain read and the final
 /// copy into Rust's `Zeroizing` buffer.
-private final class MaskedMnemonicUTF8 {
+private final class MaskedSecretUTF8 {
     private var maskedBytes: [UInt8]
     private var maskBytes: [UInt8]
 
@@ -66,12 +67,16 @@ private final class MaskedMnemonicUTF8 {
 /// `dash_sdk_derive_and_persist_identity_keys` (and the
 /// platform-address signing path in
 /// `dash_sdk_sign_with_mnemonic_resolver_and_path`) calls back
-/// into Swift via this resolver to fetch the BIP-39 mnemonic for
-/// the wallet whose identity keys it's deriving. The mnemonic is
-/// copied directly into a Rust-owned `Zeroizing` stack buffer; it
-/// never round-trips back to Swift after this single read. On the
-/// Swift side the bytes are masked while idle, then deobfuscated only
-/// long enough to copy into the FFI output buffer.
+/// into Swift via this resolver to fetch the BIP-39 mnemonic — and
+/// the wallet's BIP-39 passphrase, if it has one — for the wallet
+/// whose identity keys it's deriving. Both are copied directly into
+/// Rust-owned `Zeroizing` stack buffers; neither round-trips back to
+/// Swift after this single read. On the Swift side the bytes are
+/// masked while idle, then deobfuscated only long enough to copy into
+/// the FFI output buffers. Rust derives the seed as
+/// `PBKDF2(mnemonic, passphrase)`, so a passphrase wallet signs with
+/// the keys it was created with; a wallet without one reports a
+/// zero-length passphrase and derives exactly as before.
 ///
 /// # Lifetime contract
 ///
@@ -140,7 +145,10 @@ public final class MnemonicResolver: @unchecked Sendable {
         walletId: Data,
         outBuffer: UnsafeMutablePointer<CChar>,
         outCapacity: UInt,
-        outLen: UnsafeMutablePointer<UInt>
+        outLen: UnsafeMutablePointer<UInt>,
+        outPassphraseBuffer: UnsafeMutablePointer<CChar>,
+        outPassphraseCapacity: UInt,
+        outPassphraseLen: UnsafeMutablePointer<UInt>
     ) -> MnemonicResolverResult {
         // Secret-free audit line: every mnemonic pull through a resolver
         // handle is observable, so "the launch path never touches the
@@ -175,35 +183,77 @@ public final class MnemonicResolver: @unchecked Sendable {
             return .other
         }
 
-        let maskedMnemonic: MaskedMnemonicUTF8
+        // The passphrase leg. Absence is the common case and must not turn
+        // into a failure; only a Keychain that cannot say whether one exists
+        // is an error (a passphrase wallet resolved without its passphrase
+        // would derive the wrong keys, so fail closed).
+        let passphraseUTF8Bytes: Data?
+        switch storage.passphraseAvailability(for: walletId) {
+        case .absent:
+            passphraseUTF8Bytes = nil
+        case .unavailable:
+            return .other
+        case .present:
+            do {
+                passphraseUTF8Bytes = try storage.retrievePassphraseUTF8Bytes(for: walletId)
+            } catch {
+                return .other
+            }
+        }
+
+        let maskedMnemonic: MaskedSecretUTF8
+        let maskedPassphrase: MaskedSecretUTF8?
         do {
-            maskedMnemonic = try MaskedMnemonicUTF8(plaintextUTF8Bytes: mnemonicUTF8Bytes)
+            maskedMnemonic = try MaskedSecretUTF8(plaintextUTF8Bytes: mnemonicUTF8Bytes)
+            maskedPassphrase = try passphraseUTF8Bytes.map { try MaskedSecretUTF8(plaintextUTF8Bytes: $0) }
         } catch {
             return .other
         }
 
-        return maskedMnemonic.withDeobfuscatedBytes { bytes -> MnemonicResolverResult in
-            let mnemonicLen = bytes.count
-            // Need room for the data plus a trailing NUL byte.
-            guard UInt(mnemonicLen) + 1 <= outCapacity else {
-                return .bufferTooSmall
-            }
-            guard let srcBase = bytes.baseAddress else {
-                return .other
-            }
-            if bytes.contains(0) {
-                return .other
-            }
-            srcBase.withMemoryRebound(to: CChar.self, capacity: mnemonicLen) { srcPtr in
-                outBuffer.update(from: srcPtr, count: mnemonicLen)
-            }
-            // Explicit NUL terminator — defensive, the Rust side
-            // works off `out_len` not strlen but matching the
-            // wire contract is cheap insurance.
-            (outBuffer + mnemonicLen).pointee = 0
-            outLen.pointee = UInt(mnemonicLen)
+        let mnemonicResult = maskedMnemonic.withDeobfuscatedBytes { bytes in
+            Self.copyNULTerminated(bytes, into: outBuffer, capacity: outCapacity, outLen: outLen)
+        }
+        guard mnemonicResult == .success else { return mnemonicResult }
+
+        guard let maskedPassphrase else {
+            outPassphraseLen.pointee = 0
             return .success
         }
+        return maskedPassphrase.withDeobfuscatedBytes { bytes in
+            Self.copyNULTerminated(
+                bytes, into: outPassphraseBuffer, capacity: outPassphraseCapacity, outLen: outPassphraseLen)
+        }
+    }
+
+    /// Copy `bytes` into a Rust-owned out buffer with the resolver wire
+    /// contract: NUL-terminated, `outLen` excludes the NUL, embedded NULs
+    /// are refused (they would truncate the C string on the far side).
+    private static func copyNULTerminated(
+        _ bytes: UnsafeBufferPointer<UInt8>,
+        into outBuffer: UnsafeMutablePointer<CChar>,
+        capacity: UInt,
+        outLen: UnsafeMutablePointer<UInt>
+    ) -> MnemonicResolverResult {
+        let len = bytes.count
+        // Need room for the data plus a trailing NUL byte.
+        guard UInt(len) + 1 <= capacity else {
+            return .bufferTooSmall
+        }
+        guard let srcBase = bytes.baseAddress else {
+            return .other
+        }
+        if bytes.contains(0) {
+            return .other
+        }
+        srcBase.withMemoryRebound(to: CChar.self, capacity: len) { srcPtr in
+            outBuffer.update(from: srcPtr, count: len)
+        }
+        // Explicit NUL terminator — defensive, the Rust side works off
+        // `out_len` not strlen but matching the wire contract is cheap
+        // insurance.
+        (outBuffer + len).pointee = 0
+        outLen.pointee = UInt(len)
+        return .success
     }
 }
 
@@ -214,9 +264,13 @@ private func mnemonicResolverResolveTrampoline(
     walletIdBytes: UnsafePointer<UInt8>?,
     outBuffer: UnsafeMutablePointer<CChar>?,
     outCapacity: UInt,
-    outLen: UnsafeMutablePointer<UInt>?
+    outLen: UnsafeMutablePointer<UInt>?,
+    outPassphraseBuffer: UnsafeMutablePointer<CChar>?,
+    outPassphraseCapacity: UInt,
+    outPassphraseLen: UnsafeMutablePointer<UInt>?
 ) -> Int32 {
-    guard let ctx, let walletIdBytes, let outBuffer, let outLen else {
+    guard let ctx, let walletIdBytes, let outBuffer, let outLen,
+          let outPassphraseBuffer, let outPassphraseLen else {
         return MnemonicResolverResult.other.rawValue
     }
     let resolver = Unmanaged<MnemonicResolver>.fromOpaque(ctx).takeUnretainedValue()
@@ -225,7 +279,10 @@ private func mnemonicResolverResolveTrampoline(
         walletId: walletId,
         outBuffer: outBuffer,
         outCapacity: outCapacity,
-        outLen: outLen
+        outLen: outLen,
+        outPassphraseBuffer: outPassphraseBuffer,
+        outPassphraseCapacity: outPassphraseCapacity,
+        outPassphraseLen: outPassphraseLen
     )
     return result.rawValue
 }

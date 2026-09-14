@@ -578,6 +578,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let wallet = manager
         .create_wallet_from_mnemonic(
             &phrase,
+            "",
             Network::Testnet,
             WalletAccountCreationOptions::Default,
             Some(0),

@@ -156,9 +156,9 @@ pub(crate) unsafe fn resolve_master_from_resolver_classified(
     })
 }
 
-/// Resolve a wallet's BIP-39 mnemonic via a Swift-owned
-/// [`MnemonicResolverHandle`] and return the **raw 64-byte BIP39 seed**
-/// (empty passphrase).
+/// Resolve a wallet's BIP-39 mnemonic (and its stored passphrase, if
+/// any) via a Swift-owned [`MnemonicResolverHandle`] and return the
+/// **raw 64-byte BIP39 seed**.
 ///
 /// This is the seed the BLS operator / Ed25519 platform-node HD masters
 /// consume directly (rust-dashcore #879); unlike
@@ -189,73 +189,38 @@ pub(crate) unsafe fn resolve_seed_from_resolver_classified(
     mnemonic_resolver_handle: *mut rs_sdk_ffi::MnemonicResolverHandle,
     wallet_id: &[u8; 32],
 ) -> Result<Zeroizing<[u8; 64]>, ResolveFailure> {
-    use rs_sdk_ffi::{mnemonic_resolver_result, MNEMONIC_RESOLVER_BUFFER_CAPACITY};
-    use std::ffi::c_void;
+    use rs_sdk_ffi::ResolveSeedError;
 
-    let mut mnemonic_buf: Zeroizing<[u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]> =
-        Zeroizing::new([0u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]);
-    let mut mnemonic_len: usize = 0;
-
-    let resolver = &*mnemonic_resolver_handle;
-    let resolver_vtable = &*resolver.vtable;
-    let rc = (resolver_vtable.resolve)(
-        resolver.ctx as *const c_void,
-        wallet_id.as_ptr(),
-        mnemonic_buf.as_mut_ptr() as *mut std::os::raw::c_char,
-        MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-        &mut mnemonic_len,
-    );
-    match rc {
-        x if x == mnemonic_resolver_result::SUCCESS => {}
-        x if x == mnemonic_resolver_result::NOT_FOUND => {
-            // Not permanent: the host filters watch-only wallets before
-            // calling, so reaching this means the item was expected and was
-            // not readable — including the wipe/restore race.
-            return Err(ResolveFailure::unavailable(PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic resolver: no mnemonic stored for the supplied wallet_id",
-            )));
-        }
-        x if x == mnemonic_resolver_result::BUFFER_TOO_SMALL => {
-            return Err(ResolveFailure::permanent(PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic resolver: mnemonic exceeded the FFI buffer capacity",
-            )));
-        }
-        _ => {
-            // The Keychain bucket: locked device, denied or cancelled prompt,
-            // daemon unavailable. Retryable by nature.
-            return Err(ResolveFailure::unavailable(PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "mnemonic resolver: failed (other / Keychain access error)",
-            )));
-        }
-    }
-    if mnemonic_len == 0 || mnemonic_len > MNEMONIC_RESOLVER_BUFFER_CAPACITY {
-        return Err(ResolveFailure::permanent(PlatformWalletFFIResult::err(
+    rs_sdk_ffi::resolve_seed(mnemonic_resolver_handle, wallet_id).map_err(|e| match e {
+        // Not permanent: the host filters watch-only wallets before
+        // calling, so reaching this means the item was expected and was
+        // not readable — including the wipe/restore race.
+        ResolveSeedError::NotFound => ResolveFailure::unavailable(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            "mnemonic resolver: returned invalid length",
-        )));
-    }
-
-    // Validate UTF-8 over the resolver-claimed prefix only — never
-    // build a `String` (Swift's can't be zeroized; ours can).
-    let mnemonic_str = std::str::from_utf8(&mnemonic_buf[..mnemonic_len]).map_err(|e| {
-        ResolveFailure::permanent(PlatformWalletFFIResult::err(
+            e.to_string(),
+        )),
+        // The Keychain bucket: locked device, denied or cancelled prompt,
+        // daemon unavailable. Retryable by nature.
+        ResolveSeedError::ResolverFailed(_) => {
+            ResolveFailure::unavailable(PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                e.to_string(),
+            ))
+        }
+        ResolveSeedError::InvalidUtf8 => ResolveFailure::permanent(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorUtf8Conversion,
-            format!("mnemonic resolver: returned invalid UTF-8: {e}"),
-        ))
-    })?;
-    let mnemonic = parse_mnemonic_any_language(mnemonic_str).map_err(|e| {
-        ResolveFailure::permanent(PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("mnemonic resolver: returned an invalid mnemonic: {e}"),
-        ))
-    })?;
-
-    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
-    drop(mnemonic);
-    Ok(seed)
+            e.to_string(),
+        )),
+        ResolveSeedError::BufferTooSmall
+        | ResolveSeedError::InvalidMnemonicLength(_)
+        | ResolveSeedError::InvalidPassphraseLength(_)
+        | ResolveSeedError::InvalidMnemonic => {
+            ResolveFailure::permanent(PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                e.to_string(),
+            ))
+        }
+    })
 }
 
 /// Build the DIP-9 identity-authentication derivation path
@@ -603,6 +568,9 @@ mod resolve_classification_tests {
         _out: *mut c_char,
         _cap: usize,
         _out_len: *mut usize,
+        _out_pp: *mut c_char,
+        _pp_cap: usize,
+        _out_pp_len: *mut usize,
     ) -> i32 {
         mnemonic_resolver_result::NOT_FOUND
     }
@@ -614,6 +582,9 @@ mod resolve_classification_tests {
         _out: *mut c_char,
         _cap: usize,
         _out_len: *mut usize,
+        _out_pp: *mut c_char,
+        _pp_cap: usize,
+        _out_pp_len: *mut usize,
     ) -> i32 {
         mnemonic_resolver_result::OTHER
     }
@@ -625,11 +596,15 @@ mod resolve_classification_tests {
         out: *mut c_char,
         cap: usize,
         out_len: *mut usize,
+        _out_pp: *mut c_char,
+        _pp_cap: usize,
+        out_pp_len: *mut usize,
     ) -> i32 {
         let phrase = b"not a bip39 phrase at all";
         assert!(cap >= phrase.len());
         std::ptr::copy_nonoverlapping(phrase.as_ptr(), out as *mut u8, phrase.len());
         *out_len = phrase.len();
+        *out_pp_len = 0;
         mnemonic_resolver_result::SUCCESS
     }
 
@@ -640,8 +615,12 @@ mod resolve_classification_tests {
         _out: *mut c_char,
         _cap: usize,
         out_len: *mut usize,
+        _out_pp: *mut c_char,
+        _pp_cap: usize,
+        out_pp_len: *mut usize,
     ) -> i32 {
         *out_len = MNEMONIC_RESOLVER_BUFFER_CAPACITY + 1;
+        *out_pp_len = 0;
         mnemonic_resolver_result::SUCCESS
     }
 
