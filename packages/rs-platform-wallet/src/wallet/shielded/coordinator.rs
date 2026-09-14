@@ -80,7 +80,9 @@ use tokio::sync::RwLock;
 
 use super::activity::ShieldedActivityStatus;
 use super::activity_recorder::{identity_redrive_output_cmxs, IdentityRecoveryError};
-use super::balance::{ShieldedLocalBalanceSnapshot, ShieldedLocalBalanceState};
+use super::balance::{
+    ShieldedBalanceSource, ShieldedLocalBalanceSnapshot, ShieldedLocalBalanceState,
+};
 use super::file_store::FileBackedShieldedStore;
 use super::keys::AccountViewingKeys;
 use super::store::{
@@ -922,15 +924,23 @@ impl NetworkShieldedCoordinator {
         if account_ids.is_empty() {
             return Ok(ShieldedLocalBalanceState::Unbound);
         }
-        if !self.is_hydrated_locked(wallet_id).await {
-            return Ok(ShieldedLocalBalanceState::RestoreIncomplete);
-        }
+        let hydrated = self.is_hydrated_locked(wallet_id).await;
         let store = self.store.read().await;
         let mut accounts = BTreeMap::new();
         for id in account_ids {
             let balance = store
                 .local_account_balance(id)
                 .map_err(|error| PlatformWalletError::ShieldedStoreError(error.to_string()))?;
+            // A bind racing Clear deliberately skips its stale host snapshot;
+            // a failed Clear also invalidates hydration while retaining the
+            // registration. A complete scan can establish each live account's
+            // ledger independently. Do not mark host hydration complete here:
+            // a later bind must still be able to restore host-only metadata.
+            // Successful Clear purges the source with the subwallet, and a
+            // newly added/unscanned account cannot inherit another's coverage.
+            if !hydrated && balance.source != ShieldedBalanceSource::ScannedThisSession {
+                return Ok(ShieldedLocalBalanceState::RestoreIncomplete);
+            }
             accounts.insert(id.account_index, balance);
         }
         Ok(ShieldedLocalBalanceState::Ready(

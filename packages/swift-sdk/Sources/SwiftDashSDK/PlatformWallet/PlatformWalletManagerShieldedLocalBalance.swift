@@ -5,7 +5,8 @@ import DashSDKFFI
 public enum ShieldedLocalBalanceState: Sendable, Equatable {
     /// No shielded coordinator or bound accounts exist for this wallet.
     case unbound
-    /// Bound accounts exist, but local restoration has not completed.
+    /// Bound accounts exist, but neither restoration nor completed in-session
+    /// scans establish the local ledger for every account.
     case restoreIncomplete
     case ready(ShieldedLocalBalanceSnapshot)
 }
@@ -124,9 +125,10 @@ extension PlatformWalletManager {
     /// decides whether and when to request a fresh read. Clear, stop, failed bind,
     /// and task cancellation discard obsolete delivery with `CancellationError`.
     ///
-    /// Native failures throw; unbound and incompletely restored wallets do
-    /// not produce numeric balances. Retain the last usable snapshot when a
-    /// read fails. The manager remains alive until native read, allocation
+    /// Native failures throw; unbound wallets and ledgers lacking complete
+    /// restoration or scan coverage do not produce numeric balances. Retain
+    /// the last usable snapshot when a read fails. The manager remains alive
+    /// until native read, allocation
     /// release, and delivery finish; shutdown drains admitted reads.
     public func localShieldedBalanceSnapshot(walletId: Data) async throws -> ShieldedLocalBalanceState {
         try Task.checkCancellation()

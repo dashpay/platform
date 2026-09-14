@@ -168,8 +168,7 @@ async fn local_balance_distinguishes_availability_and_explicit_empty_scan() {
     );
 }
 
-#[tokio::test]
-async fn local_balance_successful_empty_scan_marks_known_zero() {
+async fn empty_pool_sdk() -> dash_sdk::Sdk {
     let mut sdk = dash_sdk::Sdk::new_mock();
     let count = 2048
         * u32::from(
@@ -196,6 +195,12 @@ async fn local_balance_successful_empty_scan_marks_known_zero() {
             .await
             .expect("empty mock network response");
     }
+    sdk
+}
+
+#[tokio::test]
+async fn local_balance_successful_empty_scan_marks_known_zero() {
+    let sdk = empty_pool_sdk().await;
     let path = tree_path();
     let coordinator = NetworkShieldedCoordinator::new(
         Arc::new(sdk),
@@ -220,6 +225,115 @@ async fn local_balance_successful_empty_scan_marks_known_zero() {
     assert_eq!(account.spendable_credits, 0);
     assert_eq!(account.last_scanned_index, Some(0));
     assert_eq!(account.source, ShieldedBalanceSource::ScannedThisSession);
+}
+
+#[tokio::test]
+async fn local_balance_successful_scan_covers_unhydrated_registration() {
+    let path = tree_path();
+    let coordinator = NetworkShieldedCoordinator::new(
+        Arc::new(empty_pool_sdk().await),
+        dashcore::Network::Testnet,
+        path.clone(),
+        FileBackedShieldedStore::open_path(path, 100).unwrap(),
+    );
+    let wallet = [7; 32];
+    register(&coordinator, wallet, &[0]).await;
+    assert_eq!(
+        coordinator.local_balance_snapshot(wallet).await.unwrap(),
+        ShieldedLocalBalanceState::RestoreIncomplete
+    );
+    let outcome = coordinator.sync(true).await;
+    assert_eq!(outcome.success_count(), 1, "{outcome:?}");
+    let account = ready(&coordinator, wallet).await.accounts[&0];
+    assert_eq!(account.spendable_credits, 0);
+    assert_eq!(account.source, ShieldedBalanceSource::ScannedThisSession);
+    assert_eq!(account.last_scanned_index, Some(0));
+    assert!(
+        !coordinator.is_hydrated(wallet).await,
+        "scan coverage must not fast-path a later host snapshot restore"
+    );
+}
+
+#[tokio::test]
+async fn local_balance_recovers_after_failed_clear_and_completed_scan() {
+    let path = tree_path();
+    let coordinator = NetworkShieldedCoordinator::new(
+        Arc::new(empty_pool_sdk().await),
+        dashcore::Network::Testnet,
+        path.clone(),
+        FileBackedShieldedStore::open_path(&path, 100).unwrap(),
+    );
+    let wallet = [8; 32];
+    register(&coordinator, wallet, &[0]).await;
+    coordinator.mark_hydrated(wallet, true).await;
+    let id = SubwalletId::new(wallet, 0);
+    coordinator
+        .store()
+        .write()
+        .await
+        .save_note(id, &note(1, 900, false))
+        .unwrap();
+    assert_eq!(
+        ready(&coordinator, wallet).await.accounts[&0].spendable_credits,
+        900
+    );
+
+    // A real SQLite schema error makes FileBacked's purge fail. Its SQL-first
+    // ordering keeps the live subwallet ledger intact; the host keeps its rows.
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch("ALTER TABLE shielded_pending_spends RENAME TO unavailable_pending_spends;")
+        .unwrap();
+    assert!(coordinator.clear().await.is_err());
+    conn.execute_batch("ALTER TABLE unavailable_pending_spends RENAME TO shielded_pending_spends;")
+        .unwrap();
+    drop(conn);
+    assert!(!coordinator.is_hydrated(wallet).await);
+    assert_eq!(coordinator.registered_subwallets().await, vec![id]);
+    assert_eq!(
+        coordinator.local_balance_snapshot(wallet).await.unwrap(),
+        ShieldedLocalBalanceState::RestoreIncomplete
+    );
+    let outcome = coordinator.sync(true).await;
+    assert_eq!(outcome.success_count(), 1, "{outcome:?}");
+    let account = ready(&coordinator, wallet).await.accounts[&0];
+    assert_eq!(account.spendable_credits, 900);
+    assert_eq!(account.source, ShieldedBalanceSource::ScannedThisSession);
+    assert!(!coordinator.is_hydrated(wallet).await);
+}
+
+#[tokio::test]
+async fn local_balance_unhydrated_requires_scan_coverage_for_every_account() {
+    let path = tree_path();
+    let coordinator = coordinator(&path);
+    let wallet = [9; 32];
+    register(&coordinator, wallet, &[0]).await;
+    coordinator
+        .store()
+        .write()
+        .await
+        .set_last_synced_note_index(SubwalletId::new(wallet, 0), 0)
+        .unwrap();
+    assert_eq!(ready(&coordinator, wallet).await.accounts.len(), 1);
+    register(&coordinator, wallet, &[0, 1]).await;
+    assert_eq!(
+        coordinator.local_balance_snapshot(wallet).await.unwrap(),
+        ShieldedLocalBalanceState::RestoreIncomplete,
+        "an added account without scan coverage keeps the wallet incomplete"
+    );
+    coordinator
+        .store()
+        .write()
+        .await
+        .set_last_synced_note_index(SubwalletId::new(wallet, 1), 0)
+        .unwrap();
+    assert_eq!(ready(&coordinator, wallet).await.accounts.len(), 2);
+    coordinator.clear().await.unwrap();
+    register(&coordinator, wallet, &[0, 1]).await;
+    assert_eq!(
+        coordinator.local_balance_snapshot(wallet).await.unwrap(),
+        ShieldedLocalBalanceState::RestoreIncomplete,
+        "successful Clear must not retain the previous scan evidence"
+    );
 }
 
 #[tokio::test]
@@ -347,7 +461,8 @@ async fn local_balance_waits_for_atomic_store_and_lifecycle_updates() {
     drop(install);
     assert_eq!(
         read.await.unwrap(),
-        ShieldedLocalBalanceState::RestoreIncomplete
+        ShieldedLocalBalanceState::Ready(snapshot),
+        "completed scan evidence survives invalidated host hydration"
     );
 }
 

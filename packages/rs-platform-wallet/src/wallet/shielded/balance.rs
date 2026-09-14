@@ -37,7 +37,8 @@ pub struct ShieldedLocalBalanceSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShieldedLocalBalanceState {
     Unbound,
-    /// Binding registered the keys, but restoring the ledger did not complete.
+    /// Binding registered the keys, but neither host restoration nor completed
+    /// in-session scans establish the ledger for every account.
     RestoreIncomplete,
     Ready(ShieldedLocalBalanceSnapshot),
 }

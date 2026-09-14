@@ -508,8 +508,9 @@ public class PlatformWalletManager: ObservableObject {
     /// changing the existing sync callback generation semantics.
     nonisolated let shieldedLocalBalanceGeneration = SyncGenerationCounter()
 
-    /// A successful bind may be idempotent. Reads overlapping it take one
-    /// fresh snapshot rather than treating every bind as destructive.
+    /// A successful bind may be idempotent. Overlapping reads report
+    /// `bindingChanged` so the host can request a fresh snapshot; the SDK
+    /// neither guesses native idempotence nor retries the read itself.
     nonisolated let shieldedLocalBalanceBindGeneration = SyncGenerationCounter()
 
     /// Generation guard for platform-address (BLAST/DIP-17) sync
@@ -1251,8 +1252,11 @@ public class PlatformWalletManager: ObservableObject {
     ///   hydrated", which only holds for sequential loaders).
     ///
     /// Async entrypoints use [`admitNativeOp`] instead. Mutations serialize
-    /// on the destroy queue; read-only shielded snapshots use a separate queue
-    /// and native lifecycle/store guards. Both remain counted through delivery.
+    /// on the destroy queue; read-only snapshots use a separate queue to avoid
+    /// blocking behind another manager's teardown. Queue independence does not
+    /// permit mutation before a completed read's MainActor delivery: deletion
+    /// could otherwise remove the wallet while its old snapshot is still queued.
+    /// Both operations remain counted through delivery to close that window.
     private func ensureSyncNativeOpAllowed(_ name: String) throws {
         try ensureConfigured()
         guard !shutdownRequested else {
