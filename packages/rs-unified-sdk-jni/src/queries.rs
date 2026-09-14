@@ -19,9 +19,10 @@ use rs_sdk_ffi::{
     dash_sdk_contested_resource_get_voters_for_identity, dash_sdk_data_contract_destroy,
     dash_sdk_data_contract_fetch, dash_sdk_data_contract_fetch_json,
     dash_sdk_data_contract_fetch_result_free, dash_sdk_data_contract_fetch_with_serialization,
-    dash_sdk_document_average, dash_sdk_document_count, dash_sdk_document_search,
-    dash_sdk_document_sum, dash_sdk_dpns_check_availability, dash_sdk_dpns_get_usernames,
-    dash_sdk_dpns_resolve, dash_sdk_dpns_search, dash_sdk_evonode_get_proposed_epoch_blocks_by_ids,
+    dash_sdk_data_contracts_fetch_by_range, dash_sdk_document_average, dash_sdk_document_count,
+    dash_sdk_document_search, dash_sdk_document_sum, dash_sdk_dpns_check_availability,
+    dash_sdk_dpns_get_usernames, dash_sdk_dpns_resolve, dash_sdk_dpns_search,
+    dash_sdk_evonode_get_proposed_epoch_blocks_by_ids,
     dash_sdk_evonode_get_proposed_epoch_blocks_by_range, dash_sdk_group_get_action_signers,
     dash_sdk_group_get_actions, dash_sdk_group_get_info, dash_sdk_identities_fetch_balances,
     dash_sdk_identities_fetch_contract_keys, dash_sdk_identity_fetch,
@@ -234,6 +235,39 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
     guard(&mut env, (), |_| unsafe {
         dash_sdk_data_contract_destroy(handle as *mut DataContractHandle)
     });
+}
+
+/// One page of every data contract, in ascending contract id order, as a JSON
+/// array of `{"id", "dataContract"}` objects. `startAfter`/`startAt` (base58
+/// contract id) may be null and are mutually exclusive; `limit` 0 means the
+/// default page size. With `idsOnly` every `dataContract` field is null.
+/// Returns JSON, or null.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataContractsFetchByRange(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk: jlong,
+    limit: jint,
+    start_after: JString,
+    start_at: JString,
+    ids_only: jboolean,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let after = opt_c_string(env, &start_after);
+        let at = opt_c_string(env, &start_at);
+        let result = unsafe {
+            dash_sdk_data_contracts_fetch_by_range(
+                sdk as *const SDKHandle,
+                limit.max(0) as u32,
+                c_ptr(&after),
+                c_ptr(&at),
+                ids_only != 0,
+            )
+        };
+        unsafe { unwrap_string(env, result) }
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
 }
 
 /// Search documents of a type; returns a JSON array of documents.

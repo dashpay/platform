@@ -574,6 +574,25 @@ class Contracts internal constructor(private val sdk: Sdk) {
     }
 
     /**
+     * One page of every data contract on Platform, in ascending contract id order,
+     * as a JSON array of `{"id", "dataContract"}` objects. Pass the last `id` as
+     * [startAfter] for the next page; [limit] 0 means 100. With [idsOnly] the
+     * `dataContract` fields are null. Returns null on failure.
+     */
+    suspend fun fetchByRange(
+        limit: Int = 0,
+        startAfter: String? = null,
+        startAt: String? = null,
+        idsOnly: Boolean = false,
+    ): String? = sdk.queryGate.op {
+        mapNativeErrors {
+            QueriesNative.dataContractsFetchByRange(
+                sdk.handle, limit, startAfter, startAt, idsOnly,
+            )
+        }
+    }
+
+    /**
      * Fetch a data contract with both its JSON form and its canonical
      * serialized bytes in a single round-trip, or null if not found.
      * Mirrors Swift's `dataContractGetWithSerialization`.
