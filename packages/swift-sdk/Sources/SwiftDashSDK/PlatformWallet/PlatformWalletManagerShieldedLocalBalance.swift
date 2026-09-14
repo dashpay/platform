@@ -112,9 +112,12 @@ extension PlatformWalletManager {
 
     /// Reads one coherent local balance snapshot after shielded binding.
     /// This performs no network requests. Call it before starting network
-    /// sync during launch. Native lock waits have a short deadline: if an
-    /// active scan holds the store across a network request, this throws
-    /// instead of blocking native-operation admission until the scan ends.
+    /// sync during launch. Native lock waits have a 100 ms deadline. A scan
+    /// holds the store write lock throughout its streamed download, which
+    /// may take minutes; reads can return `PlatformWalletError.walletOperation`
+    /// (busy) for that entire period. Repeated immediate reads do not bypass
+    /// the scan. Retain the last usable balance, allow network sync to continue,
+    /// and consume its completion event or request a fresh read after it ends.
     ///
     /// Each invocation performs one native read. A successful bind overlapping
     /// delivery throws `ShieldedLocalBalanceReadError.bindingChanged`; the host
@@ -152,7 +155,7 @@ extension PlatformWalletManager {
             }
         }
         try Task.checkCancellation()
-        guard handle == h, generation == shieldedSyncGeneration.current(),
+        guard isAdmittedNativeHandleValid(h), generation == shieldedSyncGeneration.current(),
               localGeneration == shieldedLocalBalanceGeneration.current() else {
             // Clear, stop, or a failed bind makes this request obsolete.
             throw CancellationError()

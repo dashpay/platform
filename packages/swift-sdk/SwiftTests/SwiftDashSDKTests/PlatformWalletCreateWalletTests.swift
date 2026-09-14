@@ -207,8 +207,8 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
         let shutdownTask = Task { await manager.shutdown() }
         try await Task.sleep(for: .milliseconds(30))
         XCTAssertEqual(
-            manager.handle, 11,
-            "shutdown must not take the handle while an admitted create is in flight")
+            manager.handle, NULL_HANDLE,
+            "shutdown must revoke public access while preserving the admitted create")
 
         gate.signal()
         let wallet = try await createTask.value
@@ -244,28 +244,17 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
         }
         let shutdownTask = Task { await manager.shutdown() }
 
-        // Poll through the seed overload with deliberately invalid input. It
-        // can never enter FFI: while the gated async create is in flight the
-        // unified synchronous-admission gate rejects it (in-flight branch),
-        // and once shutdown closes admission the shutdown branch takes over.
-        // Both take precedence over seed validation, so `invalidParameter`
-        // must never surface here.
-        while true {
-            do {
-                _ = try manager.createWallet(seed: Data(), network: .testnet)
-                XCTFail("an empty seed must never create a wallet")
-                break
-            } catch PlatformWalletError.invalidHandle(let message) {
-                if message == "manager shutdown is in progress; createWalletFromSeed rejected" {
-                    break
-                }
-                XCTAssertEqual(
-                    message,
-                    "an async native operation is in flight; synchronous createWalletFromSeed rejected")
-                await Task.yield()
-            } catch {
-                XCTFail("unexpected error while waiting for shutdown admission to close: \(error)")
-                break
+        // Await the explicit admission signal with a bound, rather than an
+        // error message whose public configuration guard may reject first.
+        for _ in 0..<200 {
+            if manager.shutdownRequested { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(manager.shutdownRequested)
+        XCTAssertEqual(manager.handle, NULL_HANDLE)
+        XCTAssertThrowsError(try manager.createWallet(seed: Data(), network: .testnet)) { error in
+            guard case PlatformWalletError.invalidHandle = error else {
+                return XCTFail("Expected shutdown rejection before seed validation, got \(error)")
             }
         }
 
@@ -280,7 +269,7 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
             } catch PlatformWalletError.invalidHandle(let message) {
                 XCTAssertEqual(
                     message,
-                    "manager shutdown is in progress; createWallet rejected",
+                    "PlatformWalletManager not configured",
                     file: file,
                     line: line)
             } catch {
@@ -304,7 +293,7 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
             }
             XCTAssertEqual(
                 message,
-                "manager shutdown is in progress; createWallet rejected")
+                "PlatformWalletManager not configured")
         }
 
         gate.signal()

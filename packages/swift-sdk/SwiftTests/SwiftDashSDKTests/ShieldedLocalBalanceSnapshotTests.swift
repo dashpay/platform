@@ -293,8 +293,8 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
             return await manager.shutdown()
         }
         await fulfillment(of: [secondStarted], timeout: 1)
-        XCTAssertEqual(manager.handle, Handle.max)
-        XCTAssertTrue(manager.isConfigured)
+        XCTAssertEqual(manager.handle, NULL_HANDLE)
+        XCTAssertFalse(manager.isConfigured)
         XCTAssertFalse(fixture.events.contains("free"))
         XCTAssertFalse(fixture.events.contains("teardown"))
         allowStopToFinish.signal()
@@ -328,7 +328,7 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(5))
         }
         XCTAssertTrue(manager.shutdownRequested)
-        XCTAssertEqual(manager.handle, Handle.max, "The native handle must remain live during the read")
+        XCTAssertEqual(manager.handle, NULL_HANDLE, "The admitted read retains its handle privately")
         XCTAssertFalse(fixture.events.contains("teardown"))
         // A completion already queued by early stop, plus late progress,
         // must stay suppressed while this admitted read keeps shutdown open.
@@ -594,7 +594,7 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(5))
         }
         XCTAssertTrue(manager.shutdownRequested)
-        XCTAssertEqual(manager.handle, Handle.max)
+        XCTAssertEqual(manager.handle, NULL_HANDLE)
         XCTAssertFalse(fixture.events.contains("teardown"))
         gate.signal()
         do {

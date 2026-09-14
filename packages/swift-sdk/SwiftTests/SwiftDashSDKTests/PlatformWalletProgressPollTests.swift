@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 import DashSDKFFI
 @testable import SwiftDashSDK
 
@@ -320,6 +321,36 @@ final class PlatformWalletProgressPollTests: XCTestCase {
             "no native read may start once shutdown bumped the poll epoch")
     }
 
+    func testClearedAddressMirrorReplaysNilAndRejectsOldGeneration() async {
+        let manager = PlatformWalletManager.makeForTesting(handle: 95, calls: Self.makeTeardownCalls())
+        let oldGeneration = manager.platformAddressSyncGeneration.current()
+        manager.handlePlatformAddressSyncCompleted(
+            PlatformAddressSyncEvent(syncUnixSeconds: 100, walletResults: []), generation: oldGeneration)
+        // These are the production Clear epilogue's two steps after native
+        // reset succeeds; a host subscribes again only after they return.
+        manager.platformAddressSyncGeneration.bump()
+        manager.resetPlatformAddressPublishedMirror()
+        let delivered = expectation(description: "Nil replay followed by a fresh completion")
+        delivered.expectedFulfillmentCount = 2
+        var timestamps: [UInt64?] = []
+        let subscription = manager.$lastPlatformAddressSyncEvent
+            .receive(on: RunLoop.main)
+            .prefix(2)
+            .sink { event in
+                timestamps.append(event?.syncUnixSeconds)
+                delivered.fulfill()
+            }
+        manager.handlePlatformAddressSyncCompleted(
+            PlatformAddressSyncEvent(syncUnixSeconds: 100, walletResults: []), generation: oldGeneration)
+        manager.handlePlatformAddressSyncCompleted(
+            PlatformAddressSyncEvent(syncUnixSeconds: 200, walletResults: []),
+            generation: manager.platformAddressSyncGeneration.current())
+        await fulfillment(of: [delivered], timeout: 1)
+        XCTAssertEqual(timestamps, [nil, 200])
+        subscription.cancel()
+        await manager.shutdown()
+    }
+
     func testShouldStopRemainingPollReadsWhileShieldedStopIsBlocked() async throws {
         let pollGate = DispatchSemaphore(value: 0)
         let stopGate = DispatchSemaphore(value: 0)
@@ -364,7 +395,7 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         await fulfillment(of: [pollEntered], timeout: 1)
         let shutdown = Task { await manager.shutdown() }
         await fulfillment(of: [stopEntered], timeout: 1)
-        XCTAssertEqual(manager.handle, 97, "Early stop retains admitted-read handles")
+        XCTAssertEqual(manager.handle, NULL_HANDLE, "Early stop must revoke public access")
         XCTAssertEqual(manager.shieldedSyncGeneration.current(), shieldedGeneration)
         XCTAssertEqual(manager.shieldedLocalBalanceGeneration.current(), balanceGeneration)
         manager.pollQueue.async { pollFinished.fulfill() }
@@ -372,7 +403,7 @@ final class PlatformWalletProgressPollTests: XCTestCase {
         await fulfillment(of: [pollFinished], timeout: 1)
         XCTAssertEqual(recorder.count, 0, "No remaining native poll reads may start during early stop")
         stopGate.signal()
-        await shutdown.value
+        _ = await shutdown.value
     }
 
     /// A status left behind by a removed wallet is pruned even when no

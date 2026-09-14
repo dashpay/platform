@@ -598,18 +598,19 @@ public class PlatformWalletManager: ObservableObject {
     /// an uncached no-op because the manager can still be configured later.
     private var shutdownTask: Task<PlatformWalletShutdownMetrics, Never>?
 
-    /// Set the moment [`shutdown()`] decides to proceed, BEFORE it drains
-    /// in-flight native ops: closes admission for EVERY native entrypoint —
-    /// the async ones (`createWallet`, `loadFromPersistor`) and their
-    /// synchronous overloads — so the drain below can terminate without a
-    /// synchronous op entering while the MainActor is reentrant at an
-    /// `await`.
+    /// Set before shutdown suspends. Together with immediate public handle
+    /// revocation, closes admission while already-admitted operations drain.
     private(set) var shutdownRequested = false
+
+    /// Shutdown's captured native handle, available only to admitted operation
+    /// epilogues. Public entry points continue to see `NULL_HANDLE` throughout
+    /// teardown. Cleared as soon as the last admitted operation finishes.
+    private var drainingNativeHandle: Handle = NULL_HANDLE
 
     /// Async native entrypoints (create, load, and local balance snapshots)
     /// between admission and the end of their MainActor epilogue.
-    /// [`shutdown()`] waits for this to reach zero before taking the
-    /// handle: an admitted op must complete its FULL transaction (FFI +
+    /// [`shutdown()`] waits for this to reach zero before destroying the
+    /// captured handle: an admitted op must complete its FULL transaction (FFI +
     /// publish) or fail on its own terms — never be failed retroactively
     /// by a concurrent teardown after the native side already persisted
     /// data (for create, the caller would roll back its mnemonic and
@@ -638,6 +639,14 @@ public class PlatformWalletManager: ObservableObject {
             nativeOpDrainContinuations.removeAll()
             waiters.forEach { $0.resume() }
         }
+    }
+
+    /// Validate a handle captured inside a balanced admit/finish scope.
+    /// Public revocation does not invalidate an operation already in that
+    /// scope; native teardown cannot destroy its handle until it finishes.
+    func isAdmittedNativeHandleValid(_ captured: Handle) -> Bool {
+        activeNativeOpCount > 0 && captured != NULL_HANDLE
+            && (handle == captured || drainingNativeHandle == captured)
     }
 
     /// Test seam for the individual native calls. Production keeps `.live`;
@@ -832,12 +841,12 @@ public class PlatformWalletManager: ObservableObject {
 
     /// Tear down the native manager without blocking the main thread.
     ///
-    /// Closes admission, then stops shielded sync on its own queue before
+    /// Revokes public access, then stops shielded sync on its own queue before
     /// draining admitted native operations: a local balance snapshot may
-    /// be waiting for the scan's store lock. The handle remains valid until
-    /// those operations finish their native work and MainActor publication.
-    /// Shutdown then consumes the handle exactly once and runs the remaining
-    /// four sync stops and native destroy on [`destroyQueue`].
+    /// be waiting for the scan's store lock. Its captured handle stays valid
+    /// until those operations finish native work and MainActor publication.
+    /// Shutdown then runs the remaining four sync stops and native destroy
+    /// on [`destroyQueue`].
     ///
     /// Native calls run off-main. A stop that reports an incomplete drain
     /// is recorded in the metrics; shutdown still waits for admitted work
@@ -867,12 +876,15 @@ public class PlatformWalletManager: ObservableObject {
         }
 
         shutdownRequested = true
+        let h = handle
+        drainingNativeHandle = h
+        handle = NULL_HANDLE
+        isConfigured = false
         // Poll cancellation is independent of admitted local-read generations.
         // Stop remaining queued poll reads before the blocking shielded stop.
         pollEpoch.bump()
         progressPollTask?.cancel()
         walletPollTask?.cancel()
-        let h = handle
         SDKLogger.event(
             "manager_shutdown_started",
             category: .lifecycle,
@@ -892,15 +904,14 @@ public class PlatformWalletManager: ObservableObject {
             }
 
             // The early stop can unblock a read parked behind an active
-            // scan. Keep the handle and snapshot generations valid until
-            // every admitted operation finishes its full actor epilogue.
+            // scan. Keep its captured handle and snapshot generations valid
+            // until every admitted operation finishes its full actor epilogue.
             while activeNativeOpCount != 0 {
                 await withCheckedContinuation { continuation in
                     nativeOpDrainContinuations.append(continuation)
                 }
             }
-            handle = NULL_HANDLE
-            isConfigured = false
+            drainingNativeHandle = NULL_HANDLE
             shieldedSyncGeneration.bump()
             platformAddressSyncGeneration.bump()
             dpnsSyncGeneration.bump()
@@ -1208,12 +1219,12 @@ public class PlatformWalletManager: ObservableObject {
     /// consumed its cached shutdown result makes the instance terminal; a new
     /// native handle must be owned by a new manager.
     private func ensureConfigurationAllowed() throws {
-        precondition(!isConfigured, "PlatformWalletManager already configured")
-        guard shutdownTask == nil else {
+        guard !shutdownRequested, shutdownTask == nil else {
             throw PlatformWalletError.invalidHandle(
                 "PlatformWalletManager cannot be configured after shutdown"
             )
         }
+        precondition(!isConfigured, "PlatformWalletManager already configured")
     }
 
     /// Access the persistence handler for loading cached data.
@@ -1227,7 +1238,7 @@ public class PlatformWalletManager: ObservableObject {
     /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`). Rejects:
     ///
     /// - once shutdown has closed admission — including the drain window,
-    ///   where the manager's handle is intentionally still live for an
+    ///   where the captured native handle remains live for an
     ///   already-admitted async op while the MainActor is reentrant at the
     ///   drain's `await`;
     /// - while an async native op is in flight: the synchronous overloads
@@ -1349,8 +1360,8 @@ public class PlatformWalletManager: ObservableObject {
     /// down or a shutdown is already in progress — always BEFORE any native
     /// work: an admitted create is guaranteed to run its full transaction
     /// (native create + publish); [`shutdown()`] drains admitted creates
-    /// before taking the handle, so a create whose FFI persisted wallet
-    /// data can never be failed retroactively by a concurrent teardown.
+    /// before destroying the captured handle, so a create whose FFI persisted
+    /// wallet data cannot fail retroactively because of concurrent teardown.
     @discardableResult
     public func createWallet(
         mnemonic: String,
@@ -1392,13 +1403,13 @@ public class PlatformWalletManager: ObservableObject {
         let w = try created.get()
 
         // Defense in depth only: `shutdown()` drains admitted creates
-        // before taking the handle, so this cannot fire from the production
-        // shutdown path. It guards the invariant that the manager never
+        // before destroying the captured handle, so this cannot fire from
+        // production shutdown. It guards the invariant that the manager never
         // publishes a wallet after its handle was torn down (dropping `w`
         // lets its deinit release the wrapper handle — a registry no-op
         // after manager teardown).
-        guard handle != NULL_HANDLE else {
-            assertionFailure("shutdown took the handle under an admitted create despite the drain")
+        guard isAdmittedNativeHandleValid(h) else {
+            assertionFailure("shutdown invalidated an admitted create despite the drain")
             throw PlatformWalletError.invalidHandle(
                 "manager was shut down while createWallet ran off-main")
         }
@@ -1834,8 +1845,8 @@ public class PlatformWalletManager: ObservableObject {
         // Defense in depth only — the shutdown drain waits for this op, so
         // the handle cannot have been torn down (see the async create's
         // matching guard).
-        guard handle != NULL_HANDLE else {
-            assertionFailure("shutdown took the handle under an admitted load despite the drain")
+        guard isAdmittedNativeHandleValid(h) else {
+            assertionFailure("shutdown invalidated an admitted load despite the drain")
             throw PlatformWalletError.invalidHandle(
                 "manager was shut down while loadFromPersistor ran off-main")
         }
@@ -1885,7 +1896,9 @@ public class PlatformWalletManager: ObservableObject {
     private func unlockRestoredWalletLoggingOutcome(_ managedWallet: ManagedPlatformWallet) {
         let walletId = managedWallet.walletId
         do {
-            let unlocked = try unlockWalletFromKeychain(managedWallet)
+            // The load caller already validated its configured/admitted
+            // handle. Preserve its full epilogue after public revocation.
+            let unlocked = try unlockWalletFromKeychainAfterManagerCheck(managedWallet)
             SDKLogger.event(
                 "wallet_unlock_completed",
                 category: .lifecycle,
@@ -2031,6 +2044,13 @@ public class PlatformWalletManager: ObservableObject {
         storage walletStorage: WalletStorage
     ) throws -> SeedBindingCheck {
         try ensureConfigured()
+        return try verifySeedBindingAfterManagerCheck(wallet, storage: walletStorage)
+    }
+
+    private func verifySeedBindingAfterManagerCheck(
+        _ wallet: ManagedPlatformWallet,
+        storage walletStorage: WalletStorage
+    ) throws -> SeedBindingCheck {
         let walletId = wallet.walletId
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
@@ -2147,9 +2167,16 @@ public class PlatformWalletManager: ObservableObject {
 
     @discardableResult
     public func unlockWalletFromKeychain(_ wallet: ManagedPlatformWallet) throws -> Bool {
+        try ensureConfigured()
+        return try unlockWalletFromKeychainAfterManagerCheck(wallet)
+    }
+
+    private func unlockWalletFromKeychainAfterManagerCheck(_ wallet: ManagedPlatformWallet) throws -> Bool {
         // Step 1 in full, side-effect-free. A watch-only wallet has nothing
         // to unlock and nothing to drain for.
-        guard try verifySeedBinding(wallet) == .verified else { return false }
+        guard try verifySeedBindingAfterManagerCheck(wallet, storage: WalletStorage()) == .verified else {
+            return false
+        }
 
         let walletId = wallet.walletId
         let walletHandle = wallet.handle
