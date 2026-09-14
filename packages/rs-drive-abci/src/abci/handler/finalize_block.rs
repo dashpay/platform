@@ -161,6 +161,7 @@ mod tests {
     use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use dpp::block::block_info::BlockInfo;
     use dpp::version::PlatformVersion;
     use drive::grovedb::Transaction;
     use std::sync::RwLock;
@@ -171,30 +172,42 @@ mod tests {
     };
     use tenderdash_abci::proto::version::Consensus;
 
-    /// An ABCI application whose `commit_transaction` always fails.
+    /// An ABCI application whose `commit_transaction` commits for real unless a commit error
+    /// was injected, in which case it fails with it.
     ///
-    /// Injects either a real RocksDB error or an unrelated execution error to verify
-    /// that only historical transaction conflicts are tolerated.
-    struct FailingCommitApplication<'a> {
+    /// The injected error is either a real RocksDB error or an unrelated execution error, to
+    /// verify that only historical transaction conflicts are tolerated.
+    struct TestApplication<'a> {
         platform: &'a Platform<MockCoreRPCLike>,
         commit_error: RwLock<Option<Error>>,
         transaction: RwLock<Option<Transaction<'a>>>,
         block_execution_context: RwLock<Option<BlockExecutionContext>>,
     }
 
-    impl PlatformApplication<MockCoreRPCLike> for FailingCommitApplication<'_> {
+    impl<'a> TestApplication<'a> {
+        fn new(platform: &'a Platform<MockCoreRPCLike>, commit_error: Option<Error>) -> Self {
+            TestApplication {
+                platform,
+                commit_error: RwLock::new(commit_error),
+                transaction: Default::default(),
+                block_execution_context: Default::default(),
+            }
+        }
+    }
+
+    impl PlatformApplication<MockCoreRPCLike> for TestApplication<'_> {
         fn platform(&self) -> &Platform<MockCoreRPCLike> {
             self.platform
         }
     }
 
-    impl BlockExecutionApplication for FailingCommitApplication<'_> {
+    impl BlockExecutionApplication for TestApplication<'_> {
         fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
             &self.block_execution_context
         }
     }
 
-    impl<'a> TransactionalApplication<'a> for FailingCommitApplication<'a> {
+    impl<'a> TransactionalApplication<'a> for TestApplication<'a> {
         fn start_transaction(&self) {
             let transaction = self.platform.drive.grove.start_transaction();
             self.transaction.write().unwrap().replace(transaction);
@@ -204,15 +217,21 @@ mod tests {
             &self.transaction
         }
 
-        fn commit_transaction(&self, _platform_version: &PlatformVersion) -> Result<(), Error> {
-            // Consume the transaction like the real implementation would, then fail.
-            self.transaction.write().unwrap().take();
-            Err(self
-                .commit_error
+        fn commit_transaction(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
+            // Consume the transaction like the real implementation would.
+            let transaction = self
+                .transaction
                 .write()
                 .unwrap()
                 .take()
-                .expect("commit error"))
+                .expect("transaction");
+            if let Some(error) = self.commit_error.write().unwrap().take() {
+                return Err(error);
+            }
+            self.platform
+                .drive
+                .commit_transaction(transaction, &platform_version.drive)
+                .map_err(Error::Drive)
         }
     }
 
@@ -229,15 +248,19 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
-        let app = FailingCommitApplication {
-            platform: &platform.platform,
-            commit_error: RwLock::new(Some(commit_error)),
-            transaction: Default::default(),
-            block_execution_context: Default::default(),
-        };
-
+        let app = TestApplication::new(&platform.platform, Some(commit_error));
         app.start_transaction();
 
+        run_finalize_block(&app, &platform, height)
+    }
+
+    /// Runs `finalize_block` at `height` on `app`, whose transaction must already be started,
+    /// with a block execution context and request that match each other.
+    fn run_finalize_block(
+        app: &TestApplication<'_>,
+        platform: &TempPlatform<MockCoreRPCLike>,
+        height: u64,
+    ) -> Result<proto::ResponseFinalizeBlock, Error> {
         let platform_state = (**platform.state.load()).clone();
         let quorum_hash: [u8; 32] = platform_state.current_validator_set_quorum_hash().into();
 
@@ -320,7 +343,58 @@ mod tests {
             }),
         };
 
-        finalize_block::<_, MockCoreRPCLike>(&app, request)
+        finalize_block::<_, MockCoreRPCLike>(app, request)
+    }
+
+    /// The hint Drive gives Tenderdash rides on the ABCI response: off when nothing waits for
+    /// the next block, on when a withdrawal transaction was pooled and waits to be signed.
+    #[test]
+    fn finalize_block_reports_pending_withdrawal_work_to_tenderdash() {
+        let mut config = PlatformConfig::default_testnet();
+        config.testing_configs.block_commit_signature_verification = false;
+        let platform: TempPlatform<MockCoreRPCLike> = TestPlatformBuilder::new()
+            .with_config(config)
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_version = PlatformVersion::latest();
+
+        // Nothing queued: Tenderdash may wait for transactions before the next block.
+        let app = TestApplication::new(&platform.platform, None);
+        app.start_transaction();
+        let response = run_finalize_block(&app, &platform, 1).expect("finalize block");
+        assert!(!response.propose_next_block_immediately);
+
+        // A withdrawal transaction pooled in this block waits for the next block to sign it.
+        let app = TestApplication::new(&platform.platform, None);
+        app.start_transaction();
+        {
+            let transaction_guard = app.transaction.read().unwrap();
+            let transaction = transaction_guard.as_ref().expect("transaction");
+            let mut drive_operations = vec![];
+            platform
+                .drive
+                .add_enqueue_untied_withdrawal_transaction_operations(
+                    vec![(1, vec![7u8; 32])],
+                    1_000_000,
+                    &mut drive_operations,
+                    platform_version,
+                )
+                .expect("expected to enqueue a withdrawal transaction");
+            platform
+                .drive
+                .apply_drive_operations(
+                    drive_operations,
+                    true,
+                    &BlockInfo::default(),
+                    Some(transaction),
+                    platform_version,
+                    None,
+                )
+                .expect("expected to apply the enqueue operations");
+        }
+        let response = run_finalize_block(&app, &platform, 2).expect("finalize block");
+        assert!(response.propose_next_block_immediately);
     }
 
     fn mainnet_evo1_config() -> PlatformConfig {
