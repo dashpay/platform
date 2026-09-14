@@ -1,6 +1,9 @@
+mod core_dust_threshold;
 pub mod daily_withdrawal_limit;
 #[cfg(all(feature = "withdrawals-contract", feature = "system_contracts"))]
 mod document_try_into_asset_unlock_base_transaction_info;
+
+pub use core_dust_threshold::core_dust_threshold_duffs;
 
 use bincode::{Decode, DecodeUntrusted, Encode};
 use serde_repr::{Deserialize_repr, Serialize_repr};

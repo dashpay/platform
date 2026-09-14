@@ -22,6 +22,7 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     daily_withdrawal_limit_percent: None,      // relative daily withdrawal limit arrives in v14
     max_daily_withdrawal_amount: None,
     min_withdrawal_amount: 1_000_000, //1000 duffs (raised from 190 in v12)
+    core_dust_relay_fee_per_kb: None, // expired dust withdrawals fail from v14
     max_contract_group_size: 256,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
