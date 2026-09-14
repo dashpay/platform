@@ -947,6 +947,29 @@ fn should_apply_an_offset_after_the_start_after_cursor() {
 }
 
 #[test]
+fn should_continue_within_duplicates_on_the_left_over_level_after_an_equality_clause() {
+    // Equality last clause with ONE left-over level on a non-unique index:
+    // the equality level attaches the cursor key's document-id bound to
+    // that terminal level. Duplicate b values, both directions, every
+    // cursor inside the equality's bucket, raw and proven.
+    let fixture = setup_left_over_fixture(
+        &[("a", "asc"), ("b", "asc")],
+        false,
+        &[[1, 3, 0], [1, 5, 0], [1, 5, 0], [1, 5, 0], [1, 7, 0]],
+    );
+    for ascending in [true, false] {
+        let order = if ascending { "asc" } else { "desc" };
+        assert_cursors_over_all_rows(
+            &fixture,
+            json!([["a", "==", 1]]),
+            json!([["b", order]]),
+            |values| values[0] == 1,
+            &[(0, true), (1, ascending)],
+        );
+    }
+}
+
+#[test]
 fn should_continue_within_duplicates_after_an_equality_clause() {
     // Equality last clause with two left-over levels on a non-unique index:
     // a startAfter cursor on the first of two documents sharing (a, b, c)
