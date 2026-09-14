@@ -501,14 +501,20 @@ message GetDataContractResponse {
   oneof version { GetDataContractResponseV0 v0 = 1; }
 }
 
-// Returns the current version number of each requested data contract. The
-// unproved form is answered from Drive's contract cache and carries one
-// integer per contract, which makes it the cheap way for a client to check
-// that the contracts it already holds are still current; serialized
-// contracts are added only when `include_contracts` is set. Every requested
-// id gets an entry; an id no contract has gets an entry without `version`.
-// With `prove`, the proof is the multi-contract proof `getDataContracts`
-// returns, and it carries the contracts whatever `include_contracts` says.
+// Returns the current version number of each requested data contract: the
+// cheap way for a client to check that the contracts it already holds are
+// still current. Every requested id gets an entry; an id no contract has gets
+// an entry without `version`. Serialized contracts are added only when
+// `include_contracts` is set.
+//
+// From protocol version 14 every contract carries a four-byte version item
+// beside it in state. Without `include_contracts`, the unproved form answers
+// from Drive's contract cache or that item without loading a contract, and
+// the proof covers the items, a few hundred bytes of hash path per contract.
+// With `include_contracts`, and on earlier protocol versions, the unproved
+// form reads the contracts through the cache and the proof is the
+// multi-contract proof `getDataContracts` returns, which carries the
+// contracts.
 message GetDataContractsLatestVersionsRequest {
   message GetDataContractsLatestVersionsRequestV0 {
     repeated bytes ids =

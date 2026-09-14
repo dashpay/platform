@@ -1,12 +1,15 @@
 //! The current versions of data contracts (`getDataContractsLatestVersions`).
 //!
-//! The cheap way to check that contracts held locally are still current. The unproved fetch
-//! ([`FetchUnproved::fetch_unproved`] on [`DataContractsLatestVersions`]) is answered from
-//! Drive's contract cache with one integer per contract. The proved fetch
-//! ([`FetchMany::fetch_many`] on [`DataContractLatestVersion`]) verifies the same
-//! multi-contract proof `getDataContracts` returns, so it costs as much as fetching the
-//! contracts; use it when the answer has to be trusted. Either way the contracts themselves
-//! come back only when [`DataContractsLatestVersionsQuery::include_contracts`] is set.
+//! The cheap way to check that contracts held locally are still current. From protocol
+//! version 14 every contract carries a four-byte version item in state, and a query without
+//! [`DataContractsLatestVersionsQuery::include_contracts`] is answered from it: the unproved
+//! fetch ([`FetchUnproved::fetch_unproved`] on [`DataContractsLatestVersions`]) returns one
+//! integer per contract, and the proved fetch ([`FetchMany::fetch_many`] on
+//! [`DataContractLatestVersion`]) verifies a proof of the items, a few hundred bytes of hash
+//! path per contract. With `include_contracts`, and on earlier protocol versions, the proof
+//! is the multi-contract proof `getDataContracts` returns, so it costs as much as fetching
+//! the contracts. Either way the contracts themselves come back only when
+//! `include_contracts` is set.
 
 use crate::platform::{FetchMany, FetchUnproved, Identifier, Query, QuerySettings};
 use crate::Error;

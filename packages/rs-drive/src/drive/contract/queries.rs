@@ -1,5 +1,5 @@
 use crate::drive::contract::paths::{
-    contract_keeping_history_root_path_vec, contract_root_path_vec,
+    contract_keeping_history_root_path_vec, contract_root_path_vec, CONTRACT_VERSION_KEY,
 };
 use crate::drive::contract::{paths, MAX_CONTRACT_HISTORY_FETCH_LIMIT};
 use crate::drive::{Drive, RootTree};
@@ -9,6 +9,7 @@ use crate::query::{Query, QueryItem};
 use crate::util::common::encode::encode_u64;
 use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
+use std::collections::BTreeSet;
 use std::ops::RangeFull;
 
 impl Drive {
@@ -82,6 +83,30 @@ impl Drive {
         PathQuery::new(
             vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()],
             SizedQuery::new(Self::contracts_range_query(start_at), Some(limit), None),
+        )
+    }
+
+    /// Creates the path query that proves the version items of the given contracts
+    /// (`getDataContractsLatestVersions` without the contracts), from protocol version 14.
+    ///
+    /// It selects the requested contract ids under the contracts root and descends the
+    /// subquery key `2`, the four-byte version item every contract carries beside its
+    /// serialized form or history subtree. A requested id no contract has is proved absent.
+    /// Duplicate ids are folded, so the limit is the number of distinct ids.
+    ///
+    /// Shared by the prover and the verifier, which must rebuild the exact query.
+    ///
+    /// # Arguments
+    ///
+    /// * `contract_ids` - The contract ids whose versions to prove, at least one.
+    pub fn fetch_contracts_versions_query(contract_ids: &[[u8; 32]]) -> PathQuery {
+        let distinct_ids: BTreeSet<&[u8; 32]> = contract_ids.iter().collect();
+        let mut query = Query::new();
+        query.insert_keys(distinct_ids.iter().map(|key| key.to_vec()).collect());
+        query.set_subquery_key(vec![CONTRACT_VERSION_KEY]);
+        PathQuery::new(
+            vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()],
+            SizedQuery::new(query, Some(distinct_ids.len() as u16), None),
         )
     }
 
