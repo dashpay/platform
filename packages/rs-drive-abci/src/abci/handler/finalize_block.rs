@@ -141,7 +141,10 @@ where
         app.platform().create_grovedb_checkpoint(platform_version)?;
     }
 
-    Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
+    Ok(proto::ResponseFinalizeBlock {
+        retain_height: 0,
+        propose_next_block_immediately: block_finalization_outcome.propose_next_block_immediately,
+    })
 }
 
 #[cfg(test)]
