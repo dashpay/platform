@@ -559,6 +559,7 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getDataContract",
                 "getDataContractHistory",
                 "getDataContracts",
+                "getDataContractsByRange",
                 "getDocumentHistory",
                 "getDocuments",
                 "getIdentityByPublicKeyHash",
