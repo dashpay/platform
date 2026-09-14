@@ -610,12 +610,22 @@ impl SubwalletState {
         self.notes.push(note.clone());
     }
 
-    pub(super) fn unspent_notes(&self) -> Vec<ShieldedNote> {
+    /// Borrow the selectable notes so balance reads do not clone note payloads.
+    fn unspent_notes_iter(&self) -> impl Iterator<Item = &ShieldedNote> {
         self.notes
             .iter()
-            .filter(|n| !n.is_spent && !self.pending_nullifiers.contains_key(&n.nullifier))
-            .cloned()
-            .collect()
+            .filter(|note| !note.is_spent && !self.pending_nullifiers.contains_key(&note.nullifier))
+    }
+
+    pub(super) fn unspent_notes(&self) -> Vec<ShieldedNote> {
+        self.unspent_notes_iter().cloned().collect()
+    }
+
+    /// Both stores use the same borrowed, reservation-aware checked sum.
+    /// Each caller maps overflow into its own storage error.
+    pub(super) fn spendable_balance(&self) -> Option<u64> {
+        self.unspent_notes_iter()
+            .try_fold(0u64, |total, note| total.checked_add(note.value))
     }
 
     pub(super) fn all_notes(&self) -> Vec<ShieldedNote> {
@@ -869,13 +879,10 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error> {
-        self.get_unspent_notes(id)?
-            .iter()
-            .try_fold(0u64, |total, note| {
-                total.checked_add(note.value).ok_or_else(|| {
-                    InMemoryStoreError("spendable shielded balance exceeds u64".to_string())
-                })
-            })
+        self.subwallets
+            .get(&id)
+            .map_or(Some(0), SubwalletState::spendable_balance)
+            .ok_or_else(|| InMemoryStoreError("spendable shielded balance exceeds u64".to_string()))
     }
 
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error> {
@@ -1149,6 +1156,34 @@ mod tests {
 
     fn test_id(account: u32) -> SubwalletId {
         SubwalletId::new([0xAA; 32], account)
+    }
+
+    #[test]
+    fn should_borrow_spendable_notes_and_preserve_the_selection_filter() {
+        let mut state = SubwalletState::default();
+        for tag in 1..=4 {
+            let mut note = note_with_nullifier([tag; 32]);
+            note.value = u64::from(tag) * 100;
+            state.save_note(&note);
+        }
+        state.mark_pending(&[2; 32]);
+        state.mark_spent(&[3; 32]);
+
+        let borrowed: Vec<_> = state.unspent_notes_iter().collect();
+        assert_eq!(borrowed.len(), 2);
+        assert!(std::ptr::eq(borrowed[0], &state.notes[0]));
+        assert!(std::ptr::eq(borrowed[1], &state.notes[3]));
+        assert_eq!(state.spendable_balance(), Some(500));
+        assert_eq!(
+            state
+                .unspent_notes()
+                .iter()
+                .map(|note| note.value)
+                .collect::<Vec<_>>(),
+            vec![100, 400]
+        );
+        state.clear_pending(&[2; 32]);
+        assert_eq!(state.spendable_balance(), Some(700));
     }
 
     #[test]

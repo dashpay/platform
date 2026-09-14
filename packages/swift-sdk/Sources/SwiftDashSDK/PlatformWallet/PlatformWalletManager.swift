@@ -867,6 +867,9 @@ public class PlatformWalletManager: ObservableObject {
         }
 
         shutdownRequested = true
+        // Poll cancellation is independent of admitted local-read generations.
+        // Stop remaining queued poll reads before the blocking shielded stop.
+        pollEpoch.bump()
         progressPollTask?.cancel()
         walletPollTask?.cancel()
         let h = handle
@@ -901,7 +904,6 @@ public class PlatformWalletManager: ObservableObject {
             shieldedSyncGeneration.bump()
             platformAddressSyncGeneration.bump()
             dpnsSyncGeneration.bump()
-            pollEpoch.bump()
             coreTxoReconcileEpoch.bump()
 
             // Let poll work that is merely mid-flight finish before the

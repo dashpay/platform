@@ -99,6 +99,9 @@ impl From<ShieldedLocalBalanceState> for ShieldedLocalBalanceSnapshotFFI {
 /// reservations, without starting sync or resolving a mnemonic. Waits at most
 /// 100 ms for the coordinator lifecycle/store locks. On contention, returns
 /// ErrorWalletOperation with an empty output; retain the last balance and retry.
+/// Check the returned result code before interpreting any output fields. Only
+/// Success makes the status authoritative; an error's reset Unbound value is
+/// allocation cleanup state, not a statement that the wallet is unbound.
 /// Call it off the host's UI thread.
 ///
 /// # Safety
@@ -187,7 +190,8 @@ unsafe fn local_shielded_balance_snapshot_with_budget(
 }
 
 /// Free the account array and reset the caller's snapshot. A null pointer is a
-/// no-op; calling again on the same reset value is also safe.
+/// no-op; calling again on the same reset value is also safe. Resetting only
+/// releases ownership; it does not establish the wallet's binding status.
 ///
 /// # Safety
 /// `snapshot` must be null or point to a live value returned by the matching

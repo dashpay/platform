@@ -195,19 +195,27 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
     }
 
     func testShouldMapNativeFailureAndReleaseItsOutput() async {
-        let fixture = NativeFixture(
-            rows: [row(0, credits: 900)], code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION)
-        let manager = makeManager(fixture)
-        do {
-            _ = try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId)
-            XCTFail("Expected native wallet operation error")
-        } catch let error as PlatformWalletError {
-            guard case .walletOperation = error else { return XCTFail("Unexpected error: \(error)") }
-        } catch {
-            XCTFail("Unexpected error: \(error)")
+        // Neither an empty reset status nor populated output can override the
+        // authoritative native error code. Both remain safe to free once.
+        let fixtures = [
+            NativeFixture(status: SHIELDED_LOCAL_BALANCE_STATUS_FFI_UNBOUND,
+                          code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION),
+            NativeFixture(rows: [row(0, credits: 900)],
+                          code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION)
+        ]
+        for fixture in fixtures {
+            let manager = makeManager(fixture)
+            do {
+                _ = try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId)
+                XCTFail("Expected native wallet operation error")
+            } catch let error as PlatformWalletError {
+                guard case .walletOperation = error else { return XCTFail("Unexpected error: \(error)") }
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(fixture.events.filter { $0 == "free" }.count, 1)
+            await manager.shutdown()
         }
-        XCTAssertEqual(fixture.events.filter { $0 == "free" }.count, 1)
-        await manager.shutdown()
     }
 
     func testShouldRejectMalformedNativeSnapshotsAndReleaseEachOnce() async {

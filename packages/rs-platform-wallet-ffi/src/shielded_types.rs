@@ -14,6 +14,8 @@ use std::os::raw::c_char;
 use platform_wallet::wallet::shielded::{IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus};
 
 /// Availability of a local ledger, independent of its numeric balance.
+/// Interpret this status only after the snapshot function returns Success.
+/// The default/reset value is empty allocation storage, not a ledger verdict.
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ShieldedLocalBalanceStatusFFI {
@@ -48,6 +50,8 @@ pub struct ShieldedLocalAccountBalanceFFI {
 /// Owned snapshot. Free it exactly once with
 /// `platform_wallet_manager_local_shielded_balance_snapshot_free`; that call
 /// frees the flat account array and resets this value to its empty default.
+/// After a non-Success result, the output is safe to free but its status and
+/// numeric fields must not be interpreted as a successfully read ledger.
 #[repr(C)]
 #[derive(Debug)]
 pub struct ShieldedLocalBalanceSnapshotFFI {

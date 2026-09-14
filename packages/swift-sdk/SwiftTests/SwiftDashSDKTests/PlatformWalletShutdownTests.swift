@@ -163,6 +163,52 @@ final class PlatformWalletShutdownTests: XCTestCase {
         XCTAssertEqual(recorder.names, Self.expectedOrder)
     }
 
+    func testShouldRejectAddressAndDpnsCallbacksDuringEarlyShieldedStop() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        let entered = expectation(description: "Shielded stop entered")
+        let base = Self.makeCalls(recorder: TeardownRecorder())
+        let calls = PlatformWalletNativeTeardownCalls(
+            spvStop: base.spvStop,
+            platformAddressSyncStop: base.platformAddressSyncStop,
+            shieldedSyncStop: { handle in
+                entered.fulfill()
+                XCTAssertEqual(gate.wait(timeout: .now() + 5), .success)
+                return base.shieldedSyncStop(handle)
+            },
+            dashPaySyncStop: base.dashPaySyncStop,
+            dpnsSyncStop: base.dpnsSyncStop,
+            destroy: base.destroy)
+        let manager = PlatformWalletManager.makeForTesting(handle: 73, calls: calls)
+        let addressGeneration = manager.platformAddressSyncGeneration.current()
+        let dpnsGeneration = manager.dpnsSyncGeneration.current()
+        manager.handlePlatformAddressSyncCompleted(
+            PlatformAddressSyncEvent(syncUnixSeconds: 100, walletResults: []), generation: addressGeneration)
+        manager.handleDpnsSyncCompleted(
+            DpnsSyncEvent(syncUnixSeconds: 100, walletResults: []), generation: dpnsGeneration)
+        let shutdown = Task { await manager.shutdown() }
+        defer { gate.signal() }
+        await fulfillment(of: [entered], timeout: 1)
+        XCTAssertTrue(manager.isConfigured)
+        XCTAssertEqual(manager.handle, 73)
+        XCTAssertEqual(manager.platformAddressSyncGeneration.current(), addressGeneration)
+        XCTAssertEqual(manager.dpnsSyncGeneration.current(), dpnsGeneration)
+        manager.handlePlatformAddressSyncCompleted(
+            PlatformAddressSyncEvent(syncUnixSeconds: 200, walletResults: []), generation: addressGeneration)
+        manager.handleDpnsSyncCompleted(
+            DpnsSyncEvent(syncUnixSeconds: 200, walletResults: []), generation: dpnsGeneration)
+        XCTAssertEqual(manager.lastPlatformAddressSyncEvent?.syncUnixSeconds, 100)
+        XCTAssertEqual(manager.lastDpnsSyncEvent?.syncUnixSeconds, 100)
+        gate.signal()
+        await shutdown.value
+        manager.handlePlatformAddressSyncCompleted(
+            PlatformAddressSyncEvent(syncUnixSeconds: 300, walletResults: []),
+            generation: manager.platformAddressSyncGeneration.current())
+        manager.handleDpnsSyncCompleted(
+            DpnsSyncEvent(syncUnixSeconds: 300, walletResults: []), generation: manager.dpnsSyncGeneration.current())
+        XCTAssertEqual(manager.lastPlatformAddressSyncEvent?.syncUnixSeconds, 100)
+        XCTAssertEqual(manager.lastDpnsSyncEvent?.syncUnixSeconds, 100)
+    }
+
     func testShutdownWithoutHandleIsANoOp() async {
         let manager = PlatformWalletManager()
         let metrics = await manager.shutdown()
