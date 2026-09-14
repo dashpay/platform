@@ -174,6 +174,8 @@ const status = await client.getStatus();
 const contracts = await client.getDataContractsByRange({ limit: 100 });
 // Check that contracts held locally are still current (versions only; the contracts themselves only with includeContracts)
 const versions = await client.getDataContractsLatestVersions({ contractIds: ['GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec'] });
+// Cheaper, unproved (the node's word): versions only, for contracts the app already holds and seeded with addKnownContract
+const current = await client.getDataContractsLatestVersionsUnproved({ contractIds: ['GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec'] });
 client.free();
 ```
 

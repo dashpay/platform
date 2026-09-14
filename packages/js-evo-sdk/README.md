@@ -156,6 +156,29 @@ A branching `in` cannot combine with a non-zero `offset`: rank-skip is attested 
 
 `sdk.documents.having()` bounds the same axis by value instead of by position (`{ operator: '>', value: 100 }`), and `rankedWithProof` / `havingWithProof` return the proof and block metadata alongside the result.
 
+## Contracts the app already holds
+
+An app knows its contracts at build time. Instead of fetching them on every load, bundle a snapshot (`contract.toBytes()`), seed the SDK with it, and ask the network only whether the snapshot is still current:
+
+```ts
+import { DataContract, PlatformVersion } from '@dashevo/evo-sdk';
+
+// Seed: no round trip, and the seeded contracts are persisted like fetched ones.
+for (const { bytes } of bundledContracts) {
+  await sdk.contracts.addKnown(DataContract.fromBytes(bytes, true, PlatformVersion.latest()));
+}
+
+// Revalidate off the critical path: unproved, a few bytes per id.
+const latest = await sdk.contracts.getLatestVersionsUnproved({ contractIds: bundledContracts.map((c) => c.id) });
+const stale = bundledContracts.filter((c) => latest.get(c.id)?.version !== c.version).map((c) => c.id);
+if (stale.length > 0) {
+  // Proved: the only way contracts enter the cache.
+  await sdk.contracts.getLatestVersions({ contractIds: stale, includeContracts: true });
+}
+```
+
+The unproved answer is the node's word, checked for freshness but not for content. A node overstating a version costs one proved fetch; one understating it leaves the app on its held contract, which the SDK drops on the first document stamped with a newer `$contractVersion` (see the contract cache note above). `includeContracts` is refused unproved for the same reason.
+
 ## Document references (`refersTo`)
 
 Also from protocol version 14, an identifier property can declare what it points at. This is a write-time consensus constraint — nothing resolves a reference for a reader — but a fetched contract can be asked what it declares:

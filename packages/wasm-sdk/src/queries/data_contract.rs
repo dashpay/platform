@@ -9,7 +9,7 @@ use dash_sdk::platform::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions, DataContractsLatestVersionsQuery,
 };
 use dash_sdk::platform::query::LimitQuery;
-use dash_sdk::platform::{DataContract, Fetch, FetchMany, Identifier};
+use dash_sdk::platform::{DataContract, Fetch, FetchMany, FetchUnproved, Identifier};
 use drive_proof_verifier::types::{DataContractHistory, DataContracts};
 use js_sys::{BigInt, Map};
 use serde::Deserialize;
@@ -238,6 +238,21 @@ fn parse_data_contracts_latest_versions_query(
         ids,
         include_contracts: input.include_contracts,
     })
+}
+
+/// The versions lookup as a JS `Map` keyed by base58 contract id, versions only. Used by the
+/// unproved path, which must not seed the cache: nothing it returns was verified.
+fn versions_only_to_map(versions: DataContractsLatestVersions) -> Map {
+    let versions_map = Map::new();
+    for (id, latest) in versions {
+        let key: JsValue = IdentifierWasm::from(id).to_base58().into();
+        let value = latest.map(|latest| DataContractLatestVersionWasm {
+            version: latest.version,
+            data_contract: None,
+        });
+        versions_map.set(&key, &JsValue::from(value));
+    }
+    versions_map
 }
 
 /// The current version of one data contract, with the contract only when the query asked
@@ -571,6 +586,39 @@ impl WasmSdk {
             metadata,
             proof,
         ))
+    }
+
+    /// The current versions of data contracts, answered UNPROVED: the responding node's
+    /// word, checked for freshness through the signed response metadata but not for content.
+    ///
+    /// This is the cheap staleness check for contracts the caller already holds (see
+    /// `addKnownContract`): the proved variant carries the full multi-contract proof and costs
+    /// as much as fetching the contracts, this one carries a few bytes per id. Versions only:
+    /// `includeContracts` is refused, because contracts enter the cache through proved fetches
+    /// alone. The trust model is bounded: a node overstating a version costs the caller one
+    /// proved fetch; a node understating one leaves the caller on its held contract, which the
+    /// `$contractVersion` guard drops on the first document written under the newer version.
+    #[wasm_bindgen(
+        js_name = "getDataContractsLatestVersionsUnproved",
+        unchecked_return_type = "Map<string, DataContractLatestVersion | undefined>"
+    )]
+    pub async fn get_data_contracts_latest_versions_unproved(
+        &self,
+        query: DataContractsLatestVersionsQueryJs,
+    ) -> Result<Map, WasmSdkError> {
+        let query = parse_data_contracts_latest_versions_query(query)?;
+        if query.include_contracts {
+            return Err(WasmSdkError::invalid_argument(
+                "includeContracts is not available unproved: contracts enter the cache only \
+                 through proved fetches (getDataContracts, or getDataContractsLatestVersions \
+                 with includeContracts)"
+                    .to_string(),
+            ));
+        }
+        let versions = DataContractsLatestVersions::fetch_unproved(self.as_ref(), query)
+            .await?
+            .unwrap_or_default();
+        Ok(versions_only_to_map(versions))
     }
 
     /// The current versions of data contracts together with their proof and metadata.

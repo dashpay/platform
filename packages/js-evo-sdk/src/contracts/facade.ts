@@ -77,6 +77,31 @@ export class ContractsFacade {
     return w.getDataContractsLatestVersions(query);
   }
 
+  /**
+   * The current versions of contracts, answered unproved: the node's word, checked for
+   * freshness but not for content, at a few bytes per id. The cheap staleness check for
+   * contracts the app holds (see {@link addKnown}); versions only, `includeContracts` is
+   * refused. A node overstating a version costs one proved fetch; one understating it leaves
+   * the app on its held contract, which the `$contractVersion` guard drops on the first
+   * document written under the newer version.
+   */
+  async getLatestVersionsUnproved(
+    query: wasm.DataContractsLatestVersionsQuery,
+  ): Promise<Map<string, wasm.DataContractLatestVersion | undefined>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDataContractsLatestVersionsUnproved(query);
+  }
+
+  /**
+   * Seed the contract cache with a contract the app already holds (a bundled snapshot, a
+   * contract it just published), so queries against it need no fetch. Persisted like a
+   * fetched contract. Returns false when the SDK runs without a trusted context.
+   */
+  async addKnown(contract: wasm.DataContract): Promise<boolean> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.addKnownContract(contract);
+  }
+
   async getLatestVersionsWithProof(
     query: wasm.DataContractsLatestVersionsQuery,
   ): Promise<wasm.ProofMetadataResponseTyped<
