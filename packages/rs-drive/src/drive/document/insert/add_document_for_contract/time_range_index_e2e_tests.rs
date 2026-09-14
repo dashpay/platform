@@ -2889,6 +2889,218 @@ fn ttl_drops_expired_buckets_and_walkers_skip_them() {
     }
 }
 
+/// A ranked windowed index whose current window holds no documents
+/// yet — every new day of a `range == step` grid until its first like —
+/// ranks EMPTY, with a proof, rather than failing. The window's bucket
+/// tree is created by the first write under it, so the pinned path the
+/// resolved `IN_TIME_RANGE` equality descends into does not exist;
+/// grovedb answers the single-path axis read over that absent path with
+/// an empty page whose absence the proof's own layers authenticate
+/// (grovedb #965). Before that the prover refused ("a single-path axis
+/// read must produce exactly one axis descent"), which reached clients
+/// as an internal error on every fresh window. Once a document lands in
+/// the window the same query serves its leaderboard.
+#[test]
+fn an_unwritten_window_ranks_empty_and_proves_it() {
+    use crate::query::drive_document_ranked_query::index_picker::resolve_ranked_query_for_mode;
+    use crate::query::drive_document_ranked_query::PrefixPin;
+    use crate::query::{DocumentRankedMode, RankedAxis, RankedEntry, RankedEntryValue};
+
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+
+    // Tumbling 2h windows (range == step), ranked hashtags per window.
+    let factory =
+        DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
+    let index_map = vec![
+        (
+            Value::Text("name".to_string()),
+            Value::Text("trendingDaily".to_string()),
+        ),
+        (
+            Value::Text("properties".to_string()),
+            Value::Array(vec![
+                platform_value!({"$createdAt": "asc"}),
+                platform_value!({"hashtag": "asc"}),
+            ]),
+        ),
+        (
+            Value::Text("timeRange".to_string()),
+            Value::Map(vec![
+                (
+                    Value::Text("on".to_string()),
+                    Value::Text("$createdAt".to_string()),
+                ),
+                (
+                    Value::Text("range".to_string()),
+                    Value::U64(2 * HOUR_SECONDS),
+                ),
+                (
+                    Value::Text("step".to_string()),
+                    Value::U64(2 * HOUR_SECONDS),
+                ),
+            ]),
+        ),
+        (
+            Value::Text("countable".to_string()),
+            Value::Text("countable".to_string()),
+        ),
+        (Value::Text("rangeCountable".to_string()), Value::Bool(true)),
+        (
+            Value::Text("rankedCountable".to_string()),
+            Value::Bool(true),
+        ),
+    ];
+    let document_schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtag": {"type": "string", "maxLength": 61, "position": 0},
+        },
+        "required": ["hashtag", "$createdAt"],
+        "indices": Value::Array(vec![Value::Map(index_map)]),
+        "additionalProperties": false,
+    });
+    let schemas = platform_value!({ "post": document_schema });
+    let contract = factory
+        .create_with_value_config(Identifier::from([205u8; 32]), 0, schemas, None, None)
+        .expect("a ranked windowed index registers")
+        .data_contract_owned();
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+    let document_type = contract.document_type_for_name("post").expect("post");
+
+    let insert_at = |created_at: u64, tag: &str| {
+        let owner_bytes = fixture_bytes(7, created_at, tag);
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from(fixture_bytes(8, created_at, tag)),
+            owner_id: Identifier::from(owner_bytes),
+            properties: BTreeMap::from([("hashtag".to_string(), Value::Text(tag.to_string()))]),
+            created_at: Some(created_at),
+            revision: Some(1),
+            ..Default::default()
+        });
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(owner_bytes),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo {
+                    time_ms: created_at,
+                    ..Default::default()
+                },
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("add document");
+    };
+
+    let h = HOUR_MS;
+    let t0 = 1_000 * h;
+    // One post in window t0; window t0+2h — the "current" one a
+    // `newest` selection resolves to at t0+2h..t0+4h — never written.
+    insert_at(t0 + 10 * MINUTE_MS_TTL, "alpha");
+
+    let window_query = |window_start: u64, k: u16| {
+        let mode = DocumentRankedMode {
+            axis: RankedAxis::Count,
+            descending: true,
+            k,
+            offset: 0,
+            group_by_property: "hashtag".to_string(),
+            aggregate_field: String::new(),
+            prefix_pins: vec![PrefixPin {
+                field: "$createdAt".to_string(),
+                values: vec![Value::U64(window_start)],
+            }],
+        };
+        resolve_ranked_query_for_mode(
+            contract.id().to_buffer(),
+            document_type,
+            "post".to_string(),
+            document_type.indexes(),
+            &mode,
+            &created_at_resolution(document_type),
+            platform_version,
+        )
+        .expect("the ranked windowed index covers the pinned request")
+    };
+    let root_hash = || {
+        drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("root hash must be readable")
+    };
+
+    let unwritten = window_query(t0 + 2 * h, 10);
+    let page = unwritten
+        .execute_top_k_no_proof(&drive, None, platform_version)
+        .expect("an unwritten window reads as an empty leaderboard");
+    assert_eq!(page.skipped, 0);
+    assert!(page.entries.is_empty());
+    let proof = unwritten
+        .execute_top_k_with_proof(&drive, None, platform_version)
+        .expect("an unwritten window proves as an empty leaderboard");
+    let (proved_root, verified) = unwritten
+        .verify_ranked_top_k_proof(&proof, platform_version)
+        .expect("the envelope authenticates the absent window");
+    assert_eq!(verified, page);
+    assert_eq!(proved_root, root_hash());
+
+    // The same read works under a caller transaction.
+    let transaction = drive.grove.start_transaction();
+    let page_in_tx = unwritten
+        .execute_top_k_no_proof(&drive, Some(&transaction), platform_version)
+        .expect("an unwritten window reads under a transaction");
+    assert!(page_in_tx.entries.is_empty());
+    drop(transaction);
+
+    // Once a document lands in the window, the same query shape serves
+    // its leaderboard — and the written window t0 still ranks its post.
+    insert_at(t0 + 2 * h + 5 * MINUTE_MS_TTL, "bravo");
+    let written = window_query(t0 + 2 * h, 10);
+    let expected = vec![RankedEntry {
+        in_key: None,
+        key: b"bravo".to_vec(),
+        value: RankedEntryValue::Count(1),
+    }];
+    let page = written
+        .execute_top_k_no_proof(&drive, None, platform_version)
+        .expect("the now-written window reads");
+    assert_eq!(page.entries, expected);
+    let proof = written
+        .execute_top_k_with_proof(&drive, None, platform_version)
+        .expect("the now-written window proves");
+    let (proved_root, verified) = written
+        .verify_ranked_top_k_proof(&proof, platform_version)
+        .expect("the envelope verifies the written window");
+    assert_eq!(verified.entries, expected);
+    assert_eq!(proved_root, root_hash());
+    let older = window_query(t0, 10)
+        .execute_top_k_no_proof(&drive, None, platform_version)
+        .expect("the first window still reads");
+    assert_eq!(older.entries[0].key, b"alpha".to_vec());
+}
+
 /// One minute in milliseconds, for the TTL lifecycle test's offsets.
 const MINUTE_MS_TTL: u64 = 60_000;
 

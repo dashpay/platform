@@ -38,7 +38,9 @@ buckets are drained **lazily, on write**: every state transition that
 writes into the index continues draining the oldest expired bucket,
 deepest-first, under a per-write operation budget. A fully drained
 window is provably absent, exactly like a window that never held
-documents. An expired window is **not queryable at all** — `byStart`
+documents: a count over it proves zero, and a ranked or having-range
+query pinned to it proves an empty page (see the ranked chapter's
+pinned-prefix rules). An expired window is **not queryable at all** — `byStart`
 rejects starts past the horizon, so the drainage lag is purely internal:
 drainage only ever touches expired buckets, which makes every window a
 query can address complete. Everything written under the index's
