@@ -18,6 +18,13 @@ impl Drive {
                 "no contract ids to prove versions for",
             )));
         }
+        if contract_ids.len() > u16::MAX as usize {
+            return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                "at most {} contract versions can be proved at once, got {}",
+                u16::MAX,
+                contract_ids.len()
+            ))));
+        }
 
         let path_query = Self::fetch_contracts_versions_query(contract_ids);
 

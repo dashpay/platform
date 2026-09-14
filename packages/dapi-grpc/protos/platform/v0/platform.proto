@@ -503,7 +503,7 @@ message GetDataContractResponse {
 
 // Returns the current version number of each requested data contract: the
 // cheap way for a client to check that the contracts it already holds are
-// still current. Every requested id gets an entry; an id no contract has gets
+// still current. Every distinct requested id gets an entry; an id no contract has gets
 // an entry without `version`. Serialized contracts are added only when
 // `include_contracts` is set.
 //

@@ -92,7 +92,9 @@ impl Drive {
     /// It selects the requested contract ids under the contracts root and descends the
     /// subquery key `2`, the four-byte version item every contract carries beside its
     /// serialized form or history subtree. A requested id no contract has is proved absent.
-    /// Duplicate ids are folded, so the limit is the number of distinct ids.
+    /// Duplicate ids are folded, so the limit is the number of distinct ids; the prover and
+    /// the verifier reject more distinct ids than a query limit can hold, so the saturation
+    /// here is never reached.
     ///
     /// Shared by the prover and the verifier, which must rebuild the exact query.
     ///
@@ -106,7 +108,11 @@ impl Drive {
         query.set_subquery_key(vec![CONTRACT_VERSION_KEY]);
         PathQuery::new(
             vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()],
-            SizedQuery::new(query, Some(distinct_ids.len() as u16), None),
+            SizedQuery::new(
+                query,
+                Some(u16::try_from(distinct_ids.len()).unwrap_or(u16::MAX)),
+                None,
+            ),
         )
     }
 

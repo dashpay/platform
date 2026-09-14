@@ -30,6 +30,13 @@ impl Drive {
                 "no contract ids to verify versions for",
             )));
         }
+        if contract_ids.len() > u16::MAX as usize {
+            return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                "at most {} contract versions can be verified at once, got {}",
+                u16::MAX,
+                contract_ids.len()
+            ))));
+        }
 
         let requested: BTreeSet<[u8; 32]> = contract_ids.iter().copied().collect();
         let path_query = Self::fetch_contracts_versions_query(contract_ids);
@@ -274,6 +281,24 @@ mod tests {
             Drive::verify_contracts_versions(&proof, &ids, platform_version),
             Err(Error::GroveDB(_)) | Err(Error::Proof(_))
         ));
+    }
+
+    #[test]
+    fn should_reject_more_ids_than_a_query_limit_can_hold() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let ids: Vec<[u8; 32]> = (0..=u16::MAX as u32)
+            .map(|i| {
+                let mut id = [0u8; 32];
+                id[..4].copy_from_slice(&i.to_be_bytes());
+                id
+            })
+            .collect();
+
+        assert!(drive
+            .prove_contracts_versions(&ids, None, platform_version)
+            .is_err());
+        assert!(Drive::verify_contracts_versions(&[], &ids, platform_version).is_err());
     }
 
     #[test]

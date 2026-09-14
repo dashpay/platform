@@ -19,7 +19,7 @@ pub struct DataContractLatestVersion {
 /// The current versions of the requested data contracts (`getDataContractsLatestVersions`),
 /// keyed by contract id.
 ///
-/// Every requested id is a key. A value is `None` when no contract has that id, and
+/// Every distinct requested id is a key. A value is `None` when no contract has that id, and
 /// `Some(entry)` otherwise; the entry carries the contract only when the request asked for
 /// it.
 #[derive(Debug, Default, Clone, PartialEq)]

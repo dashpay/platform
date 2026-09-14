@@ -22,8 +22,8 @@ use std::collections::BTreeSet;
 
 impl<C> Platform<C> {
     /// Returns the current version number of each requested data contract, and the serialized
-    /// contracts only when `include_contracts` is set. Every requested id gets an entry; an id
-    /// no contract has gets an entry without a version.
+    /// contracts only when `include_contracts` is set. Every distinct requested id gets an entry;
+    /// an id no contract has gets an entry without a version.
     ///
     /// From protocol version 14 every contract carries a four-byte version item beside it
     /// (`latest_versions_read` helper version 1). Without `include_contracts`, the unproved
