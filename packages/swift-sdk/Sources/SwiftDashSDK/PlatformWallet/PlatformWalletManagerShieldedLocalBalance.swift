@@ -104,15 +104,16 @@ extension PlatformWalletManager {
     /// active scan holds the store across a network request, this throws
     /// instead of blocking native-operation admission until the scan ends.
     ///
-    /// A successful bind overlapping delivery triggers one fresh read. If
-    /// binding changes again during that retry, this throws rather than
-    /// returning an obsolete ledger or retrying indefinitely.
+    /// Successful binds overlapping delivery trigger up to two fresh reads,
+    /// covering the direct launch bind and wallet-observer bind. Further
+    /// binding changes throw rather than returning an obsolete ledger or
+    /// retrying indefinitely.
     ///
     /// Native failures throw; unbound and incompletely restored wallets do
     /// not produce numeric balances. Retain the last usable snapshot and
     /// retry later when a read fails. The manager remains alive until the
     /// native read and allocation release finish; shutdown drains admitted
-    /// reads, including their one permitted bind retry.
+    /// reads, including their two permitted bind retries.
     public func localShieldedBalanceSnapshot(walletId: Data) async throws -> ShieldedLocalBalanceState {
         try Task.checkCancellation()
         try ensureConfigured()
@@ -126,13 +127,14 @@ extension PlatformWalletManager {
         let generation = shieldedSyncGeneration.current()
         let localGeneration = shieldedLocalBalanceGeneration.current()
         let calls = nativeShieldedLocalBalanceCalls
-        var remainingBindRetries = 1
+        var remainingBindRetries = 2
         while true {
             try Task.checkCancellation()
             let bindGeneration = shieldedLocalBalanceBindGeneration.current()
             let state: ShieldedLocalBalanceState = try await withCheckedThrowingContinuation { continuation in
-                // Shared FIFO ordering matches the other admitted native ops.
-                Self.destroyQueue.async {
+                // Read-only native access has its own lifecycle/store guards.
+                // A different manager's teardown must not delay this read.
+                shieldedLocalBalanceQueue.async {
                     do {
                         continuation.resume(returning: try Self.readLocalShieldedBalance(
                             handle: h, walletId: walletId, calls: calls))
@@ -145,7 +147,7 @@ extension PlatformWalletManager {
             guard handle == h, generation == shieldedSyncGeneration.current(),
                   localGeneration == shieldedLocalBalanceGeneration.current() else {
                 // Clear, stop, or a failed bind makes this request obsolete,
-                // including when it happens during the second native read.
+                // including when it happens during either fresh read.
                 throw CancellationError()
             }
             guard bindGeneration != shieldedLocalBalanceBindGeneration.current() else {

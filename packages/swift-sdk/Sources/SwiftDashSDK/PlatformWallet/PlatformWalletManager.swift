@@ -755,7 +755,15 @@ public class PlatformWalletManager: ObservableObject {
         qos: .userInitiated
     )
 
-    /// A snapshot on `destroyQueue` can be waiting for the shielded scan's
+    /// Read-only snapshots use native lifecycle/store guards and remain admitted
+    /// until delivery, independently of the mutation/teardown FIFO. Per-manager
+    /// so another manager's blocked read or destroy cannot delay local hydration.
+    nonisolated let shieldedLocalBalanceQueue = DispatchQueue(
+        label: "org.dash.platform-wallet.shielded-local-balance",
+        qos: .userInitiated
+    )
+
+    /// A snapshot can be waiting for the shielded scan's
     /// store lock. Stop must run on an independent thread to release that
     /// scan before shutdown drains admitted snapshots. Per-manager so a
     /// slow stop cannot prevent another manager from stopping its scan.
@@ -970,9 +978,10 @@ public class PlatformWalletManager: ObservableObject {
             steps.append(performNativeTeardownStep(name, handle: handle, call: call))
         }
 
-        // Stop the network event source first as defense in depth for the
-        // teardown order; Rust's destroy path provides the authoritative
-        // join barrier.
+        // Explicit shutdown already stopped shielded sync before draining
+        // admitted reads. Stop SPV first among the remaining services; the
+        // deinit fallback also stops shielded here. Rust destroy provides the
+        // authoritative final join barrier.
         run("spv_stop", calls.spvStop)
         run("platform_address_sync_stop", calls.platformAddressSyncStop)
         if completedShieldedStop == nil {
@@ -1228,8 +1237,9 @@ public class PlatformWalletManager: ObservableObject {
     ///   second lands (load.rs treats "already present" as "fully
     ///   hydrated", which only holds for sequential loaders).
     ///
-    /// Async entrypoints use [`admitNativeOp`] instead (they serialize on
-    /// the destroy queue, so async-with-async is safe).
+    /// Async entrypoints use [`admitNativeOp`] instead. Mutations serialize
+    /// on the destroy queue; read-only shielded snapshots use a separate queue
+    /// and native lifecycle/store guards. Both remain counted through delivery.
     private func ensureSyncNativeOpAllowed(_ name: String) throws {
         try ensureConfigured()
         guard !shutdownRequested else {

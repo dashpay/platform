@@ -398,6 +398,112 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         XCTAssertEqual(manager.handle, NULL_HANDLE, "Cancellation must release native-op admission")
     }
 
+    func testShouldReadAndDrainWhileAnotherManagerIsBlockedInDestroy() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        let destroyEntered = expectation(description: "Other manager entered native destroy")
+        let other = makeManager(NativeFixture())
+        let calls = other.nativeTeardownCalls
+        other.nativeTeardownCalls = PlatformWalletNativeTeardownCalls(
+            spvStop: calls.spvStop,
+            platformAddressSyncStop: calls.platformAddressSyncStop,
+            shieldedSyncStop: calls.shieldedSyncStop,
+            dashPaySyncStop: calls.dashPaySyncStop,
+            dpnsSyncStop: calls.dpnsSyncStop,
+            destroy: { _ in
+                destroyEntered.fulfill()
+                XCTAssertEqual(gate.wait(timeout: .now() + 5), .success)
+                return PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+            })
+        let otherShutdown = Task { await other.shutdown() }
+        defer { gate.signal() }
+        await fulfillment(of: [destroyEntered], timeout: 1)
+
+        let fixture = NativeFixture(rows: [row(0, credits: 900)])
+        let manager = makeManager(fixture)
+        let delivered = expectation(description: "Snapshot delivered before unrelated destroy finishes")
+        let read = Task {
+            defer { delivered.fulfill() }
+            return try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId)
+        }
+        await fulfillment(of: [delivered], timeout: 1)
+        let shutdown = Task { await manager.shutdown() }
+        for _ in 0..<100 {
+            if manager.handle == NULL_HANDLE { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        // Its native teardown may still queue behind the unrelated destroy,
+        // but the admitted snapshot and drain must have completed already.
+        XCTAssertEqual(manager.handle, NULL_HANDLE)
+        XCTAssertEqual(fixture.events.filter { $0 == "free" }.count, 1)
+        gate.signal()
+        _ = try await read.value
+        _ = await shutdown.value
+        _ = await otherShutdown.value
+    }
+
+    func testShouldNotDelayAnotherManagersSnapshotOrCreateBehindARead() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        let blocked = NativeFixture(rows: [row(0, credits: 900)], gate: gate)
+        let firstManager = makeManager(blocked)
+        let firstRead = Task { try await firstManager.localShieldedBalanceSnapshot(walletId: Self.walletId) }
+        defer { gate.signal() }
+        try await waitForRead(blocked)
+
+        let manager = makeManager(NativeFixture(rows: [row(0, credits: 450)]))
+        manager.nativeCreateCalls = PlatformWalletNativeCreateCalls(createFromMnemonic: { _, _ in
+            (PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil),
+             NULL_HANDLE, Data(repeating: 8, count: 32))
+        })
+        let snapshotFinished = expectation(description: "Another manager's snapshot finishes independently")
+        let createFinished = expectation(description: "Create is not queued behind the parked snapshot")
+        let secondRead = Task {
+            defer { snapshotFinished.fulfill() }
+            return try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId)
+        }
+        let create = Task {
+            defer { createFinished.fulfill() }
+            return try await manager.createWallet(mnemonic: "test", network: .testnet)
+        }
+        await fulfillment(of: [snapshotFinished, createFinished], timeout: 1)
+        XCTAssertFalse(blocked.events.contains("free"))
+        gate.signal()
+        _ = try await firstRead.value
+        _ = try await secondRead.value
+        _ = try await create.value
+        await firstManager.shutdown()
+        await manager.shutdown()
+    }
+
+    func testShouldTolerateBothDuplicateLaunchBinds() async throws {
+        let firstGate = DispatchSemaphore(value: 0)
+        let secondGate = DispatchSemaphore(value: 0)
+        let first = NativeFixture(rows: [row(0, credits: 900)], gate: firstGate)
+        let second = NativeFixture(rows: [row(0, credits: 900)], gate: secondGate)
+        let third = NativeFixture(rows: [row(0, credits: 900)])
+        let manager = makeManager(first)
+        manager.nativeShieldedLocalBalanceCalls = NativeSequence([first, second, third]).calls
+        let read = Task { try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId) }
+        defer {
+            firstGate.signal()
+            secondGate.signal()
+        }
+        try await waitForRead(first)
+        manager.withShieldedLocalBalanceBind {}
+        firstGate.signal()
+        try await waitForRead(second)
+        manager.withShieldedLocalBalanceBind {}
+        secondGate.signal()
+        let state = try await read.value
+        XCTAssertEqual(state, .ready(ShieldedLocalBalanceSnapshot(accounts: [
+            0: ShieldedLocalAccountBalance(spendableCredits: 900, lastScannedIndex: nil, source: .restored)
+        ])))
+        for fixture in [first, second, third] {
+            XCTAssertEqual(fixture.walletIds.count, 1)
+            XCTAssertEqual(fixture.events.filter { $0 == "free" }.count, 1)
+        }
+        await manager.shutdown()
+    }
+
     func testShouldRereadAfterSuccessfulBindWithoutReturningAnObsoleteSnapshot() async throws {
         // An idempotent bind must preserve delivery; a changed account set
         // must deliver the freshly read ledger, never the first attempt.
@@ -438,19 +544,25 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         for operation in ["bind", "clear", "stop", "failed bind"] {
             let firstGate = DispatchSemaphore(value: 0)
             let secondGate = DispatchSemaphore(value: 0)
+            let thirdGate = DispatchSemaphore(value: 0)
             let first = NativeFixture(rows: [row(0, credits: 900)], gate: firstGate)
             let second = NativeFixture(rows: [row(0, credits: 450)], gate: secondGate)
+            let third = NativeFixture(rows: [row(1, credits: 225)], gate: thirdGate)
             let manager = makeManager(first)
-            manager.nativeShieldedLocalBalanceCalls = NativeSequence([first, second]).calls
+            manager.nativeShieldedLocalBalanceCalls = NativeSequence([first, second, third]).calls
             let read = Task { try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId) }
             defer {
                 firstGate.signal()
                 secondGate.signal()
+                thirdGate.signal()
             }
             try await waitForRead(first)
             manager.withShieldedLocalBalanceBind {}
             firstGate.signal()
             try await waitForRead(second)
+            manager.withShieldedLocalBalanceBind {}
+            secondGate.signal()
+            try await waitForRead(third)
 
             switch operation {
             case "bind":
@@ -464,7 +576,7 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
                     throw PlatformWalletError.walletOperation("Bind failed")
                 })
             }
-            secondGate.signal()
+            thirdGate.signal()
             do {
                 _ = try await read.value
                 XCTFail("Obsolete retry was returned after \(operation)")
@@ -478,9 +590,11 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
                 XCTAssertTrue(message.contains("retry the read"))
             }
             XCTAssertEqual(first.walletIds.count, 1)
-            XCTAssertEqual(second.walletIds.count, 1, "At most one extra read is permitted")
+            XCTAssertEqual(second.walletIds.count, 1)
+            XCTAssertEqual(third.walletIds.count, 1, "At most two extra reads are permitted")
             XCTAssertEqual(first.events.filter { $0 == "free" }.count, 1)
             XCTAssertEqual(second.events.filter { $0 == "free" }.count, 1)
+            XCTAssertEqual(third.events.filter { $0 == "free" }.count, 1)
             await manager.shutdown()
             XCTAssertEqual(manager.handle, NULL_HANDLE)
         }

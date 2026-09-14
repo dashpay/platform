@@ -29,13 +29,17 @@ use crate::{check_ptr, unwrap_option_or_return};
 use rs_sdk_ffi::MnemonicResolverHandle;
 
 impl ShieldedSyncWalletResultFFI {
-    pub(crate) fn ok(wallet_id: [u8; 32], summary: &ShieldedSyncSummary) -> Self {
+    pub(crate) fn ok(
+        wallet_id: [u8; 32],
+        summary: &ShieldedSyncSummary,
+    ) -> Result<Self, PlatformWalletError> {
         // Multi-account on the Rust side; flattened to wallet-level
         // sums here. Hosts that want per-account detail call
         // `platform_wallet_manager_local_shielded_balance_snapshot`.
+        let balance = summary.balance_total()?;
         let new_notes = u32::try_from(summary.notes_result.total_new_notes()).unwrap_or(u32::MAX);
         let newly_spent = u32::try_from(summary.total_newly_spent()).unwrap_or(u32::MAX);
-        Self {
+        Ok(Self {
             wallet_id,
             success: true,
             skipped: false,
@@ -43,9 +47,9 @@ impl ShieldedSyncWalletResultFFI {
             new_notes,
             total_scanned: summary.notes_result.total_scanned,
             newly_spent,
-            balance: summary.balance_total(),
+            balance,
             error_message: std::ptr::null(),
-        }
+        })
     }
 }
 
@@ -461,7 +465,8 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     // Seedless path first: rebind from viewing keys persisted by a
     // prior seed-backed bind. `Ok(false)` means at least one
     // requested account has no persisted row — only then is the
-    // mnemonic resolved.
+    // mnemonic resolved. Persisted-key load/restore errors propagate without
+    // resolving the seed; fallback must not mask a persistence failure.
     match runtime()
         .block_on(wallet_arc.bind_shielded_from_persisted(accounts.as_slice(), &coordinator))
     {

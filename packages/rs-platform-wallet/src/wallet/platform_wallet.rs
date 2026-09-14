@@ -1870,8 +1870,12 @@ impl PlatformWallet {
     ///
     /// The identity is debited `amount` plus the metered fee plus the shielded
     /// compute fee. Returns the proven post-debit balance, which is also applied
-    /// to the managed identity and persisted. A result proof that is not this
-    /// identity's balance proof reports the spend as unconfirmed
+    /// to the managed identity. Persistence of this local balance cache is
+    /// best-effort after broadcast: a storage failure is logged and does not
+    /// turn the payment into a retryable failure. Reloading after such a failure
+    /// can show the prior cached balance until it is refreshed from Platform.
+    /// A result proof that is not this identity's balance proof reports the
+    /// spend as unconfirmed
     /// ([`PlatformWalletError::ShieldedSpendUnconfirmed`]), as does any failure
     /// verdict the proven identity nonce cannot rule out (do not rebuild on it).
     /// The activity row stays pending until the shielded scan observes the note
@@ -2027,6 +2031,10 @@ impl PlatformWallet {
             if let Some(managed) = managed {
                 managed.identity.set_balance(new_balance);
                 if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
+                    // Broadcast already happened. Returning a transaction error
+                    // could prompt a second payment; it cannot undo the debit.
+                    // Keep the proven in-memory balance and report the cache
+                    // failure separately in diagnostics.
                     tracing::error!(
                         identity = %identity_id,
                         error = %e,

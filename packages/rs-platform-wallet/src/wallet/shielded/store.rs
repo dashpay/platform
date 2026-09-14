@@ -232,13 +232,9 @@ pub trait ShieldedStore: Send + Sync {
     fn get_unspent_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error>;
 
     /// The same reservation-aware sum used by sync and local balance reads.
-    fn spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error> {
-        Ok(self
-            .get_unspent_notes(id)?
-            .iter()
-            .map(|note| note.value)
-            .sum())
-    }
+    /// Implementations must reject sums exceeding `u64::MAX` with their storage
+    /// error, rather than wrapping, saturating, or panicking.
+    fn spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error>;
 
     /// Return all notes (spent and unspent) for `id`.
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error>;
@@ -872,6 +868,16 @@ impl ShieldedStore for InMemoryShieldedStore {
             .unwrap_or_default())
     }
 
+    fn spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error> {
+        self.get_unspent_notes(id)?
+            .iter()
+            .try_fold(0u64, |total, note| {
+                total.checked_add(note.value).ok_or_else(|| {
+                    InMemoryStoreError("spendable shielded balance exceeds u64".to_string())
+                })
+            })
+    }
+
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error> {
         Ok(self
             .subwallets
@@ -1143,6 +1149,55 @@ mod tests {
 
     fn test_id(account: u32) -> SubwalletId {
         SubwalletId::new([0xAA; 32], account)
+    }
+
+    #[test]
+    fn should_reject_overflowing_in_memory_spendable_balance() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        for (tag, value) in [(1, u64::MAX), (2, 1)] {
+            store
+                .save_note(
+                    id,
+                    &ShieldedNote {
+                        position: tag as u64,
+                        cmx: [tag; 32],
+                        nullifier: [tag; 32],
+                        block_height: 100,
+                        is_spent: false,
+                        value,
+                        note_data: vec![],
+                    },
+                )
+                .expect("save test note");
+        }
+        let error = store
+            .spendable_balance(id)
+            .expect_err("overflow must not wrap or panic");
+        assert!(error.to_string().contains("exceeds u64"));
+
+        // Reservations and spent notes are excluded before checked addition.
+        store
+            .mark_pending(id, &[2; 32])
+            .expect("reserve small note");
+        assert_eq!(store.spendable_balance(id).unwrap(), u64::MAX);
+        assert_eq!(store.spendable_balance(test_id(1)).unwrap(), 0);
+        assert_eq!(
+            store
+                .spendable_balance(SubwalletId::new([0xBB; 32], 0))
+                .unwrap(),
+            0
+        );
+        store
+            .clear_pending(id, &[2; 32])
+            .expect("release reservation");
+        assert!(store.spendable_balance(id).is_err());
+        store.mark_spent(id, &[2; 32]).expect("spend small note");
+        assert_eq!(store.spendable_balance(id).unwrap(), u64::MAX);
+        store
+            .mark_spent(id, &[1; 32])
+            .expect("spend remaining note");
+        assert_eq!(store.spendable_balance(id).unwrap(), 0);
     }
 
     #[test]
