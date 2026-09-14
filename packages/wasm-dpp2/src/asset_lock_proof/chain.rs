@@ -3,7 +3,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
-use bincode::serde::{decode_from_slice, encode_to_vec};
+use bincode::serde::{decode_from_slice_untrusted, encode_to_vec};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -104,9 +104,10 @@ impl ChainAssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<ChainAssetLockProofWasm> {
-        let proof: ChainAssetLockProof = decode_from_slice(&bytes, bincode::config::standard())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?
-            .0;
+        let proof: ChainAssetLockProof =
+            decode_from_slice_untrusted(&bytes, bincode::config::standard())
+                .map_err(|e| WasmDppError::serialization(e.to_string()))?
+                .0;
         Ok(ChainAssetLockProofWasm(proof))
     }
 }

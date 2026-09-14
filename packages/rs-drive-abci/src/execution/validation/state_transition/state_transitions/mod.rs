@@ -46,10 +46,14 @@ mod identity_top_up_from_addresses;
 
 /// Module for identity-create-from-shielded-pool transition validation
 pub mod identity_create_from_shielded_pool;
+/// Identity top up from shielded pool (pool to an existing identity)
+pub mod identity_top_up_from_shielded_pool;
 /// Module for shield transition validation
 pub mod shield;
 /// Module for shield from asset lock transition validation
 pub mod shield_from_asset_lock;
+/// Shield from identity (identity balance to shielded pool)
+pub mod shield_from_identity;
 /// Common validation logic shared by shielded transitions (proof verification)
 pub mod shielded_common;
 /// Module for shielded transfer transition validation
@@ -177,7 +181,7 @@ pub(in crate::execution) mod tests {
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use dpp::tokens::token_amount_on_contract_token::{DocumentActionTokenCost, DocumentActionTokenEffect};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
-    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 
     /// We add an identity, but we also add the same amount to system credits
     pub(in crate::execution) fn setup_identity_with_system_credits(
@@ -833,7 +837,7 @@ pub(in crate::execution) mod tests {
     ) -> DataContract {
         // Deserialize the data contract from bytes
         let mut data_contract =
-            DataContract::versioned_deserialize(&contract_bytes, false, platform_version)
+            DataContract::versioned_deserialize_untrusted(&contract_bytes, false, platform_version)
                 .expect("expected to deserialize data contract");
 
         // Get identity info based on the enum variant

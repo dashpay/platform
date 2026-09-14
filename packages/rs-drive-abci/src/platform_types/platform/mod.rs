@@ -12,7 +12,7 @@ use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use arc_swap::ArcSwap;
 use dpp::prelude::BlockHeight;
-use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 use dpp::version::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -147,6 +147,24 @@ impl<C> Platform<C> {
         let (drive, current_platform_version) =
             Drive::open(&config.db_path, Some(config.drive.clone())).map_err(Error::Drive)?;
 
+        // Finish any TTL bucket-drop reclamation a crash interrupted
+        // (grovedb#848 / PR #849): committed redo records survive restarts,
+        // and draining them is idempotent and outside consensus. A no-op
+        // when no records exist; a failure leaves the records for the
+        // per-block flush to retry.
+        if let Some(platform_version) = current_platform_version {
+            if let Err(error) = drive
+                .grove
+                .flush_pending_prefix_drops(&platform_version.drive.grove_version)
+            {
+                tracing::warn!(
+                    ?error,
+                    "failed to flush pending prefix drops at startup; records persist and \
+                     will be retried after the next block"
+                );
+            }
+        }
+
         if let Some(platform_version) = current_platform_version {
             let Some(execution_state) =
                 Platform::<C>::fetch_platform_state(&drive, None, platform_version)?
@@ -159,7 +177,7 @@ impl<C> Platform<C> {
             // Load checkpoint platform states from disk
             let mut checkpoint_platform_states = BTreeMap::new();
             let checkpoints = drive.checkpoints.load();
-            for (&block_height, _checkpoint_info) in checkpoints.iter() {
+            for &block_height in checkpoints.keys() {
                 let checkpoint_state_path = config
                     .db_path
                     .join("checkpoints")
@@ -169,7 +187,7 @@ impl<C> Platform<C> {
                 if checkpoint_state_path.exists() {
                     match std::fs::read(&checkpoint_state_path) {
                         Ok(state_bytes) => {
-                            match PlatformState::versioned_deserialize(
+                            match PlatformState::versioned_deserialize_trusted(
                                 &state_bytes,
                                 platform_version,
                             ) {

@@ -96,7 +96,7 @@ use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, Security
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{BinaryData, Bytes32, Value};
 use dpp::serialization::{
-    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
     PlatformSerializableWithPlatformVersion,
 };
 use dpp::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
@@ -436,8 +436,8 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
     }
 }
 
-impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Strategy {
-    fn versioned_deserialize(
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted for Strategy {
+    fn versioned_deserialize_trusted(
         data: &[u8],
         full_validation: bool,
         platform_version: &PlatformVersion,
@@ -468,7 +468,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
         let contracts_with_updates = contracts_with_updates
             .into_iter()
             .map(|(serialized_contract, maybe_updates)| {
-                let contract = CreatedDataContract::versioned_deserialize(
+                let contract = CreatedDataContract::versioned_deserialize_trusted(
                     serialized_contract.as_slice(),
                     full_validation,
                     platform_version,
@@ -478,7 +478,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
                         updates
                             .into_iter()
                             .map(|(key, serialized_contract_update)| {
-                                let update = CreatedDataContract::versioned_deserialize(
+                                let update = CreatedDataContract::versioned_deserialize_trusted(
                                     serialized_contract_update.as_slice(),
                                     full_validation,
                                     platform_version,
@@ -501,7 +501,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
         let operations = operations
             .into_iter()
             .map(|operation| {
-                Operation::versioned_deserialize(
+                Operation::versioned_deserialize_trusted(
                     operation.as_slice(),
                     full_validation,
                     platform_version,
@@ -2838,7 +2838,7 @@ impl Strategy {
 
                 // If there are contract updates, use the mapping to update their ID and owner ID too
                 if let Some(contract_updates) = contract_updates {
-                    for (_, updated_contract) in contract_updates.iter_mut() {
+                    for updated_contract in contract_updates.values_mut() {
                         let updated_contract_data = updated_contract.data_contract_mut();
                         if let Some(new_updated_id) = id_mapping.get(&updated_contract_data.id()) {
                             updated_contract_data.set_id(*new_updated_id);
@@ -3026,7 +3026,7 @@ mod tests {
     use dpp::identity::Identity;
     use dpp::platform_value::Value;
     use dpp::serialization::{
-        PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
         PlatformSerializableWithPlatformVersion,
     };
     use dpp::system_data_contracts::load_system_data_contract;
@@ -3156,7 +3156,7 @@ mod tests {
             .expect("expected to serialize");
 
         let deserialized =
-            Strategy::versioned_deserialize(serialized.as_slice(), true, platform_version)
+            Strategy::versioned_deserialize_trusted(serialized.as_slice(), true, platform_version)
                 .expect("expected to deserialize");
 
         assert_eq!(strategy, deserialized);

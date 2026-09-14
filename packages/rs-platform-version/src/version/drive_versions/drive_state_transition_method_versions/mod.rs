@@ -69,6 +69,8 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub unshield_transition: FeatureVersion,
     pub shielded_withdrawal_transition: FeatureVersion,
     pub identity_create_from_shielded_pool_transition: FeatureVersion,
+    pub shield_from_identity_transition: FeatureVersion,
+    pub identity_top_up_from_shielded_pool_transition: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

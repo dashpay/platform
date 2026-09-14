@@ -9,8 +9,82 @@ use crate::query::{Query, QueryItem};
 use crate::util::common::encode::encode_u64;
 use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
+use std::ops::RangeFull;
 
 impl Drive {
+    /// Builds the query over the contracts root that selects contract ids in ascending
+    /// order from an optional cursor.
+    ///
+    /// * `None` selects every contract (the first page).
+    /// * `Some((id, true))` starts at `id` (inclusive, `startAt`).
+    /// * `Some((id, false))` starts after `id` (exclusive, `startAfter`).
+    pub(crate) fn contracts_range_query(start_at: Option<([u8; 32], bool)>) -> Query {
+        let mut query = Query::new();
+        match start_at {
+            None => query.insert_item(QueryItem::RangeFull(RangeFull)),
+            Some((start_at_id, true)) => {
+                query.insert_item(QueryItem::RangeFrom(start_at_id.to_vec()..))
+            }
+            Some((start_at_id, false)) => {
+                query.insert_item(QueryItem::RangeAfter(start_at_id.to_vec()..))
+            }
+        }
+        query
+    }
+
+    /// Creates the path query that proves one page of the contract enumeration
+    /// (`getDataContractsByRange`) together with the serialized contracts.
+    ///
+    /// The query ranges over the contract ids under the contracts root and descends the
+    /// two-key subquery path `0 / 0`. A contract that does not keep history stores the
+    /// serialized contract as an item at the first key; GroveDB proves and verifies that
+    /// item as a result row without descending further. A contract that keeps history
+    /// stores its history subtree at the first key and a reference to the latest revision
+    /// at the second key; the proof dereferences it. One path query therefore proves a page
+    /// regardless of how each contract is stored.
+    ///
+    /// Only for proving and verifying. The trusted read path must not use it: a non-proof
+    /// path query opens the subtree at the extended path blindly and would skip the
+    /// contracts stored as items. `fetch_contracts` reads with a single-level subquery and
+    /// resolves the history-keeping contracts afterwards instead.
+    ///
+    /// # Arguments
+    ///
+    /// * `start_at` - Optional cursor, see [`Drive::contracts_range_query`].
+    /// * `limit` - Maximum number of contracts in the page.
+    pub fn fetch_contracts_by_range_query(
+        start_at: Option<([u8; 32], bool)>,
+        limit: u16,
+    ) -> PathQuery {
+        let mut query = Self::contracts_range_query(start_at);
+        query.set_subquery_path(vec![vec![0], vec![0]]);
+        PathQuery::new(
+            vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()],
+            SizedQuery::new(query, Some(limit), None),
+        )
+    }
+
+    /// Creates the path query for one page of contract ids (`getDataContractsByRange`
+    /// with `ids_only`).
+    ///
+    /// It ranges over the contract ids under the contracts root without descending, so
+    /// every result row is a contract subtree keyed by its id. Shared by the trusted read
+    /// (`fetch_contract_ids`), the prover and the verifier.
+    ///
+    /// # Arguments
+    ///
+    /// * `start_at` - Optional cursor, see [`Drive::contracts_range_query`].
+    /// * `limit` - Maximum number of contract ids in the page.
+    pub fn fetch_contract_ids_by_range_query(
+        start_at: Option<([u8; 32], bool)>,
+        limit: u16,
+    ) -> PathQuery {
+        PathQuery::new(
+            vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()],
+            SizedQuery::new(Self::contracts_range_query(start_at), Some(limit), None),
+        )
+    }
+
     /// Creates a path query for a specified contract.
     ///
     /// This function takes a contract ID and creates a path query for fetching the contract data.

@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::supported_grovedb_proof;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
@@ -84,7 +85,7 @@ pub fn verify_state_transition_was_executed_with_proof(
     let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
         &state_transition,
         &block_info,
-        &proof_vec,
+        supported_grovedb_proof(&proof_vec, platform_version)?,
         &contract_lookup_fn,
         platform_version,
     )

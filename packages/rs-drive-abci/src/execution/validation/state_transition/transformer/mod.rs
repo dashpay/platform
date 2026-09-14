@@ -8,6 +8,7 @@ use crate::execution::validation::state_transition::identity_create::StateTransi
 use crate::execution::validation::state_transition::identity_create_from_addresses::StateTransitionActionTransformerForIdentityCreateFromAddressesTransitionV0;
 use crate::execution::validation::state_transition::identity_create_from_shielded_pool::StateTransitionIdentityCreateFromShieldedPoolTransitionActionTransformer;
 use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
+use crate::execution::validation::state_transition::identity_top_up_from_shielded_pool::StateTransitionIdentityTopUpFromShieldedPoolTransitionActionTransformer;
 use crate::execution::validation::state_transition::shield::StateTransitionShieldTransitionActionTransformer;
 use crate::execution::validation::state_transition::shield_from_asset_lock::StateTransitionShieldFromAssetLockTransitionActionTransformer;
 use crate::execution::validation::state_transition::shielded_transfer::StateTransitionShieldedTransferTransitionActionTransformer;
@@ -253,9 +254,21 @@ impl StateTransitionActionTransformer for StateTransition {
             StateTransition::ShieldedTransfer(st) => {
                 st.transform_into_action_for_shielded_transfer_transition(platform, tx)
             }
+            StateTransition::ShieldFromIdentity(st) => st.transform_into_action(
+                platform,
+                block_info,
+                remaining_address_input_balances,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
             StateTransition::Unshield(st) => {
                 st.transform_into_action_for_unshield_transition(platform, tx)
             }
+            StateTransition::IdentityTopUpFromShieldedPool(st) => st
+                .transform_into_action_for_identity_top_up_from_shielded_pool_transition(
+                    platform, tx,
+                ),
             StateTransition::ShieldFromAssetLock(st) => {
                 let signable_bytes = self.signable_bytes()?;
                 st.transform_into_action_for_shield_from_asset_lock_transition(

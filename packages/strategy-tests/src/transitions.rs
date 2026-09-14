@@ -1110,11 +1110,9 @@ pub async fn create_identities_state_transitions(
     }
 
     // Update keys with new KeyIDs and add them to signer
-    let mut current_id_num = starting_id_num;
-    for (key, _) in &mut keys {
+    for (current_id_num, (key, _)) in (starting_id_num..).zip(keys.iter_mut()) {
         let IdentityPublicKey::V0(ref mut id_pub_key_v0) = key;
         id_pub_key_v0.set_id(current_id_num);
-        current_id_num += 1; // Increment for each key
     }
     signer.add_identity_public_keys(keys);
 

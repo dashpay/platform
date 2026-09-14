@@ -86,10 +86,11 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 56] = [
+    const VERSIONED_REQUESTS: [&str; 57] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
+        "GetDataContractsByRangeRequest",
         "GetDocumentHistoryRequest",
         "GetDocumentsRequest",
         "GetIdentitiesByPublicKeyHashesRequest",

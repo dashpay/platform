@@ -8,6 +8,7 @@
 pub mod address_sync;
 pub mod block_info_from_metadata;
 pub mod dashpay;
+pub mod data_contracts_by_range;
 mod delegate;
 pub mod documents;
 pub mod dpns_usernames;

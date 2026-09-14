@@ -14,7 +14,7 @@ use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 #[cfg(feature = "value-conversion")]
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, INITIAL_DATA_CONTRACT_VERSION};
-use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]
@@ -149,7 +149,7 @@ impl DataContractFactoryV0 {
         #[cfg(not(feature = "validation"))]
         let skip_validation = true;
 
-        let data_contract: DataContract = DataContract::versioned_deserialize(
+        let data_contract: DataContract = DataContract::versioned_deserialize_untrusted(
             buffer.as_slice(),
             !skip_validation,
             platform_version,

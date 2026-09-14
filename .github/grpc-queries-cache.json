@@ -39,6 +39,9 @@
     "getDataContracts": {
       "status": "implemented"
     },
+    "getDataContractsByRange": {
+      "status": "implemented"
+    },
     "getDocuments": {
       "status": "implemented"
     },
@@ -172,9 +175,6 @@
       "status": "implemented"
     },
     "getShieldedNotesCount": {
-      "status": "implemented"
-    },
-    "getChainedDocuments": {
       "status": "implemented"
     }
   }

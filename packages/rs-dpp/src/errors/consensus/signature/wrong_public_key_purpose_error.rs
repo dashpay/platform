@@ -5,13 +5,25 @@ use crate::consensus::ConsensusError;
 use crate::identity::Purpose;
 
 use crate::errors::ProtocolError;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use itertools::Itertools;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {}", allowed_key_purposes.iter().map(|s| s.to_string()).join(" | "))]
 #[platform_serialize(unversioned)]

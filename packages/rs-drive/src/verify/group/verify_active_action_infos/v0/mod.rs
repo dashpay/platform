@@ -11,7 +11,7 @@ use dpp::group::group_action::GroupAction;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::prelude::StartAtIncluded;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 
@@ -55,10 +55,11 @@ impl Drive {
 
                 match element {
                     Some(Item(value, ..)) => {
-                        let active_action = match GroupAction::deserialize_from_bytes(&value) {
-                            Ok(active_action) => active_action,
-                            Err(e) => return Some(Err(e.into())),
-                        };
+                        let active_action =
+                            match GroupAction::deserialize_from_bytes_untrusted(&value) {
+                                Ok(active_action) => active_action,
+                                Err(e) => return Some(Err(e.into())),
+                            };
                         Some(Ok((action_id, active_action)))
                     }
                     None => None,
