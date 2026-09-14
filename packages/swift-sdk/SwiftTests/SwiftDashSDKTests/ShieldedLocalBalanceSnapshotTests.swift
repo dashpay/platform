@@ -651,6 +651,36 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         await manager.shutdown()
     }
 
+    func testShouldRejectDeletionUntilCompletedNativeSnapshotIsDelivered() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        let fixture = NativeFixture(rows: [row(0, credits: 900)], gate: gate)
+        let manager = makeManager(fixture)
+        let read = Task { try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId) }
+        defer { gate.signal() }
+        try await waitForRead(fixture)
+        gate.signal()
+        // Stay on MainActor while the native queue finishes read/decode/free.
+        // The resumed delivery cannot run until this actor turn yields.
+        manager.shieldedLocalBalanceQueue.sync {}
+        XCTAssertTrue(fixture.events.contains("free"))
+        XCTAssertThrowsError(try manager.deleteWallet(walletId: Self.walletId)) { error in
+            guard case PlatformWalletError.invalidHandle(let message) = error else {
+                return XCTFail("Expected deletion admission rejection, got \(error)")
+            }
+            XCTAssertTrue(message.contains("async native operation"))
+        }
+        _ = try await read.value
+        // After delivery, deletion reaches its ordinary persistence check.
+        // This fixture has no persister, so it never enters native deletion.
+        XCTAssertThrowsError(try manager.deleteWallet(walletId: Self.walletId)) { error in
+            guard case PlatformWalletError.invalidHandle(let message) = error else {
+                return XCTFail("Unexpected deletion preflight result: \(error)")
+            }
+            XCTAssertTrue(message.contains("requires a persistence handler"))
+        }
+        await manager.shutdown()
+    }
+
     func testShouldDiscardSnapshotOnClearWithoutChangingSyncCallbackGeneration() async throws {
         let gate = DispatchSemaphore(value: 0)
         let fixture = NativeFixture(rows: [row(0, credits: 900)], gate: gate)
