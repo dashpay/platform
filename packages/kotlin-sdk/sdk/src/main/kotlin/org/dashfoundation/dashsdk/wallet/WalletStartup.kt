@@ -5,8 +5,9 @@ import java.nio.ByteOrder
 
 /**
  * Why a wallet bring-up stopped where it did — Kotlin mirror of the Rust
- * `WalletStartupStatus` (and of Swift's `WalletStartupStatus`). Raw values
- * are the `WalletStartupStatusFFI` ABI discriminants: append, never
+ * `WalletStartupStatus` and of Swift's `WalletStartupStatus`
+ * (`SwiftDashSDK/PlatformWallet/PlatformWalletManagerStartup.swift`). Raw
+ * values are the `WalletStartupStatusFFI` ABI discriminants: append, never
  * renumber.
  *
  * Every case is a normal result. A host starts Core SPV on all of them —
@@ -96,7 +97,8 @@ enum class WalletStartupStatus(val raw: Int) {
 
 /**
  * What a wallet bring-up did — Kotlin mirror of the Rust
- * `WalletStartupOutcome` (and of Swift's `WalletStartupOutcome`).
+ * `WalletStartupOutcome` and of Swift's `WalletStartupOutcome`
+ * (`SwiftDashSDK/PlatformWallet/PlatformWalletManagerStartup.swift`).
  */
 data class WalletStartupOutcome(
     val status: WalletStartupStatus,
