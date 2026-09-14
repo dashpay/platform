@@ -699,6 +699,68 @@ mod tests {
         assert!(!preset.has_user_addresses());
     }
 
+    /// The persisted protocol version seeds an unpinned builder, the ratchet
+    /// writes back through the observer, and a pinned builder ignores the store.
+    /// Runs natively against the thread-local storage fallback, so the same
+    /// code path the browser takes is exercised without `localStorage`.
+    #[test]
+    fn persisted_protocol_version_seeds_unpinned_builders_and_ratchets_back() {
+        use dapi_grpc::platform::v0::ResponseMetadata;
+        use dash_sdk::dpp::dashcore::Network;
+        use dash_sdk::sdk::min_protocol_version;
+
+        let floor = min_protocol_version(Network::Testnet);
+        let latest = dash_sdk::dpp::version::LATEST_VERSION;
+        assert!(
+            latest > floor,
+            "the test needs a version above the testnet floor"
+        );
+
+        // Nothing stored: an unpinned testnet builder boots at the floor, and a
+        // verified response carrying a newer version ratchets it and persists it.
+        assert!(crate::protocol_version_store::load(Network::Testnet).is_none());
+        let sdk = user_builder().build().expect("build");
+        assert_eq!(sdk.version(), floor);
+        // A network (non-mock) SDK checks metadata freshness against the local
+        // clock, so the response has to carry a current time to be accepted.
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock after the epoch")
+            .as_millis() as u64;
+        sdk.verify_response_metadata(
+            "test",
+            &ResponseMetadata {
+                protocol_version: latest,
+                height: 1,
+                time_ms: now_ms,
+                ..Default::default()
+            },
+        )
+        .expect("metadata should verify");
+        assert_eq!(sdk.version(), latest, "the ratchet must move the SDK");
+        assert_eq!(
+            crate::protocol_version_store::load(Network::Testnet).map(|v| v.protocol_version),
+            Some(latest),
+            "the observer must persist the ratcheted version"
+        );
+
+        // The next unpinned builder starts where the last one ended.
+        let next = user_builder().build().expect("build");
+        assert_eq!(
+            next.version(),
+            latest,
+            "a stored version must seed the next SDK"
+        );
+
+        // A pinned builder neither reads nor writes the store.
+        let pinned = user_builder()
+            .with_version(floor)
+            .expect("floor is a valid version")
+            .build()
+            .expect("build");
+        assert_eq!(pinned.version(), floor, "withVersion must ignore the store");
+    }
+
     /// Repro of the bug behind the fix: a user calling
     /// `withAddresses([...]).withTrustedContext(ctx)` must keep their
     /// explicit addresses, not get them silently replaced by discovered
