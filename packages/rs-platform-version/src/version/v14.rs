@@ -211,6 +211,43 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    item binding lets a prover return different item bytes under the same
 ///    authenticated root; every live network has emitted V1 envelopes since
 ///    v13 (grove version 3), so no honest response is affected.
+/// 8. **Epoch-based perpetual distribution claims stop wrapping**:
+///    `RewardDistributionType::max_cycle_moment` (the cap on how far one claim
+///    may redeem, selected by
+///    `TOKEN_VERSIONS_V3.reward_distribution_max_cycle_moment_version` 1)
+///    computes `start + interval * cycles` in `u64` with saturating
+///    arithmetic and narrows back to `EpochIndex` only after capping at the
+///    last completed cycle moment (`current cycle moment - interval`, the
+///    previous epoch for an interval of one as before; for wider intervals the
+///    same cycles are paid, but the cap now sits on a cycle boundary, the only
+///    shape in which `evaluate_interval`'s fixed-amount step count and its
+///    per-cycle loop agree). Up to v13 the sum was taken in `u16`: a
+///    fixed-amount function allows 32,767 cycles, so any epoch interval of
+///    three or more with a nonzero start (or two with a start at epoch two
+///    or later) pushed the cap past `u16::MAX`. Release builds wrap, the cap landed below the
+///    start, `evaluate_interval` saw an empty range and the claim was
+///    refused with `InvalidTokenClaimNoCurrentRewards` on every attempt. The
+///    v0 arithmetic is kept, wrapping explicitly, so those refusals replay.
+/// 9. **Evonode reward cycles weighted by the epochs they span**: the
+///    per-cycle evaluator in `DistributionFunction::evaluate_interval` asks
+///    the participation ratio for the epochs a cycle covers
+///    (`TOKEN_VERSIONS_V3.distribution_function_cycle_epochs_version` 1:
+///    `cycle moment - interval + 1 ..= cycle moment`). Up to v13 it passed the
+///    cycle's step index as if it were an epoch, which coincides only for an
+///    interval of one; for a wider interval it named epochs before the
+///    distribution started, outside the epoch window the claim loads, and an
+///    `EvonodesByParticipation` claim with a function other than a fixed
+///    amount failed as an internal error (reachable only once item 8 let the
+///    cap stop wrapping). Interval-one distributions are unchanged.
+/// 10. **A zero epoch interval is rejected at registration**:
+///     `RewardDistributionType::validate_structure_interval` v1
+///     (`CONTRACT_VERSIONS_V6.token_versions.validate_structure_interval`)
+///     refuses an `EpochBasedDistribution` with `interval: 0` with the new
+///     `InvalidTokenDistributionEpochIntervalTooShortError` (code 10828) on
+///     contract create and update. Up to v13 the epoch arm enforced nothing,
+///     so such a contract registered and every claim on it failed as an
+///     internal error, since no cycle can be computed from a zero step. Block
+///     and time minimums are unchanged.
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
@@ -256,16 +293,16 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
         state_transitions: STATE_TRANSITION_VERSIONS_V3,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
-        token_versions: TOKEN_VERSIONS_V3, // changed: distribution_function_evaluate v1 — deterministic libm for token reward math
+        token_versions: TOKEN_VERSIONS_V3, // changed: distribution_function_evaluate v1 — deterministic libm for token reward math; reward_distribution_max_cycle_moment v1: the epoch claim cap no longer wraps; distribution_function_cycle_epochs v1: evonode cycles weighted by the epochs they span
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33); withdrawals v2 admits the terminal FAILED status
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.

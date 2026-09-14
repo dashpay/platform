@@ -2704,9 +2704,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            53, 9, 163, 92, 116, 134, 17, 186, 21, 68, 156, 162, 47, 181, 214, 162, 253, 4, 246, 8,
-            41, 187, 151, 152, 216, 164, 206, 110, 230, 176, 124, 225,
+            115, 71, 32, 19, 19, 28, 185, 173, 19, 83, 31, 196, 218, 150, 103, 242, 170, 82, 31,
+            219, 106, 186, 227, 137, 222, 8, 119, 190, 132, 141, 5, 129,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4025,11 +4027,13 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         assert_eq!(
             root_hash.as_slice(),
             vec![
-                144, 154, 147, 246, 236, 57, 41, 67, 21, 26, 212, 158, 68, 159, 206, 26, 158, 50,
-                252, 62, 143, 176, 149, 50, 19, 226, 239, 65, 112, 243, 225, 64
+                219, 212, 38, 199, 221, 53, 199, 246, 2, 67, 249, 145, 196, 196, 101, 196, 78, 109,
+                123, 83, 87, 87, 128, 249, 130, 7, 56, 229, 223, 246, 8, 76,
             ],
         );
     }
@@ -4179,9 +4183,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            53, 9, 163, 92, 116, 134, 17, 186, 21, 68, 156, 162, 47, 181, 214, 162, 253, 4, 246, 8,
-            41, 187, 151, 152, 216, 164, 206, 110, 230, 176, 124, 225,
+            115, 71, 32, 19, 19, 28, 185, 173, 19, 83, 31, 196, 218, 150, 103, 242, 170, 82, 31,
+            219, 106, 186, 227, 137, 222, 8, 119, 190, 132, 141, 5, 129,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5053,9 +5059,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            75, 38, 164, 96, 117, 46, 13, 23, 183, 41, 83, 163, 112, 55, 172, 37, 186, 36, 223, 39,
-            106, 201, 46, 222, 167, 79, 236, 122, 12, 210, 29, 123,
+            119, 63, 228, 222, 146, 3, 214, 206, 200, 85, 238, 169, 61, 76, 179, 15, 177, 234, 189,
+            243, 215, 36, 123, 160, 213, 152, 77, 100, 96, 29, 85, 193,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5177,9 +5185,11 @@ mod tests {
             .expect("there is always a root hash");
 
         // Make sure the state is deterministic
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            53, 9, 163, 92, 116, 134, 17, 186, 21, 68, 156, 162, 47, 181, 214, 162, 253, 4, 246, 8,
-            41, 187, 151, 152, 216, 164, 206, 110, 230, 176, 124, 225,
+            115, 71, 32, 19, 19, 28, 185, 173, 19, 83, 31, 196, 218, 150, 103, 242, 170, 82, 31,
+            219, 106, 186, 227, 137, 222, 8, 119, 190, 132, 141, 5, 129,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6151,9 +6161,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            72, 10, 0, 120, 37, 84, 157, 63, 20, 182, 20, 142, 211, 145, 233, 100, 29, 203, 146,
+            87, 162, 128, 198, 53, 155, 57, 42, 81, 94, 17, 83, 240,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -6248,9 +6260,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            72, 10, 0, 120, 37, 84, 157, 63, 20, 182, 20, 142, 211, 145, 233, 100, 29, 203, 146,
+            87, 162, 128, 198, 53, 155, 57, 42, 81, 94, 17, 83, 240,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6345,9 +6359,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            72, 10, 0, 120, 37, 84, 157, 63, 20, 182, 20, 142, 211, 145, 233, 100, 29, 203, 146,
+            87, 162, 128, 198, 53, 155, 57, 42, 81, 94, 17, 83, 240,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6442,9 +6458,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            72, 10, 0, 120, 37, 84, 157, 63, 20, 182, 20, 142, 211, 145, 233, 100, 29, 203, 146,
+            87, 162, 128, 198, 53, 155, 57, 42, 81, 94, 17, 83, 240,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6638,9 +6656,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            233, 90, 110, 8, 43, 137, 139, 242, 8, 152, 175, 246, 177, 73, 49, 137, 61, 142, 2, 49,
-            158, 134, 13, 222, 60, 223, 139, 41, 66, 131, 135, 38,
+            191, 77, 82, 194, 247, 92, 67, 134, 235, 75, 244, 116, 69, 154, 189, 12, 249, 5, 25,
+            139, 146, 147, 153, 24, 198, 87, 19, 147, 13, 11, 118, 10,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6846,9 +6866,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            233, 90, 110, 8, 43, 137, 139, 242, 8, 152, 175, 246, 177, 73, 49, 137, 61, 142, 2, 49,
-            158, 134, 13, 222, 60, 223, 139, 41, 66, 131, 135, 38,
+            191, 77, 82, 194, 247, 92, 67, 134, 235, 75, 244, 116, 69, 154, 189, 12, 249, 5, 25,
+            139, 146, 147, 153, 24, 198, 87, 19, 147, 13, 11, 118, 10,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7064,9 +7086,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            233, 90, 110, 8, 43, 137, 139, 242, 8, 152, 175, 246, 177, 73, 49, 137, 61, 142, 2, 49,
-            158, 134, 13, 222, 60, 223, 139, 41, 66, 131, 135, 38,
+            191, 77, 82, 194, 247, 92, 67, 134, 235, 75, 244, 116, 69, 154, 189, 12, 249, 5, 25,
+            139, 146, 147, 153, 24, 198, 87, 19, 147, 13, 11, 118, 10,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -7281,9 +7305,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
-            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
+            205, 146, 93, 135, 221, 204, 196, 241, 245, 249, 201, 39, 63, 75, 164, 201, 54, 207,
+            217, 96, 254, 99, 76, 95, 100, 185, 69, 107, 39, 249, 103, 12,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7362,9 +7388,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
-            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
+            205, 146, 93, 135, 221, 204, 196, 241, 245, 249, 201, 39, 63, 75, 164, 201, 54, 207,
+            217, 96, 254, 99, 76, 95, 100, 185, 69, 107, 39, 249, 103, 12,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7467,9 +7495,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
-            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
+            205, 146, 93, 135, 221, 204, 196, 241, 245, 249, 201, 39, 63, 75, 164, 201, 54, 207,
+            217, 96, 254, 99, 76, 95, 100, 185, 69, 107, 39, 249, 103, 12,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);

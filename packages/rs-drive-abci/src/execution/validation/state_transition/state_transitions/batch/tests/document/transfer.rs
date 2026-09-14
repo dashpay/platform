@@ -10,7 +10,7 @@ mod transfer_tests {
     ) {
         run_document_transfer_on_document_type_that_is_transferable_that_has_no_owner_indices_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            1997120,
+            1997860, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -213,7 +213,7 @@ mod transfer_tests {
     async fn test_document_transfer_on_document_type_that_is_transferable_before_creator_id() {
         run_document_transfer_on_document_type_that_is_transferable_before_creator_id_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            3380960,
+            3381700, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -499,7 +499,7 @@ mod transfer_tests {
         run_document_transfer_on_document_type_that_is_transferable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
             // v14: transferred documents carry the contract-version stamp
-            3643860,
+            3644600, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -797,7 +797,7 @@ mod transfer_tests {
     async fn test_document_transfer_on_document_type_that_is_transferable_contract_v0() {
         run_document_transfer_on_document_type_that_is_transferable_contract_v0_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            3380960,
+            3381700, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -1491,7 +1491,7 @@ mod transfer_tests {
     async fn test_document_delete_after_transfer() {
         run_document_delete_after_transfer_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            4004720, // v14: stamped documents (see transferable baseline note)
+            4005460, // v14: stamped documents (see transferable baseline note)
         )
         .await;
     }

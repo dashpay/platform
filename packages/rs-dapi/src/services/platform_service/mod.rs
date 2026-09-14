@@ -398,6 +398,12 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetDataContractsResponse
     );
 
+    drive_method!(
+        get_data_contracts_latest_versions,
+        dapi_grpc::platform::v0::GetDataContractsLatestVersionsRequest,
+        dapi_grpc::platform::v0::GetDataContractsLatestVersionsResponse
+    );
+
     // Document methods
     drive_method!(
         get_documents,

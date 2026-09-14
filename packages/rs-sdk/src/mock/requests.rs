@@ -25,6 +25,9 @@ use dpp::{
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
 use drive::grovedb::Element;
+use drive_proof_verifier::types::data_contracts_latest_versions::{
+    DataContractLatestVersion, DataContractsLatestVersions,
+};
 use drive_proof_verifier::types::data_contracts_by_range::DataContractsByRange;
 use drive_proof_verifier::types::evonode_status::EvoNodeStatus;
 use drive_proof_verifier::types::groups::GroupActions;
@@ -325,6 +328,41 @@ impl MockResponse for DataContractsByRange {
     {
         DataContractsByRange(
             IndexMap::<Identifier, Option<DataContract>>::mock_deserialize(sdk, buf),
+        )
+    }
+}
+
+/// Four big-endian version bytes followed by the optional contract (empty when absent).
+impl MockResponse for DataContractLatestVersion {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let mut buf = self.version.to_be_bytes().to_vec();
+        buf.extend(self.data_contract.mock_serialize(sdk));
+        buf
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (version, data_contract) = buf.split_at(4);
+        DataContractLatestVersion {
+            version: u32::from_be_bytes(version.try_into().expect("4 byte version prefix")),
+            data_contract: Option::<DataContract>::mock_deserialize(sdk, data_contract),
+        }
+    }
+}
+
+impl MockResponse for DataContractsLatestVersions {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        self.0.mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        DataContractsLatestVersions(
+            IndexMap::<Identifier, Option<DataContractLatestVersion>>::mock_deserialize(sdk, buf),
         )
     }
 }

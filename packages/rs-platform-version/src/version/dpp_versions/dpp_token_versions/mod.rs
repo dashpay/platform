@@ -23,4 +23,22 @@ pub struct DPPTokenVersions {
     ///     on either side of a `floor` boundary and split the app hash.
     /// v1: the pinned pure-Rust `libm` crate, bit-identical on every target Platform builds for.
     pub distribution_function_evaluate_version: FeatureVersion,
+    /// Version for `RewardDistributionType::max_cycle_moment`, the cap on how far a single
+    /// perpetual distribution claim may redeem.
+    /// v0: `start + interval * cycles` in the moment's own width. For epoch-based distributions
+    ///     that width is `u16`, so `interval * 32_767` (the fixed-amount cycle cap) plus a nonzero
+    ///     start wraps; release builds carry no overflow checks, the wrapped cap lands below the
+    ///     start and the claim is refused as having no rewards, forever.
+    /// v1: computed in `u64` with saturating arithmetic and capped before narrowing back; the
+    ///     epoch cap is the last completed cycle moment (the previous epoch for an interval of
+    ///     one, as in v0) so the evaluated range always ends on a cycle boundary.
+    pub reward_distribution_max_cycle_moment_version: FeatureVersion,
+    /// Version for the epochs a perpetual distribution cycle spans, which weight an evonode
+    /// reward by participation in `DistributionFunction::evaluate_interval`.
+    /// v0: the cycle's step index read as an epoch, right only for an interval of one; for a
+    ///     wider interval it names epochs before the distribution started, which are outside
+    ///     the claim's epoch window, and the claim fails for want of their epoch info.
+    /// v1: the interval's epochs ending at the cycle moment, the span the fixed-amount fast
+    ///     path already weights.
+    pub distribution_function_cycle_epochs_version: FeatureVersion,
 }

@@ -501,7 +501,7 @@ mod replacement_tests {
             // v14: replaced documents carry the contract-version stamp, and
             // GroveDB V4 writes through the Merk node it retains from reading
             // the old value, billing slightly fewer reads than the V3 path
-            1428320,
+            1429060, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
