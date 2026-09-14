@@ -15,11 +15,10 @@
 //! ratchets the SDK (and this store) upward. A version this build does not
 //! know is ignored, as is a value at or below the floor.
 
+use crate::browser_storage;
 use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::sdk::min_protocol_version;
-use js_sys::{Array, Function, Reflect};
-use wasm_bindgen::{JsCast, JsValue};
 
 const KEY_PREFIX: &str = "dash-sdk.protocol-version.";
 
@@ -36,8 +35,7 @@ pub(crate) fn storage_key(network: Network) -> Option<String> {
 /// and it lies above the network's floor (a seed at or below the floor is a no-op).
 pub(crate) fn load(network: Network) -> Option<&'static PlatformVersion> {
     let key = storage_key(network)?;
-    let storage = local_storage()?;
-    let raw = call_method(&storage, "getItem", &[JsValue::from_str(&key)])?.as_string()?;
+    let raw = browser_storage::get_item(&key)?;
     let version = raw.trim().parse::<u32>().ok()?;
     if version <= min_protocol_version(network) {
         return None;
@@ -46,43 +44,61 @@ pub(crate) fn load(network: Network) -> Option<&'static PlatformVersion> {
 }
 
 /// Persist `version` for `network`. Silent when the network is not persisted or
-/// no `localStorage` is reachable (workers, Node, blocked site data).
+/// no storage is reachable (workers, Node, blocked site data).
 pub(crate) fn store(network: Network, version: u32) {
-    let Some(key) = storage_key(network) else {
-        return;
-    };
-    let Some(storage) = local_storage() else {
-        return;
-    };
-    call_method(
-        &storage,
-        "setItem",
-        &[
-            JsValue::from_str(&key),
-            JsValue::from_str(&version.to_string()),
-        ],
-    );
+    if let Some(key) = storage_key(network) {
+        browser_storage::set_item(&key, &version.to_string());
+    }
 }
 
-/// `globalThis.localStorage`, when the host has one. Reached through `Reflect`
-/// so a missing binding (a worker, Node) is a `None`, not a link error, and a
-/// throwing accessor (blocked site data) is swallowed.
-fn local_storage() -> Option<JsValue> {
-    let storage = Reflect::get(&js_sys::global(), &JsValue::from_str("localStorage")).ok()?;
-    if storage.is_undefined() || storage.is_null() {
-        return None;
-    }
-    Some(storage)
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-fn call_method(target: &JsValue, name: &str, args: &[JsValue]) -> Option<JsValue> {
-    let method = Reflect::get(target, &JsValue::from_str(name))
-        .ok()?
-        .dyn_into::<Function>()
-        .ok()?;
-    let arguments = Array::new();
-    for arg in args {
-        arguments.push(arg);
+    #[test]
+    fn only_public_networks_are_persisted() {
+        assert!(storage_key(Network::Mainnet).is_some());
+        assert!(storage_key(Network::Testnet).is_some());
+        assert!(storage_key(Network::Devnet).is_none());
+        assert!(storage_key(Network::Regtest).is_none());
+        store(Network::Devnet, 14);
+        assert!(load(Network::Devnet).is_none());
     }
-    Reflect::apply(&method, target, &arguments).ok()
+
+    #[test]
+    fn load_ignores_floor_unknown_and_garbage_values() {
+        let key = storage_key(Network::Testnet).expect("testnet is persisted");
+        let floor = min_protocol_version(Network::Testnet);
+        browser_storage::set_item(&key, &floor.to_string());
+        assert!(
+            load(Network::Testnet).is_none(),
+            "a value at the floor seeds nothing"
+        );
+        browser_storage::set_item(&key, &(floor - 1).to_string());
+        assert!(
+            load(Network::Testnet).is_none(),
+            "a value below the floor seeds nothing"
+        );
+        browser_storage::set_item(
+            &key,
+            &(dash_sdk::dpp::version::LATEST_VERSION + 1).to_string(),
+        );
+        assert!(
+            load(Network::Testnet).is_none(),
+            "an unknown version seeds nothing"
+        );
+        browser_storage::set_item(&key, "not a number");
+        assert!(load(Network::Testnet).is_none());
+    }
+
+    #[test]
+    fn store_then_load_round_trips_above_the_floor() {
+        let latest = dash_sdk::dpp::version::LATEST_VERSION;
+        assert!(latest > min_protocol_version(Network::Testnet));
+        store(Network::Testnet, latest);
+        assert_eq!(
+            load(Network::Testnet).map(|v| v.protocol_version),
+            Some(latest)
+        );
+    }
 }
