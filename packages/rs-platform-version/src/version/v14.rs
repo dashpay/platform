@@ -239,6 +239,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    `EvonodesByParticipation` claim with a function other than a fixed
 ///    amount failed as an internal error (reachable only once item 8 let the
 ///    cap stop wrapping). Interval-one distributions are unchanged.
+/// 10. **A zero epoch interval is rejected at registration**:
+///     `RewardDistributionType::validate_structure_interval` v1
+///     (`CONTRACT_VERSIONS_V6.token_versions.validate_structure_interval`)
+///     refuses an `EpochBasedDistribution` with `interval: 0` with the new
+///     `InvalidTokenDistributionEpochIntervalTooShortError` (code 10828) on
+///     contract create and update. Up to v13 the epoch arm enforced nothing,
+///     so such a contract registered and every claim on it failed as an
+///     internal error, since no cycle can be computed from a zero step. Block
+///     and time minimums are unchanged.
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
@@ -284,7 +293,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
         state_transitions: STATE_TRANSITION_VERSIONS_V3,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,

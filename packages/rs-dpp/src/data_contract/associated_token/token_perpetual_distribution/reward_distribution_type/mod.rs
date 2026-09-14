@@ -410,6 +410,128 @@ mod tests {
             .validate_structure_interval_v0(Network::Mainnet)
             .is_valid());
     }
+
+    // ----- validate_structure_interval through the dispatcher -----
+
+    #[test]
+    fn should_reject_a_zero_epoch_interval_from_protocol_version_14() {
+        use crate::consensus::basic::BasicError;
+        use crate::consensus::ConsensusError;
+        use dashcore::Network;
+        use platform_version::version::PlatformVersion;
+
+        let zero = RewardDistributionType::EpochBasedDistribution {
+            interval: 0,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        let one = RewardDistributionType::EpochBasedDistribution {
+            interval: 1,
+            function: DistributionFunction::FixedAmount { amount: 1 },
+        };
+        let v13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        let latest = PlatformVersion::latest();
+
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Devnet,
+            Network::Regtest,
+        ] {
+            // Frozen: version 13 registers a zero interval.
+            assert!(zero
+                .validate_structure_interval(network, v13)
+                .expect("expected v13 validation")
+                .is_valid());
+            let result = zero
+                .validate_structure_interval(network, latest)
+                .expect("expected latest validation");
+            assert!(matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::InvalidTokenDistributionEpochIntervalTooShortError(error)
+                )] if error.interval() == 0
+            ));
+            for platform_version in [v13, latest] {
+                assert!(one
+                    .validate_structure_interval(network, platform_version)
+                    .expect("expected validation")
+                    .is_valid());
+            }
+        }
+    }
+
+    #[test]
+    fn should_keep_block_and_time_minimums_in_every_version() {
+        use dashcore::Network;
+        use platform_version::version::PlatformVersion;
+
+        let v13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        let latest = PlatformVersion::latest();
+        let cases = [
+            (
+                RewardDistributionType::BlockBasedDistribution {
+                    interval: 99,
+                    function: DistributionFunction::FixedAmount { amount: 1 },
+                },
+                Network::Mainnet,
+                false,
+            ),
+            (
+                RewardDistributionType::BlockBasedDistribution {
+                    interval: 100,
+                    function: DistributionFunction::FixedAmount { amount: 1 },
+                },
+                Network::Mainnet,
+                true,
+            ),
+            (
+                RewardDistributionType::TimeBasedDistribution {
+                    interval: 3_600_500,
+                    function: DistributionFunction::FixedAmount { amount: 1 },
+                },
+                Network::Mainnet,
+                false,
+            ),
+            (
+                RewardDistributionType::TimeBasedDistribution {
+                    interval: 60_000,
+                    function: DistributionFunction::FixedAmount { amount: 1 },
+                },
+                Network::Regtest,
+                true,
+            ),
+        ];
+        for (distribution, network, expected_valid) in cases {
+            for platform_version in [v13, latest] {
+                assert_eq!(
+                    distribution
+                        .validate_structure_interval(network, platform_version)
+                        .expect("expected validation")
+                        .is_valid(),
+                    expected_valid,
+                    "{distribution} on {network:?} at v{}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_reject_an_unknown_validate_structure_interval_version() {
+        use dashcore::Network;
+        use platform_version::version::PlatformVersion;
+
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .dpp
+            .contract_versions
+            .token_versions
+            .validate_structure_interval = 2;
+        assert!(matches!(
+            epoch_based().validate_structure_interval(Network::Mainnet, &platform_version),
+            Err(ProtocolError::UnknownVersionMismatch { received: 2, .. })
+        ));
+    }
 }
 
 impl fmt::Display for RewardDistributionType {
