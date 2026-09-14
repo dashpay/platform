@@ -133,7 +133,7 @@ use crate::verify::RootHash;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 #[cfg(feature = "server")]
 pub use grovedb::{
-    query_result_type::{QueryResultElement, QueryResultElements, QueryResultType},
+    query_result_type::{QueryResultElements, QueryResultType},
     Element, Error as GroveError, TransactionArg,
 };
 
@@ -2244,6 +2244,7 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<(QueryResultElements, u16), Error> {
         use dpp::document::DocumentV0Getters;
+        use grovedb::query_result_type::QueryResultElement;
         if !self.pads_cursor_page(platform_version) {
             return Ok((elements, 0));
         }
