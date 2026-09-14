@@ -12,9 +12,9 @@ impl RewardDistributionType {
     ///
     /// `start + interval * cycles` is taken in `u64` with saturating arithmetic and then capped:
     /// at the current cycle moment for block- and time-based distributions, and at the last
-    /// completed cycle moment, `current cycle moment - interval`, for epoch-based ones. Only the
-    /// capped value is narrowed back to `EpochIndex`, and it always fits because the cap is
-    /// itself an `EpochIndex`. The widest epoch case, `u16::MAX * u32::MAX + u16::MAX`, stays
+    /// completed cycle moment, `current cycle moment - interval`, for epoch-based ones. The
+    /// `u64` reach is narrowed back to `EpochIndex` with saturation before that cap, which
+    /// bounds it either way. The widest epoch case, `u16::MAX * u32::MAX + u16::MAX`, stays
     /// below `2^49`, so the `u64` sums never saturate in practice; the saturating forms only
     /// guarantee that nothing here can panic or wrap.
     ///
@@ -70,11 +70,13 @@ impl RewardDistributionType {
                 let reach = u64::from(step)
                     .saturating_mul(max_cycles)
                     .saturating_add(u64::from(start));
-                let capped = reach.min(u64::from(last_completed_cycle_moment));
-                let capped = EpochIndex::try_from(capped).map_err(|_| {
-                    ProtocolError::Overflow("max cycle moment does not fit an epoch index")
-                })?;
-                Ok(RewardDistributionMoment::EpochBasedMoment(capped))
+                // A reach past the epoch range saturates to `EpochIndex::MAX`, which the cap
+                // below then bounds like any other reach: the result is the same as taking the
+                // minimum in `u64` and narrowing, without a conversion that could fail.
+                let reach = EpochIndex::try_from(reach).unwrap_or(EpochIndex::MAX);
+                Ok(RewardDistributionMoment::EpochBasedMoment(
+                    reach.min(last_completed_cycle_moment),
+                ))
             }
             _ => Err(ProtocolError::CorruptedCodeExecution(
                 "Mismatch moment types".to_string(),
