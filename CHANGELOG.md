@@ -1,3 +1,55 @@
+## [4.2.0-dev.11](///compare/v4.2.0-dev.10...v4.2.0-dev.11) (2026-09-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** prove data contract versions without the contracts via a PV14 version item (#4749)
+* **dpp:** reject a zero epoch interval for perpetual distributions at registration (#4752)
+* **dpp:** weight evonode reward cycles by the epochs they span, not the step index (#4750)
+* **dpp:** stop epoch-based perpetual distribution claims wrapping their cycle cap (#4747)
+* **drive-abci:** fail expired withdrawals below Core's dust threshold instead of re-signing them forever (#4737)
+
+### Features
+
+* **platform:** add getDataContractsByRange paginated contract enumeration query ([#4733](undefined/undefined/undefined/issues/4733))
+* **platform:** add getDataContractsLatestVersions query for cheap contract staleness checks ([#4739](undefined/undefined/undefined/issues/4739))
+* **platform:** prove data contract versions without the contracts via a PV14 version item ([#4749](undefined/undefined/undefined/issues/4749))
+* **rs-sdk-ffi:** expose getDataContractsByRange to Swift and Kotlin ([#4734](undefined/undefined/undefined/issues/4734))
+* **sdk:** seed devnets at protocol version 14 and persist the learned version ([#4735](undefined/undefined/undefined/issues/4735))
+* **wasm-sdk:** let apps seed the contracts they already hold ([#4746](undefined/undefined/undefined/issues/4746))
+* **wasm-sdk:** persist fetched data contracts and seed the next SDK from them ([#4744](undefined/undefined/undefined/issues/4744))
+
+
+### Bug Fixes
+
+* **dpp:** reject a zero epoch interval for perpetual distributions at registration ([#4752](undefined/undefined/undefined/issues/4752))
+* **dpp:** stop epoch-based perpetual distribution claims wrapping their cycle cap ([#4747](undefined/undefined/undefined/issues/4747))
+* **dpp:** weight evonode reward cycles by the epochs they span, not the step index ([#4750](undefined/undefined/undefined/issues/4750))
+* **drive-abci:** fail expired withdrawals below Core's dust threshold instead of re-signing them forever ([#4737](undefined/undefined/undefined/issues/4737))
+* **drive-abci:** keep a committed block final when its post-commit checkpoint fails ([#4748](undefined/undefined/undefined/issues/4748))
+* **drive:** bump grovedb so a ranking over an unwritten pinned prefix proves an empty page ([#4753](undefined/undefined/undefined/issues/4753))
+* **sdk:** leave shielded snapshot retry policy to hosts
+* **swift-sdk:** expose reservation-aware local shielded balance snapshots
+* **swift-sdk:** stop shielded sync before draining snapshots
+* **wallet:** avoid note copies and fence callbacks during shutdown
+* **wallet:** bound shielded snapshots and preserve bind delivery
+* **wallet:** harden local shielded balance snapshots
+* **wallet:** isolate shielded reads and check balance totals
+* **wallet:** recognize scanned shielded ledgers after interrupted restore
+* **wallet:** release lifecycle while waiting for shielded snapshots
+* **wallet:** revoke public native access before shutdown drains
+* **wasm-sdk:** keep the protocol-version store off wasm-bindgen imports natively ([#4743](undefined/undefined/undefined/issues/4743))
+
+
+### Tests
+
+* **wallet:** preserve snapshot delivery before wallet deletion
+
+
+### Continuous Integration
+
+* re-pin PR Hygiene ([#4736](undefined/undefined/undefined/issues/4736))
+
 ## [4.2.0-dev.10](https://github.com/dashpay/platform/compare/v4.2.0-dev.9...v4.2.0-dev.10) (2026-09-14)
 
 
