@@ -517,6 +517,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         daily_withdrawal_limit_percent: None,
         max_daily_withdrawal_amount: None,
         min_withdrawal_amount: 190_000,
+        core_dust_relay_fee_per_kb: None,
         max_contract_group_size: 256,
         max_token_redemption_cycles: 128,
         max_shielded_transition_actions: 16,
