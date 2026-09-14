@@ -1,3 +1,27 @@
+## [4.2.0-dev.10](https://github.com/dashpay/platform/compare/v4.2.0-dev.9...v4.2.0-dev.10) (2026-09-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** decode remote input with untrusted bincode and disk loads with trusted decoders (#4625)
+
+### Bug Fixes
+
+* **drive-abci:** bound and deduplicate SpecificKeys identity key requests ([#4724](https://github.com/dashpay/platform/issues/4724))
+* **drive:** scope compound cursor bounds to matching branches ([#4726](https://github.com/dashpay/platform/issues/4726))
+* **drive:** verify composite page and lookup components under their lifted limits ([#4729](https://github.com/dashpay/platform/issues/4729))
+* **platform:** decode remote input with untrusted bincode and disk loads with trusted decoders ([#4625](https://github.com/dashpay/platform/issues/4625))
+
+
+### Tests
+
+* **dpp:** run deep value serialization tests on a large stack ([#4725](https://github.com/dashpay/platform/issues/4725))
+
+
+### Continuous Integration
+
+* **release:** wait for published npm packages before packing dashmate ([#4727](https://github.com/dashpay/platform/issues/4727))
+
 ## [4.2.0-dev.9](https://github.com/dashpay/platform/compare/v4.2.0-dev.8...v4.2.0-dev.9) (2026-09-13)
 
 
