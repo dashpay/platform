@@ -19,6 +19,7 @@ pub struct DriveContractProveMethodVersions {
     pub prove_contract: FeatureVersion,
     pub prove_contract_history: FeatureVersion,
     pub prove_contracts: FeatureVersion,
+    pub prove_contracts_by_range: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
