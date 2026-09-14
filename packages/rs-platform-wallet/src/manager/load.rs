@@ -926,7 +926,8 @@ mod idempotent_load_tests {
             .wallet_manager
             .write()
             .await
-            .remove_wallet(&wallet_id);
+            .remove_wallet(&wallet_id)
+            .expect("the wallet this test just registered must be removable");
 
         let broadcaster = CountingBroadcaster::new();
         let sent = Arc::clone(&broadcaster.sent);
