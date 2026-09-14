@@ -1,5 +1,7 @@
 use crate::context_provider::{WasmContext, WasmTrustedContext};
 use crate::error::WasmSdkError;
+use crate::protocol_version_store;
+use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::{DataContract, Identifier};
 use dash_sdk::sdk::Uri;
@@ -11,6 +13,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -236,6 +239,13 @@ pub struct WasmSdkBuilder {
     /// `withTrustedContext` keeps the user-provided addresses and only
     /// attaches the context for proof verification.
     has_user_addresses: bool,
+    /// The network the builder targets; selects the persisted protocol-version
+    /// slot (see [`protocol_version_store`]).
+    network: Network,
+    /// True once the caller chose a version through `withVersion(...)`. The
+    /// persisted version is then neither read nor written: a pinned SDK never
+    /// ratchets, and the caller's choice wins.
+    version_configured: bool,
 }
 
 impl Deref for WasmSdkBuilder {
@@ -312,6 +322,8 @@ impl WasmSdkBuilder {
             inner: sdk_builder,
             trusted_context: None,
             has_user_addresses: true,
+            network,
+            version_configured: false,
         })
     }
 
@@ -323,6 +335,8 @@ impl WasmSdkBuilder {
             inner: sdk_builder,
             trusted_context: None,
             has_user_addresses: false,
+            network: Network::Mainnet,
+            version_configured: false,
         }
     }
 
@@ -334,6 +348,8 @@ impl WasmSdkBuilder {
             inner: sdk_builder,
             trusted_context: None,
             has_user_addresses: false,
+            network: Network::Testnet,
+            version_configured: false,
         }
     }
 
@@ -354,6 +370,8 @@ impl WasmSdkBuilder {
             inner: sdk_builder,
             trusted_context: None,
             has_user_addresses: false,
+            network: Network::Devnet,
+            version_configured: false,
         }
     }
 
@@ -369,6 +387,8 @@ impl WasmSdkBuilder {
             inner: sdk_builder,
             trusted_context: None,
             has_user_addresses: false,
+            network: Network::Regtest,
+            version_configured: false,
         }
     }
 
@@ -415,7 +435,21 @@ impl WasmSdkBuilder {
     }
 
     pub fn build(self) -> Result<WasmSdk, WasmSdkError> {
-        let sdk = self.inner.build().map_err(WasmSdkError::from)?;
+        let mut inner = self.inner;
+        if !self.version_configured {
+            // Start where the last SDK for this network ended, so the first proved
+            // request already runs at the version the network reported, and keep
+            // the store current as auto-detect ratchets further. Persisted for
+            // mainnet and testnet only; see `protocol_version_store`.
+            let network = self.network;
+            if let Some(version) = protocol_version_store::load(network) {
+                inner = inner.with_initial_version(version);
+            }
+            inner = inner.with_protocol_version_observer(Arc::new(move |version| {
+                protocol_version_store::store(network, version)
+            }));
+        }
+        let sdk = inner.build().map_err(WasmSdkError::from)?;
         Ok(WasmSdk::new(sdk, self.trusted_context))
     }
 
@@ -453,6 +487,7 @@ impl WasmSdkBuilder {
 
         Ok(Self {
             inner: self.inner.with_version(version),
+            version_configured: true,
             ..self
         })
     }
