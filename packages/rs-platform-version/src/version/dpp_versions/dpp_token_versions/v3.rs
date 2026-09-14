@@ -8,4 +8,5 @@ pub const TOKEN_VERSIONS_V3: DPPTokenVersions = DPPTokenVersions {
     token_set_price_action_id_version: 1,
     distribution_function_evaluate_version: 1,
     reward_distribution_max_cycle_moment_version: 1,
+    distribution_function_cycle_epochs_version: 1,
 };
