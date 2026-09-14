@@ -33,4 +33,12 @@ pub struct DPPTokenVersions {
     ///     epoch cap is the last completed cycle moment (the previous epoch for an interval of
     ///     one, as in v0) so the evaluated range always ends on a cycle boundary.
     pub reward_distribution_max_cycle_moment_version: FeatureVersion,
+    /// Version for the epochs a perpetual distribution cycle spans, which weight an evonode
+    /// reward by participation in `DistributionFunction::evaluate_interval`.
+    /// v0: the cycle's step index read as an epoch, right only for an interval of one; for a
+    ///     wider interval it names epochs before the distribution started, which are outside
+    ///     the claim's epoch window, and the claim fails for want of their epoch info.
+    /// v1: the interval's epochs ending at the cycle moment, the span the fixed-amount fast
+    ///     path already weights.
+    pub distribution_function_cycle_epochs_version: FeatureVersion,
 }
