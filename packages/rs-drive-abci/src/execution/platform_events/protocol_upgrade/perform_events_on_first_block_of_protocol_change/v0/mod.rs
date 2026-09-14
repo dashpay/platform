@@ -1970,6 +1970,17 @@ mod tests {
             .transition_to_version_12(&transaction, platform_version_12)
             .expect("v12 transition should succeed and strip unknown properties");
 
+        // The rewrite must be recorded so that a transactional read of the contract never
+        // falls back to a copy a concurrent committed-state query puts into the global cache.
+        assert!(
+            platform
+                .drive
+                .cache
+                .data_contracts
+                .is_modified_in_block(contract_id.to_buffer()),
+            "the migration must mark the rewritten contract as modified in the block"
+        );
+
         // 6. Verify the unknown property is gone from disk
         let raw_after = platform
             .drive
