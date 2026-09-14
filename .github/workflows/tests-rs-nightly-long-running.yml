@@ -83,8 +83,8 @@ jobs:
           fi
           echo "All features verified"
 
-  upgrade-fork-tests:
-    name: Version upgrade tests
+  long-running-drive-abci-tests:
+    name: Long-running drive-abci tests
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -118,6 +118,30 @@ jobs:
             --all-features \
             --locked \
             -- --ignored "upgrade_fork_tests"
+        env:
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
+          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
+          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
+          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
+
+      # Unit tests inside the drive-abci lib that are too slow for the PR
+      # suite, each marked `#[ignore] // Long-running: runs in nightly CI
+      # only`. The lib also carries ignored benchmarks and known-gap guards
+      # that must stay off, so nightly-only tests are listed here by name
+      # rather than running every ignored test. Runs even when the upgrade
+      # fork tests above fail so both results land in the same run.
+      - name: Run nightly-only drive-abci unit tests
+        if: ${{ !cancelled() }}
+        run: |
+          ulimit -c unlimited
+          RUST_MIN_STACK=4194304 cargo test \
+            --package drive-abci \
+            --lib \
+            --all-features \
+            --locked \
+            -- --ignored \
+            "document_distribution_many_votes_two_contests_same_time"
         env:
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
