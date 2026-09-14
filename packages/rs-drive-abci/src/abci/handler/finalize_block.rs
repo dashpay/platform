@@ -883,4 +883,57 @@ mod tests {
             );
         }
     }
+
+    /// The attempt record survives a restart: a node restarted inside the interval
+    /// after a skipped checkpoint still makes no attempt until the next interval
+    /// boundary, so its checkpoint heights stay the network's.
+    #[test]
+    fn finalize_block_keeps_skipping_a_failed_checkpoint_after_a_restart() {
+        let platform = checkpointing_platform();
+        let app = FullAbciApplication::new(&platform.platform);
+        let [first_time, second_time, next_interval_time] =
+            block_times_around_a_checkpoint_interval();
+
+        inject_checkpoint_faults(
+            &platform,
+            [CheckpointStep::WriteState, CheckpointStep::WriteState],
+        );
+        finalize_real_block(&platform, &app, 1, first_time, None).expect("first block");
+        assert!(registered_checkpoint_heights(&platform).is_empty());
+
+        // Restart: release the database and reopen it from the same directory
+        drop(app);
+        let TempPlatform { platform, tempdir } = platform;
+        drop(platform);
+        let platform = TempPlatform::open_with_tempdir(tempdir, checkpointing_config());
+        let app = FullAbciApplication::new(&platform.platform);
+
+        assert_eq!(platform.state.load().last_committed_block_height(), 1);
+        assert_eq!(
+            platform
+                .last_checkpoint_attempt_block_time_ms
+                .load(Ordering::Relaxed),
+            first_time,
+            "the attempt record is loaded from disk"
+        );
+
+        // The rest of the interval still makes no attempt
+        let logs = CapturedLogs::default();
+        logs.capture(|| finalize_real_block(&platform, &app, 2, second_time, Some(first_time)))
+            .expect("second block after the restart");
+        assert!(registered_checkpoint_heights(&platform).is_empty());
+        assert!(
+            !logs
+                .events()
+                .iter()
+                .any(|(_, message)| message.contains("checkpoint")),
+            "no attempt expected in the same interval: {:?}",
+            logs.events()
+        );
+
+        // The next interval boundary checkpoints again
+        finalize_real_block(&platform, &app, 3, next_interval_time, Some(second_time))
+            .expect("third block after the restart");
+        assert_eq!(registered_checkpoint_heights(&platform), vec![3]);
+    }
 }
