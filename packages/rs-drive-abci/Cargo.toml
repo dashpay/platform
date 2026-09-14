@@ -51,7 +51,7 @@ tracing-subscriber = { version = "0.3.22", default-features = false, features = 
   "registry",
   "tracing-log",
 ], optional = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", branch = "feat/propose-next-block-immediately", features = [
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "c4e35d4f0dad515d406b9fbc4adefe14a45b1b1b", features = [
   "grpc",
 ] }
 time = { version = "0.3", optional = true, features = [
