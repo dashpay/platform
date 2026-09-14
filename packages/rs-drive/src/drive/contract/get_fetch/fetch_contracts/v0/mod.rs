@@ -5,8 +5,7 @@ use crate::error::Error;
 use dpp::data_contract::DataContract;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
 use dpp::version::PlatformVersion;
-use grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
-use std::ops::RangeFull;
+use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 
 impl Drive {
     pub(super) fn fetch_contracts_v0(
@@ -19,20 +18,14 @@ impl Drive {
         let contracts_root_path =
             vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()];
 
-        let mut query = Query::new();
-        if let Some((start_at_id, start_at_included)) = start_at {
-            if start_at_included {
-                query.insert_item(QueryItem::RangeFrom(start_at_id.to_vec()..));
-            } else {
-                query.insert_item(QueryItem::RangeAfter(start_at_id.to_vec()..));
-            }
-        } else {
-            query.insert_item(QueryItem::RangeFull(RangeFull));
-        }
+        let mut query = Self::contracts_range_query(start_at);
         // Descend one level into each contract subtree to fetch key [0].
         // For non-historical contracts this is the Item with the contract bytes.
         // For historical contracts this is a Tree (the history subtree), which
-        // we handle with a follow-up read below.
+        // we handle with a follow-up read below. The proof path uses the two-key
+        // subquery `0 / 0` instead (`fetch_contracts_by_range_query`); a non-proof
+        // query cannot, because it would open the item's path as a subtree and
+        // silently skip every non-historical contract.
         query.set_subquery_key(vec![0]);
 
         let path_query = PathQuery::new(
