@@ -121,6 +121,31 @@ Recovery preserves the original signed record with an `Unknown` outcome across r
 
 Startup errors distinguish damaged recovery metadata or undecodable signed bytes (`ShieldedRecoveryCorrupted`) from missing/replaced viewing keys (`ShieldedRecoveryKeysRequired`). Failure to recover an output set can also mean damaged ciphertext or output metadata; restore the original keys or a known-good backup before choosing explicit recovery. Invalid SQLite identifiers, nullifiers, and state flags fail startup without deleting their rows. When signed bytes are damaged but the recovery key remains readable, listing retains its account/activity identifiers and leaves the undecodable identity, nonce, and amount absent.
 
+## Shielded balance API migration
+
+The local shielded balance API introduces three Rust source compatibility changes:
+
+- Custom `ShieldedStore` implementations must implement
+  `spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error>`.
+  The unchecked default was removed. Sum only the reservation-aware notes
+  returned by `get_unspent_notes(id)`, use `checked_add` in a `try_fold`, and
+  map overflow into the implementation's storage error. Do not wrap, saturate,
+  or replace overflow with zero. The checked implementations in
+  [InMemoryShieldedStore](src/wallet/shielded/store.rs) and
+  [FileBackedShieldedStore](src/wallet/shielded/file_store.rs) are the reference
+  method bodies; no additional error-conversion trait bound is required.
+- `ShieldedSyncSummary::balance_total()` now returns
+  `Result<u64, PlatformWalletError>`. Callers must propagate or handle
+  `ShieldedStoreError` when individually valid account balances have an
+  unrepresentable wallet-wide sum. A caller that already returns
+  `Result<_, PlatformWalletError>` can use `let total = summary.balance_total()?;`.
+  A failed total is unavailable, not a successful zero balance. The C callback
+  layout is unchanged; the bridge reports an unsuccessful wallet result.
+- `ShieldedSubwalletStartState` struct literals require `has_sync_state`.
+  Set it from the presence of a persisted scan-state row, including a row whose
+  index is zero. An absent row is different from a recorded empty scan; do not
+  infer presence merely from `last_synced_index > 0`.
+
 ## Dependencies
 
 - `key-wallet`: Core wallet functionality

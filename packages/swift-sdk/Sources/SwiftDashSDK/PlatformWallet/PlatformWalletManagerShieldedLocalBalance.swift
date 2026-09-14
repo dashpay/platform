@@ -10,6 +10,18 @@ public enum ShieldedLocalBalanceState: Sendable, Equatable {
     case ready(ShieldedLocalBalanceSnapshot)
 }
 
+/// A local read completed, but its result cannot be delivered for the current
+/// Swift binding lifecycle. Callers own whether and when to request another read.
+public enum ShieldedLocalBalanceReadError: LocalizedError, Sendable, Equatable {
+    /// A successful bind overlapped delivery, including an idempotent bind.
+    /// No transaction was attempted; a fresh snapshot read is safe.
+    case bindingChanged
+
+    public var errorDescription: String? {
+        "Shielded binding changed during the local balance snapshot; request a fresh read"
+    }
+}
+
 public struct ShieldedLocalBalanceSnapshot: Sendable, Equatable {
     /// Every bound account is present, including accounts with zero credits.
     public let accounts: [UInt32: ShieldedLocalAccountBalance]
@@ -83,8 +95,8 @@ extension PlatformWalletManager {
     }
 
     /// Native bind does not report whether it preserved or changed the
-    /// registration. Refresh reads after either successful outcome; discard
-    /// them on failure because a failed bind cannot certify the old ledger.
+    /// registration. Mark queued delivery obsolete after either successful
+    /// outcome; discard on failure because it cannot certify the old ledger.
     /// The synchronous MainActor call and epoch update cannot interleave
     /// with a snapshot's MainActor delivery.
     func withShieldedLocalBalanceBind<T>(_ body: () throws -> T) rethrows -> T {
@@ -104,16 +116,15 @@ extension PlatformWalletManager {
     /// active scan holds the store across a network request, this throws
     /// instead of blocking native-operation admission until the scan ends.
     ///
-    /// Successful binds overlapping delivery trigger up to two fresh reads,
-    /// covering the direct launch bind and wallet-observer bind. Further
-    /// binding changes throw rather than returning an obsolete ledger or
-    /// retrying indefinitely.
+    /// Each invocation performs one native read. A successful bind overlapping
+    /// delivery throws `ShieldedLocalBalanceReadError.bindingChanged`; the host
+    /// decides whether and when to request a fresh read. Clear, stop, failed bind,
+    /// and task cancellation discard obsolete delivery with `CancellationError`.
     ///
     /// Native failures throw; unbound and incompletely restored wallets do
-    /// not produce numeric balances. Retain the last usable snapshot and
-    /// retry later when a read fails. The manager remains alive until the
-    /// native read and allocation release finish; shutdown drains admitted
-    /// reads, including their two permitted bind retries.
+    /// not produce numeric balances. Retain the last usable snapshot when a
+    /// read fails. The manager remains alive until native read, allocation
+    /// release, and delivery finish; shutdown drains admitted reads.
     public func localShieldedBalanceSnapshot(walletId: Data) async throws -> ShieldedLocalBalanceState {
         try Task.checkCancellation()
         try ensureConfigured()
@@ -127,38 +138,29 @@ extension PlatformWalletManager {
         let generation = shieldedSyncGeneration.current()
         let localGeneration = shieldedLocalBalanceGeneration.current()
         let calls = nativeShieldedLocalBalanceCalls
-        var remainingBindRetries = 2
-        while true {
-            try Task.checkCancellation()
-            let bindGeneration = shieldedLocalBalanceBindGeneration.current()
-            let state: ShieldedLocalBalanceState = try await withCheckedThrowingContinuation { continuation in
-                // Read-only native access has its own lifecycle/store guards.
-                // A different manager's teardown must not delay this read.
-                shieldedLocalBalanceQueue.async {
-                    do {
-                        continuation.resume(returning: try Self.readLocalShieldedBalance(
-                            handle: h, walletId: walletId, calls: calls))
-                    } catch {
-                        continuation.resume(throwing: error)
-                    }
+        let bindGeneration = shieldedLocalBalanceBindGeneration.current()
+        let state: ShieldedLocalBalanceState = try await withCheckedThrowingContinuation { continuation in
+            // Read-only native access has its own lifecycle/store guards.
+            // A different manager's teardown must not delay this read.
+            shieldedLocalBalanceQueue.async {
+                do {
+                    continuation.resume(returning: try Self.readLocalShieldedBalance(
+                        handle: h, walletId: walletId, calls: calls))
+                } catch {
+                    continuation.resume(throwing: error)
                 }
             }
-            try Task.checkCancellation()
-            guard handle == h, generation == shieldedSyncGeneration.current(),
-                  localGeneration == shieldedLocalBalanceGeneration.current() else {
-                // Clear, stop, or a failed bind makes this request obsolete,
-                // including when it happens during either fresh read.
-                throw CancellationError()
-            }
-            guard bindGeneration != shieldedLocalBalanceBindGeneration.current() else {
-                return state
-            }
-            guard remainingBindRetries > 0 else {
-                throw PlatformWalletError.walletOperation(
-                    "Shielded binding changed repeatedly during the local balance snapshot; retry the read")
-            }
-            remainingBindRetries -= 1
         }
+        try Task.checkCancellation()
+        guard handle == h, generation == shieldedSyncGeneration.current(),
+              localGeneration == shieldedLocalBalanceGeneration.current() else {
+            // Clear, stop, or a failed bind makes this request obsolete.
+            throw CancellationError()
+        }
+        guard bindGeneration == shieldedLocalBalanceBindGeneration.current() else {
+            throw ShieldedLocalBalanceReadError.bindingChanged
+        }
+        return state
     }
 
     nonisolated static func readLocalShieldedBalance(

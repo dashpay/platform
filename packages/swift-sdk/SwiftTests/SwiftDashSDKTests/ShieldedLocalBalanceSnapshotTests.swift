@@ -474,39 +474,31 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         await manager.shutdown()
     }
 
-    func testShouldTolerateBothDuplicateLaunchBinds() async throws {
-        let firstGate = DispatchSemaphore(value: 0)
-        let secondGate = DispatchSemaphore(value: 0)
-        let first = NativeFixture(rows: [row(0, credits: 900)], gate: firstGate)
-        let second = NativeFixture(rows: [row(0, credits: 900)], gate: secondGate)
-        let third = NativeFixture(rows: [row(0, credits: 900)])
-        let manager = makeManager(first)
-        manager.nativeShieldedLocalBalanceCalls = NativeSequence([first, second, third]).calls
+    func testShouldReportOverlappingBindsWithoutReissuingTheRead() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        let fixture = NativeFixture(rows: [row(0, credits: 900)], gate: gate)
+        let manager = makeManager(fixture)
         let read = Task { try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId) }
-        defer {
-            firstGate.signal()
-            secondGate.signal()
-        }
-        try await waitForRead(first)
+        defer { gate.signal() }
+        try await waitForRead(fixture)
         manager.withShieldedLocalBalanceBind {}
-        firstGate.signal()
-        try await waitForRead(second)
         manager.withShieldedLocalBalanceBind {}
-        secondGate.signal()
-        let state = try await read.value
-        XCTAssertEqual(state, .ready(ShieldedLocalBalanceSnapshot(accounts: [
-            0: ShieldedLocalAccountBalance(spendableCredits: 900, lastScannedIndex: nil, source: .restored)
-        ])))
-        for fixture in [first, second, third] {
-            XCTAssertEqual(fixture.walletIds.count, 1)
-            XCTAssertEqual(fixture.events.filter { $0 == "free" }.count, 1)
+        gate.signal()
+        do {
+            _ = try await read.value
+            XCTFail("A successful bind must invalidate queued delivery")
+        } catch let error as ShieldedLocalBalanceReadError {
+            XCTAssertEqual(error, .bindingChanged)
+            XCTAssertNotNil(error.errorDescription)
         }
+        XCTAssertEqual(fixture.walletIds.count, 1, "The bridge must not decide to retry")
+        XCTAssertEqual(fixture.events.filter { $0 == "free" }.count, 1)
         await manager.shutdown()
     }
 
-    func testShouldRereadAfterSuccessfulBindWithoutReturningAnObsoleteSnapshot() async throws {
-        // An idempotent bind must preserve delivery; a changed account set
-        // must deliver the freshly read ledger, never the first attempt.
+    func testShouldAllowCallerToReadFreshStateAfterBindingChanged() async throws {
+        // The caller can request a fresh ledger after either an idempotent
+        // bind or a changed account set. The bridge must not reissue it itself.
         let replacements: [(UInt32, UInt64)] = [(0, 900), (7, 450)]
         for (replacementAccount, replacementCredits) in replacements {
             let gate = DispatchSemaphore(value: 0)
@@ -528,7 +520,14 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
                 gate.signal()
                 XCTAssertEqual(didFree.wait(timeout: .now() + 1), .success)
             }
-            let state = try await read.value
+            do {
+                _ = try await read.value
+                XCTFail("Obsolete snapshot was delivered")
+            } catch let error as ShieldedLocalBalanceReadError {
+                XCTAssertEqual(error, .bindingChanged)
+            }
+            XCTAssertTrue(second.walletIds.isEmpty, "No implicit retry")
+            let state = try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId)
             XCTAssertEqual(state, .ready(ShieldedLocalBalanceSnapshot(accounts: [
                 replacementAccount: ShieldedLocalAccountBalance(
                     spendableCredits: replacementCredits, lastScannedIndex: nil, source: .restored)
@@ -540,33 +539,16 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
         }
     }
 
-    func testShouldBoundBindRetriesAndRejectDestructiveChangesDuringRetry() async throws {
-        for operation in ["bind", "clear", "stop", "failed bind"] {
-            let firstGate = DispatchSemaphore(value: 0)
-            let secondGate = DispatchSemaphore(value: 0)
-            let thirdGate = DispatchSemaphore(value: 0)
-            let first = NativeFixture(rows: [row(0, credits: 900)], gate: firstGate)
-            let second = NativeFixture(rows: [row(0, credits: 450)], gate: secondGate)
-            let third = NativeFixture(rows: [row(1, credits: 225)], gate: thirdGate)
-            let manager = makeManager(first)
-            manager.nativeShieldedLocalBalanceCalls = NativeSequence([first, second, third]).calls
+    func testShouldPreferDestructiveCancellationOverBindingChanged() async throws {
+        for operation in ["clear", "stop", "failed bind"] {
+            let gate = DispatchSemaphore(value: 0)
+            let fixture = NativeFixture(rows: [row(0, credits: 900)], gate: gate)
+            let manager = makeManager(fixture)
             let read = Task { try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId) }
-            defer {
-                firstGate.signal()
-                secondGate.signal()
-                thirdGate.signal()
-            }
-            try await waitForRead(first)
+            defer { gate.signal() }
+            try await waitForRead(fixture)
             manager.withShieldedLocalBalanceBind {}
-            firstGate.signal()
-            try await waitForRead(second)
-            manager.withShieldedLocalBalanceBind {}
-            secondGate.signal()
-            try await waitForRead(third)
-
             switch operation {
-            case "bind":
-                manager.withShieldedLocalBalanceBind {}
             case "clear":
                 manager.withShieldedLocalBalanceMutation {}
             case "stop":
@@ -576,43 +558,27 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
                     throw PlatformWalletError.walletOperation("Bind failed")
                 })
             }
-            thirdGate.signal()
+            gate.signal()
             do {
                 _ = try await read.value
-                XCTFail("Obsolete retry was returned after \(operation)")
+                XCTFail("Obsolete snapshot was delivered after \(operation)")
             } catch is CancellationError {
-                XCTAssertNotEqual(operation, "bind", "Repeated successful binds should request a later retry")
-            } catch let error as PlatformWalletError {
-                XCTAssertEqual(operation, "bind")
-                guard case .walletOperation(let message) = error else {
-                    return XCTFail("Unexpected retry error: \(error)")
-                }
-                XCTAssertTrue(message.contains("retry the read"))
+                // A successful bind must not hide a later destructive change.
             }
-            XCTAssertEqual(first.walletIds.count, 1)
-            XCTAssertEqual(second.walletIds.count, 1)
-            XCTAssertEqual(third.walletIds.count, 1, "At most two extra reads are permitted")
-            XCTAssertEqual(first.events.filter { $0 == "free" }.count, 1)
-            XCTAssertEqual(second.events.filter { $0 == "free" }.count, 1)
-            XCTAssertEqual(third.events.filter { $0 == "free" }.count, 1)
+            XCTAssertEqual(fixture.walletIds.count, 1)
+            XCTAssertEqual(fixture.events.filter { $0 == "free" }.count, 1)
             await manager.shutdown()
             XCTAssertEqual(manager.handle, NULL_HANDLE)
         }
     }
 
-    func testShouldKeepAdmittedBindRetryAliveThroughShutdown() async throws {
-        let firstGate = DispatchSemaphore(value: 0)
-        let secondGate = DispatchSemaphore(value: 0)
-        let first = NativeFixture(rows: [row(0, credits: 900)], gate: firstGate)
-        let second = NativeFixture(rows: [row(0, credits: 450)], gate: secondGate)
-        let manager = makeManager(first)
-        manager.nativeShieldedLocalBalanceCalls = NativeSequence([first, second]).calls
+    func testShouldDrainBindingChangedReadAndRejectCallerRetryDuringShutdown() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        let fixture = NativeFixture(rows: [row(0, credits: 900)], gate: gate)
+        let manager = makeManager(fixture)
         let read = Task { try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId) }
-        defer {
-            firstGate.signal()
-            secondGate.signal()
-        }
-        try await waitForRead(first)
+        defer { gate.signal() }
+        try await waitForRead(fixture)
         manager.withShieldedLocalBalanceBind {}
         let shutdown = Task { await manager.shutdown() }
         for _ in 0..<200 {
@@ -620,18 +586,27 @@ final class ShieldedLocalBalanceSnapshotTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(5))
         }
         XCTAssertTrue(manager.shutdownRequested)
-        firstGate.signal()
-        try await waitForRead(second)
         XCTAssertEqual(manager.handle, Handle.max)
-        XCTAssertFalse(first.events.contains("teardown"))
-        secondGate.signal()
-        let state = try await read.value
-        XCTAssertEqual(state, .ready(ShieldedLocalBalanceSnapshot(accounts: [
-            0: ShieldedLocalAccountBalance(spendableCredits: 450, lastScannedIndex: nil, source: .restored)
-        ])))
+        XCTAssertFalse(fixture.events.contains("teardown"))
+        gate.signal()
+        do {
+            _ = try await read.value
+            XCTFail("Bind changed during the admitted read")
+        } catch let error as ShieldedLocalBalanceReadError {
+            XCTAssertEqual(error, .bindingChanged)
+        }
+        do {
+            _ = try await manager.localShieldedBalanceSnapshot(walletId: Self.walletId)
+            XCTFail("Shutdown must reject a caller's fresh read")
+        } catch let error as PlatformWalletError {
+            guard case .invalidHandle = error else {
+                return XCTFail("Unexpected shutdown error: \(error)")
+            }
+        }
         _ = await shutdown.value
-        XCTAssertEqual(second.events.filter { $0 == "free" }.count, 1)
-        XCTAssertEqual(first.events.filter { $0 == "shielded_stop" }.count, 1)
+        XCTAssertEqual(fixture.walletIds.count, 1)
+        XCTAssertEqual(fixture.events.filter { $0 == "free" }.count, 1)
+        XCTAssertEqual(fixture.events.filter { $0 == "shielded_stop" }.count, 1)
         XCTAssertEqual(manager.handle, NULL_HANDLE)
     }
 
